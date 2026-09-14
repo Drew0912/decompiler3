@@ -7,7 +7,7 @@
 ALWAYS read CLAUDE.md before starting any task to refresh the rules.
 
 ### -1. Language Usage
-- **User communication**: Chinese
+- **User communication**: English
 - **Code, comments, commit messages, tool descriptions**: English
 
 ### -0.5. Git Commit Policy
@@ -15,6 +15,9 @@ NEVER auto-commit. Only create commits when explicitly requested by user.
 
 ### -0.25. Code Modification Policy
 NEVER modify code during discussion. Only modify code AFTER user explicitly confirms the approach.
+
+### -0.1. decompiler2 Submodule Access
+NEVER read, search, or reference files under the `decompiler2` submodule unless the user explicitly says to use it in the current request. If you think looking at `decompiler2` would help, ASK the user first and wait for confirmation before accessing it.
 
 ### 1. NO HARDCODED MAGIC NUMBERS
 Use named constants: `offset // WORD_SIZE` not `offset // 4`
@@ -59,9 +62,10 @@ Keep comments brief and meaningful. Avoid redundant explanations.
 - ❌ Don't state the obvious: `x = 5  # Set x to 5`
 
 ## Checklist
-- [ ] User communication in Chinese, everything else in English
+- [ ] User communication in English, everything else in English
 - [ ] No auto-commit (wait for user request)
 - [ ] No code changes during discussion (wait for user confirmation)
+- [ ] No accessing `decompiler2` submodule unless explicitly requested (ask first)
 - [ ] No hardcoded numbers (use named constants)
 - [ ] Imports at top level
 - [ ] Spaces around `=`

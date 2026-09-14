@@ -237,17 +237,17 @@ class ScpFunctionEntry(StrictBase):
         self.offset                 = fs.ReadULong()
         self.param_count            = fs.ReadByte()
         self.is_common_func         = fs.ReadByte()
-        self.byte06                 = fs.ReadByte()
+        self.byte06                 = fs.ReadByte() # is_common_func is UShort?
         self.default_params_count   = fs.ReadByte()
         self.default_params_offset  = fs.ReadULong()
         self.param_flags_offset     = fs.ReadULong()
         self.debug_info_count       = fs.ReadULong()
         self.debug_info_offset      = fs.ReadULong()
-        self.name_hash              = fs.ReadULong()
+        self.name_hash              = fs.ReadULong() # crc32
         self.name_offset            = fs.ReadULong()
 
         if self.byte06 != 0:
-            raise NotImplementedError(f'byte06 != 0: {self.byte06}')
+            raise NotImplementedError(f'byte06 != 0: {self.byte06}. ScpFunctionEntry.is_common_func is UShort?')
 
     def __str__(self) -> str:
         return '\n'.join([
@@ -284,9 +284,10 @@ class ScpFunctionCallDebugInfo(StrictBase):
     SIZE = 0x0C
 
     class CallType(IntEnum2):
-        Local   = 0
-        Script  = 1
-        Syscall = 3
+        Local    = 0
+        Script   = 1
+        # Tailcall = 2 # Script_No_Return
+        Syscall  = 3
 
     func_id     : int
     call_type   : CallType

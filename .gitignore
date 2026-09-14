@@ -2,6 +2,7 @@
 *.dot
 *.png
 *.zip
+.venv
 
 # tests
 openspec
@@ -11,3 +12,7 @@ openspec
 tests/debug.*
 tests/mp2000_ev.*
 tests/mp3010_01.*
+
+script_en
+
+decompiler2

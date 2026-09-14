@@ -1,0 +1,3 @@
+[submodule "decompiler2"]
+	path = decompiler2
+	url = https://github.com/Drew0912/Decompiler2.git
