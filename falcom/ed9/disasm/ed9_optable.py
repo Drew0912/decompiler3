@@ -39,8 +39,8 @@ class ED9OperandDescriptor(OperandDescriptor):
         match self.format.type:
             case ED9OperandType.Func:
                 # Try to get function name from context
-                if context.get_func_name:
-                    func_name = context.get_func_name(operand.value)
+                if context.get_func_name_from_func_id:
+                    func_name = context.get_func_name_from_func_id(operand.value)
                     if func_name:
                         return func_name
                 return f'func_{operand.value}'

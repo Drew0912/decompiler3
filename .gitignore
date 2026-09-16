@@ -2,7 +2,9 @@
 *.dot
 *.png
 *.zip
+
 .venv
+.vscode
 
 # tests
 openspec

@@ -4,6 +4,7 @@ from .types_parser import *
 from pprint import pprint
 from ..disasm import *
 from ..disasm.ed9_optable import *
+import pathlib
 
 # Stack simulation instruction groups
 PUSH_VARIANTS = (
@@ -91,11 +92,12 @@ class ScpParser(StrictBase):
 
     def __init__(self, fs: fileio.FileStream, name: str = ''):
         self.fs = fs
+        self.name = name
 
     def get_func_by_name(self, name: str) -> Function:
         return self.function_map[name]
 
-    def get_func_name(self, func_id: int) -> str:
+    def get_func_name_from_func_id(self, func_id: int) -> str:
         if func_id >= len(self.functions):
             raise ValueError(f'func_id out of range: {func_id} >= {len(self.functions)}')
 
@@ -394,6 +396,29 @@ class ScpParser(StrictBase):
 
     def format_function(self, func: Function) -> list[str]:
         """Format a disassembled function"""
-        formatter_context = FormatterContext(get_func_name = self.get_func_name)
+        formatter_context = FormatterContext(get_func_name_from_func_id = self.get_func_name_from_func_id)
         formatter = Formatter(formatter_context)
         return formatter.format_function(func)
+
+    def gen_python_header(self) -> list[str]:
+        """Generate Python header lines for output script execution"""
+        return f'''\
+from falcom.ed9.writer.scp_writer_helper import *
+try:
+    import {pathlib.Path(self.name).stem.strip()}_hook
+except ModuleNotFoundError:
+    pass
+            
+scena = create_scp_writer('{self.name}')
+            
+'''.splitlines()
+
+    def gen_python_footer(self) -> list[str]:
+        """Generate Python footer lines for output script execution"""
+        return f'''\
+def main():
+    scena.run(globals())
+
+if __name__ == '__main__':
+    Try(main)          
+        '''.splitlines()
