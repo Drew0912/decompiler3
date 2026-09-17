@@ -121,7 +121,7 @@ class OperandDescriptor:
         return str(operand.value)
 
     def format_offset(self, operand: 'Operand') -> str:
-        return f'loc_{operand.value:X}'
+        return f'\'loc_{operand.value:X}\''
 
 
 # Initialize format table
