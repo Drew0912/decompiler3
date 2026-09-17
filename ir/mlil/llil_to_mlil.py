@@ -110,13 +110,17 @@ class LLILToMLILTranslator:
         value = self._translate_expr(llil_inst.value)
         self.builder.set_var(var, value)
 
+    def _call_output(self) -> Optional[MLILVariable]:
+        '''Variable a call result is written to (architecture specific, none by default)'''
+        return None
+
     def _translate_call(self, llil_inst: LowLevelILCall):
         '''Translate function call'''
         # Translate arguments
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
         # Generate call (target is always a string)
-        self.builder.call(llil_inst.target, mlil_args)
+        self.builder.call(llil_inst.target, mlil_args, self._call_output())
 
         # Add goto to return target (makes this block terminal)
         # return_target is always a LowLevelILBasicBlock

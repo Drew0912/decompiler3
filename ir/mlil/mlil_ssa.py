@@ -273,6 +273,27 @@ class SSAConstructor:
                 if isinstance(inst, MLILSetVar):
                     self.var_defs[inst.var].add(block)
 
+                elif isinstance(inst, MediumLevelILCall):
+                    for var in self._call_defined_vars(inst):
+                        self.var_defs[var].add(block)
+
+    def _call_defined_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
+        '''Variables a call writes: its output plus the registers it clobbers
+
+        A callee may change any register, so every register other than the one
+        receiving the result becomes undefined across the call.
+        '''
+        defined = []
+
+        if inst.output is not None:
+            defined.append(inst.output)
+
+        for var in self.function.register_vars.values():
+            if var != inst.output:
+                defined.append(var)
+
+        return defined
+
     def _insert_phi_nodes(self):
         '''Insert Phi nodes at dominance frontiers (worklist algorithm)'''
         for var, def_blocks in self.var_defs.items():
@@ -392,7 +413,7 @@ class SSAConstructor:
 
             return MLILSetVarSSA(MLILVariableSSA(inst.var, new_ver), new_value, address = inst.address).copy_metadata_from(inst)
 
-        elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+        elif isinstance(inst, MediumLevelILCall):
             # Find variables passed via AddressOf (output parameters)
             addr_vars = []
             for arg in inst.args:
@@ -402,13 +423,22 @@ class SSAConstructor:
             # Rename the call (uses current SSA versions)
             renamed = self._rename_stmt(inst)
 
-            if not addr_vars:
+            # The call result defines a new version of the output variable
+            output_var = renamed.output
+            if output_var is not None:
+                new_ver = self._new_version(output_var)
+                pushed.append(output_var)
+                renamed.output = MLILVariableSSA(output_var, new_ver)
+
+            # Registers the call clobbers, plus address-taken variables it may write,
+            # get pseudo-definitions so later reads do not see the older value
+            clobbered = [var for var in self.function.register_vars.values() if var != output_var]
+
+            if not addr_vars and not clobbered:
                 return renamed
 
-            # Create new SSA versions for address-taken variables (modified by call)
-            # Generate pseudo-definitions so interference analysis knows about them
             result = [renamed]
-            for var in addr_vars:
+            for var in clobbered + addr_vars:
                 new_ver = self._new_version(var)
                 pushed.append(var)
 
@@ -479,18 +509,11 @@ class SSAConstructor:
                 if new_value is not stmt.value:
                     return MLILRet(new_value, address = stmt.address).copy_metadata_from(stmt)
 
-        elif isinstance(stmt, (MLILCall, MLILSyscall, MLILCallScript)):
+        elif isinstance(stmt, MediumLevelILCall):
             new_args = [self._rename_expr(arg) for arg in stmt.args]
 
             if any(new_args[i] is not stmt.args[i] for i in range(len(stmt.args))):
-                if isinstance(stmt, MLILCall):
-                    return MLILCall(stmt.target, new_args, address = stmt.address).copy_metadata_from(stmt)
-
-                elif isinstance(stmt, MLILSyscall):
-                    return MLILSyscall(stmt.subsystem, stmt.cmd, new_args, address = stmt.address).copy_metadata_from(stmt)
-
-                elif isinstance(stmt, MLILCallScript):
-                    return MLILCallScript(stmt.module, stmt.func, new_args, address = stmt.address).copy_metadata_from(stmt)
+                return stmt.rebuild(new_args)
 
         elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
             new_value = self._rename_expr(stmt.value)
@@ -610,6 +633,8 @@ class SSADeconstructor:
         self.live_out: Dict[MediumLevelILBasicBlock, Set[MLILVariableSSA]] = {}
         self.interference: Dict[MLILVariableSSA, Set[MLILVariableSSA]] = defaultdict(set)
         self.var_mapping: Dict[MLILVariableSSA, MLILVariable] = {}
+        self.reg_index_by_var: Dict[MLILVariable, int] = {}
+        self.undefined_reg_versions: Set[MLILVariableSSA] = set()
 
     def deconstruct(self) -> MediumLevelILFunction:
         '''Convert from SSA to non-SSA (modifies in-place)'''
@@ -618,6 +643,7 @@ class SSADeconstructor:
 
         # Step 2: Collect all SSA variables and their def/use sites
         self._collect_ssa_vars()
+        self._collect_undefined_register_versions()
 
         # Step 3: Compute liveness (which variables are live at each point)
         self._compute_liveness()
@@ -643,7 +669,38 @@ class SSADeconstructor:
                     self._collect_uses_in_expr(inst.value, block, inst_idx)
 
                 else:
+                    if isinstance(inst, MediumLevelILCall) and inst.output is not None:
+                        self.all_ssa_vars.add(inst.output)
+                        self.var_defs[inst.output] = (block, inst_idx)
+
                     self._collect_uses_in_stmt(inst, block, inst_idx)
+
+    def _collect_undefined_register_versions(self):
+        '''Register versions that hold no value known inside this function
+
+        A register read whose value comes from the caller, or from a callee that
+        clobbered it, degrades to the literal REGS[n] form rather than becoming a
+        local variable that is used before it is assigned.
+        '''
+        self.reg_index_by_var = {var: index for index, var in self.function.register_vars.items()}
+
+        if not self.reg_index_by_var:
+            return
+
+        defined: Set[MLILVariableSSA] = set()
+
+        for block in self.function.basic_blocks:
+            for inst in block.instructions:
+                if isinstance(inst, MLILSetVarSSA):
+                    if not isinstance(inst.value, MLILUndef):
+                        defined.add(inst.var)
+
+                elif isinstance(inst, MediumLevelILCall) and inst.output is not None:
+                    defined.add(inst.output)
+
+        for ssa_var in self.all_ssa_vars:
+            if ssa_var.base_var in self.reg_index_by_var and ssa_var not in defined:
+                self.undefined_reg_versions.add(ssa_var)
 
     def _collect_uses_in_expr(self, expr, block: MediumLevelILBasicBlock, inst_idx: int):
         '''Recursively collect variable uses in an expression'''
@@ -713,6 +770,10 @@ class SSADeconstructor:
                             if var not in def_set:
                                 use_set.add(var)
 
+                        # Arguments are read before the result is written
+                        if isinstance(inst, MediumLevelILCall) and inst.output is not None:
+                            def_set.add(inst.output)
+
                 new_live_in = use_set | (new_live_out - def_set)
 
                 if new_live_in != self.live_in[block] or new_live_out != self.live_out[block]:
@@ -764,15 +825,24 @@ class SSADeconstructor:
                 if isinstance(inst, MLILSetVarSSA):
                     defined_var = inst.var
                     # All currently live variables interfere with defined_var
-                    for live_var in live:
-                        if live_var != defined_var:
-                            self.interference[defined_var].add(live_var)
-                            self.interference[live_var].add(defined_var)
+                    self._add_interference(defined_var, live)
                     live.discard(defined_var)
                     live |= self._get_vars_in_expr(inst.value)
 
+                elif isinstance(inst, MediumLevelILCall) and inst.output is not None:
+                    self._add_interference(inst.output, live)
+                    live.discard(inst.output)
+                    live |= self._get_vars_in_stmt(inst)
+
                 else:
                     live |= self._get_vars_in_stmt(inst)
+
+    def _add_interference(self, defined_var: MLILVariableSSA, live: Set[MLILVariableSSA]):
+        '''Record interference between a defined variable and everything live at that point'''
+        for live_var in live:
+            if live_var != defined_var:
+                self.interference[defined_var].add(live_var)
+                self.interference[live_var].add(defined_var)
 
     def _allocate_variables(self):
         '''Allocate final variable names using graph coloring / coalescing'''
@@ -859,6 +929,9 @@ class SSADeconstructor:
     def _apply_mapping_to_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
         '''Apply variable mapping to expression'''
         if isinstance(expr, MLILVarSSA):
+            if expr.var in self.undefined_reg_versions:
+                return MLILLoadReg(self.reg_index_by_var[expr.var.base_var])
+
             new_var = self.var_mapping.get(expr.var, expr.var.base_var)
             return MLILVar(new_var)
 
@@ -893,17 +966,13 @@ class SSADeconstructor:
                 if new_value is not stmt.value:
                     return MLILRet(new_value, address = stmt.address).copy_metadata_from(stmt)
 
-        elif isinstance(stmt, (MLILCall, MLILSyscall, MLILCallScript)):
+        elif isinstance(stmt, MediumLevelILCall):
+            if stmt.output is not None:
+                stmt.output = self.var_mapping.get(stmt.output, stmt.output.base_var)
+
             new_args = [self._apply_mapping_to_expr(arg) for arg in stmt.args]
             if any(new_args[i] is not stmt.args[i] for i in range(len(stmt.args))):
-                if isinstance(stmt, MLILCall):
-                    return MLILCall(stmt.target, new_args, address = stmt.address).copy_metadata_from(stmt)
-
-                elif isinstance(stmt, MLILSyscall):
-                    return MLILSyscall(stmt.subsystem, stmt.cmd, new_args, address = stmt.address).copy_metadata_from(stmt)
-
-                elif isinstance(stmt, MLILCallScript):
-                    return MLILCallScript(stmt.module, stmt.func, new_args, address = stmt.address).copy_metadata_from(stmt)
+                return stmt.rebuild(new_args)
 
         elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
             new_value = self._apply_mapping_to_expr(stmt.value)

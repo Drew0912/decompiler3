@@ -8,6 +8,7 @@ from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
     MediumLevelILInstruction,
+    MediumLevelILCall,
     MLILConst,
     MLILDebug,
     MLILBinaryOp,
@@ -44,6 +45,11 @@ class DeadCodeEliminationPass(Pass):
 
             for inst in block.instructions:
                 if not isinstance(inst, (MLILSetVarSSA, MLILPhi)):
+                    # An unread call result is dropped, the call itself stays
+                    if isinstance(inst, MediumLevelILCall) and inst.output is not None:
+                        if not self.ssa_uses.get(inst.output):
+                            inst.output = None
+
                     new_instructions.append(inst)
                     continue
 

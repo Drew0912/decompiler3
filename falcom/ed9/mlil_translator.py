@@ -5,9 +5,23 @@ from ir.mlil import *
 from .llil_ext import *
 from .constants import *
 
+# DEBUG_LOG becomes a call so existing call handling covers it; script function names never contain a dot
+DEBUG_LOG_CALL_TARGET = 'debug.log'
+
+# REG[0] is the VM result register: calls write it and RETURN reads it
+RESULT_REG_INDEX = 0
+
 
 class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
     '''Falcom-specific LLIL to MLIL translator'''
+
+    def _result_reg_var(self) -> MLILVariable:
+        '''Variable modelling the VM result register'''
+        return self.builder.get_or_create_register_var(RESULT_REG_INDEX)
+
+    def _call_output(self) -> MLILVariable:
+        '''Local calls write their result to the VM result register'''
+        return self._result_reg_var()
 
     def _translate_instruction(self, llil_inst: LowLevelILInstruction):
         '''Translate LLIL instruction, handling Falcom-specific operations'''
@@ -28,13 +42,21 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
 
         elif isinstance(llil_inst, LowLevelILRegStore):
             value = self._translate_expr(llil_inst.value)
-            self.builder.store_reg(llil_inst.reg_index, value)
+            reg_var = self.builder.get_or_create_register_var(llil_inst.reg_index)
+            self.builder.set_var(reg_var, value)
+
+        elif isinstance(llil_inst, LowLevelILRet):
+            # The VM returns whatever the result register holds
+            self.builder.ret(self.builder.var(self._result_reg_var()))
 
         elif isinstance(llil_inst, LowLevelILCallScript):
             self._translate_call_script(llil_inst)
 
         elif isinstance(llil_inst, LowLevelILSyscall):
             self._translate_syscall(llil_inst)
+
+        elif isinstance(llil_inst, LowLevelILDebugLog):
+            self._translate_debug_log(llil_inst)
 
         else:
             # Fall back to generic handling
@@ -55,7 +77,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
         # Generate MLIL CallScript
-        self.builder.call_script(llil_inst.module, llil_inst.func, mlil_args)
+        self.builder.call_script(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
 
         # Add goto to return target (always a LowLevelILBasicBlock in Falcom)
         return_block = self.block_map[llil_inst.return_target]
@@ -74,7 +96,16 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
         # Generate MLIL Syscall
-        self.builder.syscall(llil_inst.subsystem, llil_inst.cmd, mlil_args)
+        self.builder.syscall(llil_inst.subsystem, llil_inst.cmd, mlil_args, self._result_reg_var())
+
+    def _translate_debug_log(self, llil_inst: LowLevelILDebugLog):
+        '''Translate Falcom debug log to a debug.log call (not a block terminal, so no goto)
+
+        No output: the debug print leaves the result register alone (verified in the
+        sample scripts, where no GET_REG ever follows a DEBUG_LOG).
+        '''
+        mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
+        self.builder.call(DEBUG_LOG_CALL_TARGET, mlil_args)
 
     def _translate_expr(self, llil_expr: LowLevelILInstruction) -> MediumLevelILInstruction:
         '''Translate LLIL expression, handling Falcom-specific types'''
@@ -84,7 +115,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
             return self.builder.load_global(llil_expr.index)
 
         elif isinstance(llil_expr, LowLevelILRegLoad):
-            return self.builder.load_reg(llil_expr.reg_index)
+            return self.builder.var(self.builder.get_or_create_register_var(llil_expr.reg_index))
 
         # Falcom-specific constants
         elif isinstance(llil_expr, LowLevelILConstFuncId):

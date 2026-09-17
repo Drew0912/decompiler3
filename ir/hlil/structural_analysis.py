@@ -209,11 +209,13 @@ class StructuralAnalyzer:
                 back_edges=[(tail, header)]
             )
 
-        # Find exits
+        # Find exits over the merged body, so a second back edge cannot report
+        # blocks that belong to the loop as exits
+        merged_body = self.loops[header].body
         exits = set()
-        for block in body:
+        for block in merged_body:
             for succ in self.original_successors.get(block, []):
-                if succ not in body:
+                if succ not in merged_body:
                     exits.add(succ)
         self.loops[header].exits = exits
 

@@ -828,6 +828,15 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             source_location=loc
         )
 
+    # Falcom-specific DEBUG_LOG (lifted to an MLIL call)
+    elif op.name == 'LLIL_DEBUG_LOG':
+        return SemanticOperation(
+            kind=OperationKind.CALL,
+            operator='DEBUG_LOG',
+            operands=_extract_llil_operands(instr),
+            source_location=loc
+        )
+
     elif op == LowLevelILOperation.LLIL_CONST:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -901,8 +910,16 @@ def _get_instruction_index(instr: Any, attributes: Tuple[str, ...]) -> int:
     return -1
 
 
-def normalize_mlil_operation(instr: MediumLevelILInstruction) -> SemanticOperation:
-    """Convert MLIL instruction to normalized SemanticOperation"""
+def normalize_mlil_operation(
+    instr: MediumLevelILInstruction,
+    register_names: Optional[Dict[str, int]] = None,
+) -> SemanticOperation:
+    """Convert MLIL instruction to normalized SemanticOperation
+
+    MLIL models VM registers as variables, so reads and writes of one are
+    normalized back to LOAD_REG/STORE_REG and stay comparable with LLIL.
+    """
+    register_names = register_names or {}
     op = instr.operation
     scp_offset = instr.address if hasattr(instr, 'address') else 0
     mlil_index = _get_instruction_index(instr, MLIL_INDEX_ATTRIBUTES)
@@ -1051,9 +1068,11 @@ def normalize_mlil_operation(instr: MediumLevelILInstruction) -> SemanticOperati
 
     # Variable operations
     elif op == MediumLevelILOperation.MLIL_VAR:
+        var_name = instr.var.name if hasattr(instr.var, 'name') else str(instr.var)
+        is_register = var_name in register_names
         return SemanticOperation(
             kind=OperationKind.LOAD,
-            operator='VAR',
+            operator='LOAD_REG' if is_register else 'VAR',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
             provenance_mlil_indices=provenance,
@@ -1061,12 +1080,20 @@ def normalize_mlil_operation(instr: MediumLevelILInstruction) -> SemanticOperati
 
     elif op == MediumLevelILOperation.MLIL_SET_VAR:
         result = None
+        is_register = False
         if hasattr(instr, 'var') and instr.var is not None:
             var_name = instr.var.name if hasattr(instr.var, 'name') else str(instr.var)
-            result = SemanticOperand(kind = 'var', value = var_name)
+            is_register = var_name in register_names
+
+            if is_register:
+                result = SemanticOperand(kind = 'reg', value = f"REGS[{register_names[var_name]}]")
+
+            else:
+                result = SemanticOperand(kind = 'var', value = var_name)
+
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
-            operator='SET_VAR',
+            operator='STORE_REG' if is_register else 'SET_VAR',
             operands=_extract_mlil_operands(instr),
             result=result,
             source_location=loc,
@@ -1154,7 +1181,8 @@ def _extract_mlil_operands(instr: MediumLevelILInstruction) -> List[SemanticOper
         operands.append(SemanticOperand(kind = 'var', value = str(instr.target)))
 
     if hasattr(instr, 'module') and hasattr(instr, 'func'):
-        operands.append(SemanticOperand(kind = 'var', value = f"{instr.module}.{instr.func}"))
+        # Same spelling as the HLIL extern call target, so the two match up
+        operands.append(SemanticOperand(kind = 'var', value = f"{instr.module}:{instr.func}"))
 
     if hasattr(instr, 'subsystem') and hasattr(instr, 'cmd'):
         operands.append(SemanticOperand(kind = 'var', value = f"{instr.subsystem}:{instr.cmd}"))
@@ -1592,10 +1620,12 @@ def build_cfg_from_mlil(mlil_func: MediumLevelILFunction) -> CFG:
     """Construct CFG from MLILFunction"""
     cfg = CFG()
 
+    register_names = {var.name: index for index, var in mlil_func.register_vars.items()}
+
     for i, bb in enumerate(mlil_func.basic_blocks):
         ops = []
         for instr in bb.instructions:
-            sem_op = normalize_mlil_operation(instr)
+            sem_op = normalize_mlil_operation(instr, register_names)
             if sem_op.kind != OperationKind.NOP:
                 ops.append(sem_op)
 
@@ -1629,6 +1659,83 @@ def build_cfg_from_mlil(mlil_func: MediumLevelILFunction) -> CFG:
     return cfg
 
 
+def _collect_call_expressions(node: Any, found: List[Any]) -> None:
+    """Collect call expressions inside an expression, in evaluation order"""
+    if node is None:
+        return
+
+    if hasattr(node, 'lhs') and hasattr(node, 'rhs'):
+        _collect_call_expressions(node.lhs, found)
+        _collect_call_expressions(node.rhs, found)
+        return
+
+    if hasattr(node, 'operand'):
+        _collect_call_expressions(node.operand, found)
+        return
+
+    if hasattr(node, 'args'):
+        for arg in node.args:
+            _collect_call_expressions(arg, found)
+
+        found.append(node)
+
+
+def _statement_expressions(instr: HLILInstruction) -> List[Any]:
+    """Expressions a statement evaluates, in evaluation order"""
+    if hasattr(instr, 'condition'):
+        return [instr.condition]
+
+    if hasattr(instr, 'scrutinee'):
+        return [instr.scrutinee]
+
+    if hasattr(instr, 'dest') and hasattr(instr, 'src'):
+        return [instr.src]
+
+    if hasattr(instr, 'expr'):
+        return [instr.expr]
+
+    if hasattr(instr, 'value'):
+        return [instr.value]
+
+    return []
+
+
+def _statement_own_call(instr: HLILInstruction) -> Optional[Any]:
+    """Call expression the statement's own normalized operation already stands for"""
+    if hasattr(instr, 'dest') and hasattr(instr, 'src') and hasattr(instr.src, 'args'):
+        return instr.src
+
+    if hasattr(instr, 'expr') and instr.expr is not None and hasattr(instr.expr, 'args'):
+        return instr.expr
+
+    return None
+
+
+def _folded_call_operations(instr: HLILInstruction) -> List[SemanticOperation]:
+    """CALL operations for calls folded into a statement's expressions
+
+    HLIL folds a call result into the instruction that reads it, so calls appear
+    inside if conditions, return values and other call arguments. They still run,
+    before the statement that reads them.
+    """
+    own_call = _statement_own_call(instr)
+    found: List[Any] = []
+
+    for expression in _statement_expressions(instr):
+        _collect_call_expressions(expression, found)
+
+    scp_offset = instr.address if hasattr(instr, 'address') else 0
+    mlil_index = _get_instruction_index(instr, HLIL_INDEX_ATTRIBUTES)
+    loc = SourceLocation(scp_offset = scp_offset, mlil_index = mlil_index)
+    provenance = [mlil_index] if mlil_index >= 0 else []
+
+    return [
+        _apply_location_fallback(normalize_hlil_operation(call), loc, provenance)
+        for call in found
+        if call is not own_call
+    ]
+
+
 def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
     """Construct CFG from HLILFunction (flatten structured control flow)"""
     cfg = CFG()
@@ -1656,9 +1763,44 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
         for stmt in stmts:
             op = normalize_hlil_operation(stmt)
 
+            # Calls folded into this statement's expressions run before it
+            folded_ops = _folded_call_operations(stmt)
+
             # Handle control flow statements
             if hasattr(stmt, 'operation'):
-                if stmt.operation == HLILOperation.HLIL_IF:
+                if stmt.operation == HLILOperation.HLIL_SWITCH:
+                    current_ops.extend(folded_ops)
+
+                    # Save current block
+                    if current_ops:
+                        node = CFGNode(id=current_id, address=current_ops[0].source_location.scp_offset if current_ops else 0, operations=current_ops)
+                        cfg.add_node(node)
+                        current_id += 1
+                        current_ops = []
+
+                    # Create scrutinee block
+                    switch_node = CFGNode(id=current_id, address=op.source_location.scp_offset, operations=[op])
+                    cfg.add_node(switch_node)
+                    switch_id = current_id
+                    current_id += 1
+
+                    # Each case body is a successor of the switch
+                    for case in stmt.cases:
+                        case_stmts = extract_statements(case.body)
+                        if not case_stmts:
+                            continue
+
+                        case_start = current_id
+                        case_id, case_exits = flatten_statements(case_stmts, current_id)
+                        current_id = max(case_id, current_id)
+                        cfg.add_edge(switch_id, case_start)
+                        exits.extend(case_exits)
+
+                    continue
+
+                elif stmt.operation == HLILOperation.HLIL_IF:
+                    current_ops.extend(folded_ops)
+
                     # Save current block
                     if current_ops:
                         node = CFGNode(id=current_id, address=current_ops[0].source_location.scp_offset if current_ops else 0, operations=current_ops)
@@ -1672,8 +1814,8 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     cond_id = current_id
                     current_id += 1
 
-                    # Process then branch
-                    then_stmts = extract_statements(stmt.body if hasattr(stmt, 'body') else None)
+                    # Process then branch (HLILIf.true_block, not .body)
+                    then_stmts = extract_statements(stmt.true_block if hasattr(stmt, 'true_block') else None)
                     if then_stmts:
                         then_start = current_id
                         then_id, then_exits = flatten_statements(then_stmts, current_id)
@@ -1683,10 +1825,10 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     else:
                         then_exits = []
 
-                    # Process else branch
+                    # Process else branch (HLILIf.false_block, not .else_body)
                     else_exits = []
-                    if hasattr(stmt, 'else_body') and stmt.else_body:
-                        else_stmts = extract_statements(stmt.else_body)
+                    if hasattr(stmt, 'false_block') and stmt.false_block:
+                        else_stmts = extract_statements(stmt.false_block)
                         if else_stmts:
                             else_start = current_id
                             else_id, else_exits = flatten_statements(else_stmts, current_id)
@@ -1707,8 +1849,8 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                         current_ops = []
                         cfg.add_edge(prev_id, current_id)
 
-                    # Create loop header
-                    header_node = CFGNode(id=current_id, address=op.source_location.scp_offset, operations=[op], is_loop_header=True)
+                    # Create loop header (condition calls run on each iteration)
+                    header_node = CFGNode(id=current_id, address=op.source_location.scp_offset, operations=folded_ops + [op], is_loop_header=True)
                     cfg.add_node(header_node)
                     header_id = current_id
                     current_id += 1
@@ -1727,6 +1869,8 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
 
                     exits.append(header_id)  # Loop exit
                     continue
+
+            current_ops.extend(folded_ops)
 
             if op.kind != OperationKind.NOP:
                 current_ops.append(op)
@@ -2696,6 +2840,15 @@ def semantic_op_to_effect_event(op: SemanticOperation) -> Optional[EffectEvent]:
 
     if op.kind == OperationKind.ASSIGN:
         category, destination = _extract_write_signature(op)
+
+        # Only global writes are shared state, so only they anchor the comparison.
+        # Local and register writes are private to the function and are expected to
+        # be folded away (into a call result, a condition or the returned value);
+        # the per-operation comparison still reports them as equivalent, transformed
+        # or eliminated.
+        if category != EFFECT_CATEGORY_WRITE_GLOBAL:
+            return None
+
         target_key = destination if destination else UNKNOWN_TARGET_KEY
         return _build_effect_event(op, category, category, target_key)
 
@@ -2788,6 +2941,20 @@ def _match_effect_events(
 
     unmatched_source = [index for index in range(len(source_events)) if index not in used_source_indices]
     unmatched_target = [index for index in range(len(target_events)) if index not in used_target_indices]
+
+    # Identical returns on both sides of a branch are merged into one on the way to
+    # HLIL, so several source returns can share a target return
+    matched_return_signatures = {
+        source_events[match.source_index].signature
+        for match in matches
+        if source_events[match.source_index].category == EFFECT_CATEGORY_RETURN
+    }
+    unmatched_source = [
+        index for index in unmatched_source
+        if not (source_events[index].category == EFFECT_CATEGORY_RETURN
+                and source_events[index].signature in matched_return_signatures)
+    ]
+
     matches.sort(key = lambda match: match.source_index)
     return matches, unmatched_source, unmatched_target
 

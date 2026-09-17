@@ -150,7 +150,7 @@ class MLILFormatter:
         # Function calls
         elif isinstance(inst, MLILCall):
             args_str = ', '.join(str(arg) for arg in inst.args)
-            return f'{inst.target}({args_str})'
+            return inst.format_with_output(f'{inst.target}({args_str})')
 
         elif isinstance(inst, MLILSyscall):
             args = [
@@ -158,11 +158,11 @@ class MLILFormatter:
                 f'{inst.cmd}',
                 *[str(arg) for arg in inst.args],
             ]
-            return f'syscall({', '.join(args)})'
+            return inst.format_with_output(f'syscall({', '.join(args)})')
 
         elif isinstance(inst, MLILCallScript):
             args_str = ', '.join(str(arg) for arg in inst.args)
-            return f'{inst.module}.{inst.func}({args_str})  ; MLILCallScript'
+            return inst.format_with_output(f'{inst.module}.{inst.func}({args_str})') + '  ; MLILCallScript'
 
         # Globals
         elif isinstance(inst, MLILLoadGlobal):

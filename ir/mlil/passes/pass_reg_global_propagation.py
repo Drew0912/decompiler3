@@ -466,17 +466,7 @@ class RegGlobalValuePropagator:
     def _rebuild_call(self, inst: MediumLevelILInstruction,
                       new_args: List[MediumLevelILInstruction]) -> MediumLevelILInstruction:
         '''Rebuild call instruction with new arguments'''
-        if isinstance(inst, MLILCall):
-            return MLILCall(inst.target, new_args, address = inst.address).copy_metadata_from(inst)
-
-        elif isinstance(inst, MLILSyscall):
-            return MLILSyscall(inst.subsystem, inst.cmd, new_args, address = inst.address).copy_metadata_from(inst)
-
-        elif isinstance(inst, MLILCallScript):
-            return MLILCallScript(inst.module, inst.func, new_args, address = inst.address).copy_metadata_from(inst)
-
-        else:
-            raise NotImplementedError(f'Unhandled call type: {type(inst).__name__}')
+        return inst.rebuild(new_args)
 
 
 class RegGlobalValuePropagationPass(Pass):

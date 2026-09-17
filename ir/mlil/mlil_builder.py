@@ -99,6 +99,12 @@ class MLILBuilder:
             raise RuntimeError('No function created')
         return self.function.get_or_create_local(name, slot_index)
 
+    def get_or_create_register_var(self, reg_index: int) -> MLILVariable:
+        '''Get or create the variable modelling a VM register'''
+        if self.function is None:
+            raise RuntimeError('No function created')
+        return self.function.get_or_create_register_var(reg_index)
+
     # === Constants ===
 
     def const_int(self, value: int, is_hex: bool = False) -> MLILConst:
@@ -246,19 +252,19 @@ class MLILBuilder:
 
     # === Function Calls ===
 
-    def call(self, target: str, args: list[MediumLevelILInstruction]):
+    def call(self, target: str, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None):
         '''Function call'''
-        inst = MLILCall(target, args)
+        inst = MLILCall(target, args, output)
         self.add_instruction(inst)
 
-    def syscall(self, subsystem: int, cmd: int, args: list[MediumLevelILInstruction]):
+    def syscall(self, subsystem: int, cmd: int, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None):
         '''System call'''
-        inst = MLILSyscall(subsystem, cmd, args)
+        inst = MLILSyscall(subsystem, cmd, args, output)
         self.add_instruction(inst)
 
-    def call_script(self, module: str, func: str, args: list[MediumLevelILInstruction]):
+    def call_script(self, module: str, func: str, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None):
         '''Falcom script call'''
-        inst = MLILCallScript(module, func, args)
+        inst = MLILCallScript(module, func, args, output)
         self.add_instruction(inst)
 
     # === Globals ===

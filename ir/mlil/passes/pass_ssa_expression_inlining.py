@@ -50,6 +50,7 @@ from ..mlil_ssa import (
     MLILSetVarSSA,
     MLILPhi,
     MLILIf,
+    MLILUndef,
 )
 
 
@@ -139,6 +140,11 @@ class ExpressionInliningPass(Pass):
 
             # Skip constants (handled by ConstantPropagation)
             if isinstance(defn.value, MLILConst):
+                continue
+
+            # Undefined values mark a variable a call may have written; inlining one
+            # would turn a real read into <undef>
+            if isinstance(defn.value, MLILUndef):
                 continue
 
             uses = self.ssa_uses.get(ssa_var, [])
@@ -232,6 +238,9 @@ class ExpressionInliningPass(Pass):
         if isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
             return any(self._expr_contains(arg, target) for arg in inst.args)
 
+        if isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
+            return self._expr_contains(inst.value, target)
+
         return False
 
     def _expr_contains(self, expr: MediumLevelILInstruction, target: MediumLevelILInstruction) -> bool:
@@ -269,14 +278,7 @@ class ExpressionInliningPass(Pass):
         elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
             new_args = [self._inline_in_expr(arg, inlinable) for arg in inst.args]
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
-                if isinstance(inst, MLILCall):
-                    return MLILCall(inst.target, new_args, address = inst.address).copy_metadata_from(inst)
-
-                elif isinstance(inst, MLILSyscall):
-                    return MLILSyscall(inst.subsystem, inst.cmd, new_args, address = inst.address).copy_metadata_from(inst)
-
-                elif isinstance(inst, MLILCallScript):
-                    return MLILCallScript(inst.module, inst.func, new_args, address = inst.address).copy_metadata_from(inst)
+                return inst.rebuild(new_args)
 
         elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
             new_value = self._inline_in_expr(inst.value, inlinable)

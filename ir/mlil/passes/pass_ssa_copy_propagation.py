@@ -33,6 +33,8 @@ from ..mlil import (
     MLILCall,
     MLILSyscall,
     MLILCallScript,
+    MLILStoreGlobal,
+    MLILStoreReg,
 )
 from ..mlil_ssa import (
     MLILVariableSSA,
@@ -48,6 +50,7 @@ class CopyPropagationPass(Pass):
 
     def __init__(self):
         self.ssa_defs: Dict[MLILVariableSSA, MLILSetVarSSA] = {}
+        self.use_counts: Dict[MLILVariableSSA, int] = {}
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         '''Propagate copies through the function'''
@@ -55,6 +58,7 @@ class CopyPropagationPass(Pass):
         changed = True
 
         while changed:
+            self._count_uses(func)
             changed = self._propagate_once(func)
 
         return func
@@ -71,6 +75,52 @@ class CopyPropagationPass(Pass):
                 elif isinstance(inst, MLILPhi):
                     self.ssa_defs[inst.dest] = inst
 
+    def _count_uses(self, func: MediumLevelILFunction):
+        '''Count reads of every SSA variable'''
+        self.use_counts = {}
+
+        for block in func.basic_blocks:
+            for inst in block.instructions:
+                for var in self._collect_uses(inst):
+                    self.use_counts[var] = self.use_counts.get(var, 0) + 1
+
+    def _collect_uses(self, node: MediumLevelILInstruction) -> List[MLILVariableSSA]:
+        '''SSA variables read by an instruction or expression'''
+        if isinstance(node, MLILVarSSA):
+            return [node.var]
+
+        if isinstance(node, MLILPhi):
+            return [source_var for source_var, _ in node.sources]
+
+        if isinstance(node, MLILSetVarSSA):
+            return self._collect_uses(node.value)
+
+        if isinstance(node, (MLILStoreGlobal, MLILStoreReg)):
+            return self._collect_uses(node.value)
+
+        if isinstance(node, MLILIf):
+            return self._collect_uses(node.condition)
+
+        if isinstance(node, MLILRet):
+            return self._collect_uses(node.value) if node.value is not None else []
+
+        if isinstance(node, (MLILCall, MLILSyscall, MLILCallScript)):
+            uses = []
+            for arg in node.args:
+                uses.extend(self._collect_uses(arg))
+            return uses
+
+        if isinstance(node, (MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod,
+                             MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr,
+                             MLILLogicalAnd, MLILLogicalOr,
+                             MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
+            return self._collect_uses(node.lhs) + self._collect_uses(node.rhs)
+
+        if isinstance(node, (MLILNeg, MLILLogicalNot, MLILBitwiseNot)):
+            return self._collect_uses(node.operand)
+
+        return []
+
     def _propagate_once(self, func: MediumLevelILFunction) -> bool:
         '''Single copy propagation pass'''
         # Build copy map
@@ -78,6 +128,13 @@ class CopyPropagationPass(Pass):
         for ssa_var, defn in self.ssa_defs.items():
             if isinstance(defn, MLILSetVarSSA):
                 if isinstance(defn.value, MLILVarSSA):
+                    # A local read more than once keeps its own name rather than the
+                    # register's, so reg0 does not spread over values that have a
+                    # real variable. With a single read there is nothing to spread.
+                    if func.is_register_var(defn.value.var.base_var):
+                        if self.use_counts.get(ssa_var, 0) > 1:
+                            continue
+
                     copies[ssa_var] = defn.value.var
 
         if not copies:
@@ -121,14 +178,15 @@ class CopyPropagationPass(Pass):
         elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
             new_args = [self._replace_in_expr(arg, copies) for arg in inst.args]
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
-                if isinstance(inst, MLILCall):
-                    return MLILCall(inst.target, new_args, address = inst.address).copy_metadata_from(inst)
+                return inst.rebuild(new_args)
 
-                elif isinstance(inst, MLILSyscall):
-                    return MLILSyscall(inst.subsystem, inst.cmd, new_args, address = inst.address).copy_metadata_from(inst)
+        elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
+            new_value = self._replace_in_expr(inst.value, copies)
+            if new_value is not inst.value:
+                if isinstance(inst, MLILStoreGlobal):
+                    return MLILStoreGlobal(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
 
-                elif isinstance(inst, MLILCallScript):
-                    return MLILCallScript(inst.module, inst.func, new_args, address = inst.address).copy_metadata_from(inst)
+                return MLILStoreReg(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
 
         return inst
 

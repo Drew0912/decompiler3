@@ -30,6 +30,13 @@ def mlil_arg_var_name(arg_index: int) -> str:
     return f'arg{arg_index}'
 
 
+def mlil_reg_var_name(reg_index: int) -> str:
+    '''Generate register variable name (reg0, reg1, ...)'''
+    if reg_index < 0:
+        raise ValueError(f'Negative reg_index: {reg_index}')
+    return f'reg{reg_index}'
+
+
 class MediumLevelILOperation(IntEnum2):
     '''MLIL operations - stack-free version of LLIL'''
 
@@ -455,27 +462,58 @@ class MLILRet(MediumLevelILStatement, Terminal):
 
 # === Function Calls ===
 
-class MLILCall(MediumLevelILStatement):
+class MediumLevelILCall(MediumLevelILStatement):
+    '''Base class for calls: statements that also define an output variable
+
+    output is the variable receiving the call result (the VM result register),
+    or None when the result is unused. It holds an MLILVariable, or an
+    MLILVariableSSA while the function is in SSA form.
+    '''
+
+    def __init__(self, operation: MediumLevelILOperation, args: List[MediumLevelILInstruction],
+                 output: Optional[Any] = None, **kwargs):
+        super().__init__(operation, **kwargs)
+        self.args = args
+        self.output = output
+
+    def format_with_output(self, call_str: str) -> str:
+        '''Prefix the call text with its output assignment'''
+        if self.output is None:
+            return call_str
+
+        return f'{self.output} = {call_str}'
+
+    @abstractmethod
+    def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MediumLevelILCall':
+        '''Copy of this call with new arguments, keeping target, output and metadata'''
+        raise NotImplementedError
+
+
+class MLILCall(MediumLevelILCall):
     '''Function call'''
 
-    def __init__(self, target: str, args: List[MediumLevelILInstruction], **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_CALL, **kwargs)
+    def __init__(self, target: str, args: List[MediumLevelILInstruction], output: Optional[Any] = None, **kwargs):
+        super().__init__(MediumLevelILOperation.MLIL_CALL, args, output, **kwargs)
         self.target = target
-        self.args = args
+
+    def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MLILCall':
+        return MLILCall(self.target, args, self.output, address = self.address).copy_metadata_from(self)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)
-        return f'{self.target}({args_str})'
+        return self.format_with_output(f'{self.target}({args_str})')
 
 
-class MLILSyscall(MediumLevelILStatement):
+class MLILSyscall(MediumLevelILCall):
     '''System call'''
 
-    def __init__(self, subsystem: int, cmd: int, args: List[MediumLevelILInstruction], **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_SYSCALL, **kwargs)
+    def __init__(self, subsystem: int, cmd: int, args: List[MediumLevelILInstruction], output: Optional[Any] = None, **kwargs):
+        super().__init__(MediumLevelILOperation.MLIL_SYSCALL, args, output, **kwargs)
         self.subsystem = subsystem
         self.cmd = cmd
-        self.args = args
+
+    def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MLILSyscall':
+        return MLILSyscall(self.subsystem, self.cmd, args, self.output, address = self.address).copy_metadata_from(self)
 
     def __str__(self) -> str:
             args = [
@@ -484,21 +522,23 @@ class MLILSyscall(MediumLevelILStatement):
                 *[str(arg) for arg in self.args],
             ]
 
-            return f'syscall({', '.join(args)})'
+            return self.format_with_output(f'syscall({', '.join(args)})')
 
 
-class MLILCallScript(MediumLevelILStatement):
+class MLILCallScript(MediumLevelILCall):
     '''Falcom script call'''
 
-    def __init__(self, module: str, func: str, args: List[MediumLevelILInstruction], **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_CALL_SCRIPT, **kwargs)
+    def __init__(self, module: str, func: str, args: List[MediumLevelILInstruction], output: Optional[Any] = None, **kwargs):
+        super().__init__(MediumLevelILOperation.MLIL_CALL_SCRIPT, args, output, **kwargs)
         self.module = module
         self.func = func
-        self.args = args
+
+    def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MLILCallScript':
+        return MLILCallScript(self.module, self.func, args, self.output, address = self.address).copy_metadata_from(self)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)
-        return f'{self.module}.{self.func}({args_str})'
+        return self.format_with_output(f'{self.module}.{self.func}({args_str})')
 
 
 # === Global Variables ===
@@ -632,6 +672,7 @@ class MediumLevelILFunction:
         self.basic_blocks: List[MediumLevelILBasicBlock] = []
         self.parameters: List[MLILVariable] = []  # Ordered parameter list (populated during translation)
         self.locals: Dict[str, MLILVariable] = {}  # Local variables
+        self.register_vars: Dict[int, MLILVariable] = {}  # VM register index -> variable
         self.llil_function: Optional[LowLevelILFunction] = None
         self._inst_block_map: Dict[int, MediumLevelILBasicBlock] = {}
         self.var_types: Dict[str, 'MLILType'] = {}  # Variable name -> inferred type
@@ -671,6 +712,21 @@ class MediumLevelILFunction:
         if name not in self.locals:
             self.locals[name] = MLILVariable(name, slot_index)
         return self.locals[name]
+
+    def get_or_create_register_var(self, reg_index: int) -> MLILVariable:
+        '''Get existing register variable or create new one
+
+        VM registers are modelled as variables so the SSA passes track them like
+        any other value. Calls define the result register and clobber the others.
+        '''
+        if reg_index not in self.register_vars:
+            self.register_vars[reg_index] = self.get_or_create_local(mlil_reg_var_name(reg_index))
+
+        return self.register_vars[reg_index]
+
+    def is_register_var(self, var: MLILVariable) -> bool:
+        '''Check whether a variable models a VM register'''
+        return var in self.register_vars.values()
 
     def register_instruction(self, block: MediumLevelILBasicBlock, inst: MediumLevelILInstruction):
         if inst.inst_index == -1:

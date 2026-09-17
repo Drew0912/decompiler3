@@ -15,6 +15,7 @@ __all__ = [
     # Naming utilities
     'mlil_stack_var_name',
     'mlil_arg_var_name',
+    'mlil_reg_var_name',
 
     # Builder, Translator, Formatter, and Optimizers
     'MLILBuilder',
@@ -106,6 +107,7 @@ __all__ = [
     'MLILRet',
 
     # Function calls
+    'MediumLevelILCall',
     'MLILCall',
     'MLILSyscall',
     'MLILCallScript',
