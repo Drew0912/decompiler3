@@ -94,9 +94,17 @@ class LLILToMLILTranslator:
         value = self._translate_expr(llil_inst.value)
         self.builder.set_var(var, value)
 
+    def _frame_offset_to_param_index(self, offset: int) -> int:
+        '''Frame slot to 1-based parameter index
+
+        Arguments are pushed right-to-left, so the first declared parameter sits in
+        the highest frame slot and STACK[fp + 0] holds the last one.
+        '''
+        return self.llil_func.num_params - offset // WORD_SIZE
+
     def _translate_frame_store(self, llil_inst: LowLevelILFrameStore):
         '''Translate FrameStore to SetVar (parameter)'''
-        param_index = llil_inst.offset // WORD_SIZE + 1
+        param_index = self._frame_offset_to_param_index(llil_inst.offset)
         var_name = mlil_arg_var_name(param_index)
         var = self.builder.get_or_create_parameter(param_index, var_name)
         value = self._translate_expr(llil_inst.value)
@@ -129,7 +137,7 @@ class LLILToMLILTranslator:
             return self.builder.var(var)
 
         elif isinstance(llil_expr, LowLevelILFrameLoad):
-            param_index = llil_expr.offset // WORD_SIZE + 1
+            param_index = self._frame_offset_to_param_index(llil_expr.offset)
             var_name = mlil_arg_var_name(param_index)
             var = self.builder.get_or_create_parameter(param_index, var_name)
             return self.builder.var(var)
