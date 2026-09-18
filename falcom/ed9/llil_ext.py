@@ -12,6 +12,7 @@ class LowLevelILFalcomOperation(IntEnum):
     LLIL_CALL_SCRIPT = LowLevelILOperation.LLIL_CALL_SCRIPT              # Call script function
     LLIL_GLOBAL_LOAD = LowLevelILOperation.LLIL_USER_DEFINED     # Load from global variable array
     LLIL_GLOBAL_STORE = LowLevelILOperation.LLIL_USER_DEFINED + 1  # Store to global variable array
+    LLIL_DEBUG_LOG = LowLevelILOperation.LLIL_USER_DEFINED + 2     # Debug print of stack values
 
 
 class LowLevelILPushCallerFrame(LowLevelILStatement):
@@ -87,3 +88,15 @@ class LowLevelILGlobalStore(LowLevelILStatement):
 
     def __str__(self) -> str:
         return f'GLOBAL[{self.index}] = {self.value}'
+
+
+class LowLevelILDebugLog(LowLevelILStatement):
+    '''DEBUG_LOG - Debug print of the top argc stack values, message first (statement)'''
+
+    def __init__(self, args: List['LowLevelILExpr']):
+        super().__init__(LowLevelILFalcomOperation.LLIL_DEBUG_LOG)
+        self.args = args    # Top of stack first (from vstack)
+
+    def __str__(self) -> str:
+        args_str = ', '.join(str(arg) for arg in self.args)
+        return f'DEBUG_LOG({args_str})'

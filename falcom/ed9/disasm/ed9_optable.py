@@ -64,7 +64,6 @@ ED9_FORMAT_TABLE.update({
     'F' : _ed9_oprdesc(ED9OperandType.Func),
     'V' : _ed9_oprdesc(ED9OperandType.Value),
     'S' : _ed9_oprdesc(OperandType.String),
-    'L' : _ed9_oprdesc(OperandType.String),
 })
 
 if TYPE_CHECKING:
@@ -142,8 +141,7 @@ ED9_OPCODE_TABLE = [
     InstructionEntry(0x24, 'SYSCALL',                 'CBB'),
     InstructionEntry(0x25, 'PUSH_CALLER_FRAME',       'O',   InstructionFlags.START_BLOCK),
     InstructionEntry(0x26, 'DEBUG_SET_LINENO',        'H'),
-    InstructionEntry(0x27, 'POPN',                    'C'),
-    InstructionEntry(0x28, 'DEBUG_LOG',               'L'),
+    InstructionEntry(0x27, 'DEBUG_LOG',               'C'),
 
     # Pseudo-instructions (optimized from other instructions)
     InstructionEntry(0x1000, 'PUSH_CURRENT_FUNC_ID',  ''),
@@ -221,8 +219,10 @@ class ED9Opcode(IntEnum2):
     SYSCALL                 = _opcode('SYSCALL')
     PUSH_CALLER_FRAME       = _opcode('PUSH_CALLER_FRAME')
     DEBUG_SET_LINENO        = _opcode('DEBUG_SET_LINENO')
-    POPN                    = _opcode('POPN')
     DEBUG_LOG               = _opcode('DEBUG_LOG')
+
+    # Never seen in a sample script and its operand format is unknown - not in the table, so decoding it raises
+    UNKNOWN_28              = 0x28
 
     # Pseudo-instructions
     PUSH_CURRENT_FUNC_ID    = _opcode('PUSH_CURRENT_FUNC_ID')
@@ -313,6 +313,9 @@ class ED9InstructionTable(InstructionTable):
 
     def get_descriptor(self, opcode: int) -> ED9InstructionDescriptor:
         """Get instruction descriptor"""
+        if opcode == ED9Opcode.UNKNOWN_28:
+            raise NotImplementedError(f'opcode 0x{opcode:02X} decoded - never seen in a sample script, operand format unknown')
+
         if opcode not in self.descriptors:
             raise ValueError(f'Unknown opcode: 0x{opcode:02X}')
         return self.descriptors[opcode]

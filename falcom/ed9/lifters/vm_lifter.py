@@ -142,10 +142,6 @@ class ED9VMLifter:
                 pop_size = int(inst.operands[0].value) if inst.operands else 0
                 self._pop_words(builder, pop_size // WORD_SIZE if pop_size > 0 else 0)
 
-            case ED9Opcode.POPN:
-                count = int(inst.operands[0].value) if inst.operands else 0
-                self._pop_words(builder, count)
-
             case ED9Opcode.GET_REG:
                 builder.get_reg(int(inst.operands[0].value))
 
@@ -231,7 +227,7 @@ class ED9VMLifter:
                 builder.debug_line(int(inst.operands[0].value))
 
             case ED9Opcode.DEBUG_LOG:
-                pass
+                builder.debug_log(int(inst.operands[0].value))
 
             case ED9Opcode.RETURN:
                 builder.ret()
@@ -281,7 +277,7 @@ class ED9VMLifter:
         raise RuntimeError('Missing branch target while lifting')
 
     def _resolve_call_target(self, func_id: int) -> str:
-        return self._parser.get_func_name(func_id)
+        return self._parser.get_func_name_from_func_id(func_id)
 
     def _must_str(self, value: ScpValue) -> str:
         if not isinstance(value, ScpValue):

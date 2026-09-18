@@ -329,6 +329,14 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
         self.add_instruction(LowLevelILSyscall(subsystem, cmd, argc, args))
 
+    def debug_log(self, argc: int):
+        '''DEBUG_LOG operation - log the top argc stack values (message first), then pop them'''
+        args = self.vstack_peek_many(argc) if argc > 0 else []
+        self.add_instruction(LowLevelILDebugLog(args))
+
+        if argc > 0:
+            self.pop_n(argc)
+
 
 class FalcomLLILFormatter(LLILFormatter):
     @classmethod
