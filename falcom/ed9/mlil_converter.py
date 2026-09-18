@@ -1,5 +1,6 @@
 '''Falcom LLIL to MLIL Converter'''
 
+from common.logging import log
 from ir.llil import *
 from ir.mlil import *
 from ir.pipeline import *
@@ -21,7 +22,7 @@ def convert_falcom_llil_to_mlil(llil_func: LowLevelILFunction,
         optimize: Whether to run SSA optimizations (default True)
         infer_types: Whether to run type inference (default True)
     '''
-    print(f'Translating {llil_func.name} @ 0x{llil_func.start_addr:08X}')
+    log.info(f'Translating {llil_func.name} @ 0x{llil_func.start_addr:08X}')
 
     pipeline = Pipeline()
 

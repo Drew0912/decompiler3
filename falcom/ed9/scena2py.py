@@ -1,19 +1,17 @@
 """Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps.
 
 Usage:
-    python falcom/ed9/scena2py.py script_en/scena/e2000.original.dat
-    python falcom/ed9/scena2py.py script_en/scena
+    python falcom/ed9/scena2py.py {file_path}
 
-Flags live in scena2py_config.py, not on the command line - edit CONFIG there to change
-which outputs are written and which ScpParser/MLIL flags are used.
+Flags live in scena2py_config.py, not on the command line - edit scena2py_config.py to
+change which outputs are written and which ScpParser/MLIL flags are used.
 """
 
 import argparse
 import sys
 from pathlib import Path
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parent.parent
+PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml import fileio
@@ -31,9 +29,7 @@ from ir.hlil.hlil_formatter import HLILFormatter
 from codegen import generate_typescript, generate_typescript_header
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 
-
 DAT_PATTERN = '*.dat'
-
 
 def collect_paths(paths: list[str]) -> list[Path]:
     """Expand directories (recursively) to their .dat files; keep file paths as-is"""
@@ -50,15 +46,6 @@ def collect_paths(paths: list[str]) -> list[Path]:
 
     return files
 
-
-def default_output_dir(path: Path) -> Path:
-    """<scena2py.py's own directory>/out/<stem> - collects every script's output flat, under one
-    out/ tree next to scena2py.py itself. Two different input files sharing a stem (e.g.
-    script_en/battle/btlsys.dat and script_en/battle1.0/btlsys.dat both exist in this repo) will
-    collide here; pass config.output_dir explicitly to avoid that for a specific run."""
-    return SCRIPT_DIR / 'out' / path.stem
-
-
 def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path) -> None:
     lines = parser.gen_python_header()
 
@@ -68,7 +55,6 @@ def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Pat
 
     lines.extend(parser.gen_python_footer())
     out_path.write_text('\n'.join(lines) + '\n', encoding = 'utf-8')
-
 
 def write_debug_info(parser: ScpParser, functions: list[Function], out_path: Path) -> None:
     """Dump the parsed header, each function's raw ScpFunctionEntry, and its per-call debug info"""
@@ -90,11 +76,10 @@ def write_debug_info(parser: ScpParser, functions: list[Function], out_path: Pat
 
     out_path.write_text('\n'.join(lines) + '\n', encoding = 'utf-8')
 
-
 def process_file(path: Path, config: ScenaDecompileConfig) -> None:
-    output_dir = config.output_dir or default_output_dir(path)
-    out = output_dir / path.name       # then .with_suffix(...) per artifact
-    base = out.with_suffix('')         # strips only the last suffix - for per-function .dot names
+    output_dir = config.output_dir / path.stem
+    out = output_dir / path.name
+    out_no_suffix = out.with_suffix('')
 
     with fileio.FileStream(str(path), encoding = default_encoding()) as fs:
         parser = ScpParser(fs, path.name)
@@ -128,19 +113,19 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
                 llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
 
             if config.write_llil_dot:
-                (output_dir / f'{base.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
+                (output_dir / f'{out_no_suffix.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
 
             need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
             if not need_mlil:
                 continue
 
-            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = config.optimize, infer_types = config.infer_types)
+            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = config.optimize_mlil, infer_types = config.infer_types)
 
             if config.write_mlil_asm:
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
 
             if config.write_mlil_dot:
-                (output_dir / f'{base.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
+                (output_dir / f'{out_no_suffix.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
 
             if not (config.write_hlil_ts or config.write_ts):
                 continue
@@ -165,15 +150,11 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
         if config.write_ts:
             out.with_suffix('.ts').write_text(generate_typescript_header() + '\n'.join(ts_chunks), encoding = 'utf-8')
 
-
-def create_parser() -> argparse.ArgumentParser:
+def main() -> int:
     parser = argparse.ArgumentParser(description = 'Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
     parser.add_argument('paths', nargs = '+', help = '.dat files or directories (searched recursively)')
-    return parser
 
-
-def main() -> int:
-    args = create_parser().parse_args()
+    args = parser.parse_args()
     files = collect_paths(args.paths)
     config = ScenaDecompileConfig()
 

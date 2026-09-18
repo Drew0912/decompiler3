@@ -561,7 +561,7 @@ class ScpParser(StrictBase):
             if filter_func and not filter_func(func):
                 continue
 
-            print(f'Disassembling {func.name} @ 0x{func.offset:08X}')
+            log.info(f'Disassembling {func.name} @ 0x{func.offset:08X}')
 
             # Create new context for each function
             context = ScpDisassemblerContext(
@@ -578,7 +578,7 @@ class ScpParser(StrictBase):
                 func.entry_block = disasm.disasm_function(self.fs, offset = func.offset, name = func.name)
                 disassembled_functions.append(func)
             except Exception as e:
-                print(f'Error disassembling {func.name} @ 0x{func.offset:08X}: {e}')
+                log.error(f'Error disassembling {func.name} @ 0x{func.offset:08X}: {e}')
                 raise
 
             if self.round_trip:

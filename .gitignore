@@ -19,5 +19,7 @@ script_en
 *.dat
 *.asm
 *.dot
+*.debug.txt
+*.ts
 
 decompiler2
