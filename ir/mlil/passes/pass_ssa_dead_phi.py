@@ -132,8 +132,10 @@ class DeadPhiSourceEliminationPass(Pass):
                 if isinstance(inst, MLILPhi) and inst in dead_phis:
                     continue
 
-                # Skip definitions that only feed dead Phis
-                if isinstance(inst, MLILSetVarSSA) and inst.var in dead_defs:
+                # Skip definitions that only feed dead Phis - except a global write, which is an
+                # observable cross-function side effect regardless of whether the phi is read
+                if isinstance(inst, MLILSetVarSSA) and inst.var in dead_defs \
+                        and not func.is_global_var(inst.var.base_var):
                     # Preserve string constants as debug comments
                     # Skip if variable was replaced by SCCP (string is now in function args)
                     if isinstance(inst.value, MLILConst) and isinstance(inst.value.value, str):

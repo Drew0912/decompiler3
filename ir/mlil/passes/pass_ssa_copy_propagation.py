@@ -129,9 +129,9 @@ class CopyPropagationPass(Pass):
             if isinstance(defn, MLILSetVarSSA):
                 if isinstance(defn.value, MLILVarSSA):
                     # A local read more than once keeps its own name rather than the
-                    # register's, so reg0 does not spread over values that have a
+                    # register's/global's, so reg0/global0 does not spread over values that have a
                     # real variable. With a single read there is nothing to spread.
-                    if func.is_register_var(defn.value.var.base_var):
+                    if func.is_register_var(defn.value.var.base_var) or func.is_global_var(defn.value.var.base_var):
                         if self.use_counts.get(ssa_var, 0) > 1:
                             continue
 

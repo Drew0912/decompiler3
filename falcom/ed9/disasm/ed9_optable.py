@@ -15,8 +15,9 @@ if TYPE_CHECKING:
 # ED9-specific operand types
 class ED9OperandType(IntEnum2):
     """ED9-specific operand types extending base OperandType"""
-    Func    = OperandType.UserDefined + 1  # Function ID
-    Value   = OperandType.UserDefined + 2  # ScpValue
+    Func      = OperandType.UserDefined + 1  # Function ID
+    Value     = OperandType.UserDefined + 2  # ScpValue
+    GlobalVar = OperandType.UserDefined + 3  # Global var table index (LOAD_GLOBAL/SET_GLOBAL)
 
 # ED9 operand descriptor with extended functionality
 class ED9OperandDescriptor(OperandDescriptor):
@@ -30,6 +31,9 @@ class ED9OperandDescriptor(OperandDescriptor):
 
             case ED9OperandType.Value:
                 return ScpValue(fs=fs)
+
+            case ED9OperandType.GlobalVar:
+                return fs.ReadLong()
 
             case _:
                 return super().read_value(fs)
@@ -48,8 +52,16 @@ class ED9OperandDescriptor(OperandDescriptor):
             case ED9OperandType.Value:
                 return str(operand.value)
 
+            case ED9OperandType.GlobalVar:
+                # Try to get the global var's real name from context
+                if context.get_global_name_from_index:
+                    global_name = context.get_global_name_from_index(operand.value)
+                    if global_name:
+                        return quote_string(global_name)
+                return str(operand.value)
+
             case OperandType.String:
-                return f'"{operand.value}"'
+                return quote_string(operand.value)
 
             case _:
                 return super().format_operand(operand, context)
@@ -64,6 +76,7 @@ ED9_FORMAT_TABLE.update({
     'F' : _ed9_oprdesc(ED9OperandType.Func),
     'V' : _ed9_oprdesc(ED9OperandType.Value),
     'S' : _ed9_oprdesc(OperandType.String),
+    'G' : _ed9_oprdesc(ED9OperandType.GlobalVar),
 })
 
 if TYPE_CHECKING:
@@ -93,8 +106,8 @@ ED9_OPCODE_TABLE = [
     InstructionEntry(0x06, 'POP_TO_DEREF',            'i'),
 
     # Global variables
-    InstructionEntry(0x07, 'LOAD_GLOBAL',             'i'),
-    InstructionEntry(0x08, 'SET_GLOBAL',              'i'),
+    InstructionEntry(0x07, 'LOAD_GLOBAL',             'G'),
+    InstructionEntry(0x08, 'SET_GLOBAL',              'G'),
 
     # Registers
     InstructionEntry(0x09, 'GET_REG',                 'C'),

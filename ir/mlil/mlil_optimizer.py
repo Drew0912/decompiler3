@@ -81,9 +81,11 @@ def _eliminate_dead_code_post_ssa(function: MediumLevelILFunction) -> bool:
                 new_instructions.append(inst)
                 continue
 
-            # For assignments, check if variable is used
+            # For assignments, check if variable is used. A global write is an observable
+            # cross-function side effect - keep it even with zero in-function reads (not on the
+            # live Falcom path today, but harden anyway: see pass_dead_code.py's identical guard)
             var_name = inst.var.name
-            if var_uses.get(var_name, 0) > 0:
+            if var_uses.get(var_name, 0) > 0 or function.is_global_var(inst.var):
                 new_instructions.append(inst)
 
             else:

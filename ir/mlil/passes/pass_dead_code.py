@@ -63,8 +63,11 @@ class DeadCodeEliminationPass(Pass):
                     new_instructions.append(inst)
                     continue
 
+                # A global write is an observable cross-function side effect - keep it even with
+                # zero in-function reads (not on the live Falcom path today, but harden anyway:
+                # a global is never expected to sit in MLILSetVar form outside the SSA window)
                 var_name = inst.var.name
-                if var_uses.get(var_name, 0) > 0:
+                if var_uses.get(var_name, 0) > 0 or mlil_func.is_global_var(inst.var):
                     new_instructions.append(inst)
 
             block.instructions = new_instructions

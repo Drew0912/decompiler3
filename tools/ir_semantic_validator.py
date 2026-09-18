@@ -26,11 +26,12 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from ml import fileio
 from common.config import default_encoding
 from ir.llil import LowLevelILFunction, LowLevelILInstruction, LowLevelILOperation
-from ir.mlil import MediumLevelILFunction, MediumLevelILInstruction, MediumLevelILOperation
+from ir.mlil import MediumLevelILFunction, MediumLevelILInstruction, MediumLevelILOperation, MLILLoadGlobal
 from ir.hlil import (
     HighLevelILFunction, HLILInstruction, HLILOperation, HLILStatement, HLILExpression,
     BinaryOp, UnaryOp
 )
+from falcom.ed9.llil_ext import LowLevelILGlobalLoad
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.lifters.vm_lifter import ED9VMLifter
 from falcom.ed9.mlil_converter import convert_falcom_llil_to_mlil
@@ -813,10 +814,14 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
 
     # Falcom-specific GLOBAL operations
     elif op.name == 'LLIL_GLOBAL_STORE':
+        result = None
+        if hasattr(instr, 'index'):
+            result = SemanticOperand(kind = 'global', value = f"GLOBALS[{instr.index}]")
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
             operator='GLOBAL_STORE',
             operands=_extract_llil_operands(instr),
+            result=result,
             source_location=loc
         )
 
@@ -876,6 +881,9 @@ def _extract_llil_operands(instr: LowLevelILInstruction) -> List[SemanticOperand
 
     if hasattr(instr, 'reg_index'):
         operands.append(SemanticOperand(kind='reg', value=f"Reg[{instr.reg_index}]"))
+
+    if isinstance(instr, LowLevelILGlobalLoad):
+        operands.append(SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]"))
 
     if hasattr(instr, 'left') and hasattr(instr, 'right'):
         if isinstance(instr.left, LowLevelILInstruction):
@@ -1193,6 +1201,9 @@ def _extract_mlil_operands(instr: MediumLevelILInstruction) -> List[SemanticOper
     if hasattr(instr, 'var') and instr.var is not None:
         var_name = instr.var.name if hasattr(instr.var, 'name') else str(instr.var)
         operands.append(SemanticOperand(kind='var', value=var_name))
+
+    if isinstance(instr, MLILLoadGlobal):
+        operands.append(SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]"))
 
     if hasattr(instr, 'args') and instr.args is not None:
         for arg in instr.args:
@@ -2556,6 +2567,8 @@ LLIL_MLIL_TRANSFORMATIONS: List[TransformationRule] = [
     TransformationRule('FRAME_STORE', 'SET_VAR', 'Frame store to assignment'),
     TransformationRule('REG_LOAD', 'LOAD_REG', 'Register load'),
     TransformationRule('REG_STORE', 'STORE_REG', 'Register store'),
+    TransformationRule('GLOBAL_LOAD', 'LOAD_GLOBAL', 'Global load'),
+    TransformationRule('GLOBAL_STORE', 'STORE_GLOBAL', 'Global store'),
     TransformationRule('BRANCH', 'IF', 'Branch to conditional'),
     TransformationRule('JMP', 'GOTO', 'Jump to goto'),
     TransformationRule('TEST_ZERO', 'EQ', 'Zero test to equality'),
@@ -2619,7 +2632,7 @@ def classify_difference(
 # =============================================================================
 
 CRITICAL_OPERATORS = {
-    'CALL', 'SYSCALL', 'CALL_SCRIPT', 'RET', 'RETURN', 'STORE_GLOBAL', 'SET_GLOBAL'
+    'CALL', 'SYSCALL', 'CALL_SCRIPT', 'RET', 'RETURN', 'STORE_GLOBAL', 'SET_GLOBAL', 'GLOBAL_STORE'
 }
 
 CRITICAL_BRANCH_OPERATORS = {'IF', 'GOTO', 'WHILE', 'FOR'}
@@ -2662,7 +2675,7 @@ def semantic_operation_to_atom(op: SemanticOperation) -> SemanticAtom:
     critical = (
         op.operator in CRITICAL_OPERATORS
         or op.operator in CRITICAL_BRANCH_OPERATORS
-        or (op.kind == OperationKind.ASSIGN and op.operator in ('STORE_GLOBAL', 'STORE_REG', 'ASSIGN', 'SET_VAR'))
+        or (op.kind == OperationKind.ASSIGN and op.operator in ('STORE_GLOBAL', 'GLOBAL_STORE', 'STORE_REG', 'ASSIGN', 'SET_VAR'))
     )
 
     return SemanticAtom(
@@ -2693,7 +2706,7 @@ def _normalized_operator_family(operator: str) -> str:
         return CALL_FAMILY
     if operator in ('RET', 'RETURN'):
         return RETURN_FAMILY
-    if operator in ('STORE_GLOBAL', 'SET_GLOBAL'):
+    if operator in ('STORE_GLOBAL', 'SET_GLOBAL', 'GLOBAL_STORE'):
         return EFFECT_CATEGORY_WRITE_GLOBAL
     if operator in ('STORE_REG',):
         return EFFECT_CATEGORY_WRITE_REG

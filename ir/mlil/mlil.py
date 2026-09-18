@@ -37,6 +37,13 @@ def mlil_reg_var_name(reg_index: int) -> str:
     return f'reg{reg_index}'
 
 
+def mlil_global_var_name(global_index: int) -> str:
+    '''Generate global variable name (global0, global1, ...)'''
+    if global_index < 0:
+        raise ValueError(f'Negative global_index: {global_index}')
+    return f'global{global_index}'
+
+
 class MediumLevelILOperation(IntEnum2):
     '''MLIL operations - stack-free version of LLIL'''
 
@@ -201,7 +208,7 @@ class MLILConst(MediumLevelILExpr, Constant):
 
         elif isinstance(self.value, str):
 
-            return f'"{self.value}"'
+            return quote_string(self.value)
         return str(self.value)
 
 
@@ -673,6 +680,7 @@ class MediumLevelILFunction:
         self.parameters: List[MLILVariable] = []  # Ordered parameter list (populated during translation)
         self.locals: Dict[str, MLILVariable] = {}  # Local variables
         self.register_vars: Dict[int, MLILVariable] = {}  # VM register index -> variable
+        self.global_vars: Dict[int, MLILVariable] = {}  # Global var table index -> variable
         self.llil_function: Optional[LowLevelILFunction] = None
         self._inst_block_map: Dict[int, MediumLevelILBasicBlock] = {}
         self.var_types: Dict[str, 'MLILType'] = {}  # Variable name -> inferred type
@@ -727,6 +735,29 @@ class MediumLevelILFunction:
     def is_register_var(self, var: MLILVariable) -> bool:
         '''Check whether a variable models a VM register'''
         return var in self.register_vars.values()
+
+    def get_or_create_global_var(self, global_index: int) -> MLILVariable:
+        '''Get existing global variable or create new one
+
+        Unlike registers/locals, global variables are kept out of self.locals - they are
+        script-wide storage, not something that belongs in a locals-derived variable listing.
+        '''
+        if global_index not in self.global_vars:
+            self.global_vars[global_index] = MLILVariable(mlil_global_var_name(global_index))
+
+        return self.global_vars[global_index]
+
+    def is_global_var(self, var: MLILVariable) -> bool:
+        '''Check whether a variable models a VM global'''
+        return var in self.global_vars.values()
+
+    def global_index_of(self, var: MLILVariable) -> int | None:
+        '''Global var table index of a variable, or None if it does not model a global'''
+        for index, global_var in self.global_vars.items():
+            if global_var == var:
+                return index
+
+        return None
 
     def register_instruction(self, block: MediumLevelILBasicBlock, inst: MediumLevelILInstruction):
         if inst.inst_index == -1:

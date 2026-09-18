@@ -55,7 +55,10 @@ class DeadCodeEliminationPass(Pass):
 
                 if isinstance(inst, MLILSetVarSSA):
                     uses = self.ssa_uses.get(inst.var, [])
-                    if len(uses) > 0:
+
+                    # A global write is an observable cross-function side effect - keep it even
+                    # with zero in-function reads, unlike an ordinary dead local assignment
+                    if len(uses) > 0 or func.is_global_var(inst.var.base_var):
                         new_instructions.append(inst)
 
                     else:

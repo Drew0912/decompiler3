@@ -246,6 +246,10 @@ class SSAConstructor:
 
     def construct(self) -> MediumLevelILFunction:
         '''Convert function to SSA form (modifies in-place)'''
+        # Step 0: Raise stored globals into variables, so the rest of SSA construction
+        # tracks them exactly like registers (versions, phis, call clobbers)
+        self._raise_globals()
+
         # Step 1: Dominance analysis
         self.dom_analysis.analyze()
 
@@ -266,6 +270,101 @@ class SSAConstructor:
 
         return self.function
 
+    def _raise_globals(self):
+        '''Raise MLILStoreGlobal/MLILLoadGlobal into MLILSetVar/MLILVar over per-index MLILVariables,
+        for every global stored somewhere in this function.
+
+        An unraised MLILLoadGlobal (a global that is only ever read in this function) is left alone -
+        it falls through _rename_expr's catch-all unchanged, which is correct: a read-only global
+        gains nothing from SSA versioning.
+        '''
+        self.raised_global_indices = {
+            inst.index
+            for block in self.function.basic_blocks
+            for inst in block.instructions
+            if isinstance(inst, MLILStoreGlobal)
+        }
+
+        if not self.raised_global_indices:
+            return
+
+        for block in self.function.basic_blocks:
+            block.instructions = [self._raise_inst(inst) for inst in block.instructions]
+
+    def _raise_inst(self, inst: MediumLevelILInstruction) -> MediumLevelILInstruction:
+        '''Raise one instruction (mirrors _rename_inst's per-kind dispatch, without SSA versioning)'''
+        if isinstance(inst, MLILStoreGlobal):
+            # Every MLILStoreGlobal's index is in raised_global_indices by construction (see _raise_globals)
+            new_value = self._raise_expr(inst.value)
+            global_var = self.function.get_or_create_global_var(inst.index)
+            return MLILSetVar(global_var, new_value, address = inst.address).copy_metadata_from(inst)
+
+        elif isinstance(inst, MLILSetVar):
+            new_value = self._raise_expr(inst.value)
+
+            if new_value is not inst.value:
+                return MLILSetVar(inst.var, new_value, address = inst.address).copy_metadata_from(inst)
+
+            return inst
+
+        else:
+            return self._raise_stmt(inst)
+
+    def _raise_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
+        '''Recursively raise MLILLoadGlobal in an expression tree (mirrors _rename_expr's walk)'''
+        if isinstance(expr, MLILLoadGlobal) and expr.index in self.raised_global_indices:
+            global_var = self.function.get_or_create_global_var(expr.index)
+            return MLILVar(global_var).copy_metadata_from(expr)
+
+        elif isinstance(expr, MLILBinaryOp):
+            new_lhs = self._raise_expr(expr.lhs)
+            new_rhs = self._raise_expr(expr.rhs)
+
+            if new_lhs is expr.lhs and new_rhs is expr.rhs:
+                return expr
+
+            return self._rebuild_binary_op(expr, new_lhs, new_rhs)
+
+        elif isinstance(expr, MLILUnaryOp):
+            new_operand = self._raise_expr(expr.operand)
+
+            if new_operand is expr.operand:
+                return expr
+
+            return self._rebuild_unary_op(expr, new_operand)
+
+        else:
+            return expr
+
+    def _raise_stmt(self, stmt: MediumLevelILInstruction) -> MediumLevelILInstruction:
+        '''Raise MLILLoadGlobal inside a statement's expressions (mirrors _rename_stmt's walk)'''
+        if isinstance(stmt, MLILIf):
+            new_cond = self._raise_expr(stmt.condition)
+
+            if new_cond is not stmt.condition:
+                return MLILIf(new_cond, stmt.true_target, stmt.false_target, address = stmt.address).copy_metadata_from(stmt)
+
+        elif isinstance(stmt, MLILRet):
+            if stmt.value is not None:
+                new_value = self._raise_expr(stmt.value)
+
+                if new_value is not stmt.value:
+                    return MLILRet(new_value, address = stmt.address).copy_metadata_from(stmt)
+
+        elif isinstance(stmt, MediumLevelILCall):
+            new_args = [self._raise_expr(arg) for arg in stmt.args]
+
+            if any(new_args[i] is not stmt.args[i] for i in range(len(stmt.args))):
+                return stmt.rebuild(new_args)
+
+        elif isinstance(stmt, MLILStoreReg):
+            new_value = self._raise_expr(stmt.value)
+
+            if new_value is not stmt.value:
+                return MLILStoreReg(stmt.index, new_value, address = stmt.address).copy_metadata_from(stmt)
+
+        return stmt
+
     def _collect_defs(self):
         '''Collect blocks where each variable is defined'''
         for block in self.function.basic_blocks:
@@ -278,17 +377,17 @@ class SSAConstructor:
                         self.var_defs[var].add(block)
 
     def _call_defined_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
-        '''Variables a call writes: its output plus the registers it clobbers
+        '''Variables a call writes: its output plus the registers and globals it clobbers
 
-        A callee may change any register, so every register other than the one
-        receiving the result becomes undefined across the call.
+        A callee may change any register or global, so every one of them other than the
+        variable receiving the result becomes undefined across the call.
         '''
         defined = []
 
         if inst.output is not None:
             defined.append(inst.output)
 
-        for var in self.function.register_vars.values():
+        for var in list(self.function.register_vars.values()) + list(self.function.global_vars.values()):
             if var != inst.output:
                 defined.append(var)
 
@@ -324,15 +423,28 @@ class SSAConstructor:
         if not self.function.basic_blocks:
             return
 
-        # Initialize all function variables (especially parameters) to version 0
-        # Parameters and globals are "defined" at function entry
+        # Initialize all function variables (especially parameters) to version 0.
+        # Parameters and globals are "defined" at function entry.
+        #
+        # var_versions[var] is seeded to 1, not 0: it is the NEXT version _new_version() will
+        # allocate, and 0 is already taken by this entry seed (pushed below via var_stack). Seeding
+        # it to 0 would make the first real definition (e.g. a Phi) ALSO get version 0, colliding
+        # with the entry seed's identity - two unrelated definitions sharing one MLILVariableSSA,
+        # so SSA-based passes (e.g. SCCP) can propagate the later definition's value backward into
+        # reads of the entry seed. var_stack[var] is unaffected: 0 remains the correct version for a
+        # read before any real definition.
         for var in self.function.parameters:
             if var is not None:
-                self.var_versions[var] = 0
+                self.var_versions[var] = 1
                 self.var_stack[var].append(0)
 
         for var in self.function.locals.values():
-            self.var_versions[var] = 0
+            self.var_versions[var] = 1
+            self.var_stack[var].append(0)
+
+        # Globals live outside function.locals (see get_or_create_global_var) so they need their own seeding
+        for var in self.function.global_vars.values():
+            self.var_versions[var] = 1
             self.var_stack[var].append(0)
 
         entry = self.function.basic_blocks[0]
@@ -430,9 +542,10 @@ class SSAConstructor:
                 pushed.append(output_var)
                 renamed.output = MLILVariableSSA(output_var, new_ver)
 
-            # Registers the call clobbers, plus address-taken variables it may write,
+            # Registers and globals the call clobbers, plus address-taken variables it may write,
             # get pseudo-definitions so later reads do not see the older value
-            clobbered = [var for var in self.function.register_vars.values() if var != output_var]
+            clobbered_vars = list(self.function.register_vars.values()) + list(self.function.global_vars.values())
+            clobbered = [var for var in clobbered_vars if var != output_var]
 
             if not addr_vars and not clobbered:
                 return renamed
@@ -846,8 +959,13 @@ class SSADeconstructor:
 
     def _allocate_variables(self):
         '''Allocate final variable names using graph coloring / coalescing'''
-        # Filter out dead variables (defined but never used)
-        live_vars = {v for v in self.all_ssa_vars if self.var_uses[v]}
+        # Filter out dead variables (defined but never used). Globals are excluded entirely - they
+        # always lower back to GLOBALS[n] by index (_apply_mapping_to_inst/_expr), so coalescing
+        # them would only mint unused global0_v0-style names into function.locals.
+        live_vars = {
+            v for v in self.all_ssa_vars
+            if self.var_uses[v] and not self.function.is_global_var(v.base_var)
+        }
 
         # Group SSA vars by base variable
         base_groups: Dict[str, List[MLILVariableSSA]] = defaultdict(list)
@@ -909,14 +1027,25 @@ class SSADeconstructor:
         if isinstance(inst, MLILSetVarSSA):
             new_var = self.var_mapping.get(inst.var, inst.var.base_var)
             new_value = self._apply_mapping_to_expr(inst.value)
+            global_index = self.function.global_index_of(new_var)
 
             # Skip self-assignment (var = var) from coalesced phi copies
             if isinstance(new_value, MLILVar) and new_value.var == new_var:
                 return None
 
+            # Same hazard for a global: a phi copy between two versions of the same global
+            # lowers its value side to MLILLoadGlobal (not MLILVar), so the check above never
+            # matches it - without this, coalesced phi copies show up as GLOBALS[n] = GLOBALS[n]
+            if global_index is not None and isinstance(new_value, MLILLoadGlobal) and new_value.index == global_index:
+                return None
+
             # Skip undef assignments (pseudo-definitions for call output parameters)
             if isinstance(inst.value, MLILUndef):
                 return None
+
+            # A global write lowers back to a GLOBALS[n] store - never a plain variable assignment
+            if global_index is not None:
+                return MLILStoreGlobal(global_index, new_value, address = inst.address).copy_metadata_from(inst)
 
             return MLILSetVar(new_var, new_value, address = inst.address).copy_metadata_from(inst)
 
@@ -933,6 +1062,13 @@ class SSADeconstructor:
                 return MLILLoadReg(self.reg_index_by_var[expr.var.base_var])
 
             new_var = self.var_mapping.get(expr.var, expr.var.base_var)
+
+            # Every surviving global read lowers back to GLOBALS[n], defined-in-function or not -
+            # globals are excluded from coalescing (_allocate_variables), so this is unconditional
+            global_index = self.function.global_index_of(new_var)
+            if global_index is not None:
+                return MLILLoadGlobal(global_index).copy_metadata_from(expr)
+
             return MLILVar(new_var)
 
         elif isinstance(expr, MLILBinaryOp):

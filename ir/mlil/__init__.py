@@ -16,6 +16,7 @@ __all__ = [
     'mlil_stack_var_name',
     'mlil_arg_var_name',
     'mlil_reg_var_name',
+    'mlil_global_var_name',
 
     # Builder, Translator, Formatter, and Optimizers
     'MLILBuilder',

@@ -241,6 +241,11 @@ class SSATypeInferencePass(Pass):
         base_types = {}
 
         for ssa_var, typ in self.var_types.items():
+            # Globals always lower back to GLOBALS[n] (see SSADeconstructor), never surviving as a
+            # named variable - recording a type for them here would be a stale, unused entry
+            if self.function.is_global_var(ssa_var.base_var):
+                continue
+
             name = ssa_var.base_var.name
 
             if name in base_types:
