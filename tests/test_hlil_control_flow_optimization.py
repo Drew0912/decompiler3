@@ -110,8 +110,33 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         self.assertEqual(len(terminal_cases), EXPECTED_TERMINAL_CASE_COUNT)
         self.assertTrue(block_contains_call(terminal_cases[0].body, TERMINAL_MARKER_CALL))
 
-    def test_eq_chain_is_not_converted_to_switch(self):
+    def test_eq_chain_becomes_switch(self):
         third_if = HLILIf(make_condition(BinaryOp.EQ, THIRD_CASE_VALUE), make_case_body(THIRD_CASE_VALUE), HLILBlock())
+        second_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock([third_if]))
+        first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), HLILBlock([second_if]))
+
+        func = self.run_pass(first_if)
+
+        self.assertEqual(len(func.body.statements), EXPECTED_TOP_LEVEL_STATEMENT_COUNT)
+        switch_stmt = func.body.statements[0]
+        self.assertIsInstance(switch_stmt, HLILSwitch)
+        self.assertEqual(
+            collect_switch_case_values(switch_stmt),
+            {FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE},
+        )
+
+    def test_short_eq_chain_is_not_converted_to_switch(self):
+        second_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock())
+        first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), HLILBlock([second_if]))
+
+        func = self.run_pass(first_if)
+
+        self.assertEqual(len(func.body.statements), EXPECTED_TOP_LEVEL_STATEMENT_COUNT)
+        self.assertIsInstance(func.body.statements[0], HLILIf)
+
+    def test_eq_chain_on_different_variables_is_not_converted(self):
+        other_var = HLILVar(HLILVariable('other'))
+        third_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, other_var, HLILConst(THIRD_CASE_VALUE)), make_case_body(THIRD_CASE_VALUE), HLILBlock())
         second_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock([third_if]))
         first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), HLILBlock([second_if]))
 

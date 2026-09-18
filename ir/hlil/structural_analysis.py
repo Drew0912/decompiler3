@@ -428,25 +428,41 @@ class StructuralAnalyzer:
         if true_target == false_target:
             return true_target
 
-        # One branch directly targets the other
-        if true_target in self.successors.get(false_target, []):
+        # One branch directly targets the other - but only if that edge is an
+        # unconditional fallthrough. If the source block is itself a 2-way branch,
+        # the target is one of two independent outcomes of its own test, not an
+        # empty tail shared with the other branch, so it must not be discarded.
+        if (true_target in self.successors.get(false_target, []) and
+                len(self.successors.get(false_target, [])) == 1):
             return true_target
 
-        if false_target in self.successors.get(true_target, []):
+        if (false_target in self.successors.get(true_target, []) and
+                len(self.successors.get(true_target, [])) == 1):
             return false_target
 
-        # Forward reachability from each branch
-        reach_true = self._forward_reach(true_target)
-        reach_false = self._forward_reach(false_target)
+        # Indirect merge: one target reachable from the other - but only via a
+        # chain of unconditional (single-successor) blocks. A multi-hop path that
+        # passes through a 2-way branch has the same problem as the direct-edge
+        # case above: the candidate is reached because one of that branch's own
+        # two outcomes leads there, not because it's an empty shared tail.
+        unconditional_from_true = self._unconditional_reach(true_target)
+        unconditional_from_false = self._unconditional_reach(false_target)
 
-        # Indirect merge: one target reachable from the other
-        if true_target in reach_false:
+        if true_target in unconditional_from_false:
             return true_target
 
-        if false_target in reach_true:
+        if false_target in unconditional_from_true:
             return false_target
 
-        # Common reachable blocks
+        # Common reachable blocks - reachable from each branch WITHOUT passing
+        # through the other branch first. Plain reachability would also count
+        # everything downstream of false_target as "reachable from true_target",
+        # since true_target eventually reaches false_target itself (that's how a
+        # shared-target chain works) - that would keep picking a block inside
+        # false_target's own body as a false "merge", just one step further along.
+        reach_true = self._forward_reach(true_target, barrier = false_target)
+        reach_false = self._forward_reach(false_target, barrier = true_target)
+
         common = set(reach_true.keys()) & set(reach_false.keys())
         common.discard(true_target)
         common.discard(false_target)
@@ -457,8 +473,42 @@ class StructuralAnalyzer:
         # Return nearest (minimum combined distance)
         return min(common, key=lambda b: reach_true[b] + reach_false[b])
 
-    def _forward_reach(self, start: int) -> Dict[int, int]:
-        '''Forward reachability, skipping back edges and collapsed nodes'''
+    def _unconditional_reach(self, start: int) -> Dict[int, int]:
+        '''Forward reachability following only unconditional (single-successor) edges
+
+        Stops at the first 2-way branch instead of following either of its edges,
+        so a block reached only through one outcome of a decision made along the
+        way is never mistaken for start's own empty/trivial continuation.
+        '''
+        reach = {start: 0}
+        block = start
+        depth = 0
+
+        while True:
+            if block not in self.active_nodes:
+                break
+
+            succs = self.successors.get(block, [])
+            if len(succs) != 1:
+                break
+
+            succ = succs[0]
+            if (block, succ) in self.back_edges or succ in reach:
+                break
+
+            depth += 1
+            reach[succ] = depth
+            block = succ
+
+        return reach
+
+    def _forward_reach(self, start: int, barrier: Optional[int] = None) -> Dict[int, int]:
+        '''Forward reachability, skipping back edges and collapsed nodes
+
+        barrier, if given, is never entered or traversed past - used to keep a
+        branch's own reachable set from including whatever lies beyond the other
+        branch's target once the two eventually converge.
+        '''
         reach = {}
         queue = deque([(start, 0)])
 
@@ -468,7 +518,7 @@ class StructuralAnalyzer:
             if block in reach:
                 continue
 
-            if block not in self.active_nodes:
+            if block not in self.active_nodes or block == barrier:
                 continue
 
             reach[block] = depth
@@ -478,7 +528,7 @@ class StructuralAnalyzer:
                 if (block, succ) in self.back_edges:
                     continue
 
-                if succ not in reach and succ in self.active_nodes:
+                if succ not in reach and succ in self.active_nodes and succ != barrier:
                     queue.append((succ, depth + 1))
 
         return reach
@@ -506,25 +556,38 @@ class StructuralAnalyzer:
         if true_target == false_target:
             return true_target
 
-        # One branch directly targets the other
-        if true_target in self.original_successors.get(false_target, []):
+        # One branch directly targets the other - but only if that edge is an
+        # unconditional fallthrough. If the source block is itself a 2-way branch,
+        # the target is one of two independent outcomes of its own test (e.g. a
+        # chain of equality tests that all share one match target), not an empty
+        # tail shared with the other branch - treating it as the merge point would
+        # silently drop that target's content for every path except the last.
+        if (true_target in self.original_successors.get(false_target, []) and
+                len(self.original_successors.get(false_target, [])) == 1):
             return true_target
 
-        if false_target in self.original_successors.get(true_target, []):
+        if (false_target in self.original_successors.get(true_target, []) and
+                len(self.original_successors.get(true_target, [])) == 1):
             return false_target
 
-        # Forward reachability on original graph
-        reach_true = self._forward_reach_original(true_target)
-        reach_false = self._forward_reach_original(false_target)
+        # Indirect merge: one target reachable from the other - but only via a
+        # chain of unconditional (single-successor) blocks (see _unconditional_reach).
+        unconditional_from_true = self._unconditional_reach_original(true_target)
+        unconditional_from_false = self._unconditional_reach_original(false_target)
 
-        # Indirect merge: one target reachable from the other
-        if true_target in reach_false:
+        if true_target in unconditional_from_false:
             return true_target
 
-        if false_target in reach_true:
+        if false_target in unconditional_from_true:
             return false_target
 
-        # Common reachable blocks
+        # Common reachable blocks - reachable from each branch WITHOUT passing
+        # through the other branch first (see _find_local_merge for why plain
+        # reachability would keep picking a block inside the other branch's own
+        # body as a false "merge").
+        reach_true = self._forward_reach_original(true_target, barrier = false_target)
+        reach_false = self._forward_reach_original(false_target, barrier = true_target)
+
         common = set(reach_true.keys()) & set(reach_false.keys())
         common.discard(true_target)
         common.discard(false_target)
@@ -535,15 +598,39 @@ class StructuralAnalyzer:
         # Return nearest (minimum combined distance)
         return min(common, key=lambda b: reach_true[b] + reach_false[b])
 
-    def _forward_reach_original(self, start: int) -> Dict[int, int]:
-        '''Forward reachability on original graph, skipping back edges'''
+    def _unconditional_reach_original(self, start: int) -> Dict[int, int]:
+        '''_unconditional_reach, but over the original (unmodified) CFG'''
+        reach = {start: 0}
+        block = start
+        depth = 0
+
+        while True:
+            succs = self.original_successors.get(block, [])
+            if len(succs) != 1:
+                break
+
+            succ = succs[0]
+            if (block, succ) in self.back_edges or succ in reach:
+                break
+
+            depth += 1
+            reach[succ] = depth
+            block = succ
+
+        return reach
+
+    def _forward_reach_original(self, start: int, barrier: Optional[int] = None) -> Dict[int, int]:
+        '''Forward reachability on original graph, skipping back edges
+
+        barrier, if given, is never entered or traversed past (see _forward_reach).
+        '''
         reach = {}
         queue = deque([(start, 0)])
 
         while queue:
             block, depth = queue.popleft()
 
-            if block in reach:
+            if block in reach or block == barrier:
                 continue
 
             reach[block] = depth
@@ -553,7 +640,7 @@ class StructuralAnalyzer:
                 if (block, succ) in self.back_edges:
                     continue
 
-                if succ not in reach:
+                if succ not in reach and succ != barrier:
                     queue.append((succ, depth + 1))
 
         return reach
