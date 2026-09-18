@@ -93,6 +93,9 @@ Pointer     = object
 
 
 class ScpValue:
+    TYPE_SHIFT      = 30                        # type tag is the top 2 bits
+    PAYLOAD_MASK    = (1 << TYPE_SHIFT) - 1     # value, or string pool offset for String
+
     class Type(IntEnum2):
         Raw             = 0
         Integer         = 1
@@ -171,7 +174,8 @@ class ScpValue:
         return v
 
     def __str__(self) -> str:
-        return f'ScpValue<{self.value!r}>'
+        # return f'ScpValue<{self.value!r}>'
+        return f'ScpValue({self.value!r})'
 
     __repr__ = __str__
 
@@ -180,15 +184,15 @@ class ScpHeader(StrictBase):
     SIZE    = 0x18
     MAGIC   = b'#scp'
 
-    function_entry_offset   : int
-    function_count          : int
-    global_var_offset       : int
-    global_var_count        : int
-    dword_14                : int
+    function_entry_offset   : int = SIZE
+    function_count          : int = 0
+    global_var_offset       : int = 0
+    global_var_count        : int = 0
+    dword_14                : int = 0
 
     def __init__(self, *, fs: fileio.FileStream = None):
         self.from_stream(fs)
-
+        
     def from_stream(self, fs: fileio.FileStream):
         if not fs:
             return
@@ -200,6 +204,16 @@ class ScpHeader(StrictBase):
         self.global_var_offset      = fs.ReadULong()    # 0x0C
         self.global_var_count       = fs.ReadULong()    # 0x10
         self.dword_14               = fs.ReadULong()    # 0x14
+
+    def to_bytes(self) -> bytes:
+        return (
+            self.MAGIC +
+            utils.int_to_bytes(self.function_entry_offset, 4) +
+            utils.int_to_bytes(self.function_count, 4) +
+            utils.int_to_bytes(self.global_var_offset, 4) +
+            utils.int_to_bytes(self.global_var_count, 4) +
+            utils.int_to_bytes(self.dword_14, 4)
+        )
 
     def __str__(self) -> str:
         return '\n'.join([
@@ -249,6 +263,21 @@ class ScpFunctionEntry(StrictBase):
         if self.byte06 != 0:
             raise NotImplementedError(f'byte06 != 0: {self.byte06}. ScpFunctionEntry.is_common_func is UShort?')
 
+    def to_bytes(self) -> bytes:
+        return (
+            utils.int_to_bytes(self.offset, 4) +
+            utils.int_to_bytes(self.param_count, 1) +
+            utils.int_to_bytes(self.is_common_func, 1) +
+            utils.int_to_bytes(self.byte06, 1) +
+            utils.int_to_bytes(self.default_params_count, 1) +
+            utils.int_to_bytes(self.default_params_offset, 4) +
+            utils.int_to_bytes(self.param_flags_offset, 4) +
+            utils.int_to_bytes(self.debug_info_count, 4) +
+            utils.int_to_bytes(self.debug_info_offset, 4) +
+            utils.int_to_bytes(self.name_hash, 4) +
+            utils.int_to_bytes(self.name_offset, 4)
+        )
+
     def __str__(self) -> str:
         return '\n'.join([
             f'offset                : 0x{self.offset:08X}',
@@ -268,11 +297,19 @@ class ScpFunctionEntry(StrictBase):
 
 
 class ScpFunctionCallDebugInfoArg(StrictBase):
+    SIZE = 0x08
+
+    class Type(IntEnum2):
+        Constant    = 0     # value is the pushed constant
+        CallResult  = 1     # GET_REG after a nested call, value is Raw 0
+        Variable    = 2     # LOAD_STACK / PUSH_STACK_OFFSET, value is Raw 0
+        Expression  = 3     # computed value, value is Raw 0
+
     value : ScpValue
     type  : int
 
     def __init__(self, type: int, value: ScpValue):
-        self.type   = type        # remain argc
+        self.type   = type
         self.value  = value
 
     def __str__(self) -> str:
@@ -281,13 +318,14 @@ class ScpFunctionCallDebugInfoArg(StrictBase):
     __repr__ = __str__
 
 class ScpFunctionCallDebugInfo(StrictBase):
-    SIZE = 0x0C
+    SIZE        = 0x0C
+    NO_FUNC_ID  = 0xFFFFFFFF    # func_id of script calls and syscalls
 
     class CallType(IntEnum2):
-        Local    = 0
-        Script   = 1
-        # Tailcall = 2 # Script_No_Return
-        Syscall  = 3
+        Local           = 0
+        Script          = 1
+        ScriptNoReturn  = 2     # unverified - no sample script uses CALL_SCRIPT_NO_RETURN
+        Syscall         = 3
 
     func_id     : int
     call_type   : CallType
@@ -306,6 +344,14 @@ class ScpFunctionCallDebugInfo(StrictBase):
         self.arg_count   = fs.ReadUShort()
         self.info_offset = fs.ReadULong()
 
+    def to_bytes(self) -> bytes:
+        return (
+            utils.int_to_bytes(self.func_id, 4) +
+            utils.int_to_bytes(self.call_type, 2) +
+            utils.int_to_bytes(self.arg_count, 2) +
+            utils.int_to_bytes(self.info_offset, 4)
+        )
+
     def __str__(self) -> str:
         return '\n'.join([
             f'func_name     : {self.func_name}',
@@ -319,22 +365,24 @@ class ScpFunctionCallDebugInfo(StrictBase):
     __repr__ = __str__
 
 class ScpGlobalVar(StrictBase):
-    name_offset : int
-    type        : Type
+    SIZE = 0x08
+
+    name : str
+    type : int
 
     class Type(IntEnum2):
         Integer = 0
         String  = 1
 
-    def __init__(self, *, fs: fileio.FileStream = None):
+    def __init__(self, name: str = '', type: int = 0, *, fs: fileio.FileStream = None):
+        self.name = name
+        self.type = type
         self.from_stream(fs)
 
     def from_stream(self, fs: fileio.FileStream):
         if not fs:
             return
 
-        self.name_offset = fs.ReadULong()
-        self.type = ScpGlobalVar.Type(fs.ReadULong())
-
-    def to_bytes(self) -> bytes:
-        return utils.int_to_bytes(self.name_offset, 4) + utils.int_to_bytes(self.type, 4)
+        # name is a String-tagged ScpValue (pool ref), not a raw pool offset
+        self.name = ScpValue(fs = fs).value
+        self.type = fs.ReadULong()

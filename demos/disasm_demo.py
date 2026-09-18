@@ -1,273 +1,290 @@
 #!/usr/bin/env python3
-"""Disassembler Demo - Test the ED9 disassembler"""
+"""Disassembler Demo - hand-coded ED9 bytecode disassembled to LLIL DSL and checked against expected output"""
 
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
+import difflib
 from ml import *
 from falcom.ed9.disasm import *
+from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.parser import *
-from pathlib import Path
+
+HEX_DUMP_WIDTH = 16
+
+# Bytecode below is hand-coded on purpose, with the DSL equivalent of each instruction in a comment.
+# PUSH is 6 bytes: opcode, size byte (always 4), 4-byte ScpValue (top 2 bits = type, 01 = Integer).
 
 
-def print_block(block: BasicBlock, visited=None, indent=0, all_blocks=None):
-    """Recursively print basic block and its successors"""
-    if visited is None:
-        visited = set()
+def format_hex_dump(bytecode: bytes) -> list[str]:
+    lines = []
+    for offset in range(0, len(bytecode), HEX_DUMP_WIDTH):
+        chunk = bytecode[offset:offset + HEX_DUMP_WIDTH]
+        lines.append(f'  {offset:08X}: {chunk.hex(" ").upper()}')
 
-    if all_blocks is None:
-        # First call: collect all blocks
-        all_blocks = []
-        collect_blocks(block, all_blocks, set())
-        # Sort by offset
-        all_blocks.sort(key=lambda b: b.offset)
-        # Print in order
-        for b in all_blocks:
-            if b.instructions:  # Skip empty blocks
-                print(f'Block {b.name}:')
-                for inst in b.instructions:
-                    print(f'  {inst.offset:08X}: {inst.descriptor.format_instruction(inst)}')
-                if b.succs:
-                    succ_names = ', '.join(br.name for br in b.succs)
-                    print(f'  → {succ_names}')
-                print()
-        return
-
-    # Legacy recursive implementation (not used anymore)
-    if block.offset in visited:
-        print(f'{"  " * indent}→ {block.name} (already visited)')
-        return
-
-    visited.add(block.offset)
-
-    if not block.instructions:
-        return
-
-    print(f'{"  " * indent}Block {block.name}:')
-    for inst in block.instructions:
-        print(f'{"  " * indent}  {inst.offset:08X}: {inst.descriptor.format_instruction(inst)}')
-
-    if block.succs:
-        print(f'{"  " * indent}  Successors:')
-        for succ in block.succs:
-            print_block(succ, visited, indent + 1, all_blocks)
+    return lines
 
 
-def collect_blocks(block, result, visited):
-    """Collect all blocks in the CFG"""
-    if block.offset in visited:
-        return
-    visited.add(block.offset)
-    result.append(block)
-    for succ in block.succs:
-        collect_blocks(succ, result, visited)
+def disasm_to_dsl(name: str, bytecode: bytes) -> list[str]:
+    context = DisassemblerContext(create_fallthrough_jump = ed9_create_fallthrough_jump)
+    disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
+
+    func = Function()
+    func.name = name
+    func.offset = 0
+    func.is_common_func = False
+    func.entry_block = disasm.disasm_function(bytecode, offset = 0, name = name)
+
+    return Formatter(FormatterContext()).format_function(func)
 
 
-def test_simple_function():
-    """Test with a simple bytecode sequence"""
-    print('=== Test: Simple Function ===\n')
+def run_case(title: str, name: str, bytecode: bytes, expected: str) -> bool:
+    print(f'=== {title} ===\n')
 
-    # Simple bytecode: PUSH_INT(1), PUSH_INT(2), ADD, SET_REG(0), RETURN
-    bytecode = bytes([
-        0x00, 0x01, 0x00, 0x00, 0x40,  # PUSH int(1): 0x40000001
-        0x00, 0x02, 0x00, 0x00, 0x40,  # PUSH int(2): 0x40000002
-        0x10,                           # ADD
-        0x0A, 0x00,                     # SET_REG(0)
-        0x0D,                           # RETURN
-    ])
-
-    # Disassemble
-    disasm = Disassembler(ED9_INSTRUCTION_TABLE)
-
-    entry = disasm.disasm_function(bytecode, offset=0, name='test_add')
-
-    # Print result
-    print_block(entry)
+    print(f'Bytecode ({len(bytecode)} bytes):')
+    print('\n'.join(format_hex_dump(bytecode)))
     print()
 
+    try:
+        actual = [line.rstrip() for line in disasm_to_dsl(name, bytecode)]
 
-def test_conditional():
-    """Test with conditional branch"""
-    print('=== Test: Conditional Branch ===\n')
+    except Exception as e:
+        print(f'FAIL: {name}: {type(e).__name__}: {e}\n')
+        return False
 
-    # Bytecode: GET_REG(0), POP_JMP_ZERO(loc_11), PUSH_INT(1), JMP(loc_16), loc_11: PUSH_INT(0), loc_16: RETURN
-    bytecode = bytes([
-        0x09, 0x00,                     # 0x00: GET_REG(0)
-        0x0F, 0x11, 0x00, 0x00, 0x00,  # 0x02: POP_JMP_ZERO(0x11)
-        0x00, 0x01, 0x00, 0x00, 0x40,  # 0x07: PUSH int(1)
-        0x0B, 0x16, 0x00, 0x00, 0x00,  # 0x0C: JMP(0x16)
-        0x00, 0x00, 0x00, 0x00, 0x40,  # 0x11: PUSH int(0)
-        0x0D,                           # 0x16: RETURN
-    ])
-
-    # Disassemble
-    disasm = Disassembler(ED9_INSTRUCTION_TABLE)
-
-    entry = disasm.disasm_function(bytecode, offset=0, name='test_cond')
-
-    # Print result
-    print_block(entry)
+    print('LLIL DSL:')
+    print('\n'.join(actual))
     print()
 
+    expected_lines = expected.strip('\n').splitlines()
+    if actual == expected_lines:
+        print(f'PASS: {name}\n')
+        return True
 
-def test_caller_frame():
-    """Test PUSH_CALLER_FRAME (allocates return point)"""
-    print('=== Test: PUSH_CALLER_FRAME ===\n')
+    print(f'FAIL: {name}')
+    print('\n'.join(difflib.unified_diff(expected_lines, actual, 'expected', 'actual', lineterm = '')))
+    print()
+    return False
 
-    # PUSH_CALLER_FRAME allocates a return point, then continues execution
-    # Flow: PUSH_CALLER_FRAME(loc_return), do_work, JMP(somewhere)
-    # loc_return will be used when called function returns
+
+def test_simple_function() -> bool:
     bytecode = bytes([
-        0x25, 0x11, 0x00, 0x00, 0x00,  # 0x00: PUSH_CALLER_FRAME(0x11)
-        0x00, 0x01, 0x00, 0x00, 0x40,  # 0x05: PUSH int(1)
-        0x0A, 0x00,                     # 0x0A: SET_REG(0)
-        0x0B, 0x11, 0x00, 0x00, 0x00,  # 0x0C: JMP(0x11) -> jump to return point
-        # loc_11 (return point allocated by PUSH_CALLER_FRAME)
-        0x09, 0x00,                     # 0x11: GET_REG(0)
-        0x0D,                           # 0x13: RETURN
+        0x00, 0x04, 0x01, 0x00, 0x00, 0x40,  # 0x00: PUSH_INT(1)
+        0x00, 0x04, 0x02, 0x00, 0x00, 0x40,  # 0x06: PUSH_INT(2)
+        0x10,                                # 0x0C: ADD()
+        0x0A, 0x00,                          # 0x0D: SET_REG(0)
+        0x0D,                                # 0x0F: RETURN()
     ])
 
-    # Disassemble
-    disasm = Disassembler(ED9_INSTRUCTION_TABLE)
+    expected = '''
+@scena.LLILCode()
+def test_add():
+    PUSH_INT(1)
+    PUSH_INT(2)
+    ADD()
+    SET_REG(0)
+    RETURN()
+'''
 
-    entry = disasm.disasm_function(bytecode, offset=0, name='test_frame')
-
-    # Print result
-    print_block(entry)
-    print()
+    return run_case('Simple Function', 'test_add', bytecode, expected)
 
 
+def test_conditional() -> bool:
+    bytecode = bytes([
+        0x09, 0x00,                          # 0x00: GET_REG(0)
+        0x0F, 0x12, 0x00, 0x00, 0x00,        # 0x02: POP_JMP_ZERO('loc_12')
+                                             #       label('loc_7')
+        0x00, 0x04, 0x01, 0x00, 0x00, 0x40,  # 0x07: PUSH_INT(1)
+        0x0B, 0x18, 0x00, 0x00, 0x00,        # 0x0D: JMP('loc_18')
+                                             #       label('loc_12')
+        0x00, 0x04, 0x00, 0x00, 0x00, 0x40,  # 0x12: PUSH_INT(0)
+                                             #       label('loc_18')
+        0x0A, 0x00,                          # 0x18: SET_REG(0)
+        0x0D,                                # 0x1A: RETURN()
+    ])
+
+    expected = '''
+@scena.LLILCode()
+def test_cond():
+    GET_REG(0)
+    POP_JMP_ZERO('loc_12')
+
+    label('loc_7')
+
+    PUSH_INT(1)
+    JMP('loc_18')
+
+    label('loc_12')
+
+    PUSH_INT(0)
+
+    label('loc_18')
+
+    SET_REG(0)
+    RETURN()
+'''
+
+    return run_case('Conditional Branch', 'test_cond', bytecode, expected)
+
+
+def test_caller_frame() -> bool:
+    bytecode = bytes([
+        0x25, 0x12, 0x00, 0x00, 0x00,        # 0x00: PUSH_CALLER_FRAME('loc_12')
+        0x00, 0x04, 0x01, 0x00, 0x00, 0x40,  # 0x05: PUSH_INT(1)
+        0x0A, 0x00,                          # 0x0B: SET_REG(0)
+        0x0B, 0x12, 0x00, 0x00, 0x00,        # 0x0D: JMP('loc_12')
+                                             #       label('loc_12')
+        0x00, 0x04, 0x00, 0x00, 0x00, 0x40,  # 0x12: PUSH_INT(0)
+        0x0A, 0x00,                          # 0x18: SET_REG(0)
+        0x0D,                                # 0x1A: RETURN()
+    ])
+
+    expected = '''
+@scena.LLILCode()
+def test_frame():
+    PUSH_CALLER_FRAME('loc_12')
+    PUSH_INT(1)
+    SET_REG(0)
+    JMP('loc_12')
+
+    label('loc_12')
+
+    PUSH_INT(0)
+    SET_REG(0)
+    RETURN()
+'''
+
+    return run_case('PUSH_CALLER_FRAME', 'test_frame', bytecode, expected)
+
+
+def test_loop() -> bool:
+    bytecode = bytes([
+        0x00, 0x04, 0x00, 0x00, 0x00, 0x40,  # 0x00: PUSH_INT(0)
+        0x0A, 0x00,                          # 0x06: SET_REG(0)
+                                             #       label('loc_8')
+        0x09, 0x00,                          # 0x08: GET_REG(0)
+        0x00, 0x04, 0x0A, 0x00, 0x00, 0x40,  # 0x0A: PUSH_INT(10)
+        0x19,                                # 0x10: LT()
+        0x0F, 0x26, 0x00, 0x00, 0x00,        # 0x11: POP_JMP_ZERO('loc_26')
+                                             #       label('loc_16')
+        0x09, 0x00,                          # 0x16: GET_REG(0)
+        0x00, 0x04, 0x01, 0x00, 0x00, 0x40,  # 0x18: PUSH_INT(1)
+        0x10,                                # 0x1E: ADD()
+        0x0A, 0x00,                          # 0x1F: SET_REG(0)
+        0x0B, 0x08, 0x00, 0x00, 0x00,        # 0x21: JMP('loc_8')
+                                             #       label('loc_26')
+        0x00, 0x04, 0x00, 0x00, 0x00, 0x40,  # 0x26: PUSH_INT(0)
+        0x0A, 0x00,                          # 0x2C: SET_REG(0)
+        0x0D,                                # 0x2E: RETURN()
+    ])
+
+    expected = '''
+@scena.LLILCode()
 def test_loop():
-    """Test with backward jump (loop)"""
-    print('=== Test: Loop (Backward Jump) ===\n')
+    PUSH_INT(0)
+    SET_REG(0)
 
-    # Simulates: loop with condition
-    # PUSH int(0), SET_REG(0)
-    # loc_loop: GET_REG(0), PUSH int(10), LT, POP_JMP_ZERO(loc_end)
-    # GET_REG(0), PUSH int(1), ADD, SET_REG(0), JMP(loc_loop)
-    # loc_end: RETURN
+    label('loc_8')
+
+    GET_REG(0)
+    PUSH_INT(10)
+    LT()
+    POP_JMP_ZERO('loc_26')
+
+    label('loc_16')
+
+    GET_REG(0)
+    PUSH_INT(1)
+    ADD()
+    SET_REG(0)
+    JMP('loc_8')
+
+    label('loc_26')
+
+    PUSH_INT(0)
+    SET_REG(0)
+    RETURN()
+'''
+
+    return run_case('Loop (Backward Jump)', 'test_loop', bytecode, expected)
+
+
+def test_jump_into_middle() -> bool:
+    # JMP('loc_10') targets the middle of the already disassembled entry block, which must be split there
     bytecode = bytes([
-        0x00, 0x00, 0x00, 0x00, 0x40,  # 0x00: PUSH int(0)
-        0x0A, 0x00,                     # 0x05: SET_REG(0)
-        # loc_loop (0x07)
-        0x09, 0x00,                     # 0x07: GET_REG(0)
-        0x00, 0x0A, 0x00, 0x00, 0x40,  # 0x09: PUSH int(10)
-        0x19,                           # 0x0E: LT (i < 10)
-        0x0F, 0x23, 0x00, 0x00, 0x00,  # 0x0F: POP_JMP_ZERO(0x23) -> exit loop
-        # loop body
-        0x09, 0x00,                     # 0x14: GET_REG(0)
-        0x00, 0x01, 0x00, 0x00, 0x40,  # 0x16: PUSH int(1)
-        0x10,                           # 0x1B: ADD
-        0x0A, 0x00,                     # 0x1C: SET_REG(0)
-        0x0B, 0x07, 0x00, 0x00, 0x00,  # 0x1E: JMP(0x07) -> back to loop
-        # loc_23 (loop exit)
-        0x0D,                           # 0x23: RETURN
+        0x00, 0x04, 0x00, 0x00, 0x00, 0x40,  # 0x00: PUSH_INT(0)
+        0x0A, 0x00,                          # 0x06: SET_REG(0)
+        0x00, 0x04, 0x01, 0x00, 0x00, 0x40,  # 0x08: PUSH_INT(1)
+        0x0A, 0x01,                          # 0x0E: SET_REG(1)
+                                             #       label('loc_10')
+        0x09, 0x01,                          # 0x10: GET_REG(1)
+        0x00, 0x04, 0x0A, 0x00, 0x00, 0x40,  # 0x12: PUSH_INT(10)
+        0x19,                                # 0x18: LT()
+        0x0F, 0x2E, 0x00, 0x00, 0x00,        # 0x19: POP_JMP_ZERO('loc_2E')
+                                             #       label('loc_1E')
+        0x09, 0x01,                          # 0x1E: GET_REG(1)
+        0x00, 0x04, 0x01, 0x00, 0x00, 0x40,  # 0x20: PUSH_INT(1)
+        0x10,                                # 0x26: ADD()
+        0x0A, 0x01,                          # 0x27: SET_REG(1)
+        0x0B, 0x10, 0x00, 0x00, 0x00,        # 0x29: JMP('loc_10')
+                                             #       label('loc_2E')
+        0x00, 0x04, 0x00, 0x00, 0x00, 0x40,  # 0x2E: PUSH_INT(0)
+        0x0A, 0x00,                          # 0x34: SET_REG(0)
+        0x0D,                                # 0x36: RETURN()
     ])
 
-    # Disassemble
-    context = DisassemblerContext()
-    disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
+    expected = '''
+@scena.LLILCode()
+def test_split():
+    PUSH_INT(0)
+    SET_REG(0)
+    PUSH_INT(1)
+    SET_REG(1)
 
-    entry = disasm.disasm_function(bytecode, offset = 0, name = 'loop_test')
+    label('loc_10')
 
-    # Print result
-    print_block(entry)
-    print()
+    GET_REG(1)
+    PUSH_INT(10)
+    LT()
+    POP_JMP_ZERO('loc_2E')
 
+    label('loc_1E')
 
-def test_jump_into_middle():
-    """Test jumping into the middle of a block (should split the block)"""
-    print('=== Test: Jump Into Middle of Block ===\n')
+    GET_REG(1)
+    PUSH_INT(1)
+    ADD()
+    SET_REG(1)
+    JMP('loc_10')
 
-    # Backward jump into the middle of a linear block
-    # Actual instruction offsets (calculated based on real sizes):
-    # PUSH = 6 bytes (0x00 opcode + 0x00 size + 4-byte value)
-    # SET_REG = 2 bytes (0x0A + reg)
-    # GET_REG = 2 bytes (0x09 + reg)
-    # LT = 1 byte (0x19)
-    # ADD = 1 byte (0x10)
-    # POP_JMP_ZERO = 5 bytes (0x0F + 4-byte offset)
-    # JMP = 5 bytes (0x0B + 4-byte offset)
-    # RETURN = 1 byte (0x0D)
-    bytecode = bytes([
-        # Entry block (0x00-0x0F)
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x40,  # 0x00: PUSH int(0) [6 bytes]
-        0x0A, 0x00,                           # 0x06: SET_REG(0) [2 bytes]
-        0x00, 0x00, 0x01, 0x00, 0x00, 0x40,  # 0x08: PUSH int(1) [6 bytes]
-        0x0A, 0x01,                           # 0x0E: SET_REG(1) [2 bytes]
+    label('loc_2E')
 
-        # Loop header - split point (0x10-)
-        0x09, 0x01,                           # 0x10: GET_REG(1) <- Backward jump target!
-        0x00, 0x00, 0x0A, 0x00, 0x00, 0x40,  # 0x12: PUSH int(10)
-        0x19,                                 # 0x18: LT
-        0x0F, 0x2C, 0x00, 0x00, 0x00,        # 0x19: POP_JMP_ZERO(0x2C) -> exit
+    PUSH_INT(0)
+    SET_REG(0)
+    RETURN()
+'''
 
-        # Loop body (fallthrough from POP_JMP_ZERO)
-        0x09, 0x01,                           # 0x1E: GET_REG(1)
-        0x00, 0x00, 0x01, 0x00, 0x00, 0x40,  # 0x20: PUSH int(1)
-        0x10,                                 # 0x26: ADD
-        0x0B, 0x10, 0x00, 0x00, 0x00,        # 0x27: JMP(0x10) -> backward jump!
-
-        # Exit
-        0x0D,                                 # 0x2C: RETURN
-    ])
-
-    # Disassemble
-    from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
-    context = DisassemblerContext(
-        create_fallthrough_jump = ed9_create_fallthrough_jump,
-    )
-
-    disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
-
-    entry = disasm.disasm_function(bytecode, offset=0, name='test_split')
-
-    # Print result
-    print('Expected behavior:')
-    print('  - Initial linear block should be split at 0x10')
-    print('  - Block starting at 0x10 should exist (loop header)')
-    print('  - Backward JMP(0x10) should target the split block\n')
-    # Use formatter with context
-    formatter_context = FormatterContext(
-    )
-
-    formatter = Formatter(formatter_context)
-    lines = formatter.format_entry_block(entry)
-
-    # Add function header manually for demo
-    func_name = entry.name or f'func_{entry.offset:X}'
-    print(f'def {func_name}():')
-    print('\n'.join(lines))
+    return run_case('Jump Into Middle of Block', 'test_split', bytecode, expected)
 
 
-def test_scp_parser():
-    DAT_PATH = Path(__file__).parent.parent / 'tests'
-    test_file = DAT_PATH / 'mp3010_01.dat'
+def main() -> int:
+    tests = [
+        test_simple_function,
+        test_conditional,
+        test_caller_frame,
+        test_loop,
+        test_jump_into_middle,
+    ]
 
-    with fileio.FileStream(str(test_file), encoding = default_encoding()) as fs:
-        parser = ScpParser(fs, test_file.name)
-        parser.parse()
+    failed = [test.__name__ for test in tests if not test()]
 
-        # Disassemble all functions
-        disassembled_functions = parser.disasm_all_functions(
-            filter_func = lambda f: f.name == 'Init'
-        )
+    print(f'{len(tests) - len(failed)}/{len(tests)} passed')
+    if failed:
+        print(f'Failed: {", ".join(failed)}')
+        return 1
 
-        # Format and print
-        for func in disassembled_functions:
-            lines = parser.format_function(func)
-            print('\n'.join(lines))
-
-
-def main():
-    # test_simple_function()
-    # test_conditional()
-    # test_caller_frame()
-    # test_loop()
-    # test_jump_into_middle()
-    test_scp_parser()
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

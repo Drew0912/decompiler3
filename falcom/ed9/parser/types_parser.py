@@ -70,12 +70,16 @@ class Function:
     params          : list[FunctionParam]
     is_common_func  : bool
     debug_info      : list[FunctionCallDebugInfo]
+    call_debug_argc : dict[str, int]    # CALL return label -> args passed explicitly, when fewer than the callee's params
     entry_block     : BasicBlock | None
+    unreachable_blocks : list[BasicBlock]   # code no branch reaches, linearly decoded (not linked into the CFG)
 
     def __init__(self):
         self.params     = []
         self.debug_info = []
+        self.call_debug_argc = {}
         self.entry_block = None
+        self.unreachable_blocks = []
 
     def name_hash(self) -> int:
         return hash_func_Name(self.name)

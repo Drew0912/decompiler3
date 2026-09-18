@@ -1,0 +1,579 @@
+"""Writer runtime for reassembling ED9 VM bytecode from decompiled Python script output"""
+
+import inspect
+from dataclasses import dataclass, field
+from typing import Callable
+
+from ml import fileio
+
+from common.config import default_encoding, default_endian
+from common.enum import IntEnum2
+from common.logging import *
+from ir.llil import WORD_SIZE
+from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, ED9_FORMAT_TABLE, OperandDescriptor, OperandType
+from ..parser.crc32 import hash_func_Name
+from ..parser.scp import CallDebugInfoTracker, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
+from ..parser.types_scp import (
+    ScpValue,
+    RawInt,
+    ScpFunctionEntry,
+    ScpGlobalVar,
+    ScpHeader,
+    ScpParamFlags,
+    ScpFunctionCallDebugInfo,
+    ScpFunctionCallDebugInfoArg,
+)
+from ..parser.utils import str_to_bytes
+
+# __all__ = (
+#     'ScpWriter',
+#     'create_scp_writer',
+#     'get_scp_writer',
+#     'label',
+# )
+
+# PUSH's leading byte - 4 in every sample script (checked by tools/scp_roundtrip_validator.py)
+PUSH_SIZE_BYTE = 4
+
+UNRESOLVED_LABEL_OFFSET = 0xFFFFFFFF  # deliberately-invalid sentinel so a forgotten patch is obvious in a hex dump
+UNRESOLVED_FUNC_OFFSET = 0xFFFFFFFF  # placeholder for entry.offset until compileFunctions() sets the real one
+UNRESOLVED_STRING_OFFSET = 0xFFFFFFFF  # placeholder for a string reference until writeStringPool() resolves it
+UNRESOLVED_FUNC_INDEX = -1  # placeholder until buildFunctionTable() sorts the function table
+
+STRING_OFFSET_TAG = ScpValue.Type.String << 30  # 0xC0000000 - top 2 bits of a resolved string-pool offset
+NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - WORD_SIZE  # name_offset is the last field of a function entry
+NON_CONSTANT_ARG_VALUE = RawInt(0)  # debug-arg value of non-constant args (always wrap in ScpValue)
+
+
+class StringPoolSection(IntEnum2):
+    """Order of the original compiler's string pool"""
+    Code    = 0
+    Name    = 1
+    Default = 2
+    Debug   = 3
+    Global  = 4
+
+
+@dataclass
+class XRef:
+    """Deferred label reference, patched once the label is placed"""
+    name: str
+    offset: int
+
+
+@dataclass
+class PooledString:
+    """String-pool entry; xref_offsets are final file offsets patched by writeStringPool()"""
+    text: str
+    section: StringPoolSection
+    xref_offsets: list[int] = field(default_factory = list)
+
+
+@dataclass
+class DebugArg:
+    type: ScpFunctionCallDebugInfoArg.Type
+    value: ScpValue
+    string: PooledString | None = None  # set when value is a pooled string
+
+
+@dataclass
+class DebugRecord:
+    call_type: ScpFunctionCallDebugInfo.CallType
+    func_id: int
+    args: list[DebugArg]
+
+
+@dataclass
+class ScpFunction:
+    """An LLILCode()-decorated function pending compilation, plus its pending table entry"""
+    index: int
+    name: str
+    obj: Callable
+    sig: inspect.Signature
+    entry: ScpFunctionEntry
+    debug_argc: dict[str, int] = field(default_factory = dict)  # CALL return label -> args passed explicitly
+    calls: list[TrackedCall] = field(default_factory = list)
+    debug_records: list[DebugRecord] = field(default_factory = list)
+
+
+class ScpWriter:
+    """Records opcode calls made by an executed decompiled script"""
+
+    # Byte-exact round trip with the original compiler: a never-deduplicated string pool in section order and
+    # call-site debug-info records. Neither is believed to change behavior in-game.
+    round_trip = True
+
+    def __init__(self):
+        self.name = None
+        self.labels = {}
+        self.functions = []                             # type: list[ScpFunction]
+        self.functions_by_name = {}                     # type: dict[str, ScpFunction]
+        self.function_table = []                        # type: list[ScpFunction]
+        self.global_vars = []                           # type: list[ScpGlobalVar]
+        self.global_var_indices = {}                    # type: dict[str, int]
+        self.calls = []
+        self.fs = None                                  # type: fileio.FileStream
+        self.instruction_table = ED9_INSTRUCTION_TABLE  # shared singleton - never construct a new ED9InstructionTable()
+        self.xrefs = []                                 # type: list[XRef]
+        self.strings = []                               # type: list[PooledString]
+        self.strings_by_text = {}                       # type: dict[str, PooledString]
+        self.code_string_xrefs = []                     # type: list[tuple[PooledString, int]]
+        self.current_function = None                    # type: ScpFunction
+        self.call_tracker = None                        # type: CallDebugInfoTracker
+
+    def init(self, name: str):
+        self.name = name
+        self.global_vars = []
+        self.global_var_indices = {}
+
+        # if self.fs is not None:
+        #     self.fs.Close()
+
+        # self.fs = fileio.FileStream().OpenFile(name, 'wb+', endian = default_endian())
+
+    def run(self, g: dict):
+        # for cb in self.runCallbacks:
+        #     cb(g)
+
+        try:
+            self.run2(g)
+        except KeyError as e:
+            if isinstance(e.args[0], int):
+                e.args = (f'0x{e.args[0]:X} ({e.args[0]})',)
+            raise
+
+    def run2(self, g: dict):
+        self.globals = g
+
+        hdr = ScpHeader()
+        hdr.function_count = len(self.functions)
+        hdr.global_var_count = len(self.global_vars)
+
+        self.buildFunctionTable()
+        code = self.compileFunctions()
+        self.buildDebugRecords()
+
+        fs = fileio.FileStream(encoding = default_encoding()).OpenFile(self.name, 'wb+')
+
+        self.fs = fs
+
+        fs.Write(hdr.to_bytes())  # rewritten once global_var_offset is known
+
+        self.writeFuncInfo(fs)
+
+        code_offset = fs.Position + self.getDebugSymbolsSize() + self.getGlobalVarsSize()
+        self.relocateCode(code_offset)
+        self.writeDebugSymbols(fs)
+
+        hdr.global_var_offset = fs.Position  # end of debug args, start of the global var table
+        self.writeGlobalVars(fs)
+        assert fs.Position == code_offset
+
+        fs.Write(code)
+
+        with fs.PositionSaver:
+            self.flushFuncEntries(fs)
+
+        self.writeStringPool(fs)
+
+        with fs.PositionSaver:
+            for x in self.xrefs:
+                offset = self.labels[x.name]
+                fs.Position = x.offset
+                fs.WriteULong(offset)
+
+            self.xrefs.clear()
+
+        fs.Position = 0
+        fs.Write(hdr.to_bytes())
+
+        fs.Flush()
+        fs.Close()
+
+    def buildFunctionTable(self):
+        """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this index"""
+        encoding = default_encoding()
+        self.function_table = sorted(self.functions, key = lambda f: f.name.encode(encoding))
+
+        for index, f in enumerate(self.function_table):
+            f.index = index
+            name = self._add_string(f.name, StringPoolSection.Name)
+            name.xref_offsets.append(ScpHeader.SIZE + index * ScpFunctionEntry.SIZE + NAME_OFFSET_FIELD_OFFSET)
+
+    def compileFunctions(self) -> fileio.FileStream:
+        """Compile every function in script (source) order into a memory buffer; offsets are relative until relocateCode()"""
+        code = fileio.FileStream(encoding = default_encoding()).OpenMemory()
+        self.fs = code
+
+        for f in self.functions:
+            self.current_function = f
+            self.call_tracker = CallDebugInfoTracker(get_param_count = self._get_param_count) if self.round_trip else None
+            f.entry.offset = code.Position
+            log.debug(f'{f.name} @ code+0x{f.entry.offset:08X}')
+            f.obj(*[None] * f.entry.param_count)
+
+            if self.call_tracker is not None:
+                f.calls = self.call_tracker.ordered_calls()
+
+        self.call_tracker = None
+
+        return code
+
+    def relocateCode(self, code_offset: int):
+        """Move every position recorded while compiling into the code buffer to its final file offset"""
+        for f in self.functions:
+            f.entry.offset += code_offset
+
+        for name in self.labels:
+            self.labels[name] += code_offset
+
+        for xref in self.xrefs:
+            xref.offset += code_offset
+
+        for string, offset in self.code_string_xrefs:
+            string.xref_offsets.append(offset + code_offset)
+
+        self.code_string_xrefs.clear()
+
+    def flushFuncEntries(self, fs: fileio.FileStream):
+        fs.Position = ScpHeader.SIZE
+        for f in self.function_table:
+            fs.Write(f.entry.to_bytes())
+
+    def writeFuncInfo(self, fs: fileio.FileStream):
+        self.flushFuncEntries(fs)  # reserve the function-table region before writing default-params/param-flags
+
+        for f in self.function_table:
+            entry = f.entry
+            entry.default_params_offset = fs.Position
+            entry.default_params_count = 0
+
+            # Stored in parameter order for the trailing defaulted parameters
+            for param in f.sig.parameters.values():
+                if param.default is param.empty:
+                    continue
+
+                entry.default_params_count += 1
+                self._write_scp_value(ScpValue(param.default), StringPoolSection.Default)
+
+        for f in self.function_table:
+            entry = f.entry
+            entry.param_flags_offset = fs.Position
+
+            for param in f.sig.parameters.values():
+                fs.Write(ScpParamFlags(typ = param.annotation).to_bytes())
+
+    def buildDebugRecords(self):
+        """Turn tracked call sites into debug-info records, in table order like the original compiler"""
+        if not self.round_trip:
+            return
+
+        ArgType = ScpFunctionCallDebugInfoArg.Type
+        CallType = ScpFunctionCallDebugInfo.CallType
+
+        for f in self.function_table:
+            for call in f.calls:
+                args = [self._debug_arg(value) for value in call.args]
+
+                if call.call_type == CallType.Local:
+                    func_id = self._find_function(call.target).index
+                    args = args[:f.debug_argc.get(call.ret_label, len(args))]
+
+                elif call.call_type == CallType.Syscall:
+                    func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID
+                    subsystem, cmd = call.target
+                    args = [DebugArg(ArgType.Constant, ScpValue(subsystem)), DebugArg(ArgType.Constant, ScpValue(cmd))] + args
+
+                else:
+                    func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID
+                    module, func = (value.value if isinstance(value, ScpValue) else value for value in call.target)
+                    name = self._add_string(f'{module}.{func}', StringPoolSection.Debug)
+                    args = [DebugArg(ArgType.Constant, ScpValue(name.text), name)] + args
+
+                f.debug_records.append(DebugRecord(call_type = call.call_type, func_id = func_id, args = args))
+
+    def getDebugSymbolsSize(self) -> int:
+        records = [record for f in self.function_table for record in f.debug_records]
+        arg_count = sum(len(record.args) for record in records)
+        return len(records) * ScpFunctionCallDebugInfo.SIZE + arg_count * ScpFunctionCallDebugInfoArg.SIZE
+
+    def writeDebugSymbols(self, fs: fileio.FileStream):
+        records = [record for f in self.function_table for record in f.debug_records]
+        info_offset = fs.Position + len(records) * ScpFunctionCallDebugInfo.SIZE
+
+        for f in self.function_table:
+            f.entry.debug_info_offset = fs.Position
+            f.entry.debug_info_count = len(f.debug_records)
+
+            for record in f.debug_records:
+                info = ScpFunctionCallDebugInfo()
+                info.func_id = record.func_id
+                info.call_type = record.call_type
+                info.arg_count = len(record.args)
+                info.info_offset = info_offset
+                fs.Write(info.to_bytes())
+
+                info_offset += info.arg_count * ScpFunctionCallDebugInfoArg.SIZE
+
+        for record in records:
+            for arg in record.args:
+                if arg.string is not None:
+                    arg.string.xref_offsets.append(fs.Position)
+                    fs.WriteULong(UNRESOLVED_STRING_OFFSET)
+
+                else:
+                    fs.Write(arg.value.to_bytes())
+
+                fs.WriteULong(arg.type)
+
+    def getGlobalVarsSize(self) -> int:
+        return len(self.global_vars) * ScpGlobalVar.SIZE
+
+    def writeGlobalVars(self, fs: fileio.FileStream):
+        for var in self.global_vars:
+            self._write_string_ref(var.name, StringPoolSection.Global)
+            fs.WriteULong(var.type)
+
+    def writeStringPool(self, fs: fileio.FileStream):
+        strings = sorted(self.strings, key = lambda s: s.section) if self.round_trip else self.strings
+
+        for s in strings:
+            offset = fs.Position
+            fs.Write(str_to_bytes(s.text))
+
+            with fs.PositionSaver:
+                for xref_offset in s.xref_offsets:
+                    fs.Position = xref_offset
+                    fs.WriteULong(offset | STRING_OFFSET_TAG)
+
+        self.strings.clear()
+        self.strings_by_text.clear()
+
+    def handle_opcode(self, opcode: int, *args):
+        # log.debug(f'handle opcode 0x{opcode:X} @ 0x{self.fs.Position:X}')
+
+        self.calls.append((opcode, args))
+
+        # PUSH and its pseudo-ops all collapse to the on-disk PUSH opcode + size byte + ScpValue
+        if opcode in PUSH_CONSTANT_OPS:
+            value = ScpValue(args[0])
+            string = self._write_push_value(value)
+            self._track(opcode, args, (value, string))
+            return
+
+        if opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
+            self._write_push_value(ScpValue(RawInt(self.current_function.index)))
+            self._track(opcode, args)
+            return
+
+        if opcode == ED9Opcode.PUSH_RET_ADDR:
+            self._write_push_header()
+            self._write_label_ref(args[0])
+            self._track(opcode, args)
+            return
+
+        # No descriptor - the operand format is unknown, so the operand bytes are written as given
+        if opcode == ED9Opcode.UNKNOWN_28:
+            self.fs.WriteByte(opcode)
+            self.fs.Write(args[0])
+            self._track(opcode, args)
+            return
+
+        descriptor = self.instruction_table.get_descriptor(opcode)
+        operand_descriptors = OperandDescriptor.from_format_string(descriptor.operand_fmt, ED9_FORMAT_TABLE)
+
+        assert len(operand_descriptors) == len(args), \
+            f'{descriptor.mnemonic}: expected {len(operand_descriptors)} operands, got {len(args)}'
+
+        self.fs.WriteByte(opcode)
+
+        for op_desc, value in zip(operand_descriptors, args):
+            self._write_operand(op_desc, value)
+
+        self._track(opcode, args)
+
+    def _track(self, opcode: int, args: tuple, payload = None):
+        if self.call_tracker is not None:
+            self.call_tracker.on_opcode(opcode, args, payload)
+
+    def _write_push_header(self):
+        """Real on-disk PUSH opcode + size/type byte, shared by every PUSH-family value"""
+        self.fs.WriteByte(ED9Opcode.PUSH)
+        self.fs.WriteByte(PUSH_SIZE_BYTE)
+
+    def _write_push_value(self, value: ScpValue) -> PooledString | None:
+        self._write_push_header()
+        return self._write_scp_value(value)
+
+    def _write_scp_value(self, value: ScpValue, section: StringPoolSection = StringPoolSection.Code) -> PooledString | None:
+        """Write a ScpValue's on-disk bytes, deferring String-typed values through the string pool"""
+        if value.type == ScpValue.Type.String:
+            return self._write_string_ref(value.value, section)
+
+        self.fs.Write(value.to_bytes())
+        return None
+
+    def _write_operand(self, op_desc: OperandDescriptor, value):
+        writers = {
+            OperandType.SInt8        : self.fs.WriteChar,
+            OperandType.UInt8        : self.fs.WriteByte,
+            OperandType.SInt16       : self.fs.WriteShort,
+            OperandType.UInt16       : self.fs.WriteUShort,
+            OperandType.SInt32       : self.fs.WriteLong,
+            OperandType.UInt32       : self.fs.WriteULong,
+            OperandType.Float32      : self.fs.WriteFloat,
+            OperandType.Offset       : self._write_label_ref,
+            ED9OperandType.Func      : self._write_func_operand,
+            ED9OperandType.Value     : self._write_value_operand,
+            ED9OperandType.GlobalVar : self.fs.WriteLong,
+        }
+
+        writers[op_desc.type](value)
+
+    def _write_value_operand(self, value):
+        self._write_scp_value(value if isinstance(value, ScpValue) else ScpValue(value))
+
+    def _write_func_operand(self, value):
+        self.fs.WriteUShort(self._find_function(value).index)
+
+    def _find_function(self, func: Callable) -> ScpFunction:
+        f = self.functions_by_name.get(func.__name__)
+        if f is None:
+            raise TypeError(f'CALL has unknown function name: {func.__name__}')
+
+        return f
+
+    def _get_param_count(self, func: Callable) -> int:
+        return self._find_function(func).entry.param_count
+
+    def _debug_arg(self, value: TrackedValue) -> DebugArg:
+        if value.type == ScpFunctionCallDebugInfoArg.Type.Constant:
+            scp_value, string = value.payload
+            return DebugArg(value.type, scp_value, string)
+
+        return DebugArg(value.type, ScpValue(NON_CONSTANT_ARG_VALUE))
+
+    def add_label(self, name: str):
+        if name in self.labels:
+            raise ValueError(f'label already exists: {name} (at 0x{self.labels[name]:X})')
+
+        self.labels[name] = self.fs.Position
+
+    def _write_label_ref(self, name: str):
+        """Record a deferred xref at the current position, then write a placeholder to patch later"""
+        self.xrefs.append(XRef(name = name, offset = self.fs.Position))
+        self.fs.WriteULong(UNRESOLVED_LABEL_OFFSET)
+
+    def resolve_labels(self):
+        """Patch every deferred label reference now that all labels have been placed.
+
+        Call manually after running the decompiled script's top-level opcode calls -
+        no automatic multi-function compile driver exists yet.
+        """
+        with self.fs.PositionSaver:
+            for xref in self.xrefs:
+                self.fs.Position = xref.offset
+                self.fs.WriteULong(self.labels[xref.name])
+
+        self.xrefs.clear()
+
+    def _add_string(self, text: str, section: StringPoolSection) -> PooledString:
+        """String-pool entry for text - the original compiler never deduplicates, so entries are only shared without round_trip"""
+        if not self.round_trip and text in self.strings_by_text:
+            return self.strings_by_text[text]
+
+        string = PooledString(text = text, section = section)
+        self.strings.append(string)
+        self.strings_by_text.setdefault(text, string)
+        return string
+
+    def _write_string_ref(self, text: str, section: StringPoolSection) -> PooledString:
+        """Write a placeholder tagged string reference at the current position"""
+        string = self._add_string(text, section)
+
+        if section == StringPoolSection.Code:
+            self.code_string_xrefs.append((string, self.fs.Position))  # code-relative until relocateCode()
+
+        else:
+            string.xref_offsets.append(self.fs.Position)
+
+        self.fs.WriteULong(UNRESOLVED_STRING_OFFSET)
+        return string
+
+    def functionDecorator(self, is_common_func: bool, debug_argc: dict[str, int] | None):
+        def wrapper(func):
+            name = func.__name__
+            sig = inspect.signature(func)
+
+            entry = ScpFunctionEntry()
+            entry.offset                = UNRESOLVED_FUNC_OFFSET
+            entry.param_count           = len(sig.parameters)
+            entry.is_common_func        = int(is_common_func)
+            entry.byte06                = 0  # unknown meaning, not worrying about it per user
+            entry.default_params_count  = 0  # placeholder - overwritten by writeFuncInfo()
+            entry.default_params_offset = 0  # placeholder - overwritten by writeFuncInfo()
+            entry.param_flags_offset    = 0  # placeholder - overwritten by writeFuncInfo()
+            entry.debug_info_count      = 0  # placeholder - overwritten by writeDebugSymbols()
+            entry.debug_info_offset     = 0  # placeholder - overwritten by writeDebugSymbols()
+            entry.name_hash             = hash_func_Name(name)
+            entry.name_offset           = 0  # unused in memory - real value patched directly into the function table by writeStringPool
+
+            f = ScpFunction(index = UNRESOLVED_FUNC_INDEX, name = name, obj = func, sig = sig, entry = entry, debug_argc = debug_argc or {})
+            self.functions.append(f)
+            self.functions_by_name[name] = f
+
+            return func
+
+        return wrapper
+
+    def LLILCode(self, debug_argc: dict[str, int] | None = None):
+        return self.functionDecorator(is_common_func = False, debug_argc = debug_argc)
+
+    def LLILCommonCode(self, debug_argc: dict[str, int] | None = None):
+        return self.functionDecorator(is_common_func = True, debug_argc = debug_argc)
+
+    def GlobalVars(self):
+        """Declares the script's global variable table, in table order (declaration order == on-disk index).
+
+        Unlike LLILCode/LLILCommonCode, the decorated body runs immediately - the table must exist before
+        compileFunctions() runs, since LOAD_GLOBAL/SET_GLOBAL resolve names against it at compile time.
+        """
+        def wrapper(func):
+            self.global_vars = []
+            self.global_var_indices = {}
+            func()
+
+            return func
+
+        return wrapper
+
+    def add_global_var(self, name: str, type: int):
+        if name in self.global_var_indices:
+            raise ValueError(f'global var already declared: {name!r}')
+
+        self.global_var_indices[name] = len(self.global_vars)
+        self.global_vars.append(ScpGlobalVar(name, type))
+
+    def global_var_index(self, name: str) -> int:
+        index = self.global_var_indices.get(name)
+        if index is None:
+            raise KeyError(f'unknown global var {name!r}; declared: {sorted(self.global_var_indices)}')
+
+        return index
+
+
+_gScp = ScpWriter()
+
+
+def create_scp_writer(name: str) -> ScpWriter:
+    _gScp.init(name)
+
+    return _gScp
+
+
+def get_scp_writer() -> ScpWriter:
+    return _gScp
+
+
+def label(name: str):
+    get_scp_writer().add_label(name)
