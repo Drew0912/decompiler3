@@ -236,7 +236,7 @@ class TypeScriptGenerator:
         elif isinstance(expr, HLILConst):
             # Handle different constant types
             if isinstance(expr.value, str):
-                return f'"{expr.value}"'
+                return quote_string(expr.value)
 
             elif isinstance(expr.value, bool):
                 return 'true' if expr.value else 'false'
