@@ -212,8 +212,8 @@ class HLILFormatter:
                 if case.is_default():
                     lines.append(f'{indent_str}{case_indent}default:')
                 else:
-                    case_val_str = cls._format_expr(case.value)
-                    lines.append(f'{indent_str}{case_indent}case {case_val_str}:')
+                    for value in case.values:
+                        lines.append(f'{indent_str}{case_indent}case {cls._format_expr(value)}:')
                 lines.extend(cls._format_block(case.body, indent + 2))
 
                 # Add break if case doesn't end with return/break/continue

@@ -1,6 +1,6 @@
 '''Control Flow Optimization Pass'''
 
-from typing import Optional
+from typing import List, Optional, Tuple
 from ir.pipeline import Pass
 from ..hlil import (
     HighLevelILFunction,
@@ -32,6 +32,10 @@ from ..hlil import (
     BinaryOp,
     UnaryOp,
 )
+
+
+# Below this a chain reads better as if/else-if than as a switch
+SWITCH_MIN_CASES = 3
 
 
 class ControlFlowOptimizationPass(Pass):
@@ -107,7 +111,7 @@ class ControlFlowOptimizationPass(Pass):
                 self._remove_redundant_else_assign(stmt)
 
                 # Convert nested if-chain to switch
-                switch_stmt = self._try_convert_to_switch(stmt) or self._try_convert_eq_chain_to_switch(stmt)
+                switch_stmt = self._try_convert_to_switch(stmt)
                 if switch_stmt:
                     optimized.append(switch_stmt)
                     i += 1
@@ -617,132 +621,63 @@ class ControlFlowOptimizationPass(Pass):
         else:
             if_stmt.false_block = new_block
 
-    def _try_convert_to_switch(self, if_stmt: HLILIf) -> Optional[HLILSwitch]:
-        MIN_CASES = 3
-        cases = []
-        seen_case_values = set()
-        scrutinee = None
-        default_body = None
-        current_if = if_stmt
+    def _equality_labels(self, cond) -> Optional[Tuple[HLILVar, List[int]]]:
+        '''Values a test accepts, for `x == k` or any || chain of those
 
-        while current_if:
-            if not isinstance(current_if.condition, HLILBinaryOp):
-                return None
-
-            if current_if.condition.op == BinaryOp.EQ:
-                if len(cases) < MIN_CASES or scrutinee is None:
-                    return None
-
-                var_expr = current_if.condition.lhs
-                const_expr = current_if.condition.rhs
-
-                if not isinstance(const_expr, HLILConst):
-                    return None
-
-                if not isinstance(var_expr, HLILVar):
-                    return None
-
-                if scrutinee.var != var_expr.var:
-                    return None
-
-                case_value = const_expr.value
-                if case_value in seen_case_values:
-                    return None
-
-                case_body = current_if.true_block
-                seen_case_values.add(case_value)
-                cases.append((case_value, case_body))
-
-                if current_if.false_block and current_if.false_block.statements:
-                    default_body = current_if.false_block
-
-                break
-
-            if current_if.condition.op != BinaryOp.NE:
-                return None
-
-            var_expr = current_if.condition.lhs
-            const_expr = current_if.condition.rhs
-
-            if not isinstance(const_expr, HLILConst):
-                return None
-
-            if not isinstance(var_expr, HLILVar):
-                return None
-
-            if scrutinee is None:
-                scrutinee = var_expr
-
-            else:
-                if scrutinee.var != var_expr.var:
-                    return None
-
-            case_value = const_expr.value
-            if case_value in seen_case_values:
-                return None
-
-            case_body = current_if.false_block
-
-            if case_body:
-                seen_case_values.add(case_value)
-                cases.append((case_value, case_body))
-
-            if current_if.true_block:
-                real_stmts = [s for s in current_if.true_block.statements if not isinstance(s, HLILComment)]
-                if len(real_stmts) == 1 and isinstance(real_stmts[0], HLILIf):
-                    current_if = real_stmts[0]
-                    continue
-
-            if current_if.true_block:
-                real_stmts = [s for s in current_if.true_block.statements if not isinstance(s, HLILComment)]
-                if len(real_stmts) == 1:
-                    next_stmt = real_stmts[0]
-                    if isinstance(next_stmt, HLILSwitch):
-                        if isinstance(next_stmt.scrutinee, HLILVar) and next_stmt.scrutinee.var == scrutinee.var:
-                            for nested_case in next_stmt.cases:
-                                if nested_case.is_default():
-                                    default_body = nested_case.body
-
-                                else:
-                                    case_value = nested_case.value.value
-                                    if case_value in seen_case_values:
-                                        return None
-
-                                    seen_case_values.add(case_value)
-                                    cases.append((case_value, nested_case.body))
-                            break
-
-            default_body = current_if.true_block
-            break
-
-        if len(cases) < MIN_CASES or scrutinee is None:
-            return None
-
-        # A bare loop break inside a case would become a switch break after conversion
-        for _, case_body in cases:
-            if self._contains_bare_break(case_body):
-                return None
-
-        if default_body and self._contains_bare_break(default_body):
-            return None
-
-        switch_cases = []
-        for case_value, case_body in reversed(cases):
-            switch_cases.append(HLILSwitchCase(HLILConst(case_value), case_body))
-
-        if default_body and default_body.statements:
-            switch_cases.append(HLILSwitchCase(None, default_body))
-
-        return HLILSwitch(scrutinee, switch_cases)
-
-    def _try_convert_eq_chain_to_switch(self, if_stmt: HLILIf) -> Optional[HLILSwitch]:
-        '''Convert if (x == a) {...} else if (x == b) {...} ... into a switch
-
-        Every test reads the same variable, so evaluating it once in the switch head
-        keeps the meaning. The scrutinee must be a plain variable: a folded call
-        would be evaluated once by the switch but once per test by the chain.
+        The scrutinee must be a plain variable: a folded call would be evaluated
+        once by the switch but once per test by the chain it replaces.
         '''
-        MIN_CASES = 3
+        if not isinstance(cond, HLILBinaryOp):
+            return None
+
+        if cond.op == BinaryOp.OR:
+            left = self._equality_labels(cond.lhs)
+            right = self._equality_labels(cond.rhs)
+
+            if left is None or right is None:
+                return None
+
+            if left[0].var != right[0].var:
+                return None
+
+            return left[0], left[1] + right[1]
+
+        if cond.op == BinaryOp.EQ:
+            if isinstance(cond.lhs, HLILVar) and isinstance(cond.rhs, HLILConst):
+                return cond.lhs, [cond.rhs.value]
+
+        return None
+
+    def _switch_link(self, if_stmt: HLILIf):
+        '''One link of a dispatch chain as (scrutinee, values, case body, continuation)
+
+        should_invert_condition can pick either orientation per link, so a chain may
+        alternate between them; both are read here so one walk spans the whole chain.
+        '''
+        cond = if_stmt.condition
+
+        match = self._equality_labels(cond)
+        if match is not None:
+            return match[0], match[1], if_stmt.true_block, if_stmt.false_block
+
+        # Inverted: the case body is the else, the chain continues in the then
+        if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT:
+            match = self._equality_labels(cond.operand)
+            if match is not None:
+                return match[0], match[1], if_stmt.false_block, if_stmt.true_block
+
+        if isinstance(cond, HLILBinaryOp) and cond.op == BinaryOp.NE:
+            if isinstance(cond.lhs, HLILVar) and isinstance(cond.rhs, HLILConst):
+                return cond.lhs, [cond.rhs.value], if_stmt.false_block, if_stmt.true_block
+
+        return None
+
+    def _try_convert_to_switch(self, if_stmt: HLILIf) -> Optional[HLILSwitch]:
+        '''Convert a chain of equality tests on one variable into a switch
+
+        Handles `==`, `!=` and ||-grouped links in any order, so a chain that
+        alternates between them still becomes one switch.
+        '''
         cases = []
         seen_case_values = set()
         scrutinee = None
@@ -751,15 +686,12 @@ class ControlFlowOptimizationPass(Pass):
         current_if = if_stmt
 
         while current_if is not None:
-            condition = current_if.condition
-            if not isinstance(condition, HLILBinaryOp) or condition.op != BinaryOp.EQ:
+            link = self._switch_link(current_if)
+
+            if link is None:
                 return None
 
-            var_expr = condition.lhs
-            const_expr = condition.rhs
-
-            if not isinstance(var_expr, HLILVar) or not isinstance(const_expr, HLILConst):
-                return None
+            var_expr, values, case_body, continuation = link
 
             if scrutinee is None:
                 scrutinee = var_expr
@@ -767,32 +699,33 @@ class ControlFlowOptimizationPass(Pass):
             elif scrutinee.var != var_expr.var:
                 return None
 
-            if const_expr.value in seen_case_values:
+            if any(value in seen_case_values for value in values):
                 return None
 
-            case_body = current_if.true_block or HLILBlock()
+            case_body = case_body or HLILBlock()
 
             # Comments sat before the test that is about to disappear
             for comment in reversed(pending_comments):
                 case_body.statements.insert(0, comment)
 
             pending_comments = []
-            seen_case_values.add(const_expr.value)
-            cases.append((const_expr.value, case_body))
+            seen_case_values.update(values)
+            cases.append((values, case_body))
 
-            # Walk into the else branch: another test continues the chain,
-            # anything else is the default case
-            next_if = None
-            if current_if.false_block and current_if.false_block.statements:
-                real_stmts = [s for s in current_if.false_block.statements if not self._is_nop_stmt(s)]
+            # Walk the continuation: another link, a switch already built from the
+            # rest of the chain, or the default body
+            current_if = None
+
+            if continuation and continuation.statements:
+                real_stmts = [s for s in continuation.statements if not self._is_nop_stmt(s)]
 
                 if len(real_stmts) == 1 and isinstance(real_stmts[0], HLILIf):
-                    next_if = real_stmts[0]
-                    pending_comments = [s for s in current_if.false_block.statements if self._is_nop_stmt(s)]
+                    current_if = real_stmts[0]
+                    pending_comments = [s for s in continuation.statements if self._is_nop_stmt(s)]
 
                 elif len(real_stmts) == 1 and isinstance(real_stmts[0], HLILSwitch):
-                    # The rest of the chain already became a switch on the same value
                     nested = real_stmts[0]
+
                     if not isinstance(nested.scrutinee, HLILVar) or nested.scrutinee.var != scrutinee.var:
                         return None
 
@@ -801,21 +734,21 @@ class ControlFlowOptimizationPass(Pass):
                             default_body = nested_case.body
                             continue
 
-                        if not isinstance(nested_case.value, HLILConst):
+                        if not all(isinstance(v, HLILConst) for v in nested_case.values):
                             return None
 
-                        if nested_case.value.value in seen_case_values:
+                        nested_values = [v.value for v in nested_case.values]
+
+                        if any(value in seen_case_values for value in nested_values):
                             return None
 
-                        seen_case_values.add(nested_case.value.value)
-                        cases.append((nested_case.value.value, nested_case.body))
+                        seen_case_values.update(nested_values)
+                        cases.append((nested_values, nested_case.body))
 
                 else:
-                    default_body = current_if.false_block
+                    default_body = continuation
 
-            current_if = next_if
-
-        if len(cases) < MIN_CASES or scrutinee is None:
+        if len(cases) < SWITCH_MIN_CASES or scrutinee is None:
             return None
 
         # A bare loop break inside a case would become a switch break after conversion
@@ -826,7 +759,8 @@ class ControlFlowOptimizationPass(Pass):
         if default_body and self._contains_bare_break(default_body):
             return None
 
-        switch_cases = [HLILSwitchCase(HLILConst(value), body) for value, body in cases]
+        switch_cases = [HLILSwitchCase([HLILConst(v) for v in values], body)
+                        for values, body in cases]
 
         if default_body and default_body.statements:
             switch_cases.append(HLILSwitchCase(None, default_body))

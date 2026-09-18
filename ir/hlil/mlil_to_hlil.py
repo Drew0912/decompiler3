@@ -58,6 +58,11 @@ _NEGATE_CMP_OP = {
     BinaryOp.GE : BinaryOp.LT,
 }
 
+# Re-emitting a block reached from several conditions is the only faithful option
+# without goto, but it grows output, so cap how far it can run per function.
+CLONE_STATEMENT_BUDGET   = 400  # total statements re-emitted per function
+CLONE_MAX_REGION_BLOCKS  = 48   # blocks in one re-emitted region
+
 
 def _negate_condition(cond: HLILExpression) -> HLILExpression:
     '''Negate a condition, simplifying where possible'''
@@ -346,6 +351,13 @@ class MLILToHLILConverter:
         self.block_successors: Dict[int, List[int]] = {}
         self.visited_blocks: Set[int] = set()
         self.globally_processed: Set[int] = set()
+
+        # Blocks currently being re-emitted, and the remaining re-emission allowance
+        self.cloning_blocks: Set[int] = set()
+        self.clone_budget = CLONE_STATEMENT_BUDGET
+
+        # Merge points an enclosing if will emit after itself, innermost last
+        self.pending_merges: List[int] = []
 
         # Loop detection
         self.loop_headers: Set[int] = set()  # Blocks that are loop headers
@@ -778,6 +790,12 @@ class MLILToHLILConverter:
             target_block.add_statement(if_stmt)
             return None
 
+        # Several tests funnelling into one body are one condition, not nested ifs
+        collapsed = self._collapse_funnel_chain(if_instr, true_target_idx, false_target_idx)
+
+        if collapsed is not None:
+            condition, true_target_idx, false_target_idx = collapsed
+
         # Find merge block for the entire if/else-if chain
         merge_block_idx = None
         if true_target_idx is not None and false_target_idx is not None:
@@ -811,6 +829,11 @@ class MLILToHLILConverter:
             # processing false branch would stop immediately. Use outer stop_at instead.
             if merge_block_idx == old_true_target:
                 branch_stop = stop_at
+
+        # A branch reaching this merge falls through to it once the if ends, so
+        # meeting it again is not a lost path and must not be re-emitted.
+        if branch_stop is not None:
+            self.pending_merges.append(branch_stop)
 
         # Process true branch (skip if empty - it's just the merge point)
         # MLIL: if (C) goto true_target else false_target
@@ -849,6 +872,9 @@ class MLILToHLILConverter:
                 self.visited_blocks.add(stop_at)
             self._reconstruct_control_flow(false_target_idx, false_block, stop_at=branch_stop, jump_source = if_instr)
             all_visited |= self.visited_blocks
+
+        if branch_stop is not None:
+            self.pending_merges.pop()
 
         self.visited_blocks = all_visited
         if stop_at is not None:
@@ -915,6 +941,171 @@ class MLILToHLILConverter:
 
         return None
 
+    def _bare_test_block(self, block_idx: int) -> Optional[Tuple[MLILIf, int, int]]:
+        '''The test and its targets, if block_idx holds nothing but a 2-way test.
+
+        Bare means it holds only the test and is entered only from the previous
+        link, so folding it into a condition loses no other work and steals it
+        from no other path.
+        '''
+        if block_idx is None or block_idx >= len(self.mlil_func.basic_blocks):
+            return None
+
+        if block_idx in self.loop_headers:
+            return None
+
+        block = self.mlil_func.basic_blocks[block_idx]
+
+        if len(block.instructions) != 1 or len(block.incoming_edges) != 1:
+            return None
+
+        instr = block.instructions[0]
+
+        if not isinstance(instr, MLILIf) or instr.true_target is None or instr.false_target is None:
+            return None
+
+        return instr, instr.true_target.index, instr.false_target.index
+
+    def _collapse_funnel_chain(self, if_instr: MLILIf, true_idx: Optional[int],
+                               false_idx: Optional[int]):
+        '''Merge consecutive tests that all branch to one block into one || condition.
+
+        Tests sharing a body are a switch case carrying several labels. Left as
+        nested ifs the body has to be repeated once per test, so folding them here
+        keeps it emitted once. Returns (condition, shared_target, else_target).
+        '''
+        if true_idx is None or false_idx is None:
+            return None
+
+        for shared, following in ((true_idx, false_idx), (false_idx, true_idx)):
+            link = self._bare_test_block(following)
+
+            if link is None or shared not in (link[1], link[2]):
+                continue
+
+            first = self._convert_expr(if_instr.condition)
+            conditions = [_negate_condition(first) if shared == false_idx else first]
+            current = following
+
+            while True:
+                link = self._bare_test_block(current)
+
+                if link is None:
+                    break
+
+                instr, link_true, link_false = link
+
+                if shared not in (link_true, link_false):
+                    break
+
+                # Convert in the test's own context: a folded call result is looked
+                # up by reader position, and a miss would drop the call entirely
+                saved_block, saved_instr = self.current_block_idx, self.current_instr_idx
+                self.current_block_idx, self.current_instr_idx = current, 0
+
+                try:
+                    cond = self._convert_expr(instr.condition)
+
+                finally:
+                    self.current_block_idx, self.current_instr_idx = saved_block, saved_instr
+
+                conditions.append(_negate_condition(cond) if shared == link_false else cond)
+                current = link_false if shared == link_true else link_true
+
+            if len(conditions) < 2 or current == shared:
+                continue
+
+            combined = conditions[0]
+            for cond in conditions[1:]:
+                combined = HLILBinaryOp(BinaryOp.OR, combined, cond)
+
+            return combined, shared, current
+
+        return None
+
+    def _warn_dropped_path(self, block_idx: int, reason: str):
+        block_label = self.mlil_func.basic_blocks[block_idx].label
+        print(f'[hlil] dropped path to {block_label} in {self.mlil_func.name} ({reason})',
+              file = sys.stderr)
+
+    def _clone_region_blocks(self, block_idx: int, stop_at: Optional[int]) -> Optional[Set[int]]:
+        '''Blocks reachable from block_idx up to stop_at, or None if unsafe to repeat.
+
+        A loop we are currently inside is refused: re-entering its header would
+        rebuild that loop underneath itself. A self-contained loop further down
+        is fine - it gets rebuilt whole.
+        '''
+        active_headers = {entry.header for entry in self.loop_stack}
+        region: Set[int] = set()
+        queue = deque([block_idx])
+
+        while queue:
+            current = queue.popleft()
+
+            if current in region or current == stop_at:
+                continue
+
+            if current >= len(self.mlil_func.basic_blocks):
+                continue
+
+            if current in active_headers:
+                return None
+
+            region.add(current)
+
+            if len(region) > CLONE_MAX_REGION_BLOCKS:
+                return None
+
+            queue.extend(self.block_successors.get(current, []))
+
+        return region or None
+
+    def _clone_processed_region(self, block_idx: int, target_block: HLILBlock,
+                                stop_at: Optional[int],
+                                jump_source: Optional[MediumLevelILInstruction]) -> bool:
+        '''Re-emit a region already emitted on another path.
+
+        Rebuilds it rather than deep-copying so nested structuring, merge detection
+        and break/continue all resolve against this path's context.
+        '''
+        if block_idx in self.cloning_blocks:
+            self._warn_dropped_path(block_idx, 'already being re-emitted')
+            return False
+
+        region = self._clone_region_blocks(block_idx, stop_at)
+
+        if region is None:
+            self._warn_dropped_path(block_idx, 'region not repeatable')
+            return False
+
+        scratch = HLILBlock()
+        saved_visited = self.visited_blocks.copy()
+        saved_processed = self.globally_processed.copy()
+
+        self.visited_blocks -= region
+        self.globally_processed -= region
+        self.cloning_blocks.add(block_idx)
+
+        try:
+            self._reconstruct_control_flow(block_idx, scratch, stop_at = stop_at,
+                                           jump_source = jump_source)
+
+        finally:
+            self.cloning_blocks.discard(block_idx)
+            self.visited_blocks = saved_visited
+            self.globally_processed |= saved_processed
+
+        if len(scratch.statements) > self.clone_budget:
+            self._warn_dropped_path(block_idx, f'{len(scratch.statements)} statements over budget')
+            return False
+
+        self.clone_budget -= len(scratch.statements)
+
+        for stmt in scratch.statements:
+            target_block.add_statement(stmt)
+
+        return True
+
     def _reconstruct_control_flow(self, block_idx: int, target_block: HLILBlock,
                                    stop_at: Optional[int] = None,
                                    jump_source: Optional[MediumLevelILInstruction] = None,
@@ -956,11 +1147,22 @@ class MLILToHLILConverter:
                     target_block.add_statement(stmt)
                     return None
 
-            # Skip already processed blocks
+            # Already emitted somewhere else in the function
             if block_idx in self.visited_blocks or block_idx in self.globally_processed:
                 if block_idx in self.loop_headers and block_idx in self.globally_processed:
                     block_label = self.mlil_func.basic_blocks[block_idx].label
                     print(f'[loop] jump into inactive loop header {block_label} in {self.mlil_func.name} (possible lost path)', file = sys.stderr)
+                    return None
+
+                # An enclosing if emits its merge point after itself, so control
+                # reaches it by falling out of this branch - nothing is lost.
+                if block_idx in self.pending_merges:
+                    return None
+
+                # Still reachable from here too - several conditions funnelling into one
+                # shared body. HLIL has no goto, so repeating it is the only faithful
+                # representation; refusing warns rather than dropping the path silently.
+                self._clone_processed_region(block_idx, target_block, stop_at, jump_source)
                 return None
 
             if stop_at is not None and block_idx == stop_at:

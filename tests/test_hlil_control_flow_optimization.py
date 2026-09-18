@@ -38,6 +38,8 @@ TEST_FUNCTION_NAME = 'test_switch_tail'
 EXPECTED_TOP_LEVEL_STATEMENT_COUNT = 1
 EXPECTED_TERMINAL_CASE_COUNT = 1
 NESTED_CASE_VALUE = 4
+FOURTH_CASE_VALUE = 7
+DEFAULT_BODY_VALUE = 99
 
 
 def make_var() -> HLILVar:
@@ -64,7 +66,9 @@ def make_ne_check(value: int, next_if: HLILIf) -> HLILIf:
 
 
 def collect_switch_case_values(switch_stmt: HLILSwitch) -> set:
-    return {case.value.value for case in switch_stmt.cases if not case.is_default()}
+    return {value.value
+            for case in switch_stmt.cases if not case.is_default()
+            for value in case.values}
 
 
 def block_contains_call(block: HLILBlock, func_name: str) -> bool:
@@ -105,7 +109,8 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
 
         terminal_cases = [
             case for case in switch_stmt.cases
-            if not case.is_default() and case.value.value == TERMINAL_CASE_VALUE
+            if not case.is_default()
+            and any(v.value == TERMINAL_CASE_VALUE for v in case.values)
         ]
         self.assertEqual(len(terminal_cases), EXPECTED_TERMINAL_CASE_COUNT)
         self.assertTrue(block_contains_call(terminal_cases[0].body, TERMINAL_MARKER_CALL))
@@ -161,7 +166,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
 
     def test_nested_switch_non_const_case_value_is_not_silently_ignored(self):
         nested_switch = HLILSwitch(make_var(), [
-            HLILSwitchCase(make_var(), make_case_body(NESTED_CASE_VALUE)),
+            HLILSwitchCase([make_var()], make_case_body(NESTED_CASE_VALUE)),
         ])
         third_if = HLILIf(
             make_condition(BinaryOp.NE, THIRD_CASE_VALUE),
@@ -171,8 +176,65 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         second_if = make_ne_check(SECOND_CASE_VALUE, third_if)
         first_if = make_ne_check(FIRST_CASE_VALUE, second_if)
 
-        with self.assertRaises(AttributeError):
-            self.run_pass(first_if)
+        # A case label that is not a constant cannot be merged in, so the chain
+        # must be left alone rather than converted without it
+        func = self.run_pass(first_if)
+
+        self.assertIsInstance(func.body.statements[0], HLILIf)
+
+    def test_alternating_ne_eq_chain_becomes_one_switch(self):
+        # NE, NE, EQ, NE - neither of the two former converters could span this
+        fourth_if = HLILIf(
+            make_condition(BinaryOp.NE, FOURTH_CASE_VALUE),
+            make_case_body(DEFAULT_BODY_VALUE),
+            make_case_body(FOURTH_CASE_VALUE),
+        )
+        third_if = HLILIf(
+            make_condition(BinaryOp.EQ, THIRD_CASE_VALUE),
+            make_case_body(THIRD_CASE_VALUE),
+            HLILBlock([fourth_if]),
+        )
+        second_if = make_ne_check(SECOND_CASE_VALUE, third_if)
+        first_if = make_ne_check(FIRST_CASE_VALUE, second_if)
+
+        func = self.run_pass(first_if)
+        switch_stmt = func.body.statements[0]
+
+        self.assertIsInstance(switch_stmt, HLILSwitch)
+        self.assertEqual(
+            collect_switch_case_values(switch_stmt),
+            {FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE, FOURTH_CASE_VALUE},
+        )
+
+    def test_or_grouped_equalities_become_one_case_with_several_labels(self):
+        grouped = HLILBinaryOp(
+            BinaryOp.OR,
+            make_condition(BinaryOp.EQ, FIRST_CASE_VALUE),
+            make_condition(BinaryOp.EQ, SECOND_CASE_VALUE),
+        )
+        fourth_if = HLILIf(
+            make_condition(BinaryOp.EQ, FOURTH_CASE_VALUE),
+            make_case_body(FOURTH_CASE_VALUE),
+            make_case_body(DEFAULT_BODY_VALUE),
+        )
+        third_if = HLILIf(
+            make_condition(BinaryOp.EQ, THIRD_CASE_VALUE),
+            make_case_body(THIRD_CASE_VALUE),
+            HLILBlock([fourth_if]),
+        )
+        grouped_if = HLILIf(grouped, make_case_body(FIRST_CASE_VALUE), HLILBlock([third_if]))
+
+        func = self.run_pass(grouped_if)
+        switch_stmt = func.body.statements[0]
+
+        self.assertIsInstance(switch_stmt, HLILSwitch)
+
+        shared = [case for case in switch_stmt.cases
+                  if not case.is_default() and len(case.values) > 1]
+
+        self.assertEqual(len(shared), 1)
+        self.assertEqual({v.value for v in shared[0].values},
+                         {FIRST_CASE_VALUE, SECOND_CASE_VALUE})
 
 
 if __name__ == '__main__':

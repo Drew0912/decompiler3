@@ -543,8 +543,11 @@ class TypeScriptGenerator:
                 if case.is_default():
                     lines.append(f'{indent_str}{case_indent}default: {{')
                 else:
-                    case_val_str = cls._format_expr(case.value)
-                    lines.append(f'{indent_str}{case_indent}case {case_val_str}: {{')
+                    # Labels sharing a body stack, only the last one opens the block
+                    for value in case.values[:-1]:
+                        lines.append(f'{indent_str}{case_indent}case {cls._format_expr(value)}:')
+
+                    lines.append(f'{indent_str}{case_indent}case {cls._format_expr(case.values[-1])}: {{')
                 lines.extend(cls._generate_block(case.body, indent + 2))
 
                 # Add break if case doesn't end with return/break/continue

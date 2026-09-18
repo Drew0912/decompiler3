@@ -409,25 +409,32 @@ class HLILFor(HLILStatement):
 
 
 class HLILSwitchCase:
-    '''Switch case: case value: { ... }'''
+    '''Switch case: one body, reached by one or more labels
 
-    def __init__(self, value: Optional[HLILExpression], body: 'HLILBlock'):
-        self.value = value  # None for default case
+    Several values share a body when the source tested them against one another
+    with ||, which is what a fall-through group of case labels means.
+    '''
+
+    def __init__(self, values: Optional[List[HLILExpression]], body: 'HLILBlock'):
+        self.values = values  # None for default case
         self.body = body
 
     def is_default(self) -> bool:
         '''Check if this is the default case'''
-        return self.value is None
+        return self.values is None
+
+    def _label_str(self) -> str:
+        return ', '.join(str(value) for value in self.values)
 
     def __str__(self) -> str:
         if self.is_default():
             return 'default: { ... }'
-        return f'case {self.value}: {{ ... }}'
+        return f'case {self._label_str()}: {{ ... }}'
 
     def __repr__(self) -> str:
         if self.is_default():
             return 'HLILSwitchCase(default)'
-        return f'HLILSwitchCase({self.value})'
+        return f'HLILSwitchCase({self._label_str()})'
 
 
 class HLILSwitch(HLILStatement):
