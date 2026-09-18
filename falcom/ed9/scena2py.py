@@ -27,7 +27,7 @@ from falcom.ed9.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.hlil.hlil_formatter import HLILFormatter
 from codegen import generate_typescript, generate_typescript_header
-from falcom.ed9.scena2py_config import ScenaDecompileConfig, CONFIG
+from falcom.ed9.scena2py_config import ScenaDecompileConfig
 
 
 DAT_PATTERN = '*.dat'
@@ -61,7 +61,7 @@ def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Pat
 
 
 def process_file(path: Path, config: ScenaDecompileConfig) -> None:
-    output_dir = config.output_dir or path.parent
+    output_dir = config.output_dir or path.parent / path.stem
     output_dir.mkdir(parents = True, exist_ok = True)
 
     out = output_dir / path.name       # then .with_suffix(...) per artifact
@@ -93,7 +93,7 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
                 llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
 
             if config.write_llil_dot:
-                (output_dir / f'{base.name}.llil.{func.name}.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
+                (output_dir / f'{base.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
 
             need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
             if not need_mlil:
@@ -105,7 +105,7 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
 
             if config.write_mlil_dot:
-                (output_dir / f'{base.name}.mlil.{func.name}.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
+                (output_dir / f'{base.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
 
             if not (config.write_hlil_ts or config.write_ts):
                 continue
@@ -140,13 +140,14 @@ def create_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = create_parser().parse_args()
     files = collect_paths(args.paths)
+    config = ScenaDecompileConfig()
 
     failures = 0
     for path in files:
         log.info(f'Decompiling {path}')
 
         try:
-            process_file(path, CONFIG)
+            process_file(path, config)
 
         except Exception as e:
             log.error(f'{path}: {type(e).__name__}: {e}')
