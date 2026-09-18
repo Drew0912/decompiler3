@@ -1,0 +1,160 @@
+"""Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps.
+
+Usage:
+    python falcom/ed9/scena2py.py script_en/scena/e2000.original.dat
+    python falcom/ed9/scena2py.py script_en/scena
+
+Flags live in scena2py_config.py, not on the command line - edit CONFIG there to change
+which outputs are written and which ScpParser/MLIL flags are used.
+"""
+
+import argparse
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(PROJECT_ROOT))
+
+from ml import fileio
+from common.config import default_encoding
+from common.logging import log
+from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.parser.types_parser import Function
+from falcom.ed9.lifters import ED9VMLifter
+from falcom.ed9.llil_builder import FalcomLLILFormatter
+from falcom.ed9.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.hlil_converter import convert_falcom_mlil_to_hlil
+from ir.mlil.mlil_formatter import MLILFormatter
+from ir.hlil.hlil_formatter import HLILFormatter
+from codegen import generate_typescript, generate_typescript_header
+from falcom.ed9.scena2py_config import ScenaDecompileConfig, CONFIG
+
+
+DAT_PATTERN = '*.dat'
+
+
+def collect_paths(paths: list[str]) -> list[Path]:
+    """Expand directories (recursively) to their .dat files; keep file paths as-is"""
+    files = []
+
+    for name in paths:
+        path = Path(name)
+
+        if path.is_dir():
+            files.extend(sorted(path.rglob(DAT_PATTERN)))
+
+        else:
+            files.append(path)
+
+    return files
+
+
+def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path) -> None:
+    lines = parser.gen_python_header()
+
+    for func in functions:
+        lines.extend(parser.format_function(func))
+        lines.append('')
+
+    lines.extend(parser.gen_python_footer())
+    out_path.write_text('\n'.join(lines) + '\n', encoding = 'utf-8')
+
+
+def process_file(path: Path, config: ScenaDecompileConfig) -> None:
+    output_dir = config.output_dir or path.parent
+    output_dir.mkdir(parents = True, exist_ok = True)
+
+    out = output_dir / path.name       # then .with_suffix(...) per artifact
+    base = out.with_suffix('')         # strips only the last suffix - for per-function .dot names
+
+    with fileio.FileStream(str(path), encoding = default_encoding()) as fs:
+        parser = ScpParser(fs, path.name)
+        parser.round_trip = config.round_trip
+        parser.keep_unreachable_code = config.keep_unreachable_code
+        parser.parse()
+        functions = parser.disasm_all_functions(filter_func = config.filter_func)
+
+        if config.write_py:
+            write_python_dsl(parser, functions, out.with_suffix('.py'))
+
+        need_llil = config.write_llil_asm or config.write_llil_dot or config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
+        if not need_llil:
+            return
+
+        llil_asm_lines: list[str] = []
+        mlil_asm_lines: list[str] = []
+        hlil_ts_lines: list[str] = []
+        ts_chunks: list[str] = []
+
+        for func in functions:
+            llil_func = ED9VMLifter(parser = parser).lift_function(func)
+
+            if config.write_llil_asm:
+                llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
+
+            if config.write_llil_dot:
+                (output_dir / f'{base.name}.llil.{func.name}.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
+
+            need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
+            if not need_mlil:
+                continue
+
+            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = config.optimize, infer_types = config.infer_types)
+
+            if config.write_mlil_asm:
+                mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
+
+            if config.write_mlil_dot:
+                (output_dir / f'{base.name}.mlil.{func.name}.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
+
+            if not (config.write_hlil_ts or config.write_ts):
+                continue
+
+            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
+
+            if config.write_hlil_ts:
+                hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))
+
+            if config.write_ts:
+                ts_chunks.append(generate_typescript(hlil_func))
+
+        if config.write_llil_asm:
+            out.with_suffix('.llil.asm').write_text('\n'.join(llil_asm_lines), encoding = 'utf-8')
+
+        if config.write_mlil_asm:
+            out.with_suffix('.mlil.asm').write_text('\n'.join(mlil_asm_lines), encoding = 'utf-8')
+
+        if config.write_hlil_ts:
+            out.with_suffix('.hlil.ts').write_text('\n'.join(hlil_ts_lines), encoding = 'utf-8')
+
+        if config.write_ts:
+            out.with_suffix('.ts').write_text(generate_typescript_header() + '\n'.join(ts_chunks), encoding = 'utf-8')
+
+
+def create_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description = 'Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
+    parser.add_argument('paths', nargs = '+', help = '.dat files or directories (searched recursively)')
+    return parser
+
+
+def main() -> int:
+    args = create_parser().parse_args()
+    files = collect_paths(args.paths)
+
+    failures = 0
+    for path in files:
+        log.info(f'Decompiling {path}')
+
+        try:
+            process_file(path, CONFIG)
+
+        except Exception as e:
+            log.error(f'{path}: {type(e).__name__}: {e}')
+            failures += 1
+
+    log.info(f'{len(files) - failures}/{len(files)} succeeded')
+    return 1 if failures else 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

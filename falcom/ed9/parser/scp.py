@@ -258,8 +258,9 @@ class ScpDisassemblerContext(DisassemblerContext):
 
 
 class ScpParser(StrictBase):
-    # Keep data only needed for a byte-exact round trip: zero-arg debug records, the explicit arg
-    # count of each local CALL (debug_argc) and source function order
+    # Keep data only needed for a byte-exact round trip: zero-arg debug records and the explicit
+    # arg count of each local CALL (debug_argc). Source function order is always kept - it's a free
+    # reordering of already-parsed data, not extra fidelity data, so it isn't gated by this flag.
     round_trip      : bool = True
 
     # Decode code no branch reaches (e.g. a JMP right after RETURN) so the .py keeps it for a byte-exact round trip
@@ -586,9 +587,8 @@ class ScpParser(StrictBase):
         if self.keep_unreachable_code:
             self.find_unreachable_code(disassembled_functions, has_all_functions = filter_func is None)
 
-        if self.round_trip:
-            # The table is sorted by name, but code is laid out in source order
-            disassembled_functions.sort(key = lambda func: func.offset)
+        # The table is sorted by name, but code is laid out in source order
+        disassembled_functions.sort(key = lambda func: func.offset)
 
         return disassembled_functions
 
