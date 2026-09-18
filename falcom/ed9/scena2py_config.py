@@ -14,11 +14,17 @@ class ScenaDecompileConfig:
     write_ts: bool = True   # final TypeScript (.ts)
 
     # Debug/inspection outputs
-    write_llil_asm: bool = False   # .llil.asm text dump
-    write_llil_dot: bool = False   # one .llil.<func>.dot CFG per function
-    write_mlil_asm: bool = False   # .mlil.asm text dump
-    write_mlil_dot: bool = False   # one .mlil.<func>.dot CFG per function
-    write_hlil_ts: bool = False    # .hlil.ts text dump (HLILFormatter text, not real TypeScript)
+    write_llil_asm: bool = True    # .llil.asm text dump
+    write_llil_dot: bool = True    # one .llil.<func>.dot CFG per function. Use Graphviz Online
+    write_mlil_asm: bool = True    # .mlil.asm text dump
+    write_mlil_dot: bool = True    # one .mlil.<func>.dot CFG per function. Use Graphviz Online
+    write_hlil_ts: bool = False     # .hlil.ts text dump (HLILFormatter text, not real TypeScript)
+
+    # .debug.txt: parsed header, per-function ScpFunctionEntry, per-call debug info. Populated during
+    # parsing regardless of round_trip, except zero-arg-count debug records are dropped when
+    # round_trip=False (ScpParser._read_functions) - unrelated to pair_call_debug_info/call_debug_argc,
+    # which this dump doesn't show.
+    write_debug_info: bool = True
 
     # ScpParser flags
     round_trip: bool = False
@@ -28,7 +34,9 @@ class ScenaDecompileConfig:
     optimize: bool = True
     infer_types: bool = True
 
-    # Output location; None means a new folder named after the input file, next to it
+    # Output location; None means a new folder named after the input file, collected flat under
+    # falcom/ed9/out/ (same-named inputs from different folders will collide there - see
+    # default_output_dir in scena2py.py)
     output_dir: Optional[Path] = None
 
     # Optional function filter, forwarded to ScpParser.disasm_all_functions(filter_func=...)

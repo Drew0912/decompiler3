@@ -1,5 +1,4 @@
 ﻿__pycache__
-*.dot
 *.png
 *.zip
 
@@ -15,6 +14,10 @@ tests/debug.*
 tests/mp2000_ev.*
 tests/mp3010_01.*
 
+# game scripts
 script_en
+*.dat
+*.asm
+*.dot
 
 decompiler2

@@ -19,6 +19,7 @@ from ir.llil.llil import LowLevelILFunction
 from ir.mlil import *
 from ir.hlil import *
 from codegen import *
+import ast
 import unittest
 import struct
 
@@ -151,18 +152,60 @@ class TestScpValue(unittest.TestCase):
         self.assertEqual(val.value, test_string)
 
 
+class TestQuoteString(unittest.TestCase):
+    '''Test quote_string escaping (falcom/ed9/disasm/ed9_optable.py PUSH_STR formatting)'''
+
+    def test_round_trip(self):
+        '''quote_string output must parse back to the original text via ast.literal_eval'''
+        test_strings = [
+            '\\n',              # literal backslash + n - the real corpus case (ai_chr0313_c10_e00.dat)
+            '"',
+            "'",
+            '\n',
+            '\r\n',
+            '\t',
+            '\x00',
+            '\x1b[0m',
+            '◆敵から距離を取る',  # real corpus text (ai1.0/ai_chr5004p.dat)
+            'a\\',
+            '',
+        ]
+
+        for text in test_strings:
+            with self.subTest(text = text):
+                self.assertEqual(ast.literal_eval(quote_string(text)), text)
+
+    def test_backslash_n_escaped_not_interpreted(self):
+        '''A literal backslash + n must not become a real newline'''
+        self.assertEqual(quote_string('\\n'), '"\\\\n"')
+
+    def test_non_ascii_kept_verbatim(self):
+        '''Printable non-ASCII (Japanese game text) is never \\u-escaped'''
+        text = '◆敵から距離を取る'  # real corpus text (ai1.0/ai_chr5004p.dat)
+        self.assertIn('◆', quote_string(text))
+        self.assertNotIn('\\u', quote_string(text))
+
+
 class TestScpParser(unittest.TestCase):
     '''Test SCP parser'''
 
     def test_parser_with_real_file(self):
         '''Test parser with real SCP file if available'''
 
-        ED9_DATA_DIR = Path(r'D:\Game\Steam\steamapps\common\THE LEGEND OF HEROES KURO NO KISEKI\decrypted\tc\f\script\scena')
+        # ED9_DATA_DIR = Path(r'D:\Dev\decompiler3\script_en\scena')
+        # ED9_DATA_DIR = Path(r'D:\Dev\decompiler3\script_en\ai')
+        ED9_DATA_DIR = Path(r'D:\Dev\decompiler3\script_en\battle')
 
         # test_file = Path(__file__).parent / 'mp2000_ev.dat'
         test_file = Path(__file__).parent / 'debug.dat'
         # test_file = Path(__file__).parent / 'mp3010_01.dat'
         # test_file = ED9_DATA_DIR / 'c0600.dat'
+
+        # test_file = ED9_DATA_DIR / 'e2000.dat'
+        # test_file = ED9_DATA_DIR / 'ai_chr0100_e00.dat'
+        test_file = ED9_DATA_DIR / 'btlsys.dat'
+        # test_file = ED9_DATA_DIR / 'ai_chr0118_e00.dat'
+        # test_file = ED9_DATA_DIR / 'btl_EV_01_07_00.dat'
 
         if not test_file.exists():
             self.skipTest(f'Test file not found: {test_file}')
@@ -188,6 +231,14 @@ class TestScpParser(unittest.TestCase):
             hlil_lines = []
             typescript_lines = []
 
+            formatted_lines.extend(parser.gen_python_header())
+
+            # Generate LLIL CFG
+            llil_cfg_path = test_file.with_suffix('.llil.dot')
+
+            # Generate MLIL CFG
+            mlil_cfg_path = test_file.with_suffix('.mlil.dot')
+
             # Print formatted functions
             print('\n=== Disassembly ===\n')
             for func in disassembled_functions:
@@ -204,10 +255,18 @@ class TestScpParser(unittest.TestCase):
                 llil_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
                 llil_lines.append('')
 
+                with llil_cfg_path.open("a", encoding = 'utf-8') as f:
+                    f.write(FalcomLLILFormatter.to_dot(llil_func))
+
+
+                # llil_cfg_path.write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
+
                 # Generate MLIL from LLIL (with parser for type signatures)
-                mlil_func = convert_falcom_llil_to_mlil(llil_func, parser)
+                mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize=True)
                 mlil_lines.extend(MLILFormatter.format_function(mlil_func))
                 mlil_lines.append('')
+
+                # mlil_cfg_path.write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
 
                 # Generate HLIL from MLIL with Falcom-specific type information
                 hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
@@ -221,22 +280,23 @@ class TestScpParser(unittest.TestCase):
                 typescript_lines.append(typescript_code)
                 typescript_lines.append('')
 
+            formatted_lines.extend(parser.gen_python_footer())
             vmpy_path = test_file.with_suffix('.py')
             vmpy_path.write_text('\n'.join(formatted_lines) + '\n', encoding = 'utf-8')
 
             llil_path = test_file.with_suffix('.llil.asm')
             llil_path.write_text('\n'.join(llil_lines) + '\n', encoding = 'utf-8')
 
-            # Generate LLIL CFG
-            llil_cfg_path = test_file.with_suffix('.llil.dot')
-            llil_cfg_path.write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
+            # # Generate LLIL CFG
+            # llil_cfg_path = test_file.with_suffix('.llil.dot')
+            # llil_cfg_path.write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
 
             mlil_path = test_file.with_suffix('.mlil.asm')
             mlil_path.write_text('\n'.join(mlil_lines) + '\n', encoding = 'utf-8')
 
-            # Generate MLIL CFG
-            mlil_cfg_path = test_file.with_suffix('.mlil.dot')
-            mlil_cfg_path.write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
+            # # Generate MLIL CFG
+            # mlil_cfg_path = test_file.with_suffix('.mlil.dot')
+            # mlil_cfg_path.write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
 
             # HLIL debug output (IR text)
             hlil_path = test_file.with_suffix('.hlil.ts')
