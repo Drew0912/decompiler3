@@ -11,10 +11,10 @@ from ml import *
 from io import BytesIO
 from common import *
 from falcom.ed9 import *
-from falcom.ed9.lifters import ED9VMLifter
-from falcom.ed9.llil_builder import FalcomLLILFormatter
-from falcom.ed9.mlil_converter import convert_falcom_llil_to_mlil
-from falcom.ed9.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.llil import ED9VMLifter
+from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.llil.llil import LowLevelILFunction
 from ir.mlil import *
 from ir.hlil import *

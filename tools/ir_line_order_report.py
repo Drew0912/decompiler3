@@ -38,9 +38,9 @@ from ml import *
 from common import *
 from falcom.ed9 import ScpParser
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
-from falcom.ed9.lifters import ED9VMLifter
-from falcom.ed9.mlil_converter import convert_falcom_llil_to_mlil
-from falcom.ed9.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.llil import ED9VMLifter
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.llil.llil import LowLevelILDebug
 from ir.mlil.mlil import MLILDebug
 from ir.hlil.hlil import (

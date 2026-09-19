@@ -3,7 +3,7 @@
 from typing import Optional
 from ir.pipeline import Pass
 from ir.hlil import HighLevelILFunction
-from .parser.types_parser import Function
+from ...parser.types_parser import Function
 
 
 class FalcomTypeInferencePass(Pass):

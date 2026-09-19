@@ -171,7 +171,7 @@ class TestBranchOrderNormalizationFlag(unittest.TestCase):
     '''The converter flag must control whether the pass runs at all'''
 
     def pass_names(self, **kwargs) -> list:
-        from falcom.ed9.hlil_converter import convert_falcom_mlil_to_hlil
+        from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
         from ir.pipeline import Pipeline
 
         captured = []

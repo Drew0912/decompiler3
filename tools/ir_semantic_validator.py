@@ -31,11 +31,11 @@ from ir.hlil import (
     HighLevelILFunction, HLILInstruction, HLILOperation, HLILStatement, HLILExpression,
     BinaryOp, UnaryOp
 )
-from falcom.ed9.llil_ext import LowLevelILGlobalLoad
+from falcom.ed9.ir.llil.llil_ext import LowLevelILGlobalLoad
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.lifters.vm_lifter import ED9VMLifter
-from falcom.ed9.mlil_converter import convert_falcom_llil_to_mlil
-from falcom.ed9.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.llil.vm_lifter import ED9VMLifter
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 
 
 # =============================================================================

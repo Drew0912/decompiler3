@@ -14,7 +14,7 @@ from ir.hlil.hlil_passes import (
     BranchOrderNormalizationPass,
 )
 from .hlil_passes import FalcomTypeInferencePass
-from .parser.types_parser import Function
+from ...parser.types_parser import Function
 
 
 def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Optional[Function] = None,

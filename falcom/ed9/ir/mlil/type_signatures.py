@@ -2,7 +2,7 @@
 
 from typing import Optional
 from ir.mlil.mlil_types import MLILType, FunctionSignatureDB
-from .parser.scp import ScpParser
+from ...parser.scp import ScpParser
 
 
 class ED9TypeSignatures(FunctionSignatureDB):

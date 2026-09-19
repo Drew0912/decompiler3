@@ -6,12 +6,12 @@ from typing import *
 from ir.llil.llil import *
 from ir.core import IRParameter
 
-from ..disasm import *
-from ..llil_builder import *
-from ..parser import *
+from ...disasm import *
+from .llil_builder import *
+from ...parser import *
 
 if TYPE_CHECKING:
-    from ..parser.scp import *
+    from ...parser.scp import *
 
 
 @dataclass

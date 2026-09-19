@@ -28,8 +28,8 @@ functions = parser.disasm_all_functions()
 ### 2. Lift to LLIL
 
 ```python
-from falcom.ed9.lifters import ED9VMLifter
-from falcom.ed9.llil_builder import FalcomLLILFormatter
+from falcom.ed9.ir.llil import ED9VMLifter
+from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
 
 # Create lifter
 lifter = ED9VMLifter(parser=parser)
@@ -46,7 +46,7 @@ for func in functions:
 ### 3. Convert to MLIL
 
 ```python
-from falcom.ed9.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from ir.mlil import MLILFormatter
 
 # Convert LLIL → MLIL
@@ -60,7 +60,7 @@ print('\n'.join(mlil_text))
 ### 4. Convert to HLIL
 
 ```python
-from falcom.ed9.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.hlil import HLILFormatter
 
 # Convert MLIL → HLIL (need original function for type info)
@@ -85,7 +85,7 @@ print(typescript_code)
 
 ```python
 from pathlib import Path
-from falcom.ed9.format_signatures import FormatSignatureDB
+from falcom.ed9.signatures.format_signatures import FormatSignatureDB
 from codegen import TypeScriptGenerator
 
 # Load signature database
@@ -108,10 +108,10 @@ typescript_code = generate_typescript(hlil_func)
 from pathlib import Path
 from ml import fileio
 from falcom.ed9.parser import ScpParser
-from falcom.ed9.lifters import ED9VMLifter
-from falcom.ed9.mlil_converter import convert_falcom_llil_to_mlil
-from falcom.ed9.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.format_signatures import FormatSignatureDB
+from falcom.ed9.ir.llil import ED9VMLifter
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.signatures.format_signatures import FormatSignatureDB
 from codegen import generate_typescript, TypeScriptGenerator
 
 

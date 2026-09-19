@@ -20,10 +20,10 @@ from common.logging import log
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function
 from falcom.ed9.parser.types_scp import ScpFunctionEntry
-from falcom.ed9.lifters import ED9VMLifter
-from falcom.ed9.llil_builder import FalcomLLILFormatter
-from falcom.ed9.mlil_converter import convert_falcom_llil_to_mlil
-from falcom.ed9.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.llil import ED9VMLifter
+from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.hlil.hlil_formatter import HLILFormatter
 from codegen import generate_typescript, generate_typescript_header
