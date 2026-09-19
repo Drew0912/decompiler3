@@ -25,19 +25,29 @@ from typing import Optional
 
 from ir.pipeline import Pass
 from ..hlil import (
+    BinaryOp,
     HighLevelILFunction,
+    HLILBinaryOp,
     HLILBlock,
+    HLILCall,
     HLILComment,
     HLILDoWhile,
+    HLILExternCall,
     HLILFor,
     HLILIf,
     HLILSwitch,
+    HLILSyscall,
+    HLILUnaryOp,
+    HLILVar,
     HLILWhile,
+    UnaryOp,
 )
 from ..mlil_to_hlil import _negate_condition
 
 
 LINE_COMMENT = re.compile(r'line\((\d+)\)')
+
+_COMPARISON_OPS = {BinaryOp.EQ, BinaryOp.NE, BinaryOp.LT, BinaryOp.LE, BinaryOp.GT, BinaryOp.GE}
 
 
 class BranchOrderNormalizationPass(Pass):
@@ -75,8 +85,18 @@ class BranchOrderNormalizationPass(Pass):
         false_is_chain = self._is_else_if_chain(stmt.false_block)
 
         # Moving a chain into the then-branch buries the next test in it. Only a
-        # problem when the arms differ: if false is already the chain, it's fine
+        # problem when the arms differ: if false is already the chain, it's fine -
+        # unless the chain isn't really a continuation of THIS test at all (just a
+        # coincidentally-nested, unrelated if), in which case treat it like any
+        # other pair of sibling arms instead of protecting it unconditionally
         if false_is_chain and not true_is_chain:
+            if self._looks_like_same_chain(stmt.condition, stmt.false_block):
+                return
+
+            if not self._should_swap(stmt):
+                return
+
+            self._swap(stmt)
             return
 
         # The chain sits in the then-branch instead: the pairwise line/depth
@@ -113,6 +133,64 @@ class BranchOrderNormalizationPass(Pass):
 
         inner_if = next(s for s in block.statements if isinstance(s, HLILIf))
         return 1 + max(cls._chain_length(inner_if.true_block), cls._chain_length(inner_if.false_block))
+
+    @classmethod
+    def _looks_like_same_chain(cls, condition, chain_block: HLILBlock) -> bool:
+        '''Whether a lone-if chain block continues testing the same thing as `condition`
+
+        Conservative by design: stays True (protect the chain) whenever either side's
+        scrutinee can't be identified, since the cost of a missed swap is just a less
+        tidy chain, while wrongly reordering a real dispatch chain would bury it again.
+        '''
+        inner_if = next((s for s in chain_block.statements if isinstance(s, HLILIf)), None)
+        if inner_if is None:
+            return True
+
+        head = cls._chain_head(condition)
+        inner_head = cls._chain_head(inner_if.condition)
+
+        if head is None or inner_head is None:
+            return True
+
+        return head == inner_head
+
+    @classmethod
+    def _chain_head(cls, condition):
+        '''Identity of what a condition tests, ignoring the literal it's compared against -
+        e.g. `global_work(12) == 1` and `global_work(12) == 2` share a head, `flag(9023) == 0`
+        and `flag(9017) == 0` share a head (same call, different constant argument), but
+        `menu_is_canceled(1) != 0` and `var_s1 == 0` do not (unrelated things being tested)
+        '''
+        scrutinee = cls._scrutinee(condition)
+
+        if isinstance(scrutinee, HLILCall):
+            return ('call', scrutinee.func_name)
+
+        if isinstance(scrutinee, HLILSyscall):
+            return ('syscall', scrutinee.subsystem, scrutinee.cmd)
+
+        if isinstance(scrutinee, HLILExternCall):
+            return ('extern', scrutinee.target)
+
+        if isinstance(scrutinee, HLILVar):
+            return ('var', scrutinee.var)
+
+        return None
+
+    @classmethod
+    def _scrutinee(cls, condition):
+        '''The thing a condition is testing, unwrapping negation and comparison operators'''
+        if isinstance(condition, HLILUnaryOp) and condition.op == UnaryOp.NOT:
+            return cls._scrutinee(condition.operand)
+
+        if isinstance(condition, HLILBinaryOp):
+            if condition.op in _COMPARISON_OPS:
+                return condition.lhs
+
+            if condition.op in (BinaryOp.AND, BinaryOp.OR):
+                return cls._scrutinee(condition.lhs)
+
+        return condition
 
     @classmethod
     def _swap(cls, stmt: HLILIf):

@@ -34,7 +34,8 @@ _BINARY_OP_MAP = {
 }
 
 _UNARY_OP_MAP = {
-    MediumLevelILOperation.MLIL_NEG : UnaryOp.NEG,
+    MediumLevelILOperation.MLIL_NEG         : UnaryOp.NEG,
+    MediumLevelILOperation.MLIL_BITWISE_NOT : UnaryOp.BIT_NOT,
 }
 
 _MLIL_TYPE_MAP = {
