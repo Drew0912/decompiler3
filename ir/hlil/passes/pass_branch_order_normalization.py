@@ -25,9 +25,7 @@ from typing import Optional
 
 from ir.pipeline import Pass
 from ..hlil import (
-    BinaryOp,
     HighLevelILFunction,
-    HLILBinaryOp,
     HLILBlock,
     HLILComment,
     HLILDoWhile,
@@ -37,12 +35,6 @@ from ..hlil import (
     HLILWhile,
 )
 from ..mlil_to_hlil import _negate_condition
-
-
-DE_MORGAN = {
-    BinaryOp.AND: BinaryOp.OR,
-    BinaryOp.OR : BinaryOp.AND,
-}
 
 
 LINE_COMMENT = re.compile(r'line\((\d+)\)')
@@ -88,7 +80,7 @@ class BranchOrderNormalizationPass(Pass):
         if not self._should_swap(stmt):
             return
 
-        stmt.condition = self._negate(stmt.condition)
+        stmt.condition = _negate_condition(stmt.condition)
         stmt.true_block, stmt.false_block = stmt.false_block, stmt.true_block
 
     def _should_swap(self, stmt: HLILIf) -> bool:
@@ -130,19 +122,6 @@ class BranchOrderNormalizationPass(Pass):
                     stack.append((stmt.false_block, depth + 1))
 
         return max_depth
-
-    def _negate(self, condition):
-        '''Negate a condition, pushing through && and || rather than wrapping them
-
-        Without De Morgan's a swapped `a != 1 && a != 3` becomes `NOT(a != 1 && a != 3)`,
-        which reads worse than what it replaced; distributing gives `a == 1 || a == 3`.
-        '''
-        if isinstance(condition, HLILBinaryOp) and condition.op in DE_MORGAN:
-            return HLILBinaryOp(DE_MORGAN[condition.op],
-                                self._negate(condition.lhs),
-                                self._negate(condition.rhs))
-
-        return _negate_condition(condition)
 
     @classmethod
     def _has_statements(cls, block: Optional[HLILBlock]) -> bool:

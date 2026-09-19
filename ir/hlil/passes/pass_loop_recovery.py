@@ -19,7 +19,6 @@ from ..hlil import (
     HLILExpression,
     HLILConst,
     HLILBinaryOp,
-    HLILUnaryOp,
     HLILIf,
     HLILWhile,
     HLILDoWhile,
@@ -29,18 +28,8 @@ from ..hlil import (
     HLILReturn,
     HLILComment,
     BinaryOp,
-    UnaryOp,
 )
-
-
-NEGATED_COMPARISON = {
-    BinaryOp.EQ: BinaryOp.NE,
-    BinaryOp.NE: BinaryOp.EQ,
-    BinaryOp.LT: BinaryOp.GE,
-    BinaryOp.GE: BinaryOp.LT,
-    BinaryOp.GT: BinaryOp.LE,
-    BinaryOp.LE: BinaryOp.GT,
-}
+from ..mlil_to_hlil import _negate_condition
 
 
 class LoopRecoveryPass(Pass):
@@ -129,7 +118,7 @@ class LoopRecoveryPass(Pass):
             new_body = stmt.true_block or HLILBlock()
 
         elif self._is_only_break(stmt.true_block) and stmt.false_block:
-            condition = self._negate(stmt.condition)
+            condition = _negate_condition(stmt.condition)
             new_body = stmt.false_block
 
         else:
@@ -164,7 +153,7 @@ class LoopRecoveryPass(Pass):
 
         # Comments above the test stay at the top of the body, with the test
         del body.statements[index]
-        return self._negate(stmt.condition)
+        return _negate_condition(stmt.condition)
 
     def _leading_exit_return(self, body: HLILBlock) -> Optional[tuple]:
         '''Leading `if (c) { return x; }` becomes the test, with the return after the loop
@@ -188,7 +177,7 @@ class LoopRecoveryPass(Pass):
         trailing = list(stmt.true_block.statements)
         del body.statements[index]
 
-        return (self._negate(stmt.condition), trailing)
+        return (_negate_condition(stmt.condition), trailing)
 
     def _is_lone_return(self, stmt: HLILStatement) -> bool:
         '''Check for `if (c) { return x; }` with no else branch'''
@@ -250,7 +239,7 @@ class LoopRecoveryPass(Pass):
             return None
 
         body.statements.pop()
-        return self._negate(stmt.condition)
+        return _negate_condition(stmt.condition)
 
     def _is_lone_break(self, stmt: HLILStatement) -> bool:
         '''Check for `if (c) break;` with no else branch'''
@@ -298,13 +287,3 @@ class LoopRecoveryPass(Pass):
 
     def _is_always_true(self, condition: HLILExpression) -> bool:
         return isinstance(condition, HLILConst) and condition.value not in (0, False)
-
-    def _negate(self, condition: HLILExpression) -> HLILExpression:
-        '''Negate a condition, keeping it readable where possible'''
-        if isinstance(condition, HLILUnaryOp) and condition.op == UnaryOp.NOT:
-            return condition.operand
-
-        if isinstance(condition, HLILBinaryOp) and condition.op in NEGATED_COMPARISON:
-            return HLILBinaryOp(NEGATED_COMPARISON[condition.op], condition.lhs, condition.rhs)
-
-        return HLILUnaryOp(UnaryOp.NOT, condition)

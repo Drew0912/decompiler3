@@ -18,7 +18,7 @@ class ScenaDecompileConfig:
     # Debug/inspection outputs
     write_llil_asm: bool = False    # .llil.asm text dump
     write_llil_dot: bool = False    # one .llil.<func>.dot CFG per function. Use Graphviz Online
-    write_mlil_asm: bool = False    # .mlil.asm text dump
+    write_mlil_asm: bool = True    # .mlil.asm text dump
     write_mlil_dot: bool = False    # one .mlil.<func>.dot CFG per function. Use Graphviz Online
     write_hlil_ts: bool = False     # .hlil.ts text dump (HLILFormatter text, not recompilable code)
 

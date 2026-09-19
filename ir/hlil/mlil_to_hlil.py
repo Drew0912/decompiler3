@@ -58,6 +58,12 @@ _NEGATE_CMP_OP = {
     BinaryOp.GE : BinaryOp.LT,
 }
 
+# De Morgan's: negating && / || swaps the operator
+_DE_MORGAN_OP = {
+    BinaryOp.AND : BinaryOp.OR,
+    BinaryOp.OR  : BinaryOp.AND,
+}
+
 # Re-emitting a block reached from several conditions is the only faithful option
 # without goto, but it grows output, so cap how far it can run per function.
 CLONE_STATEMENT_BUDGET   = 400  # total statements re-emitted per function
@@ -65,7 +71,7 @@ CLONE_MAX_REGION_BLOCKS  = 48   # blocks in one re-emitted region
 
 
 def _negate_condition(cond: HLILExpression) -> HLILExpression:
-    '''Negate a condition, simplifying where possible'''
+    '''Negate a condition, distributing through && / || (De Morgan's) rather than wrapping them'''
     # Double negation: !!a -> a
     if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT:
         return cond.operand
@@ -73,6 +79,10 @@ def _negate_condition(cond: HLILExpression) -> HLILExpression:
     # Comparison negation: !(a == b) -> a != b
     if isinstance(cond, HLILBinaryOp) and cond.op in _NEGATE_CMP_OP:
         return HLILBinaryOp(_NEGATE_CMP_OP[cond.op], cond.lhs, cond.rhs)
+
+    # De Morgan's: !(a && b) -> !a || !b, !(a || b) -> !a && !b
+    if isinstance(cond, HLILBinaryOp) and cond.op in _DE_MORGAN_OP:
+        return HLILBinaryOp(_DE_MORGAN_OP[cond.op], _negate_condition(cond.lhs), _negate_condition(cond.rhs))
 
     # Default: wrap with NOT
     return HLILUnaryOp(UnaryOp.NOT, cond)
