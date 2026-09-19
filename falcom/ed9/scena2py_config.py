@@ -31,6 +31,11 @@ class ScenaDecompileConfig:
     round_trip: bool = False
     keep_unreachable_code: bool = False
 
+    # Exclude common/shared functions (is_common_func) from every output format, to make
+    # scripts shorter and easier to read. The .py DSL output will not compile back to a
+    # .dat file with this on, since callers still reference the now-missing definitions.
+    include_common_functions: bool = True
+
     # MLIL conversion flags, forwarded to convert_falcom_llil_to_mlil
     optimize_mlil: bool = True
     infer_types: bool = True

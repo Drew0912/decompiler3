@@ -46,8 +46,18 @@ def collect_paths(paths: list[str]) -> list[Path]:
 
     return files
 
-def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path) -> None:
+COMMON_FUNCTIONS_OMITTED_COMMENT = (
+    '# Common/shared functions were omitted (include_common_functions = False).\n'
+    '# This script will NOT compile back to a .dat file: calls below reference\n'
+    '# common function definitions that are not present in this file.'
+)
+
+def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *, common_functions_omitted: bool = False) -> None:
     lines = parser.gen_python_header()
+
+    if common_functions_omitted:
+        lines.extend(COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines())
+        lines.append('')
 
     for func in functions:
         lines.extend(parser.format_function(func))
@@ -88,11 +98,15 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
         parser.parse()
         functions = parser.disasm_all_functions(filter_func = config.filter_func)
 
+        common_functions_omitted = not config.include_common_functions
+        if common_functions_omitted:
+            functions = [func for func in functions if not func.is_common_func]
+
         # Only create the output folder once parsing has actually produced something to write
         output_dir.mkdir(parents = True, exist_ok = True)
 
         if config.write_py:
-            write_python_dsl(parser, functions, out.with_suffix('.py'))
+            write_python_dsl(parser, functions, out.with_suffix('.py'), common_functions_omitted = common_functions_omitted)
 
         if config.write_debug_info:
             write_debug_info(parser, functions, out.with_suffix('.debug.txt'))
