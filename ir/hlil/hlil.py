@@ -1,6 +1,6 @@
 '''HLIL - Structured control flow (if/while/for) from unstructured MLIL (goto/label)'''
 
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 from enum import auto
 from common import *
 
@@ -541,6 +541,24 @@ class HLILComment(HLILStatement):
 
     def __repr__(self) -> str:
         return f'HLILComment({self.text})'
+
+
+def split_else_if_arm(block: HLILBlock) -> Optional[Tuple[List[HLILComment], HLILIf]]:
+    '''An else arm's comments and its single inner if, or None if it is not an else-if
+
+    Comments annotate the inner if's test, so they belong before the `} else if` line
+    rather than inside the arm. Shared so both renderers agree on the shape.
+    '''
+    if not block or not block.statements:
+        return None
+
+    comments = [stmt for stmt in block.statements if isinstance(stmt, HLILComment)]
+    rest = [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
+
+    if len(rest) != 1 or not isinstance(rest[0], HLILIf):
+        return None
+
+    return comments, rest[0]
 
 
 # ============================================================================

@@ -68,9 +68,6 @@ class ControlFlowOptimizationPass(Pass):
                             self._optimize_block(inlined.false_block)
                             # Remove redundant assignments
                             self._remove_redundant_else_assign(inlined)
-                            # Flatten else-if pattern in both branches
-                            self._try_flatten_if_block(inlined, is_true_block=True)
-                            self._try_flatten_if_block(inlined, is_true_block=False)
                             optimized.append(inlined)
                             i += 2
                             continue
@@ -97,8 +94,6 @@ class ControlFlowOptimizationPass(Pass):
                                 self._optimize_block(inlined.false_block)
                                 # Remove redundant assignments
                                 self._remove_redundant_else_assign(inlined)
-                                self._try_flatten_if_block(inlined, is_true_block=True)
-                                self._try_flatten_if_block(inlined, is_true_block=False)
                                 optimized.append(inlined)
                                 i = j + 2
                                 continue
@@ -126,10 +121,6 @@ class ControlFlowOptimizationPass(Pass):
                         stmt.condition = self._negate_condition(stmt.condition)
                         stmt.true_block = stmt.false_block
                         stmt.false_block = None
-
-                # Flatten else-if pattern in both branches
-                self._try_flatten_if_block(stmt, is_true_block = True)
-                self._try_flatten_if_block(stmt, is_true_block = False)
 
             elif isinstance(stmt, HLILWhile):
                 self._optimize_block(stmt.body)
@@ -502,125 +493,6 @@ class ControlFlowOptimizationPass(Pass):
 
         return False
 
-    def _try_flatten_if_block(self, if_stmt: HLILIf, is_true_block: bool):
-        '''Flatten else-if patterns'''
-        block = if_stmt.true_block if is_true_block else if_stmt.false_block
-        if not block or not block.statements:
-            return
-
-        stmts = block.statements
-        idx = 0
-
-        # Skip leading nop statements
-        leading_nops = []
-        while idx < len(stmts) and self._is_nop_stmt(stmts[idx]):
-            leading_nops.append(stmts[idx])
-            idx += 1
-
-        remaining = len(stmts) - idx
-
-        # Pattern 1: { nop*; if (bool_expr) {...} } -> flatten for else-if
-        if remaining == 1 and isinstance(stmts[idx], HLILIf):
-            inner_if = stmts[idx]
-            if leading_nops:
-                if not inner_if.true_block:
-                    inner_if.true_block = HLILBlock([])
-                for nop in reversed(leading_nops):
-                    inner_if.true_block.statements.insert(0, nop)
-            if is_true_block:
-                if_stmt.true_block = HLILBlock([inner_if])
-            else:
-                if_stmt.false_block = HLILBlock([inner_if])
-            return
-
-        # Pattern 2: { nop*; [other_assigns*;] var = bool_expr; if (var == 0) {...} }
-        # DISABLED: This should be handled by MLIL SSA Copy Propagation instead
-        return
-
-        # Last statement must be if, second-to-last must be bool assignment
-        if remaining < 2:
-            return
-
-        inner_if = stmts[-1]
-        if not isinstance(inner_if, HLILIf):
-            return
-
-        assign_stmt = stmts[-2]
-        if not isinstance(assign_stmt, HLILAssign):
-            return
-
-        if not isinstance(assign_stmt.dest, HLILVar):
-            return
-
-        if not self._is_boolean_expr(assign_stmt.src):
-            return
-
-        assigned_var = assign_stmt.dest.var
-        condition_expr = assign_stmt.src
-
-        # Keep non-bool assigns before the bool assign as leading statements
-        extra_leading = stmts[idx:-2]
-
-        # Check if any extra_leading statement modifies variables used in condition_expr
-        # If so, we can't flatten because the condition would use wrong values
-        condition_vars = self._collect_vars(condition_expr)
-        for stmt in extra_leading:
-            if self._stmt_modifies_any(stmt, condition_vars):
-                return
-
-        leading_nops = leading_nops + extra_leading
-
-        cond = inner_if.condition
-        if not isinstance(cond, HLILBinaryOp):
-            return
-
-        if cond.op not in (BinaryOp.EQ, BinaryOp.NE):
-            return
-
-        if not isinstance(cond.rhs, HLILConst) or cond.rhs.value != 0:
-            return
-
-        if not isinstance(cond.lhs, HLILVar):
-            return
-
-        if cond.lhs.var != assigned_var:
-            return
-
-        # Ensure original value of assigned_var is not read in inner_if body
-        true_reads, _, _ = self._can_read_original_value(assigned_var, inner_if.true_block)
-        false_reads, _, _ = self._can_read_original_value(assigned_var, inner_if.false_block)
-        if true_reads or false_reads:
-            return
-
-        has_inner_else = inner_if.false_block and inner_if.false_block.statements
-        negate = (cond.op == BinaryOp.EQ)
-
-        if negate and has_inner_else:
-            new_condition = condition_expr
-            new_true_block = inner_if.false_block
-            new_false_block = inner_if.true_block
-
-        elif negate:
-            new_condition = self._negate_condition(condition_expr)
-            new_true_block = inner_if.true_block
-            new_false_block = None
-
-        else:
-            new_condition = condition_expr
-            new_true_block = inner_if.true_block
-            new_false_block = inner_if.false_block
-
-        # Insert leading nops at the beginning of new_true_block
-        if leading_nops and new_true_block:
-            for nop in reversed(leading_nops):
-                new_true_block.statements.insert(0, nop)
-
-        new_block = HLILBlock([HLILIf(new_condition, new_true_block, new_false_block)])
-        if is_true_block:
-            if_stmt.true_block = new_block
-        else:
-            if_stmt.false_block = new_block
-
     def _equality_labels(self, cond) -> Optional[Tuple[HLILVar, List[int]]]:
         '''Values a test accepts, for `x == k` or any || chain of those
 
@@ -793,12 +665,19 @@ class ControlFlowOptimizationPass(Pass):
                 for case in stmt.cases:
                     self._merge_nested_switches(case.body)
 
-                    if len(case.body.statements) == 1:
-                        nested_stmt = case.body.statements[0]
+                    comments = [s for s in case.body.statements if self._is_nop_stmt(s)]
+                    rest = [s for s in case.body.statements if not self._is_nop_stmt(s)]
+
+                    if len(rest) == 1:
+                        nested_stmt = rest[0]
                         if isinstance(nested_stmt, HLILSwitch):
                             if isinstance(nested_stmt.scrutinee, HLILVar) and isinstance(stmt.scrutinee, HLILVar):
                                 if nested_stmt.scrutinee.var == stmt.scrutinee.var:
                                     if case.is_default():
+                                        # The merge drops this case, so its comments move to what replaces it
+                                        if comments and nested_stmt.cases:
+                                            nested_stmt.cases[0].body.statements[:0] = comments
+
                                         stmt.cases.remove(case)
                                         stmt.cases.extend(nested_stmt.cases)
                                         self._merge_nested_switches(block)

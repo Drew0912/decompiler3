@@ -151,8 +151,10 @@ class LoopRecoveryPass(Pass):
         if not self._is_lone_break(stmt):
             return None
 
-        # Comments above the test stay at the top of the body, with the test
-        del body.statements[index]
+        # Comments above the test stay at the top of the body, with the test - and the
+        # break's own comments stay where the test was, since the break becomes that test
+        comments = [s for s in stmt.true_block.statements if isinstance(s, HLILComment)]
+        body.statements[index : index + 1] = comments
         return _negate_condition(stmt.condition)
 
     def _leading_exit_return(self, body: HLILBlock) -> Optional[tuple]:
@@ -238,7 +240,9 @@ class LoopRecoveryPass(Pass):
         if self._first_real_statement(body) == len(body.statements) - 1:
             return None
 
-        body.statements.pop()
+        # The break becomes the loop test, so its comments stay where the test was
+        comments = [s for s in stmt.true_block.statements if isinstance(s, HLILComment)]
+        body.statements[-1:] = comments
         return _negate_condition(stmt.condition)
 
     def _is_lone_break(self, stmt: HLILStatement) -> bool:
@@ -249,10 +253,14 @@ class LoopRecoveryPass(Pass):
         if stmt.false_block and stmt.false_block.statements:
             return False
 
-        if not stmt.true_block or len(stmt.true_block.statements) != 1:
+        if not stmt.true_block:
             return False
 
-        inner = stmt.true_block.statements[0]
+        rest = [s for s in stmt.true_block.statements if not isinstance(s, HLILComment)]
+        if len(rest) != 1:
+            return False
+
+        inner = rest[0]
         return isinstance(inner, HLILBreak) and inner.label is None
 
     def _first_real_statement(self, body: HLILBlock) -> Optional[int]:

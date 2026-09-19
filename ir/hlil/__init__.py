@@ -54,6 +54,9 @@ __all__ = [
     'HLILExprStmt',
     'HLILComment',
 
+    # Shape helpers
+    'split_else_if_arm',
+
     # Function
     'HighLevelILFunction',
 

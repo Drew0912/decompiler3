@@ -466,14 +466,13 @@ class TypeScriptGenerator:
 
             while false_block and false_block.statements:
                 # else { [comments] single if } -> [comments] else if
-                non_comments = [s for s in false_block.statements if not isinstance(s, HLILComment)]
+                arm = split_else_if_arm(false_block)
 
-                if len(non_comments) == 1 and isinstance(non_comments[0], HLILIf):
-                    inner_if = non_comments[0]
+                if arm is not None:
+                    comments, inner_if = arm
 
-                    for comment in false_block.statements:
-                        if isinstance(comment, HLILComment):
-                            lines.extend(cls._generate_statement(comment, indent))
+                    for comment in comments:
+                        lines.extend(cls._generate_statement(comment, indent))
 
                     inner_cond = cls._format_expr(inner_if.condition)
                     lines.append(f'{indent_str}}} else if ({inner_cond}) {{')

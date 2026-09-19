@@ -150,10 +150,15 @@ class HLILFormatter:
         # Walk through else-if chain
         current_else = if_stmt.false_block
         while current_else and current_else.statements:
-            # Check for else-if: single HLILIf statement in false_block
-            if (len(current_else.statements) == 1 and
-                isinstance(current_else.statements[0], HLILIf)):
-                nested_if = current_else.statements[0]
+            # else { [comments] single if } -> [comments] else if, matching the TS codegen
+            arm = split_else_if_arm(current_else)
+
+            if arm is not None:
+                comments, nested_if = arm
+
+                for comment in comments:
+                    lines.extend(cls._format_statement(comment, indent))
+
                 cond_str = cls._format_expr(nested_if.condition)
                 lines.append(f'{indent_str}}} else if ({cond_str}) {{')
                 lines.extend(cls._format_block(nested_if.true_block, indent + 1))
