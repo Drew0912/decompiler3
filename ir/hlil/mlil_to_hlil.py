@@ -105,9 +105,16 @@ class CallResultFolder:
         reg0 = f()          ->      var = f()
         var = reg0
 
-    The fold is only legal when the call is the last real instruction before the
-    reader, so nothing observable moves across it, and when the variable is dead
-    afterwards.
+    The fold is only legal when nothing observable sits between the call and the
+    reader, and when the variable is dead afterwards. Other calls may sit there
+    if they fold into the same reader, since those end up in the same expression:
+
+        reg0 = f()          ->      if (f() == g())
+        reg1 = g()
+        if (reg0 == reg1)
+
+    That makes the expression's operand order the calls' execution order, so a
+    chain is only folded while the two agree.
     '''
 
     def __init__(self, mlil_func: MediumLevelILFunction, block_successors: Dict[int, List[int]]):
@@ -189,18 +196,25 @@ class CallResultFolder:
                     changed = True
 
     def _find_foldable_calls(self):
-        for block_idx, block in enumerate(self.mlil_func.basic_blocks):
-            for instr_idx, instr in enumerate(block.instructions):
+        # Reverse program order, so a later call's decision is already made when
+        # the call feeding it is considered - that is what lets chains resolve
+        for block_idx in reversed(range(len(self.mlil_func.basic_blocks))):
+            block = self.mlil_func.basic_blocks[block_idx]
+
+            for instr_idx in reversed(range(len(block.instructions))):
+                instr = block.instructions[instr_idx]
+
                 if not isinstance(instr, MediumLevelILCall) or instr.output is None:
                     continue
 
-                reader = self._find_reader(block_idx, instr_idx)
+                var_name = instr.output.name
+
+                reader = self._resolve_reader(block_idx, instr_idx, var_name)
                 if reader is None:
                     continue
 
                 reader_block_idx, reader_instr_idx = reader
                 reader_instr = self.mlil_func.basic_blocks[reader_block_idx].instructions[reader_instr_idx]
-                var_name = instr.output.name
 
                 # Exactly one read, and nothing reads it afterwards
                 if self._count_reads(reader_instr, var_name) != 1:
@@ -212,11 +226,55 @@ class CallResultFolder:
                 self.folded_call[(block_idx, instr_idx)] = reader
                 self.folded_use[(reader_block_idx, reader_instr_idx, var_name)] = (block_idx, instr_idx)
 
-    def _find_reader(self, block_idx: int, instr_idx: int) -> Optional[Tuple[int, int]]:
-        '''Next instruction that can consume the call result, or None
+    def _resolve_reader(self, block_idx: int, instr_idx: int,
+                        var_name: str) -> Optional[Tuple[int, int]]:
+        '''Reader for this call result, seeing through calls that fold away
 
-        Only nops and unconditional jumps may sit between the call and the reader,
-        and a following block must be entered from this call alone.
+        A call whose own result is folded into a later reader does not really
+        separate this call from that reader - both end up in the same expression.
+        Stepping over it turns a run of `reg = f()` statements into one nested
+        expression, which is what the bytecode was written as.
+        '''
+        position = self._find_reader(block_idx, instr_idx)
+        if position is None:
+            return None
+
+        instr = self.mlil_func.basic_blocks[position[0]].instructions[position[1]]
+
+        if not isinstance(instr, MediumLevelILCall) or instr.output is None:
+            return position
+
+        # Reading the result makes this call the reader, not something to skip
+        if self._count_reads(instr, var_name) > 0:
+            return position
+
+        # Reassigning our own variable clobbers the result before anything reads it
+        if instr.output.name == var_name:
+            return None
+
+        reader = self.folded_call.get(position)
+        if reader is None:
+            return None
+
+        reader_instr = self.mlil_func.basic_blocks[reader[0]].instructions[reader[1]]
+        order = self._read_order(reader_instr)
+
+        if var_name not in order or instr.output.name not in order:
+            return None
+
+        # Both calls run when the expression is evaluated, so the operands have
+        # to appear in the order the calls did
+        if order.index(var_name) > order.index(instr.output.name):
+            return None
+
+        return reader
+
+    def _find_reader(self, block_idx: int, instr_idx: int) -> Optional[Tuple[int, int]]:
+        '''Next real instruction after this call, or None
+
+        Only nops and unconditional jumps may be skipped, and a following block
+        must be entered from this call alone. Whether that instruction is the
+        reader or merely folds away too is left to `_resolve_reader`.
         '''
         block = self.mlil_func.basic_blocks[block_idx]
 
@@ -277,13 +335,21 @@ class CallResultFolder:
 
     def _read_names(self, instr: MediumLevelILInstruction) -> Set[str]:
         '''Variable names this instruction reads'''
-        names: Set[str] = set()
+        return set(self._read_order(instr))
+
+    def _read_order(self, instr: MediumLevelILInstruction) -> List[str]:
+        '''Variable names this instruction reads, in evaluation order
+
+        Folding several calls into one expression makes that expression's
+        operand order their execution order, so the two have to agree.
+        '''
+        names: List[str] = []
         self._collect_read_names(instr, names)
         return names
 
-    def _collect_read_names(self, node: MediumLevelILInstruction, names: Set[str]):
+    def _collect_read_names(self, node: MediumLevelILInstruction, names: List[str]):
         if isinstance(node, MLILVar):
-            names.add(node.var.name)
+            names.append(node.var.name)
 
         elif isinstance(node, MLILBinaryOp):
             self._collect_read_names(node.lhs, names)
