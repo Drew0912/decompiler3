@@ -71,15 +71,29 @@ class BranchOrderNormalizationPass(Pass):
         if not self._has_statements(stmt.true_block) or not self._has_statements(stmt.false_block):
             return
 
+        true_is_chain = self._is_else_if_chain(stmt.true_block)
+        false_is_chain = self._is_else_if_chain(stmt.false_block)
+
         # Moving a chain into the then-branch buries the next test in it. Only a
         # problem when the arms differ: if both are chains they just trade places
-        if (self._is_else_if_chain(stmt.false_block) and
-                not self._is_else_if_chain(stmt.true_block)):
+        if false_is_chain and not true_is_chain:
+            return
+
+        # The chain sits in the then-branch instead: the pairwise line/depth
+        # tie-break below only reliably catches this at the outermost link (its
+        # entry comment reads as an earlier line than the sibling case body), so
+        # a deeper cascade stays buried unless this is unconditional
+        if true_is_chain and not false_is_chain:
+            self._swap(stmt)
             return
 
         if not self._should_swap(stmt):
             return
 
+        self._swap(stmt)
+
+    @classmethod
+    def _swap(cls, stmt: HLILIf):
         stmt.condition = _negate_condition(stmt.condition)
         stmt.true_block, stmt.false_block = stmt.false_block, stmt.true_block
 
