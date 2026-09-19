@@ -749,6 +749,10 @@ class SSADeconstructor:
         self.reg_index_by_var: Dict[MLILVariable, int] = {}
         self.undefined_reg_versions: Set[MLILVariableSSA] = set()
 
+        # Blocks added to carry a phi copy on a critical edge, dropped again if
+        # the copy coalesces away
+        self.split_blocks: List[MediumLevelILBasicBlock] = []
+
     def deconstruct(self) -> MediumLevelILFunction:
         '''Convert from SSA to non-SSA (modifies in-place)'''
         # Step 1: Eliminate Phi nodes (insert copies in predecessors)
@@ -769,6 +773,9 @@ class SSADeconstructor:
 
         # Step 6: Replace SSA variables with allocated variables
         self._apply_mapping()
+
+        # Step 7: Drop the split blocks whose copy coalesced away
+        self._remove_redundant_splits()
 
         return self.function
 
@@ -1121,6 +1128,109 @@ class SSADeconstructor:
 
         return stmt
 
+    def _retarget_branch(self, block: MediumLevelILBasicBlock,
+                         old_target: MediumLevelILBasicBlock,
+                         new_target: MediumLevelILBasicBlock):
+        '''Point block's terminal at new_target wherever it named old_target'''
+        if not block.instructions:
+            return
+
+        terminal = block.instructions[-1]
+
+        if isinstance(terminal, MLILIf):
+            if terminal.true_target is old_target:
+                terminal.true_target = new_target
+
+            if terminal.false_target is old_target:
+                terminal.false_target = new_target
+
+        elif isinstance(terminal, MLILGoto):
+            if terminal.target is old_target:
+                terminal.target = new_target
+
+    def _split_critical_edge(self, pred_block: MediumLevelILBasicBlock,
+                             succ_block: MediumLevelILBasicBlock) -> MediumLevelILBasicBlock:
+        '''Insert a block of its own along the pred -> succ edge'''
+        split = MediumLevelILBasicBlock(pred_block.index, succ_block.start,
+                                        f'{pred_block.label}_to_{succ_block.label}')
+        split.instructions.append(MLILGoto(succ_block, address = succ_block.start))
+
+        self._retarget_branch(pred_block, succ_block, split)
+
+        pred_block.outgoing_edges = [split if b is succ_block else b
+                                     for b in pred_block.outgoing_edges]
+        succ_block.incoming_edges = [b for b in succ_block.incoming_edges
+                                     if b is not pred_block]
+        succ_block.incoming_edges.append(split)
+
+        split.incoming_edges.append(pred_block)
+        split.outgoing_edges.append(succ_block)
+
+        # Keep it next to the block it came from so the dump stays readable
+        position = self.function.basic_blocks.index(pred_block) + 1
+        self.function.basic_blocks.insert(position, split)
+        self.split_blocks.append(split)
+
+        return split
+
+    def _phi_copy_block(self, pred_block: MediumLevelILBasicBlock,
+                        succ_block: MediumLevelILBasicBlock,
+                        split_cache: Dict) -> MediumLevelILBasicBlock:
+        '''Block a phi copy for the pred -> succ edge belongs in
+
+        Putting it in pred_block is only correct when that edge is the only way
+        out. On a critical edge - pred branches several ways and succ is joined
+        from several places - the copy would sit alongside the other successor's
+        own reads, and per-block liveness reports it as interfering with them
+        even though the two never run together. That is the classic lost-copy
+        problem, and it surfaces as a shadow variable in the output. Giving the
+        copy a block of its own narrows its live-out to that one edge.
+        '''
+        if len(pred_block.outgoing_edges) <= 1 or len(succ_block.incoming_edges) <= 1:
+            return pred_block
+
+        cached = split_cache.get((pred_block, succ_block))
+
+        if cached is not None:
+            return cached
+
+        split = self._split_critical_edge(pred_block, succ_block)
+        split_cache[(pred_block, succ_block)] = split
+
+        return split
+
+    def _remove_redundant_splits(self):
+        '''Drop split blocks whose copy coalesced away, leaving only the jump'''
+        removed = False
+
+        for split in self.split_blocks:
+            if len(split.instructions) != 1 or not isinstance(split.instructions[0], MLILGoto):
+                continue
+
+            if len(split.incoming_edges) != 1 or len(split.outgoing_edges) != 1:
+                continue
+
+            pred_block = split.incoming_edges[0]
+            succ_block = split.outgoing_edges[0]
+
+            self._retarget_branch(pred_block, split, succ_block)
+
+            pred_block.outgoing_edges = [succ_block if b is split else b
+                                         for b in pred_block.outgoing_edges]
+            succ_block.incoming_edges = [b for b in succ_block.incoming_edges
+                                         if b is not split]
+
+            if pred_block not in succ_block.incoming_edges:
+                succ_block.incoming_edges.append(pred_block)
+
+            self.function.basic_blocks.remove(split)
+            removed = True
+
+        self.split_blocks = []
+
+        if removed:
+            self.function.renumber_blocks()
+
     def _eliminate_phi_nodes(self):
         '''Replace Phi nodes with SSA copies in predecessor blocks'''
         # Build set of parameter variables for quick lookup
@@ -1133,7 +1243,10 @@ class SSADeconstructor:
                 if isinstance(inst, MLILSetVarSSA):
                     def_addr[inst.var] = inst.address
 
-        for block in self.function.basic_blocks:
+        split_cache: Dict[Tuple[MediumLevelILBasicBlock, MediumLevelILBasicBlock],
+                          MediumLevelILBasicBlock] = {}
+
+        for block in list(self.function.basic_blocks):
             phi_nodes = [inst for inst in block.instructions if isinstance(inst, MLILPhi)]
 
             if not phi_nodes:
@@ -1159,12 +1272,17 @@ class SSADeconstructor:
                     copy = MLILSetVarSSA(phi.dest, MLILVarSSA(ssa_var),
                                          address = def_addr.get(ssa_var, 0))
 
+                    copy_block = self._phi_copy_block(pred_block, block, split_cache)
+
                     # Insert before terminal instruction
-                    if pred_block.instructions and pred_block.has_terminal:
-                        pred_block.instructions.insert(-1, copy)
+                    if copy_block.instructions and copy_block.has_terminal:
+                        copy_block.instructions.insert(-1, copy)
 
                     else:
-                        pred_block.instructions.append(copy)
+                        copy_block.instructions.append(copy)
+
+        if split_cache:
+            self.function.renumber_blocks()
 
 # ============================================================================
 # Public API
