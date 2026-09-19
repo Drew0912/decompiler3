@@ -75,7 +75,7 @@ class BranchOrderNormalizationPass(Pass):
         false_is_chain = self._is_else_if_chain(stmt.false_block)
 
         # Moving a chain into the then-branch buries the next test in it. Only a
-        # problem when the arms differ: if both are chains they just trade places
+        # problem when the arms differ: if false is already the chain, it's fine
         if false_is_chain and not true_is_chain:
             return
 
@@ -87,10 +87,32 @@ class BranchOrderNormalizationPass(Pass):
             self._swap(stmt)
             return
 
+        # Both arms are chains: codegen can only flatten the false/else side, so
+        # something nests either way. Flatten whichever chain runs longer and
+        # bury the shorter one; an equal-length tie falls through to the same
+        # line/depth tie-break used for ordinary sibling arms below
+        if true_is_chain and false_is_chain:
+            true_len = self._chain_length(stmt.true_block)
+            false_len = self._chain_length(stmt.false_block)
+
+            if true_len != false_len:
+                if true_len > false_len:
+                    self._swap(stmt)
+                return
+
         if not self._should_swap(stmt):
             return
 
         self._swap(stmt)
+
+    @classmethod
+    def _chain_length(cls, block: Optional[HLILBlock]) -> int:
+        '''How many further else-if links follow from this lone-if block'''
+        if not cls._is_else_if_chain(block):
+            return 0
+
+        inner_if = next(s for s in block.statements if isinstance(s, HLILIf))
+        return 1 + max(cls._chain_length(inner_if.true_block), cls._chain_length(inner_if.false_block))
 
     @classmethod
     def _swap(cls, stmt: HLILIf):
@@ -142,8 +164,11 @@ class BranchOrderNormalizationPass(Pass):
         return bool(block and block.statements)
 
     @classmethod
-    def _is_else_if_chain(cls, block: HLILBlock) -> bool:
+    def _is_else_if_chain(cls, block: Optional[HLILBlock]) -> bool:
         '''An else branch that is nothing but the next test in a chain'''
+        if not block or not block.statements:
+            return False
+
         real_stmts = [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
 
         return len(real_stmts) == 1 and isinstance(real_stmts[0], HLILIf)
