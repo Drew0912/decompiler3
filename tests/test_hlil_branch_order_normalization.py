@@ -77,8 +77,8 @@ class TestBranchOrderNormalization(unittest.TestCase):
         self.assertEqual(first_comment(result.true_block), f'line({EARLY_LINE})')
         self.assertEqual(result.condition.op, BinaryOp.GT)
 
-    def test_else_if_chain_is_refused(self):
-        # Swapping would bury the next test inside the then-branch
+    def test_asymmetric_else_if_chain_is_refused(self):
+        # Only the false arm is a chain, so swapping would bury the next test
         inner = HLILIf(make_condition(), make_arm(EARLY_LINE), None)
         stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(LATE_LINE), HLILBlock([inner]))
 
@@ -88,15 +88,46 @@ class TestBranchOrderNormalization(unittest.TestCase):
         self.assertEqual(first_comment(result.true_block), f'line({LATE_LINE})')
         self.assertEqual(result.condition.op, BinaryOp.GT)
 
-    def test_missing_line_info_is_refused(self):
-        bare = HLILBlock([HLILExprStmt(HLILCall('untagged', []))])
-        stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(LATE_LINE), bare)
+    def test_symmetric_else_if_chains_are_swapped(self):
+        # Both arms are chains, so they simply trade places - nothing gets buried
+        late_chain = HLILBlock([HLILIf(make_condition(), make_arm(LATE_LINE), None)])
+        early_chain = HLILBlock([HLILIf(make_condition(), make_arm(EARLY_LINE), None)])
+        stmt = HLILIf(make_condition(BinaryOp.GT), late_chain, early_chain)
 
         func = run_pass(stmt)
         result = func.body.statements[0]
 
-        self.assertEqual(first_comment(result.true_block), f'line({LATE_LINE})')
+        self.assertEqual(result.condition.op, BinaryOp.LE)
+        self.assertEqual(first_comment(result.true_block.statements[0].true_block),
+                         f'line({EARLY_LINE})')
+        self.assertEqual(first_comment(result.false_block.statements[0].true_block),
+                         f'line({LATE_LINE})')
+
+    def test_missing_line_info_falls_back_to_nesting_depth(self):
+        # No line numbers to compare, so the shallower arm goes first instead -
+        # the rule the TypeScript emitter used to apply on its own
+        deep = HLILBlock([HLILIf(make_condition(), HLILBlock([
+            HLILIf(make_condition(), HLILBlock([HLILExprStmt(HLILCall('deep', []))]), None),
+        ]), None)])
+        shallow = HLILBlock([HLILExprStmt(HLILCall('shallow', []))])
+        stmt = HLILIf(make_condition(BinaryOp.GT), deep, shallow)
+
+        func = run_pass(stmt)
+        result = func.body.statements[0]
+
+        self.assertEqual(result.condition.op, BinaryOp.LE)
+        self.assertIsInstance(result.true_block.statements[0], HLILExprStmt)
+
+    def test_equal_depth_without_line_info_is_left_alone(self):
+        left = HLILBlock([HLILExprStmt(HLILCall('left', []))])
+        right = HLILBlock([HLILExprStmt(HLILCall('right', []))])
+        stmt = HLILIf(make_condition(BinaryOp.GT), left, right)
+
+        func = run_pass(stmt)
+        result = func.body.statements[0]
+
         self.assertEqual(result.condition.op, BinaryOp.GT)
+        self.assertIs(result.true_block, left)
 
     def test_empty_arm_is_refused(self):
         stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(LATE_LINE), HLILBlock())

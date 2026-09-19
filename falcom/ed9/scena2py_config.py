@@ -16,20 +16,20 @@ class ScenaDecompileConfig:
     write_ts: bool = True   # final TypeScript (.ts)
 
     # Debug/inspection outputs
-    write_llil_asm: bool = True    # .llil.asm text dump
-    write_llil_dot: bool = True    # one .llil.<func>.dot CFG per function. Use Graphviz Online
-    write_mlil_asm: bool = True    # .mlil.asm text dump
-    write_mlil_dot: bool = True    # one .mlil.<func>.dot CFG per function. Use Graphviz Online
+    write_llil_asm: bool = False    # .llil.asm text dump
+    write_llil_dot: bool = False    # one .llil.<func>.dot CFG per function. Use Graphviz Online
+    write_mlil_asm: bool = False    # .mlil.asm text dump
+    write_mlil_dot: bool = False    # one .mlil.<func>.dot CFG per function. Use Graphviz Online
     write_hlil_ts: bool = False     # .hlil.ts text dump (HLILFormatter text, not recompilable code)
 
     # Parsed header, per-function ScpFunctionEntry, per-call debug info. Populated during
     # parsing regardless of round_trip, except zero-arg-count debug records are dropped when
     # round_trip=False (ScpParser._read_functions)
-    write_debug_info: bool = True    # .debug.txt
+    write_debug_info: bool = False    # .debug.txt
 
     # ScpParser flags
     round_trip: bool = False
-    keep_unreachable_code: bool = True
+    keep_unreachable_code: bool = False
 
     # MLIL conversion flags, forwarded to convert_falcom_llil_to_mlil
     optimize_mlil: bool = True

@@ -10,6 +10,11 @@ That makes the useful number the *difference* between HLIL and MLIL: backward
 steps present at MLIL are inherited from the game's own bytecode and are not a
 decompiler defect, while the excess at HLIL is what structuring introduced.
 
+The HLIL column describes the generated `.ts` as well: arm order is decided once,
+in BranchOrderNormalizationPass, and the TypeScript emitter renders that decision
+rather than making its own. If the two ever disagree again, the emitter has
+started restructuring.
+
 Counts are reported per level too, so a dropped comment (loss) or a re-emitted
 region (gain) is visible and attributable.
 

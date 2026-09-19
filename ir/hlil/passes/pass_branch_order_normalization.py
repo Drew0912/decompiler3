@@ -10,6 +10,11 @@ costs nothing but the negation:
 
     if (!c) { /* line 758 */ } else { /* line 766 */ }
 
+This is the only place arm order is decided. The TypeScript emitter used to make
+the same choice again by nesting depth, which contradicted source order 146 times
+against 7 and left `.hlil.ts` and `.ts` disagreeing about the same function; that
+rule now lives here as the tie-break for arms carrying no line number.
+
 This is the one pass that deliberately diverges from the order the bytecode was
 emitted in, so it is optional - see `normalize_branch_order` in
 falcom/ed9/hlil_converter.py.
@@ -70,25 +75,61 @@ class BranchOrderNormalizationPass(Pass):
                     self._process_block(case.body)
 
     def _normalize(self, stmt: HLILIf):
-        '''Swap this if's arms when doing so restores ascending line order'''
+        '''Swap this if's arms when the other order reads better'''
         if not self._has_statements(stmt.true_block) or not self._has_statements(stmt.false_block):
             return
 
-        # An else-if chain reads as a chain; swapping would bury the next test
-        if self._is_else_if_chain(stmt.false_block):
+        # Moving a chain into the then-branch buries the next test in it. Only a
+        # problem when the arms differ: if both are chains they just trade places
+        if (self._is_else_if_chain(stmt.false_block) and
+                not self._is_else_if_chain(stmt.true_block)):
             return
 
-        true_line = self._first_line(stmt.true_block)
-        false_line = self._first_line(stmt.false_block)
-
-        if true_line is None or false_line is None:
-            return
-
-        if false_line >= true_line:
+        if not self._should_swap(stmt):
             return
 
         stmt.condition = self._negate(stmt.condition)
         stmt.true_block, stmt.false_block = stmt.false_block, stmt.true_block
+
+    def _should_swap(self, stmt: HLILIf) -> bool:
+        '''Whether the false arm belongs first
+
+        Source order decides wherever both arms carry a line number, because the
+        corpus says the nesting rule contradicts it 146 times against 7. Depth is
+        the tie-break for the rest, which is where that rule went uncontested.
+        '''
+        true_line = self._first_line(stmt.true_block)
+        false_line = self._first_line(stmt.false_block)
+
+        if true_line is not None and false_line is not None and true_line != false_line:
+            return false_line < true_line
+
+        # Shallower arm first, so the deeper one lands in the else and flattens
+        # into an else-if chain instead of nesting
+        return self._if_depth(stmt.true_block) > self._if_depth(stmt.false_block)
+
+    @classmethod
+    def _if_depth(cls, block: Optional[HLILBlock]) -> int:
+        '''Maximum if nesting depth inside a block'''
+        if not block or not block.statements:
+            return 0
+
+        max_depth = 0
+        stack = [(block, 0)]
+
+        while stack:
+            current, depth = stack.pop()
+
+            if not current or not current.statements:
+                continue
+
+            for stmt in current.statements:
+                if isinstance(stmt, HLILIf):
+                    max_depth = max(max_depth, depth + 1)
+                    stack.append((stmt.true_block, depth + 1))
+                    stack.append((stmt.false_block, depth + 1))
+
+        return max_depth
 
     def _negate(self, condition):
         '''Negate a condition, pushing through && and || rather than wrapping them

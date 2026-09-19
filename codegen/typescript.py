@@ -416,29 +416,6 @@ class TypeScriptGenerator:
 
         return lines
 
-    @classmethod
-    def _get_if_depth(cls, block: HLILBlock) -> int:
-        '''Get the maximum if nesting depth in a block (iterative)'''
-        if not block or not block.statements:
-            return 0
-
-        max_depth = 0
-        stack = [(block, 0)]  # (block, current_depth)
-
-        while stack:
-            blk, depth = stack.pop()
-            if not blk or not blk.statements:
-                continue
-
-            for stmt in blk.statements:
-                if isinstance(stmt, HLILIf):
-                    new_depth = depth + 1
-                    max_depth = max(max_depth, new_depth)
-                    stack.append((stmt.true_block, new_depth))
-                    stack.append((stmt.false_block, new_depth))
-
-        return max_depth
-
     NEGATION_MAP = {
         BinaryOp.EQ: BinaryOp.NE,
         BinaryOp.NE: BinaryOp.EQ,
@@ -471,24 +448,18 @@ class TypeScriptGenerator:
             true_block = stmt.true_block
             false_block = stmt.false_block
 
-            # Swap if true has deeper if nesting than false (reduce nesting)
-            # But only if it won't create an empty true block
-            true_depth = cls._get_if_depth(true_block)
-            false_depth = cls._get_if_depth(false_block)
+            # Arm order is decided in HLIL (BranchOrderNormalizationPass) so that
+            # this output and the HLIL dump agree - only an empty then-branch is
+            # still worth rewriting here
             false_has_content = false_block and false_block.statements
-            if false_has_content and true_depth > false_depth:
+            true_empty = not true_block or not true_block.statements
+
+            if true_empty and false_has_content:
                 cond_str = cls._negate_condition_str(condition)
-                true_block, false_block = false_block, true_block
+                true_block, false_block = false_block, None
 
             else:
-                # Swap if true block is empty but false has content
-                true_empty = not true_block or not true_block.statements
-                if true_empty and false_has_content:
-                    cond_str = cls._negate_condition_str(condition)
-                    true_block, false_block = false_block, None
-
-                else:
-                    cond_str = cls._format_expr(condition)
+                cond_str = cls._format_expr(condition)
 
             lines.append(f'{indent_str}if ({cond_str}) {{')
             lines.extend(cls._generate_block(true_block, indent + 1))
