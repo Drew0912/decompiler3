@@ -553,7 +553,10 @@ class MLILToHLILConverter:
         elif isinstance(node, HLILSwitch):
             names.extend(self._collect_used_var_names(node.scrutinee))
             for case in node.cases:
-                names.extend(self._collect_used_var_names(case.value))
+                if case.values is not None:
+                    for value in case.values:
+                        names.extend(self._collect_used_var_names(value))
+
                 names.extend(self._collect_used_var_names(case.body))
 
         return names
