@@ -10,6 +10,7 @@ class LowLevelILFalcomOperation(IntEnum):
     '''Falcom-specific LLIL operations'''
     LLIL_PUSH_CALLER_FRAME = LowLevelILOperation.LLIL_PUSH_CALLER_FRAME  # Push caller frame (4 values)
     LLIL_CALL_SCRIPT = LowLevelILOperation.LLIL_CALL_SCRIPT              # Call script function
+    LLIL_CALL_SCRIPT_NO_RETURN = LowLevelILOperation.LLIL_CALL_SCRIPT_NO_RETURN  # Tail-call script function
     LLIL_GLOBAL_LOAD = LowLevelILOperation.LLIL_USER_DEFINED     # Load from global variable array
     LLIL_GLOBAL_STORE = LowLevelILOperation.LLIL_USER_DEFINED + 1  # Store to global variable array
     LLIL_DEBUG_LOG = LowLevelILOperation.LLIL_USER_DEFINED + 2     # Debug print of stack values
@@ -65,6 +66,31 @@ class LowLevelILCallScript(LowLevelILCall):
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)
         return f'call_script(`{self.module}.{self.func}`, [{args_str}]) -> {self.return_target.label}'
+
+
+class LowLevelILCallScriptNoReturn(LowLevelILCall):
+    '''CALL_SCRIPT_NO_RETURN - tail call to a script function; caller never regains control (statement)
+
+    Unlike CALL_SCRIPT, the bytecode emits no PUSH_CALLER_FRAME before this opcode - the compiler
+    only pushes the arguments, since the callee's frame takes over instead of returning here.
+    '''
+
+    def __init__(
+        self,
+        module: str,
+        func: str,
+        args: List['LowLevelILExpr'],
+    ):
+        target = f'{module}.{func}'
+        super().__init__(target, return_target = None, args = args, returns = False)
+        self.operation    = LowLevelILFalcomOperation.LLIL_CALL_SCRIPT_NO_RETURN
+        self.module       = module          # Script module name (e.g., 'system')
+        self.func         = func            # Function name (e.g., 'OnTalkBegin')
+        self.arg_count    = len(args)       # Number of arguments
+
+    def __str__(self) -> str:
+        args_str = ', '.join(str(arg) for arg in self.args)
+        return f'call_script_no_return(`{self.module}.{self.func}`, [{args_str}])'
 
 
 class LowLevelILGlobalLoad(LowLevelILExpr):

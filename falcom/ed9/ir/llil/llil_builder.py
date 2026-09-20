@@ -244,6 +244,34 @@ class FalcomVMBuilder(LowLevelILBuilder):
         # Clean up state
         self.caller_frame_inst = None
 
+    def call_script_no_return(self, module: str, func: str, arg_count: int):
+        '''CALL_SCRIPT_NO_RETURN operation - tail call to a script function, no return to caller
+
+        No push_caller_frame/push_ret_addr pair precedes this opcode in the bytecode, so
+        return_target_stack/sp_before_call_stack are not touched. The args stay logically on the
+        vstack (the callee's frame takes over rather than this function reading them back), so
+        _cleanup_stack brings the tracked sp back to 0 without emitting IL - matching the bytecode,
+        which emits no cleanup POP before a tail call.
+        '''
+        offset = -1
+        args = [self.vstack_peek(offset - i) for i in range(arg_count)]
+
+        call_inst = LowLevelILCallScriptNoReturn(module, func, args)
+        self.add_instruction(call_inst)
+
+        self._cleanup_stack(arg_count)
+
+        # A tail call replaces the rest of the function - nothing but its own arguments can be
+        # live at this point. Checked immediately, not left to finalize()'s end-of-function check:
+        # this block has no successor, so a leak here never propagates anywhere for finalize() to
+        # see, and a later block reached via a different branch would restore its own saved sp
+        # snapshot and silently paper over it (Codex Rule 0 finding, see notes/codex_rules.md).
+        if self.sp_get() != 0:
+            raise RuntimeError(
+                f'Stack imbalance in call_script_no_return: after cleaning up {arg_count} args, '
+                f'current_sp={self.sp_get()} but a tail call must leave sp=0'
+            )
+
     # === VM Operations ===
 
     def push_int(self, value: int, is_hex: bool = False):

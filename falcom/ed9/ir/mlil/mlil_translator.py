@@ -49,6 +49,9 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
             # The VM returns whatever the result register holds
             self.builder.ret(self.builder.var(self._result_reg_var()))
 
+        elif isinstance(llil_inst, LowLevelILCallScriptNoReturn):
+            self._translate_call_script_no_return(llil_inst)
+
         elif isinstance(llil_inst, LowLevelILCallScript):
             self._translate_call_script(llil_inst)
 
@@ -82,6 +85,18 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         # Add goto to return target (always a LowLevelILBasicBlock in Falcom)
         return_block = self.block_map[llil_inst.return_target]
         self.builder.goto(return_block)
+
+    def _translate_call_script_no_return(self, llil_inst: LowLevelILCallScriptNoReturn):
+        '''Translate a tail-call script call as `return module.func(args)`
+
+        A tail call still delivers the callee's result to our own caller, so this MLIL shape
+        satisfies the "every block ends in a terminal" invariant and reuses the existing
+        call/return path instead of needing a dedicated terminal call node.
+        '''
+        mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
+
+        self.builder.call_script(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
+        self.builder.ret(self.builder.var(self._result_reg_var()))
 
     def _translate_syscall(self, llil_inst: LowLevelILSyscall):
         '''Translate Falcom syscall'''

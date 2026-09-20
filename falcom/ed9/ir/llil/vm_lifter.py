@@ -217,6 +217,12 @@ class ED9VMLifter:
                 argc = int(inst.operands[2].value)
                 builder.call_script(module, func_name, argc)
 
+            case ED9Opcode.CALL_SCRIPT_NO_RETURN:
+                module = self._must_str(inst.operands[0].value)
+                func_name = self._must_str(inst.operands[1].value)
+                argc = int(inst.operands[2].value)
+                builder.call_script_no_return(module, func_name, argc)
+
             case ED9Opcode.SYSCALL:
                 subsystem = int(inst.operands[0].value)
                 cmd = int(inst.operands[1].value)

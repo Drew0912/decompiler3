@@ -68,11 +68,12 @@ class LowLevelILOperation(IntEnum2):
     LLIL_STACK_ADDR         = 62    # address of stack location (sp + offset)
 
     # Falcom VM specific (user-defined extensions)
-    LLIL_PUSH_CALLER_FRAME  = 1000  # Falcom VM: push caller frame (4 values)
-    LLIL_CALL_SCRIPT        = 1001  # Falcom VM: call script function
+    LLIL_PUSH_CALLER_FRAME     = 1000  # Falcom VM: push caller frame (4 values)
+    LLIL_CALL_SCRIPT           = 1001  # Falcom VM: call script function
+    LLIL_CALL_SCRIPT_NO_RETURN = 1002  # Falcom VM: tail-call script function (never returns to caller)
 
-    # User-defined extensions (reserved range: 1002+)
-    LLIL_USER_DEFINED       = 1002  # Start of user-defined operations
+    # User-defined extensions (reserved range: 1003+)
+    LLIL_USER_DEFINED       = 1003  # Start of user-defined operations
 
 
 class LowLevelILInstruction(ILInstruction):
@@ -428,13 +429,16 @@ class LowLevelILCall(LowLevelILStatement, Terminal):
     def __init__(
         self,
         target: str,
-        return_target: 'LowLevelILBasicBlock',
+        return_target: Optional['LowLevelILBasicBlock'],
         args: List['LowLevelILExpr'] = None,
+        *,
+        returns: bool = True,
     ):
         super().__init__(LowLevelILOperation.LLIL_CALL)
         self.target = target
-        self.return_target = return_target  # Where to return after call (always a block)
+        self.return_target = return_target  # Where to return after call (None if returns is False)
         self.args = args if args is not None else []  # Arguments (used by MLIL translator)
+        self.returns = returns  # False for a tail call that never gives control back to this function
 
     def __str__(self) -> str:
         if self.args:
@@ -707,8 +711,12 @@ class LowLevelILFunction:
                 block.add_outgoing_edge(last_inst.false_target)
 
             elif isinstance(last_inst, LowLevelILCall):
+                if not last_inst.returns:
+                    # Tail call - caller never regains control, no outgoing edge
+                    pass
+
                 # Call returns to explicit return target
-                if last_inst.return_target is not None:
+                elif last_inst.return_target is not None:
                     return_block = last_inst.return_target
                     # Resolve label if needed
                     if isinstance(return_block, str):

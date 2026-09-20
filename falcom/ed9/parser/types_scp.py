@@ -324,7 +324,7 @@ class ScpFunctionCallDebugInfo(StrictBase):
     class CallType(IntEnum2):
         Local           = 0
         Script          = 1
-        ScriptNoReturn  = 2     # unverified - no sample script uses CALL_SCRIPT_NO_RETURN
+        ScriptNoReturn  = 2     # CALL_SCRIPT_NO_RETURN - tail call, no PUSH_CALLER_FRAME precedes it
         Syscall         = 3
 
     func_id     : int

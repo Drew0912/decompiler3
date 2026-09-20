@@ -174,13 +174,23 @@ class CallDebugInfoTracker:
             key, ret_label = self.close_frame()
             self.add_call(CallType.Local, operands[0], ret_label, args, key)
 
-        elif opcode in SCRIPT_CALL_OPS:
+        elif opcode == ED9Opcode.CALL_SCRIPT:
             module, func, argc = operands
             args = self.pop(argc)
             self.pop(CALLER_FRAME_SLOTS)
             key, _ = self.close_frame()
-            call_type = CallType.Script if opcode == ED9Opcode.CALL_SCRIPT else CallType.ScriptNoReturn
-            self.add_call(call_type, (module, func), None, args, key)
+            self.add_call(CallType.Script, (module, func), None, args, key)
+
+        elif opcode == ED9Opcode.CALL_SCRIPT_NO_RETURN:
+            # No PUSH_CALLER_FRAME precedes this opcode - only the arguments were pushed. Popping
+            # CALLER_FRAME_SLOTS or closing a frame here would consume state belonging to an
+            # enclosing call and corrupt its debug-record ordering. Its own key must still sort
+            # before any call nested in its arguments (source pre-order) - same reasoning as SYSCALL.
+            module, func, argc = operands
+            args = self.pop(argc)
+            nested_keys = [arg.call_key for arg in args if arg.call_key is not None]
+            key = self.key_before(min(nested_keys)) if nested_keys else self.next_key()
+            self.add_call(CallType.ScriptNoReturn, (module, func), None, args, key)
 
         elif opcode == ED9Opcode.SYSCALL:
             # Args stay on the stack - the following POP removes them
