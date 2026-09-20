@@ -677,6 +677,11 @@ class LLILFormatter:
         elif isinstance(inst, (LowLevelILStackStore, LowLevelILStackLoad)):
             line = f'{line} ; [{inst.slot_index}]'
 
+        elif isinstance(inst, LowLevelILFrameStore):
+            word_offset = inst.offset // WORD_SIZE
+            location = f'fp + {word_offset}' if word_offset >= 0 else f'fp - {-word_offset}'
+            line = f'STACK[{location}] = STACK[--sp] ; {inst.value}'
+
         return [line]
 
     @classmethod

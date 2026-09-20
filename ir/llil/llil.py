@@ -711,26 +711,25 @@ class LowLevelILFunction:
                 block.add_outgoing_edge(last_inst.false_target)
 
             elif isinstance(last_inst, LowLevelILCall):
-                if not last_inst.returns:
-                    # Tail call - caller never regains control, no outgoing edge
-                    pass
+                if last_inst.returns:
+                    # Call returns to explicit return target
+                    if last_inst.return_target is not None:
+                        return_block = last_inst.return_target
+                        # Resolve label if needed
+                        if isinstance(return_block, str):
+                            return_block = self.get_block_by_label(return_block)
+                            if return_block is None:
+                                raise RuntimeError(f'Undefined return label: {last_inst.return_target}')
 
-                # Call returns to explicit return target
-                elif last_inst.return_target is not None:
-                    return_block = last_inst.return_target
-                    # Resolve label if needed
-                    if isinstance(return_block, str):
-                        return_block = self.get_block_by_label(return_block)
-                        if return_block is None:
-                            raise RuntimeError(f'Undefined return label: {last_inst.return_target}')
+                        block.add_outgoing_edge(return_block)
 
-                    block.add_outgoing_edge(return_block)
+                    else:
+                        raise NotImplementedError('Fall through is not supported')
+                        # next_idx = block.index + 1
+                        # if next_idx < len(self.basic_blocks):
+                        #     block.add_outgoing_edge(self.basic_blocks[next_idx])
 
-                else:
-                    raise NotImplementedError('Fall through is not supported')
-                    # next_idx = block.index + 1
-                    # if next_idx < len(self.basic_blocks):
-                    #     block.add_outgoing_edge(self.basic_blocks[next_idx])
+                # else: tail call (returns=False) - caller never regains control, no outgoing edge
 
             elif not isinstance(last_inst, Terminal):
                 # Should not happen - all blocks must end with terminal

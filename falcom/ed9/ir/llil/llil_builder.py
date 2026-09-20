@@ -261,11 +261,10 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
         self._cleanup_stack(arg_count)
 
-        # A tail call replaces the rest of the function - nothing but its own arguments can be
-        # live at this point. Checked immediately, not left to finalize()'s end-of-function check:
-        # this block has no successor, so a leak here never propagates anywhere for finalize() to
-        # see, and a later block reached via a different branch would restore its own saved sp
-        # snapshot and silently paper over it (Codex Rule 0 finding, see notes/codex_rules.md).
+        # A tail call replaces the rest of the function, so only its own arguments should be
+        # live here. Checked immediately rather than deferred to finalize(): this block has no
+        # successor, so a leak would never reach finalize()'s end-of-function check, and a later
+        # block reached via a different branch could restore its own sp snapshot and mask it.
         if self.sp_get() != 0:
             raise RuntimeError(
                 f'Stack imbalance in call_script_no_return: after cleaning up {arg_count} args, '
@@ -302,7 +301,15 @@ class FalcomVMBuilder(LowLevelILBuilder):
         val = self.pop(hidden_for_formatter = True)
         # offset is relative to sp AFTER pop (new_sp + offset)
         slot_index = self.sp_get() + offset // WORD_SIZE
-        self.add_instruction(LowLevelILStackStore(val, offset = offset, slot_index = slot_index))
+
+        # A parameter slot is frame-relative (mirrors load_stack's parameter check below) so a
+        # reassigned argument keeps its identity instead of becoming a new, disconnected local.
+        num_params = self.function.num_params
+        if 0 <= slot_index < num_params:
+            self.frame_store(val, slot_index * WORD_SIZE)
+
+        else:
+            self.add_instruction(LowLevelILStackStore(val, offset = offset, slot_index = slot_index))
 
     def pop_jmp_zero(self, true_target, false_target):
         '''POP_JMP_ZERO operation - branch if popped value is zero'''
