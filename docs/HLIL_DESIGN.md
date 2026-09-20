@@ -233,9 +233,6 @@ elimination, formatting, and the disabled copy-propagation pass have no dedicate
   type refinement unresolved.
 - `CopyPropagationPass` remains implemented and exported despite being disabled in favor of MLIL
   SSA propagation. Its long-term API/maintenance status should be decided.
-- The converter retains `USE_LEGACY_MERGE_DETECTION` and the legacy reachability heuristic for
-  debugging. The newer structural analyzer is the active path, so the fallback should either gain
-  explicit regression coverage or eventually be removed.
 - Tree-walking passes are not uniform about `HLILDoWhile` and `HLILFor`. Each pass should be audited
   when new structured node kinds become constructible so nested cleanup is not silently skipped.
 - Direct tests for irreducible/shared CFG regions and the clone-budget warning paths are still

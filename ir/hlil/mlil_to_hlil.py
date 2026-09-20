@@ -610,77 +610,17 @@ class MLILToHLILConverter:
             for tail, _ in loop_info.back_edges:
                 self.loop_ends[tail] = header
 
-    def _get_reachable(self, start_idx: int) -> Dict[int, int]:
-        reachable = {}
-        queue = deque([(start_idx, 0)])
-        while queue:
-            idx, depth = queue.popleft()
-            if idx in reachable:
-                continue
-            reachable[idx] = depth
-            for succ in self.block_successors.get(idx, []):
-                if succ not in reachable:
-                    queue.append((succ, depth + 1))
-        return reachable
-
-    # Set to True to use legacy reachability-based merge point detection
-    USE_LEGACY_MERGE_DETECTION = False
-
     def _find_merge_block(self, cond_block_idx: int, true_target_idx: int, false_target_idx: int) -> Optional[int]:
         '''Find merge point for if-else using structural analyzer.'''
         if true_target_idx == false_target_idx:
             return true_target_idx
 
-        if self.USE_LEGACY_MERGE_DETECTION:
-            return self._find_merge_block_legacy(true_target_idx, false_target_idx)
-
-        # Use structural analyzer
         if self.structural_analyzer is not None:
             return self.structural_analyzer.find_merge_point(
                 cond_block_idx, true_target_idx, false_target_idx
             )
 
         return None
-
-    def _find_merge_block_legacy(self, true_target_idx: int, false_target_idx: int) -> Optional[int]:
-        '''
-        Legacy: reachability-based heuristic for merge point detection.
-        Kept for debugging/comparison. Enable via USE_LEGACY_MERGE_DETECTION.
-        '''
-        succ1 = set(self.block_successors.get(true_target_idx, []))
-        succ2 = set(self.block_successors.get(false_target_idx, []))
-
-        # Check if one branch directly targets the other
-        if true_target_idx in succ2:
-            return true_target_idx
-
-        if false_target_idx in succ1:
-            return false_target_idx
-
-        # Check common immediate successors
-        common = succ1 & succ2
-        if common:
-            return min(common)
-
-        # Use reachability analysis
-        reachable1 = self._get_reachable(true_target_idx)
-        reachable2 = self._get_reachable(false_target_idx)
-        common_blocks = set(reachable1.keys()) & set(reachable2.keys())
-
-        # Check indirect merge
-        if true_target_idx in reachable2:
-            return true_target_idx
-
-        if false_target_idx in reachable1:
-            return false_target_idx
-
-        # Find closest common reachable block
-        common_blocks.discard(true_target_idx)
-        common_blocks.discard(false_target_idx)
-        if not common_blocks:
-            return None
-
-        return min(common_blocks, key=lambda idx: reachable1[idx] + reachable2[idx])
 
     def _is_passthrough_block(self, block_idx: int) -> bool:
         if block_idx >= len(self.mlil_func.basic_blocks):
