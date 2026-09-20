@@ -121,36 +121,41 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
         ts_chunks: list[str] = []
 
         for func in functions:
-            llil_func = ED9VMLifter(parser = parser).lift_function(func)
+            try:
+                llil_func = ED9VMLifter(parser = parser).lift_function(func)
 
-            if config.write_llil_asm:
-                llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
+                if config.write_llil_asm:
+                    llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
 
-            if config.write_llil_dot:
-                (output_dir / f'{out_no_suffix.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
+                if config.write_llil_dot:
+                    (output_dir / f'{out_no_suffix.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
 
-            need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
-            if not need_mlil:
-                continue
+                need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
+                if not need_mlil:
+                    continue
 
-            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = config.optimize_mlil, infer_types = config.infer_types)
+                mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = config.optimize_mlil, infer_types = config.infer_types)
 
-            if config.write_mlil_asm:
-                mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
+                if config.write_mlil_asm:
+                    mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
 
-            if config.write_mlil_dot:
-                (output_dir / f'{out_no_suffix.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
+                if config.write_mlil_dot:
+                    (output_dir / f'{out_no_suffix.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
 
-            if not (config.write_hlil_ts or config.write_ts):
-                continue
+                if not (config.write_hlil_ts or config.write_ts):
+                    continue
 
-            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
+                hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
 
-            if config.write_hlil_ts:
-                hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))
+                if config.write_hlil_ts:
+                    hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))
 
-            if config.write_ts:
-                ts_chunks.append(generate_typescript(hlil_func))
+                if config.write_ts:
+                    ts_chunks.append(generate_typescript(hlil_func))
+
+            except Exception as e:
+                # One bad function shouldn't lose the rest of the file's output
+                log.info(f'{path} [{func.name}]: {type(e).__name__}: {e}')
 
         if config.write_llil_asm:
             out.with_suffix('.llil.asm').write_text('\n'.join(llil_asm_lines), encoding = 'utf-8')

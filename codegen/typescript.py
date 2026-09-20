@@ -4,6 +4,11 @@ from common import *
 from typing import List, Optional
 from ir.hlil import *
 
+# Constant folding at codegen time only covers comparisons (arithmetic/bitwise/logical constant
+# pairs are printed literally via BINARY_OP_STR instead - see the isinstance(HLILBinaryOp) branch
+# below). Matches ir/hlil/passes/pass_branch_order_normalization.py's _COMPARISON_OPS.
+_COMPARISON_OPS = (BinaryOp.EQ, BinaryOp.NE, BinaryOp.LT, BinaryOp.LE, BinaryOp.GT, BinaryOp.GE)
+
 
 class TypeScriptGenerator:
     _current_func: 'HighLevelILFunction' = None
@@ -253,8 +258,10 @@ class TypeScriptGenerator:
                 return str(expr.value)
 
         elif isinstance(expr, HLILBinaryOp):
-            # Constant folding for comparison operators
-            if isinstance(expr.lhs, HLILConst) and isinstance(expr.rhs, HLILConst):
+            # Constant folding for comparison operators only - an arithmetic/bitwise/logical op
+            # with two constant operands (e.g. a compile-time 5 / 2) falls through to the plain
+            # BINARY_OP_STR rendering below instead of hitting the comparison-only match below.
+            if isinstance(expr.lhs, HLILConst) and isinstance(expr.rhs, HLILConst) and expr.op in _COMPARISON_OPS:
                 lhs_val, rhs_val = expr.lhs.value, expr.rhs.value
 
                 match expr.op:
@@ -275,9 +282,6 @@ class TypeScriptGenerator:
 
                     case BinaryOp.GE:
                         result = lhs_val >= rhs_val
-
-                    case _:
-                        raise NotImplementedError(f'Constant folding not implemented for {expr.op}')
 
                 return 'true' if result else 'false'
 
