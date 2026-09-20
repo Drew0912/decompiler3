@@ -1,76 +1,87 @@
 # Medium Level IL (MLIL) Design
 
-> Status: Draft — this document captures the target architecture before implementation.
+> Status: Implemented. This document originally described a pre-implementation target
+> architecture; it has been rewritten against the real implementation (2026-09-20), including a
+> full SSA optimizer pipeline that predates this revision but was never documented. See
+> `docs/MLIL_GUIDE.md` for a practical usage guide; this document focuses on the node model and
+> pipeline shape.
 
 ## Role in the Pipeline
 
 ```
-SCP → Parser → Bytecode → Disassembler → LLIL → MLIL → HLIL → Decompiled Code
+SCP → Parser → Disassembler → Lifter → LLIL → MLIL → HLIL → Codegen (TypeScript)
 ```
 
-MLIL is the bridge between the Falcom‑specific stack‑based LLIL and the future HLIL /
-decompiler passes. It must:
+MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 
-1. **Erase the explicit operand stack** — every temporary becomes a named variable.
-2. **Expose control/data flow** suitable for SSA and optimizer passes.
-3. **Retain Falcom semantics** (system call IDs, CALL_SCRIPT metadata, etc.) so that
-   later passes still understand the VM behavior.
+1. **Erases the explicit operand stack** — every temporary becomes a named variable.
+2. **Exposes control/data flow** suitable for SSA and optimizer passes.
+3. **Retains Falcom semantics** (syscall IDs, `CALL_SCRIPT` metadata, etc.) so later passes still
+   understand VM behavior.
 
 ## Module Layout
 
 | Path | Responsibility |
 | --- | --- |
-| `ir/mlil/mlil.py` | Core data structures (operations enum, expression & statement classes, variables, blocks, functions). |
-| `ir/mlil/mlil_builder.py` | Builder helpers (variable creation, SSA versioning, convenience helpers for emitting statements). |
-| `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests and debugging). |
-| `falcom/ed9/lifters/mlil_lifter.py` | LLIL → MLIL translator (Falcom specific). |
-| `tests/test_mlil.py` | Unit / snapshot tests for the lifter and formatter. |
-| `docs/MLIL_DESIGN.md` | This specification; should be kept consistent with implementation. |
+| `ir/mlil/mlil.py` | Core non-SSA data structures: `MediumLevelILInstruction` base, the `MediumLevelILExpr`/`MediumLevelILStatement` split, `MLILVariable`, `MediumLevelILBasicBlock`, `MediumLevelILFunction`. |
+| `ir/mlil/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
+| `ir/mlil/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
+| `ir/mlil/mlil_optimizer.py` | Top-level `optimize_mlil()`: SSA-convert → run `SSAOptimizer` → type inference → de-SSA → a post-de-SSA dead-code pass. |
+| `ir/mlil/mlil_type_inference.py` | `MLILTypeInference`, operating on SSA variables/`Phi` nodes. |
+| `ir/mlil/passes/` | The actual pass implementations (~16 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_dead_code.py`, and others. |
+| `ir/mlil/mlil_passes.py` | Re-export shim over `ir/mlil/passes/` — mirrors HLIL's `hlil_passes.py`. |
+| `ir/mlil/mlil_builder.py` | Builder API for constructing MLIL directly. |
+| `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging). |
+| `ir/mlil/mlil_types.py` | Type-kind/unification support, `FunctionSignatureDB`. |
+| `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator`/`translate_llil_to_mlil` (not Falcom-specific). |
+| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
+| `falcom/ed9/ir/mlil/mlil_translator.py` | Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
+| `falcom/ed9/ir/mlil/type_signatures.py` | Type signature data used by Falcom-specific passes. |
+| `tests/test_mlil_metadata.py` | The only dedicated MLIL test file currently — see Testing below. |
+
+Note: `falcom/ed9/lifters/mlil_lifter.py`, previously listed here, does not exist anywhere in the
+tree. This table now reflects the real path.
 
 ## Operations & Node Types
 
-- All MLIL nodes derive from:
+All MLIL nodes derive from a common `MediumLevelILInstruction` base carrying an
+`operation` enum value, an optional source `address`, and an `inst_index` inherited from LLIL for
+cross-layer traceability. Nodes are split into `MediumLevelILExpr` (produces a value) and
+`MediumLevelILStatement` (side effects only) — roughly 30 concrete instruction classes exist across
+these two categories, covering:
 
-  ```python
-  class MediumLevelILInstruction(ILInstruction):
-      operation: MediumLevelILOperation
-      address: int  # optional source offset
-      inst_index: int  # inherits LLIL inst_index for traceability
-  ```
-
-- Split into `MediumLevelILExpr` (produces a value) and `MediumLevelILStatement` (side effects only).
-- Planned operation groups:
-
-  | Category | Examples |
-  | --- | --- |
-  | Constants | `MLIL_CONST_INT`, `MLIL_CONST_FLOAT`, `MLIL_CONST_STR` |
-  | Variable read/write | `MLIL_VAR`, `MLIL_SET_VAR`, `MLIL_PHI` |
-  | Arithmetic / logical | `MLIL_ADD`, `MLIL_SUB`, `MLIL_MUL`, `MLIL_DIV`, `MLIL_MOD`, `MLIL_AND`, `MLIL_OR`, `MLIL_NOT`, `MLIL_CMP_*` |
-  | Memory / stack artifacts | `MLIL_LOAD_STACK_SLOT`, `MLIL_STORE_STACK_SLOT` (only for explicitly referenced addresses) |
-  | Control flow | `MLIL_GOTO`, `MLIL_IF`, `MLIL_RET` |
-  | Calls | `MLIL_CALL`, `MLIL_CALL_SCRIPT`, `MLIL_SYSCALL` |
-  | Falcom specific | Derived metadata on top of generic ops (no dedicated `PUSH_*` nodes; call setup is represented via variables/arguments). |
+| Category | Examples |
+| --- | --- |
+| Constants | `MLIL_CONST_INT`, `MLIL_CONST_FLOAT`, `MLIL_CONST_STR` |
+| Variable read/write | `MLIL_VAR`, `MLIL_SET_VAR`, `MLIL_PHI` (SSA form) |
+| Arithmetic / logical | `MLIL_ADD`, `MLIL_SUB`, `MLIL_MUL`, `MLIL_DIV`, `MLIL_MOD`, `MLIL_AND`, `MLIL_OR`, `MLIL_NOT`, `MLIL_CMP_*` |
+| Memory / stack artifacts | Explicit address expressions, for the cases where a raw stack address is referenced directly rather than eliminated. |
+| Control flow | `MLIL_GOTO`, `MLIL_IF`, `MLIL_RET` |
+| Calls | `MLIL_CALL`, `MLIL_CALL_SCRIPT`, `MLIL_SYSCALL` |
+| Falcom specific | Derived metadata on top of generic ops — stack-setup helpers like `PUSH_CALLER_FRAME`/`PUSH_FUNC_ID`/`PUSH_RET_ADDR` are fully lowered to regular variables/arguments, with no dedicated MLIL opcode. |
 
 ## Variable Model & SSA
 
-- Introduce `MLILVar` (logical variable) and `MLILVarVersion` (SSA version).
-- Stack slots become variables with canonical names:
+Two coexisting representations, not a single evolving one:
 
-  ```
-  slot_0003        # absolute slot index
-  arg_0 / arg_1    # parameters
-  temp_nnn         # temporaries introduced during translation
-  ```
+- **Non-SSA** (`ir/mlil/mlil.py`): `MLILVariable`, read via `MLILVar` and written via
+  `MLILSetVar`. This is the "on the wire" default form — a `MediumLevelILFunction` starts and ends
+  in this form both before and after the optimizer runs.
+- **SSA** (`ir/mlil/mlil_ssa.py`): `MLILVariableSSA`, `MLILVarSSA`, `MLILSetVarSSA`, and `MLILPhi`.
+  SSA construction is dominance-based (`SSAConstructor`) and includes critical-edge splitting;
+  deconstruction (`SSADeconstructor`) converts back to non-SSA form afterward.
 
-- MLIL lifter emits `MLIL_SET_VAR` whenever LLIL stores to a slot, and `MLIL_VAR`
-  whenever a value is consumed.
-- Falcom‑specific helpers like `PUSH_CALLER_FRAME`, `PUSH_FUNC_ID`, `PUSH_RET_ADDR`
-  are fully lowered to regular variables/arguments in MLIL; there is no dedicated
-  MLIL opcode for them once the stack layout is eliminated.
-- SSA form is optional but recommended:
-  1. Initial pass builds non‑SSA MLIL while recording definitions/uses.
-  2. Dominator‑based SSA construction inserts `MLIL_PHI` nodes per block entry.
-  3. Later passes (constant prop, DCE) operate on SSA.
+SSA is not optional or a future addition — it's where essentially all real optimization work
+happens. `optimize_mlil()` (`ir/mlil/mlil_optimizer.py`) converts non-SSA MLIL to SSA, runs the
+full `SSAOptimizer` pass suite plus type inference, then deconstructs back to non-SSA before
+returning. HLIL's converter (`falcom/ed9/ir/hlil/hlil_converter.py`) imports and consumes
+non-SSA `MediumLevelILFunction` — it does not read SSA form directly; by the time HLIL sees a
+function, SSA construction/optimization/deconstruction has already happened upstream in the MLIL
+pipeline.
+
+Falcom-specific stack-setup helpers (`PUSH_CALLER_FRAME`, `PUSH_FUNC_ID`, `PUSH_RET_ADDR`) are
+fully lowered to regular variables/arguments in MLIL — there is no dedicated MLIL opcode for them
+once the stack layout is eliminated.
 
 ## Basic Blocks & Functions
 
@@ -78,59 +89,57 @@ decompiler passes. It must:
 class MediumLevelILBasicBlock:
     index: int
     instructions: list[MediumLevelILStatement]
-    preds/succs: list[MediumLevelILBasicBlock]
+    incoming_edges: list[MediumLevelILBasicBlock]
+    outgoing_edges: list[MediumLevelILBasicBlock]
 
 class MediumLevelILFunction:
     name: str
     start_addr: int
     basic_blocks: list[MediumLevelILBasicBlock]
-    variables: dict[str, MLILVar]
-    llil_inst_to_mlil: dict[int, list[MediumLevelILInstruction]]
 ```
 
-- Each MLIL block mirrors an LLIL block. Additional split/merge may occur once SSA
-  is implemented.
-- `llil_inst_to_mlil` uses the LLIL `inst_index` (already tracked globally) so that
-  debugging tools can jump between layers.
+(Simplified for illustration — see `ir/mlil/mlil.py:632` and `:672` for the real class
+definitions.) Predecessor/successor edges are `incoming_edges`/`outgoing_edges`, not `preds`/
+`succs`. Each MLIL block mirrors an LLIL block; the LLIL `inst_index` carried on each instruction
+is how debugging tools jump between layers, rather than a separate `llil_inst_to_mlil` map.
 
-## LLIL → MLIL Translation Pipeline
+## LLIL → MLIL Pipeline
 
-1. **Input**: `LowLevelILFunction`.
-2. **Preprocessing**:
-   - Build CFG (already available via `build_cfg()`).
-   - Initialize block order and stack slot metadata.
-3. **Stack elimination**:
-   - Maintain `slot_index -> MLILVarVersion`.
-   - When LLIL pushes/pops, map to writes/reads of the corresponding variable.
-   - `LowLevelILStackAddr` becomes address expressions; pure stack pointers become
-     `MLIL_ADDR_OF_SLOT`.
-4. **Expression translation**:
-   - Binary/unary ops map 1:1 (e.g., `LLIL_ADD` → `MLIL_ADD`), but operands now
-     reference variables instead of stack loads.
-5. **Control flow**:
-   - `LLIL_IF` → `MLIL_IF` with condition expression, true/false block IDs.
-   - `LLIL_JMP` → `MLIL_GOTO`.
-   - `LLIL_CALL`/`LLIL_CALL_SCRIPT` carry callee + argument expressions.
-6. **SSA conversion** (optional initial phase):
-   - After linear translation, run a standard SSA construction pass.
-   - Insert `MLIL_PHI` nodes at block entries for variables with multiple defs.
-7. **Output**: `MediumLevelILFunction`.
+The real production entry point is `convert_falcom_llil_to_mlil()`
+(`falcom/ed9/ir/mlil/mlil_converter.py`), which builds a `Pipeline` and runs, in order:
 
-## Testing Strategy
+```
+ED9LLILToMLILPass → SSAConversionPass → SSAOptimizationPass →
+SSATypeInferencePass (optional) → SSADeconstructionPass → RegGlobalValuePropagationPass
+```
 
-- Extend `tests/test_scp_parser.py` (or new `tests/test_mlil.py`) to:
-  - Lift LLIL to MLIL for the existing `MayaEvent02_07_01` sample.
-  - Dump MLIL as text to `{input_file}.mlil.py` for inspection (similar to LLIL dump).
-  - Add unit tests for specific opcode translations (e.g., MOD, CALL_SCRIPT) once
-    MLIL lifter is implemented.
+One pass is explicitly disabled in this pipeline: `DeadCodeEliminationPass()` is commented out
+with a `# TODO: check if needed` note. This doesn't mean dead-code elimination is actually missing
+from the live path — other DCE passes still run: `pass_ssa_dead_code.py` and
+`pass_ssa_dead_phi.py` inside `SSAOptimizer`, plus a separate post-de-SSA dead-code step inlined in
+`ir/mlil/mlil_optimizer.py`. Only this one specific pass instance is unused.
 
-## Future Work
+### Optimization Passes (inside `SSAOptimizer`)
 
-- **Formatter**: Create `MLILFormatter` to pretty print SSA form (with variable names).
-  - Formatter lives in `ir/mlil/mlil_formatter.py` and is used by tests/CLI dumps.
-- **Analysis passes**: constant propagation, dead code elimination, condition simplification.
-- **HLIL integration**: once MLIL is stable, HLIL will operate on SSA output to
-  produce high‑level statements (if/else, loops, switch).
+Run on SSA form, in `ir/mlil/mlil_ssa_optimizer.py`'s configured order: sparse conditional constant
+propagation (SCCP), constant propagation, copy propagation, expression inlining, expression/
+condition simplification, negation normal form, dead-code elimination, and dead-`Phi` elimination.
+Register/global value propagation (`pass_reg_global_propagation.py`) runs as its own pipeline stage
+in the Falcom entry point, after SSA deconstruction.
 
-This document should be updated alongside implementation to reflect any changes in
-operation naming or conversion flow.
+## Testing
+
+Only one dedicated MLIL test file currently exists: `tests/test_mlil_metadata.py`. This is
+noticeably thinner than HLIL's three dedicated test files — worth treating as a gap given how much
+of the real optimization work (SSA construction/deconstruction, the ~10 SSA passes, register/
+global propagation) has no direct test coverage of its own.
+
+## Open Items
+
+- `DeadCodeEliminationPass()` in the Falcom pipeline is commented out with an unresolved
+  "check if needed" note — worth actually resolving given other DCE passes already cover most of
+  the same ground.
+- Dedicated MLIL-SSA test coverage (construction, deconstruction, critical-edge splitting, each of
+  the ~10 optimizer passes) doesn't exist yet, unlike HLIL's per-pass test files.
+- This document and `docs/MLIL_GUIDE.md` should be kept in sync with `ir/mlil/passes/` as passes
+  are added, removed, or reordered — that directory is the actual source of truth for what runs.
