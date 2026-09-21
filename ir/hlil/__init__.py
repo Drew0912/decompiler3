@@ -33,6 +33,7 @@ __all__ = [
     'HLILBinaryOp',
     'HLILUnaryOp',
     'HLILAddressOf',
+    'HLILDeref',
     'HLILCall',
     'HLILSyscall',
     'HLILExternCall',

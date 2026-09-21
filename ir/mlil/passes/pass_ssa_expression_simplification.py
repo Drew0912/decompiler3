@@ -38,6 +38,8 @@ from ..mlil import (
     MLILGt,
     MLILGe,
     MLILRet,
+    MLILDeref,
+    MLILStoreDeref,
 )
 from ..mlil_ssa import MLILSetVarSSA, MLILIf
 
@@ -76,6 +78,12 @@ class ExpressionSimplificationPass(Pass):
                 if new_value is not inst.value:
                     return MLILRet(new_value, address = inst.address).copy_metadata_from(inst)
 
+        elif isinstance(inst, MLILStoreDeref):
+            new_dest = self._simplify_expr(inst.dest)
+            new_value = self._simplify_expr(inst.value)
+            if new_dest is not inst.dest or new_value is not inst.value:
+                return inst.rebuild(new_dest, new_value)
+
         return inst
 
     def _simplify_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
@@ -92,7 +100,7 @@ class ExpressionSimplificationPass(Pass):
             if lhs is not expr.lhs or rhs is not expr.rhs:
                 return self._reconstruct_binary_op(expr, lhs, rhs)
 
-        elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot)):
+        elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILDeref)):
             operand = self._simplify_expr(expr.operand)
             if operand is not expr.operand:
                 return self._reconstruct_unary_op(expr, operand)
@@ -249,6 +257,9 @@ class ExpressionSimplificationPass(Pass):
 
         elif isinstance(expr, MLILTestZero):
             return MLILTestZero(operand)
+
+        elif isinstance(expr, MLILDeref):
+            return MLILDeref(operand)
 
         else:
             raise NotImplementedError(f'Unhandled unary operation: {type(expr).__name__}')

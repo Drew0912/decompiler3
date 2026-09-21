@@ -46,9 +46,10 @@ construction site anywhere in the converter or passes — it's dead/reserved, no
 **Other statements:** `HLILBlock`, `HLILAssign`, `HLILExprStmt`, `HLILComment` (carries `line(N)`
 markers that the branch-order pass reads to recover original source ordering).
 
-**Expressions:** `HLILVar`/`HLILConst`, `HLILBinaryOp`/`HLILUnaryOp`, `HLILAddressOf`, `HLILCall`
-(name + args), `HLILSyscall` (subsystem + cmd + args), `HLILExternCall` (`"module:func"`
-cross-script calls).
+**Expressions:** `HLILVar`/`HLILConst`, `HLILBinaryOp`/`HLILUnaryOp`, `HLILAddressOf`, `HLILDeref`
+(`*ptr`, from `MLILDeref` - a runtime-computed address, e.g. an out-parameter; not a subclass of
+`HLILUnaryOp`, same as `HLILAddressOf`), `HLILCall` (name + args), `HLILSyscall` (subsystem + cmd +
+args), `HLILExternCall` (`"module:func"` cross-script calls).
 
 **Register model:** there is no dedicated register IL node. `VariableKind` is
 `LOCAL`/`PARAM`/`GLOBAL`/`REG`; a `REG`/`GLOBAL` variable simply prints as `REGS[index]`/
@@ -99,9 +100,12 @@ splitting, which is deconstruction machinery living in `ir/mlil/mlil_ssa.py`, en
 ## Codegen
 
 `codegen/typescript.py` is a real TypeScript emitter, not generic pseudocode: typed signatures and
-`let` declarations, a generated header with `GLOBALS`/`REGS` arrays and `addr_of`/`int`/
-`extern_call`/`syscall`/`debug.log` intrinsics, and per-syscall wrapper functions from a signature
-database. It also does its own peephole simplification at print time (constant-folds
+`let` declarations, a generated header with `GLOBALS`/`REGS` arrays and `addr_of`/`deref`/
+`deref_set`/`int`/`extern_call`/`syscall`/`debug.log` intrinsics, and per-syscall wrapper functions
+from a signature database. TypeScript has no `*ptr` syntax, so a pointer read is a `deref(ptr)`
+call and a store through one (`HLILAssign` whose `dest` is `HLILDeref`) becomes a `deref_set(ptr,
+value)` call instead of an assignment - matching the existing `addr_of(x)` convention for `&x`. It
+also does its own peephole simplification at print time (constant-folds
 constant-vs-constant comparisons, `(bool) != 0` → `bool`, double-negation elimination) — some
 optimization happens here, not only in `ir/hlil/passes/`.
 

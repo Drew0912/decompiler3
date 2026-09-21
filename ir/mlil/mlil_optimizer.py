@@ -71,6 +71,10 @@ def _eliminate_dead_code_post_ssa(function: MediumLevelILFunction) -> bool:
             elif isinstance(inst, MLILStoreReg):
                 count_uses(inst.value)
 
+            elif isinstance(inst, MLILStoreDeref):
+                count_uses(inst.dest)
+                count_uses(inst.value)
+
     # Remove unused assignments
     changed = False
     for block in function.basic_blocks:

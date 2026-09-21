@@ -13,6 +13,7 @@ from ..hlil import (
     HLILBinaryOp,
     HLILUnaryOp,
     HLILAddressOf,
+    HLILDeref,
     HLILCall,
     HLILSyscall,
     HLILExternCall,
@@ -236,7 +237,7 @@ class ControlFlowOptimizationPass(Pass):
             right_reads, _, _ = self._can_read_original_value(var, node.rhs, killed)
             return (left_reads or right_reads, killed, False)
 
-        if isinstance(node, (HLILUnaryOp, HLILAddressOf)):
+        if isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
             reads, _, _ = self._can_read_original_value(var, node.operand, killed)
             return (reads, killed, False)
 
@@ -255,9 +256,18 @@ class ControlFlowOptimizationPass(Pass):
         if isinstance(node, HLILAssign):
             # RHS is evaluated first
             rhs_reads, _, _ = self._can_read_original_value(var, node.src, killed)
+
+            # A store through a pointer (*dest = value) reads dest's own value too - unlike a
+            # plain HLILVar dest, it does not kill var. Recursing on node.dest itself (not
+            # node.dest.operand) reuses the HLILDeref branch above instead of re-deriving its
+            # unwrap logic here.
+            dest_reads = False
+            if isinstance(node.dest, HLILDeref):
+                dest_reads, _, _ = self._can_read_original_value(var, node.dest, killed)
+
             # Check if this kills var
             dest_kills = isinstance(node.dest, HLILVar) and node.dest.var == var
-            return (rhs_reads, dest_kills or killed, False)
+            return (rhs_reads or dest_reads, dest_kills or killed, False)
 
         if isinstance(node, HLILBlock):
             any_reads = False
@@ -456,7 +466,7 @@ class ControlFlowOptimizationPass(Pass):
             self._collect_vars(expr.lhs, vars_set)
             self._collect_vars(expr.rhs, vars_set)
 
-        elif isinstance(expr, (HLILUnaryOp, HLILAddressOf)):
+        elif isinstance(expr, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
             self._collect_vars(expr.operand, vars_set)
 
         elif isinstance(expr, HLILCall):

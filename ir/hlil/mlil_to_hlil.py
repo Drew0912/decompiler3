@@ -234,6 +234,11 @@ class CallResultFolder:
                 if not self._is_dead_after(reader_block_idx, reader_instr_idx, var_name):
                     continue
 
+                # An impure read (deref or REG/GLOBAL load) earlier in the reader's own
+                # evaluation order would end up running after the folded call instead of before it
+                if self._reads_before_impure(reader_instr, var_name):
+                    continue
+
                 self.folded_call[(block_idx, instr_idx)] = reader
                 self.folded_use[(reader_block_idx, reader_instr_idx, var_name)] = (block_idx, instr_idx)
 
@@ -379,6 +384,10 @@ class CallResultFolder:
         elif isinstance(node, (MLILStoreReg, MLILStoreGlobal)):
             self._collect_read_names(node.value, names)
 
+        elif isinstance(node, MLILStoreDeref):
+            self._collect_read_names(node.dest, names)
+            self._collect_read_names(node.value, names)
+
         elif isinstance(node, MLILIf):
             self._collect_read_names(node.condition, names)
 
@@ -406,6 +415,9 @@ class CallResultFolder:
         if isinstance(node, (MLILStoreReg, MLILStoreGlobal)):
             return self._count_reads(node.value, var_name)
 
+        if isinstance(node, MLILStoreDeref):
+            return self._count_reads(node.dest, var_name) + self._count_reads(node.value, var_name)
+
         if isinstance(node, MLILIf):
             return self._count_reads(node.condition, var_name)
 
@@ -413,6 +425,80 @@ class CallResultFolder:
             return self._count_reads(node.value, var_name) if node.value is not None else 0
 
         return 0
+
+    def _contains_impure_read(self, node: MediumLevelILInstruction) -> bool:
+        '''Whether node reads through a pointer, or reads REG[]/GLOBAL[], anywhere in its tree.
+
+        Both are impure the same way: not SSA-tracked variables, and a call is conservatively
+        assumed able to write either (see e.g. pass_reg_global_propagation.py's MLILCall
+        handling, which drops every cached REG/GLOBAL value on a call).
+        '''
+        if isinstance(node, (MLILDeref, MLILLoadReg, MLILLoadGlobal)):
+            return True
+
+        if isinstance(node, MLILBinaryOp):
+            return self._contains_impure_read(node.lhs) or self._contains_impure_read(node.rhs)
+
+        if isinstance(node, MLILUnaryOp):
+            return self._contains_impure_read(node.operand)
+
+        if isinstance(node, MediumLevelILCall):
+            return any(self._contains_impure_read(arg) for arg in node.args)
+
+        return False
+
+    def _reads_before_impure(self, node: MediumLevelILInstruction, var_name: str) -> bool:
+        '''Whether var_name's read inside node is preceded, in evaluation order, by an impure
+        read (pointer dereference or REG[]/GLOBAL[] load) elsewhere in node.
+
+        Reader operands run in a fixed order (e.g. MLILStoreDeref evaluates dest before
+        value), but folding only replaces var_name's own read position with the call. If an
+        impure read sits earlier in that order, the call would now run after it instead of
+        before, letting the fold observe state the call itself may still be about to change.
+        '''
+        if isinstance(node, MLILBinaryOp):
+            if self._count_reads(node.rhs, var_name) > 0 and self._contains_impure_read(node.lhs):
+                return True
+
+            return (self._reads_before_impure(node.lhs, var_name) or
+                    self._reads_before_impure(node.rhs, var_name))
+
+        if isinstance(node, MLILUnaryOp):
+            return self._reads_before_impure(node.operand, var_name)
+
+        if isinstance(node, MediumLevelILCall):
+            seen_impure = False
+            for arg in node.args:
+                if seen_impure and self._count_reads(arg, var_name) > 0:
+                    return True
+
+                if self._reads_before_impure(arg, var_name):
+                    return True
+
+                seen_impure = seen_impure or self._contains_impure_read(arg)
+
+            return False
+
+        if isinstance(node, MLILSetVar):
+            return self._reads_before_impure(node.value, var_name)
+
+        if isinstance(node, (MLILStoreReg, MLILStoreGlobal)):
+            return self._reads_before_impure(node.value, var_name)
+
+        if isinstance(node, MLILStoreDeref):
+            if self._count_reads(node.value, var_name) > 0 and self._contains_impure_read(node.dest):
+                return True
+
+            return (self._reads_before_impure(node.dest, var_name) or
+                    self._reads_before_impure(node.value, var_name))
+
+        if isinstance(node, MLILIf):
+            return self._reads_before_impure(node.condition, var_name)
+
+        if isinstance(node, MLILRet):
+            return self._reads_before_impure(node.value, var_name) if node.value is not None else False
+
+        return False
 
 
 # ============================================================================
@@ -524,7 +610,7 @@ class MLILToHLILConverter:
             names.extend(self._collect_used_var_names(node.lhs))
             names.extend(self._collect_used_var_names(node.rhs))
 
-        elif isinstance(node, (HLILUnaryOp, HLILAddressOf)):
+        elif isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
             names.extend(self._collect_used_var_names(node.operand))
 
         elif isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
@@ -1297,6 +1383,11 @@ class MLILToHLILConverter:
             self._set_hlil_source_info(stmt, instr, mlil_index)
             result.append(stmt)
 
+        elif isinstance(instr, MLILStoreDeref):
+            stmt = HLILAssign(HLILDeref(self._convert_expr(instr.dest)), self._convert_expr(instr.value))
+            self._set_hlil_source_info(stmt, instr, mlil_index)
+            result.append(stmt)
+
         elif isinstance(instr, MediumLevelILCall):
             call_expr = self._convert_expr(instr)
 
@@ -1352,6 +1443,10 @@ class MLILToHLILConverter:
         elif isinstance(expr, MLILAddressOf):
             operand = self._convert_expr(expr.operand)
             return HLILAddressOf(operand)
+
+        elif isinstance(expr, MLILDeref):
+            operand = self._convert_expr(expr.operand)
+            return HLILDeref(operand)
 
         elif isinstance(expr, MLILUnaryOp):
             if expr.operation in (MediumLevelILOperation.MLIL_LOGICAL_NOT, MediumLevelILOperation.MLIL_TEST_ZERO):

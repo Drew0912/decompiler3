@@ -36,6 +36,8 @@ from ..mlil import (
     MLILCallScript,
     MLILStoreGlobal,
     MLILStoreReg,
+    MLILDeref,
+    MLILStoreDeref,
 )
 from ..mlil_ssa import (
     MLILVariableSSA,
@@ -122,6 +124,12 @@ class ConstantPropagationPass(Pass):
                 else:
                     return MLILStoreReg(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
 
+        elif isinstance(inst, MLILStoreDeref):
+            new_dest = self._propagate_in_expr(inst.dest)
+            new_value = self._propagate_in_expr(inst.value)
+            if new_dest is not inst.dest or new_value is not inst.value:
+                return inst.rebuild(new_dest, new_value)
+
         return inst
 
     def _propagate_in_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
@@ -145,6 +153,12 @@ class ConstantPropagationPass(Pass):
 
             if operand is not expr.operand:
                 return self._reconstruct_unary_op(expr, operand)
+
+        elif isinstance(expr, MLILDeref):
+            operand = self._propagate_in_expr(expr.operand)
+
+            if operand is not expr.operand:
+                return MLILDeref(operand)
 
         return expr
 

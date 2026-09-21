@@ -43,6 +43,8 @@ from ..mlil import (
     MLILStoreReg,
     MLILLoadReg,
     MLILLoadGlobal,
+    MLILDeref,
+    MLILStoreDeref,
 )
 from ..mlil_ssa import (
     MLILVariableSSA,
@@ -123,6 +125,10 @@ class ExpressionInliningPass(Pass):
         elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
             self._collect_uses_in_expr(inst.value)
 
+        elif isinstance(inst, MLILStoreDeref):
+            self._collect_uses_in_expr(inst.dest)
+            self._collect_uses_in_expr(inst.value)
+
     def _collect_uses_in_expr(self, expr: MediumLevelILInstruction):
         self._collect_uses_in_inst(expr)
 
@@ -198,8 +204,8 @@ class ExpressionInliningPass(Pass):
         return False
 
     def _is_impure_read(self, expr: MediumLevelILInstruction) -> bool:
-        '''Check if expression reads from mutable storage (REG/GLOBAL)'''
-        if isinstance(expr, (MLILLoadReg, MLILLoadGlobal)):
+        '''Check if expression reads from mutable storage (REG/GLOBAL/pointer target)'''
+        if isinstance(expr, (MLILLoadReg, MLILLoadGlobal, MLILDeref)):
             return True
 
         if isinstance(expr, MLILBinaryOp):
@@ -240,6 +246,9 @@ class ExpressionInliningPass(Pass):
 
         if isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
             return self._expr_contains(inst.value, target)
+
+        if isinstance(inst, MLILStoreDeref):
+            return self._expr_contains(inst.dest, target) or self._expr_contains(inst.value, target)
 
         return False
 
@@ -289,6 +298,12 @@ class ExpressionInliningPass(Pass):
                 else:
                     return MLILStoreReg(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
 
+        elif isinstance(inst, MLILStoreDeref):
+            new_dest = self._inline_in_expr(inst.dest, inlinable)
+            new_value = self._inline_in_expr(inst.value, inlinable)
+            if new_dest is not inst.dest or new_value is not inst.value:
+                return inst.rebuild(new_dest, new_value)
+
         return inst
 
     def _inline_in_expr(self, expr: MediumLevelILInstruction,
@@ -311,6 +326,11 @@ class ExpressionInliningPass(Pass):
             operand = self._inline_in_expr(expr.operand, inlinable)
             if operand is not expr.operand:
                 return self._reconstruct_unary_op(expr, operand)
+
+        elif isinstance(expr, MLILDeref):
+            operand = self._inline_in_expr(expr.operand, inlinable)
+            if operand is not expr.operand:
+                return MLILDeref(operand)
 
         return expr
 

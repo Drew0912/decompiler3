@@ -20,6 +20,7 @@ from ..mlil import (
     MLILCallScript,
     MLILStoreGlobal,
     MLILStoreReg,
+    MLILStoreDeref,
 )
 from ..mlil_ssa import (
     MLILVariableSSA,
@@ -97,6 +98,10 @@ class DeadPhiSourceEliminationPass(Pass):
                 self._collect_uses(arg, user)
 
         elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
+            self._collect_uses(stmt.value, user)
+
+        elif isinstance(stmt, MLILStoreDeref):
+            self._collect_uses(stmt.dest, user)
             self._collect_uses(stmt.value, user)
 
     def _eliminate_dead_phis(self, func: MediumLevelILFunction):

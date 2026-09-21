@@ -15,7 +15,8 @@ from ..mlil import (
     MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr,
     MLILLogicalAnd, MLILLogicalOr, MLILLogicalNot,
     MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe,
-    MLILNeg, MLILBitwiseNot, MLILTestZero, MLILAddressOf
+    MLILNeg, MLILBitwiseNot, MLILTestZero, MLILAddressOf,
+    MLILDeref, MLILStoreDeref,
 )
 
 
@@ -191,6 +192,15 @@ class RegGlobalValuePropagator:
                 new_state.global_[k] = None
             return new_state
 
+        elif isinstance(inst, MLILStoreDeref):
+            # A deref store's target is a runtime pointer, architecturally disjoint from the
+            # REG[]/GLOBALS[] arrays this pass tracks, so it never clobbers a tracked slot
+            # directly. But a cached slot VALUE can itself be a MLILDeref expression (e.g.
+            # REG[0] = *p) - re-evaluating that cached expression later would read through
+            # the pointer again, picking up whatever this store just wrote. Drop only the
+            # cached values that could be stale, not the whole state.
+            return self._invalidate_deref_dependent(state)
+
         else:
             return state
 
@@ -218,6 +228,16 @@ class RegGlobalValuePropagator:
                 new_inst = MLILStoreGlobal(inst.index, new_value)
                 self._copy_metadata(inst, new_inst)
                 return (new_inst, new_state)
+
+            return (inst, new_state)
+
+        elif isinstance(inst, MLILStoreDeref):
+            new_dest = self._substitute(inst.dest, state)
+            new_value = self._substitute(inst.value, state)
+            new_state = self._invalidate_deref_dependent(state)
+
+            if new_dest is not inst.dest or new_value is not inst.value:
+                return (inst.rebuild(new_dest, new_value), new_state)
 
             return (inst, new_state)
 
@@ -313,6 +333,37 @@ class RegGlobalValuePropagator:
 
         else:
             return expr
+
+    def _contains_deref(self, expr: MediumLevelILInstruction) -> bool:
+        '''Check if expr recursively contains a MLILDeref - such an expression's value can
+        change due to an intervening store through an unrelated pointer, so a cached copy of
+        it must not survive past any MLILStoreDeref.'''
+        if isinstance(expr, MLILDeref):
+            return True
+
+        elif isinstance(expr, MLILBinaryOp):
+            return self._contains_deref(expr.lhs) or self._contains_deref(expr.rhs)
+
+        elif isinstance(expr, MLILUnaryOp):
+            return self._contains_deref(expr.operand)
+
+        else:
+            return False
+
+    def _invalidate_deref_dependent(self, state: RegGlobalState) -> RegGlobalState:
+        '''Drop cached REG/GLOBAL values that read through a pointer - a store through some
+        other pointer may alias them and we have no alias analysis to rule it out.'''
+        new_state = state.copy()
+
+        for k, v in state.reg.items():
+            if v is not None and self._contains_deref(v):
+                new_state.reg[k] = None
+
+        for k, v in state.global_.items():
+            if v is not None and self._contains_deref(v):
+                new_state.global_[k] = None
+
+        return new_state
 
     def _state_equal(self, s1: RegGlobalState, s2: RegGlobalState) -> bool:
         '''Check if two states are equal'''
@@ -459,6 +510,9 @@ class RegGlobalValuePropagator:
 
         elif isinstance(expr, MLILAddressOf):
             return MLILAddressOf(operand)
+
+        elif isinstance(expr, MLILDeref):
+            return MLILDeref(operand)
 
         else:
             raise NotImplementedError(f'Unhandled unary op: {type(expr).__name__}')

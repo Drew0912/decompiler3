@@ -19,6 +19,7 @@ from ..mlil import (
     MLILCallScript,
     MLILStoreGlobal,
     MLILStoreReg,
+    MLILStoreDeref,
 )
 from ..mlil_ssa import (
     MLILVariableSSA,
@@ -120,6 +121,10 @@ class DeadCodeEliminationPass(Pass):
                 self._collect_uses_in_expr(arg)
 
         elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
+            self._collect_uses_in_expr(inst.value)
+
+        elif isinstance(inst, MLILStoreDeref):
+            self._collect_uses_in_expr(inst.dest)
             self._collect_uses_in_expr(inst.value)
 
     def _collect_uses_in_expr(self, expr: MediumLevelILInstruction):

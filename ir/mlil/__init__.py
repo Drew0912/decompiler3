@@ -121,6 +121,10 @@ __all__ = [
     'MLILLoadReg',
     'MLILStoreReg',
 
+    # Pointer dereference
+    'MLILDeref',
+    'MLILStoreDeref',
+
     # Debug
     'MLILNop',
     'MLILDebug',

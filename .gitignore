@@ -21,6 +21,7 @@ script_en
 *.dot
 *.debug.txt
 *.ts
+out
 
 decompiler2
 notes

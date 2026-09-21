@@ -75,6 +75,7 @@ class HLILOperation(IntEnum2):
     HLIL_BINARY_OP      = auto()
     HLIL_UNARY_OP       = auto()
     HLIL_ADDRESS_OF     = auto()
+    HLIL_DEREF          = auto()
     HLIL_CALL           = auto()
     HLIL_SYSCALL        = auto()
 
@@ -265,6 +266,23 @@ class HLILAddressOf(HLILExpression):
 
     def __repr__(self) -> str:
         return f'HLILAddressOf({self.operand})'
+
+
+class HLILDeref(HLILExpression):
+    '''Pointer dereference: *ptr'''
+
+    def __init__(self, operand: HLILExpression):
+        super().__init__(HLILOperation.HLIL_DEREF)
+        self.operand = operand
+
+    def __str__(self) -> str:
+        # Wrap a compound address so *p + 1 (meaning (*p) + 1) can't be confused with the
+        # intended *(p + 1) - only debug text, real codegen builds a deref(...) call instead.
+        operand_str = f'({self.operand})' if isinstance(self.operand, HLILBinaryOp) else str(self.operand)
+        return f'*{operand_str}'
+
+    def __repr__(self) -> str:
+        return f'HLILDeref({self.operand})'
 
 
 class HLILCall(HLILExpression):

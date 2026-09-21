@@ -129,14 +129,20 @@ class ED9VMLifter:
                 target = self._require_block(inst.operands[0].value, block_map, llil_blocks)
                 builder.push_caller_frame(target)
 
-            case ED9Opcode.LOAD_STACK | ED9Opcode.LOAD_STACK_DEREF:
+            case ED9Opcode.LOAD_STACK:
                 builder.load_stack(int(inst.operands[0].value))
+
+            case ED9Opcode.LOAD_STACK_DEREF:
+                builder.load_stack_deref(int(inst.operands[0].value))
 
             case ED9Opcode.PUSH_STACK_OFFSET:
                 builder.push_stack_addr(int(inst.operands[0].value))
 
-            case ED9Opcode.POP_TO | ED9Opcode.POP_TO_DEREF:
+            case ED9Opcode.POP_TO:
                 builder.pop_to(int(inst.operands[0].value))
+
+            case ED9Opcode.POP_TO_DEREF:
+                builder.pop_to_deref(int(inst.operands[0].value))
 
             case ED9Opcode.POP:
                 pop_size = int(inst.operands[0].value) if inst.operands else 0

@@ -244,6 +244,11 @@ class SSAConstructor:
         self.var_versions: Dict[MLILVariable, int] = {}
         self.var_stack: Dict[MLILVariable, List[int]] = defaultdict(list)
 
+        # Every local whose address is taken anywhere in the function - populated by
+        # construct() before def-collection, since a deref store's conservative clobber
+        # (see _collect_defs/_rename_inst) needs it
+        self.address_taken_vars: Set[MLILVariable] = set()
+
     def construct(self) -> MediumLevelILFunction:
         '''Convert function to SSA form (modifies in-place)'''
         # Step 0: Raise stored globals into variables, so the rest of SSA construction
@@ -259,16 +264,76 @@ class SSAConstructor:
             self.function.basic_blocks = [b for b in self.function.basic_blocks if b in reachable_set]
             self.function.renumber_blocks()
 
-        # Step 2: Collect variable definitions
+        # Step 2: Collect address-taken locals (used by deref-store handling below)
+        self.address_taken_vars = self._collect_address_taken_vars()
+
+        # Step 3: Collect variable definitions
         self._collect_defs()
 
-        # Step 3: Insert Phi nodes
+        # Step 4: Insert Phi nodes
         self._insert_phi_nodes()
 
-        # Step 4: Rename variables (iterative)
+        # Step 5: Rename variables (iterative)
         self._rename_variables_iterative()
 
         return self.function
+
+    def _collect_address_taken_vars(self) -> Set[MLILVariable]:
+        '''Every local whose address is taken anywhere in the function.
+
+        A pointer dereferenced by MLILStoreDeref could alias any of them - there is no
+        alias analysis to narrow it further, so this is deliberately function-wide rather
+        than scoped to whatever AddressOf expression is syntactically nearest a given store.
+        '''
+        address_taken: Set[MLILVariable] = set()
+
+        for block in self.function.basic_blocks:
+            for inst in block.instructions:
+                self._collect_address_taken_in(inst, address_taken)
+
+        return address_taken
+
+    def _collect_address_taken_in(self, node: MediumLevelILInstruction, address_taken: Set[MLILVariable]):
+        '''Recursively find every AddressOf(var) in an instruction/expression tree'''
+        if node is None:
+            return
+
+        if isinstance(node, MLILAddressOf):
+            if isinstance(node.operand, MLILVar):
+                address_taken.add(node.operand.var)
+            return
+
+        if isinstance(node, MLILBinaryOp):
+            self._collect_address_taken_in(node.lhs, address_taken)
+            self._collect_address_taken_in(node.rhs, address_taken)
+
+        elif isinstance(node, MLILUnaryOp):
+            self._collect_address_taken_in(node.operand, address_taken)
+
+        elif isinstance(node, MediumLevelILCall):
+            for arg in node.args:
+                self._collect_address_taken_in(arg, address_taken)
+
+        elif isinstance(node, MLILSetVar):
+            self._collect_address_taken_in(node.value, address_taken)
+
+        elif isinstance(node, (MLILStoreReg, MLILStoreGlobal)):
+            self._collect_address_taken_in(node.value, address_taken)
+
+        elif isinstance(node, MLILStoreDeref):
+            self._collect_address_taken_in(node.dest, address_taken)
+            self._collect_address_taken_in(node.value, address_taken)
+
+        elif isinstance(node, MLILIf):
+            self._collect_address_taken_in(node.condition, address_taken)
+
+        elif isinstance(node, MLILRet):
+            self._collect_address_taken_in(node.value, address_taken)
+
+    def _extract_addr_vars(self, args: List[MediumLevelILInstruction]) -> List[MLILVariable]:
+        '''Variables passed via AddressOf (e.g. output parameters) among these arguments'''
+        return [arg.operand.var for arg in args
+                if isinstance(arg, MLILAddressOf) and isinstance(arg.operand, MLILVar)]
 
     def _raise_globals(self):
         '''Raise MLILStoreGlobal/MLILLoadGlobal into MLILSetVar/MLILVar over per-index MLILVariables,
@@ -363,6 +428,13 @@ class SSAConstructor:
             if new_value is not stmt.value:
                 return MLILStoreReg(stmt.index, new_value, address = stmt.address).copy_metadata_from(stmt)
 
+        elif isinstance(stmt, MLILStoreDeref):
+            new_dest = self._raise_expr(stmt.dest)
+            new_value = self._raise_expr(stmt.value)
+
+            if new_dest is not stmt.dest or new_value is not stmt.value:
+                return stmt.rebuild(new_dest, new_value)
+
         return stmt
 
     def _collect_defs(self):
@@ -376,8 +448,13 @@ class SSAConstructor:
                     for var in self._call_defined_vars(inst):
                         self.var_defs[var].add(block)
 
+                elif isinstance(inst, MLILStoreDeref):
+                    for var in self.address_taken_vars:
+                        self.var_defs[var].add(block)
+
     def _call_defined_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
-        '''Variables a call writes: its output plus the registers and globals it clobbers
+        '''Variables a call writes: its output, the registers/globals it clobbers, plus any
+        address-taken variable passed as one of its own arguments (an output parameter)
 
         A callee may change any register or global, so every one of them other than the
         variable receiving the result becomes undefined across the call.
@@ -390,6 +467,8 @@ class SSAConstructor:
         for var in list(self.function.register_vars.values()) + list(self.function.global_vars.values()):
             if var != inst.output:
                 defined.append(var)
+
+        defined.extend(self._extract_addr_vars(inst.args))
 
         return defined
 
@@ -527,10 +606,7 @@ class SSAConstructor:
 
         elif isinstance(inst, MediumLevelILCall):
             # Find variables passed via AddressOf (output parameters)
-            addr_vars = []
-            for arg in inst.args:
-                if isinstance(arg, MLILAddressOf) and isinstance(arg.operand, MLILVar):
-                    addr_vars.append(arg.operand.var)
+            addr_vars = self._extract_addr_vars(inst.args)
 
             # Rename the call (uses current SSA versions)
             renamed = self._rename_stmt(inst)
@@ -556,6 +632,30 @@ class SSAConstructor:
                 pushed.append(var)
 
                 # Pseudo-definition: var#new = <undef> (call modified the variable)
+                new_ssa_var = MLILVariableSSA(var, new_ver)
+                pseudo_def = MLILSetVarSSA(new_ssa_var, MLILUndef(), address = inst.address).copy_metadata_from(inst)
+                result.append(pseudo_def)
+
+            return result
+
+        elif isinstance(inst, MLILStoreDeref):
+            # Rename the store itself (dest/value use current SSA versions)
+            renamed = self._rename_stmt(inst)
+
+            if not self.address_taken_vars:
+                return renamed
+
+            # A store through a pointer could alias any local whose address is taken
+            # anywhere in this function - there is no alias analysis to narrow it further,
+            # so every one of them gets the same pseudo-definition treatment a call's
+            # register/global clobber gets above. Sorted by name for deterministic output -
+            # address_taken_vars is a set, and iteration order over it is not guaranteed
+            # stable across runs otherwise.
+            result = [renamed]
+            for var in sorted(self.address_taken_vars, key = lambda v: v.name):
+                new_ver = self._new_version(var)
+                pushed.append(var)
+
                 new_ssa_var = MLILVariableSSA(var, new_ver)
                 pseudo_def = MLILSetVarSSA(new_ssa_var, MLILUndef(), address = inst.address).copy_metadata_from(inst)
                 result.append(pseudo_def)
@@ -638,6 +738,13 @@ class SSAConstructor:
                 else:
                     return MLILStoreReg(stmt.index, new_value, address = stmt.address).copy_metadata_from(stmt)
 
+        elif isinstance(stmt, MLILStoreDeref):
+            new_dest = self._rename_expr(stmt.dest)
+            new_value = self._rename_expr(stmt.value)
+
+            if new_dest is not stmt.dest or new_value is not stmt.value:
+                return stmt.rebuild(new_dest, new_value)
+
         return stmt
 
     def _rebuild_binary_op(self, expr: MLILBinaryOp, lhs, rhs) -> MediumLevelILInstruction:
@@ -715,6 +822,9 @@ class SSAConstructor:
 
         elif isinstance(expr, MLILAddressOf):
             return MLILAddressOf(operand)
+
+        elif isinstance(expr, MLILDeref):
+            return MLILDeref(operand)
 
         else:
             raise NotImplementedError(f'Unknown unary op: {type(expr).__name__}')
@@ -855,6 +965,10 @@ class SSADeconstructor:
         elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
             self._collect_uses_in_expr(stmt.value, block, inst_idx)
 
+        elif isinstance(stmt, MLILStoreDeref):
+            self._collect_uses_in_expr(stmt.dest, block, inst_idx)
+            self._collect_uses_in_expr(stmt.value, block, inst_idx)
+
     def _compute_liveness(self):
         '''Compute live-in and live-out sets for each block using dataflow analysis'''
         # Initialize
@@ -931,6 +1045,10 @@ class SSADeconstructor:
                 result |= self._get_vars_in_expr(arg)
 
         elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
+            result |= self._get_vars_in_expr(stmt.value)
+
+        elif isinstance(stmt, MLILStoreDeref):
+            result |= self._get_vars_in_expr(stmt.dest)
             result |= self._get_vars_in_expr(stmt.value)
 
         return result
@@ -1125,6 +1243,12 @@ class SSADeconstructor:
 
                 else:
                     return MLILStoreReg(stmt.index, new_value, address = stmt.address).copy_metadata_from(stmt)
+
+        elif isinstance(stmt, MLILStoreDeref):
+            new_dest = self._apply_mapping_to_expr(stmt.dest)
+            new_value = self._apply_mapping_to_expr(stmt.value)
+            if new_dest is not stmt.dest or new_value is not stmt.value:
+                return stmt.rebuild(new_dest, new_value)
 
         return stmt
 

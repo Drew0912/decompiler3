@@ -5,7 +5,7 @@ from ..mlil import (
     MediumLevelILFunction,
     MLILVar, MLILBinaryOp, MLILUnaryOp, MLILSetVar,
     MLILIf, MLILRet, MLILCall, MLILSyscall, MLILCallScript,
-    MLILStoreGlobal, MLILStoreReg
+    MLILStoreGlobal, MLILStoreReg, MLILStoreDeref
 )
 
 
@@ -53,6 +53,10 @@ class DeadCodeEliminationPass(Pass):
                     count_uses(inst.value)
 
                 elif isinstance(inst, MLILStoreReg):
+                    count_uses(inst.value)
+
+                elif isinstance(inst, MLILStoreDeref):
+                    count_uses(inst.dest)
                     count_uses(inst.value)
 
         # Remove unused assignments

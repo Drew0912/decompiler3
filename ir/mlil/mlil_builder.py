@@ -289,6 +289,17 @@ class MLILBuilder:
         inst = MLILStoreReg(index, value)
         self.add_instruction(inst)
 
+    # === Pointer Dereference ===
+
+    def deref(self, operand: MediumLevelILInstruction) -> MLILDeref:
+        '''Dereference a pointer expression (returns expression)'''
+        return MLILDeref(operand)
+
+    def store_deref(self, dest: MediumLevelILInstruction, value: MediumLevelILInstruction):
+        '''Store through a pointer expression (*dest = value)'''
+        inst = MLILStoreDeref(dest, value)
+        self.add_instruction(inst)
+
     # === Debug ===
 
     def nop(self):

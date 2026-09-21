@@ -178,6 +178,10 @@ class MLILFormatter:
         elif isinstance(inst, MLILStoreReg):
             return f'REG[{inst.index}] = {inst.value}'
 
+        # Pointer dereference
+        elif isinstance(inst, (MLILDeref, MLILStoreDeref)):
+            return str(inst)
+
         # Debug
         elif isinstance(inst, MLILNop):
             return str(inst)

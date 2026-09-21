@@ -67,6 +67,10 @@ class LowLevelILOperation(IntEnum2):
     LLIL_DEBUG              = 61    # debug info
     LLIL_STACK_ADDR         = 62    # address of stack location (sp + offset)
 
+    # Generic pointer dereference (address computed at runtime, not a known stack/frame slot)
+    LLIL_LOAD               = 63    # load *ptr
+    LLIL_STORE              = 64    # *ptr = value
+
     # Falcom VM specific (user-defined extensions)
     LLIL_PUSH_CALLER_FRAME     = 1000  # Falcom VM: push caller frame (4 values)
     LLIL_CALL_SCRIPT           = 1001  # Falcom VM: call script function
@@ -191,6 +195,30 @@ class LowLevelILFrameStore(LowLevelILStatement):
             return f'STACK[fp + {word_offset}] = {self.value}'
         else:
             return f'STACK[fp - {-word_offset}] = {self.value}'
+
+
+class LowLevelILLoad(LowLevelILExpr):
+    '''Load *src - generic pointer dereference (address computed at runtime, e.g. a parameter
+    that itself holds a pointer, unlike StackLoad/FrameLoad whose slot is known statically)'''
+
+    def __init__(self, src: 'LowLevelILExpr'):
+        super().__init__(LowLevelILOperation.LLIL_LOAD)
+        self.src = src
+
+    def __str__(self) -> str:
+        return f'*{self.src}'
+
+
+class LowLevelILStore(LowLevelILStatement):
+    '''*dest = value - generic pointer dereference store'''
+
+    def __init__(self, dest: 'LowLevelILExpr', value: 'LowLevelILExpr'):
+        super().__init__(LowLevelILOperation.LLIL_STORE)
+        self.dest = dest
+        self.value = value
+
+    def __str__(self) -> str:
+        return f'*{self.dest} = {self.value}'
 
 
 class LowLevelILSpAdd(LowLevelILStatement):

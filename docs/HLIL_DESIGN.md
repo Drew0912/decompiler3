@@ -65,6 +65,7 @@ The concrete model is small and source-oriented:
 | Ordinary statements | `HLILAssign`, `HLILExprStmt`, `HLILComment`. |
 | Leaf expressions | `HLILVar`, `HLILConst`. Constants retain an `is_hex` display hint. |
 | Operators | `HLILBinaryOp`, `HLILUnaryOp`, `HLILAddressOf`, using `BinaryOp` and `UnaryOp`. |
+| Pointer dereference | `HLILDeref` (`*ptr`, from `MLILDeref`) - like `HLILAddressOf`, not a subclass of `HLILUnaryOp`. A store through one (`MLILStoreDeref`) lowers to an ordinary `HLILAssign` whose `dest` is an `HLILDeref` - no dedicated store node. |
 | Calls | `HLILCall`, `HLILSyscall`, and `HLILExternCall`. |
 
 `BinaryOp` distinguishes arithmetic, comparison, logical, and bitwise operations. This distinction

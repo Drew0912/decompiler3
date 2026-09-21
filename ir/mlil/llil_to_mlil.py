@@ -54,6 +54,10 @@ class LLILToMLILTranslator:
         elif isinstance(llil_inst, LowLevelILFrameStore):
             self._translate_frame_store(llil_inst)
 
+        # Pointer dereference
+        elif isinstance(llil_inst, LowLevelILStore):
+            self._translate_store(llil_inst)
+
         # Control flow
         elif isinstance(llil_inst, LowLevelILJmp):
             target = self.block_map[llil_inst.target]
@@ -110,6 +114,12 @@ class LLILToMLILTranslator:
         value = self._translate_expr(llil_inst.value)
         self.builder.set_var(var, value)
 
+    def _translate_store(self, llil_inst: LowLevelILStore):
+        '''Translate Store to StoreDeref (*ptr = value)'''
+        dest = self._translate_expr(llil_inst.dest)
+        value = self._translate_expr(llil_inst.value)
+        self.builder.store_deref(dest, value)
+
     def _call_output(self) -> Optional[MLILVariable]:
         '''Variable a call result is written to (architecture specific, none by default)'''
         return None
@@ -151,6 +161,11 @@ class LLILToMLILTranslator:
             var_name = mlil_stack_var_name(llil_expr.slot_index)
             var = self.builder.get_or_create_local(var_name, llil_expr.slot_index)
             return self.builder.address_of(self.builder.var(var))
+
+        elif isinstance(llil_expr, LowLevelILLoad):
+            # Pointer dereference → *ptr
+            src = self._translate_expr(llil_expr.src)
+            return self.builder.deref(src)
 
         # Binary operations
         elif isinstance(llil_expr, LowLevelILAdd):

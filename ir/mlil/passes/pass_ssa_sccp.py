@@ -39,6 +39,8 @@ from ..mlil import (
     MLILCallScript,
     MLILStoreGlobal,
     MLILStoreReg,
+    MLILDeref,
+    MLILStoreDeref,
 )
 from ..mlil_ssa import (
     MLILVariableSSA,
@@ -224,6 +226,10 @@ class SCCP:
                 self._collect_uses(arg, user)
 
         elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
+            self._collect_uses(stmt.value, user)
+
+        elif isinstance(stmt, MLILStoreDeref):
+            self._collect_uses(stmt.dest, user)
             self._collect_uses(stmt.value, user)
 
     def _propagate(self):
@@ -561,6 +567,13 @@ class SCCP:
                 else:
                     return MLILStoreReg(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
 
+        elif isinstance(inst, MLILStoreDeref):
+            new_dest = self._replace_constants_in_expr(inst.dest)
+            new_value = self._replace_constants_in_expr(inst.value)
+
+            if new_dest is not inst.dest or new_value is not inst.value:
+                return inst.rebuild(new_dest, new_value)
+
         return inst
 
     def _replace_constants_in_expr(self, expr: MediumLevelILInstruction, is_bitwise: bool = False) -> MediumLevelILInstruction:
@@ -671,6 +684,9 @@ class SCCP:
 
         elif isinstance(expr, MLILTestZero):
             return MLILTestZero(operand)
+
+        elif isinstance(expr, MLILDeref):
+            return MLILDeref(operand)
 
         else:
             return expr

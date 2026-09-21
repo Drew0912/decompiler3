@@ -35,6 +35,8 @@ from ..mlil import (
     MLILCallScript,
     MLILStoreGlobal,
     MLILStoreReg,
+    MLILDeref,
+    MLILStoreDeref,
 )
 from ..mlil_ssa import (
     MLILVariableSSA,
@@ -97,6 +99,12 @@ class CopyPropagationPass(Pass):
 
         if isinstance(node, (MLILStoreGlobal, MLILStoreReg)):
             return self._collect_uses(node.value)
+
+        if isinstance(node, MLILStoreDeref):
+            return self._collect_uses(node.dest) + self._collect_uses(node.value)
+
+        if isinstance(node, MLILDeref):
+            return self._collect_uses(node.operand)
 
         if isinstance(node, MLILIf):
             return self._collect_uses(node.condition)
@@ -188,6 +196,12 @@ class CopyPropagationPass(Pass):
 
                 return MLILStoreReg(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
 
+        elif isinstance(inst, MLILStoreDeref):
+            new_dest = self._replace_in_expr(inst.dest, copies)
+            new_value = self._replace_in_expr(inst.value, copies)
+            if new_dest is not inst.dest or new_value is not inst.value:
+                return inst.rebuild(new_dest, new_value)
+
         return inst
 
     def _replace_in_expr(self, expr: MediumLevelILInstruction,
@@ -210,6 +224,14 @@ class CopyPropagationPass(Pass):
             operand = self._replace_in_expr(expr.operand, copies)
             if operand is not expr.operand:
                 return self._reconstruct_unary_op(expr, operand)
+
+        elif isinstance(expr, MLILDeref):
+            # Unlike MLILAddressOf (whose operand is a location, never substitutable), a
+            # pointer's VALUE is an ordinary operand - propagating a value-equal copy into it
+            # is safe and desirable.
+            operand = self._replace_in_expr(expr.operand, copies)
+            if operand is not expr.operand:
+                return MLILDeref(operand)
 
         return expr
 

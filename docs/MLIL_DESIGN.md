@@ -47,7 +47,7 @@ tree. This table now reflects the real path.
 All MLIL nodes derive from a common `MediumLevelILInstruction` base carrying an
 `operation` enum value, an optional source `address`, and an `inst_index` inherited from LLIL for
 cross-layer traceability. Nodes are split into `MediumLevelILExpr` (produces a value) and
-`MediumLevelILStatement` (side effects only) — roughly 30 concrete instruction classes exist across
+`MediumLevelILStatement` (side effects only) — roughly 32 concrete instruction classes exist across
 these two categories, covering:
 
 | Category | Examples |
@@ -56,6 +56,7 @@ these two categories, covering:
 | Variable read/write | `MLIL_VAR`, `MLIL_SET_VAR`, `MLIL_PHI` (SSA form) |
 | Arithmetic / logical | `MLIL_ADD`, `MLIL_SUB`, `MLIL_MUL`, `MLIL_DIV`, `MLIL_MOD`, `MLIL_AND`, `MLIL_OR`, `MLIL_NOT`, `MLIL_CMP_*` |
 | Memory / stack artifacts | Explicit address expressions, for the cases where a raw stack address is referenced directly rather than eliminated. |
+| Pointer dereference | `MLILDeref` (`*ptr`, a unary expression) / `MLILStoreDeref` (`*dest = value`, modelled on `MLILStoreGlobal` but with an expression target instead of a static index) — for `LOAD_STACK_DEREF`/`POP_TO_DEREF`, where the address is a runtime value (e.g. a caller-supplied out-parameter) rather than a statically known stack/frame slot. Unlike `MLILAddressOf`, a `MLILDeref`'s operand is an ordinary value and safe to copy-propagate through; a `MLILStoreDeref` is always kept (never DCE'd) since its target isn't a tracked SSA variable. |
 | Control flow | `MLIL_GOTO`, `MLIL_IF`, `MLIL_RET` |
 | Calls | `MLIL_CALL`, `MLIL_CALL_SCRIPT`, `MLIL_SYSCALL` |
 | Falcom specific | Derived metadata on top of generic ops — stack-setup helpers like `PUSH_CALLER_FRAME`/`PUSH_FUNC_ID`/`PUSH_RET_ADDR` are fully lowered to regular variables/arguments, with no dedicated MLIL opcode. |

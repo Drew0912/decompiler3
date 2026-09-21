@@ -796,6 +796,22 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             source_location=loc
         )
 
+    elif op == LowLevelILOperation.LLIL_LOAD:
+        return SemanticOperation(
+            kind=OperationKind.LOAD,
+            operator='LOAD',
+            operands=_extract_llil_operands(instr),
+            source_location=loc
+        )
+
+    elif op == LowLevelILOperation.LLIL_STORE:
+        return SemanticOperation(
+            kind=OperationKind.ASSIGN,
+            operator='STORE',
+            operands=_extract_llil_operands(instr),
+            source_location=loc
+        )
+
     elif op == LowLevelILOperation.LLIL_REG_LOAD:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -884,6 +900,12 @@ def _extract_llil_operands(instr: LowLevelILInstruction) -> List[SemanticOperand
 
     if isinstance(instr, LowLevelILGlobalLoad):
         operands.append(SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]"))
+
+    if hasattr(instr, 'src') and isinstance(instr.src, LowLevelILInstruction):
+        operands.append(SemanticOperand(kind='expr', value=str(instr.src)))
+
+    if hasattr(instr, 'dest') and isinstance(instr.dest, LowLevelILInstruction):
+        operands.append(SemanticOperand(kind='expr', value=str(instr.dest)))
 
     if hasattr(instr, 'left') and hasattr(instr, 'right'):
         if isinstance(instr.left, LowLevelILInstruction):
@@ -1162,6 +1184,25 @@ def normalize_mlil_operation(
             provenance_mlil_indices=provenance,
         )
 
+    # Pointer dereference
+    elif op == MediumLevelILOperation.MLIL_DEREF:
+        return SemanticOperation(
+            kind=OperationKind.LOAD,
+            operator='DEREF',
+            operands=_extract_mlil_operands(instr),
+            source_location=loc,
+            provenance_mlil_indices=provenance,
+        )
+
+    elif op == MediumLevelILOperation.MLIL_STORE_DEREF:
+        return SemanticOperation(
+            kind=OperationKind.ASSIGN,
+            operator='STORE_DEREF',
+            operands=_extract_mlil_operands(instr),
+            source_location=loc,
+            provenance_mlil_indices=provenance,
+        )
+
     # NOP
     elif op in (MediumLevelILOperation.MLIL_NOP, MediumLevelILOperation.MLIL_DEBUG):
         return SemanticOperation(
@@ -1204,6 +1245,9 @@ def _extract_mlil_operands(instr: MediumLevelILInstruction) -> List[SemanticOper
 
     if isinstance(instr, MLILLoadGlobal):
         operands.append(SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]"))
+
+    if hasattr(instr, 'dest') and isinstance(instr.dest, MediumLevelILInstruction):
+        operands.append(SemanticOperand(kind='expr', value=str(instr.dest)))
 
     if hasattr(instr, 'args') and instr.args is not None:
         for arg in instr.args:
@@ -1436,6 +1480,15 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             provenance_mlil_indices=provenance,
         )
 
+    elif op == HLILOperation.HLIL_DEREF:
+        return SemanticOperation(
+            kind=OperationKind.LOAD,
+            operator='DEREF',
+            operands=_extract_hlil_operands(instr),
+            source_location=loc,
+            provenance_mlil_indices=provenance,
+        )
+
     # Unknown
     op_name = op.name if hasattr(op, 'name') else str(op)
     _unknown_hlil_ops.add(op_name)
@@ -1466,6 +1519,12 @@ def _extract_hlil_operands(instr: HLILInstruction) -> List[SemanticOperand]:
     if hasattr(instr, 'var') and instr.var is not None:
         var_name = instr.var.name if hasattr(instr.var, 'name') else str(instr.var)
         operands.append(SemanticOperand(kind='var', value=var_name))
+
+    # A plain var dest (e.g. HLIL_ASSIGN's x = ...) is already captured via that
+    # operation's own `result` field - only a compound dest (e.g. *ptr = ...) needs
+    # capturing here, so it is not silently dropped from validation coverage.
+    if hasattr(instr, 'dest') and isinstance(instr.dest, HLILInstruction) and not hasattr(instr.dest, 'var'):
+        operands.append(SemanticOperand(kind='expr', value=str(instr.dest)))
 
     if hasattr(instr, 'args') and instr.args is not None:
         for arg in instr.args:

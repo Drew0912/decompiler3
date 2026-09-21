@@ -348,6 +348,10 @@ class TypeScriptGenerator:
             operand = cls._format_expr(expr.operand)
             return f'addr_of({operand})'
 
+        elif isinstance(expr, HLILDeref):
+            operand = cls._format_expr(expr.operand)
+            return f'deref({operand})'
+
         elif isinstance(expr, HLILCall):
             args = cls._format_call_args(expr.func_name, expr.args)
             return f'{expr.func_name}({args})'
@@ -560,6 +564,13 @@ class TypeScriptGenerator:
             else:
                 lines.append(f'{indent_str}return;')
 
+        elif isinstance(stmt, HLILAssign) and isinstance(stmt.dest, HLILDeref):
+            # TypeScript has no *ptr syntax - a store through a pointer is a deref_set() call,
+            # matching the addr_of() convention already used for &var
+            ptr_str = cls._format_expr(stmt.dest.operand)
+            src_str = cls._format_expr(stmt.src)
+            lines.append(f'{indent_str}deref_set({ptr_str}, {src_str});')
+
         elif isinstance(stmt, HLILAssign):
             dest_str = cls._format_expr(stmt.dest)
             src_str = cls._format_expr(stmt.src)
@@ -596,6 +607,10 @@ const REGS: any[] = new Array(16);
 
 // Intrinsic function: address-of operator (for output parameters)
 function addr_of<T>(value: T): T { return value; }
+
+// Intrinsic functions: pointer dereference (read/write through an out-parameter)
+function deref<T>(ptr: T): T { return ptr; }
+function deref_set<T>(ptr: T, value: T): void { }
 
 // Intrinsic function: boolean/number to int conversion
 function int(b: number | boolean): number { return +b; }

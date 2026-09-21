@@ -108,6 +108,11 @@ class MediumLevelILOperation(IntEnum2):
     MLIL_NOP                = 110
     MLIL_DEBUG              = 111
 
+    # Generic pointer dereference (address computed at runtime, unlike LOAD_GLOBAL/REG which
+    # target a statically-known slot)
+    MLIL_DEREF              = 120
+    MLIL_STORE_DEREF        = 121
+
     # Falcom VM specific
     MLIL_CALL_SCRIPT        = 1000
 
@@ -625,6 +630,49 @@ class MLILDebug(MediumLevelILStatement):
 def is_nop_instr(instr: MediumLevelILInstruction) -> bool:
     '''Check if instruction has no effect (debug/nop)'''
     return isinstance(instr, (MLILDebug, MLILNop))
+
+
+# === Pointer Dereference ===
+
+def _parenthesize_deref_operand(operand: MediumLevelILInstruction) -> str:
+    '''Wrap a compound address in parens so *p + 1 (meaning (*p) + 1) can't be confused with
+    the intended *(p + 1) - only debug/dump text, real codegen builds deref(...) calls instead.'''
+    if isinstance(operand, MLILBinaryOp):
+        return f'({operand})'
+
+    return str(operand)
+
+
+class MLILDeref(MLILUnaryOp):
+    '''Load *ptr - dereference a pointer expression. Impure: unlike a variable read, the target
+    memory is not tracked by SSA, so this can never be assumed constant across a store through
+    any pointer (see the inliner's _is_impure_read and RegGlobalValuePropagator's
+    _invalidate_deref_dependent, which drops cached REG/GLOBAL values on a deref store).
+    '''
+
+    def __init__(self, operand: MediumLevelILInstruction, **kwargs):
+        super().__init__(MediumLevelILOperation.MLIL_DEREF, operand, **kwargs)
+
+    def __str__(self) -> str:
+        return f'*{_parenthesize_deref_operand(self.operand)}'
+
+
+class MLILStoreDeref(MediumLevelILStatement):
+    '''*dest = value - store through a pointer expression. Always an observable side effect:
+    never removed by DCE and never reordered, since the target is not a tracked SSA variable.
+    '''
+
+    def __init__(self, dest: MediumLevelILInstruction, value: MediumLevelILInstruction, **kwargs):
+        super().__init__(MediumLevelILOperation.MLIL_STORE_DEREF, **kwargs)
+        self.dest = dest
+        self.value = value
+
+    def rebuild(self, dest: MediumLevelILInstruction, value: MediumLevelILInstruction) -> 'MLILStoreDeref':
+        '''Copy of this store with a new dest/value, keeping metadata'''
+        return MLILStoreDeref(dest, value, address = self.address).copy_metadata_from(self)
+
+    def __str__(self) -> str:
+        return f'*{_parenthesize_deref_operand(self.dest)} = {self.value}'
 
 
 # === Basic Block ===

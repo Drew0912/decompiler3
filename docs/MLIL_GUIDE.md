@@ -76,6 +76,11 @@ variants of each).
 
 **Globals/registers:** load/store global variable; load/store VM register.
 
+**Pointer dereference:** `MLILDeref`/`MLILStoreDeref` (`*ptr` / `*dest = value`) for
+`LOAD_STACK_DEREF`/`POP_TO_DEREF` - a runtime-computed address (e.g. a caller-supplied
+out-parameter), not a statically known slot. Always impure (never assumed constant, never
+inlined across a call) and a deref store is never dead-code-eliminated.
+
 ## The Pipeline
 
 `convert_falcom_llil_to_mlil()` (`falcom/ed9/ir/mlil/mlil_converter.py`) is what real code paths
