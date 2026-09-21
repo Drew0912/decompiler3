@@ -110,15 +110,15 @@ def test_cond():
     GET_REG(0)
     POP_JMP_ZERO('loc_12')
 
-    label('loc_7')
-
     PUSH_INT(1)
     JMP('loc_18')
 
+    def _loc_12(): pass
     label('loc_12')
 
     PUSH_INT(0)
 
+    def _loc_18(): pass
     label('loc_18')
 
     SET_REG(0)
@@ -148,6 +148,7 @@ def test_frame():
     SET_REG(0)
     JMP('loc_12')
 
+    def _loc_12(): pass
     label('loc_12')
 
     PUSH_INT(0)
@@ -185,6 +186,7 @@ def test_loop():
     PUSH_INT(0)
     SET_REG(0)
 
+    def _loc_8(): pass
     label('loc_8')
 
     GET_REG(0)
@@ -192,14 +194,13 @@ def test_loop():
     LT()
     POP_JMP_ZERO('loc_26')
 
-    label('loc_16')
-
     GET_REG(0)
     PUSH_INT(1)
     ADD()
     SET_REG(0)
     JMP('loc_8')
 
+    def _loc_26(): pass
     label('loc_26')
 
     PUSH_INT(0)
@@ -242,6 +243,7 @@ def test_split():
     PUSH_INT(1)
     SET_REG(1)
 
+    def _loc_10(): pass
     label('loc_10')
 
     GET_REG(1)
@@ -249,14 +251,13 @@ def test_split():
     LT()
     POP_JMP_ZERO('loc_2E')
 
-    label('loc_1E')
-
     GET_REG(1)
     PUSH_INT(1)
     ADD()
     SET_REG(1)
     JMP('loc_10')
 
+    def _loc_2E(): pass
     label('loc_2E')
 
     PUSH_INT(0)
@@ -267,6 +268,52 @@ def test_split():
     return run_case('Jump Into Middle of Block', 'test_split', bytecode, expected)
 
 
+def test_loop_back_to_entry() -> bool:
+    # JMP('loc_0') targets offset 0 itself - the entry block is now a real branch target, so it
+    # must get a label too (previously the entry block was never labelled, no matter what)
+    bytecode = bytes([
+        0x09, 0x00,                          # 0x00: GET_REG(0)
+        0x00, 0x04, 0x0A, 0x00, 0x00, 0x40,  # 0x02: PUSH_INT(10)
+        0x19,                                # 0x08: LT()
+        0x0F, 0x1E, 0x00, 0x00, 0x00,        # 0x09: POP_JMP_ZERO('loc_1E')
+        0x09, 0x00,                          # 0x0E: GET_REG(0)
+        0x00, 0x04, 0x01, 0x00, 0x00, 0x40,  # 0x10: PUSH_INT(1)
+        0x10,                                # 0x16: ADD()
+        0x0A, 0x00,                          # 0x17: SET_REG(0)
+        0x0B, 0x00, 0x00, 0x00, 0x00,        # 0x19: JMP('loc_0')
+        0x00, 0x04, 0x00, 0x00, 0x00, 0x40,  # 0x1E: PUSH_INT(0)
+        0x0A, 0x00,                          # 0x24: SET_REG(0)
+        0x0D,                                # 0x26: RETURN()
+    ])
+
+    expected = '''
+@scena.LLILCode()
+def test_loop_to_entry():
+    def _loc_0(): pass
+    label('loc_0')
+
+    GET_REG(0)
+    PUSH_INT(10)
+    LT()
+    POP_JMP_ZERO('loc_1E')
+
+    GET_REG(0)
+    PUSH_INT(1)
+    ADD()
+    SET_REG(0)
+    JMP('loc_0')
+
+    def _loc_1E(): pass
+    label('loc_1E')
+
+    PUSH_INT(0)
+    SET_REG(0)
+    RETURN()
+'''
+
+    return run_case('Loop Back to Entry Block', 'test_loop_to_entry', bytecode, expected)
+
+
 def main() -> int:
     tests = [
         test_simple_function,
@@ -274,6 +321,7 @@ def main() -> int:
         test_caller_frame,
         test_loop,
         test_jump_into_middle,
+        test_loop_back_to_entry,
     ]
 
     failed = [test.__name__ for test in tests if not test()]

@@ -7,6 +7,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .instruction_table import InstructionDescriptor, OperandDescriptor
 
+SYNTHETIC_INSTRUCTION_SIZE = 0  # Instruction.size for a disassembler-inserted instruction with no real bytes
+
 
 @dataclass
 class Operand:

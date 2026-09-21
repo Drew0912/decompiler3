@@ -410,13 +410,12 @@ def ed9_create_fallthrough_jump(offset: int, target: int, inst_table: 'Instructi
 
     # Create synthetic instruction
     # Use offset - 1 to avoid collision with tail block's first instruction
-    # Use size = 0 to indicate this is synthetic (not in original bytecode)
     synthetic_inst = Instruction(
         offset     = offset - 1,
         opcode     = jmp_descriptor.opcode,
         descriptor = jmp_descriptor,
         operands   = [operand],
-        size       = 0  # Synthetic instruction, no actual bytes
+        size       = SYNTHETIC_INSTRUCTION_SIZE
     )
 
     return synthetic_inst

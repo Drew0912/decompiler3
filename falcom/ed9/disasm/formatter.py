@@ -4,6 +4,7 @@ from common import *
 from typing import TYPE_CHECKING, Callable
 from dataclasses import dataclass
 
+from .instruction import SYNTHETIC_INSTRUCTION_SIZE
 from .instruction_table import OperandType
 from .ed9_optable import ED9OperandType
 
@@ -39,6 +40,7 @@ class Formatter:
         self.formatted_offsets: set[int] = set()
         self.formatted_labels: set[str] = set()
         self.unreachable_targets: set[int] = set()   # offsets unreachable code branches to - each needs a label
+        self.referenced_offsets: set[int] = set()    # offsets real reachable-code operands point at - each needs a label
 
     def format_entry_block(self, entry_block: 'BasicBlock', unreachable_blocks: 'list[BasicBlock]' = ()) -> list[str]:
         """Format blocks starting from entry block (without function header), plus unreachable blocks in offset order"""
@@ -47,8 +49,24 @@ class Formatter:
         self.formatted_labels.clear()
         self.unreachable_targets = {target for block in unreachable_blocks for target in self.branch_targets(block)}
 
+        # Collect reachable blocks and every offset a real instruction's Offset operand points at -
+        # only those offsets earn a label, so a JMP/POP_JMP_*/PUSH_RET_ADDR/PUSH_CALLER_FRAME target
+        # (or debug_argc key, which is always one of those) always resolves, and the synthetic
+        # fall-through block after a conditional branch (referenced by nothing) does not.
+        reachable_blocks = self.collect_blocks(entry_block)
+        self.referenced_offsets = {target for block in reachable_blocks for target in self.branch_targets(block, real_only = True)}
+
+        # The disassembler always splits a block when something jumps into its middle, so a
+        # referenced offset should always be some block's start. Assert that invariant here for an
+        # immediate signal if it ever breaks; format_block's per-instruction loop still emits an
+        # inline label at the actual reference point regardless, so a reference can never go
+        # undefined even if this assert is stripped (-O) or the invariant is ever wrong.
+        block_start_offsets = {block.offset for block in reachable_blocks}
+        assert self.referenced_offsets <= block_start_offsets, \
+            f'referenced offset(s) not at a block start: {sorted(self.referenced_offsets - block_start_offsets)}'
+
         # Collect all blocks
-        blocks = self.collect_blocks(entry_block) + list(unreachable_blocks)
+        blocks = reachable_blocks + list(unreachable_blocks)
         unreachable_ids = {id(block) for block in unreachable_blocks}  # BasicBlock is an unhashable dataclass
 
         # Sort by offset
@@ -58,10 +76,10 @@ class Formatter:
         lines = []
         for block in blocks:
             if id(block) in unreachable_ids:
-                block_lines = [UNREACHABLE_CODE_BEGIN, *self.format_block(block, gen_label = False, unreachable = True), UNREACHABLE_CODE_END]
+                block_lines = [UNREACHABLE_CODE_BEGIN, *self.format_block(block, unreachable = True), UNREACHABLE_CODE_END]
 
             else:
-                block_lines = self.format_block(block, gen_label = block is not entry_block)
+                block_lines = self.format_block(block)
 
             lines.extend(self.indent + line for line in block_lines)
             if lines and lines[-1] != '':
@@ -102,23 +120,24 @@ class Formatter:
 
         return lines
 
-    def format_block(self, block: 'BasicBlock', gen_label: bool = True, unreachable: bool = False) -> list[str]:
+    def format_block(self, block: 'BasicBlock', unreachable: bool = False) -> list[str]:
         """Format block instructions"""
         lines = []
 
         if not block.instructions:
             return lines
 
-        # Generate label if needed
-        if gen_label and block.name and block.name not in self.formatted_labels:
-            self.formatted_labels.add(block.name)
-            lines.extend(self._format_label(block.name))
+        # Generate label only when this block's start is actually referenced by something
+        label_name = f'loc_{block.offset:X}'
+        if not unreachable and block.offset in self.referenced_offsets and label_name not in self.formatted_labels:
+            self.formatted_labels.add(label_name)
+            lines.extend(self._format_label(label_name))
             lines.append('')
 
         # Format instructions
         for inst in block.instructions:
             # Synthetic fall-through JMP added when a block is split - not in the bytecode
-            if inst.size == 0:
+            if inst.size == SYNTHETIC_INSTRUCTION_SIZE:
                 continue
 
             if inst.offset in self.formatted_offsets:
@@ -132,6 +151,16 @@ class Formatter:
                 self.formatted_labels.add(target_label)
                 comment = '' if unreachable else UNREACHABLE_TARGET_COMMENT
                 lines.extend(self._format_label(target_label, comment))
+                lines.append('')
+
+            # Fallback for the (census-verified, never-observed) case where a referenced offset
+            # is not a block start - see the assert in format_entry_block. Not gated on
+            # `unreachable` (unlike the primary label above): a referenced offset could in
+            # principle only be reachable via the unreachable_blocks list rather than succs, so
+            # this must still fire there too for the "never go undefined" guarantee to hold.
+            if inst.offset in self.referenced_offsets and target_label not in self.formatted_labels:
+                self.formatted_labels.add(target_label)
+                lines.extend(self._format_label(target_label))
                 lines.append('')
 
             # Format instruction with context
@@ -163,9 +192,15 @@ class Formatter:
         return blocks
 
     @classmethod
-    def branch_targets(cls, block: 'BasicBlock') -> list[int]:
-        """Offset operands of a block's instructions"""
-        return [operand.value for inst in block.instructions for operand in inst.operands if operand.descriptor.type == OperandType.Offset]
+    def branch_targets(cls, block: 'BasicBlock', real_only: bool = False) -> list[int]:
+        """Offset operands of a block's instructions (real_only skips synthetic fall-through jumps)"""
+        return [
+            operand.value
+            for inst in block.instructions
+            if not real_only or inst.size != SYNTHETIC_INSTRUCTION_SIZE
+            for operand in inst.operands
+            if operand.descriptor.type == OperandType.Offset
+        ]
 
     def _format_label(self, name: str, comment: str = '') -> list[str]:
         """Format a label"""
