@@ -859,6 +859,16 @@ class SSADeconstructor:
         self.reg_index_by_var: Dict[MLILVariable, int] = {}
         self.undefined_reg_versions: Set[MLILVariableSSA] = set()
 
+        # Defs whose value is a call-clobber MLILUndef placeholder (never emitted - see
+        # _apply_mapping_to_inst) - excluded from _allocate_variables so they never consume a class
+        self.undef_defs: Set[MLILVariableSSA] = set()
+
+        # dest <-> src edges from copy-shaped defs (MLILSetVarSSA(dest, MLILVarSSA(src))) - always
+        # same-base-variable for phi-elimination copies, since phi sources are versions of the phi's
+        # own variable. One dest can have several source partners (one copy per predecessor edge),
+        # so this is many-to-many, not a single preferred partner.
+        self.copy_affinity: Dict[MLILVariableSSA, Set[MLILVariableSSA]] = defaultdict(set)
+
         # Blocks added to carry a phi copy on a critical edge, dropped again if
         # the copy coalesces away
         self.split_blocks: List[MediumLevelILBasicBlock] = []
@@ -896,6 +906,14 @@ class SSADeconstructor:
                 if isinstance(inst, MLILSetVarSSA):
                     self.all_ssa_vars.add(inst.var)
                     self.var_defs[inst.var] = (block, inst_idx)
+
+                    if isinstance(inst.value, MLILUndef):
+                        self.undef_defs.add(inst.var)
+
+                    elif isinstance(inst.value, MLILVarSSA):
+                        self.copy_affinity[inst.var].add(inst.value.var)
+                        self.copy_affinity[inst.value.var].add(inst.var)
+
                     self._collect_uses_in_expr(inst.value, block, inst_idx)
 
                 else:
@@ -1083,59 +1101,89 @@ class SSADeconstructor:
                 self.interference[live_var].add(defined_var)
 
     def _allocate_variables(self):
-        '''Allocate final variable names using graph coloring / coalescing'''
-        # Filter out dead variables (defined but never used). Globals are excluded entirely - they
-        # always lower back to GLOBALS[n] by index (_apply_mapping_to_inst/_expr), so coalescing
-        # them would only mint unused global0_v0-style names into function.locals.
-        live_vars = {
+        '''Allocate final variable names using graph coloring / coalescing
+
+        Defined-but-unused versions are allocated here too, not just live ones - excluding them
+        would leave _apply_mapping_to_inst falling back to the raw, interference-unaware base
+        variable for their def, which can silently clobber whatever coalesced version is live under
+        that name at that point. Only undef_defs (call-clobber MLILUndef placeholders, which
+        _apply_mapping_to_inst drops unconditionally regardless of allocation) are excluded. Globals
+        are excluded entirely - they always lower back to GLOBALS[n] by index
+        (_apply_mapping_to_inst/_expr), so coalescing them would only mint unused global0_v0-style
+        names into function.locals.
+        '''
+        # Not just live vars - a defined-but-unused version still needs an interference-checked
+        # name here (see docstring above), so this only drops undef placeholders and globals.
+        allocatable_vars = {
             v for v in self.all_ssa_vars
-            if self.var_uses[v] and not self.function.is_global_var(v.base_var)
+            if v not in self.undef_defs and not self.function.is_global_var(v.base_var)
         }
 
         # Group SSA vars by base variable
         base_groups: Dict[str, List[MLILVariableSSA]] = defaultdict(list)
-        for ssa_var in live_vars:
+        for ssa_var in allocatable_vars:
             base_groups[ssa_var.base_var.name].append(ssa_var)
 
         # For each base variable group, try to coalesce
         for base_name, ssa_vars in base_groups.items():
-            if not ssa_vars:
-                continue
-
             # Sort by version for deterministic output (version 0 gets base name priority)
             ssa_vars.sort(key = lambda v: v.version)
             base_var = ssa_vars[0].base_var
 
-            # Find connected components of non-interfering variables
-            # Variables in the same component can share the base name
-            assigned: Dict[MLILVariableSSA, MLILVariable] = {}
-            suffix_counter = 0
+            # classes[0] is the base-name class; classes[i >= 1] get a minted "{base_name}_vN"
+            # suffix. Each version joins the first existing class it doesn't interfere with,
+            # preferring one already holding a direct copy_affinity partner so the self-assignment
+            # skip in _apply_mapping_to_inst can elide that copy. A new class is minted only when
+            # nothing fits - previously, the allocator only ever tried the base-name class, so every
+            # conflicting version minted its own fresh suffix instead of reusing an earlier one.
+            classes: List[List[MLILVariableSSA]] = [[]]
 
             for ssa_var in ssa_vars:
-                if ssa_var in assigned:
-                    continue
+                interferes_with = self.interference.get(ssa_var, set())
+                partners = self.copy_affinity.get(ssa_var, set())
 
-                # Check if this var interferes with any already assigned to base_var
-                can_use_base = True
-                for other_var, other_assigned in assigned.items():
-                    if other_assigned.name == base_name and other_var in self.interference.get(ssa_var, set()):
-                        can_use_base = False
-                        break
+                fitting = [i for i, members in enumerate(classes)
+                          if not any(m in interferes_with for m in members)]
 
-                if can_use_base:
-                    assigned[ssa_var] = base_var
+                chosen = next((i for i in fitting if any(m in partners for m in classes[i])), None)
+
+                if chosen is None and fitting:
+                    chosen = fitting[0]
+
+                if chosen is None:
+                    classes.append([])
+                    chosen = len(classes) - 1
+
+                classes[chosen].append(ssa_var)
+
+            # Mint each suffix class a real, collision-free name. MLILVariable equality is
+            # name-only, so a minted name must never collide with a real local, parameter, or
+            # global - registers already live in function.locals, but parameters and globals are
+            # kept in their own separate collections and would not be caught by a locals-only check.
+            # The counter only ever advances (never resets or aligns to class position), so a name
+            # skipped for colliding is never handed to a different class later.
+            names_in_use = (set(self.function.locals)
+                            | {p.name for p in self.function.parameters if p is not None}
+                            | {g.name for g in self.function.global_vars.values()})
+            suffix_counter = 0
+
+            for class_index, members in enumerate(classes):
+                if class_index == 0:
+                    class_var = base_var
 
                 else:
-                    # Need a new name
-                    new_name = f'{base_name}_v{suffix_counter}'
-                    suffix_counter += 1
-                    new_var = MLILVariable(new_name, base_var.slot_index)
-                    assigned[ssa_var] = new_var
-                    # Add to function's locals
-                    if new_name not in self.function.locals:
-                        self.function.locals[new_name] = new_var
+                    while True:
+                        candidate = f'{base_name}_v{suffix_counter}'
+                        suffix_counter += 1
+                        if candidate not in names_in_use:
+                            break
 
-            self.var_mapping.update(assigned)
+                    class_var = MLILVariable(candidate, base_var.slot_index)
+                    self.function.locals[candidate] = class_var
+                    names_in_use.add(candidate)
+
+                for ssa_var in members:
+                    self.var_mapping[ssa_var] = class_var
 
     def _apply_mapping(self):
         '''Replace SSA variables with allocated variables'''
