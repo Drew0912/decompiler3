@@ -4,12 +4,12 @@ Inline expressions that are only used once.
 Pattern: x#n = expr; ... use(x#n) -> ... use(expr)
 '''
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Tuple
 from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
-    MediumLevelILInstruction,
     MediumLevelILBasicBlock,
+    MediumLevelILInstruction,
     MLILConst,
     MLILBinaryOp,
     MLILUnaryOp,
@@ -41,8 +41,6 @@ from ..mlil import (
     MLILCallScript,
     MLILStoreGlobal,
     MLILStoreReg,
-    MLILLoadReg,
-    MLILLoadGlobal,
     MLILDeref,
     MLILStoreDeref,
 )
@@ -54,6 +52,7 @@ from ..mlil_ssa import (
     MLILIf,
     MLILUndef,
 )
+from .pass_ssa_copy_propagation import reaches_without_redefinition
 
 
 class ExpressionInliningPass(Pass):
@@ -61,7 +60,9 @@ class ExpressionInliningPass(Pass):
 
     def __init__(self):
         self.ssa_defs: Dict[MLILVariableSSA, MLILSetVarSSA] = {}
+        self.def_positions: Dict[MLILVariableSSA, Tuple[MediumLevelILBasicBlock, int]] = {}
         self.ssa_uses: Dict[MLILVariableSSA, List[MediumLevelILInstruction]] = {}
+        self.use_positions: Dict[MLILVariableSSA, List[Tuple[MediumLevelILBasicBlock, int]]] = {}
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         '''Inline single-use expressions'''
@@ -74,63 +75,70 @@ class ExpressionInliningPass(Pass):
         return func
 
     def _build_def_use_chains(self, func: MediumLevelILFunction):
-        '''Build SSA def-use chains'''
+        '''Build SSA def-use chains, tracking each def's and use's (block, index) position'''
         self.ssa_defs = {}
+        self.def_positions = {}
         self.ssa_uses = {}
+        self.use_positions = {}
 
         for block in func.basic_blocks:
-            for inst in block.instructions:
+            for idx, inst in enumerate(block.instructions):
                 if isinstance(inst, MLILSetVarSSA):
                     self.ssa_defs[inst.var] = inst
+                    self.def_positions[inst.var] = (block, idx)
 
                 elif isinstance(inst, MLILPhi):
                     self.ssa_defs[inst.dest] = inst
+                    self.def_positions[inst.dest] = (block, idx)
 
-                self._collect_uses_in_inst(inst)
+                self._collect_uses_in_inst(inst, block, idx)
 
-    def _collect_uses_in_inst(self, inst: MediumLevelILInstruction):
-        '''Collect SSA variable uses in instruction'''
+    def _record_use(self, var: MLILVariableSSA, use: MediumLevelILInstruction,
+                    block: MediumLevelILBasicBlock, idx: int):
+        self.ssa_uses.setdefault(var, []).append(use)
+        self.use_positions.setdefault(var, []).append((block, idx))
+
+    def _collect_uses_in_inst(self, inst: MediumLevelILInstruction,
+                              block: MediumLevelILBasicBlock, idx: int):
+        '''Collect SSA variable uses in a top-level instruction, at its own position'''
         if isinstance(inst, MLILVarSSA):
-            if inst.var not in self.ssa_uses:
-                self.ssa_uses[inst.var] = []
-            self.ssa_uses[inst.var].append(inst)
+            self._record_use(inst.var, inst, block, idx)
 
         elif isinstance(inst, MLILSetVarSSA):
-            self._collect_uses_in_expr(inst.value)
+            self._collect_uses_in_expr(inst.value, block, idx)
 
         elif isinstance(inst, MLILPhi):
             for source_var, _ in inst.sources:
-                if source_var not in self.ssa_uses:
-                    self.ssa_uses[source_var] = []
-                self.ssa_uses[source_var].append(inst)
+                self._record_use(source_var, inst, block, idx)
 
         elif isinstance(inst, MLILBinaryOp):
-            self._collect_uses_in_expr(inst.lhs)
-            self._collect_uses_in_expr(inst.rhs)
+            self._collect_uses_in_expr(inst.lhs, block, idx)
+            self._collect_uses_in_expr(inst.rhs, block, idx)
 
         elif isinstance(inst, MLILUnaryOp):
-            self._collect_uses_in_expr(inst.operand)
+            self._collect_uses_in_expr(inst.operand, block, idx)
 
         elif isinstance(inst, MLILIf):
-            self._collect_uses_in_expr(inst.condition)
+            self._collect_uses_in_expr(inst.condition, block, idx)
 
         elif isinstance(inst, MLILRet):
             if inst.value is not None:
-                self._collect_uses_in_expr(inst.value)
+                self._collect_uses_in_expr(inst.value, block, idx)
 
         elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
             for arg in inst.args:
-                self._collect_uses_in_expr(arg)
+                self._collect_uses_in_expr(arg, block, idx)
 
         elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
-            self._collect_uses_in_expr(inst.value)
+            self._collect_uses_in_expr(inst.value, block, idx)
 
         elif isinstance(inst, MLILStoreDeref):
-            self._collect_uses_in_expr(inst.dest)
-            self._collect_uses_in_expr(inst.value)
+            self._collect_uses_in_expr(inst.dest, block, idx)
+            self._collect_uses_in_expr(inst.value, block, idx)
 
-    def _collect_uses_in_expr(self, expr: MediumLevelILInstruction):
-        self._collect_uses_in_inst(expr)
+    def _collect_uses_in_expr(self, expr: MediumLevelILInstruction,
+                              block: MediumLevelILBasicBlock, idx: int):
+        self._collect_uses_in_inst(expr, block, idx)
 
     def _inline_once(self, func: MediumLevelILFunction) -> bool:
         '''Single inlining pass'''
@@ -163,11 +171,40 @@ class ExpressionInliningPass(Pass):
             if isinstance(use, MLILPhi):
                 continue
 
-            # For expressions with side effects or impure reads,
-            # only inline if use is immediately after def in same block
-            if self._has_side_effects(defn.value) or self._is_impure_read(defn.value):
-                if not self._is_immediate_use(func, defn, use):
+            def_pos = self.def_positions.get(ssa_var)
+            use_pos = self.use_positions.get(ssa_var, [None])[0]
+
+            if self._has_side_effects(defn.value):
+                # A call's own side effect must not move relative to anything else in the
+                # function, not just the specific storage an impure read cares about - keep
+                # the strict adjacency requirement for this case.
+                if def_pos is None or use_pos is None or not self._is_immediate_use(def_pos, use_pos, use):
                     continue
+
+            elif self._is_impure_read(defn.value, func):
+                if def_pos is None or use_pos is None:
+                    continue
+
+                storages = self._impure_read_storages(defn.value, func)
+
+                if not storages:
+                    # None means a deref is present somewhere (no trackable storage to check
+                    # reachability against). An empty list should not happen when
+                    # _is_impure_read was true - _impure_read_storages mirrors its dispatch -
+                    # but treat that the same defensively rather than assume the invariant.
+                    # Either way, fall back to the original strict "must be the immediately
+                    # next instruction" requirement instead of refusing to inline at all.
+                    if not self._is_immediate_use(def_pos, use_pos, use):
+                        continue
+
+                else:
+                    def_block, def_idx = def_pos
+                    use_block, use_idx = use_pos
+                    if not all(
+                        reaches_without_redefinition(storage, def_block, def_idx, use_block, use_idx)
+                        for storage in storages
+                    ):
+                        continue
 
             inlinable[ssa_var] = defn.value
 
@@ -203,29 +240,72 @@ class ExpressionInliningPass(Pass):
 
         return False
 
-    def _is_impure_read(self, expr: MediumLevelILInstruction) -> bool:
-        '''Check if expression reads from mutable storage (REG/GLOBAL/pointer target)'''
-        if isinstance(expr, (MLILLoadReg, MLILLoadGlobal, MLILDeref)):
+    def _is_impure_read(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction) -> bool:
+        '''Check if expression reads from mutable storage (register/global/pointer target)
+
+        In SSA form a register/global read is an ordinary MLILVarSSA wrapping a
+        register/global-kind base variable - MLILLoadReg/MLILLoadGlobal are the pre-SSA and
+        post-de-SSA node shapes, they never occur at this layer, so checking for them here
+        would never match a real register/global read.
+        '''
+        if isinstance(expr, MLILVarSSA):
+            return func.is_register_var(expr.var.base_var) or func.is_global_var(expr.var.base_var)
+
+        if isinstance(expr, MLILDeref):
             return True
 
         if isinstance(expr, MLILBinaryOp):
-            return self._is_impure_read(expr.lhs) or self._is_impure_read(expr.rhs)
+            return self._is_impure_read(expr.lhs, func) or self._is_impure_read(expr.rhs, func)
 
         if isinstance(expr, MLILUnaryOp):
-            return self._is_impure_read(expr.operand)
+            return self._is_impure_read(expr.operand, func)
 
         return False
 
-    def _is_immediate_use(self, func: MediumLevelILFunction,
-                          defn: MLILSetVarSSA, use: MediumLevelILInstruction) -> bool:
-        '''Check if use immediately follows definition in same block'''
-        for block in func.basic_blocks:
-            for i, inst in enumerate(block.instructions):
-                if inst is defn:
-                    if i + 1 < len(block.instructions):
-                        return self._inst_contains(block.instructions[i + 1], use)
-                    return False
-        return False
+    def _impure_read_storages(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction) -> Optional[List]:
+        '''Every distinct register/global base variable an impure expression reads (e.g.
+        `reg0 + global3` reads two, both need their own reachability check - a hazard on
+        either one alone makes forwarding this expression unsafe).
+
+        Returns None (not an empty list) if the expression contains an MLILDeref anywhere -
+        checked before the generic MLILUnaryOp case, since MLILDeref subclasses it. A pointer's
+        target is not a named register/global storage this reachability check can track, so a
+        deref poisons the whole expression as unsafe for this relaxed check, the same way one
+        untrackable term in a sum can't be dropped without losing its hazard.
+        '''
+        if isinstance(expr, MLILDeref):
+            return None
+
+        if isinstance(expr, MLILVarSSA):
+            if func.is_register_var(expr.var.base_var) or func.is_global_var(expr.var.base_var):
+                return [expr.var.base_var]
+
+            return []
+
+        if isinstance(expr, MLILBinaryOp):
+            lhs = self._impure_read_storages(expr.lhs, func)
+            rhs = self._impure_read_storages(expr.rhs, func)
+            if lhs is None or rhs is None:
+                return None
+
+            return lhs + rhs
+
+        if isinstance(expr, MLILUnaryOp):
+            return self._impure_read_storages(expr.operand, func)
+
+        return []
+
+    def _is_immediate_use(self, def_pos: Tuple[MediumLevelILBasicBlock, int],
+                          use_pos: Tuple[MediumLevelILBasicBlock, int],
+                          use: MediumLevelILInstruction) -> bool:
+        '''Check if use immediately follows definition in the same block'''
+        def_block, def_idx = def_pos
+        use_block, use_idx = use_pos
+
+        if def_block is not use_block or use_idx != def_idx + 1:
+            return False
+
+        return self._inst_contains(def_block.instructions[def_idx + 1], use)
 
     def _inst_contains(self, inst: MediumLevelILInstruction, target: MediumLevelILInstruction) -> bool:
         '''Check if inst is or contains target'''

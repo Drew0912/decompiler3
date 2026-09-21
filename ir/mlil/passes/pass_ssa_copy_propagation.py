@@ -3,10 +3,11 @@
 Replace SSA variable copies (x#1 = x#0 -> use x#0).
 '''
 
-from typing import Dict, List
+from typing import Dict, List, Optional, Set, Tuple
 from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
+    MediumLevelILBasicBlock,
     MediumLevelILInstruction,
     MLILAdd,
     MLILSub,
@@ -29,6 +30,7 @@ from ..mlil import (
     MLILNeg,
     MLILLogicalNot,
     MLILBitwiseNot,
+    MLILTestZero,
     MLILRet,
     MLILCall,
     MLILSyscall,
@@ -47,35 +49,98 @@ from ..mlil_ssa import (
 )
 
 
+def reaches_without_redefinition(base_var, def_block: MediumLevelILBasicBlock, def_idx: int,
+                                 use_block: MediumLevelILBasicBlock, use_idx: int) -> bool:
+    '''True if no instruction between (def_block, def_idx) and (use_block, use_idx) redefines
+    base_var - explicitly, via a call's pseudo-definition for a register/global it clobbers
+    (lowers to an explicit `var#new = <undef>` MLILSetVarSSA, so a plain SetVarSSA scan already
+    covers those), or via a call's own result landing in base_var (that one is NOT a
+    MLILSetVarSSA - it lives on the call instruction's own .output field instead, since the
+    variable receiving a call's result is excluded from the pseudo-definition sweep).
+
+    Walks forward along single-successor/single-predecessor edges only - a branch (or a merge
+    point with another predecessor) makes the path ambiguous, so this conservatively returns
+    False rather than exploring multiple paths. Shared by CopyPropagationPass and
+    ExpressionInliningPass - both need the same "did this storage change before we got here"
+    check when forwarding a register/global SSA read.
+    '''
+    def redefines(inst) -> bool:
+        if isinstance(inst, MLILSetVarSSA):
+            return inst.var.base_var == base_var
+
+        if isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+            return inst.output is not None and inst.output.base_var == base_var
+
+        return False
+
+    if def_block is use_block:
+        if def_idx <= use_idx:
+            return not any(redefines(inst) for inst in def_block.instructions[def_idx + 1:use_idx])
+
+        return False  # use precedes def in program order - not a valid def->use edge
+
+    if any(redefines(inst) for inst in def_block.instructions[def_idx + 1:]):
+        return False
+
+    visited = {def_block}
+    current = def_block
+    while current is not use_block:
+        if len(current.outgoing_edges) != 1:
+            return False
+
+        current = current.outgoing_edges[0]
+        if len(current.incoming_edges) != 1 or current in visited:
+            return False  # a merge point, or a single-successor cycle that never reaches use_block
+
+        visited.add(current)
+
+        end = use_idx if current is use_block else len(current.instructions)
+        if any(redefines(inst) for inst in current.instructions[:end]):
+            return False
+
+    return True
+
+
 class CopyPropagationPass(Pass):
     '''Replace SSA variable copies with original variables'''
 
     def __init__(self):
         self.ssa_defs: Dict[MLILVariableSSA, MLILSetVarSSA] = {}
+        self.def_positions: Dict[MLILVariableSSA, Tuple[MediumLevelILBasicBlock, int]] = {}
         self.use_counts: Dict[MLILVariableSSA, int] = {}
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         '''Propagate copies through the function'''
-        self._build_def_chains(func)
         changed = True
 
         while changed:
+            self._build_def_chains(func)
             self._count_uses(func)
             changed = self._propagate_once(func)
 
         return func
 
     def _build_def_chains(self, func: MediumLevelILFunction):
-        '''Build SSA definition chains'''
+        '''Build SSA definition chains and their (block, index) positions'''
         self.ssa_defs = {}
+        self.def_positions = {}
 
         for block in func.basic_blocks:
-            for inst in block.instructions:
+            for idx, inst in enumerate(block.instructions):
                 if isinstance(inst, MLILSetVarSSA):
                     self.ssa_defs[inst.var] = inst
+                    self.def_positions[inst.var] = (block, idx)
 
                 elif isinstance(inst, MLILPhi):
                     self.ssa_defs[inst.dest] = inst
+                    self.def_positions[inst.dest] = (block, idx)
+
+                elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)) and inst.output is not None:
+                    # A call result is a definition too, but not an MLILSetVarSSA - it lives on
+                    # the call's own .output field. Position-only: it is never itself a copy
+                    # (ssa_defs intentionally has no entry for it), but _resolve_effective_root
+                    # still needs to know where it was defined to scan forward from.
+                    self.def_positions[inst.output] = (block, idx)
 
     def _count_uses(self, func: MediumLevelILFunction):
         '''Count reads of every SSA variable'''
@@ -124,37 +189,20 @@ class CopyPropagationPass(Pass):
                              MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
             return self._collect_uses(node.lhs) + self._collect_uses(node.rhs)
 
-        if isinstance(node, (MLILNeg, MLILLogicalNot, MLILBitwiseNot)):
+        if isinstance(node, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero)):
             return self._collect_uses(node.operand)
 
         return []
 
     def _propagate_once(self, func: MediumLevelILFunction) -> bool:
-        '''Single copy propagation pass'''
-        # Build copy map
-        copies: Dict[MLILVariableSSA, MLILVariableSSA] = {}
-        for ssa_var, defn in self.ssa_defs.items():
-            if isinstance(defn, MLILSetVarSSA):
-                if isinstance(defn.value, MLILVarSSA):
-                    # A local read more than once keeps its own name rather than the
-                    # register's/global's, so reg0/global0 does not spread over values that have a
-                    # real variable. With a single read there is nothing to spread.
-                    if func.is_register_var(defn.value.var.base_var) or func.is_global_var(defn.value.var.base_var):
-                        if self.use_counts.get(ssa_var, 0) > 1:
-                            continue
-
-                    copies[ssa_var] = defn.value.var
-
-        if not copies:
-            return False
-
+        '''Single copy propagation pass - resolves each read to its effective root'''
         changed = False
 
         for block in func.basic_blocks:
             new_instructions = []
 
-            for inst in block.instructions:
-                new_inst = self._replace_in_inst(inst, copies)
+            for idx, inst in enumerate(block.instructions):
+                new_inst = self._replace_in_inst(inst, func, block, idx)
                 new_instructions.append(new_inst)
 
                 if new_inst is not inst:
@@ -164,32 +212,78 @@ class CopyPropagationPass(Pass):
 
         return changed
 
-    def _replace_in_inst(self, inst: MediumLevelILInstruction,
-                         copies: Dict[MLILVariableSSA, MLILVariableSSA]) -> MediumLevelILInstruction:
+    def _resolve_effective_root(self, var: MLILVariableSSA, func: MediumLevelILFunction,
+                                use_block: MediumLevelILBasicBlock, use_idx: int,
+                                visiting: Optional[Set[MLILVariableSSA]] = None) -> MLILVariableSSA:
+        '''Follow a chain of pure copies (x#n = y#m) back to its furthest safe ancestor.
+
+        Stops at the first link that is not itself a plain copy, that is a register/global
+        read from a source used more than once (keeps the local's own name rather than
+        spreading the register's/global's identity over it), or whose source is not safely
+        reachable - without an intervening redefinition of the same storage - from var's OWN
+        definition (not source_var's) through to (use_block, use_idx). Using var's definition
+        rather than source_var's is deliberate, not just simpler: SSA construction guarantees
+        nothing redefines source_var's base variable between source_var's own definition and
+        var's definition anyway (otherwise var would have been assigned a later version), so
+        that earlier stretch never needed checking - and var's definition always has a
+        recorded position (it is exactly how `defn` above was found), while source_var's does
+        not when source_var is a version seeded at function entry (a parameter, or a
+        register/global read before any assignment in this function). Cycle-guarded via
+        `visiting`, since a chain can only be walked once per call regardless.
+        '''
+        if visiting is None:
+            visiting = set()
+
+        if var in visiting:
+            return var
+
+        defn = self.ssa_defs.get(var)
+        if not isinstance(defn, MLILSetVarSSA) or not isinstance(defn.value, MLILVarSSA):
+            return var
+
+        source_var = defn.value.var
+        is_reg_or_global = func.is_register_var(source_var.base_var) or func.is_global_var(source_var.base_var)
+
+        if is_reg_or_global:
+            # A local read more than once keeps its own name rather than the
+            # register's/global's, so reg0/global0 does not spread over values that have a
+            # real variable. With a single read there is nothing to spread.
+            if self.use_counts.get(var, 0) > 1:
+                return var
+
+            def_block, def_idx = self.def_positions[var]
+            if not reaches_without_redefinition(source_var.base_var, def_block, def_idx, use_block, use_idx):
+                return var
+
+        visiting.add(var)
+        return self._resolve_effective_root(source_var, func, use_block, use_idx, visiting)
+
+    def _replace_in_inst(self, inst: MediumLevelILInstruction, func: MediumLevelILFunction,
+                         block: MediumLevelILBasicBlock, idx: int) -> MediumLevelILInstruction:
         '''Replace copy variables in instruction'''
         if isinstance(inst, MLILSetVarSSA):
-            new_value = self._replace_in_expr(inst.value, copies)
+            new_value = self._replace_in_expr(inst.value, func, block, idx)
             if new_value is not inst.value:
                 return MLILSetVarSSA(inst.var, new_value, address = inst.address).copy_metadata_from(inst)
 
         elif isinstance(inst, MLILIf):
-            new_condition = self._replace_in_expr(inst.condition, copies)
+            new_condition = self._replace_in_expr(inst.condition, func, block, idx)
             if new_condition is not inst.condition:
                 return MLILIf(new_condition, inst.true_target, inst.false_target, address = inst.address).copy_metadata_from(inst)
 
         elif isinstance(inst, MLILRet):
             if inst.value is not None:
-                new_value = self._replace_in_expr(inst.value, copies)
+                new_value = self._replace_in_expr(inst.value, func, block, idx)
                 if new_value is not inst.value:
                     return MLILRet(new_value, address = inst.address).copy_metadata_from(inst)
 
         elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
-            new_args = [self._replace_in_expr(arg, copies) for arg in inst.args]
+            new_args = [self._replace_in_expr(arg, func, block, idx) for arg in inst.args]
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
                 return inst.rebuild(new_args)
 
         elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
-            new_value = self._replace_in_expr(inst.value, copies)
+            new_value = self._replace_in_expr(inst.value, func, block, idx)
             if new_value is not inst.value:
                 if isinstance(inst, MLILStoreGlobal):
                     return MLILStoreGlobal(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
@@ -197,31 +291,32 @@ class CopyPropagationPass(Pass):
                 return MLILStoreReg(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
 
         elif isinstance(inst, MLILStoreDeref):
-            new_dest = self._replace_in_expr(inst.dest, copies)
-            new_value = self._replace_in_expr(inst.value, copies)
+            new_dest = self._replace_in_expr(inst.dest, func, block, idx)
+            new_value = self._replace_in_expr(inst.value, func, block, idx)
             if new_dest is not inst.dest or new_value is not inst.value:
                 return inst.rebuild(new_dest, new_value)
 
         return inst
 
-    def _replace_in_expr(self, expr: MediumLevelILInstruction,
-                         copies: Dict[MLILVariableSSA, MLILVariableSSA]) -> MediumLevelILInstruction:
+    def _replace_in_expr(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction,
+                         block: MediumLevelILBasicBlock, idx: int) -> MediumLevelILInstruction:
         '''Replace copy variables in expression'''
         if isinstance(expr, MLILVarSSA):
-            if expr.var in copies:
-                return MLILVarSSA(copies[expr.var])
+            root = self._resolve_effective_root(expr.var, func, block, idx)
+            if root is not expr.var:
+                return MLILVarSSA(root)
 
         elif isinstance(expr, (MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod,
                                MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr,
                                MLILLogicalAnd, MLILLogicalOr,
                                MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
-            lhs = self._replace_in_expr(expr.lhs, copies)
-            rhs = self._replace_in_expr(expr.rhs, copies)
+            lhs = self._replace_in_expr(expr.lhs, func, block, idx)
+            rhs = self._replace_in_expr(expr.rhs, func, block, idx)
             if lhs is not expr.lhs or rhs is not expr.rhs:
                 return self._reconstruct_binary_op(expr, lhs, rhs)
 
-        elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot)):
-            operand = self._replace_in_expr(expr.operand, copies)
+        elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero)):
+            operand = self._replace_in_expr(expr.operand, func, block, idx)
             if operand is not expr.operand:
                 return self._reconstruct_unary_op(expr, operand)
 
@@ -229,7 +324,7 @@ class CopyPropagationPass(Pass):
             # Unlike MLILAddressOf (whose operand is a location, never substitutable), a
             # pointer's VALUE is an ordinary operand - propagating a value-equal copy into it
             # is safe and desirable.
-            operand = self._replace_in_expr(expr.operand, copies)
+            operand = self._replace_in_expr(expr.operand, func, block, idx)
             if operand is not expr.operand:
                 return MLILDeref(operand)
 
@@ -307,6 +402,9 @@ class CopyPropagationPass(Pass):
 
         elif isinstance(expr, MLILBitwiseNot):
             return MLILBitwiseNot(operand)
+
+        elif isinstance(expr, MLILTestZero):
+            return MLILTestZero(operand)
 
         else:
             raise NotImplementedError(f'Unhandled unary operation: {type(expr).__name__}')
