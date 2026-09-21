@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst,
-    MLILGt, MLILAdd, MLILCall, MLILSyscall, MLILDeref,
+    MLILGt, MLILAdd, MLILCall, MLILSyscall, MLILDeref, MLILLoadGlobal,
 )
 from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILIf, MLILRet, MLILUndef, SSADeconstructor
 from ir.mlil.passes import CopyPropagationPass, ExpressionInliningPass
@@ -351,6 +351,90 @@ class TestCopyPropagationEntryVersionSource(unittest.TestCase):
         CopyPropagationPass().run(func)
 
         self.assertEqual(str(block.instructions[-1]), 'return reg0#0')
+
+
+class TestExpressionInliningUnraisedGlobalRead(unittest.TestCase):
+    '''A global that is only ever READ (never stored) in this function is never raised into
+    an SSA-tracked variable by SSA construction (mlil_ssa.py's _raise_globals leaves it alone)
+    - it survives as a bare MLILLoadGlobal even in SSA form. Since it has no SSA base variable,
+    reaches_without_redefinition cannot track it; it must be treated as untrackable (poisoned),
+    like MLILDeref, not as pure - a prior rewrite of _is_impure_read (switching to
+    MLILVarSSA-based detection for the common raised case) dropped this case entirely, making
+    every such read freely movable with no adjacency check at all, not even the old strict one.'''
+
+    def test_unraised_global_read_not_inlined_across_call(self):
+        func = make_func('unraised_global')
+        for n in ('x', 'r'):
+            func.locals[n] = MLILVariable(n)
+
+        x1 = MLILVariableSSA(func.locals['x'], 1)
+        r1 = MLILVariableSSA(func.locals['r'], 1)
+
+        block = MediumLevelILBasicBlock(0)
+        block.instructions = [
+            MLILSetVarSSA(x1, MLILGt(MLILLoadGlobal(7), MLILConst(0))),  # x#1 = GLOBAL[7] > 0 (never stored -> unraised)
+            MLILCall(0x1234, [], output = None),
+            MLILSetVarSSA(r1, MLILVarSSA(x1)),
+        ]
+        func.basic_blocks = [block]
+
+        ExpressionInliningPass().run(func)
+
+        self.assertEqual(str(block.instructions[-1]), 'r#1 = x#1', 'an unraised global read must not inline across a call')
+
+    def test_unraised_global_read_still_inlines_when_adjacent(self):
+        '''Regression guard: the untrackable fallback must not become an unconditional refusal.'''
+        func = make_func('unraised_global_adjacent')
+        func.locals['x'] = MLILVariable('x')
+
+        x1 = MLILVariableSSA(func.locals['x'], 1)
+
+        block = MediumLevelILBasicBlock(0)
+        block.instructions = [
+            MLILSetVarSSA(x1, MLILGt(MLILLoadGlobal(7), MLILConst(0))),
+            MLILRet(MLILVarSSA(x1)),
+        ]
+        func.basic_blocks = [block]
+
+        ExpressionInliningPass().run(func)
+
+        self.assertIn('GLOBAL[7]', str(block.instructions[-1]), 'an adjacent unraised global read must still inline')
+
+
+class TestCopyPropagationMultiUseAppliesAtEveryHop(unittest.TestCase):
+    '''The "read more than once keeps its own name" rule must apply at every hop of a copy
+    chain, not just the hop whose immediate source is the register/global itself:
+    t#1 = reg0#1; a#1 = t#1; z1#1 = a#1; z2#1 = a#1 must stop at a#1 (used twice), even though
+    t#1 - a#1's own direct source - is used only once, so the original single-hop check never
+    saw a#1's use count at all.'''
+
+    def test_multi_use_local_two_hops_from_register_keeps_its_name(self):
+        func = make_func('multiuse_two_hop')
+        reg0 = MLILVariable('reg0')
+        func.register_vars[0] = reg0
+        for n in ('t', 'a', 'z1', 'z2'):
+            func.locals[n] = MLILVariable(n)
+
+        reg0_1 = MLILVariableSSA(reg0, 1)
+        t1 = MLILVariableSSA(func.locals['t'], 1)
+        a1 = MLILVariableSSA(func.locals['a'], 1)
+        z1_1 = MLILVariableSSA(func.locals['z1'], 1)
+        z2_1 = MLILVariableSSA(func.locals['z2'], 1)
+
+        block = MediumLevelILBasicBlock(0)
+        block.instructions = [
+            MLILSetVarSSA(reg0_1, MLILConst(5)),
+            MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),   # t#1 = reg0#1, used once (by a#1)
+            MLILSetVarSSA(a1, MLILVarSSA(t1)),        # a#1 = t#1, used TWICE (z1, z2)
+            MLILSetVarSSA(z1_1, MLILVarSSA(a1)),
+            MLILSetVarSSA(z2_1, MLILVarSSA(a1)),
+        ]
+        func.basic_blocks = [block]
+
+        CopyPropagationPass().run(func)
+
+        self.assertEqual(str(block.instructions[-2]), 'z1#1 = a#1', 'must stop at a#1, not spread reg0#1 over both reads')
+        self.assertEqual(str(block.instructions[-1]), 'z2#1 = a#1', 'must stop at a#1, not spread reg0#1 over both reads')
 
 
 if __name__ == '__main__':

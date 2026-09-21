@@ -32,9 +32,7 @@ from ..mlil import (
     MLILBitwiseNot,
     MLILTestZero,
     MLILRet,
-    MLILCall,
-    MLILSyscall,
-    MLILCallScript,
+    MediumLevelILCall,
     MLILStoreGlobal,
     MLILStoreReg,
     MLILDeref,
@@ -68,7 +66,7 @@ def reaches_without_redefinition(base_var, def_block: MediumLevelILBasicBlock, d
         if isinstance(inst, MLILSetVarSSA):
             return inst.var.base_var == base_var
 
-        if isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+        if isinstance(inst, MediumLevelILCall):
             return inst.output is not None and inst.output.base_var == base_var
 
         return False
@@ -135,13 +133,6 @@ class CopyPropagationPass(Pass):
                     self.ssa_defs[inst.dest] = inst
                     self.def_positions[inst.dest] = (block, idx)
 
-                elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)) and inst.output is not None:
-                    # A call result is a definition too, but not an MLILSetVarSSA - it lives on
-                    # the call's own .output field. Position-only: it is never itself a copy
-                    # (ssa_defs intentionally has no entry for it), but _resolve_effective_root
-                    # still needs to know where it was defined to scan forward from.
-                    self.def_positions[inst.output] = (block, idx)
-
     def _count_uses(self, func: MediumLevelILFunction):
         '''Count reads of every SSA variable'''
         self.use_counts = {}
@@ -177,7 +168,7 @@ class CopyPropagationPass(Pass):
         if isinstance(node, MLILRet):
             return self._collect_uses(node.value) if node.value is not None else []
 
-        if isinstance(node, (MLILCall, MLILSyscall, MLILCallScript)):
+        if isinstance(node, MediumLevelILCall):
             uses = []
             for arg in node.args:
                 uses.extend(self._collect_uses(arg))
@@ -230,6 +221,13 @@ class CopyPropagationPass(Pass):
         not when source_var is a version seeded at function entry (a parameter, or a
         register/global read before any assignment in this function). Cycle-guarded via
         `visiting`, since a chain can only be walked once per call regardless.
+
+        The multi-use check applies at every hop, not just one whose immediate source is a
+        register/global: t#1 = reg0#1; a#1 = t#1; z1#1 = a#1; z2#1 = a#1 must stop at a#1
+        (used twice), not resolve through it to reg0#1, even though t#1 itself (a#1's direct
+        source) is used only once. The recursive call below resolves the rest of the chain
+        first, so the register/global-ness of the final root is known before this hop decides
+        whether it is safe to disappear into it.
         '''
         if visiting is None:
             visiting = set()
@@ -256,7 +254,17 @@ class CopyPropagationPass(Pass):
                 return var
 
         visiting.add(var)
-        return self._resolve_effective_root(source_var, func, use_block, use_idx, visiting)
+        root = self._resolve_effective_root(source_var, func, use_block, use_idx, visiting)
+
+        # var's own source (source_var) may be a plain local - is_reg_or_global False above,
+        # so the multi-use guard never ran for var - but resolving further back may still
+        # land on a register/global through that local. The same "don't spread reg/global
+        # identity over a multiply-used value" rule applies here too.
+        root_is_reg_or_global = func.is_register_var(root.base_var) or func.is_global_var(root.base_var)
+        if root_is_reg_or_global and self.use_counts.get(var, 0) > 1:
+            return var
+
+        return root
 
     def _replace_in_inst(self, inst: MediumLevelILInstruction, func: MediumLevelILFunction,
                          block: MediumLevelILBasicBlock, idx: int) -> MediumLevelILInstruction:
@@ -277,7 +285,7 @@ class CopyPropagationPass(Pass):
                 if new_value is not inst.value:
                     return MLILRet(new_value, address = inst.address).copy_metadata_from(inst)
 
-        elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+        elif isinstance(inst, MediumLevelILCall):
             new_args = [self._replace_in_expr(arg, func, block, idx) for arg in inst.args]
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
                 return inst.rebuild(new_args)

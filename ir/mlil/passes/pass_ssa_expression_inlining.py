@@ -36,11 +36,11 @@ from ..mlil import (
     MLILBitwiseNot,
     MLILTestZero,
     MLILRet,
-    MLILCall,
-    MLILSyscall,
-    MLILCallScript,
+    MediumLevelILCall,
     MLILStoreGlobal,
     MLILStoreReg,
+    MLILLoadGlobal,
+    MLILLoadReg,
     MLILDeref,
     MLILStoreDeref,
 )
@@ -125,7 +125,7 @@ class ExpressionInliningPass(Pass):
             if inst.value is not None:
                 self._collect_uses_in_expr(inst.value, block, idx)
 
-        elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+        elif isinstance(inst, MediumLevelILCall):
             for arg in inst.args:
                 self._collect_uses_in_expr(arg, block, idx)
 
@@ -229,7 +229,7 @@ class ExpressionInliningPass(Pass):
 
     def _has_side_effects(self, expr: MediumLevelILInstruction) -> bool:
         '''Check if expression has side effects'''
-        if isinstance(expr, (MLILCall, MLILSyscall, MLILCallScript)):
+        if isinstance(expr, MediumLevelILCall):
             return True
 
         if isinstance(expr, MLILBinaryOp):
@@ -243,15 +243,18 @@ class ExpressionInliningPass(Pass):
     def _is_impure_read(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction) -> bool:
         '''Check if expression reads from mutable storage (register/global/pointer target)
 
-        In SSA form a register/global read is an ordinary MLILVarSSA wrapping a
-        register/global-kind base variable - MLILLoadReg/MLILLoadGlobal are the pre-SSA and
-        post-de-SSA node shapes, they never occur at this layer, so checking for them here
-        would never match a real register/global read.
+        In SSA form, a STORED register/global's read is an ordinary MLILVarSSA wrapping a
+        register/global-kind base variable - MLILLoadReg/MLILLoadGlobal are normally the
+        pre-SSA and post-de-SSA node shapes only. But a global that is only ever READ in this
+        function (never stored) is never raised into a variable at all (mlil_ssa.py's
+        _raise_globals leaves it alone), so its MLILLoadGlobal survives unchanged into SSA
+        form - it must still be treated as impure here, the same as MLILDeref, since it has
+        no SSA version for reaches_without_redefinition to track.
         '''
         if isinstance(expr, MLILVarSSA):
             return func.is_register_var(expr.var.base_var) or func.is_global_var(expr.var.base_var)
 
-        if isinstance(expr, MLILDeref):
+        if isinstance(expr, (MLILLoadReg, MLILLoadGlobal, MLILDeref)):
             return True
 
         if isinstance(expr, MLILBinaryOp):
@@ -268,12 +271,13 @@ class ExpressionInliningPass(Pass):
         either one alone makes forwarding this expression unsafe).
 
         Returns None (not an empty list) if the expression contains an MLILDeref anywhere -
-        checked before the generic MLILUnaryOp case, since MLILDeref subclasses it. A pointer's
-        target is not a named register/global storage this reachability check can track, so a
-        deref poisons the whole expression as unsafe for this relaxed check, the same way one
-        untrackable term in a sum can't be dropped without losing its hazard.
+        checked before the generic MLILUnaryOp case, since MLILDeref subclasses it - or a
+        surviving MLILLoadReg/MLILLoadGlobal (an unraised, read-only global; see
+        _is_impure_read). None of these have an SSA base variable this reachability check can
+        track, so each poisons the whole expression as unsafe for this relaxed check, the same
+        way one untrackable term in a sum can't be dropped without losing its hazard.
         '''
-        if isinstance(expr, MLILDeref):
+        if isinstance(expr, (MLILLoadReg, MLILLoadGlobal, MLILDeref)):
             return None
 
         if isinstance(expr, MLILVarSSA):
@@ -321,7 +325,7 @@ class ExpressionInliningPass(Pass):
         if isinstance(inst, MLILRet):
             return inst.value is not None and self._expr_contains(inst.value, target)
 
-        if isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+        if isinstance(inst, MediumLevelILCall):
             return any(self._expr_contains(arg, target) for arg in inst.args)
 
         if isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
@@ -364,7 +368,7 @@ class ExpressionInliningPass(Pass):
                 if new_value is not inst.value:
                     return MLILRet(new_value, address = inst.address).copy_metadata_from(inst)
 
-        elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+        elif isinstance(inst, MediumLevelILCall):
             new_args = [self._inline_in_expr(arg, inlinable) for arg in inst.args]
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
                 return inst.rebuild(new_args)
