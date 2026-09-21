@@ -56,9 +56,16 @@ def reaches_without_redefinition(base_var, def_block: MediumLevelILBasicBlock, d
     MLILSetVarSSA - it lives on the call instruction's own .output field instead, since the
     variable receiving a call's result is excluded from the pseudo-definition sweep).
 
-    Walks forward along single-successor/single-predecessor edges only - a branch (or a merge
-    point with another predecessor) makes the path ambiguous, so this conservatively returns
-    False rather than exploring multiple paths. Shared by CopyPropagationPass and
+    Walks BACKWARD from (use_block, use_idx) along single-predecessor edges until it reaches
+    def_block, checking every instruction along the way. Only use_block's and each intermediate
+    block's IN-degree matters here - never any block's OUT-degree, including def_block's own:
+    whether def_block (or any block on the path) branches elsewhere is irrelevant to whether
+    the ONE path actually taken to reach (use_block, use_idx) is hazard-free. If use_block's
+    only predecessor is some block P, every execution that reaches use_block did so via P, full
+    stop, regardless of what else P might lead to on a different run - so a def in a block that
+    ends in `if (cond) ...` still forwards safely into whichever arm has that block as its sole
+    predecessor. A merge point (in-degree != 1) makes the path ambiguous, so this conservatively
+    returns False rather than exploring multiple predecessors. Shared by CopyPropagationPass and
     ExpressionInliningPass - both need the same "did this storage change before we got here"
     check when forwarding a register/global SSA read.
     '''
@@ -77,24 +84,22 @@ def reaches_without_redefinition(base_var, def_block: MediumLevelILBasicBlock, d
 
         return False  # use precedes def in program order - not a valid def->use edge
 
-    if any(redefines(inst) for inst in def_block.instructions[def_idx + 1:]):
-        return False
+    current = use_block
+    visited = {use_block}
+    while current is not def_block:
+        if len(current.incoming_edges) != 1:
+            return False  # a merge point - ambiguous which predecessor actually ran
 
-    visited = {def_block}
-    current = def_block
-    while current is not use_block:
-        if len(current.outgoing_edges) != 1:
+        pred = current.incoming_edges[0]
+        if pred in visited:
+            return False  # a single-predecessor cycle that never reaches def_block
+
+        visited.add(pred)
+        start = def_idx + 1 if pred is def_block else 0
+        if any(redefines(inst) for inst in pred.instructions[start:]):
             return False
 
-        current = current.outgoing_edges[0]
-        if len(current.incoming_edges) != 1 or current in visited:
-            return False  # a merge point, or a single-successor cycle that never reaches use_block
-
-        visited.add(current)
-
-        end = use_idx if current is use_block else len(current.instructions)
-        if any(redefines(inst) for inst in current.instructions[:end]):
-            return False
+        current = pred
 
     return True
 

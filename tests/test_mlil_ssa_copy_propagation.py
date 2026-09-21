@@ -437,5 +437,48 @@ class TestCopyPropagationMultiUseAppliesAtEveryHop(unittest.TestCase):
         self.assertEqual(str(block.instructions[-1]), 'z2#1 = a#1', 'must stop at a#1, not spread reg0#1 over both reads')
 
 
+class TestCopyPropagationBackwardReachabilityAcrossBranch(unittest.TestCase):
+    '''reaches_without_redefinition walks backward from the use, so a def sitting in a block
+    that itself branches (e.g. ends in `if (cond) ...`) can still forward safely into whichever
+    arm has that block as its SOLE predecessor - the block's OTHER successor is irrelevant to
+    whether the one path actually taken is hazard-free. Found and sized against the real corpus
+    before implementing (350-file capped census, per notes/corpus_run_rules.md): 12 distinct
+    sites across 9 ai_* files, 0 soundness violations (no case the old forward-only walk
+    accepted was ever rejected by the backward walk).'''
+
+    def test_copy_forwards_through_a_branching_def_block_into_its_sole_successor(self):
+        func = make_func('branch_then_safe_use')
+        reg0 = MLILVariable('reg0')
+        func.register_vars[0] = reg0
+        func.locals['a'] = MLILVariable('a')
+        func.locals['c'] = MLILVariable('c')
+        func.locals['r'] = MLILVariable('r')
+
+        reg0_1 = MLILVariableSSA(reg0, 1)
+        a1 = MLILVariableSSA(func.locals['a'], 1)
+        c1 = MLILVariableSSA(func.locals['c'], 1)
+        r1 = MLILVariableSSA(func.locals['r'], 1)
+
+        b1 = MediumLevelILBasicBlock(1)
+        b2 = MediumLevelILBasicBlock(2)
+        b0 = MediumLevelILBasicBlock(0)
+        b0.instructions = [
+            MLILSetVarSSA(reg0_1, MLILConst(5)),
+            MLILSetVarSSA(a1, MLILVarSSA(reg0_1)),   # a#1 = reg0#1 - b0 (a#1's own def block) branches next
+            MLILIf(MLILVarSSA(c1), b1, b2),
+        ]
+        b1.instructions = [
+            MLILSetVarSSA(r1, MLILVarSSA(a1)),        # r#1 = a#1 - b1's only predecessor is b0
+        ]
+        b0.add_outgoing_edge(b1)
+        b0.add_outgoing_edge(b2)
+        func.basic_blocks = [b0, b1, b2]
+
+        CopyPropagationPass().run(func)
+
+        self.assertEqual(str(b1.instructions[-1]), 'r#1 = reg0#1',
+                          'a safe copy must still resolve through a branching def block into its sole successor')
+
+
 if __name__ == '__main__':
     unittest.main()
