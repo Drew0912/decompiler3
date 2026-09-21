@@ -25,6 +25,9 @@ NEVER modify, create, or delete any file under `binaryninja-api/` — it is thir
 ### -0.05. Codex Secondary-Agent Invocation
 Full rule set in `notes/codex_rules.md` — read it before invoking Codex. Only invoke Codex for one of its listed rules (user-directed one-off action, validator-output verification, HLIL/MLIL condensability review, corpus-harness offload, user-directed implementation, adversarial plan review); it is not a general-purpose delegate. Rule 5 (user-directed implementation) is the only one granting Codex real implementation authority, and only when the user explicitly asks for it by name — Claude must independently verify the result against real source afterward, not just trust Codex's self-report. Whenever Codex is invoked, or invocation is being considered, tell the user and cite which rule triggered it (e.g. "Invoking Codex — Rule 2"). Codex reviews/verifies/critiques only unless a rule explicitly grants implementation, or Claude explicitly instructs it to implement something as a separate, later step. **When writing a plan that touches `ir/hlil/` or `ir/mlil/`, include a Rule 2 Codex condensability-review step in the plan itself** (see `notes/codex_rules.md` Rule 2 "Plan integration") — don't leave it to be remembered after the fact.
 
+### -0.04. Root-Cause Fixes in `ir/`
+When a bug is found while editing `ir/` (LLIL/MLIL/HLIL structures and passes), prioritize fixing the root cause over patching just the reported symptom. This directory's passes tend to hand-roll their own tree traversal, and a walker missing a node type is not a one-off mistake at that call site — it is a class of bug that recurs across every hand-rolled walker in the file. Prefer closing the class (e.g. a shared traversal helper every predicate/collector is built on, so a missing node type is fixed once for every consumer) over a narrow guard clause that only fixes the specific finding. Not every `ir/` bug is a traversal-coverage bug — some are genuine logic gaps (wrong equality check, missing case) that a shared walker would not have caught either; for those, still ask what the underlying gap is before patching, rather than defaulting to the narrowest possible fix.
+
 ### 1. NO HARDCODED MAGIC NUMBERS
 Use named constants: `offset // WORD_SIZE` not `offset // 4`
 Common: `WORD_SIZE = 4` (in `ir/llil.py`)
@@ -74,6 +77,7 @@ Keep comments brief and meaningful. Avoid redundant explanations.
 - [ ] No accessing `decompiler2` submodule unless explicitly requested (ask first)
 - [ ] No editing `binaryninja-api/` ever; no reading it unless explicitly requested (ask first)
 - [ ] Codex invoked only per `notes/codex_rules.md`, with the triggering rule cited to the user
+- [ ] Bugs found while editing `ir/` get a root-cause fix, not just a patch for the reported instance
 - [ ] No hardcoded numbers (use named constants)
 - [ ] Imports at top level
 - [ ] Spaces around `=`

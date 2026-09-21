@@ -535,11 +535,12 @@ class TypeScriptGenerator:
                     lines.append(f'{indent_str}{case_indent}case {cls._format_expr(case.values[-1])}: {{')
                 lines.extend(cls._generate_block(case.body, indent + 2))
 
-                # Add break if case doesn't end with return/break/continue
-                if case.body.statements:
-                    last_stmt = case.body.statements[-1]
-                    if not isinstance(last_stmt, (HLILReturn, HLILBreak, HLILContinue)):
-                        lines.append(f'{indent_str}{case_body_indent}break;')
+                # Add break if case doesn't end with return/break/continue - including an
+                # empty case body (no last statement at all), which otherwise falls through
+                # into the next case instead of doing nothing
+                last_stmt = case.body.statements[-1] if case.body.statements else None
+                if not isinstance(last_stmt, (HLILReturn, HLILBreak, HLILContinue)):
+                    lines.append(f'{indent_str}{case_body_indent}break;')
 
                 lines.append(f'{indent_str}{case_indent}}}')
 

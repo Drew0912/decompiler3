@@ -43,6 +43,7 @@ class ControlFlowOptimizationPass(Pass):
     '''Control flow optimizations: if-to-switch, empty-if inversion, else-if flattening, switch merging'''
 
     def run(self, func: HighLevelILFunction) -> HighLevelILFunction:
+        self._func_body = func.body
         self._optimize_block(func.body)
         self._merge_nested_switches(func.body)
         return func
@@ -176,10 +177,25 @@ class ControlFlowOptimizationPass(Pass):
         if cond.lhs.var != assigned_var:
             return None
 
+        # Globals are shared-state writes (matches _remove_redundant_else_assign's same
+        # exclusion below) - the assignment is observable even with no in-function read of
+        # its own, so it can never be treated as a dead store here
+        if assigned_var.kind == VariableKind.GLOBAL:
+            return None
+
         # Check var is not read in if body
         true_reads, _, _ = self._can_read_original_value(assigned_var, next_stmt.true_block)
         false_reads, _, _ = self._can_read_original_value(assigned_var, next_stmt.false_block)
         if true_reads or false_reads:
+            return None
+
+        # The assignment is about to be deleted, so var must not be read anywhere else in
+        # the function either - it may be a VM register the bytecode reuses later, either
+        # for this same condition again or for an unrelated value. assign_stmt and next_stmt
+        # are excluded since their own reads of var are the pattern being folded away, not
+        # an outside use (next_stmt's branches were just checked above; its condition is the
+        # read this transform consumes).
+        if self._var_read_elsewhere(assigned_var, exclude = (id(assign_stmt), id(next_stmt))):
             return None
 
         # Build new condition
@@ -206,6 +222,90 @@ class ControlFlowOptimizationPass(Pass):
             new_false_block = next_stmt.false_block
 
         return HLILIf(new_condition, new_true_block, new_false_block)
+
+    def _expr_children(self, node) -> list:
+        '''Immediate sub-expressions of an expression node, for a uniform "walk everything
+        underneath" traversal. Leaves (HLILVar, HLILConst) and anything not an expression
+        return no children.'''
+        if isinstance(node, HLILBinaryOp):
+            return [node.lhs, node.rhs]
+
+        if isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
+            return [node.operand]
+
+        if isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
+            return list(node.args)
+
+        return []
+
+    def _stmt_children(self, node) -> list:
+        '''Immediate sub-statement/expression nodes of a statement-shaped node, falling
+        through to _expr_children for anything that isn't a statement - lets _tree_any walk
+        a mixed statement+expression tree with one recursive helper instead of every
+        predicate hand-rolling its own dispatch list (the drift between hand-rolled lists is
+        what let a switch case *label* go unscanned for variable reads - Codex Rule 2 review
+        of Step 4's fix, finding 5).
+        '''
+        if isinstance(node, HLILAssign):
+            # A plain-Var dest is a write, not a read - only a store through a pointer
+            # (*dest = value) reads dest's own value too, so only that case is a child here
+            # (matches _can_read_original_value's own dest handling below).
+            if isinstance(node.dest, HLILDeref):
+                return [node.dest, node.src]
+
+            return [node.src]
+
+        if isinstance(node, HLILExprStmt):
+            return [node.expr]
+
+        if isinstance(node, HLILReturn):
+            return [node.value]
+
+        if isinstance(node, HLILBlock):
+            return list(node.statements)
+
+        if isinstance(node, HLILIf):
+            return [node.condition, node.true_block, node.false_block]
+
+        if isinstance(node, HLILWhile):
+            return [node.condition, node.body]
+
+        if isinstance(node, HLILDoWhile):
+            return [node.body, node.condition]
+
+        if isinstance(node, HLILSwitch):
+            children = [node.scrutinee]
+            for case in node.cases:
+                if case.values:
+                    children.extend(case.values)
+                children.append(case.body)
+            return children
+
+        return self._expr_children(node)
+
+    def _tree_any(self, node, predicate, exclude: tuple = ()) -> bool:
+        '''Whether predicate holds for node, or anywhere beneath it - statement or
+        expression, via _stmt_children. The shared traversal behind every "does X occur
+        anywhere in this tree" check in this file. A node whose id() is in exclude is
+        skipped entirely (not recursed into), for callers that need to carve out a specific
+        already-handled subtree rather than filter by node shape.'''
+        if node is None or id(node) in exclude:
+            return False
+
+        if predicate(node):
+            return True
+
+        return any(self._tree_any(child, predicate, exclude) for child in self._stmt_children(node))
+
+    def _var_read_elsewhere(self, var: HLILVariable, exclude: tuple) -> bool:
+        '''Check if var is read anywhere in the function, outside the excluded nodes.
+
+        No kill/reachability tracking, unlike _can_read_original_value - any read anywhere
+        counts, even one a real data-flow analysis could prove unreachable from the write
+        being considered. That is deliberately conservative: it only ever blocks an
+        optimization, never causes one, so it cannot turn a safe deletion into an unsafe one.
+        '''
+        return self._tree_any(self._func_body, lambda n: isinstance(n, HLILVar) and n.var == var, exclude)
 
     def _is_nop_stmt(self, stmt: HLILStatement) -> bool:
         '''Check if statement has no side effects (can be skipped)'''
@@ -339,8 +439,20 @@ class ControlFlowOptimizationPass(Pass):
             any_reads = scrutinee_reads
             all_exit = True
             all_kill = True
+            has_default = False
 
             for case in node.cases:
+                if case.is_default():
+                    has_default = True
+
+                elif case.values:
+                    # Case labels are expressions too (an OR-grouped chain of them, in
+                    # general) - a read here is as real as one in the case body.
+                    for value in case.values:
+                        value_reads, _, _ = self._can_read_original_value(var, value, killed)
+                        if value_reads:
+                            any_reads = True
+
                 case_reads, case_killed, case_exits = self._can_read_original_value(var, case.body, killed)
                 if case_reads:
                     any_reads = True
@@ -348,6 +460,14 @@ class ControlFlowOptimizationPass(Pass):
                     all_exit = False
                     if not case_killed:
                         all_kill = False
+
+            # With no default, a scrutinee value matching none of the cases takes an
+            # implicit path where nothing in the switch runs - var reaches the code after
+            # the switch unchanged, so the switch can neither be assumed to exit nor to
+            # kill var on every path, no matter what the explicit cases do.
+            if not has_default:
+                all_exit = False
+                all_kill = False
 
             if all_exit:
                 return (any_reads, killed, True)
@@ -411,7 +531,7 @@ class ControlFlowOptimizationPass(Pass):
         if not isinstance(assign_stmt.dest, HLILVar):
             return
 
-        if assign_stmt.dest.var.name != outer_var.name:
+        if assign_stmt.dest.var != outer_var:
             return
 
         source_expr = assign_stmt.src
@@ -428,11 +548,17 @@ class ControlFlowOptimizationPass(Pass):
         if not isinstance(inner_cond, HLILBinaryOp) or inner_cond.op != BinaryOp.EQ:
             return
 
-        if not isinstance(inner_cond.lhs, HLILVar) or inner_cond.lhs.var.name != outer_var.name:
+        if not isinstance(inner_cond.lhs, HLILVar) or inner_cond.lhs.var != outer_var:
             return
 
         # Check source wasn't modified in true_block (case body)
         if self._expr_modified_in_block(source_expr, if_stmt.true_block):
+            return
+
+        # A call in source may have side effects beyond its return value - the value
+        # being redundant does not make the call itself redundant, so removing the whole
+        # statement here would silently drop that effect from the decompiled output
+        if self._contains_call(source_expr):
             return
 
         # Remove redundant assignment
@@ -475,33 +601,24 @@ class ControlFlowOptimizationPass(Pass):
 
         return vars_set
 
+    def _contains_call(self, expr: HLILExpression) -> bool:
+        '''Check if expr contains a call anywhere - a call may have side effects a
+        seemingly-redundant reassignment must not silently drop'''
+        return self._tree_any(expr, lambda n: isinstance(n, (HLILCall, HLILSyscall, HLILExternCall)))
+
     def _stmt_modifies_any(self, stmt: HLILStatement, vars_set: set) -> bool:
-        '''Check if statement modifies any variable in vars_set'''
-        if isinstance(stmt, HLILAssign):
-            if isinstance(stmt.dest, HLILVar) and stmt.dest.var in vars_set:
-                return True
+        '''Check if stmt modifies any variable in vars_set, anywhere in its tree.
 
-        elif isinstance(stmt, HLILIf):
-            if stmt.true_block:
-                for s in stmt.true_block.statements:
-                    if self._stmt_modifies_any(s, vars_set):
-                        return True
+        Note: a call (HLILExprStmt wrapping one, or nested inside an expression) is NOT
+        considered to modify a named variable - REGS in this VM are only modified via direct
+        assignment, unlike the conservative "any call may write anything" policy used
+        elsewhere in this codebase (e.g. pass_copy_propagation.py) for a different hazard.
+        '''
+        if not vars_set:
+            return False
 
-            if stmt.false_block:
-                for s in stmt.false_block.statements:
-                    if self._stmt_modifies_any(s, vars_set):
-                        return True
-
-        elif isinstance(stmt, HLILWhile):
-            if stmt.body:
-                for s in stmt.body.statements:
-                    if self._stmt_modifies_any(s, vars_set):
-                        return True
-
-        # Note: HLILExprStmt (function calls) are NOT considered to modify REGS
-        # REGS are only modified via direct assignment in this VM
-
-        return False
+        return self._tree_any(stmt, lambda n: isinstance(n, HLILAssign)
+                               and isinstance(n.dest, HLILVar) and n.dest.var in vars_set)
 
     def _equality_labels(self, cond) -> Optional[Tuple[HLILVar, List[int]]]:
         '''Values a test accepts, for `x == k` or any || chain of those
