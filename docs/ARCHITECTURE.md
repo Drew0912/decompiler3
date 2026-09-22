@@ -98,7 +98,9 @@ and works; fidelity settings are opt-in rather than default. A shared common-fun
 (`falcom/ed9/writer/metadata/common/`, generated from the corpus) is implemented and active by
 default, so generated `.py` files import shared game functions instead of embedding full copies of
 them. Compiling from MLIL/HLIL DSL forms instead of just LLIL DSL is still future work, loosely
-sketched rather than fully designed. Full detail in `docs/LLIL_DSL.md`.
+sketched rather than fully designed. Full detail in `docs/LLIL_DSL.md`; not-yet-started extensions
+(MLIL/HLIL DSL, mixed-IR-level compilation, knowledge-driven typing for common functions) are in
+`docs/FUTURE_WORK.md`.
 
 ## Data Flow (Decompilation)
 
@@ -141,3 +143,4 @@ sketched rather than fully designed. Full detail in `docs/LLIL_DSL.md`.
 6. Done — Codegen (TypeScript)
 7. Core mechanism implemented, fidelity opt-in — Recompilation: LLIL DSL round trip, common-function shared library (`docs/LLIL_DSL.md`)
 8. Future work, loosely sketched — Recompilation: MLIL/HLIL DSL, mixed-IR-level compilation
+   (`docs/FUTURE_WORK.md`)

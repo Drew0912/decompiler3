@@ -3,9 +3,9 @@
 > Status: Core mechanism implemented (a `.py` file can be executed to produce byte-exact
 > bytecode, and an automated round-trip check exists). Fidelity is opt-in, not default — see §2
 > for the round-trip policy this whole pipeline follows. The common-function shared library (§3)
-> is implemented and active by default; multi-IR-level compilation (§4–§5) is still future work,
-> only loosely sketched — treat that section as a starting point to refine once someone actually
-> builds it, not a settled design.
+> is implemented and active by default. Ideas beyond what's implemented here — multi-IR-level
+> compilation, knowledge-driven typing for common functions — live in `docs/FUTURE_WORK.md`, not
+> in this document.
 
 ## Role in the Pipeline
 
@@ -19,7 +19,7 @@ pipeline (`ED9VMLifter`, `FalcomLLILFormatter`) is a separate, disjoint path tha
 (one opcode, one function call, stack-machine semantics), and the disassembly-sourced version is
 already correct and round-trip-capable, that there's no plan to switch its source — treat "LLIL
 DSL" as this level everywhere it's mentioned below, including in the MLIL/HLIL lowering chain
-in §4.
+sketched in `docs/FUTURE_WORK.md`.
 
 **Compilation itself does not involve the Parser or Disassembler at all.** Those two layers only
 come into play when *generating* a `.py` DSL file from an existing `.dat` (either for inspection,
@@ -167,33 +167,9 @@ claims matches that `import` statements can't actually resolve.
   it needs no per-compile reset either — the same cached module can be executed against a fresh
   writer any number of times and its labels are re-allocated fresh each time.
 
-## 4. Future Work: MLIL DSL and HLIL DSL
+## 4. Future Work
 
-Extend the same pattern upward, one IR level at a time:
-
-```
-HLIL DSL (.py) → lower → MLIL DSL (.py) → lower → LLIL DSL (.py, exists today) → ScpWriter → bytecode
-```
-
-A future MLIL-level writer takes a `.py` MLIL DSL file and lowers it to a `.py` LLIL DSL file
-(reusing today's real LLIL DSL → `ScpWriter` path unchanged), rather than talking to `ScpWriter`
-directly. HLIL would lower to MLIL DSL the same way. **Not started** — no reference to
-`ScpWriter`, `handle_opcode`, or any bytecode-emission path exists anywhere in `ir/mlil/`,
-`ir/hlil/`, or `codegen/` today.
-
-## 5. Future Work: Mixed-IR-Level Compilation, Per Function
-
-The idea: because jump opcodes don't cross function boundaries (an assumption this leans on —
-worth confirming explicitly, not just assuming), a single output `.py` file could hold some
-functions written at the LLIL DSL level, others at MLIL DSL level, others at HLIL DSL level, each
-lowered independently down to LLIL DSL / bytecode.
-
-**This needs more than independent per-function lowering to actually work**, though — even once
-the jump-boundary assumption is confirmed, functions still participate in several script-wide
-concerns that a per-function compile can't resolve alone: `CALL` operands and
-`PUSH_CURRENT_FUNC_ID` depend on the final function table; common-function source order affects
-byte layout; function offsets are assigned during whole-script compilation; labels/xrefs and
-string-pool relocation are writer-global; debug records and global-variable resolution are
-script-wide; per-function labels need collision-safe namespacing. A real version of this idea needs
-an explicit per-function intermediate object plus a separate link/finalization phase that stitches
-independently-lowered functions back into one script — not merely "lower each function on its own."
+Ideas that extend this pipeline but haven't been started — MLIL/HLIL DSL lowering, mixed-IR-level
+compilation, knowledge-driven typing for common functions — are collected in
+`docs/FUTURE_WORK.md` rather than here, so this document stays a description of what's actually
+implemented.
