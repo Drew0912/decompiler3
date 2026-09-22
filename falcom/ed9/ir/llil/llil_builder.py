@@ -26,6 +26,8 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def finalize(self) -> 'LowLevelILFunction':
         '''Finalize builder and return function'''
 
+        self._finish_block()
+
         if self.sp_get() != 0:
             raise RuntimeError(f'Stack is not empty at the end of the function. Current sp: {self.sp_get()}')
 

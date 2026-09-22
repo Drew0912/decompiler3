@@ -7,11 +7,16 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from ir.llil.llil import LowLevelILBasicBlock
+from ir.llil.llil_builder import StackSnapshot
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 
 
 FUNC_START = 0x1000
 SECOND_BLOCK_START = FUNC_START + 0x10
+UNREGISTERED_BLOCK_OFFSET = 0x9999
+DELIBERATELY_DIFFERENT_SP = 9
+SENTINEL_SP_OUT = 999
 
 
 def make_builder(num_params: int = 0, *, name: str = 'lift_order_test') -> FalcomVMBuilder:
@@ -57,7 +62,6 @@ class TestReindexInBlockOrder(unittest.TestCase):
         builder.debug_line(1)
         first_inst = entry.instructions[-1]
 
-        # Before reindexing, registration order (not block order) is what inst_index reflects.
         self.assertEqual(second_inst.inst_index, 0)
         self.assertEqual(first_inst.inst_index, 1)
 
@@ -84,6 +88,61 @@ class TestReindexInBlockOrder(unittest.TestCase):
         after = [(inst.inst_index, id(inst)) for inst in func.iter_instructions()]
 
         self.assertEqual(before, after)
+
+
+class TestBlockLifecycle(unittest.TestCase):
+    '''begin_block/set_current_block/finalize() split "close the old block" from "open the new
+    one" with a restore in between, fixing a bug where the previous block's sp_out was recorded
+    from the next block's just-restored sp instead of its own true exit sp.'''
+
+    def test_begin_block_records_previous_blocks_true_exit_sp(self):
+        builder = make_builder()
+        entry = builder.function.basic_blocks[0]
+        other = builder.create_basic_block(SECOND_BLOCK_START, 'other')
+
+        builder.push_int(1)
+        builder.saved_stacks[SECOND_BLOCK_START] = StackSnapshot(sp = DELIBERATELY_DIFFERENT_SP, values = [])
+
+        builder.begin_block(other)
+
+        self.assertEqual(entry.sp_out, 1)
+        self.assertEqual(other.sp_in, DELIBERATELY_DIFFERENT_SP)
+
+    def test_set_current_block_validates_before_mutating_previous_block(self):
+        builder = make_builder()
+        entry = builder.function.basic_blocks[0]
+        builder.push_int(1)
+
+        unregistered = LowLevelILBasicBlock(UNREGISTERED_BLOCK_OFFSET)
+
+        with self.assertRaises(RuntimeError):
+            builder.set_current_block(unregistered)
+
+        self.assertEqual(entry.sp_out, 0)
+
+    def test_begin_block_validates_before_mutating_previous_block(self):
+        builder = make_builder()
+        entry = builder.function.basic_blocks[0]
+        builder.push_int(1)
+
+        unregistered = LowLevelILBasicBlock(UNREGISTERED_BLOCK_OFFSET)
+
+        with self.assertRaises(RuntimeError):
+            builder.begin_block(unregistered)
+
+        self.assertEqual(entry.sp_out, 0)
+
+    def test_finalize_closes_the_active_block_without_an_explicit_end_call(self):
+        '''A caller that only ever calls set_current_block (as tests/demos do, never begin_block)
+        still gets its last block closed once finalize() runs.'''
+        builder = make_builder()
+        entry = builder.function.basic_blocks[0]
+        entry.sp_out = SENTINEL_SP_OUT
+
+        builder.ret()
+        builder.finalize()
+
+        self.assertEqual(entry.sp_out, 0)
 
 
 if __name__ == '__main__':

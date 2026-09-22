@@ -195,16 +195,17 @@ class LowLevelILBuilder:
         '''Set the original expression for a StackLoad'''
         self.__stack_load_to_expr[stack_load] = expr
 
-    def set_current_block(self, block: LowLevelILBasicBlock):
-        '''Set the current basic block for instruction insertion'''
-        # Verify block has been added to function
+    def _require_registered_block(self, block: LowLevelILBasicBlock):
         if block not in self.function.basic_blocks:
             raise RuntimeError(f'Block {block} has not been added to function. Call function.add_basic_block() first.')
 
-        # Save previous block's sp_out if we have a current block
+    def _finish_block(self):
+        '''Record the current block's exit sp, if any.'''
         if self.current_block is not None:
             self.current_block.sp_out = self.sp_get()
 
+    def _start_block(self, block: LowLevelILBasicBlock):
+        '''Start a registered block using the active stack state.'''
         self.current_block = block
 
         # Set new block's sp_in and current sp
@@ -220,6 +221,19 @@ class LowLevelILBuilder:
         if self.frame_base_sp is None:
             self.frame_base_sp = 0
             self.function.frame_base_sp = 0
+
+    def set_current_block(self, block: LowLevelILBasicBlock):
+        '''Set the current basic block for instruction insertion'''
+        self._require_registered_block(block)
+        self._finish_block()
+        self._start_block(block)
+
+    def begin_block(self, block: LowLevelILBasicBlock):
+        '''Close the current block, restore `block`'s saved stack state if present, and open it.'''
+        self._require_registered_block(block)
+        self._finish_block()
+        self.restore_stack_for_offset(block.start)
+        self._start_block(block)
 
     def save_stack_state(self) -> StackSnapshot:
         '''Snapshot current stack pointer and virtual stack'''
