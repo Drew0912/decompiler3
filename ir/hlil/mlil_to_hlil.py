@@ -527,7 +527,7 @@ def _is_unconditionally_reached(predecessors: Dict[int, List[int]], successors: 
     return True
 
 
-# Statement types' own direct expression fields, for _walk_gated_in_block/_unfold_ids_in_block -
+# Statement types' own direct expression fields, for _extract_unsafe_calls/_unfold_unsafe_calls -
 # not their nested statements/blocks, which _sub_blocks handles separately
 _UNFOLD_EXPR_FIELDS: Dict[type, Tuple[str, ...]] = {
     HLILIf: ('condition',),
@@ -558,75 +558,45 @@ def _sub_blocks(stmt: HLILStatement) -> List[HLILBlock]:
     return []
 
 
-def _collect_gated_call_ids(expr: Optional[HLILExpression], gated: bool,
-                            fold_ids: Set[int], found: Set[int]):
-    '''Walk one expression tree, tracking short-circuit gating through HLILBinaryOp(AND/OR)'s
-    rhs - the only construct in this IR that makes evaluation conditional within an expression
-    (call args, and every other binary/unary operand, always run). Adds id(expr) to `found`
-    whenever a node in fold_ids is reached while gated.
-    '''
-    if expr is None:
-        return
-
-    if id(expr) in fold_ids and gated:
-        found.add(id(expr))
-
-    if isinstance(expr, HLILBinaryOp):
-        _collect_gated_call_ids(expr.lhs, gated, fold_ids, found)
-        _collect_gated_call_ids(expr.rhs, gated or expr.op in (BinaryOp.AND, BinaryOp.OR), fold_ids, found)
-
-    elif isinstance(expr, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
-        _collect_gated_call_ids(expr.operand, gated, fold_ids, found)
-
-    elif isinstance(expr, (HLILCall, HLILSyscall, HLILExternCall)):
-        for arg in expr.args:
-            _collect_gated_call_ids(arg, gated, fold_ids, found)
-
-
-def _walk_gated_in_block(block: HLILBlock, fold_ids: Set[int], found: Set[int]):
-    '''Find every fold_ids member that is short-circuit-gated anywhere in block, recursing into
-    every nested block. Read-only - the companion pass to _unfold_ids_in_block, which mutates.
-    '''
-    for stmt in block.statements:
-        for attr in _UNFOLD_EXPR_FIELDS.get(type(stmt), ()):
-            _collect_gated_call_ids(getattr(stmt, attr), False, fold_ids, found)
-
-        for sub_block in _sub_blocks(stmt):
-            _walk_gated_in_block(sub_block, fold_ids, found)
-
-
-def _extract_targets(node: Optional[HLILExpression], targets: Set[int], var_names: Dict[int, str],
-                     prelude: List[HLILStatement]) -> Optional[HLILExpression]:
-    '''Return node with any (sub)expression whose id is in `targets` swapped for a plain variable
-    read, appending a `var = call();` statement restoring the pre-fold shape to `prelude` for
-    each one, in left-to-right evaluation order. Mutates non-matching nodes' children in place
+def _extract_unsafe_calls(node: Optional[HLILExpression], gated: bool, unconditional_fold_ids: Set[int],
+                          var_names: Dict[int, str], prelude: List[HLILStatement]) -> Optional[HLILExpression]:
+    '''Return node with any short-circuit-gated, unconditional-pre-fold call swapped for a plain
+    variable read, appending a `var = call();` statement restoring its pre-fold shape to `prelude`
+    for each one, in left-to-right evaluation order. Mutates non-matching nodes' children in place
     and returns node unchanged.
 
-    Recurses into every node's children UNCONDITIONALLY, before checking whether node itself is a
-    match - deliberately the same shape as _collect_gated_call_ids's own "check self, then always
-    recurse" traversal, so the two can't independently drift on which node types get walked into.
-    A match is never treated as a leaf: one gated call can sit inside another's own argument list
+    One traversal does what used to be two: track short-circuit gating through
+    HLILBinaryOp(AND/OR)'s rhs (the only construct in this IR that makes evaluation conditional
+    within an expression - call args, and every other binary/unary operand, always run) AND decide
+    whether to extract, in the same pass - not a separate read-only pass followed by a separate
+    mutating one that has to independently agree on which node types to recurse into. Recurses into
+    every node's children UNCONDITIONALLY, before checking whether node itself needs extracting - a
+    match is never treated as a leaf: one unsafe call can sit inside another's own argument list
     (e.g. an outer call gated by `a && outer(...)`, one of whose own arguments is independently
     gated by a local `b && inner()`) - recursing into a match's args before emitting its own
     prelude entry (rather than stopping at the match) is what carries that inner extraction along,
     in the same left-to-right order, so the whole prelude ends up in genuine evaluation order
     (inner()'s statement lands before outer()'s, matching the original program's actual execution
-    order).
+    order). unconditional_fold_ids is pre-filtered to calls that were unconditionally reached
+    pre-fold (position-independent, checked once up front) - a node only needs extracting when it's
+    ALSO currently gated at this specific tree position, which only this walk can determine.
     '''
     if node is None:
         return None
 
     if isinstance(node, HLILBinaryOp):
-        node.lhs = _extract_targets(node.lhs, targets, var_names, prelude)
-        node.rhs = _extract_targets(node.rhs, targets, var_names, prelude)
+        node.lhs = _extract_unsafe_calls(node.lhs, gated, unconditional_fold_ids, var_names, prelude)
+        node.rhs = _extract_unsafe_calls(node.rhs, gated or node.op in (BinaryOp.AND, BinaryOp.OR),
+                                         unconditional_fold_ids, var_names, prelude)
 
     elif isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
-        node.operand = _extract_targets(node.operand, targets, var_names, prelude)
+        node.operand = _extract_unsafe_calls(node.operand, gated, unconditional_fold_ids, var_names, prelude)
 
     elif isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
-        node.args = [_extract_targets(arg, targets, var_names, prelude) for arg in node.args]
+        node.args = [_extract_unsafe_calls(arg, gated, unconditional_fold_ids, var_names, prelude)
+                     for arg in node.args]
 
-    if id(node) in targets:
+    if gated and id(node) in unconditional_fold_ids:
         var = HLILVariable(var_names[id(node)], None)
         prelude.append(HLILAssign(HLILVar(var), node))
         return HLILVar(var)
@@ -634,10 +604,10 @@ def _extract_targets(node: Optional[HLILExpression], targets: Set[int], var_name
     return node
 
 
-def _unfold_ids_in_block(block: HLILBlock, targets: Set[int], var_names: Dict[int, str]):
-    '''Mutate block.statements in place: before any statement that reads one of `targets`,
-    insert a `var = call();` statement restoring the pre-fold shape, and splice that read back
-    to a plain variable reference. Recurses into every nested block.
+def _unfold_unsafe_calls(block: HLILBlock, unconditional_fold_ids: Set[int], var_names: Dict[int, str]):
+    '''Mutate block.statements in place: before any statement that reads a short-circuit-gated,
+    unconditional-pre-fold call, insert a `var = call();` statement restoring its pre-fold shape,
+    and splice that read back to a plain variable reference. Recurses into every nested block.
     '''
     new_statements = []
 
@@ -646,13 +616,13 @@ def _unfold_ids_in_block(block: HLILBlock, targets: Set[int], var_names: Dict[in
         for attr in _UNFOLD_EXPR_FIELDS.get(type(stmt), ()):
             value = getattr(stmt, attr)
             if value is not None:
-                setattr(stmt, attr, _extract_targets(value, targets, var_names, prelude))
+                setattr(stmt, attr, _extract_unsafe_calls(value, False, unconditional_fold_ids, var_names, prelude))
 
         new_statements.extend(prelude)
         new_statements.append(stmt)
 
         for sub_block in _sub_blocks(stmt):
-            _unfold_ids_in_block(sub_block, targets, var_names)
+            _unfold_unsafe_calls(sub_block, unconditional_fold_ids, var_names)
 
     block.statements = new_statements
 
@@ -747,17 +717,16 @@ class MLILToHLILConverter:
             var_names[id(hlil_expr)] = call_instr.output.name
             call_block_of[id(hlil_expr)] = call_key[0]
 
-        gated_ids: Set[int] = set()
-        _walk_gated_in_block(self.hlil_func.body, set(var_names), gated_ids)
-
-        unsafe_ids = {
-            expr_id for expr_id in gated_ids
+        # Position-independent - whether a fold is ALSO currently gated at its one tree position
+        # is decided during the walk itself (_extract_unsafe_calls), not precomputed here
+        unconditional_fold_ids = {
+            expr_id for expr_id in var_names
             if _is_unconditionally_reached(self.folder.predecessors, self.folder.block_successors,
                                            call_block_of[expr_id])
         }
 
-        if unsafe_ids:
-            _unfold_ids_in_block(self.hlil_func.body, unsafe_ids, var_names)
+        if unconditional_fold_ids:
+            _unfold_unsafe_calls(self.hlil_func.body, unconditional_fold_ids, var_names)
 
     def _convert_parameters(self):
         '''Build the HLIL parameter list from the MLIL one'''

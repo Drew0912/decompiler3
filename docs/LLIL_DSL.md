@@ -71,7 +71,18 @@ point at round 2 (`c1 == c2`, `out2 == out3`); all preserve game logic against t
 `out1`/`out2` differ only in `loc_` label lines. Re-checked after the library landed (§3) on a
 132-file subset (`sora2_1.0/script_en/battle/`, chosen for subsystem diversity) plus the two
 previously-broken edge cases (`common.dat`, `mon5078+.dat`): identical result, 100% converge at
-round 2, no logic regressions. A full-corpus re-run with the library active is still pending.
+round 2, no logic regressions. **Full 1082-file re-run with the library active, completed
+2026-09-22:** 0 logic round-trip failures and 0 errors — every file's `logic round trip` check
+(fingerprint match against source, per function) passes. 234/1082 files additionally show a
+**structural**-only difference (function order and/or rebuilt debug records, 7 also string-pool
+counts) against source when checked with `validate_file`'s format checks: common functions are now
+always registered before source functions (`@scena.CommonImports()` runs eagerly, ahead of the
+inline definitions), which reorders them relative to source and shifts debug-record layout — both
+explicitly excluded from the "game logic" definition above (function order, debug records,
+string-pool layout). This is the expected, designed consequence of pulling matched functions out of
+their original source position into the shared-library import path, not a regression. 127 files'
+worst status was an informational WARN (mostly pre-existing "N unreachable ranges" notes, same
+category as the pre-library baseline).
 
 **Generation** (bytecode → `.py`): `Formatter.format_function`/`format_block`
 (`falcom/ed9/disasm/formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
