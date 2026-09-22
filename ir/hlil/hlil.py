@@ -583,6 +583,18 @@ def split_else_if_arm(block: HLILBlock) -> Optional[Tuple[List[HLILComment], HLI
 # Function Container
 # ============================================================================
 
+def unwrap_address_taken_var(expr: 'HLILExpression') -> Optional['HLILVar']:
+    '''*(&x) - ir/mlil/mlil_ssa.py's memory-form lowering of address-taken local x -
+    collapses to plain x. Returns the HLILVar, or None if expr is not that exact shape.
+    Shared by every consumer of this shape (the TS codegen, the debug formatter, and CFO's
+    modifies-check) so they cannot independently drift on what counts as the canonical form.'''
+    if (isinstance(expr, HLILDeref) and isinstance(expr.operand, HLILAddressOf)
+            and isinstance(expr.operand.operand, HLILVar)):
+        return expr.operand.operand
+
+    return None
+
+
 class HighLevelILFunction:
     '''HLIL function container'''
 

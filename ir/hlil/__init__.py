@@ -57,6 +57,7 @@ __all__ = [
 
     # Shape helpers
     'split_else_if_arm',
+    'unwrap_address_taken_var',
 
     # Function
     'HighLevelILFunction',

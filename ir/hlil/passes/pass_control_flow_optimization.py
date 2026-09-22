@@ -32,6 +32,7 @@ from ..hlil import (
     VariableKind,
     BinaryOp,
     UnaryOp,
+    unwrap_address_taken_var,
 )
 
 
@@ -613,12 +614,24 @@ class ControlFlowOptimizationPass(Pass):
         considered to modify a named variable - REGS in this VM are only modified via direct
         assignment, unlike the conservative "any call may write anything" policy used
         elsewhere in this codebase (e.g. pass_copy_propagation.py) for a different hazard.
+        Recognizes the address-taken *(&x) = v write shape too (ir/mlil/mlil_ssa.py's memory-
+        form lowering), not just a plain HLILAssign(HLILVar, ...) - a call taking &x is still
+        invisible here, a separate, larger gap this predicate does not attempt to close.
         '''
         if not vars_set:
             return False
 
-        return self._tree_any(stmt, lambda n: isinstance(n, HLILAssign)
-                               and isinstance(n.dest, HLILVar) and n.dest.var in vars_set)
+        def modifies(n) -> bool:
+            if not isinstance(n, HLILAssign):
+                return False
+
+            if isinstance(n.dest, HLILVar):
+                return n.dest.var in vars_set
+
+            unwrapped = unwrap_address_taken_var(n.dest)
+            return unwrapped is not None and unwrapped.var in vars_set
+
+        return self._tree_any(stmt, modifies)
 
     def _equality_labels(self, cond) -> Optional[Tuple[HLILVar, List[int]]]:
         '''Values a test accepts, for `x == k` or any || chain of those

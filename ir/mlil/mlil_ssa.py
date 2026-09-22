@@ -227,6 +227,17 @@ class DominanceAnalysis:
                         break
 
 
+def _names_in_use(function: MediumLevelILFunction) -> Set[str]:
+    '''Every name a fresh local must not collide with: locals (registers included - a
+    register's MLILVariable is created via get_or_create_local, so it lives in .locals too),
+    parameters, and globals. Shared by every minted-name site in this file
+    (SSAConstructor._mint_local, SSADeconstructor._allocate_variables) so they cannot
+    independently drift on which namespaces count.'''
+    return (set(function.locals)
+            | {p.name for p in function.parameters if p is not None}
+            | {g.name for g in function.global_vars.values()})
+
+
 # ============================================================================
 # SSA Construction (Iterative)
 # ============================================================================
@@ -264,32 +275,56 @@ class SSAConstructor:
             self.function.basic_blocks = [b for b in self.function.basic_blocks if b in reachable_set]
             self.function.renumber_blocks()
 
-        # Step 2: Collect address-taken locals (used by deref-store handling below)
+        # Step 2: Collect address-taken locals/parameters - a stable storage identity, not
+        # a scalar SSA value, so they are lowered to explicit *(&x) memory form below rather
+        # than versioned directly (see _lower_address_taken_vars)
         self.address_taken_vars = self._collect_address_taken_vars()
 
-        # Step 3: Collect variable definitions
+        # Step 3: A call's own output is a def path independent of MLILSetVar - redirect any
+        # that would alias an address-taken local through a fresh temp before the general
+        # lowering runs, so that lowering never has to special-case call outputs
+        self._decompose_address_taken_call_outputs()
+
+        # Step 4: Lower every address-taken local's reads/writes to explicit *(&x) deref/
+        # store form, so each one renames to a single stable address identity below instead
+        # of being versioned like an ordinary scalar
+        self._lower_address_taken_vars()
+
+        # Step 5: Collect variable definitions
         self._collect_defs()
 
-        # Step 4: Insert Phi nodes
+        # Step 6: Insert Phi nodes
         self._insert_phi_nodes()
 
-        # Step 5: Rename variables (iterative)
+        # Step 7: Rename variables (iterative)
         self._rename_variables_iterative()
 
         return self.function
 
     def _collect_address_taken_vars(self) -> Set[MLILVariable]:
-        '''Every local whose address is taken anywhere in the function.
+        '''Every local or parameter whose address is taken anywhere in the function.
 
-        A pointer dereferenced by MLILStoreDeref could alias any of them - there is no
-        alias analysis to narrow it further, so this is deliberately function-wide rather
-        than scoped to whatever AddressOf expression is syntactically nearest a given store.
+        Deliberately function-wide rather than scoped to one AddressOf site, since a lowered
+        read/write (see _lower_address_taken_vars) must be consistent everywhere the variable
+        appears, not just near the nearest '&'.
+
+        Raises if a register or raised global is ever address-taken - no opcode produces one
+        today, and admitting one here would need the same memory-form lowering this class
+        gives locals/parameters, which registers/globals do not go through. Checked by
+        identity (is_register_var/is_global_var), not by '.locals' membership - a register's
+        MLILVariable is created via get_or_create_local, so it lives in '.locals' too.
         '''
         address_taken: Set[MLILVariable] = set()
 
         for block in self.function.basic_blocks:
             for inst in block.instructions:
                 self._collect_address_taken_in(inst, address_taken)
+
+        for var in address_taken:
+            if self.function.is_register_var(var) or self.function.is_global_var(var):
+                raise NotImplementedError(
+                    f'Address taken of register/global variable {var.name!r} - no opcode '
+                    f'produces this today, and it is not covered by address-taken lowering')
 
         return address_taken
 
@@ -330,10 +365,140 @@ class SSAConstructor:
         elif isinstance(node, MLILRet):
             self._collect_address_taken_in(node.value, address_taken)
 
-    def _extract_addr_vars(self, args: List[MediumLevelILInstruction]) -> List[MLILVariable]:
-        '''Variables passed via AddressOf (e.g. output parameters) among these arguments'''
-        return [arg.operand.var for arg in args
-                if isinstance(arg, MLILAddressOf) and isinstance(arg.operand, MLILVar)]
+    def _decompose_address_taken_call_outputs(self):
+        '''A call's own output is a def path independent of MLILSetVar - if it would alias an
+        address-taken local, redirect it through a temp + MLILSetVar so the one general
+        address-taken rewrite (_lower_address_taken_vars) handles it below, instead of leaving
+        a second, unrewritten path back to the SSA-identity/storage-identity conflation this
+        class's memory-form lowering exists to close.'''
+        for block in self.function.basic_blocks:
+            new_instructions = []
+
+            for inst in block.instructions:
+                new_instructions.append(inst)
+
+                if isinstance(inst, MediumLevelILCall) and inst.output in self.address_taken_vars:
+                    original_output = inst.output
+                    temp = self._mint_local(f'{original_output.name}__result')
+                    inst.output = temp
+
+                    set_var = MLILSetVar(original_output, MLILVar(temp), address = inst.address).copy_metadata_from(inst)
+                    new_instructions.append(set_var)
+
+            block.instructions = new_instructions
+
+    def _mint_local(self, candidate: str) -> MLILVariable:
+        '''A fresh local guaranteed not to collide with any existing local/parameter/global
+        name, and actually registered on the function - not just proven collision-free.'''
+        names_in_use = _names_in_use(self.function)
+
+        name = candidate
+        suffix = 0
+        while name in names_in_use:
+            name = f'{candidate}_{suffix}'
+            suffix += 1
+
+        return self.function.get_or_create_local(name)
+
+    def _lower_address_taken_vars(self):
+        '''Rewrite every read/write of an address-taken local/parameter to explicit *(&x)
+        memory form, so it renames to one stable address identity in
+        _rename_variables_iterative instead of being versioned like an ordinary scalar value -
+        see _collect_address_taken_vars's docstring for why.'''
+        if not self.address_taken_vars:
+            return
+
+        for block in self.function.basic_blocks:
+            block.instructions = [self._lower_inst(inst) for inst in block.instructions]
+
+    def _lower_inst(self, inst: MediumLevelILInstruction) -> MediumLevelILInstruction:
+        '''Lower one instruction (mirrors _raise_inst's per-kind dispatch)'''
+        if isinstance(inst, MLILSetVar):
+            new_value = self._lower_expr(inst.value)
+
+            if inst.var in self.address_taken_vars:
+                dest = MLILAddressOf(MLILVar(inst.var))
+                return MLILStoreDeref(dest, new_value, address = inst.address).copy_metadata_from(inst)
+
+            if new_value is not inst.value:
+                return MLILSetVar(inst.var, new_value, address = inst.address).copy_metadata_from(inst)
+
+            return inst
+
+        else:
+            return self._lower_stmt(inst)
+
+    def _lower_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
+        '''Recursively lower address-taken reads in an expression tree (mirrors _raise_expr's walk)'''
+        if isinstance(expr, MLILAddressOf):
+            # The variable whose address is being taken is the stable address identity
+            # itself - leave &x as &x, never rewrite it to &*(&x)
+            return expr
+
+        elif isinstance(expr, MLILVar) and expr.var in self.address_taken_vars:
+            return MLILDeref(MLILAddressOf(MLILVar(expr.var))).copy_metadata_from(expr)
+
+        elif isinstance(expr, MLILBinaryOp):
+            new_lhs = self._lower_expr(expr.lhs)
+            new_rhs = self._lower_expr(expr.rhs)
+
+            if new_lhs is expr.lhs and new_rhs is expr.rhs:
+                return expr
+
+            return self._rebuild_binary_op(expr, new_lhs, new_rhs)
+
+        elif isinstance(expr, MLILUnaryOp):
+            new_operand = self._lower_expr(expr.operand)
+
+            if new_operand is expr.operand:
+                return expr
+
+            return self._rebuild_unary_op(expr, new_operand)
+
+        else:
+            return expr
+
+    def _lower_stmt(self, stmt: MediumLevelILInstruction) -> MediumLevelILInstruction:
+        '''Lower address-taken reads inside a statement's expressions (mirrors _raise_stmt's walk)'''
+        if isinstance(stmt, MLILIf):
+            new_cond = self._lower_expr(stmt.condition)
+
+            if new_cond is not stmt.condition:
+                return MLILIf(new_cond, stmt.true_target, stmt.false_target, address = stmt.address).copy_metadata_from(stmt)
+
+        elif isinstance(stmt, MLILRet):
+            if stmt.value is not None:
+                new_value = self._lower_expr(stmt.value)
+
+                if new_value is not stmt.value:
+                    return MLILRet(new_value, address = stmt.address).copy_metadata_from(stmt)
+
+        elif isinstance(stmt, MediumLevelILCall):
+            new_args = [self._lower_expr(arg) for arg in stmt.args]
+
+            if any(new_args[i] is not stmt.args[i] for i in range(len(stmt.args))):
+                return stmt.rebuild(new_args)
+
+        elif isinstance(stmt, MLILStoreReg):
+            new_value = self._lower_expr(stmt.value)
+
+            if new_value is not stmt.value:
+                return MLILStoreReg(stmt.index, new_value, address = stmt.address).copy_metadata_from(stmt)
+
+        elif isinstance(stmt, MLILStoreGlobal):
+            new_value = self._lower_expr(stmt.value)
+
+            if new_value is not stmt.value:
+                return MLILStoreGlobal(stmt.index, new_value, address = stmt.address).copy_metadata_from(stmt)
+
+        elif isinstance(stmt, MLILStoreDeref):
+            new_dest = self._lower_expr(stmt.dest)
+            new_value = self._lower_expr(stmt.value)
+
+            if new_dest is not stmt.dest or new_value is not stmt.value:
+                return stmt.rebuild(new_dest, new_value)
+
+        return stmt
 
     def _raise_globals(self):
         '''Raise MLILStoreGlobal/MLILLoadGlobal into MLILSetVar/MLILVar over per-index MLILVariables,
@@ -448,16 +613,15 @@ class SSAConstructor:
                     for var in self._call_defined_vars(inst):
                         self.var_defs[var].add(block)
 
-                elif isinstance(inst, MLILStoreDeref):
-                    for var in self.address_taken_vars:
-                        self.var_defs[var].add(block)
-
     def _call_defined_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
-        '''Variables a call writes: its output, the registers/globals it clobbers, plus any
-        address-taken variable passed as one of its own arguments (an output parameter)
+        '''Variables a call writes: its output, plus the registers/globals it clobbers.
 
         A callee may change any register or global, so every one of them other than the
-        variable receiving the result becomes undefined across the call.
+        variable receiving the result becomes undefined across the call. Address-taken
+        locals need no entry here - they are lowered to explicit *(&x) memory form before
+        this runs (see _lower_address_taken_vars), so a call passing &x has no scalar def to
+        record; _decompose_address_taken_call_outputs guarantees inst.output is never one of
+        them either.
         '''
         defined = []
 
@@ -467,8 +631,6 @@ class SSAConstructor:
         for var in list(self.function.register_vars.values()) + list(self.function.global_vars.values()):
             if var != inst.output:
                 defined.append(var)
-
-        defined.extend(self._extract_addr_vars(inst.args))
 
         return defined
 
@@ -605,9 +767,6 @@ class SSAConstructor:
             return MLILSetVarSSA(MLILVariableSSA(inst.var, new_ver), new_value, address = inst.address).copy_metadata_from(inst)
 
         elif isinstance(inst, MediumLevelILCall):
-            # Find variables passed via AddressOf (output parameters)
-            addr_vars = self._extract_addr_vars(inst.args)
-
             # Rename the call (uses current SSA versions)
             renamed = self._rename_stmt(inst)
 
@@ -618,44 +777,23 @@ class SSAConstructor:
                 pushed.append(output_var)
                 renamed.output = MLILVariableSSA(output_var, new_ver)
 
-            # Registers and globals the call clobbers, plus address-taken variables it may write,
-            # get pseudo-definitions so later reads do not see the older value
+            # Registers and globals the call clobbers get pseudo-definitions so later reads
+            # do not see the older value. Address-taken locals need no such treatment here -
+            # they are lowered to explicit *(&x) memory form before renaming (see
+            # _lower_address_taken_vars), so a call passing &x has no scalar def to create,
+            # and _decompose_address_taken_call_outputs guarantees output_var is never one
             clobbered_vars = list(self.function.register_vars.values()) + list(self.function.global_vars.values())
             clobbered = [var for var in clobbered_vars if var != output_var]
 
-            if not addr_vars and not clobbered:
+            if not clobbered:
                 return renamed
 
             result = [renamed]
-            for var in clobbered + addr_vars:
+            for var in clobbered:
                 new_ver = self._new_version(var)
                 pushed.append(var)
 
                 # Pseudo-definition: var#new = <undef> (call modified the variable)
-                new_ssa_var = MLILVariableSSA(var, new_ver)
-                pseudo_def = MLILSetVarSSA(new_ssa_var, MLILUndef(), address = inst.address).copy_metadata_from(inst)
-                result.append(pseudo_def)
-
-            return result
-
-        elif isinstance(inst, MLILStoreDeref):
-            # Rename the store itself (dest/value use current SSA versions)
-            renamed = self._rename_stmt(inst)
-
-            if not self.address_taken_vars:
-                return renamed
-
-            # A store through a pointer could alias any local whose address is taken
-            # anywhere in this function - there is no alias analysis to narrow it further,
-            # so every one of them gets the same pseudo-definition treatment a call's
-            # register/global clobber gets above. Sorted by name for deterministic output -
-            # address_taken_vars is a set, and iteration order over it is not guaranteed
-            # stable across runs otherwise.
-            result = [renamed]
-            for var in sorted(self.address_taken_vars, key = lambda v: v.name):
-                new_ver = self._new_version(var)
-                pushed.append(var)
-
                 new_ssa_var = MLILVariableSSA(var, new_ver)
                 pseudo_def = MLILSetVarSSA(new_ssa_var, MLILUndef(), address = inst.address).copy_metadata_from(inst)
                 result.append(pseudo_def)
@@ -750,84 +888,88 @@ class SSAConstructor:
     def _rebuild_binary_op(self, expr: MLILBinaryOp, lhs, rhs) -> MediumLevelILInstruction:
         '''Rebuild binary operation (explicit, not type())'''
         if isinstance(expr, MLILAdd):
-            return MLILAdd(lhs, rhs)
+            rebuilt = MLILAdd(lhs, rhs)
 
         elif isinstance(expr, MLILSub):
-            return MLILSub(lhs, rhs)
+            rebuilt = MLILSub(lhs, rhs)
 
         elif isinstance(expr, MLILMul):
-            return MLILMul(lhs, rhs)
+            rebuilt = MLILMul(lhs, rhs)
 
         elif isinstance(expr, MLILDiv):
-            return MLILDiv(lhs, rhs)
+            rebuilt = MLILDiv(lhs, rhs)
 
         elif isinstance(expr, MLILMod):
-            return MLILMod(lhs, rhs)
+            rebuilt = MLILMod(lhs, rhs)
 
         elif isinstance(expr, MLILAnd):
-            return MLILAnd(lhs, rhs)
+            rebuilt = MLILAnd(lhs, rhs)
 
         elif isinstance(expr, MLILOr):
-            return MLILOr(lhs, rhs)
+            rebuilt = MLILOr(lhs, rhs)
 
         elif isinstance(expr, MLILXor):
-            return MLILXor(lhs, rhs)
+            rebuilt = MLILXor(lhs, rhs)
 
         elif isinstance(expr, MLILShl):
-            return MLILShl(lhs, rhs)
+            rebuilt = MLILShl(lhs, rhs)
 
         elif isinstance(expr, MLILShr):
-            return MLILShr(lhs, rhs)
+            rebuilt = MLILShr(lhs, rhs)
 
         elif isinstance(expr, MLILLogicalAnd):
-            return MLILLogicalAnd(lhs, rhs)
+            rebuilt = MLILLogicalAnd(lhs, rhs)
 
         elif isinstance(expr, MLILLogicalOr):
-            return MLILLogicalOr(lhs, rhs)
+            rebuilt = MLILLogicalOr(lhs, rhs)
 
         elif isinstance(expr, MLILEq):
-            return MLILEq(lhs, rhs)
+            rebuilt = MLILEq(lhs, rhs)
 
         elif isinstance(expr, MLILNe):
-            return MLILNe(lhs, rhs)
+            rebuilt = MLILNe(lhs, rhs)
 
         elif isinstance(expr, MLILLt):
-            return MLILLt(lhs, rhs)
+            rebuilt = MLILLt(lhs, rhs)
 
         elif isinstance(expr, MLILLe):
-            return MLILLe(lhs, rhs)
+            rebuilt = MLILLe(lhs, rhs)
 
         elif isinstance(expr, MLILGt):
-            return MLILGt(lhs, rhs)
+            rebuilt = MLILGt(lhs, rhs)
 
         elif isinstance(expr, MLILGe):
-            return MLILGe(lhs, rhs)
+            rebuilt = MLILGe(lhs, rhs)
 
         else:
             raise NotImplementedError(f'Unknown binary op: {type(expr).__name__}')
 
+        return rebuilt.copy_metadata_from(expr)
+
     def _rebuild_unary_op(self, expr: MLILUnaryOp, operand) -> MediumLevelILInstruction:
         '''Rebuild unary operation (explicit, not type())'''
         if isinstance(expr, MLILNeg):
-            return MLILNeg(operand)
+            rebuilt = MLILNeg(operand)
 
         elif isinstance(expr, MLILLogicalNot):
-            return MLILLogicalNot(operand)
+            rebuilt = MLILLogicalNot(operand)
 
         elif isinstance(expr, MLILBitwiseNot):
-            return MLILBitwiseNot(operand)
+            rebuilt = MLILBitwiseNot(operand)
 
         elif isinstance(expr, MLILTestZero):
-            return MLILTestZero(operand)
+            rebuilt = MLILTestZero(operand)
 
         elif isinstance(expr, MLILAddressOf):
-            return MLILAddressOf(operand)
+            rebuilt = MLILAddressOf(operand)
 
         elif isinstance(expr, MLILDeref):
-            return MLILDeref(operand)
+            rebuilt = MLILDeref(operand)
 
         else:
             raise NotImplementedError(f'Unknown unary op: {type(expr).__name__}')
+
+        return rebuilt.copy_metadata_from(expr)
 
     def _new_version(self, var: MLILVariable) -> int:
         '''Allocate new SSA version for variable'''
@@ -1158,13 +1300,10 @@ class SSADeconstructor:
 
             # Mint each suffix class a real, collision-free name. MLILVariable equality is
             # name-only, so a minted name must never collide with a real local, parameter, or
-            # global - registers already live in function.locals, but parameters and globals are
-            # kept in their own separate collections and would not be caught by a locals-only check.
-            # The counter only ever advances (never resets or aligns to class position), so a name
-            # skipped for colliding is never handed to a different class later.
-            names_in_use = (set(self.function.locals)
-                            | {p.name for p in self.function.parameters if p is not None}
-                            | {g.name for g in self.function.global_vars.values()})
+            # global. The counter only ever advances (never resets or aligns to class
+            # position), so a name skipped for colliding is never handed to a different class
+            # later.
+            names_in_use = _names_in_use(self.function)
             suffix_counter = 0
 
             for class_index, members in enumerate(classes):

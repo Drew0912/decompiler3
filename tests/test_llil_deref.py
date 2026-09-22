@@ -282,14 +282,18 @@ class TestHLILCopyPropagationDerefStaleness(unittest.TestCase):
 
 
 class TestDerefStoreVersionsAddressTakenLocal(unittest.TestCase):
-    '''Codex Rule 2 round 6 finding: MLILStoreDeref never created an SSA version for the
-    variable it might write through, even in straight-line code with no branching at all -
-    a read after the store still saw the pre-store SSA version. The plan's own Step 3 design
-    called for this defense explicitly ("have a deref store also clobber every address-taken
-    local"); it had never actually been implemented.'''
+    '''Originally: Codex Rule 2 round 6 finding that MLILStoreDeref never created an SSA
+    version for the variable it might write through, fixed with a pseudo-definition that
+    clobbered every address-taken local on every deref store. Step A (2026-09-22) replaced
+    that pseudo-definition mechanism entirely: an address-taken local is now lowered to
+    explicit *(&x) memory form during SSA construction and never scalar-versioned at all, so
+    the semantic property to guard is "reads/writes go through the memory form and a stale
+    scalar version can never be read" rather than "a new SSA version gets created".'''
 
-    def test_read_after_deref_store_uses_a_new_ssa_version(self):
-        # x = 1; *(&x) = 2; return x
+    def test_address_taken_local_lowers_to_memory_form_not_scalar_ssa(self):
+        # x = 1; *(&x) = 2; return x - both writes become *(&x) stores and the read becomes
+        # *(&x); x itself never advances past its seeded version, since a memory-form
+        # variable has no scalar SSA identity for a store to clobber
         func = MediumLevelILFunction('addr_taken_store_test')
         block = func.create_block(start = FUNC_START)
         x = func.get_or_create_local('x')
@@ -300,15 +304,15 @@ class TestDerefStoreVersionsAddressTakenLocal(unittest.TestCase):
 
         SSAConversionPass().run(func)
 
-        set_inst = block.instructions[0]
-        ret_inst = block.instructions[-1]
-        self.assertIsInstance(set_inst, MLILSetVarSSA)
+        first_store, second_store, ret_inst = block.instructions
+        self.assertIsInstance(first_store, MLILStoreDeref)
+        self.assertIsInstance(second_store, MLILStoreDeref)
         self.assertIsInstance(ret_inst, MLILRet)
-        self.assertIsInstance(ret_inst.value, MLILVarSSA)
+        self.assertIsInstance(ret_inst.value, MLILDeref)
 
-        # The return must read a version created AFTER the store's pseudo-definition, not
-        # the original `x = 1`'s version - proving the store's clobber was actually applied.
-        self.assertNotEqual(ret_inst.value.var.version, set_inst.var.version)
+        # One stable address identity throughout, not a chain of scalar SSA values
+        ret_var = ret_inst.value.operand.operand.var
+        self.assertEqual(ret_var.version, 0)
 
     def test_deref_store_does_not_let_sccp_fold_a_stale_constant(self):
         # x = 1; *(&x) = 2; return x - full optimizer must not fold this to `return 1`
@@ -327,10 +331,13 @@ class TestDerefStoreVersionsAddressTakenLocal(unittest.TestCase):
 
 
 class TestCallAddressTakenArgPhiPlacement(unittest.TestCase):
-    '''Fable's independent review finding: the existing call-&arg pseudo-def mechanism
-    (predates Step 3) created a pseudo-definition at rename time, but _collect_defs never
-    knew about it - so no phi was placed at a merge point downstream of a conditional call,
-    and the pre-call value could be folded in past the call entirely.'''
+    '''Originally: Fable's independent review finding that the call-&arg pseudo-def mechanism
+    created a pseudo-definition at rename time that _collect_defs never knew about, so no phi
+    was placed at a merge point downstream of a conditional call. Step A (2026-09-22) removed
+    that pseudo-definition mechanism entirely: an address-taken local is lowered to explicit
+    *(&x) memory form and never scalar-versioned, so it needs no phi at all - the semantic
+    property to guard is now "no phi, and every read sees the one stable address" rather than
+    "a phi gets placed".'''
 
     def _build_diamond_with_addr_taken_call(self, name: str) -> MediumLevelILFunction:
         # var_s0 = 0; if (arg1 == 0) { f(&var_s0) } ; return var_s0 + 1
@@ -355,7 +362,10 @@ class TestCallAddressTakenArgPhiPlacement(unittest.TestCase):
 
         return func
 
-    def test_phi_placed_at_merge_after_conditional_call_with_addr_arg(self):
+    def test_no_phi_needed_after_conditional_call_with_addr_arg(self):
+        # var_s0 = 0; if (arg1 == 0) { f(&var_s0) }; return var_s0 + 1 - address-taken var_s0
+        # is memory-form, so the merge needs no phi to reconcile a call-clobbered version
+        # against the entry's initial version: there is only ever the one stable address
         func = self._build_diamond_with_addr_taken_call('addr_arg_phi_test')
         merge_block = func.basic_blocks[2]
         var_s0 = func.locals['var_s0']
@@ -363,8 +373,15 @@ class TestCallAddressTakenArgPhiPlacement(unittest.TestCase):
         SSAConversionPass().run(func)
 
         phi = next((inst for inst in merge_block.instructions if isinstance(inst, MLILPhi)), None)
-        self.assertIsNotNone(phi)
-        self.assertEqual(phi.dest.base_var, var_s0)
+        self.assertIsNone(phi)
+
+        ret_inst = merge_block.instructions[-1]
+        self.assertIsInstance(ret_inst.value, MLILAdd)
+        self.assertIsInstance(ret_inst.value.lhs, MLILDeref)
+
+        ret_var = ret_inst.value.lhs.operand.operand.var
+        self.assertEqual(ret_var.base_var, var_s0)
+        self.assertEqual(ret_var.version, 0)
 
     def test_optimizer_does_not_fold_past_the_conditional_call(self):
         func = self._build_diamond_with_addr_taken_call('addr_arg_phi_sccp_test')

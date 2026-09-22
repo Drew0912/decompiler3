@@ -226,6 +226,20 @@ class TypeScriptGenerator:
         return False
 
     @classmethod
+    def _format_var_assignment(cls, dest: HLILVar, src: HLILExpression, indent_str: str) -> str:
+        '''Format `dest = src;`, wrapping src in int(...) when assigning a boolean expression
+        to a numeric variable. Shared by the ordinary HLILAssign path and the address-taken
+        *(&x) = v fold-back path, so both get the same coercion instead of it being
+        reimplemented (and possibly missed) at a second call site.'''
+        dest_str = cls._format_expr(dest)
+        src_str = cls._format_expr(src)
+
+        if cls._is_boolean_expr(src) and cls._is_number_var(dest):
+            src_str = f'int({src_str})'
+
+        return f'{indent_str}{dest_str} = {src_str};'
+
+    @classmethod
     def _format_expr(cls, expr: HLILExpression) -> str:
         if isinstance(expr, HLILVar):
             var = expr.var
@@ -349,6 +363,10 @@ class TypeScriptGenerator:
             return f'addr_of({operand})'
 
         elif isinstance(expr, HLILDeref):
+            unwrapped = unwrap_address_taken_var(expr)
+            if unwrapped is not None:
+                return cls._format_expr(unwrapped)
+
             operand = cls._format_expr(expr.operand)
             return f'deref({operand})'
 
@@ -566,21 +584,22 @@ class TypeScriptGenerator:
                 lines.append(f'{indent_str}return;')
 
         elif isinstance(stmt, HLILAssign) and isinstance(stmt.dest, HLILDeref):
-            # TypeScript has no *ptr syntax - a store through a pointer is a deref_set() call,
-            # matching the addr_of() convention already used for &var
-            ptr_str = cls._format_expr(stmt.dest.operand)
-            src_str = cls._format_expr(stmt.src)
-            lines.append(f'{indent_str}deref_set({ptr_str}, {src_str});')
+            # *(&x) = v - address-taken local x's own lowered write - folds back to plain
+            # x = v, through the same _format_var_assignment ordinary assignment uses, so it
+            # gets the same boolean-to-int coercion rather than a second, unreimplemented copy
+            unwrapped = unwrap_address_taken_var(stmt.dest)
+            if unwrapped is not None:
+                lines.append(cls._format_var_assignment(unwrapped, stmt.src, indent_str))
+
+            else:
+                # A genuine store through some other pointer - TypeScript has no *ptr syntax,
+                # so this is a deref_set() call, matching the addr_of() convention for &var
+                ptr_str = cls._format_expr(stmt.dest.operand)
+                src_str = cls._format_expr(stmt.src)
+                lines.append(f'{indent_str}deref_set({ptr_str}, {src_str});')
 
         elif isinstance(stmt, HLILAssign):
-            dest_str = cls._format_expr(stmt.dest)
-            src_str = cls._format_expr(stmt.src)
-
-            # Wrap boolean expr with int() when assigning to number variable
-            if cls._is_boolean_expr(stmt.src) and cls._is_number_var(stmt.dest):
-                src_str = f'int({src_str})'
-
-            lines.append(f'{indent_str}{dest_str} = {src_str};')
+            lines.append(cls._format_var_assignment(stmt.dest, stmt.src, indent_str))
 
         elif isinstance(stmt, HLILExprStmt):
             expr_str = cls._format_expr(stmt.expr)

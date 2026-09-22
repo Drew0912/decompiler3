@@ -1,7 +1,7 @@
 '''HLIL Formatter - Format HLIL for debugging'''
 
 from common import *
-from typing import List
+from typing import List, Optional
 from .hlil import *
 
 
@@ -81,6 +81,22 @@ class HLILFormatter:
             if isinstance(expr.operand, HLILBinaryOp):
                 operand = f'({operand})'
             return f'{expr.op}{operand}'
+
+        elif isinstance(expr, HLILAddressOf):
+            operand = cls._format_expr(expr.operand)
+            return f'&{operand}'
+
+        elif isinstance(expr, HLILDeref):
+            # *(&x) - ir/mlil/mlil_ssa.py's memory-form lowering of address-taken local x -
+            # folds back to plain x, same convention as codegen/typescript.py
+            unwrapped = unwrap_address_taken_var(expr)
+            if unwrapped is not None:
+                return cls._format_expr(unwrapped)
+
+            operand = cls._format_expr(expr.operand)
+            if isinstance(expr.operand, HLILBinaryOp):
+                operand = f'({operand})'
+            return f'*{operand}'
 
         elif isinstance(expr, HLILCall):
             args = ', '.join(cls._format_expr(arg) for arg in expr.args)
