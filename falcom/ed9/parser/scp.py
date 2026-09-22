@@ -6,7 +6,7 @@ from ml import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.formatter import GLOBAL_VAR_INDEX_COMMENT
-from ..writer.metadata import COMMON_LIBRARY_PACKAGE, SCP_WRITER_HELPER_IMPORT
+from ..writer.metadata import COMMON_LIBRARY_ALL_IMPORT, SCP_WRITER_HELPER_IMPORT
 from ..writer.metadata.common_index import COMMON_FUNCTIONS
 from ..writer.metadata.signature import function_fingerprint, fingerprint_digest
 from common.config import default_encoding
@@ -792,10 +792,19 @@ class ScpParser(StrictBase):
         """Generate Python header lines for output script execution.
 
         functions, when given, are this script's disassembled functions in code order - used to
-        emit the shared-library imports and @scena.CommonImports() manifest (see
-        match_library_functions). Leave it as None when there's no function list to give (e.g. a
-        caller building just the header on its own); matched lets gen_python_script pass in an
-        already-computed match set instead of this recomputing it.
+        emit the @scena.CommonImports() manifest (see match_library_functions). Leave it as None
+        when there's no function list to give (e.g. a caller building just the header on its own);
+        matched lets gen_python_script pass in an already-computed match set instead of this
+        recomputing it.
+
+        The whole-library import is unconditional - every script gets it, regardless of fidelity
+        mode or whether it has a function list at all, so a human editing the script has every
+        common function in scope for CALL()/autocomplete even when adding one this script never
+        originally used. Unlike the hook import above it, this one needs no try/except of its own:
+        common_all.py is a tracked project file (always present) whose own internal imports of the
+        gitignored, locally-generated common/ package are what can fail on a fresh checkout - it
+        catches that itself and logs a hint to run the generator, so importing common_all here
+        always succeeds even when the library behind it doesn't exist yet.
         """
         lines = f'''\
 {SCP_WRITER_HELPER_IMPORT}
@@ -803,6 +812,8 @@ try:
     {self.gen_hook_import()}
 except ModuleNotFoundError:
     pass
+
+{COMMON_LIBRARY_ALL_IMPORT}
 
 scena = create_scp_writer('{self.name}')
 
@@ -832,8 +843,22 @@ scena = create_scp_writer('{self.name}')
         own dead bytes even though that flag asked to keep them. A common function whose fingerprint
         diverges from the library (different body, signature, or subsystem) is left out here and
         stays inline as an ordinary @scena.LLILCommonCode() definition, same as a non-common one.
+
+        Also returns {} if the library package itself isn't actually generated on disk yet (fresh
+        checkout, generator never run) - common_index.py is tracked and would otherwise claim
+        matches that don't actually exist, leaving a matched name referenced by the
+        @scena.CommonImports() manifest but never defined anywhere.
         """
         if self.round_trip or self.keep_unreachable_code:
+            return {}
+
+        # Deferred import, not module-level (CLAUDE.md rule 2's circular-dependency exception):
+        # common_all pulls in the generated library modules, which import scp_writer_helper ->
+        # scp_writer, and scp_writer itself imports names from this module (parser.scp) - a
+        # module-level import here would fail while parser.scp is still mid-initialization. By the
+        # time this method actually runs, parser.scp has already finished loading, so it's safe.
+        from ..writer.metadata.common_all import COMMON_LIBRARY_GENERATED
+        if not COMMON_LIBRARY_GENERATED:
             return {}
 
         matched = {}
@@ -863,28 +888,20 @@ scena = create_scp_writer('{self.name}')
         return [func for func in functions if func.name not in matched]
 
     def gen_common_imports(self, functions: list[Function], *, matched: dict[str, str] | None = None) -> list[str]:
-        """Per-module imports plus the @scena.CommonImports() manifest, in this script's own code
-        order, for every function matched to the shared library. Empty when nothing matched."""
+        """The @scena.CommonImports() manifest, in this script's own code order, for every function
+        matched to the shared library. Empty when nothing matched - including strict round-trip
+        mode and an ungenerated library, both handled by match_library_functions returning {}.
+        The whole-library import itself lives in gen_python_header instead, unconditionally - it's
+        pure name resolution for autocomplete/hand-editing, so it doesn't need to track fidelity
+        mode or match state the way the manifest (what's actually compiled in) does."""
         if matched is None:
             matched = self.match_library_functions(functions)
 
         if not matched:
             return []
 
-        names_by_module: dict[str, list[str]] = {}
-        for name, module_key in matched.items():
-            names_by_module.setdefault(module_key, []).append(name)
-
         indent = default_indent()
-        lines = []
-        for module_key in sorted(names_by_module):
-            names = ', '.join(sorted(names_by_module[module_key]))
-            lines.append(f'from {COMMON_LIBRARY_PACKAGE}.{module_key} import {names}')
-
-        lines.append('')
-        lines.append('@scena.CommonImports()')
-        lines.append('def commonImports():')
-        lines.append(f'{indent}return [')
+        lines = ['@scena.CommonImports()', 'def commonImports():', f'{indent}return [']
         for func in functions:
             if func.name in matched:
                 lines.append(f'{indent * 2}{func.name},')

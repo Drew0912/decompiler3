@@ -111,18 +111,39 @@ function they used. Across the 1082-file sora2_1.0 corpus: 953 distinct common-f
 **Design:** `falcom/ed9/writer/scp_writer_gen_common_funcs.py` walks the corpus once and generates
 `falcom/ed9/writer/metadata/common/scp_writer_common_{N}.py` (one module per first-syscall
 subsystem, or `scp_writer_common_no_syscall.py`), plus `falcom/ed9/writer/metadata/common_index.py`
-(pure data: `name -> (module, fingerprint digest)`). At decompile time, `ScpParser` (`scp.py`)
-matches each of a script's own common functions against that index by name *and* fingerprint
-(`match_library_functions`) — a name whose body diverges from the canonical library variant is
-left inline, unchanged. Matched functions are imported (`from
-falcom.ed9.writer.metadata.common.scp_writer_common_N import name1, name2, ...`) and declared in a
-`@scena.CommonImports()` manifest, in the script's own code order; everything else — non-matching
-commons and this script's own functions — is still emitted inline as today.
+(pure data: `name -> (module, fingerprint digest)`) and `falcom/ed9/writer/metadata/common_all.py`
+(re-exports every generated module via `import *`, see Gating below for its `try`/`except`). At
+decompile time, `ScpParser` (`scp.py`) matches each of a script's own common functions against the
+index by name *and* fingerprint (`match_library_functions`) — a name whose body diverges from the
+canonical library variant is left inline, unchanged. **Every generated script unconditionally
+imports the whole library** (`gen_python_header` emits `from
+falcom.ed9.writer.metadata.common_all import *`) — every mode, every script, whether or not its
+own source used any common functions — so a human editing the script has every common function in
+scope for `CALL()`/autocomplete even when adding one the original bytecode never used. Only the
+matched subset is declared in a `@scena.CommonImports()` manifest, in the script's own code order,
+since that (not the import) is what actually gets baked into the compiled bytecode; the import
+itself has zero effect on compiled output; it's inert until the manifest (or, in strict mode, this
+script's own inline definitions, which always take precedence) actually references a name.
+Everything else — non-matching commons and this script's own functions — is still emitted inline
+as today.
 
-**Gating:** active only when `not (self.round_trip or self.keep_unreachable_code)` — the everyday
-`scena2py_config.py` default. The library was generated with unreachable code already stripped, so
-either fidelity flag being `True` falls back to inlining everything, exactly as before this
-existed.
+**Gating:** the *import* is unconditional (see above) and needs no `try`/`except` of its own in the
+generated script's header — `common_all.py` is a tracked project file (always present) that wraps
+its *own* internal imports of the gitignored, locally-generated `common/` package in
+`try`/`except ModuleNotFoundError`, logging a hint to run the generator and setting
+`COMMON_LIBRARY_GENERATED = False` if that package doesn't exist yet, `True` otherwise. The
+*manifest* — i.e. what actually gets matched and baked into bytecode — stays gated on two things
+in `match_library_functions`: `not (self.round_trip or self.keep_unreachable_code)` (the everyday
+`scena2py_config.py` default; the library was generated with unreachable code already stripped, so
+either fidelity flag falls back to inlining everything, exactly as before this existed), and
+`common_all.COMMON_LIBRARY_GENERATED` (needed because `common_index.py` is tracked in git and would
+otherwise claim matches that don't actually exist on a fresh checkout, leaving the manifest
+referencing an undefined name). That second check is a **deferred import inside the method, not at
+module level** — `common_all` transitively imports `scp_writer`, which imports names from this same
+module (`parser/scp.py`), so importing it at module load time would be circular; by the time
+`match_library_functions` actually runs, `parser.scp` has already finished loading, so the deferred
+import is safe (CLAUDE.md rule 2's explicit circular-dependency exception). When the library isn't
+generated, matching returns `{}` and every function falls back to fully inline, same as strict mode.
 
 **Regenerating the library:** `python falcom/ed9/writer/scp_writer_gen_common_funcs.py
 sora2_1.0` walks the corpus (round_trip=False, keep_unreachable_code=False), fingerprints every
@@ -135,11 +156,12 @@ regeneration.
 **`falcom/ed9/writer/metadata/common/` is gitignored, not checked in** — like `sora2_1.0`/
 `script_en` themselves, its generated modules are a substantive translation of the game's own
 script content (real function bodies, not original project code), so it's treated the same way:
-regenerated locally, never committed. `metadata/common_index.py` (pure data: names, module keys,
-fingerprint digests — no translated code) is checked in normally. **This means a fresh checkout
-needs the generator run once, against a local copy of the corpus, before the default
-(`round_trip=False`) `scena2py.py` path produces working output** — otherwise `common_index.py`
-claims matches that `import` statements can't actually resolve.
+regenerated locally, never committed. `metadata/common_index.py` and `metadata/common_all.py`
+(pure data/import-statements — names, module keys, fingerprint digests, `import *` lines, no
+translated code) are checked in normally. **This means a fresh checkout needs the generator run
+once, against a local copy of the corpus, before the default (`round_trip=False`) `scena2py.py`
+path produces working output** — otherwise `common_index.py`/`common_all.py` reference modules
+that don't exist on disk yet.
 
 **The four questions this section used to leave open, now closed:**
 
