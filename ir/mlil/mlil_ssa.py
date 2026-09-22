@@ -425,8 +425,7 @@ class SSAConstructor:
 
             return inst
 
-        else:
-            return self._lower_stmt(inst)
+        return self._lower_stmt(inst)
 
     def _lower_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
         '''Recursively lower address-taken reads in an expression tree (mirrors _raise_expr's walk)'''

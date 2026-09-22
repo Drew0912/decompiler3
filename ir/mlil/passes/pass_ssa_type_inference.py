@@ -142,10 +142,7 @@ class SSATypeInferencePass(Pass):
         if isinstance(expr, MLILConst):
             return self._infer_const_type(expr)
 
-        elif isinstance(expr, MLILVarSSA):
-            return self.var_types.get(expr.var, MLILType.unknown())
-
-        elif isinstance(expr, MLILDeref):
+        elif isinstance(expr, (MLILVarSSA, MLILDeref)):
             target = self._as_ssa_var(expr)
             return self.var_types.get(target, MLILType.unknown()) if target is not None else MLILType.unknown()
 
