@@ -20,6 +20,7 @@ from ir.hlil import (
     HLILConst,
     HLILExprStmt,
     HLILIf,
+    HLILStatement,
     HLILSwitch,
     HLILSwitchCase,
     HLILVar,
@@ -297,9 +298,10 @@ SOURCE_REG_NAME = 'source_reg'
 class TestRedundantElseAssignSideEffects(unittest.TestCase):
     '''Tests for _remove_redundant_else_assign not discarding side effects.'''
 
-    def run_pass(self, first_if: HLILIf) -> HighLevelILFunction:
+    def run_pass(self, *statements: HLILStatement) -> HighLevelILFunction:
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(first_if)
+        for stmt in statements:
+            func.add_statement(stmt)
         return ControlFlowOptimizationPass().run(func)
 
     def build_switch_case_if(self, source_expr) -> HLILIf:
@@ -323,14 +325,34 @@ class TestRedundantElseAssignSideEffects(unittest.TestCase):
         self.assertEqual(reload_stmt.src.func_name, RELOAD_CALL_NAME)
 
     def test_pure_reload_is_still_removed_as_redundant(self):
-        first_if = self.build_switch_case_if(HLILVar(HLILVariable(SOURCE_REG_NAME)))
+        # A genuine reaching load before the whole chain - required since the fix for the
+        # confirmed soundness gap (selector starting unrelated to the reload's source, see
+        # test_reload_without_a_reaching_assignment_is_not_removed below): the reload is only
+        # provably redundant once something upstream actually proves selector already held
+        # source's value.
+        source_var = HLILVariable(SOURCE_REG_NAME)
+        reaching_load = HLILAssign(make_var(), HLILVar(source_var))
+        first_if = self.build_switch_case_if(HLILVar(source_var))
 
-        func = self.run_pass(first_if)
+        func = self.run_pass(reaching_load, first_if)
 
-        else_block = func.body.statements[0].false_block
+        else_block = func.body.statements[1].false_block
         # The reassignment is gone - only the inner if remains
         self.assertEqual(len(else_block.statements), 1)
         self.assertIsInstance(else_block.statements[0], HLILIf)
+
+    def test_reload_without_a_reaching_assignment_is_not_removed(self):
+        # The confirmed soundness gap this fix closes: selector starts at a value unrelated
+        # to the reload's source (never proven to already equal it), so deleting the reload
+        # would silently change which case body a later match against SECOND_CASE_VALUE runs.
+        unrelated_init = HLILAssign(make_var(), HLILConst(999))
+        first_if = self.build_switch_case_if(HLILConst(SECOND_CASE_VALUE))
+
+        func = self.run_pass(unrelated_init, first_if)
+
+        else_block = func.body.statements[1].false_block
+        self.assertEqual(len(else_block.statements), 2)
+        self.assertIsInstance(else_block.statements[0], HLILAssign)
 
 
 class TestBooleanTempInliningPreservesGlobals(unittest.TestCase):
@@ -358,8 +380,12 @@ class TestBooleanTempInliningPreservesGlobals(unittest.TestCase):
 
 
 class TestRedundantElseAssignVariableIdentity(unittest.TestCase):
-    '''_remove_redundant_else_assign must compare full variable identity, not just .name -
-    REG-kind variables commonly share name=None, distinguished only by index.'''
+    '''Originally: _remove_redundant_else_assign must compare full variable identity, not just
+    .name, since REG-kind variables commonly share name=None, distinguished only by index. Now
+    moot as a live concern for this function specifically - a REG-kind outer_var is rejected
+    outright before any name/identity comparison runs (a register still literally REG-kind at
+    this layer means SSA never resolved it to a concrete value, never a safe reload source
+    either way) - kept as a regression guard on that rejection, not on identity comparison.'''
 
     def test_distinct_reg_variables_are_not_conflated(self):
         r1 = HLILVariable(None, kind = VariableKind.REG, index = 1)
@@ -458,6 +484,220 @@ class TestBooleanTempInliningCaseLabelInsideTheIfItself(unittest.TestCase):
 
         self.assertEqual(len(func.body.statements), 2)
         self.assertIsInstance(func.body.statements[0], HLILAssign)
+
+
+class TestRedundantElseAssignRejectsSelfReference(unittest.TestCase):
+    '''x = x textually matches any earlier x = x, but re-evaluating a self-referential source
+    does not prove the same value was ever produced twice - must always refuse, independent
+    of any reaching definition.'''
+
+    def test_self_referential_source_is_not_removed(self):
+        inner_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock())
+        reload_assign = HLILAssign(make_var(), make_var())  # selector = selector
+        false_block = HLILBlock([reload_assign, inner_if])
+        first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), false_block)
+
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(first_if)
+        func = ControlFlowOptimizationPass().run(func)
+
+        else_stmts = func.body.statements[0].false_block.statements
+        self.assertEqual(len(else_stmts), 2)
+        self.assertIsInstance(else_stmts[0], HLILAssign)
+
+
+class TestRedundantElseAssignRejectsUnstableSourceKinds(unittest.TestCase):
+    '''A global can change across a call while still rendering under the identical name at
+    this layer; a variable still REG-kind here means SSA never resolved it to a concrete
+    value. Neither is a provably-stable reload source, regardless of any reaching assignment
+    that would otherwise look sufficient.'''
+
+    def build_with_source(self, source_var: HLILVariable) -> tuple:
+        reaching_load = HLILAssign(make_var(), HLILVar(source_var))
+        inner_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock())
+        reload_assign = HLILAssign(make_var(), HLILVar(source_var))
+        false_block = HLILBlock([reload_assign, inner_if])
+        first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), false_block)
+        return reaching_load, first_if
+
+    def run_and_get_else_stmts(self, reaching_load, first_if) -> list:
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(reaching_load)
+        func.add_statement(first_if)
+        func = ControlFlowOptimizationPass().run(func)
+        return func.body.statements[1].false_block.statements
+
+    def test_global_source_is_not_removed_even_with_a_reaching_assignment(self):
+        global_var = HLILVariable(None, kind = VariableKind.GLOBAL, index = 7)
+        reaching_load, first_if = self.build_with_source(global_var)
+
+        else_stmts = self.run_and_get_else_stmts(reaching_load, first_if)
+
+        self.assertEqual(len(else_stmts), 2)
+        self.assertIsInstance(else_stmts[0], HLILAssign)
+
+    def test_register_source_is_not_removed_even_with_a_reaching_assignment(self):
+        reg_var = HLILVariable(None, kind = VariableKind.REG, index = 3)
+        reaching_load, first_if = self.build_with_source(reg_var)
+
+        else_stmts = self.run_and_get_else_stmts(reaching_load, first_if)
+
+        self.assertEqual(len(else_stmts), 2)
+        self.assertIsInstance(else_stmts[0], HLILAssign)
+
+
+class TestRedundantElseAssignRequiresConstantConditions(unittest.TestCase):
+    '''The pattern only ever means something as a literal switch-style discriminant test - a
+    call embedded in either condition's RHS (whose side effect could change the reload's
+    source between the reaching assignment and the reload itself) must not be silently
+    assumed away.'''
+
+    def test_outer_condition_with_non_constant_rhs_is_not_removed(self):
+        reaching_load = HLILAssign(make_var(), HLILConst(SECOND_CASE_VALUE))
+        inner_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock())
+        reload_assign = HLILAssign(make_var(), HLILConst(SECOND_CASE_VALUE))
+        false_block = HLILBlock([reload_assign, inner_if])
+        outer_cond = HLILBinaryOp(BinaryOp.EQ, make_var(), HLILCall('mutate_and_return', []))
+        first_if = HLILIf(outer_cond, make_case_body(FIRST_CASE_VALUE), false_block)
+
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(reaching_load)
+        func.add_statement(first_if)
+        func = ControlFlowOptimizationPass().run(func)
+
+        else_stmts = func.body.statements[1].false_block.statements
+        self.assertEqual(len(else_stmts), 2)
+        self.assertIsInstance(else_stmts[0], HLILAssign)
+
+    def test_inner_condition_with_non_constant_rhs_is_not_removed(self):
+        reaching_load = HLILAssign(make_var(), HLILConst(SECOND_CASE_VALUE))
+        inner_cond = HLILBinaryOp(BinaryOp.EQ, make_var(), HLILCall('mutate_and_return', []))
+        inner_if = HLILIf(inner_cond, make_case_body(SECOND_CASE_VALUE), HLILBlock())
+        reload_assign = HLILAssign(make_var(), HLILConst(SECOND_CASE_VALUE))
+        false_block = HLILBlock([reload_assign, inner_if])
+        first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), false_block)
+
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(reaching_load)
+        func.add_statement(first_if)
+        func = ControlFlowOptimizationPass().run(func)
+
+        else_stmts = func.body.statements[1].false_block.statements
+        self.assertEqual(len(else_stmts), 2)
+        self.assertIsInstance(else_stmts[0], HLILAssign)
+
+
+class TestReachingAssignmentExistsModificationBarriers(unittest.TestCase):
+    '''Direct tests of _reaching_assignment_exists: a reaching candidate only counts if
+    nothing between it and the use point modifies the destination or the source.'''
+
+    def test_outer_var_reassigned_after_the_candidate_blocks_the_match(self):
+        selector = HLILVariable('selector')
+        source_var = HLILVariable(SOURCE_REG_NAME)
+        candidate = HLILAssign(HLILVar(selector), HLILVar(source_var))
+        clobber = HLILAssign(HLILVar(selector), HLILConst(0))
+
+        result = ControlFlowOptimizationPass()._reaching_assignment_exists(
+            selector, HLILVar(source_var), [candidate, clobber])
+
+        self.assertFalse(result)
+
+    def test_source_var_reassigned_after_the_candidate_blocks_the_match(self):
+        selector = HLILVariable('selector')
+        source_var = HLILVariable(SOURCE_REG_NAME)
+        candidate = HLILAssign(HLILVar(selector), HLILVar(source_var))
+        clobber = HLILAssign(HLILVar(source_var), HLILConst(0))
+
+        result = ControlFlowOptimizationPass()._reaching_assignment_exists(
+            selector, HLILVar(source_var), [candidate, clobber])
+
+        self.assertFalse(result)
+
+    def test_unrelated_statement_in_between_does_not_block_the_match(self):
+        selector = HLILVariable('selector')
+        source_var = HLILVariable(SOURCE_REG_NAME)
+        candidate = HLILAssign(HLILVar(selector), HLILVar(source_var))
+        unrelated = HLILAssign(HLILVar(HLILVariable('other')), HLILConst(0))
+
+        result = ControlFlowOptimizationPass()._reaching_assignment_exists(
+            selector, HLILVar(source_var), [candidate, unrelated])
+
+        self.assertTrue(result)
+
+
+class TestSourceMatchesDistinguishesIntFromFloat(unittest.TestCase):
+    '''Mirrors pass_reg_global_propagation.py's established _expr_equal contract: int and
+    float constants are distinct representations even at equal numeric value, and NaN
+    compares equal to itself.'''
+
+    def test_int_and_float_same_value_do_not_match(self):
+        self.assertFalse(ControlFlowOptimizationPass()._source_matches(HLILConst(1), HLILConst(1.0)))
+
+    def test_same_type_same_value_matches(self):
+        cfo = ControlFlowOptimizationPass()
+        self.assertTrue(cfo._source_matches(HLILConst(1), HLILConst(1)))
+        self.assertTrue(cfo._source_matches(HLILConst(1.5), HLILConst(1.5)))
+
+    def test_nan_matches_itself(self):
+        nan = float('nan')
+        self.assertTrue(ControlFlowOptimizationPass()._source_matches(HLILConst(nan), HLILConst(nan)))
+
+
+SOURCE_MARKER_VALUE = 42
+
+
+class TestRedundantElseAssignChainInteractionWithSwitchConversion(unittest.TestCase):
+    '''A genuine reload chain (each link reloads the scrutinee from the same constant source
+    before testing the next value) is the actual motivating shape for this optimization.
+    Exactly 3 links is the base case both this function and switch-conversion were designed
+    around. A 4th link changes the outcome: _optimize_block recurses into false_block before
+    checking the current if's own reload, so by the time the outermost link's reload is
+    examined, the inner 3-link suffix has ALREADY been switch-converted (3 alone meets
+    SWITCH_MIN_CASES) - the outermost reload's "next statement" is then a HLILSwitch, not a
+    HLILIf, so the pattern no longer matches and that one reload survives. This is a real,
+    deliberate optimization-coverage tradeoff from scoping the reaching-definition search to
+    the current block only (never crossing into an already-restructured continuation) - not a
+    correctness bug, but documented here rather than left silently unasserted.'''
+
+    def build_reload_chain(self, num_links: int) -> tuple:
+        source = HLILConst(SOURCE_MARKER_VALUE)
+        reaching_load = HLILAssign(make_var(), source)
+
+        current_if = HLILIf(make_condition(BinaryOp.EQ, num_links), make_case_body(num_links), HLILBlock())
+
+        for value in range(num_links - 1, 0, -1):
+            reload_assign = HLILAssign(make_var(), source)
+            current_if = HLILIf(make_condition(BinaryOp.EQ, value), make_case_body(value),
+                                HLILBlock([reload_assign, current_if]))
+
+        return reaching_load, current_if
+
+    def test_exactly_three_links_removes_every_reload_and_converts_to_switch(self):
+        reaching_load, first_if = self.build_reload_chain(3)
+
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(reaching_load)
+        func.add_statement(first_if)
+        func = ControlFlowOptimizationPass().run(func)
+
+        self.assertEqual(len(func.body.statements), 2)
+        self.assertIsInstance(func.body.statements[1], HLILSwitch)
+
+    def test_four_links_the_outermost_reload_survives_once_the_inner_suffix_becomes_a_switch(self):
+        reaching_load, first_if = self.build_reload_chain(4)
+
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(reaching_load)
+        func.add_statement(first_if)
+        func = ControlFlowOptimizationPass().run(func)
+
+        outer_if = func.body.statements[1]
+        self.assertIsInstance(outer_if, HLILIf)
+        else_stmts = outer_if.false_block.statements
+        # [reload (survives - its own "next stmt" is now a switch, not an if), <switch 2-4>]
+        self.assertEqual(len(else_stmts), 2)
+        self.assertIsInstance(else_stmts[0], HLILAssign)
+        self.assertIsInstance(else_stmts[1], HLILSwitch)
 
 
 if __name__ == '__main__':

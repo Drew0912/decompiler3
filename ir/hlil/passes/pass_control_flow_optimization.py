@@ -1,5 +1,6 @@
 '''Control Flow Optimization Pass'''
 
+import math
 from typing import List, Optional, Tuple
 from ir.pipeline import Pass
 from ..hlil import (
@@ -70,7 +71,7 @@ class ControlFlowOptimizationPass(Pass):
                             self._optimize_block(inlined.true_block)
                             self._optimize_block(inlined.false_block)
                             # Remove redundant assignments
-                            self._remove_redundant_else_assign(inlined)
+                            self._remove_redundant_else_assign(inlined, optimized)
                             optimized.append(inlined)
                             i += 2
                             continue
@@ -96,7 +97,7 @@ class ControlFlowOptimizationPass(Pass):
                                 self._optimize_block(inlined.true_block)
                                 self._optimize_block(inlined.false_block)
                                 # Remove redundant assignments
-                                self._remove_redundant_else_assign(inlined)
+                                self._remove_redundant_else_assign(inlined, optimized)
                                 optimized.append(inlined)
                                 i = j + 2
                                 continue
@@ -106,7 +107,7 @@ class ControlFlowOptimizationPass(Pass):
                 self._optimize_block(stmt.false_block)
 
                 # Remove redundant var = source in else block for switch-case patterns
-                self._remove_redundant_else_assign(stmt)
+                self._remove_redundant_else_assign(stmt, optimized)
 
                 # Convert nested if-chain to switch
                 switch_stmt = self._try_convert_to_switch(stmt)
@@ -489,30 +490,38 @@ class ControlFlowOptimizationPass(Pass):
 
         return (False, killed, False)
 
-    def _remove_redundant_else_assign(self, if_stmt: HLILIf):
+    def _remove_redundant_else_assign(self, if_stmt: HLILIf, preceding_stmts: List[HLILStatement]):
         '''Remove redundant var = source in else block for switch-case patterns.
 
-        Pattern: if (var EQ A) { case_body } else { var = source; if (var EQ B) {...} }
-        The switch-case uses EQ conditions where:
-        - true_block = case body (when var == const)
-        - false_block = next check (when var != const)
-        If source wasn't modified in true_block (case body), the assignment is redundant.
+        Pattern: if (var == A) { case_body } else { var = source; if (var == B) {...} }, where A
+        and B are both literal constants (this function only recognizes literal switch-style
+        discriminant tests). source must be a constant or a plain local/parameter variable - the
+        only shapes provably stable across if_stmt's own condition evaluation and anything an
+        intervening call could do: a global's value can change across a call while still
+        rendering under the identical name at this layer; a register-kind variable still present
+        here means SSA could not resolve it to a concrete tracked value (a successfully-tracked
+        register becomes an ordinary LOCAL by this point); this codebase always represents an
+        address-taken variable as an explicit *(&x) shape, never a bare HLILVar, so a bare HLILVar
+        here is never address-taken.
+
+        Requires proof that var already held source's value on entry to if_stmt: a reaching
+        var = source assignment earlier in the same block (preceding_stmts), with nothing between
+        it and if_stmt modifying var or source.
         '''
         if not if_stmt.false_block or not if_stmt.false_block.statements:
             return
 
-        # Check outer condition is var EQ const (switch-case pattern)
+        # Check outer condition is var == const (switch-case pattern)
         cond = if_stmt.condition
         if not isinstance(cond, HLILBinaryOp) or cond.op != BinaryOp.EQ:
             return
 
-        if not isinstance(cond.lhs, HLILVar):
+        if not isinstance(cond.lhs, HLILVar) or not isinstance(cond.rhs, HLILConst):
             return
 
         outer_var = cond.lhs.var
 
-        # Globals are shared-state writes, never a redundant discriminant reload
-        if outer_var.kind == VariableKind.GLOBAL:
+        if outer_var.kind not in (VariableKind.LOCAL, VariableKind.PARAM):
             return
 
         # Find first non-nop statement in else block
@@ -537,7 +546,19 @@ class ControlFlowOptimizationPass(Pass):
 
         source_expr = assign_stmt.src
 
-        # Check next statement is if (var EQ const)
+        if isinstance(source_expr, HLILVar):
+            if source_expr.var.kind not in (VariableKind.LOCAL, VariableKind.PARAM):
+                return
+
+            # Self-referential (x = x): a textual match against an earlier x = x does not mean
+            # the same value was ever produced twice.
+            if source_expr.var == outer_var:
+                return
+
+        elif not isinstance(source_expr, HLILConst):
+            return
+
+        # Check next statement is if (var == const)
         if assign_idx + 1 >= len(false_stmts):
             return
 
@@ -552,60 +573,55 @@ class ControlFlowOptimizationPass(Pass):
         if not isinstance(inner_cond.lhs, HLILVar) or inner_cond.lhs.var != outer_var:
             return
 
-        # Check source wasn't modified in true_block (case body)
-        if self._expr_modified_in_block(source_expr, if_stmt.true_block):
+        if not isinstance(inner_cond.rhs, HLILConst):
             return
 
-        # A call in source may have side effects beyond its return value - the value
-        # being redundant does not make the call itself redundant, so removing the whole
-        # statement here would silently drop that effect from the decompiled output
-        if self._contains_call(source_expr):
+        if not self._reaching_assignment_exists(outer_var, source_expr, preceding_stmts):
             return
 
         # Remove redundant assignment
-        if_stmt.false_block.statements.pop(assign_idx)
+        false_stmts.pop(assign_idx)
 
-    def _expr_modified_in_block(self, expr: HLILExpression, block: HLILBlock) -> bool:
-        '''Check if any variable in expr is modified in block'''
-        if not block or not block.statements:
-            return False
+    def _reaching_assignment_exists(self, var: HLILVariable, source: HLILExpression,
+                                    preceding_stmts: List[HLILStatement]) -> bool:
+        '''Walk preceding_stmts backward for a var = source-equivalent assignment, refusing if
+        anything between it and here modifies var or (if source is itself a variable) source.
+        source is already restricted to HLILConst or a plain local/param HLILVar by the caller.
+        '''
+        vars_to_guard = {var}
+        if isinstance(source, HLILVar):
+            vars_to_guard.add(source.var)
 
-        # Collect variables referenced in expr
-        vars_in_expr = set()
-        self._collect_vars(expr, vars_in_expr)
-
-        # Check if any are modified
-        for stmt in block.statements:
-            if self._stmt_modifies_any(stmt, vars_in_expr):
+        for stmt in reversed(preceding_stmts):
+            if (isinstance(stmt, HLILAssign) and isinstance(stmt.dest, HLILVar)
+                    and stmt.dest.var == var and self._source_matches(stmt.src, source)):
                 return True
+
+            if self._stmt_modifies_any(stmt, vars_to_guard):
+                return False
 
         return False
 
-    def _collect_vars(self, expr: HLILExpression, vars_set: set = None) -> set:
-        '''Collect all variable names referenced in expression'''
-        if vars_set is None:
-            vars_set = set()
+    def _source_matches(self, a: HLILExpression, b: HLILExpression) -> bool:
+        '''True if a and b are the same constant value or the same plain variable - the only two
+        shapes source_expr is ever allowed to be by the time this is called. Constant comparison
+        mirrors pass_reg_global_propagation.py's _expr_equal: int and float are distinct
+        representations even at equal numeric value, and NaN compares equal to itself here
+        (ED9 floats decode straight from binary data, so NaN is a real, reachable constant).
+        '''
+        if isinstance(a, HLILConst) and isinstance(b, HLILConst):
+            if type(a.value) != type(b.value):
+                return False
 
-        if isinstance(expr, HLILVar):
-            vars_set.add(expr.var)
+            if isinstance(a.value, float):
+                return a.value == b.value or (math.isnan(a.value) and math.isnan(b.value))
 
-        elif isinstance(expr, HLILBinaryOp):
-            self._collect_vars(expr.lhs, vars_set)
-            self._collect_vars(expr.rhs, vars_set)
+            return a.value == b.value
 
-        elif isinstance(expr, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
-            self._collect_vars(expr.operand, vars_set)
+        if isinstance(a, HLILVar) and isinstance(b, HLILVar):
+            return a.var == b.var
 
-        elif isinstance(expr, HLILCall):
-            for arg in expr.args:
-                self._collect_vars(arg, vars_set)
-
-        return vars_set
-
-    def _contains_call(self, expr: HLILExpression) -> bool:
-        '''Check if expr contains a call anywhere - a call may have side effects a
-        seemingly-redundant reassignment must not silently drop'''
-        return self._tree_any(expr, lambda n: isinstance(n, (HLILCall, HLILSyscall, HLILExternCall)))
+        return False
 
     def _stmt_modifies_any(self, stmt: HLILStatement, vars_set: set) -> bool:
         '''Check if stmt modifies any variable in vars_set, anywhere in its tree.
@@ -618,9 +634,6 @@ class ControlFlowOptimizationPass(Pass):
         form lowering), not just a plain HLILAssign(HLILVar, ...) - a call taking &x is still
         invisible here, a separate, larger gap this predicate does not attempt to close.
         '''
-        if not vars_set:
-            return False
-
         def modifies(n) -> bool:
             if not isinstance(n, HLILAssign):
                 return False
