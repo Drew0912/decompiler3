@@ -20,6 +20,7 @@ from ir.mlil import *
 from ir.hlil import *
 from codegen import *
 import ast
+import tempfile
 import unittest
 import struct
 
@@ -187,125 +188,105 @@ class TestQuoteString(unittest.TestCase):
 
 
 class TestScpParser(unittest.TestCase):
-    '''Test SCP parser'''
+    '''Test SCP parser against a real corpus file, through the full LLIL/MLIL/HLIL/TS pipeline.
 
-    def test_parser_with_real_file(self):
-        '''Test parser with real SCP file if available'''
+    All outputs are written under a TemporaryDirectory, never beside the real corpus file - a
+    previous version of this test wrote '.py'/'.llil.asm'/'.mlil.asm'/'.hlil.ts'/'.ts' next to
+    the real .dat and appended to '.llil.dot' on every run, silently growing a 24MB+ file in the
+    game data directory (gitignored, so `git status` never showed it).
+    '''
 
-        # ED9_DATA_DIR = Path(r'D:\Dev\decompiler3\script_en\scena')
-        # ED9_DATA_DIR = Path(r'D:\Dev\decompiler3\script_en\ai')
-        ED9_DATA_DIR = Path(r'D:\Dev\decompiler3\script_en\battle')
+    TEST_FILE = Path(__file__).parent.parent / 'script_en' / 'battle' / 'btlsys.dat'
 
-        # test_file = Path(__file__).parent / 'mp2000_ev.dat'
-        test_file = Path(__file__).parent / 'debug.dat'
-        # test_file = Path(__file__).parent / 'mp3010_01.dat'
-        # test_file = ED9_DATA_DIR / 'c0600.dat'
+    @classmethod
+    def setUpClass(cls):
+        if not cls.TEST_FILE.exists():
+            raise unittest.SkipTest(f'Test file not found: {cls.TEST_FILE}')
 
-        # test_file = ED9_DATA_DIR / 'e2000.dat'
-        # test_file = ED9_DATA_DIR / 'ai_chr0100_e00.dat'
-        test_file = ED9_DATA_DIR / 'btlsys.dat'
-        # test_file = ED9_DATA_DIR / 'ai_chr0118_e00.dat'
-        # test_file = ED9_DATA_DIR / 'btl_EV_01_07_00.dat'
+        cls.llil_functions = {}
+        cls.mlil_functions = {}
+        cls.hlil_functions = {}
 
-        if not test_file.exists():
-            self.skipTest(f'Test file not found: {test_file}')
+        with fileio.FileStream(str(cls.TEST_FILE), encoding = default_encoding()) as fs:
+            cls.parser = ScpParser(fs, cls.TEST_FILE.name)
+            cls.parser.parse()
 
-        with fileio.FileStream(str(test_file), encoding = default_encoding()) as fs:
-            parser = ScpParser(fs, test_file.name)
-            parser.parse()
+            # disasm_all_functions seeks/reads from fs directly, so it must run before the stream closes
+            cls.functions = cls.parser.disasm_all_functions()
 
-            print(parser.header)
+            for func in cls.functions:
+                llil_func = ED9VMLifter(parser = cls.parser).lift_function(func)
+                cls.llil_functions[func.name] = llil_func
 
-            # Check header was parsed
-            self.assertIsNotNone(parser.header)
-            self.assertGreater(parser.header.function_count, 0)
+                mlil_func = convert_falcom_llil_to_mlil(llil_func, cls.parser, optimize = True)
+                cls.mlil_functions[func.name] = mlil_func
 
-            # Test disassembly and formatting
-            disassembled_functions = parser.disasm_all_functions(
-                # filter_func = lambda f: f.name == 'TestCitySet'
-            )
+                cls.hlil_functions[func.name] = convert_falcom_mlil_to_hlil(mlil_func, func)
 
-            formatted_lines = []
+    def test_header(self):
+        self.assertIsNotNone(self.parser.header)
+        self.assertGreater(self.parser.header.function_count, 0)
+
+    def test_lift_to_llil(self):
+        for func in self.functions:
+            with self.subTest(function = func.name):
+                self.assertIsInstance(self.llil_functions[func.name], LowLevelILFunction)
+
+    def test_convert_to_mlil(self):
+        for func in self.functions:
+            with self.subTest(function = func.name):
+                self.assertIsNotNone(self.mlil_functions[func.name])
+
+    def test_convert_to_hlil(self):
+        for func in self.functions:
+            with self.subTest(function = func.name):
+                self.assertIsNotNone(self.hlil_functions[func.name])
+
+    def test_generate_typescript(self):
+        for func in self.functions:
+            with self.subTest(function = func.name):
+                self.assertIsInstance(generate_typescript(self.hlil_functions[func.name]), str)
+
+    def test_debug_output_writes_under_temp_dir_only(self):
+        '''Regression guard: formatting/writing debug dumps must never touch the real corpus'''
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_file = Path(tmp_dir) / self.TEST_FILE.name
+
+            formatted_lines = list(self.parser.gen_python_header())
             llil_lines = []
             mlil_lines = []
             hlil_lines = []
             typescript_lines = []
 
-            formatted_lines.extend(parser.gen_python_header())
+            for func in self.functions:
+                with self.subTest(function = func.name):
+                    formatted_lines.extend(self.parser.format_function(func))
+                    formatted_lines.append('')
 
-            # Generate LLIL CFG
-            llil_cfg_path = test_file.with_suffix('.llil.dot')
+                    llil_lines.extend(FalcomLLILFormatter.format_llil_function(self.llil_functions[func.name]))
+                    llil_lines.append('')
 
-            # Generate MLIL CFG
-            mlil_cfg_path = test_file.with_suffix('.mlil.dot')
+                    mlil_lines.extend(MLILFormatter.format_function(self.mlil_functions[func.name]))
+                    mlil_lines.append('')
 
-            # Print formatted functions
-            print('\n=== Disassembly ===\n')
-            for func in disassembled_functions:
-                print(f'{func} @ 0x{func.offset:08X}')
+                    hlil_lines.extend(HLILFormatter.format_function(self.hlil_functions[func.name]))
+                    hlil_lines.append('')
 
-                formatted_lines.extend(parser.format_function(func))
-                formatted_lines.append('')
+                    typescript_lines.append(generate_typescript(self.hlil_functions[func.name]))
+                    typescript_lines.append('')
 
-                # Generate LLIL
-                lifter = ED9VMLifter(parser = parser)
-                llil_func = lifter.lift_function(func)
-                self.assertIsInstance(llil_func, LowLevelILFunction)
+            formatted_lines.extend(self.parser.gen_python_footer())
 
-                llil_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
-                llil_lines.append('')
+            out_file.with_suffix('.py').write_text('\n'.join(formatted_lines) + '\n', encoding = 'utf-8')
+            out_file.with_suffix('.llil.asm').write_text('\n'.join(llil_lines) + '\n', encoding = 'utf-8')
+            out_file.with_suffix('.mlil.asm').write_text('\n'.join(mlil_lines) + '\n', encoding = 'utf-8')
+            out_file.with_suffix('.hlil.ts').write_text('\n'.join(hlil_lines) + '\n', encoding = 'utf-8')
 
-                with llil_cfg_path.open("a", encoding = 'utf-8') as f:
-                    f.write(FalcomLLILFormatter.to_dot(llil_func))
-
-
-                # llil_cfg_path.write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
-
-                # Generate MLIL from LLIL (with parser for type signatures)
-                mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize=True)
-                mlil_lines.extend(MLILFormatter.format_function(mlil_func))
-                mlil_lines.append('')
-
-                # mlil_cfg_path.write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
-
-                # Generate HLIL from MLIL with Falcom-specific type information
-                hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
-
-                # Debug output: HLIL text
-                hlil_lines.extend(HLILFormatter.format_function(hlil_func))
-                hlil_lines.append('')
-
-                # Final output: TypeScript code
-                typescript_code = generate_typescript(hlil_func)
-                typescript_lines.append(typescript_code)
-                typescript_lines.append('')
-
-            formatted_lines.extend(parser.gen_python_footer())
-            vmpy_path = test_file.with_suffix('.py')
-            vmpy_path.write_text('\n'.join(formatted_lines) + '\n', encoding = 'utf-8')
-
-            llil_path = test_file.with_suffix('.llil.asm')
-            llil_path.write_text('\n'.join(llil_lines) + '\n', encoding = 'utf-8')
-
-            # # Generate LLIL CFG
-            # llil_cfg_path = test_file.with_suffix('.llil.dot')
-            # llil_cfg_path.write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
-
-            mlil_path = test_file.with_suffix('.mlil.asm')
-            mlil_path.write_text('\n'.join(mlil_lines) + '\n', encoding = 'utf-8')
-
-            # # Generate MLIL CFG
-            # mlil_cfg_path = test_file.with_suffix('.mlil.dot')
-            # mlil_cfg_path.write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
-
-            # HLIL debug output (IR text)
-            hlil_path = test_file.with_suffix('.hlil.ts')
-            hlil_path.write_text('\n'.join(hlil_lines) + '\n', encoding = 'utf-8')
-
-            # TypeScript final output
-            typescript_path = test_file.with_suffix('.ts')
             typescript_content = generate_typescript_header() + '\n'.join(typescript_lines) + '\n'
-            typescript_path.write_text(typescript_content, encoding = 'utf-8')
+            out_file.with_suffix('.ts').write_text(typescript_content, encoding = 'utf-8')
+
+            for suffix in ('.py', '.llil.asm', '.mlil.asm', '.hlil.ts', '.ts'):
+                self.assertTrue(out_file.with_suffix(suffix).exists())
 
 
 if __name__ == '__main__':
