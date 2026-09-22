@@ -501,6 +501,155 @@ class CallResultFolder:
         return False
 
 
+def _is_unconditionally_reached(predecessors: Dict[int, List[int]], successors: Dict[int, List[int]],
+                                block_idx: int) -> bool:
+    '''True if block_idx runs on every execution path from the entry block (0)
+
+    Walking backward, every step must have exactly one predecessor, AND that predecessor must
+    have exactly one successor - not just "the only way in", but "that block unconditionally
+    leads here", ruling out the case where the predecessor branches and this is only one arm.
+    '''
+    current = block_idx
+    visited = {current}
+
+    while current != 0:
+        preds = predecessors.get(current, [])
+        if len(preds) != 1:
+            return False
+
+        pred = preds[0]
+        if len(successors.get(pred, [])) != 1 or pred in visited:
+            return False
+
+        visited.add(pred)
+        current = pred
+
+    return True
+
+
+# Statement types' own direct expression fields, for _walk_gated_in_block/_unfold_ids_in_block -
+# not their nested statements/blocks, which _sub_blocks handles separately
+_UNFOLD_EXPR_FIELDS: Dict[type, Tuple[str, ...]] = {
+    HLILIf: ('condition',),
+    HLILWhile: ('condition',),
+    HLILDoWhile: ('condition',),
+    HLILFor: ('condition',),
+    HLILSwitch: ('scrutinee',),
+    HLILReturn: ('value',),
+    HLILAssign: ('dest', 'src'),
+    HLILExprStmt: ('expr',),
+}
+
+
+def _sub_blocks(stmt: HLILStatement) -> List[HLILBlock]:
+    '''Every nested block reachable directly from one statement'''
+    if isinstance(stmt, HLILIf):
+        blocks = [stmt.true_block]
+        if stmt.false_block is not None:
+            blocks.append(stmt.false_block)
+        return blocks
+
+    if isinstance(stmt, (HLILWhile, HLILDoWhile, HLILFor)):
+        return [stmt.body]
+
+    if isinstance(stmt, HLILSwitch):
+        return [case.body for case in stmt.cases]
+
+    return []
+
+
+def _collect_gated_call_ids(expr: Optional[HLILExpression], gated: bool,
+                            fold_ids: Set[int], found: Set[int]):
+    '''Walk one expression tree, tracking short-circuit gating through HLILBinaryOp(AND/OR)'s
+    rhs - the only construct in this IR that makes evaluation conditional within an expression
+    (call args, and every other binary/unary operand, always run). Adds id(expr) to `found`
+    whenever a node in fold_ids is reached while gated.
+    '''
+    if expr is None:
+        return
+
+    if id(expr) in fold_ids and gated:
+        found.add(id(expr))
+
+    if isinstance(expr, HLILBinaryOp):
+        _collect_gated_call_ids(expr.lhs, gated, fold_ids, found)
+        _collect_gated_call_ids(expr.rhs, gated or expr.op in (BinaryOp.AND, BinaryOp.OR), fold_ids, found)
+
+    elif isinstance(expr, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
+        _collect_gated_call_ids(expr.operand, gated, fold_ids, found)
+
+    elif isinstance(expr, (HLILCall, HLILSyscall, HLILExternCall)):
+        for arg in expr.args:
+            _collect_gated_call_ids(arg, gated, fold_ids, found)
+
+
+def _walk_gated_in_block(block: HLILBlock, fold_ids: Set[int], found: Set[int]):
+    '''Find every fold_ids member that is short-circuit-gated anywhere in block, recursing into
+    every nested block. Read-only - the companion pass to _unfold_ids_in_block, which mutates.
+    '''
+    for stmt in block.statements:
+        for attr in _UNFOLD_EXPR_FIELDS.get(type(stmt), ()):
+            _collect_gated_call_ids(getattr(stmt, attr), False, fold_ids, found)
+
+        for sub_block in _sub_blocks(stmt):
+            _walk_gated_in_block(sub_block, fold_ids, found)
+
+
+def _extract_targets(node: Optional[HLILExpression], targets: Set[int], var_names: Dict[int, str],
+                     call_exprs: Dict[int, HLILExpression],
+                     prelude: List[HLILStatement]) -> Optional[HLILExpression]:
+    '''Return node with any (sub)expression whose id is in `targets` swapped for a plain variable
+    read, appending a `var = call();` statement restoring the pre-fold shape to `prelude` for
+    each one, in left-to-right evaluation order. Mutates non-matching nodes' children in place
+    and returns node unchanged; a target is a leaf for this walk - its own args already ran as
+    part of its own call and move with it into the new prelude statement, rather than being
+    independently extracted here.
+    '''
+    if node is None:
+        return None
+
+    if id(node) in targets:
+        var = HLILVariable(var_names[id(node)], None)
+        prelude.append(HLILAssign(HLILVar(var), call_exprs[id(node)]))
+        return HLILVar(var)
+
+    if isinstance(node, HLILBinaryOp):
+        node.lhs = _extract_targets(node.lhs, targets, var_names, call_exprs, prelude)
+        node.rhs = _extract_targets(node.rhs, targets, var_names, call_exprs, prelude)
+
+    elif isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
+        node.operand = _extract_targets(node.operand, targets, var_names, call_exprs, prelude)
+
+    elif isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
+        node.args = [_extract_targets(arg, targets, var_names, call_exprs, prelude) for arg in node.args]
+
+    return node
+
+
+def _unfold_ids_in_block(block: HLILBlock, targets: Set[int], var_names: Dict[int, str],
+                         call_exprs: Dict[int, HLILExpression]):
+    '''Mutate block.statements in place: before any statement that reads one of `targets`,
+    insert a `var = call();` statement restoring the pre-fold shape, and splice that read back
+    to a plain variable reference. Recurses into every nested block.
+    '''
+    new_statements = []
+
+    for stmt in block.statements:
+        prelude: List[HLILStatement] = []
+        for attr in _UNFOLD_EXPR_FIELDS.get(type(stmt), ()):
+            value = getattr(stmt, attr)
+            if value is not None:
+                setattr(stmt, attr, _extract_targets(value, targets, var_names, call_exprs, prelude))
+
+        new_statements.extend(prelude)
+        new_statements.append(stmt)
+
+        for sub_block in _sub_blocks(stmt):
+            _unfold_ids_in_block(sub_block, targets, var_names, call_exprs)
+
+    block.statements = new_statements
+
+
 # ============================================================================
 # MLIL to HLIL Converter
 # ============================================================================
@@ -557,10 +706,52 @@ class MLILToHLILConverter:
         if self.mlil_func.basic_blocks:
             self._reconstruct_control_flow(0, self.hlil_func.body)
 
-        # Phase 5: Declare the variables the body actually uses
+        # Phase 5: Undo a fold that ended up short-circuit-gated despite the original call
+        # running unconditionally - see _unfold_unsafe_folds
+        self._unfold_unsafe_folds()
+
+        # Phase 6: Declare the variables the body actually uses (after phase 5, so a variable
+        # newly reintroduced by unfolding gets declared too)
         self._declare_used_variables()
 
         return self.hlil_func
+
+    def _unfold_unsafe_folds(self):
+        '''Undo a CallResultFolder decision if it ended up short-circuit-gated in the final HLIL
+        and the original call ran unconditionally in straight-line MLIL.
+
+        CallResultFolder decides every fold before _bare_test_block/_collapse_funnel_chain build
+        the &&/|| chains that can gate a fold, and before this pass's own negation/cascade
+        cleanup - so it has no way to know at decision time whether a reader position will end
+        up short-circuited. This VM evaluates strictly; JS && / || do not. Running this last,
+        against the fully-built tree, is what actually lets the check be made at all - and it
+        only touches the specific sites where that gap is real (measured: ~4% of all folds
+        corpus-wide), leaving every already-conditional fold (the much more common case -
+        cascade-flattened nested ifs, _bare_test_block chain links) untouched.
+        '''
+        if not self.folder.folded_call:
+            return
+
+        var_names: Dict[int, str] = {}
+        call_block_of: Dict[int, int] = {}
+
+        for call_key, hlil_expr in self.expr_cache.items():
+            call_instr = self.mlil_func.basic_blocks[call_key[0]].instructions[call_key[1]]
+            var_names[id(hlil_expr)] = call_instr.output.name
+            call_block_of[id(hlil_expr)] = call_key[0]
+
+        gated_ids: Set[int] = set()
+        _walk_gated_in_block(self.hlil_func.body, set(var_names), gated_ids)
+
+        unsafe_ids = {
+            expr_id for expr_id in gated_ids
+            if _is_unconditionally_reached(self.folder.predecessors, self.folder.block_successors,
+                                           call_block_of[expr_id])
+        }
+
+        if unsafe_ids:
+            call_exprs = {id(expr): expr for expr in self.expr_cache.values()}
+            _unfold_ids_in_block(self.hlil_func.body, unsafe_ids, var_names, call_exprs)
 
     def _convert_parameters(self):
         '''Build the HLIL parameter list from the MLIL one'''
