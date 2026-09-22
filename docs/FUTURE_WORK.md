@@ -6,6 +6,35 @@
 > instead of accumulating as a growing tail on top of those docs. Each entry links back to the
 > concrete doc/code it extends.
 
+## VM-Accurate DIV/MOD Folding (`docs/MLIL_DESIGN.md`)
+
+SCCP (`ir/mlil/passes/pass_ssa_sccp.py`) deliberately does not fold `MLIL_DIV`/`MLIL_MOD` - see
+the Optimization Passes section of `docs/MLIL_DESIGN.md`. The one live, corpus-confirmed bad fold
+this closed: `sora2_1.0/script_en/scena/mp0000_ev.dat`'s `MayaEvented_22_test` used to print
+`13.0` for `400 / 30.0` (Python floor-division), which is wrong for VM float division no matter
+what the VM's exact answer turns out to be.
+
+**Not started** - a real fix needs more than not-folding:
+- `ScpValue` (`falcom/ed9/parser/types_scp.py`) describes the *constant encoding* (30-bit int
+  payload, float32-with-2-bits-dropped), not proof of the runtime arithmetic width - whether the
+  VM actually computes int ops at 30 or 32 bits is unverified.
+- MOD's sign convention (Python's `%` vs. C-style truncating remainder) is unverified.
+- Overflow/wrap behavior on both int and float paths is unverified.
+- decompiler2 may only be read **to verify** hypotheses already derived from this repo's own
+  source (`ScpValue`'s encoding), never as the source of the rules. Per `CLAUDE.md` -0.1, this
+  needs the user's explicit go-ahead in whatever future request actually does it - a past
+  planning session having scoped this permission for Step B doesn't carry forward as standing
+  authorization; ask again before reading anything under `decompiler2/`.
+- None of the above can be *proven* by static analysis or corpus diffing alone - the only real
+  oracle is running an affected script in-game and comparing (e.g. `MayaEvented_22_test`'s
+  `camera_rotate` duration against the actual animation timing it drives). Whoever picks this up
+  needs that ability, or the result stays "derived and cross-checked, not proven" like the
+  analysis already done.
+- If/when this lands, `pass_ssa_expression_simplification.py`'s `_apply_algebraic_identity`
+  should also be audited: today's `x * 0 → 0` identity is wrong for a float `x`, and the
+  `0xFFFFFFFF` bitwise identities assume a 32-bit int against the VM's 30-bit constant encoding -
+  both predate this idea and are independent of it, but a natural pass to make at the same time.
+
 ## Recompilation Pipeline (`docs/LLIL_DSL.md`)
 
 ### 1. MLIL DSL and HLIL DSL

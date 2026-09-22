@@ -37,7 +37,7 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
 | `falcom/ed9/ir/mlil/mlil_translator.py` | Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
 | `falcom/ed9/ir/mlil/type_signatures.py` | Type signature data used by Falcom-specific passes. |
-| `tests/test_mlil_metadata.py` | The only dedicated MLIL test file currently — see Testing below. |
+| `tests/test_mlil_metadata.py` | One of several dedicated MLIL test files today — see Testing below. |
 
 Note: `falcom/ed9/lifters/mlil_lifter.py`, previously listed here, does not exist anywhere in the
 tree. This table now reflects the real path.
@@ -150,12 +150,24 @@ condition simplification, negation normal form, dead-code elimination, and dead-
 Register/global value propagation (`pass_reg_global_propagation.py`) runs as its own pipeline stage
 in the Falcom entry point, after SSA deconstruction.
 
+SCCP folds constant `+ - * & | ^ << >>`, `&&`/`||`, and comparisons, but deliberately never
+evaluates `MLIL_DIV`/`MLIL_MOD` to a lattice constant (`pass_ssa_sccp.py`'s `_eval_binary_op`) -
+Python's arithmetic doesn't match the VM's actual number format (`ScpValue`'s 30-bit-int/float32
+shape describes the constant *encoding*, not the runtime arithmetic width), and the real semantics
+(float rounding, int truncation, overflow, MOD's sign) can't be verified without running the game.
+Folding with an unverified formula risks silently replacing one wrong constant with another. Note
+this is narrower than "DIV/MOD always print unfolded" - a separate pass
+(`ExpressionSimplificationPass`'s `x / 1 → x` identity) can still simplify a DIV whose divisor is
+literally 1, including a fully-constant one like `10 / 1 → 10`, since that identity holds
+regardless of numeric semantics. See `docs/FUTURE_WORK.md` for what a verified SCCP fix would need.
+
 ## Testing
 
-Only one dedicated MLIL test file currently exists: `tests/test_mlil_metadata.py`. This is
-noticeably thinner than HLIL's three dedicated test files — worth treating as a gap given how much
-of the real optimization work (SSA construction/deconstruction, the ~10 SSA passes, register/
-global propagation) has no direct test coverage of its own.
+Several dedicated MLIL test files exist today (`test_mlil_metadata.py`,
+`test_mlil_ssa_optimizer.py`, `test_mlil_sccp_folding.py`, `test_mlil_address_taken.py`,
+`test_mlil_reg_global_propagation.py`, and others) covering SSA construction/deconstruction, the
+SSA optimizer's passes, and register/global propagation - a closed gap from when this line last
+said only one existed.
 
 ## Open Items
 

@@ -411,17 +411,13 @@ class SCCP:
             elif op_type == MLILMul:
                 return LatticeValue.constant(lhs * rhs)
 
-            elif op_type == MLILDiv:
-                if rhs == 0:
-                    return LatticeValue.bottom()
-
-                return LatticeValue.constant(lhs // rhs)
-
-            elif op_type == MLILMod:
-                if rhs == 0:
-                    return LatticeValue.bottom()
-
-                return LatticeValue.constant(lhs % rhs)
+            elif op_type in (MLILDiv, MLILMod):
+                # Not folded: Python's // is confirmed wrong for VM float division, and the rest
+                # of DIV/MOD (int width, overflow, MOD's sign) is unverified without running the
+                # game - ScpValue's 30-bit-int/float32 shape is the constant encoding, not proof
+                # of runtime arithmetic width. See docs/FUTURE_WORK.md. Folding wrong is worse
+                # than not folding.
+                return LatticeValue.bottom()
 
             elif op_type == MLILAnd:
                 return LatticeValue.constant(lhs & rhs)
