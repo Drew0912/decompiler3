@@ -528,34 +528,16 @@ def _is_unconditionally_reached(predecessors: Dict[int, List[int]], successors: 
 
 
 # Statement types' own direct expression fields, for _extract_unsafe_calls/_unfold_unsafe_calls -
-# not their nested statements/blocks, which _sub_blocks handles separately
+# not their nested statements/blocks, which sub_blocks (ir/hlil/hlil.py) handles separately
 _UNFOLD_EXPR_FIELDS: Dict[type, Tuple[str, ...]] = {
     HLILIf: ('condition',),
     HLILWhile: ('condition',),
     HLILDoWhile: ('condition',),
-    HLILFor: ('condition',),
     HLILSwitch: ('scrutinee',),
     HLILReturn: ('value',),
     HLILAssign: ('dest', 'src'),
     HLILExprStmt: ('expr',),
 }
-
-
-def _sub_blocks(stmt: HLILStatement) -> List[HLILBlock]:
-    '''Every nested block reachable directly from one statement'''
-    if isinstance(stmt, HLILIf):
-        blocks = [stmt.true_block]
-        if stmt.false_block is not None:
-            blocks.append(stmt.false_block)
-        return blocks
-
-    if isinstance(stmt, (HLILWhile, HLILDoWhile, HLILFor)):
-        return [stmt.body]
-
-    if isinstance(stmt, HLILSwitch):
-        return [case.body for case in stmt.cases]
-
-    return []
 
 
 def _extract_unsafe_calls(node: Optional[HLILExpression], gated: bool, unconditional_fold_ids: Set[int],
@@ -621,7 +603,7 @@ def _unfold_unsafe_calls(block: HLILBlock, unconditional_fold_ids: Set[int], var
         new_statements.extend(prelude)
         new_statements.append(stmt)
 
-        for sub_block in _sub_blocks(stmt):
+        for sub_block in sub_blocks(stmt):
             _unfold_unsafe_calls(sub_block, unconditional_fold_ids, var_names)
 
     block.statements = new_statements

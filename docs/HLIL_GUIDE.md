@@ -38,10 +38,11 @@ All nodes derive from `HLILInstruction`, split into `HLILStatement` (side effect
 `HLILExpression` (produces a value); both carry `address`/`mlil_index` back-references to the
 source MLIL for traceability.
 
-**Control flow statements:** `HLILIf`, `HLILWhile` (optional label), `HLILDoWhile`, `HLILSwitch`/
-`HLILSwitchCase` (supports multi-value case labels for merged `||` tests), `HLILBreak`/
-`HLILContinue` (optional label), `HLILReturn`. `HLILFor` is also defined but currently has no
-construction site anywhere in the converter or passes — it's dead/reserved, not wired up.
+**Control flow statements:** `HLILIf`, `HLILWhile` (optional label), `HLILDoWhile` (optional
+label), `HLILSwitch`/`HLILSwitchCase` (supports multi-value case labels for merged `||` tests),
+`HLILBreak`/`HLILContinue` (optional label), `HLILReturn`. `HLILFor` existed in the node model but
+was removed (Step H, 2026-09-22) — nothing ever constructed one, and its renderers were already
+wrong for the shape.
 
 **Other statements:** `HLILBlock`, `HLILAssign`, `HLILExprStmt`, `HLILComment` (carries `line(N)`
 markers that the branch-order pass reads to recover original source ordering).
@@ -86,7 +87,7 @@ Two passes exist in the codebase but are currently **wired off** in this pipelin
 | --- | --- |
 | `pass_mlil_to_hlil.py` | Thin wrapper invoking `MLILToHLILConverter.convert()` — the conversion step itself, not a post-conversion cleanup pass. |
 | `pass_control_flow_optimization.py` | Inlines `var = bool_expr; if (var)` into `if (bool_expr)`; folds `==`/`!=`/`\|\|` chains on one variable into an `HLILSwitch`; inverts empty-then `if`s; merges nested switches that share a scrutinee. |
-| `pass_loop_recovery.py` | Rewrites `while(1) { if (c) break; ... }` into a real `while(!c)` or `do...while`; hoists a leading `if (c) return` out of the loop. |
+| `pass_loop_recovery.py` | Rewrites `while(1) { if (c) break; ... }` into a real `while(!c)` or `do...while`; hoists a leading `if (c) return` out of the loop. The `do...while` rewrite refuses when the body has a `continue` targeting this loop (`continue` means something different in the two shapes - always jumps to the top in `while(1)`, can exit in `do...while`) and carries a labelled loop's label through (`HLILDoWhile.label`), instead of silently dropping it. |
 | `pass_common_return_extraction.py` | Hoists a `return` shared by every arm of an `if`/`switch` to after the construct. |
 | `pass_copy_propagation.py` | Single-use `var = expr; use(var)` propagation with loop/side-effect safety checks. Implemented and tested; **currently disabled** (see above) — not part of the 5 active post-conversion transformations. |
 | `pass_dead_code_elimination.py` | Truncates a block immediately after `return`/`break`/`continue`. |
@@ -117,8 +118,9 @@ an `HLILAssign` whose `dest` is that same shape. `*(&x) ≡ x` always holds for 
 (never for a genuine runtime-computed pointer), so both printers special-case it before falling
 through to the generic `deref(...)`/`deref_set(...)` handling: `codegen/typescript.py` prints plain
 `x` / `x = v` (reusing the ordinary assignment branch's `int(...)` boolean coercion, not a second
-copy of it - `_unwrap_address_taken_deref`/`_format_var_assignment`), and the debug
-`ir/hlil/hlil_formatter.py` prints `x` the same way (`HLILFormatter._unwrap_address_taken_deref`).
+copy of it - the shared `unwrap_address_taken_var`/its own `_format_var_assignment`), and
+`ir/hlil/hlil_formatter.py` prints `x` the same way, via the same shared `unwrap_address_taken_var`
+(`ir/hlil/hlil.py`).
 Real output therefore reads naturally - `chr_set_pos(65533, var_s5, var_s6, var_s7, var_s8)` - with
 no visible trace of the underlying memory-form representation.
 
@@ -129,7 +131,6 @@ Two output modes exist side by side:
 
 ## Known Gaps / Active Work
 
-- `HLILFor` is defined but unused — either wire it up or remove it.
 - `CopyPropagationPass` is real but bypassed in favor of MLIL-SSA-level propagation; worth
   revisiting whether it's still needed at all.
 - Arm-ordering and chain-flattening (`pass_branch_order_normalization.py`) is the newest, most
@@ -138,5 +139,7 @@ Two output modes exist side by side:
 
 ## Testing
 
-Three dedicated test files (~605 lines total): `tests/test_hlil_branch_order_normalization.py`,
-`tests/test_hlil_control_flow_optimization.py`, `tests/test_hlil_loop_recovery.py`.
+Several dedicated test files: `tests/test_hlil_branch_order_normalization.py`,
+`tests/test_hlil_control_flow_optimization.py`, `tests/test_hlil_loop_recovery.py`,
+`tests/test_hlil_loop_traversal.py`, `tests/test_hlil_copy_propagation.py`,
+`tests/test_hlil_call_fold_short_circuit.py`.

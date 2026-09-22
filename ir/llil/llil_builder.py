@@ -324,6 +324,10 @@ class LowLevelILBuilder:
         frame_val = self.frame_load(offset)
         self.stack_push(frame_val)
 
+    def frame_addr(self, offset: int) -> 'LowLevelILFrameAddr':
+        '''&STACK[frame + offset] - Frame-relative address (for function parameters/locals)'''
+        return LowLevelILFrameAddr(offset)
+
     def load_stack(self, offset: int):
         '''Load from sp + offset and push to stack'''
         # Calculate word offset
@@ -351,8 +355,16 @@ class LowLevelILBuilder:
         word_offset = offset // WORD_SIZE
         # Calculate absolute slot index using current sp
         slot_index = self.sp_get() + word_offset
-        # Create stack address with absolute slot index
-        stack_addr = LowLevelILStackAddr(slot_index)
+
+        # A parameter slot is frame-relative (mirrors load_stack's own parameter check) so
+        # taking its address produces &arg_N, not the address of an unrelated phantom local.
+        num_params = self.function.num_params
+        if 0 <= slot_index < num_params:
+            stack_addr = self.frame_addr(slot_index * WORD_SIZE)
+
+        else:
+            stack_addr = LowLevelILStackAddr(slot_index)
+
         self.stack_push(stack_addr)
 
     # REMOVED: sp_add() - use emit_sp_add() instead

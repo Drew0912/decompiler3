@@ -615,23 +615,33 @@ class SSAConstructor:
     def _call_defined_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
         '''Variables a call writes: its output, plus the registers/globals it clobbers.
 
-        A callee may change any register or global, so every one of them other than the
-        variable receiving the result becomes undefined across the call. Address-taken
-        locals need no entry here - they are lowered to explicit *(&x) memory form before
-        this runs (see _lower_address_taken_vars), so a call passing &x has no scalar def to
-        record; _decompose_address_taken_call_outputs guarantees inst.output is never one of
-        them either.
+        Address-taken locals need no entry here - they are lowered to explicit *(&x) memory
+        form before this runs (see _lower_address_taken_vars), so a call passing &x has no
+        scalar def to record; _decompose_address_taken_call_outputs guarantees inst.output is
+        never one of them either.
         '''
         defined = []
 
         if inst.output is not None:
             defined.append(inst.output)
 
-        for var in list(self.function.register_vars.values()) + list(self.function.global_vars.values()):
-            if var != inst.output:
-                defined.append(var)
+        defined.extend(self._clobbered_reg_global_vars(inst))
 
         return defined
+
+    def _clobbered_reg_global_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
+        '''Registers/globals a call clobbers, besides its own output.
+
+        A callee may change any register or global, so every one of them other than the
+        variable receiving the result becomes undefined across the call - unless the call is
+        marked clobbers_registers=False (proven to have no VM register/global side effects at
+        all, e.g. a pure debug print), in which case it clobbers nothing here.
+        '''
+        if not inst.clobbers_registers:
+            return []
+
+        return [var for var in list(self.function.register_vars.values()) + list(self.function.global_vars.values())
+                if var != inst.output]
 
     def _insert_phi_nodes(self):
         '''Insert Phi nodes at dominance frontiers (worklist algorithm)'''
@@ -769,20 +779,21 @@ class SSAConstructor:
             # Rename the call (uses current SSA versions)
             renamed = self._rename_stmt(inst)
 
+            # Registers and globals the call clobbers get pseudo-definitions so later reads
+            # do not see the older value. Address-taken locals need no such treatment here -
+            # they are lowered to explicit *(&x) memory form before renaming (see
+            # _lower_address_taken_vars), so a call passing &x has no scalar def to create,
+            # and _decompose_address_taken_call_outputs guarantees output_var is never one.
+            # Computed before output is rewritten to its SSA form below - _clobbered_reg_global_vars
+            # compares against the still-plain output variable.
+            clobbered = self._clobbered_reg_global_vars(renamed)
+
             # The call result defines a new version of the output variable
             output_var = renamed.output
             if output_var is not None:
                 new_ver = self._new_version(output_var)
                 pushed.append(output_var)
                 renamed.output = MLILVariableSSA(output_var, new_ver)
-
-            # Registers and globals the call clobbers get pseudo-definitions so later reads
-            # do not see the older value. Address-taken locals need no such treatment here -
-            # they are lowered to explicit *(&x) memory form before renaming (see
-            # _lower_address_taken_vars), so a call passing &x has no scalar def to create,
-            # and _decompose_address_taken_call_outputs guarantees output_var is never one
-            clobbered_vars = list(self.function.register_vars.values()) + list(self.function.global_vars.values())
-            clobbered = [var for var in clobbered_vars if var != output_var]
 
             if not clobbered:
                 return renamed
@@ -1572,9 +1583,13 @@ class SSADeconstructor:
                     if phi.dest == ssa_var:
                         continue
 
-                    # Skip version 0 for local variables (undefined initial value)
-                    # Version 0 is only valid for parameters (input values)
-                    if ssa_var.version == 0 and ssa_var.base_var not in param_vars:
+                    # Skip version 0 only for a plain local (an undefined initial value) - a
+                    # parameter, register, or global's version 0 is a real value already live
+                    # at function entry (the caller's argument, the register's incoming value,
+                    # or the global's persisted value), not undefined.
+                    if (ssa_var.version == 0 and ssa_var.base_var not in param_vars
+                            and not self.function.is_register_var(ssa_var.base_var)
+                            and not self.function.is_global_var(ssa_var.base_var)):
                         continue
 
                     # Insert SSA copy: phi.dest = ssa_var

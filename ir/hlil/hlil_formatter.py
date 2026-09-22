@@ -208,20 +208,12 @@ class HLILFormatter:
             lines.append(f'{indent_str}}}')
 
         elif isinstance(stmt, HLILDoWhile):
-            # do { ... } while (condition);
+            # do { ... } while (condition);, optionally labeled
             cond_str = cls._format_expr(stmt.condition)
-            lines.append(f'{indent_str}do {{')
+            label_prefix = f'{stmt.label}: ' if stmt.label else ''
+            lines.append(f'{indent_str}{label_prefix}do {{')
             lines.extend(cls._format_block(stmt.body, indent + 1))
             lines.append(f'{indent_str}}} while ({cond_str});')
-
-        elif isinstance(stmt, HLILFor):
-            # for (init; cond; update) { ... }
-            init_str = cls._format_expr(stmt.init) if stmt.init else ''
-            cond_str = cls._format_expr(stmt.condition) if stmt.condition else ''
-            update_str = cls._format_expr(stmt.update) if stmt.update else ''
-            lines.append(f'{indent_str}for ({init_str}; {cond_str}; {update_str}) {{')
-            lines.extend(cls._format_block(stmt.body, indent + 1))
-            lines.append(f'{indent_str}}}')
 
         elif isinstance(stmt, HLILSwitch):
             # switch (scrutinee) { ... }

@@ -252,9 +252,10 @@ class MLILBuilder:
 
     # === Function Calls ===
 
-    def call(self, target: str, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None):
+    def call(self, target: str, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None,
+             *, clobbers_registers: bool = True):
         '''Function call'''
-        inst = MLILCall(target, args, output)
+        inst = MLILCall(target, args, output, clobbers_registers = clobbers_registers)
         self.add_instruction(inst)
 
     def syscall(self, subsystem: int, cmd: int, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None):

@@ -61,7 +61,7 @@ The concrete model is small and source-oriented:
 | Category | Nodes and purpose |
 | --- | --- |
 | Containers | `HLILBlock` owns an ordered list of statements. `HighLevelILFunction` owns one root block. |
-| Structured control flow | `HLILIf`, `HLILWhile`, `HLILDoWhile`, `HLILFor`, `HLILSwitch`, `HLILBreak`, `HLILContinue`, `HLILReturn`. |
+| Structured control flow | `HLILIf`, `HLILWhile`, `HLILDoWhile`, `HLILSwitch`, `HLILBreak`, `HLILContinue`, `HLILReturn`. |
 | Ordinary statements | `HLILAssign`, `HLILExprStmt`, `HLILComment`. |
 | Leaf expressions | `HLILVar`, `HLILConst`. Constants retain an `is_hex` display hint. |
 | Operators | `HLILBinaryOp`, `HLILUnaryOp`, `HLILAddressOf`, using `BinaryOp` and `UnaryOp`. |
@@ -82,9 +82,16 @@ the body.
 external `target` string separately. Consumers that care about the call form therefore dispatch on
 the concrete class, as the formatter and optimization passes do.
 
-`HLILFor` is part of the node model and supported by the formatter and branch-order traversal, but
-the converter and active recovery passes do not currently construct it. Current loop output is
-therefore `HLILWhile` or `HLILDoWhile`.
+`HLILFor` previously existed in the node model but was removed (Step H, Codex IR review plan,
+2026-09-22): nothing ever constructed one, and both renderers passed its statement-typed
+`init`/`update` fields to the expression formatter, so its output was already wrong for a shape
+nothing produced. Current loop output is `HLILWhile` or `HLILDoWhile` only. If a for-loop
+recognizer is ever built, design it (and its rendering) from scratch rather than reviving the old
+node.
+
+`HLILDoWhile` carries an optional `label`, the same as `HLILWhile` - needed so a `while(1)` loop
+recovered into `do-while` form (`HLIL_GUIDE.md`'s loop recovery section) keeps working
+`continue`/`break` targets for anything that names it from a nested construct.
 
 Comments are first-class statements rather than formatter-only annotations. In particular,
 `line(N)` comments carry source-order evidence used by `BranchOrderNormalizationPass`. The shared
@@ -211,30 +218,43 @@ testing. See `docs/HLIL_GUIDE.md` for the detailed transformations performed by 
 
 ## Testing
 
-There are three dedicated HLIL unit-test files, totaling 605 lines and 25 test methods:
+Several dedicated HLIL unit-test files exist today:
 
 - `tests/test_hlil_branch_order_normalization.py` covers line-based swaps, nesting-depth fallback,
   chain preservation, De Morgan negation, nested ordering, and the production enable/disable flag.
 - `tests/test_hlil_control_flow_optimization.py` covers switch conversion thresholds, mixed
   equality/inequality chains, grouped labels, duplicate rejection, and scrutinee consistency.
 - `tests/test_hlil_loop_recovery.py` covers leading break/return guards, unsafe rotations, nested
-  switch breaks, and preservation of already-tested loops.
+  switch breaks, preservation of already-tested loops, the while(1)->do-while rotation, and its
+  continue-safety/label-preservation guards (Step H, 2026-09-22).
+- `tests/test_hlil_loop_traversal.py` (Step H, 2026-09-22) covers `DeadCodeEliminationPass`,
+  `CommonReturnExtractionPass`, and `TypeScriptGenerator._infer_return_type` each correctly seeing
+  into a do-while body via the shared `sub_blocks` helper.
+- `tests/test_hlil_copy_propagation.py` and `tests/test_hlil_call_fold_short_circuit.py` cover
+  `CopyPropagationPass` and the MLIL->HLIL call-fold short-circuit safety work respectively.
 
 These tests directly exercise important tree rewrites, but they do not constitute end-to-end
-coverage of HLIL construction. `StructuralAnalyzer`, `CallResultFolder`, shared-region cloning,
-source metadata propagation, variable declaration, common-return extraction, dead-code
-elimination, formatting, and the disabled copy-propagation pass have no dedicated HLIL test files.
+coverage of HLIL construction. `StructuralAnalyzer`, shared-region cloning, source metadata
+propagation, variable declaration, and formatting (`hlil_formatter.py`) still have no dedicated
+HLIL test file of their own.
 
 ## Open Items
 
-- `HLILFor` is defined and partially supported by consumers but has no construction site. Either
-  loop recovery should gain a sound for-loop recognizer or the node should remain explicitly
-  documented as reserved.
 - `FalcomTypeInferencePass` is wired off as "testing," leaving the intended ownership of final HLIL
   type refinement unresolved.
 - `CopyPropagationPass` remains implemented and exported despite being disabled in favor of MLIL
   SSA propagation. Its long-term API/maintenance status should be decided.
-- Tree-walking passes are not uniform about `HLILDoWhile` and `HLILFor`. Each pass should be audited
-  when new structured node kinds become constructible so nested cleanup is not silently skipped.
+- **Resolved (Step H, 2026-09-22):** `HLILFor` (no construction site, and already-wrong rendering)
+  was deleted rather than fixed. Tree-walking passes that only recursed into simple nested blocks -
+  `DeadCodeEliminationPass`, `CommonReturnExtractionPass`, `TypeScriptGenerator._infer_return_type`
+  - used to skip `HLILDoWhile` entirely; all three now share one traversal helper (`sub_blocks` in
+    `ir/hlil/hlil.py`) covering every structured node that owns a nested block, so a future node
+  type needs one edit there instead of one per walker. `pass_copy_propagation.py` and
+  `pass_control_flow_optimization.py` keep their own tailored `_expr_children`/`_stmt_children`/
+  `_tree_any` (deeper expression-level walkers `sub_blocks` doesn't replace) - left alone since
+  big-plan Step 12 is active in that code. Separately, `LoopRecoveryPass`'s `while(1)` -> `do-while`
+  rewrite was unsound when the body held a `continue` targeting the loop (different exit-target
+  semantics between the two shapes) and silently dropped a labelled loop's label (`HLILDoWhile` had
+  no `label` field); both fixed - see `HLIL_GUIDE.md`'s loop recovery section.
 - Direct tests for irreducible/shared CFG regions and the clone-budget warning paths are still
   needed; these are the cases where a goto-free tree representation is under the most pressure.

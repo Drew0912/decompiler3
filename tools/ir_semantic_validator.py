@@ -1311,15 +1311,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             provenance_mlil_indices=provenance,
         )
 
-    elif op == HLILOperation.HLIL_FOR:
-        return SemanticOperation(
-            kind=OperationKind.CONTROL_FLOW,
-            operator='FOR',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-            provenance_mlil_indices=provenance,
-        )
-
     elif op == HLILOperation.HLIL_SWITCH:
         return SemanticOperation(
             kind=OperationKind.CONTROL_FLOW,
@@ -1909,7 +1900,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     exits.extend(else_exits)
                     continue
 
-                elif stmt.operation in (HLILOperation.HLIL_WHILE, HLILOperation.HLIL_FOR):
+                elif stmt.operation == HLILOperation.HLIL_WHILE:
                     # Save current block
                     if current_ops:
                         node = CFGNode(id=current_id, address=current_ops[0].source_location.scp_offset if current_ops else 0, operations=current_ops)
@@ -2637,7 +2628,6 @@ LLIL_MLIL_TRANSFORMATIONS: List[TransformationRule] = [
 MLIL_HLIL_TRANSFORMATIONS: List[TransformationRule] = [
     TransformationRule('IF', 'IF', 'Conditional preserved'),
     TransformationRule('GOTO', 'WHILE', 'Back-edge goto to while loop'),
-    TransformationRule('GOTO', 'FOR', 'Structured goto to for loop'),
     TransformationRule('SET_VAR', 'ASSIGN', 'Variable set to assignment'),
     TransformationRule('STORE_REG', 'ASSIGN', 'Register store to assignment'),
     TransformationRule('VAR', 'VAR', 'Variable reference'),

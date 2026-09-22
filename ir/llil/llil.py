@@ -70,6 +70,7 @@ class LowLevelILOperation(IntEnum2):
     # Generic pointer dereference (address computed at runtime, not a known stack/frame slot)
     LLIL_LOAD               = 63    # load *ptr
     LLIL_STORE              = 64    # *ptr = value
+    LLIL_FRAME_ADDR         = 65    # address of frame-relative location (fp + offset)
 
     # Falcom VM specific (user-defined extensions)
     LLIL_PUSH_CALLER_FRAME     = 1000  # Falcom VM: push caller frame (4 values)
@@ -250,6 +251,22 @@ class LowLevelILStackAddr(LowLevelILExpr):
 
     def __str__(self) -> str:
         return f'&STACK[{self.slot_index}]'
+
+
+class LowLevelILFrameAddr(LowLevelILExpr):
+    '''Address of STACK[frame + offset] - the frame-relative sibling of StackAddr, for taking
+    the address of a parameter rather than a local (mirrors FrameLoad/FrameStore)'''
+
+    def __init__(self, offset: int = 0):
+        super().__init__(LowLevelILOperation.LLIL_FRAME_ADDR)
+        self.offset = offset  # Byte offset relative to frame
+
+    def __str__(self) -> str:
+        word_offset = self.offset // WORD_SIZE
+        if word_offset >= 0:
+            return f'&STACK[fp + {word_offset}]'
+        else:
+            return f'&STACK[fp - {-word_offset}]'
 
 
 # Alias for compatibility

@@ -43,7 +43,6 @@ __all__ = [
     'HLILIf',
     'HLILWhile',
     'HLILDoWhile',
-    'HLILFor',
     'HLILSwitch',
     'HLILSwitchCase',
     'HLILBreak',
@@ -58,6 +57,7 @@ __all__ = [
     # Shape helpers
     'split_else_if_arm',
     'unwrap_address_taken_var',
+    'sub_blocks',
 
     # Function
     'HighLevelILFunction',

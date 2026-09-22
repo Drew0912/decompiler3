@@ -1,4 +1,4 @@
-'''HLIL - Structured control flow (if/while/for) from unstructured MLIL (goto/label)'''
+'''HLIL - Structured control flow (if/while/do-while) from unstructured MLIL (goto/label)'''
 
 from typing import List, Optional, Tuple, Union
 from enum import auto
@@ -57,7 +57,6 @@ class HLILOperation(IntEnum2):
     HLIL_IF             = auto()
     HLIL_WHILE          = auto()
     HLIL_DO_WHILE       = auto()
-    HLIL_FOR            = auto()
     HLIL_SWITCH         = auto()
     HLIL_BREAK          = auto()
     HLIL_CONTINUE       = auto()
@@ -394,36 +393,20 @@ class HLILWhile(HLILStatement):
 
 
 class HLILDoWhile(HLILStatement):
-    '''Do-while loop: do { ... } while (cond);'''
+    '''Do-while loop: do { ... } while (cond);, optionally labeled for cross-level break/continue'''
 
-    def __init__(self, condition: HLILExpression, body: 'HLILBlock'):
+    def __init__(self, condition: HLILExpression, body: 'HLILBlock', label: Optional[str] = None):
         super().__init__(HLILOperation.HLIL_DO_WHILE)
         self.condition = condition
         self.body = body
+        self.label = label
 
     def __str__(self) -> str:
-        return f'do {{ ... }} while ({self.condition})'
+        prefix = f'{self.label}: ' if self.label else ''
+        return f'{prefix}do {{ ... }} while ({self.condition})'
 
     def __repr__(self) -> str:
         return f'HLILDoWhile(cond={self.condition})'
-
-
-class HLILFor(HLILStatement):
-    '''For loop: for (init; cond; update) { ... }'''
-
-    def __init__(self, init: Optional[HLILStatement], condition: Optional[HLILExpression],
-                 update: Optional[HLILStatement], body: 'HLILBlock'):
-        super().__init__(HLILOperation.HLIL_FOR)
-        self.init = init
-        self.condition = condition
-        self.update = update
-        self.body = body
-
-    def __str__(self) -> str:
-        return f'for ({self.init}; {self.condition}; {self.update}) {{ ... }}'
-
-    def __repr__(self) -> str:
-        return f'HLILFor()'
 
 
 class HLILSwitchCase:
@@ -589,6 +572,25 @@ def unwrap_address_taken_var(expr: 'HLILExpression') -> Optional['HLILVar']:
         return expr.operand.operand
 
     return None
+
+
+def sub_blocks(stmt: 'HLILStatement') -> List['HLILBlock']:
+    '''Blocks directly owned by a structured statement - HLILIf's arms, a loop's body, each
+    HLILSwitch case's body. Shared so a new statement type needs one edit here, not one per
+    walker (CLAUDE.md -0.04).'''
+    if isinstance(stmt, HLILIf):
+        blocks = [stmt.true_block]
+        if stmt.false_block is not None:
+            blocks.append(stmt.false_block)
+        return blocks
+
+    if isinstance(stmt, (HLILWhile, HLILDoWhile)):
+        return [stmt.body]
+
+    if isinstance(stmt, HLILSwitch):
+        return [case.body for case in stmt.cases]
+
+    return []
 
 
 # ============================================================================

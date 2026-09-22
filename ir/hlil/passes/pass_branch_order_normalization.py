@@ -33,7 +33,6 @@ from ..hlil import (
     HLILComment,
     HLILDoWhile,
     HLILExternCall,
-    HLILFor,
     HLILIf,
     HLILSwitch,
     HLILSyscall,
@@ -69,7 +68,7 @@ class BranchOrderNormalizationPass(Pass):
                 self._process_block(stmt.false_block)
                 self._normalize(stmt)
 
-            elif isinstance(stmt, (HLILWhile, HLILDoWhile, HLILFor)):
+            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
                 self._process_block(stmt.body)
 
             elif isinstance(stmt, HLILSwitch):
@@ -268,7 +267,7 @@ class BranchOrderNormalizationPass(Pass):
                     if line is not None:
                         return line
 
-            elif isinstance(stmt, (HLILWhile, HLILDoWhile, HLILFor)):
+            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
                 line = self._first_line(stmt.body)
                 if line is not None:
                     return line

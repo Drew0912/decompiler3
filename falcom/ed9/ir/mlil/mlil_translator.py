@@ -116,11 +116,13 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
     def _translate_debug_log(self, llil_inst: LowLevelILDebugLog):
         '''Translate Falcom debug log to a debug.log call (not a block terminal, so no goto)
 
-        No output: the debug print leaves the result register alone (verified in the
-        sample scripts, where no GET_REG ever follows a DEBUG_LOG).
+        No output, and clobbers_registers=False: a debug print has no VM register/global
+        side effects at all, so it must not clobber reg0 (or anything else) either - it
+        leaves every register alone (verified in the sample scripts, where no GET_REG ever
+        follows a DEBUG_LOG).
         '''
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
-        self.builder.call(DEBUG_LOG_CALL_TARGET, mlil_args)
+        self.builder.call(DEBUG_LOG_CALL_TARGET, mlil_args, clobbers_registers = False)
 
     def _translate_expr(self, llil_expr: LowLevelILInstruction) -> MediumLevelILInstruction:
         '''Translate LLIL expression, handling Falcom-specific types'''

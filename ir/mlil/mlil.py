@@ -483,13 +483,20 @@ class MediumLevelILCall(MediumLevelILStatement):
     output is the variable receiving the call result (the VM result register),
     or None when the result is unused. It holds an MLILVariable, or an
     MLILVariableSSA while the function is in SSA form.
+
+    clobbers_registers is True for an ordinary call, whose callee may change any VM
+    register/global other than its own output - SSA construction gives every one of
+    them a fresh, unknown-valued pseudo-definition here. False marks a call proven to
+    have no VM register/global side effects at all (e.g. a pure debug print), so
+    nothing but its own output (if any) is treated as redefined.
     '''
 
     def __init__(self, operation: MediumLevelILOperation, args: List[MediumLevelILInstruction],
-                 output: Optional[Any] = None, **kwargs):
+                 output: Optional[Any] = None, *, clobbers_registers: bool = True, **kwargs):
         super().__init__(operation, **kwargs)
         self.args = args
         self.output = output
+        self.clobbers_registers = clobbers_registers
 
     def format_with_output(self, call_str: str) -> str:
         '''Prefix the call text with its output assignment'''
@@ -507,12 +514,14 @@ class MediumLevelILCall(MediumLevelILStatement):
 class MLILCall(MediumLevelILCall):
     '''Function call'''
 
-    def __init__(self, target: str, args: List[MediumLevelILInstruction], output: Optional[Any] = None, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_CALL, args, output, **kwargs)
+    def __init__(self, target: str, args: List[MediumLevelILInstruction], output: Optional[Any] = None,
+                 *, clobbers_registers: bool = True, **kwargs):
+        super().__init__(MediumLevelILOperation.MLIL_CALL, args, output, clobbers_registers = clobbers_registers, **kwargs)
         self.target = target
 
     def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MLILCall':
-        return MLILCall(self.target, args, self.output, address = self.address).copy_metadata_from(self)
+        return MLILCall(self.target, args, self.output, clobbers_registers = self.clobbers_registers,
+                        address = self.address).copy_metadata_from(self)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)

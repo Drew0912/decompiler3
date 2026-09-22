@@ -162,6 +162,13 @@ class LLILToMLILTranslator:
             var = self.builder.get_or_create_local(var_name, llil_expr.slot_index)
             return self.builder.address_of(self.builder.var(var))
 
+        elif isinstance(llil_expr, LowLevelILFrameAddr):
+            # Frame address → address of parameter variable (&argN)
+            param_index = self._frame_offset_to_param_index(llil_expr.offset)
+            var_name = mlil_arg_var_name(param_index)
+            var = self.builder.get_or_create_parameter(param_index, var_name)
+            return self.builder.address_of(self.builder.var(var))
+
         elif isinstance(llil_expr, LowLevelILLoad):
             # Pointer dereference → *ptr
             src = self._translate_expr(llil_expr.src)

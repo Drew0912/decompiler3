@@ -97,9 +97,18 @@ class LoopRecoveryPass(Pass):
             loop.condition, trailing = leading_return
             return [loop] + trailing
 
+        # Checked before _trailing_exit_condition, which mutates loop.body - refusing after
+        # that mutation would return a "left unchanged" while(1) loop that had already lost
+        # its own trailing break
+        if self._contains_loop_continue(loop.body):
+            return [loop]
+
         trailing_exit = self._trailing_exit_condition(loop.body)
         if trailing_exit is not None:
-            return [HLILDoWhile(trailing_exit, loop.body)]
+            new_loop = HLILDoWhile(trailing_exit, loop.body, label = loop.label)
+            new_loop.address = loop.address
+            new_loop.mlil_index = loop.mlil_index
+            return [new_loop]
 
         return [loop]
 
@@ -223,6 +232,37 @@ class LoopRecoveryPass(Pass):
             elif isinstance(stmt, HLILSwitch):
                 for case in stmt.cases:
                     if self._contains_loop_break(case.body, True):
+                        return True
+
+        return False
+
+    def _contains_loop_continue(self, block: Optional[HLILBlock], nested: bool = False) -> bool:
+        '''Check for a continue that would target this loop
+
+        Same rule as _contains_loop_break, except a switch does NOT absorb a bare continue -
+        continue always targets the nearest enclosing loop, never a switch - so switch cases
+        are walked without setting nested, the one place this differs from _contains_loop_break.
+        '''
+        if not block or not block.statements:
+            return False
+
+        for stmt in block.statements:
+            if isinstance(stmt, HLILContinue):
+                if stmt.label is not None or not nested:
+                    return True
+
+            elif isinstance(stmt, HLILIf):
+                if (self._contains_loop_continue(stmt.true_block, nested) or
+                        self._contains_loop_continue(stmt.false_block, nested)):
+                    return True
+
+            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
+                if self._contains_loop_continue(stmt.body, True):
+                    return True
+
+            elif isinstance(stmt, HLILSwitch):
+                for case in stmt.cases:
+                    if self._contains_loop_continue(case.body, nested):
                         return True
 
         return False

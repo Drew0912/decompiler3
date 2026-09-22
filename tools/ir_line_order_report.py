@@ -47,7 +47,6 @@ from ir.hlil.hlil import (
     HLILBlock,
     HLILComment,
     HLILDoWhile,
-    HLILFor,
     HLILIf,
     HLILSwitch,
     HLILWhile,
@@ -146,7 +145,7 @@ def collect_hlil_lines(hlil_func) -> List[int]:
                 walk(stmt.true_block)
                 walk(stmt.false_block)
 
-            elif isinstance(stmt, (HLILWhile, HLILDoWhile, HLILFor)):
+            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
                 walk(stmt.body)
 
             elif isinstance(stmt, HLILSwitch):

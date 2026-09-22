@@ -8,9 +8,9 @@ from ..hlil import (
     HLILVar,
     HLILConst,
     HLILIf,
-    HLILWhile,
     HLILSwitch,
     HLILReturn,
+    sub_blocks,
 )
 
 
@@ -29,10 +29,10 @@ class CommonReturnExtractionPass(Pass):
         while i < len(block.statements):
             stmt = block.statements[i]
 
-            if isinstance(stmt, HLILIf):
-                self._extract_common_returns(stmt.true_block)
-                self._extract_common_returns(stmt.false_block)
+            for child in sub_blocks(stmt):
+                self._extract_common_returns(child)
 
+            if isinstance(stmt, HLILIf):
                 common_return = self._get_common_if_return(stmt)
                 if common_return is not None:
                     if stmt.true_block.statements and isinstance(stmt.true_block.statements[-1], HLILReturn):
@@ -43,13 +43,7 @@ class CommonReturnExtractionPass(Pass):
 
                     block.statements.insert(i + 1, common_return)
 
-            elif isinstance(stmt, HLILWhile):
-                self._extract_common_returns(stmt.body)
-
             elif isinstance(stmt, HLILSwitch):
-                for case in stmt.cases:
-                    self._extract_common_returns(case.body)
-
                 common_return = self._get_common_switch_return(stmt)
                 if common_return is not None:
                     for case in stmt.cases:
