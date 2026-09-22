@@ -503,6 +503,9 @@ class ScpWriter:
     def functionDecorator(self, is_common_func: bool, debug_argc: dict[str, int] | None):
         def wrapper(func):
             name = func.__name__
+            if name in self.functions_by_name:
+                raise ValueError(f'duplicate function name: {name!r}')
+
             sig = inspect.signature(func)
 
             entry = ScpFunctionEntry()
@@ -531,6 +534,25 @@ class ScpWriter:
 
     def LLILCommonCode(self, debug_argc: dict[str, int] | None = None):
         return self.functionDecorator(is_common_func = True, debug_argc = debug_argc)
+
+    def CommonImports(self):
+        """Declares which common functions this script bakes into its bytecode: some imported from
+        the shared library, some defined locally as a fallback when this script's own copy diverges
+        from the library's canonical body. Like GlobalVars, the decorated body runs immediately - it
+        returns the functions to register, in this script's own code order, and each one is
+        registered the same way an inline @scena.LLILCommonCode() definition would be. debug_argc
+        isn't exposed here because it can never apply: it's only recovered when round_trip is True
+        (pair_call_debug_info), but the manifest is only emitted when round_trip is False - the two
+        conditions can't hold at once.
+        """
+        def wrapper(func):
+            register = self.LLILCommonCode()
+            for common_func in func():
+                register(common_func)
+
+            return func
+
+        return wrapper
 
     def GlobalVars(self):
         """Declares the script's global variable table, in table order (declaration order == on-disk index).

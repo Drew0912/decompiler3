@@ -14,8 +14,6 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from ml import fileio
-from common.config import default_encoding
 from common.logging import log
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function
@@ -53,18 +51,8 @@ COMMON_FUNCTIONS_OMITTED_COMMENT = (
 )
 
 def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *, common_functions_omitted: bool = False) -> None:
-    lines = parser.gen_python_header()
-
-    if common_functions_omitted:
-        lines.extend(COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines())
-        lines.append('')
-
-    for func in functions:
-        lines.extend(parser.format_function(func))
-        lines.append('')
-
-    lines.extend(parser.gen_python_footer())
-    out_path.write_text('\n'.join(lines) + '\n', encoding = 'utf-8')
+    preamble = [*COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines(), ''] if common_functions_omitted else []
+    out_path.write_text(parser.gen_python_script(functions, preamble = preamble), encoding = 'utf-8')
 
 def write_debug_info(parser: ScpParser, functions: list[Function], out_path: Path) -> None:
     """Dump the parsed header, each function's raw ScpFunctionEntry, and its per-call debug info"""
@@ -91,83 +79,78 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     out = output_dir / path.name
     out_no_suffix = out.with_suffix('')
 
-    with fileio.FileStream(str(path), encoding = default_encoding()) as fs:
-        parser = ScpParser(fs, path.name)
-        parser.round_trip = config.round_trip
-        parser.keep_unreachable_code = config.keep_unreachable_code
-        parser.parse()
-        functions = parser.disasm_all_functions(filter_func = config.filter_func)
+    parser, functions = ScpParser.load(path, round_trip = config.round_trip, keep_unreachable_code = config.keep_unreachable_code, filter_func = config.filter_func)
 
-        common_functions_omitted = not config.include_common_functions
-        if common_functions_omitted:
-            functions = [func for func in functions if not func.is_common_func]
+    common_functions_omitted = not config.include_common_functions
+    if common_functions_omitted:
+        functions = [func for func in functions if not func.is_common_func]
 
-        # Only create the output folder once parsing has actually produced something to write
-        output_dir.mkdir(parents = True, exist_ok = True)
+    # Only create the output folder once parsing has actually produced something to write
+    output_dir.mkdir(parents = True, exist_ok = True)
 
-        if config.write_py:
-            write_python_dsl(parser, functions, out.with_suffix('.py'), common_functions_omitted = common_functions_omitted)
+    if config.write_py:
+        write_python_dsl(parser, functions, out.with_suffix('.py'), common_functions_omitted = common_functions_omitted)
 
-        if config.write_debug_info:
-            write_debug_info(parser, functions, out.with_suffix('.debug.txt'))
+    if config.write_debug_info:
+        write_debug_info(parser, functions, out.with_suffix('.debug.txt'))
 
-        need_llil = config.write_llil_asm or config.write_llil_dot or config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
-        if not need_llil:
-            return
+    need_llil = config.write_llil_asm or config.write_llil_dot or config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
+    if not need_llil:
+        return
 
-        llil_asm_lines: list[str] = []
-        mlil_asm_lines: list[str] = []
-        hlil_ts_lines: list[str] = []
-        ts_chunks: list[str] = []
+    llil_asm_lines: list[str] = []
+    mlil_asm_lines: list[str] = []
+    hlil_ts_lines: list[str] = []
+    ts_chunks: list[str] = []
 
-        for func in functions:
-            try:
-                llil_func = ED9VMLifter(parser = parser).lift_function(func)
+    for func in functions:
+        try:
+            llil_func = ED9VMLifter(parser = parser).lift_function(func)
 
-                if config.write_llil_asm:
-                    llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
+            if config.write_llil_asm:
+                llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
 
-                if config.write_llil_dot:
-                    (output_dir / f'{out_no_suffix.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
+            if config.write_llil_dot:
+                (output_dir / f'{out_no_suffix.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
 
-                need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
-                if not need_mlil:
-                    continue
+            need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
+            if not need_mlil:
+                continue
 
-                mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = config.optimize_mlil, infer_types = config.infer_types)
+            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = config.optimize_mlil, infer_types = config.infer_types)
 
-                if config.write_mlil_asm:
-                    mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
+            if config.write_mlil_asm:
+                mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
 
-                if config.write_mlil_dot:
-                    (output_dir / f'{out_no_suffix.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
+            if config.write_mlil_dot:
+                (output_dir / f'{out_no_suffix.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
 
-                if not (config.write_hlil_ts or config.write_ts):
-                    continue
+            if not (config.write_hlil_ts or config.write_ts):
+                continue
 
-                hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
+            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
 
-                if config.write_hlil_ts:
-                    hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))
+            if config.write_hlil_ts:
+                hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))
 
-                if config.write_ts:
-                    ts_chunks.append(generate_typescript(hlil_func))
+            if config.write_ts:
+                ts_chunks.append(generate_typescript(hlil_func))
 
-            except Exception as e:
-                # One bad function shouldn't lose the rest of the file's output
-                log.info(f'{path} [{func.name}]: {type(e).__name__}: {e}')
+        except Exception as e:
+            # One bad function shouldn't lose the rest of the file's output
+            log.info(f'{path} [{func.name}]: {type(e).__name__}: {e}')
 
-        if config.write_llil_asm:
-            out.with_suffix('.llil.asm').write_text('\n'.join(llil_asm_lines), encoding = 'utf-8')
+    if config.write_llil_asm:
+        out.with_suffix('.llil.asm').write_text('\n'.join(llil_asm_lines), encoding = 'utf-8')
 
-        if config.write_mlil_asm:
-            out.with_suffix('.mlil.asm').write_text('\n'.join(mlil_asm_lines), encoding = 'utf-8')
+    if config.write_mlil_asm:
+        out.with_suffix('.mlil.asm').write_text('\n'.join(mlil_asm_lines), encoding = 'utf-8')
 
-        if config.write_hlil_ts:
-            out.with_suffix('.hlil.ts').write_text('\n'.join(hlil_ts_lines), encoding = 'utf-8')
+    if config.write_hlil_ts:
+        out.with_suffix('.hlil.ts').write_text('\n'.join(hlil_ts_lines), encoding = 'utf-8')
 
-        if config.write_ts:
-            out.with_suffix('.ts').write_text(generate_typescript_header() + '\n'.join(ts_chunks), encoding = 'utf-8')
+    if config.write_ts:
+        out.with_suffix('.ts').write_text(generate_typescript_header() + '\n'.join(ts_chunks), encoding = 'utf-8')
 
 def main() -> int:
     parser = argparse.ArgumentParser(description = 'Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')

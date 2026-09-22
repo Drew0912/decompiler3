@@ -11,7 +11,7 @@ from .ed9_optable import ED9OperandType
 if TYPE_CHECKING:
     from .basic_block import BasicBlock
     from .instruction import Instruction
-    from ..parser.types_parser import Function
+    from ..parser.types_parser import Function, FunctionParam
 
 __all__ = (
     'Formatter',
@@ -54,7 +54,7 @@ class Formatter:
         # (or debug_argc key, which is always one of those) always resolves, and the synthetic
         # fall-through block after a conditional branch (referenced by nothing) does not.
         reachable_blocks = self.collect_blocks(entry_block)
-        self.referenced_offsets = {target for block in reachable_blocks for target in self.branch_targets(block, real_only = True)}
+        self.referenced_offsets = self.find_referenced_offsets(entry_block, reachable_blocks = reachable_blocks)
 
         # The disassembler always splits a block when something jumps into its middle, so a
         # referenced offset should always be some block's start. Assert that invariant here for an
@@ -94,15 +94,7 @@ class Formatter:
     def format_function(self, func: 'Function') -> list[str]:
         """Format a complete function with header"""
         lines = []
-        param_names = []
-        for i, param in enumerate(func.params):
-            param_name = f'arg{i + 1}: {param.type.get_python_type()}'
-            if param.default_value is not None:
-                param_name += f' = {param.default_value.value!r}'
-
-            param_names.append(param_name)
-
-        param_str = ', '.join(param_names)
+        param_str = ', '.join(self.format_param(i, param) for i, param in enumerate(func.params))
         decorator = 'LLILCommonCode' if func.is_common_func else 'LLILCode'
 
         if func.call_debug_argc:
@@ -172,6 +164,44 @@ class Formatter:
             lines.append(formatted)
 
         return lines
+
+    @classmethod
+    def format_param(cls, index: int, param: 'FunctionParam') -> str:
+        """'argN: Type' or 'argN: Type = default' for one parameter (1-indexed, matching the DSL's
+        own param naming) - shared by format_function and the common-function generator, which must
+        render parameters identically since a divergent-signature function stays inline precisely
+        when this rendering would differ."""
+        text = f'arg{index + 1}: {param.type.get_python_type()}'
+        if param.default_value is not None:
+            text += f' = {param.default_value.value!r}'
+
+        return text
+
+    @classmethod
+    def reachable_instructions(cls, entry_block: 'BasicBlock') -> list['Instruction']:
+        """Reachable instructions in offset order, deduplicated and with synthetic fall-through
+        JMPs removed - the flat view of collect_blocks() that ScpParser.get_instructions and the
+        common-function generator both need instead of walking blocks themselves."""
+        instructions = {}
+        for block in cls.collect_blocks(entry_block):
+            for inst in block.instructions:
+                # Synthetic fall-through JMPs have no bytes and can share an offset with a real instruction
+                if inst.size == SYNTHETIC_INSTRUCTION_SIZE:
+                    continue
+
+                instructions.setdefault(inst.offset, inst)
+
+        return [instructions[offset] for offset in sorted(instructions)]
+
+    @classmethod
+    def find_referenced_offsets(cls, entry_block: 'BasicBlock', *, reachable_blocks: 'list[BasicBlock] | None' = None) -> set[int]:
+        """Offsets a real (non-synthetic) Offset operand points at, among reachable blocks - each
+        one needs a label. Every one is guaranteed to land on some reachable block's start (see the
+        assert in format_entry_block, which computes this same set for its own use)."""
+        if reachable_blocks is None:
+            reachable_blocks = cls.collect_blocks(entry_block)
+
+        return {target for block in reachable_blocks for target in cls.branch_targets(block, real_only = True)}
 
     @classmethod
     def collect_blocks(cls, entry: 'BasicBlock') -> list['BasicBlock']:

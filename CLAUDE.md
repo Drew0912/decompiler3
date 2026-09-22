@@ -28,6 +28,9 @@ Full rule set in `notes/codex_rules.md` — read it before invoking Codex. Only 
 ### -0.04. Root-Cause Fixes in `ir/`
 When a bug is found while editing `ir/` (LLIL/MLIL/HLIL structures and passes), prioritize fixing the root cause over patching just the reported symptom. This directory's passes tend to hand-roll their own tree traversal, and a walker missing a node type is not a one-off mistake at that call site — it is a class of bug that recurs across every hand-rolled walker in the file. Prefer closing the class (e.g. a shared traversal helper every predicate/collector is built on, so a missing node type is fixed once for every consumer) over a narrow guard clause that only fixes the specific finding. Not every `ir/` bug is a traversal-coverage bug — some are genuine logic gaps (wrong equality check, missing case) that a shared walker would not have caught either; for those, still ask what the underlying gap is before patching, rather than defaulting to the narrowest possible fix.
 
+### -0.03. Round-Trip Policy
+Required: logic round trip — decompile (`round_trip=False`) → recompile → decompile must keep the same game logic and reach a fixed point within a few rounds. Byte-exact round trip is a nice-to-have, low priority. Full rule: `docs/LLIL_DSL.md` §2.
+
 ### 1. NO HARDCODED MAGIC NUMBERS
 Use named constants: `offset // WORD_SIZE` not `offset // 4`
 Common: `WORD_SIZE = 4` (in `ir/llil.py`)
@@ -78,6 +81,7 @@ Keep comments brief and meaningful. Avoid redundant explanations.
 - [ ] No editing `binaryninja-api/` ever; no reading it unless explicitly requested (ask first)
 - [ ] Codex invoked only per `notes/codex_rules.md`, with the triggering rule cited to the user
 - [ ] Bugs found while editing `ir/` get a root-cause fix, not just a patch for the reported instance
+- [ ] Recompilation work follows the round-trip policy (`docs/LLIL_DSL.md` §2): logic round trip required, byte-exact is a low-priority nice-to-have
 - [ ] No hardcoded numbers (use named constants)
 - [ ] Imports at top level
 - [ ] Spaces around `=`

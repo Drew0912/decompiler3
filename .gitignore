@@ -23,6 +23,8 @@ script_en
 *.ts
 out
 
+**/metadata/common/
+
 decompiler2
 notes
 sora2_1.0

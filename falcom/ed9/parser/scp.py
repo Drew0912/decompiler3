@@ -2,12 +2,18 @@ from re import S
 from .types_scp import *
 from .types_parser import *
 from pprint import pprint
+from ml import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.formatter import GLOBAL_VAR_INDEX_COMMENT
+from ..writer.metadata import COMMON_LIBRARY_PACKAGE, SCP_WRITER_HELPER_IMPORT
+from ..writer.metadata.common_index import COMMON_FUNCTIONS
+from ..writer.metadata.signature import function_fingerprint, fingerprint_digest
+from common.config import default_encoding
 from common.logging import log
 from ir.llil import WORD_SIZE
 from typing import Any, Callable
+import keyword
 import pathlib
 import struct
 
@@ -287,6 +293,28 @@ class ScpParser(StrictBase):
     def __init__(self, fs: fileio.FileStream, name: str = ''):
         self.fs = fs
         self.name = name
+
+    @classmethod
+    def load(
+        cls,
+        path: pathlib.Path,
+        *,
+        round_trip: bool,
+        keep_unreachable_code: bool,
+        filter_func: Callable[[Function], bool] | None = None,
+    ) -> tuple['ScpParser', list[Function]]:
+        """Open path, parse, and disassemble every function - the setup every caller (scena2py.py,
+        the common-function generator, the round-trip validator, tests) otherwise repeats by hand.
+        The file handle is closed before returning; the parser stays fully usable afterward
+        (get_instructions, get_func_name_from_func_id, etc. are all in-memory)."""
+        with fileio.FileStream(str(path), encoding = default_encoding()) as fs:
+            parser = cls(fs, path.name)
+            parser.round_trip = round_trip
+            parser.keep_unreachable_code = keep_unreachable_code
+            parser.parse()
+            functions = parser.disasm_all_functions(filter_func = filter_func)
+
+        return parser, functions
 
     def get_func_by_name(self, name: str) -> Function:
         return self.function_map[name]
@@ -604,17 +632,7 @@ class ScpParser(StrictBase):
 
     def get_instructions(self, func: Function) -> list[Instruction]:
         """Reachable instructions of a disassembled function in offset order"""
-        instructions = {}
-
-        for block in Formatter.collect_blocks(func.entry_block):
-            for inst in block.instructions:
-                # Synthetic fall-through JMPs have no bytes and can share an offset with a real instruction
-                if inst.size == 0:
-                    continue
-
-                instructions.setdefault(inst.offset, inst)
-
-        return [instructions[offset] for offset in sorted(instructions)]
+        return Formatter.reachable_instructions(func.entry_block)
 
     def pair_call_debug_info(self, func: Function):
         """Recover each local CALL's explicit arg count - its debug record drops trailing default args"""
@@ -751,17 +769,43 @@ class ScpParser(StrictBase):
         formatter = Formatter(formatter_context)
         return formatter.format_function(func)
 
-    def gen_python_header(self) -> list[str]:
-        """Generate Python header lines for output script execution"""
+    def gen_python_script(self, functions: list[Function], *, preamble: list[str] = ()) -> str:
+        """Full generated .py text: header (incl. shared-library imports/manifest), an optional
+        preamble (e.g. scena2py.py's common-functions-omitted warning), every function this script
+        must still define itself, then the footer. match_library_functions runs exactly once here
+        and its result is threaded through the header and the inline-function filter, so the two
+        can never disagree about which functions got imported - see write_python_dsl/
+        decompile_to_python, which used to compute it separately in each half."""
+        matched = self.match_library_functions(functions)
+
+        lines = self.gen_python_header(functions, matched = matched)
+        lines.extend(preamble)
+
+        for func in self.get_inline_functions(functions, matched = matched):
+            lines.extend(self.format_function(func))
+            lines.append('')
+
+        lines.extend(self.gen_python_footer())
+        return '\n'.join(lines) + '\n'
+
+    def gen_python_header(self, functions: list[Function] | None = None, *, matched: dict[str, str] | None = None) -> list[str]:
+        """Generate Python header lines for output script execution.
+
+        functions, when given, are this script's disassembled functions in code order - used to
+        emit the shared-library imports and @scena.CommonImports() manifest (see
+        match_library_functions). Leave it as None when there's no function list to give (e.g. a
+        caller building just the header on its own); matched lets gen_python_script pass in an
+        already-computed match set instead of this recomputing it.
+        """
         lines = f'''\
-from falcom.ed9.writer.scp_writer_helper import *
+{SCP_WRITER_HELPER_IMPORT}
 try:
-    import {pathlib.Path(self.name).stem.strip()}_hook
+    {self.gen_hook_import()}
 except ModuleNotFoundError:
     pass
-            
+
 scena = create_scp_writer('{self.name}')
-            
+
 '''.splitlines()
 
         if self.global_vars:
@@ -772,7 +816,90 @@ scena = create_scp_writer('{self.name}')
                 lines.append(f'{indent}GLOBAL_VAR({quote_string(var.name)}, {var.type}){GLOBAL_VAR_INDEX_COMMENT} {var.index}')
             lines.append('')
 
+        if functions is not None:
+            lines.extend(self.gen_common_imports(functions, matched = matched))
+
         return lines
+
+    def match_library_functions(self, functions: list[Function]) -> dict[str, str]:
+        """This script's common functions whose body+signature exactly match the shared library's
+        canonical variant (falcom/ed9/writer/metadata/common_index.py) - name -> library module key.
+
+        Only meaningful in the everyday (non-fidelity) mode: a byte-exact recompile needs every
+        function inline and every byte of it kept, so this always returns {} when self.round_trip
+        or self.keep_unreachable_code is True - the library was generated with unreachable code
+        dropped, so importing it under keep_unreachable_code=True would silently drop a script's
+        own dead bytes even though that flag asked to keep them. A common function whose fingerprint
+        diverges from the library (different body, signature, or subsystem) is left out here and
+        stays inline as an ordinary @scena.LLILCommonCode() definition, same as a non-common one.
+        """
+        if self.round_trip or self.keep_unreachable_code:
+            return {}
+
+        matched = {}
+        for func in functions:
+            if not func.is_common_func:
+                continue
+
+            entry = COMMON_FUNCTIONS.get(func.name)
+            if entry is None:
+                continue
+
+            module_key, digest = entry
+            if fingerprint_digest(function_fingerprint(self, func)) == digest:
+                matched[func.name] = module_key
+
+        return matched
+
+    def get_inline_functions(self, functions: list[Function], *, matched: dict[str, str] | None = None) -> list[Function]:
+        """functions this script must still define itself - everything not matched to the shared
+        library. Returns functions unchanged when the library isn't active or nothing matched."""
+        if matched is None:
+            matched = self.match_library_functions(functions)
+
+        if not matched:
+            return functions
+
+        return [func for func in functions if func.name not in matched]
+
+    def gen_common_imports(self, functions: list[Function], *, matched: dict[str, str] | None = None) -> list[str]:
+        """Per-module imports plus the @scena.CommonImports() manifest, in this script's own code
+        order, for every function matched to the shared library. Empty when nothing matched."""
+        if matched is None:
+            matched = self.match_library_functions(functions)
+
+        if not matched:
+            return []
+
+        names_by_module: dict[str, list[str]] = {}
+        for name, module_key in matched.items():
+            names_by_module.setdefault(module_key, []).append(name)
+
+        indent = default_indent()
+        lines = []
+        for module_key in sorted(names_by_module):
+            names = ', '.join(sorted(names_by_module[module_key]))
+            lines.append(f'from {COMMON_LIBRARY_PACKAGE}.{module_key} import {names}')
+
+        lines.append('')
+        lines.append('@scena.CommonImports()')
+        lines.append('def commonImports():')
+        lines.append(f'{indent}return [')
+        for func in functions:
+            if func.name in matched:
+                lines.append(f'{indent * 2}{func.name},')
+        lines.append(f'{indent}]')
+        lines.append('')
+
+        return lines
+
+    def gen_hook_import(self) -> str:
+        """Import of the optional <stem>_hook module - __import__ when the stem isn't a valid module path (e.g. mon5078+)"""
+        module = f'{pathlib.Path(self.name).stem.strip()}_hook'
+        if all(part.isidentifier() and not keyword.iskeyword(part) for part in module.split('.')):
+            return f'import {module}'
+
+        return f'__import__({module!r})'
 
     def gen_python_footer(self) -> list[str]:
         """Generate Python footer lines for output script execution"""

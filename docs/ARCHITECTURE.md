@@ -86,17 +86,19 @@ arrays, per-syscall wrapper functions, and its own print-time peephole simplific
 
 ## Recompilation Pipeline — Core mechanism implemented, extensions planned
 
-**Location:** `falcom/ed9/writer/` (`scp_writer.py`, `scp_writer_helper.py`), driven by
+**Location:** `falcom/ed9/writer/` (`scp_writer.py`, `scp_writer_opcode_handler.py`,
+`scp_writer_helper.py`, `scp_writer_gen_common_funcs.py`, `metadata/`), driven by
 `falcom/ed9/scena2py.py`, validated by `tools/scp_roundtrip_validator.py`.
 
 A `.py` source file — sequential calls to per-opcode functions, one per VM opcode — executed
 against a `ScpWriter` to emit bytecode. Compilation itself only needs that `.py` file; it does not
 involve the Parser or Disassembler, which only come into play when *generating* a `.py` file from
 an existing script (e.g. for a round-trip check). An automated byte-exact round-trip check exists
-and works; fidelity settings are opt-in rather than default, and no corpus-scale round-trip results
-are currently persisted in this repo. Common-function deduplication, and compiling from MLIL/HLIL
-DSL forms instead of just LLIL DSL, are future work, loosely sketched rather than fully designed.
-Full detail in `docs/LLIL_DSL.md`.
+and works; fidelity settings are opt-in rather than default. A shared common-function library
+(`falcom/ed9/writer/metadata/common/`, generated from the corpus) is implemented and active by
+default, so generated `.py` files import shared game functions instead of embedding full copies of
+them. Compiling from MLIL/HLIL DSL forms instead of just LLIL DSL is still future work, loosely
+sketched rather than fully designed. Full detail in `docs/LLIL_DSL.md`.
 
 ## Data Flow (Decompilation)
 
@@ -137,5 +139,5 @@ Full detail in `docs/LLIL_DSL.md`.
 4. Implemented — MLIL
 5. Implemented, active development — HLIL
 6. Done — Codegen (TypeScript)
-7. Core mechanism implemented, fidelity opt-in — Recompilation: LLIL DSL round trip (`docs/LLIL_DSL.md`)
-8. Future work, loosely sketched — Recompilation: common-function library, MLIL/HLIL DSL, mixed-IR-level compilation
+7. Core mechanism implemented, fidelity opt-in — Recompilation: LLIL DSL round trip, common-function shared library (`docs/LLIL_DSL.md`)
+8. Future work, loosely sketched — Recompilation: MLIL/HLIL DSL, mixed-IR-level compilation
