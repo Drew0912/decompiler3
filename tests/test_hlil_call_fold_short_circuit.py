@@ -26,6 +26,58 @@ def make_func(name: str) -> MediumLevelILFunction:
     return func
 
 
+class TestNestedUnsafeFoldInsideAnotherFoldsOwnArgument(unittest.TestCase):
+    '''One gated, unconditional-pre-fold call can sit inside ANOTHER gated, unconditional-pre-fold
+    call's own argument list: inner() folds into outer()'s args (outer(b && inner())), and outer()
+    itself folds into the outer if (if (a && outer(...))). Found by Codex (Rule 0 correctness
+    review, 2026-09-22): _extract_targets originally treated a matched call as a leaf, so hoisting
+    outer() to its own statement carried inner() along unchanged, still gated by its own local
+    `b &&` even after outer() itself became unconditional. Both calls must end up as their own
+    unconditional statements, in the order they actually ran.'''
+
+    def test_both_calls_are_unfolded_in_evaluation_order(self):
+        func = make_func('nested_unsafe_fold')
+        a = func.locals['arg1']
+        b = MLILVariable('b')
+        func.locals['b'] = b
+        reg0 = func.locals['reg0']
+        reg1 = MLILVariable('reg1')
+        func.locals['reg1'] = reg1
+
+        block0 = MediumLevelILBasicBlock(0)
+        block1 = MediumLevelILBasicBlock(1)
+        block2 = MediumLevelILBasicBlock(2)
+        block3 = MediumLevelILBasicBlock(3)
+        block4 = MediumLevelILBasicBlock(4)
+
+        block0.instructions = [
+            MLILCall('inner', [], reg0),      # unconditional - function entry
+            MLILGoto(block1),
+        ]
+        block1.instructions = [
+            # outer()'s own argument reads reg0 - inner()'s result folds in here
+            MLILCall('outer', [MLILLogicalAnd(MLILVar(b), MLILVar(reg0))], reg1),
+            MLILGoto(block2),
+        ]
+        block2.instructions = [
+            MLILIf(MLILLogicalAnd(MLILVar(a), MLILVar(reg1)), block3, block4),
+        ]
+        block3.instructions = [MLILRet(MLILConst(1))]
+        block4.instructions = [MLILRet(MLILConst(0))]
+
+        func.basic_blocks = [block0, block1, block2, block3, block4]
+
+        hlil_func = MLILToHLILConverter(func).convert()
+        rendered = [str(s) for s in hlil_func.body.statements]
+
+        self.assertEqual(rendered[0], 'reg0 = inner()',
+                         f'inner() must run first, as its own statement: {rendered}')
+        self.assertEqual(rendered[1], 'reg1 = outer(b && reg0)',
+                         f'outer() must read the captured reg0, not re-inline inner(): {rendered}')
+        self.assertEqual(str(hlil_func.body.statements[2].condition), 'arg1 && reg1',
+                         f'the if must read the captured reg1: {rendered}')
+
+
 class TestUnconditionalCallGatedByNativeAnd(unittest.TestCase):
     '''reg0 = f() runs unconditionally (function entry, straight-line, no branch) and folds
     into becoming the RHS of `arg1 && reg0` - short-circuit-gated where the VM never gated it.

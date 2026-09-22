@@ -596,38 +596,45 @@ def _walk_gated_in_block(block: HLILBlock, fold_ids: Set[int], found: Set[int]):
 
 
 def _extract_targets(node: Optional[HLILExpression], targets: Set[int], var_names: Dict[int, str],
-                     call_exprs: Dict[int, HLILExpression],
                      prelude: List[HLILStatement]) -> Optional[HLILExpression]:
     '''Return node with any (sub)expression whose id is in `targets` swapped for a plain variable
     read, appending a `var = call();` statement restoring the pre-fold shape to `prelude` for
     each one, in left-to-right evaluation order. Mutates non-matching nodes' children in place
-    and returns node unchanged; a target is a leaf for this walk - its own args already ran as
-    part of its own call and move with it into the new prelude statement, rather than being
-    independently extracted here.
+    and returns node unchanged.
+
+    Recurses into every node's children UNCONDITIONALLY, before checking whether node itself is a
+    match - deliberately the same shape as _collect_gated_call_ids's own "check self, then always
+    recurse" traversal, so the two can't independently drift on which node types get walked into.
+    A match is never treated as a leaf: one gated call can sit inside another's own argument list
+    (e.g. an outer call gated by `a && outer(...)`, one of whose own arguments is independently
+    gated by a local `b && inner()`) - recursing into a match's args before emitting its own
+    prelude entry (rather than stopping at the match) is what carries that inner extraction along,
+    in the same left-to-right order, so the whole prelude ends up in genuine evaluation order
+    (inner()'s statement lands before outer()'s, matching the original program's actual execution
+    order).
     '''
     if node is None:
         return None
 
-    if id(node) in targets:
-        var = HLILVariable(var_names[id(node)], None)
-        prelude.append(HLILAssign(HLILVar(var), call_exprs[id(node)]))
-        return HLILVar(var)
-
     if isinstance(node, HLILBinaryOp):
-        node.lhs = _extract_targets(node.lhs, targets, var_names, call_exprs, prelude)
-        node.rhs = _extract_targets(node.rhs, targets, var_names, call_exprs, prelude)
+        node.lhs = _extract_targets(node.lhs, targets, var_names, prelude)
+        node.rhs = _extract_targets(node.rhs, targets, var_names, prelude)
 
     elif isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
-        node.operand = _extract_targets(node.operand, targets, var_names, call_exprs, prelude)
+        node.operand = _extract_targets(node.operand, targets, var_names, prelude)
 
     elif isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
-        node.args = [_extract_targets(arg, targets, var_names, call_exprs, prelude) for arg in node.args]
+        node.args = [_extract_targets(arg, targets, var_names, prelude) for arg in node.args]
+
+    if id(node) in targets:
+        var = HLILVariable(var_names[id(node)], None)
+        prelude.append(HLILAssign(HLILVar(var), node))
+        return HLILVar(var)
 
     return node
 
 
-def _unfold_ids_in_block(block: HLILBlock, targets: Set[int], var_names: Dict[int, str],
-                         call_exprs: Dict[int, HLILExpression]):
+def _unfold_ids_in_block(block: HLILBlock, targets: Set[int], var_names: Dict[int, str]):
     '''Mutate block.statements in place: before any statement that reads one of `targets`,
     insert a `var = call();` statement restoring the pre-fold shape, and splice that read back
     to a plain variable reference. Recurses into every nested block.
@@ -639,13 +646,13 @@ def _unfold_ids_in_block(block: HLILBlock, targets: Set[int], var_names: Dict[in
         for attr in _UNFOLD_EXPR_FIELDS.get(type(stmt), ()):
             value = getattr(stmt, attr)
             if value is not None:
-                setattr(stmt, attr, _extract_targets(value, targets, var_names, call_exprs, prelude))
+                setattr(stmt, attr, _extract_targets(value, targets, var_names, prelude))
 
         new_statements.extend(prelude)
         new_statements.append(stmt)
 
         for sub_block in _sub_blocks(stmt):
-            _unfold_ids_in_block(sub_block, targets, var_names, call_exprs)
+            _unfold_ids_in_block(sub_block, targets, var_names)
 
     block.statements = new_statements
 
@@ -750,8 +757,7 @@ class MLILToHLILConverter:
         }
 
         if unsafe_ids:
-            call_exprs = {id(expr): expr for expr in self.expr_cache.values()}
-            _unfold_ids_in_block(self.hlil_func.body, unsafe_ids, var_names, call_exprs)
+            _unfold_ids_in_block(self.hlil_func.body, unsafe_ids, var_names)
 
     def _convert_parameters(self):
         '''Build the HLIL parameter list from the MLIL one'''
