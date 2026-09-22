@@ -97,9 +97,15 @@ convention.
 call. It builds a `Pipeline` and runs:
 
 ```
-ED9LLILToMLILPass → SSAConversionPass → SSAOptimizationPass →
+ED9LLILToMLILPass → BlockMergePass (optimize only) → SSAConversionPass → SSAOptimizationPass →
 SSATypeInferencePass (optional) → SSADeconstructionPass → RegGlobalValuePropagationPass
 ```
+
+`BlockMergePass` splices any block whose only way in is another block's unconditional goto into
+that block - mainly undoing the call-return split every `LowLevelILCall` forces (it is a block
+terminator), but it also removes real bytecode `JMP`s that happen to land on a single-predecessor
+target. Only runs when `optimize=True`; `optimize=False` keeps the untouched, block-per-LLIL-
+boundary translation.
 
 `SSAOptimizationPass` internally runs the `SSAOptimizer` (`ir/mlil/mlil_ssa_optimizer.py`), which
 chains together sparse conditional constant propagation, constant propagation, copy propagation,

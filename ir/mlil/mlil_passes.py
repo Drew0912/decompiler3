@@ -12,6 +12,7 @@ from .passes import (
     SSATypeInferencePass,
     # Non-SSA
     DeadCodeEliminationPass,
+    BlockMergePass,
     StorageKind,
     StorageKey,
     RegGlobalState,
@@ -26,6 +27,7 @@ __all__ = [
     'SSADeconstructionPass',
     'SSATypeInferencePass',
     'DeadCodeEliminationPass',
+    'BlockMergePass',
     'StorageKind',
     'StorageKey',
     'RegGlobalState',

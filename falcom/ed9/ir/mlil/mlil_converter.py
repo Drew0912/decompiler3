@@ -31,6 +31,11 @@ def convert_falcom_llil_to_mlil(llil_func: LowLevelILFunction,
 
     # Phase 2: SSA-based optimization (optional)
     if optimize:
+        # A LowLevelILCall is a block terminator, so nearly every call site is one goto away
+        # from its return block - undo that split before any SSA analysis runs, so every later
+        # pass sees the smaller CFG. optimize=False keeps the raw, untouched, block-per-LLIL-
+        # boundary translation (Scena2PyConfig.optimize_mlil is a real, reachable way to ask for it).
+        pipeline.add_pass(BlockMergePass())
         pipeline.add_pass(SSAConversionPass())
         pipeline.add_pass(SSAOptimizationPass())
 

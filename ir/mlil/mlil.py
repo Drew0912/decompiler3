@@ -12,6 +12,8 @@ from ir.core import *
 FLOAT_ROUND_REL_TOL = 1e-6
 FLOAT_ROUND_ABS_TOL = 1e-9
 
+UNASSIGNED_INST_INDEX = -1
+
 if TYPE_CHECKING:
     from ir.llil import LowLevelILBasicBlock, LowLevelILFunction
 
@@ -130,7 +132,7 @@ class MediumLevelILInstruction(ILInstruction):
         super().__init__()
         self.operation = operation
         self.address = address
-        self.inst_index = -1  # Inherited from LLIL instruction index
+        self.inst_index = UNASSIGNED_INST_INDEX  # Inherited from LLIL instruction index
         self.llil_index = -1  # Source LLIL instruction index (for debugging/mapping)
         self.options = ILOptions()
 
@@ -743,9 +745,17 @@ class MediumLevelILFunction:
         self.basic_blocks.append(block)
 
     def renumber_blocks(self):
-        '''Renumber basic blocks to match list positions after removal'''
+        '''Renumber basic blocks to match list positions after a structural change, and rebuild
+        the inst_index -> block map, which goes stale for the same reason (a removed block would
+        otherwise stay reachable through it)'''
+        self._inst_block_map = {}
+
         for i, block in enumerate(self.basic_blocks):
             block.index = i
+
+            for inst in block.instructions:
+                if inst.inst_index != UNASSIGNED_INST_INDEX:
+                    self._inst_block_map[inst.inst_index] = block
 
     def create_block(self, start: int = 0, label: str = None) -> MediumLevelILBasicBlock:
         block = MediumLevelILBasicBlock(len(self.basic_blocks), start, label)
@@ -808,7 +818,7 @@ class MediumLevelILFunction:
         return None
 
     def register_instruction(self, block: MediumLevelILBasicBlock, inst: MediumLevelILInstruction):
-        if inst.inst_index == -1:
+        if inst.inst_index == UNASSIGNED_INST_INDEX:
             raise RuntimeError('MLIL instruction must have inst_index set')
         self._inst_block_map[inst.inst_index] = block
 

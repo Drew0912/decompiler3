@@ -20,6 +20,7 @@ from .pass_ssa_type_inference import SSATypeInferencePass
 
 # Non-SSA passes
 from .pass_dead_code import DeadCodeEliminationPass
+from .pass_block_merge import BlockMergePass
 from .pass_reg_global_propagation import (
     StorageKind,
     StorageKey,
@@ -50,6 +51,7 @@ __all__ = [
     'SSATypeInferencePass',
     # Non-SSA
     'DeadCodeEliminationPass',
+    'BlockMergePass',
     'StorageKind',
     'StorageKey',
     'RegGlobalState',

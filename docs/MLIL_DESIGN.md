@@ -120,8 +120,11 @@ class MediumLevelILFunction:
 
 (Simplified for illustration — see `ir/mlil/mlil.py:632` and `:672` for the real class
 definitions.) Predecessor/successor edges are `incoming_edges`/`outgoing_edges`, not `preds`/
-`succs`. Each MLIL block mirrors an LLIL block; the LLIL `inst_index` carried on each instruction
-is how debugging tools jump between layers, rather than a separate `llil_inst_to_mlil` map.
+`succs`. Each MLIL block mirrors an LLIL block when `optimize=False` - the `BlockMergePass` (part
+of the SSA optimization pipeline, so it does not run when `optimize=False`) collapses call-return
+and other single-predecessor goto chains when optimization is enabled, so this 1:1 property does
+not hold for `optimize=True` output. The LLIL `inst_index` carried on each instruction is how
+debugging tools jump between layers, rather than a separate `llil_inst_to_mlil` map.
 
 ## LLIL → MLIL Pipeline
 
@@ -129,7 +132,7 @@ The real production entry point is `convert_falcom_llil_to_mlil()`
 (`falcom/ed9/ir/mlil/mlil_converter.py`), which builds a `Pipeline` and runs, in order:
 
 ```
-ED9LLILToMLILPass → SSAConversionPass → SSAOptimizationPass →
+ED9LLILToMLILPass → BlockMergePass (optimize only) → SSAConversionPass → SSAOptimizationPass →
 SSATypeInferencePass (optional) → SSADeconstructionPass → RegGlobalValuePropagationPass
 ```
 
