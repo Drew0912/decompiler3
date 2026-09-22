@@ -178,13 +178,13 @@ class RegGlobalValuePropagator:
         if isinstance(inst, MLILStoreReg):
             resolved = self._substitute(inst.value, state)
             new_state = state.copy()
-            new_state.reg[inst.index] = resolved
+            new_state.reg[inst.index] = resolved if self._is_closed_form(resolved) else None
             return new_state
 
         elif isinstance(inst, MLILStoreGlobal):
             resolved = self._substitute(inst.value, state)
             new_state = state.copy()
-            new_state.global_[inst.index] = resolved
+            new_state.global_[inst.index] = resolved if self._is_closed_form(resolved) else None
             return new_state
 
         elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
@@ -195,15 +195,6 @@ class RegGlobalValuePropagator:
                 new_state.global_[k] = None
             return new_state
 
-        elif isinstance(inst, MLILStoreDeref):
-            # A deref store's target is a runtime pointer, architecturally disjoint from the
-            # REG[]/GLOBALS[] arrays this pass tracks, so it never clobbers a tracked slot
-            # directly. But a cached slot VALUE can itself be a MLILDeref expression (e.g.
-            # REG[0] = *p) - re-evaluating that cached expression later would read through
-            # the pointer again, picking up whatever this store just wrote. Drop only the
-            # cached values that could be stale, not the whole state.
-            return self._invalidate_deref_dependent(state)
-
         else:
             return state
 
@@ -213,7 +204,7 @@ class RegGlobalValuePropagator:
         if isinstance(inst, MLILStoreReg):
             new_value = self._substitute(inst.value, state)
             new_state = state.copy()
-            new_state.reg[inst.index] = new_value
+            new_state.reg[inst.index] = new_value if self._is_closed_form(new_value) else None
 
             if new_value is not inst.value:
                 new_inst = MLILStoreReg(inst.index, new_value)
@@ -225,7 +216,7 @@ class RegGlobalValuePropagator:
         elif isinstance(inst, MLILStoreGlobal):
             new_value = self._substitute(inst.value, state)
             new_state = state.copy()
-            new_state.global_[inst.index] = new_value
+            new_state.global_[inst.index] = new_value if self._is_closed_form(new_value) else None
 
             if new_value is not inst.value:
                 new_inst = MLILStoreGlobal(inst.index, new_value)
@@ -235,14 +226,16 @@ class RegGlobalValuePropagator:
             return (inst, new_state)
 
         elif isinstance(inst, MLILStoreDeref):
+            # A deref store's target is a runtime pointer, architecturally disjoint from the
+            # REG[]/GLOBALS[] arrays this pass tracks - and since only closed-form (constant)
+            # expressions ever get cached, no cached value could ever alias through it anyway.
             new_dest = self._substitute(inst.dest, state)
             new_value = self._substitute(inst.value, state)
-            new_state = self._invalidate_deref_dependent(state)
 
             if new_dest is not inst.dest or new_value is not inst.value:
-                return (inst.rebuild(new_dest, new_value), new_state)
+                return (inst.rebuild(new_dest, new_value), state)
 
-            return (inst, new_state)
+            return (inst, state)
 
         elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
             new_args = [self._substitute(arg, state) for arg in inst.args]
@@ -337,36 +330,25 @@ class RegGlobalValuePropagator:
         else:
             return expr
 
-    def _contains_deref(self, expr: MediumLevelILInstruction) -> bool:
-        '''Check if expr recursively contains a MLILDeref - such an expression's value can
-        change due to an intervening store through an unrelated pointer, so a cached copy of
-        it must not survive past any MLILStoreDeref.'''
-        if isinstance(expr, MLILDeref):
+    def _is_closed_form(self, expr: MediumLevelILInstruction) -> bool:
+        '''True only if expr contains no read of any storage this pass doesn't itself fully own
+        the lifetime of - a REG/GLOBAL load, a variable, or a pointer dereference. Only such a
+        "closed" expression is safe to cache indefinitely: it can never go stale, since nothing
+        else can write to what it depends on (it doesn't depend on anything mutable at all).'''
+        if isinstance(expr, MLILConst):
             return True
 
+        elif isinstance(expr, MLILDeref):
+            return False
+
         elif isinstance(expr, MLILBinaryOp):
-            return self._contains_deref(expr.lhs) or self._contains_deref(expr.rhs)
+            return self._is_closed_form(expr.lhs) and self._is_closed_form(expr.rhs)
 
         elif isinstance(expr, MLILUnaryOp):
-            return self._contains_deref(expr.operand)
+            return self._is_closed_form(expr.operand)
 
         else:
             return False
-
-    def _invalidate_deref_dependent(self, state: RegGlobalState) -> RegGlobalState:
-        '''Drop cached REG/GLOBAL values that read through a pointer - a store through some
-        other pointer may alias them and we have no alias analysis to rule it out.'''
-        new_state = state.copy()
-
-        for k, v in state.reg.items():
-            if v is not None and self._contains_deref(v):
-                new_state.reg[k] = None
-
-        for k, v in state.global_.items():
-            if v is not None and self._contains_deref(v):
-                new_state.global_[k] = None
-
-        return new_state
 
     def _state_equal(self, s1: RegGlobalState, s2: RegGlobalState) -> bool:
         '''Check if two states are equal'''

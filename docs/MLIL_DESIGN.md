@@ -95,8 +95,9 @@ value (`chr_set_pos(65533, 0, 0, 0, 0)` instead of the real post-call coordinate
 before renaming, so `x` itself never advances past its seeded version (`x#0`) — it renames to one
 stable address identity throughout, and every existing deref-safety mechanism (SCCP evaluates a
 deref to BOTTOM, copy/expression-inlining never moves an impure deref read across a call, DCE never
-drops a `MLILStoreDeref`, `RegGlobalValuePropagator` invalidates deref-dependent caches) applies to
-it unchanged. A call whose own `output` would alias an address-taken variable is redirected through
+drops a `MLILStoreDeref`, `RegGlobalValuePropagator` never caches a deref read or a variable read at
+all — only a fully closed-form constant expression is ever cached under a REG/GLOBAL slot, so a
+pointer write has nothing stale to invalidate in the first place) applies to it unchanged. A call whose own `output` would alias an address-taken variable is redirected through
 a fresh temporary first (`SSAConstructor._decompose_address_taken_call_outputs`), so the general
 rewrite never has to special-case call outputs. The memory form is kept through every IR layer and
 raised back to a plain variable only at print time (`x` / `x = v`, never `deref(addr_of(x))`) — see

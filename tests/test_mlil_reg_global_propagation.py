@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-'''Unit tests for RegGlobalValuePropagator's worklist-fixpoint and constant-equality bugs -
-Step 9 of the LLIL/MLIL hardening plan (bugs 2 and 6; bugs 1/3/4/5 need a design decision
-between candidate fixes and are not covered here).'''
+'''Unit tests for RegGlobalValuePropagator - Step 9 of the LLIL/MLIL hardening plan. Covers all
+six confirmed bugs: 2 (worklist fixpoint) and 6 (constant equality) fixed directly; 1/3/4/5 (a
+live/stale cached reference surviving a write to whatever it depends on) closed by Candidate B -
+only a fully closed-form (constant) expression is ever cached under a REG/GLOBAL slot, so nothing
+cached can ever go stale, chosen over Candidate A (generalized dependency invalidation) after a
+full-corpus, cross-game measurement showed zero real difference between them.'''
 
 from pathlib import Path
 import sys
@@ -10,8 +13,9 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MLILConst, MLILGoto, MLILIf, MLILCall, MLILLoadGlobal,
-    MLILStoreGlobal, MLILRet,
+    MediumLevelILFunction, MLILConst, MLILGoto, MLILIf, MLILCall, MLILLoadGlobal, MLILLoadReg,
+    MLILStoreGlobal, MLILStoreReg, MLILStoreDeref, MLILRet, MLILSetVar, MLILVar, MLILAdd,
+    MLILAddressOf,
 )
 from ir.mlil.passes.pass_reg_global_propagation import (
     RegGlobalValuePropagator, RegGlobalState,
@@ -83,6 +87,82 @@ class TestConstantEqualityIsRepresentationSafe(unittest.TestCase):
         right = RegGlobalState(global_ = {0: MLILConst(float('nan'))})
 
         self.assertTrue(self.propagator._state_equal(left, right))
+
+
+class TestClosedFormCachingClosesLiveReferenceBugs(unittest.TestCase):
+    '''Bugs 1/3/4/5: only a fully closed-form (constant) expression is ever cached under a
+    REG/GLOBAL slot - a live reference to another slot, a local, or a pointer dereference is
+    never cached, so none of these can go stale.'''
+
+    def test_bug1_copy_of_an_unresolved_slot_is_not_cached_as_a_live_reference(self):
+        func = MediumLevelILFunction('bug1')
+        block = func.create_block()
+        block.add_instruction(MLILStoreReg(0, MLILLoadReg(1)))
+        block.add_instruction(MLILStoreReg(1, MLILConst(7)))
+        block.add_instruction(MLILRet(MLILLoadReg(0)))
+
+        RegGlobalValuePropagationPass().run(func)
+
+        # If REG[0] wrongly cached "whatever REG[1] turns out to be," this would fold to 7.
+        final_ret = block.instructions[-1]
+        self.assertIsInstance(final_ret.value, MLILLoadReg)
+        self.assertEqual(final_ret.value.index, 0)
+
+    def test_bug3_reassigning_a_local_does_not_leak_into_an_earlier_global_read(self):
+        func = MediumLevelILFunction('bug3')
+        block = func.create_block()
+        x = func.get_or_create_local('var_s0', 0)
+        block.add_instruction(MLILStoreGlobal(5, MLILVar(x)))
+        block.add_instruction(MLILSetVar(x, MLILConst(99)))
+        block.add_instruction(MLILCall('h', [MLILLoadGlobal(5)]))
+
+        RegGlobalValuePropagationPass().run(func)
+
+        # If GLOBAL[5] wrongly cached "whatever var_s0 turns out to be," this would fold to 99.
+        call_inst = block.instructions[-1]
+        self.assertIsInstance(call_inst.args[0], MLILLoadGlobal)
+
+    def test_bug4_a_self_referential_store_does_not_double_apply(self):
+        func = MediumLevelILFunction('bug4')
+        block = func.create_block()
+        block.add_instruction(MLILStoreReg(0, MLILAdd(MLILLoadReg(0), MLILConst(1))))
+        block.add_instruction(MLILRet(MLILLoadReg(0)))
+
+        RegGlobalValuePropagationPass().run(func)
+
+        # "REG[0] + 1" still contains a LoadReg - not closed-form - so it must not be cached as
+        # REG[0]'s own new value, or the return would double-apply the +1.
+        final_ret = block.instructions[-1]
+        self.assertIsInstance(final_ret.value, MLILLoadReg)
+
+    def test_bug5_a_pointer_write_does_not_retroactively_change_an_earlier_global_snapshot(self):
+        func = MediumLevelILFunction('bug5')
+        block = func.create_block()
+        x = func.get_or_create_local('x', 0)
+        block.add_instruction(MLILSetVar(x, MLILConst(1)))
+        block.add_instruction(MLILStoreGlobal(5, MLILVar(x)))
+        block.add_instruction(MLILStoreDeref(MLILAddressOf(MLILVar(x)), MLILConst(2)))
+        block.add_instruction(MLILRet(MLILLoadGlobal(5)))
+
+        RegGlobalValuePropagationPass().run(func)
+
+        # If GLOBAL[5] wrongly cached "whatever x turns out to be," this would fold to 2.
+        final_ret = block.instructions[-1]
+        self.assertIsInstance(final_ret.value, MLILLoadGlobal)
+
+    def test_positive_control_constant_propagation_still_works(self):
+        '''The main case this pass exists for must still fold - closed-form caching should not
+        regress plain constant propagation.'''
+        func = MediumLevelILFunction('positive_control')
+        block = func.create_block()
+        block.add_instruction(MLILStoreReg(0, MLILConst(5)))
+        block.add_instruction(MLILRet(MLILLoadReg(0)))
+
+        RegGlobalValuePropagationPass().run(func)
+
+        final_ret = block.instructions[-1]
+        self.assertIsInstance(final_ret.value, MLILConst)
+        self.assertEqual(final_ret.value.value, 5)
 
 
 if __name__ == '__main__':
