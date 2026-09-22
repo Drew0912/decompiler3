@@ -147,6 +147,22 @@ class LowLevelILBuilder:
         # Note: add_instruction will handle the sp update via its existing logic
         return sp_add
 
+    def _discard_vstack_to(self, new_sp: int):
+        '''Sync the vstack after a bulk stack-pointer decrease.'''
+        while self.__vstack.size() and self.__vstack.peek().slot_index >= new_sp:
+            self.__vstack_pop()
+
+        # Exact contiguity, not just increasing order - that would miss a hole left by an
+        # earlier, unrelated desync.
+        expected_slot = new_sp - 1
+        for entry in reversed(self.__vstack.snapshot()):
+            if entry.slot_index != expected_slot:
+                raise RuntimeError(
+                    f'Vstack desync after discard: expected slot_index {expected_slot}, '
+                    f'found {entry.slot_index}'
+                )
+            expected_slot -= 1
+
     # === Virtual Stack Management (Public Interface) ===
 
     def __vstack_push(self, expr: LowLevelILExpr):

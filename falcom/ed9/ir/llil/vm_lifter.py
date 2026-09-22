@@ -146,7 +146,7 @@ class ED9VMLifter:
 
             case ED9Opcode.POP:
                 pop_size = int(inst.operands[0].value) if inst.operands else 0
-                self._pop_words(builder, pop_size // WORD_SIZE if pop_size > 0 else 0)
+                builder.pop_bytes(pop_size)
 
             case ED9Opcode.GET_REG:
                 builder.get_reg(int(inst.operands[0].value))
@@ -299,6 +299,3 @@ class ED9VMLifter:
             raise TypeError(f'CALL_SCRIPT expects string ScpValue, got {value.type}')
 
         return str(value.value)
-
-    def _pop_words(self, builder: FalcomVMBuilder, words: int) -> None:
-        builder.pop_bytes(words * WORD_SIZE)

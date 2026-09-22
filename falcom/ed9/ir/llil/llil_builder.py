@@ -66,18 +66,6 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
         return super().push(value, hidden_for_formatter = hidden_for_formatter)
 
-    def pop(self, *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
-        '''Pop value from stack and emit SpAdd'''
-        expr = super().pop(hidden_for_formatter = hidden_for_formatter)
-
-        if isinstance(expr, LowLevelILConstScript):
-            # 8 bytes script pointer - pop the second slot
-            expr_clone = super().pop()
-            if expr_clone is not expr:
-                raise RuntimeError(f'Script pointer mismatch: {expr_clone} != {expr}')
-
-        return expr
-
     # === Falcom Specific Constants ===
 
     def push_func_id(self):
@@ -358,12 +346,20 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def pop_bytes(self, num_bytes: int, *, hidden_for_formatter: bool = False):
         '''POP operation - discard N bytes from stack'''
-        # Convert bytes to words
+        if num_bytes < 0:
+            raise ValueError(f'num_bytes ({num_bytes}) must not be negative')
+
         if num_bytes % WORD_SIZE != 0:
             raise ValueError(f'num_bytes ({num_bytes}) must be a multiple of WORD_SIZE ({WORD_SIZE})')
 
         num_words = num_bytes // WORD_SIZE
+        if num_words > self.sp_get():
+            raise ValueError(
+                f'num_bytes ({num_bytes}) would pop past the start of the stack (sp={self.sp_get()})'
+            )
+
         self.emit_sp_add(-num_words, hidden_for_formatter = hidden_for_formatter)
+        self._discard_vstack_to(self.sp_get())
 
     def pop_n(self, count: int, *, hidden_for_formatter: bool = False):
         '''POP_N operation - discard N slots from stack'''
@@ -371,7 +367,13 @@ class FalcomVMBuilder(LowLevelILBuilder):
         if count <= 0:
             raise ValueError(f'count ({count}) must be positive')
 
+        if count > self.sp_get():
+            raise ValueError(
+                f'count ({count}) would pop past the start of the stack (sp={self.sp_get()})'
+            )
+
         self.emit_sp_add(-count, hidden_for_formatter = hidden_for_formatter)
+        self._discard_vstack_to(self.sp_get())
 
     def load_global(self, index: int):
         '''LOAD_GLOBAL operation - push global variable onto stack'''
