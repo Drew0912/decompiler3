@@ -93,7 +93,7 @@ class MLILBuilder:
             raise RuntimeError('No function created')
         return self.function.get_or_create_parameter(param_index, name)
 
-    def get_or_create_local(self, name: str, slot_index: int = -1) -> MLILVariable:
+    def get_or_create_local(self, name: str, slot_index: int = UNASSIGNED_SLOT_INDEX) -> MLILVariable:
         '''Get or create a local variable'''
         if self.function is None:
             raise RuntimeError('No function created')

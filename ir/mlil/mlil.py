@@ -13,6 +13,7 @@ FLOAT_ROUND_REL_TOL = 1e-6
 FLOAT_ROUND_ABS_TOL = 1e-9
 
 UNASSIGNED_INST_INDEX = -1
+UNASSIGNED_SLOT_INDEX = -1
 
 if TYPE_CHECKING:
     from ir.llil import LowLevelILBasicBlock, LowLevelILFunction
@@ -133,7 +134,7 @@ class MediumLevelILInstruction(ILInstruction):
         self.operation = operation
         self.address = address
         self.inst_index = UNASSIGNED_INST_INDEX  # Inherited from LLIL instruction index
-        self.llil_index = -1  # Source LLIL instruction index (for debugging/mapping)
+        self.llil_index = UNASSIGNED_INST_INDEX  # Source LLIL instruction index (for debugging/mapping)
         self.options = ILOptions()
 
     @property
@@ -172,7 +173,7 @@ class MediumLevelILStatement(MediumLevelILInstruction):
 class MLILVariable:
     '''MLIL variable (non-SSA)'''
 
-    def __init__(self, name: str, slot_index: int = -1):
+    def __init__(self, name: str, slot_index: int = UNASSIGNED_SLOT_INDEX):
         self.name = name
         self.slot_index = slot_index  # Original stack slot (for debugging)
 
@@ -180,7 +181,7 @@ class MLILVariable:
         return self.name
 
     def __repr__(self) -> str:
-        if self.slot_index >= 0:
+        if self.slot_index != UNASSIGNED_SLOT_INDEX:
             return f'MLILVariable({self.name}, slot={self.slot_index})'
         return f'MLILVariable({self.name})'
 
@@ -773,7 +774,7 @@ class MediumLevelILFunction:
 
         return self.parameters[param_index - 1]
 
-    def get_or_create_local(self, name: str, slot_index: int = -1) -> MLILVariable:
+    def get_or_create_local(self, name: str, slot_index: int = UNASSIGNED_SLOT_INDEX) -> MLILVariable:
         '''Get existing local variable or create new one'''
         if name not in self.locals:
             self.locals[name] = MLILVariable(name, slot_index)

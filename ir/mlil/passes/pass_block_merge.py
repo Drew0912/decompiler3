@@ -30,7 +30,7 @@ class BlockMergePass(Pass):
         block_set = set(mlil_func.basic_blocks)
         absorbed: Set[MediumLevelILBasicBlock] = set()
 
-        for head in list(mlil_func.basic_blocks):
+        for head in mlil_func.basic_blocks:
             if head in absorbed:
                 continue
 
@@ -45,7 +45,7 @@ class BlockMergePass(Pass):
 
         if absorbed:
             mlil_func.basic_blocks = [b for b in mlil_func.basic_blocks if b not in absorbed]
-            mlil_func.renumber_blocks()  # also rebuilds _inst_block_map (ir/mlil/mlil.py)
+            mlil_func.renumber_blocks()  # also drops the absorbed blocks' stale _inst_block_map entries
 
         return mlil_func
 

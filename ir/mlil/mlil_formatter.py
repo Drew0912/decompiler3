@@ -47,7 +47,7 @@ class MLILFormatter:
             result.append('; Locals:')
             for var_name in sorted(func.locals.keys()):
                 var = func.locals[var_name]
-                if var.slot_index >= 0:
+                if var.slot_index != UNASSIGNED_SLOT_INDEX:
                     result.append(f';   {var.name} (slot {var.slot_index})')
 
                 else:
