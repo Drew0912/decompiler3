@@ -14,6 +14,9 @@ from ..mlil import *
 from ..mlil_ssa import *
 from ..mlil_types import *
 
+SSA_TYPE_PROPAGATION_MAX_ITERATIONS = 20
+USAGE_INFERENCE_PASSES = 3
+
 
 class SSATypeInferencePass(Pass):
     '''Infer types for SSA variables'''
@@ -65,10 +68,9 @@ class SSATypeInferencePass(Pass):
     def _propagate_types(self):
         '''Propagate types through assignments until convergence'''
         changed = True
-        max_iterations = 20
         iterations = 0
 
-        while changed and iterations < max_iterations:
+        while changed and iterations < SSA_TYPE_PROPAGATION_MAX_ITERATIONS:
             changed = False
             iterations += 1
 
@@ -100,7 +102,7 @@ class SSATypeInferencePass(Pass):
 
     def _infer_from_usage(self):
         '''Infer types from how variables are used (backward inference)'''
-        for _ in range(3):
+        for _ in range(USAGE_INFERENCE_PASSES):
             for block in self.function.basic_blocks:
                 for inst in block.instructions:
                     if isinstance(inst, MLILIf):
