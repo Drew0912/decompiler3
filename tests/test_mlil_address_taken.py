@@ -236,8 +236,10 @@ class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
 class TestRegGlobalPropagationAddressTaken(unittest.TestCase):
     '''GLOBAL[n] = x; *(&x) = 5; use(GLOBAL[n]) - the value captured into GLOBAL[0] before
     the store must not be replaced by a re-read of *x after it. RegGlobalValuePropagator's
-    deref-invalidation (Step 3) already defends this; Step A's lowering makes an address-
-    taken local's ordinary reassignment go through exactly the same StoreDeref shape.'''
+    closed-form-only caching already defends this - a deref read is never cached under a
+    REG/GLOBAL slot at all, so there is nothing for the later store to invalidate; Step A's
+    lowering makes an address-taken local's ordinary reassignment go through exactly the same
+    StoreDeref shape.'''
 
     def test_stale_global_copy_not_substituted_after_address_taken_reassignment(self):
         func = MediumLevelILFunction('reg_global_addr_taken_test')

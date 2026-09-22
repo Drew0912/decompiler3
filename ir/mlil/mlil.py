@@ -647,7 +647,7 @@ class MLILDeref(MLILUnaryOp):
     '''Load *ptr - dereference a pointer expression. Impure: unlike a variable read, the target
     memory is not tracked by SSA, so this can never be assumed constant across a store through
     any pointer (see the inliner's _is_impure_read and RegGlobalValuePropagator's
-    _invalidate_deref_dependent, which drops cached REG/GLOBAL values on a deref store).
+    _is_closed_form, which never caches a deref read under a REG/GLOBAL slot at all).
     '''
 
     def __init__(self, operand: MediumLevelILInstruction, **kwargs):

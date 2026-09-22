@@ -236,10 +236,12 @@ class TestHLILDerefStoreReadsPointer(unittest.TestCase):
 
 
 class TestRegGlobalPropagationDerefInvalidation(unittest.TestCase):
-    '''Codex Rule 2 second-pass finding: a cached REG/GLOBAL value that itself reads through a
-    pointer (e.g. REG[0] = *arg1) must be invalidated by any later store through a pointer -
-    otherwise the propagator re-evaluates the stale expression after the store instead of using
-    the value that was actually captured into REG[0] beforehand.'''
+    '''A REG/GLOBAL value read through a pointer (e.g. REG[0] = *arg1) must never be propagated
+    across a later store through a pointer - otherwise the propagator could re-evaluate a stale
+    expression after the store instead of using the value actually captured into REG[0]
+    beforehand. RegGlobalValuePropagator's closed-form-only caching (_is_closed_form) achieves
+    this by never caching a deref read under a REG/GLOBAL slot in the first place, rather than
+    caching it and invalidating on a later pointer store.'''
 
     def test_cached_deref_value_is_invalidated_by_a_later_store_deref(self):
         func = MediumLevelILFunction('reg_global_test')

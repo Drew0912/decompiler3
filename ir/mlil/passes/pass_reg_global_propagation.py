@@ -226,9 +226,7 @@ class RegGlobalValuePropagator:
             return (inst, new_state)
 
         elif isinstance(inst, MLILStoreDeref):
-            # A deref store's target is a runtime pointer, architecturally disjoint from the
-            # REG[]/GLOBALS[] arrays this pass tracks - and since only closed-form (constant)
-            # expressions ever get cached, no cached value could ever alias through it anyway.
+            # Dereference stores cannot affect closed-form cached values.
             new_dest = self._substitute(inst.dest, state)
             new_value = self._substitute(inst.value, state)
 
@@ -331,10 +329,7 @@ class RegGlobalValuePropagator:
             return expr
 
     def _is_closed_form(self, expr: MediumLevelILInstruction) -> bool:
-        '''True only if expr contains no read of any storage this pass doesn't itself fully own
-        the lifetime of - a REG/GLOBAL load, a variable, or a pointer dereference. Only such a
-        "closed" expression is safe to cache indefinitely: it can never go stale, since nothing
-        else can write to what it depends on (it doesn't depend on anything mutable at all).'''
+        '''Return whether expr is a constant expression with no mutable inputs.'''
         if isinstance(expr, MLILConst):
             return True
 
