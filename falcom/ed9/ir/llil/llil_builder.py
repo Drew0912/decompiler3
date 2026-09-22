@@ -52,6 +52,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
                 f'Incomplete call sequence detected (push_ret_addr without call).'
             )
 
+        self.function.reindex_in_block_order()
         self._finalized = True
         return self.function
 

@@ -706,6 +706,17 @@ class LowLevelILFunction:
         self._instructions.append(inst)
         self._inst_block_map[inst.inst_index] = block
 
+    def reindex_in_block_order(self):
+        '''Rebuild instruction indices and lookup tables in basic-block list order, regardless of
+        the order instructions were originally registered in.'''
+        self._instructions = []
+        self._inst_block_map = {}
+        self._next_inst_index = 0
+
+        for block in self.basic_blocks:
+            for inst in block.instructions:
+                self._register_instruction(block, inst)
+
     def get_instruction_by_index(self, inst_index: int) -> Optional[LowLevelILInstruction]:
         '''Get instruction by global inst_index'''
         if inst_index < 0 or inst_index >= len(self._instructions):
@@ -717,7 +728,7 @@ class LowLevelILFunction:
         return self._inst_block_map.get(inst_index)
 
     def iter_instructions(self):
-        '''Iterate over instructions in insertion order'''
+        '''Iterate over instructions in inst_index order'''
         return iter(self._instructions)
 
     def get_block_by_addr(self, addr: int) -> Optional[LowLevelILBasicBlock]:
