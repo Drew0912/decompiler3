@@ -81,6 +81,16 @@ variants of each).
 out-parameter), not a statically known slot. Always impure (never assumed constant, never
 inlined across a call) and a deref store is never dead-code-eliminated.
 
+The same `MLILDeref`/`MLILStoreDeref`/`MLILAddressOf` shape also carries a second, distinct use:
+during SSA construction, every local or parameter whose address is taken anywhere in the function
+(`&x`) is rewritten to explicit `*(&x)` memory form - `MLILDeref(MLILAddressOf(MLILVar(x)))` reads,
+`MLILStoreDeref(MLILAddressOf(MLILVar(x)), v)` writes - instead of being versioned like an ordinary
+scalar (see `MLIL_DESIGN.md`'s Variable Model & SSA section for why). This is purely an SSA-layer
+representation choice, not a new opcode: outside SSA form (before construction, after
+deconstruction), `x` still prints and behaves like any other local. `*(&x) ≡ x` always holds for
+this shape, so every printer folds it back to plain `x` / `x = v` - see `HLIL_GUIDE.md`'s printing
+convention.
+
 ## The Pipeline
 
 `convert_falcom_llil_to_mlil()` (`falcom/ed9/ir/mlil/mlil_converter.py`) is what real code paths

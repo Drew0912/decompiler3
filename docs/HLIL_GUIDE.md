@@ -109,6 +109,19 @@ also does its own peephole simplification at print time (constant-folds
 constant-vs-constant comparisons, `(bool) != 0` → `bool`, double-negation elimination) — some
 optimization happens here, not only in `ir/hlil/passes/`.
 
+**Address-taken locals fold back to a plain variable, not a `deref` call.** MLIL SSA construction
+lowers every address-taken local/parameter `x` to explicit `*(&x)` memory form (see
+`MLIL_DESIGN.md`'s Variable Model & SSA section); that form survives SSA deconstruction and MLIL-
+to-HLIL conversion unchanged, so it also reaches HLIL as `HLILDeref(HLILAddressOf(HLILVar(x)))` /
+an `HLILAssign` whose `dest` is that same shape. `*(&x) ≡ x` always holds for exactly this shape
+(never for a genuine runtime-computed pointer), so both printers special-case it before falling
+through to the generic `deref(...)`/`deref_set(...)` handling: `codegen/typescript.py` prints plain
+`x` / `x = v` (reusing the ordinary assignment branch's `int(...)` boolean coercion, not a second
+copy of it - `_unwrap_address_taken_deref`/`_format_var_assignment`), and the debug
+`ir/hlil/hlil_formatter.py` prints `x` the same way (`HLILFormatter._unwrap_address_taken_deref`).
+Real output therefore reads naturally - `chr_set_pos(65533, var_s5, var_s6, var_s7, var_s8)` - with
+no visible trace of the underlying memory-form representation.
+
 Two output modes exist side by side:
 - **`.ts`** — `generate_typescript()`'s real pseudocode output.
 - **`.hlil.ts`** — a raw `HLILFormatter` tree dump, explicitly documented in-repo as

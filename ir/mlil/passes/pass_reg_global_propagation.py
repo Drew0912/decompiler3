@@ -1,5 +1,6 @@
 '''REG/GLOBAL value propagation pass'''
 
+import math
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum, auto
@@ -89,9 +90,11 @@ class RegGlobalValuePropagator:
             # Simulate block execution
             out_state = self._simulate_block(block, in_state)
 
-            # Check if changed
+            # Retain the latest input even when the block's output is already stable.
+            block_in[block] = in_state
+
+            # Check if out_state changed - only this decides whether successors need revisiting
             if block not in block_out or not self._state_equal(block_out[block], out_state):
-                block_in[block] = in_state
                 block_out[block] = out_state
 
                 for succ in block.outgoing_edges:
@@ -404,6 +407,13 @@ class RegGlobalValuePropagator:
             return False
 
         if isinstance(a, MLILConst):
+            # Preserve constant types and make NaN reflexive for fixpoint comparison.
+            if type(a.value) != type(b.value):
+                return False
+
+            if isinstance(a.value, float):
+                return a.value == b.value or (math.isnan(a.value) and math.isnan(b.value))
+
             return a.value == b.value
 
         elif isinstance(a, MLILVar):

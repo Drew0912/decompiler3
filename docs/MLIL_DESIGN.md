@@ -84,6 +84,24 @@ Falcom-specific stack-setup helpers (`PUSH_CALLER_FRAME`, `PUSH_FUNC_ID`, `PUSH_
 fully lowered to regular variables/arguments in MLIL — there is no dedicated MLIL opcode for them
 once the stack layout is eliminated.
 
+**Address-taken locals/parameters are memory, not scalar SSA values.** A variable whose address is
+taken anywhere in the function (`SSAConstructor._collect_address_taken_vars`) cannot be versioned
+like an ordinary scalar: doing so would version the *address* itself (`&x#1`, `&x#2`, ...),
+conflating one stable storage location with a chain of immutable SSA values — the root cause of a
+real bug where a call's actual effect on an out-parameter was silently replaced by its pre-call
+value (`chr_set_pos(65533, 0, 0, 0, 0)` instead of the real post-call coordinates). Instead,
+`SSAConstructor._lower_address_taken_vars` rewrites every read/write of such a variable to explicit
+`*(&x)` deref/store form (`MLILDeref(MLILAddressOf(MLILVar(x)))` / `MLILStoreDeref(MLILAddressOf(...), v)`)
+before renaming, so `x` itself never advances past its seeded version (`x#0`) — it renames to one
+stable address identity throughout, and every existing deref-safety mechanism (SCCP evaluates a
+deref to BOTTOM, copy/expression-inlining never moves an impure deref read across a call, DCE never
+drops a `MLILStoreDeref`, `RegGlobalValuePropagator` invalidates deref-dependent caches) applies to
+it unchanged. A call whose own `output` would alias an address-taken variable is redirected through
+a fresh temporary first (`SSAConstructor._decompose_address_taken_call_outputs`), so the general
+rewrite never has to special-case call outputs. The memory form is kept through every IR layer and
+raised back to a plain variable only at print time (`x` / `x = v`, never `deref(addr_of(x))`) — see
+`HLIL_GUIDE.md`'s printing-convention section.
+
 ## Basic Blocks & Functions
 
 ```
