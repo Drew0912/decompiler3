@@ -43,16 +43,16 @@ class ED9VMLifter:
         ir_params = self._convert_params(func.params)
         builder.create_function(func.name, func.offset, ir_params, is_common_func=func.is_common_func)
 
-        blocks = self._collect_blocks(func.entry_block)
-        blocks.sort(key = lambda b: b.offset)
+        lift_blocks = self._compute_rpo(func.entry_block)
+        layout_blocks = sorted(lift_blocks, key = lambda b: b.offset)   # preserve address-order block indices
 
         llil_blocks: Dict[int, LowLevelILBasicBlock] = {}
-        for block in blocks:
+        for block in layout_blocks:
             llil_blocks[block.offset] = builder.create_basic_block(block.offset, block.name)
 
-        block_map = {block.offset: block for block in blocks}
+        block_map = {block.offset: block for block in layout_blocks}
 
-        for block in blocks:
+        for block in lift_blocks:
             builder.begin_block(llil_blocks[block.offset])
             for inst in block.instructions:
                 # Set current SCP instruction address for LLIL address tracking
@@ -79,19 +79,35 @@ class ED9VMLifter:
         return result
 
     def _collect_blocks(self, entry: BasicBlock) -> list[BasicBlock]:
-        blocks: list[BasicBlock] = []
+        '''All blocks reachable from entry. Kept separate from lift_function's own traversal for
+        external callers (e.g. tools/ir_line_order_report.py) that just want the reachable set.'''
+        return self._compute_rpo(entry)
+
+    def _compute_rpo(self, entry: BasicBlock) -> list[BasicBlock]:
+        '''Reverse post-order over succs only (never preds - split_block() leaves it unreliable).
+        In the returned order, every non-entry block follows at least one predecessor.'''
         visited: set[int] = set()
-        stack = [entry]
+        postorder: list[BasicBlock] = []
+        stack: list[tuple[BasicBlock, bool]] = [(entry, False)]
 
         while stack:
-            block = stack.pop()
+            block, processed = stack.pop()
+
+            if processed:
+                postorder.append(block)
+                continue
+
             if block.offset in visited:
                 continue
-            visited.add(block.offset)
-            blocks.append(block)
-            stack.extend(block.succs)
 
-        return blocks
+            visited.add(block.offset)
+            stack.append((block, True))
+
+            for succ in reversed(block.succs):
+                if succ.offset not in visited:
+                    stack.append((succ, False))
+
+        return list(reversed(postorder))
 
     def _translate_instruction(
         self,

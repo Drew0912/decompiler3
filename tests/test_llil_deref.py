@@ -51,6 +51,9 @@ def build_function_with_deref(num_params: int, offset: int, *, deref_write: bool
         builder.load_stack_deref(offset)
 
     if with_ret:
+        if not deref_write:
+            builder.pop_bytes(WORD_SIZE)   # load_stack_deref leaves its loaded value pushed
+        builder.pop_bytes(num_params * WORD_SIZE)   # a real function cleans up its own params too
         builder.ret()
 
     return builder.function, entry

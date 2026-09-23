@@ -533,6 +533,7 @@ class TestAddressTakenFromRealLLIL(unittest.TestCase):
         builder.syscall(1, 1, 1)                # syscall(var_s1) - sp stays 2
         builder.load_stack(-2 * WORD_SIZE)      # push var_s0's value; sp 2->3
         builder.set_reg(0)                      # reg0 = var_s0's value; sp 3->2
+        builder.pop_bytes(2 * WORD_SIZE)        # sp 2->0 (discard the two remaining temps)
         builder.ret()
 
         mlil_func = convert_falcom_llil_to_mlil(builder.function, optimize = True, infer_types = False)

@@ -87,6 +87,7 @@ class TestPushStackAddrParameterSlotMLIL(unittest.TestCase):
         builder.set_current_block(entry)
 
         builder.push_stack_addr(-WORD_SIZE)  # var_s1 (slot 1) = &arg1; sp 1->2
+        builder.pop_bytes(2 * WORD_SIZE)      # sp 2->0 (the pushed temp, then the param itself)
         builder.ret()
 
         mlil_func = FalcomLLILToMLILTranslator().translate(builder.function)

@@ -7,6 +7,9 @@ from .constants import *
 from .llil_ext import *
 
 
+EMPTY_STACK_SP = 0   # ED9 calling convention: any real exit must leave the VM stack empty
+
+
 class FalcomVMBuilder(LowLevelILBuilder):
     '''High-level builder with Falcom VM patterns'''
 
@@ -28,9 +31,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
         self._finish_block()
 
-        if self.sp_get() != 0:
-            raise RuntimeError(f'Stack is not empty at the end of the function. Current sp: {self.sp_get()}')
-
+        # RPO can end on a non-exit block; exit operations validate their own stack state.
         self.function.build_cfg()
 
         if self.function is None:
@@ -177,6 +178,9 @@ class FalcomVMBuilder(LowLevelILBuilder):
         if argc > 0:
             self._cleanup_stack(argc)
 
+        # Save the post-call stack state for the return edge.
+        self.save_stack_for_offset(return_block.start)
+
     def call_script(self, module: str, func: str, arg_count: int):
         '''CALL_SCRIPT operation - call a script function'''
         # Verify call setup was done
@@ -235,6 +239,9 @@ class FalcomVMBuilder(LowLevelILBuilder):
         # Clean up state
         self.caller_frame_inst = None
 
+        # Save the post-call stack state for the return edge.
+        self.save_stack_for_offset(return_block.start)
+
     def call_script_no_return(self, module: str, func: str, arg_count: int):
         '''CALL_SCRIPT_NO_RETURN operation - tail call to a script function, no return to caller
 
@@ -253,14 +260,20 @@ class FalcomVMBuilder(LowLevelILBuilder):
         self._cleanup_stack(arg_count)
 
         # A tail call replaces the rest of the function, so only its own arguments should be
-        # live here. Checked immediately rather than deferred to finalize(): this block has no
-        # successor, so a leak would never reach finalize()'s end-of-function check, and a later
-        # block reached via a different branch could restore its own sp snapshot and mask it.
-        if self.sp_get() != 0:
+        # live here. This block has no successor, so nothing else would ever validate a leak here.
+        if self.sp_get() != EMPTY_STACK_SP:
             raise RuntimeError(
                 f'Stack imbalance in call_script_no_return: after cleaning up {arg_count} args, '
-                f'current_sp={self.sp_get()} but a tail call must leave sp=0'
+                f'current_sp={self.sp_get()} but a tail call must leave sp={EMPTY_STACK_SP}'
             )
+
+    def ret(self):
+        '''RETURN operation - the VM calling convention requires an empty stack at any real exit'''
+        if self.sp_get() != EMPTY_STACK_SP:
+            raise RuntimeError(
+                f'Stack imbalance at return: current sp={self.sp_get()}, expected {EMPTY_STACK_SP}'
+            )
+        super().ret()
 
     # === VM Operations ===
 

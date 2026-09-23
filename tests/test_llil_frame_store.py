@@ -83,6 +83,7 @@ class TestPopToParameterSlotMLIL(unittest.TestCase):
 
         builder.push_int(99)
         builder.pop_to(-WORD_SIZE)
+        builder.pop_bytes(WORD_SIZE)  # a real function cleans up its own param slot before RETURN
         builder.ret()  # MLIL finalize() requires every block to end in a terminal
 
         mlil_func = FalcomLLILToMLILTranslator().translate(builder.function)

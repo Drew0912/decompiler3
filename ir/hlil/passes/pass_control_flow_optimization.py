@@ -1,7 +1,8 @@
 '''Control Flow Optimization Pass'''
 
 import math
-from typing import List, Optional, Tuple
+from enum import Enum, auto
+from typing import List, NamedTuple, Optional, Tuple
 from ir.pipeline import Pass
 from ..hlil import (
     HighLevelILFunction,
@@ -39,6 +40,29 @@ from ..hlil import (
 
 # Below this a chain reads better as if/else-if than as a switch
 SWITCH_MIN_CASES = 3
+
+
+class ExitKind(Enum):
+    '''How a path leaves the node being analyzed. A return leaves the function and is never
+    absorbed by anything; a break/continue is absorbed by whichever construct owns it and
+    rejoins at a real location, so it must survive until that owner is reached.'''
+
+    RETURN = auto()
+    BREAK = auto()
+    CONTINUE = auto()
+
+
+class ExitPath(NamedTuple):
+    '''One non-local exit, and what var's killed-state was where it happens.
+
+    label is None for a bare break/continue (owned by the nearest enclosing loop, or for a
+    break the nearest enclosing switch); otherwise it names the loop it belongs to, which
+    may be several levels out, so the exit passes through everything in between unchanged.
+    '''
+
+    kind: ExitKind
+    label: Optional[str]
+    killed: bool
 
 
 class ControlFlowOptimizationPass(Pass):
@@ -318,42 +342,52 @@ class ControlFlowOptimizationPass(Pass):
         Check if original value of var can be read anywhere in node.
         Uses data flow analysis to track write-before-read.
 
-        Returns: (reads_original, killed_after, always_exits)
+        Returns: (reads_original, fallthrough_killed, exit_paths)
             - reads_original: True if original value can be read on some path
-            - killed_after: True if var is killed on all continuing paths
-            - always_exits: True if all paths exit (return/break/continue)
+            - fallthrough_killed: None when nothing falls through to whatever follows node;
+              otherwise var's killed-state where it does. None is a structural proof (every
+              path returns or jumps away); a bool is conservative, since conditions are
+              never interpreted - `while (1)` still reports the zero-iteration fallthrough
+              it can never really take. Over-reporting a fallthrough only keeps an
+              assignment alive needlessly; it cannot hide a read.
+            - exit_paths: every non-local exit reachable inside node that node does not
+              itself own, each carrying the killed-state where it happens. Collected
+              unconditionally - a break on one arm of an if survives even when the other
+              arm falls through, because it rejoins at a real location further out.
+              Duplicates are fine: these states get merged, never counted.
         '''
         if node is None:
-            return (False, killed, False)
+            return (False, killed, ())
 
-        # Expressions - don't kill, may read
+        # Expressions - don't kill, may read, and cannot contain a break/return/continue
+        # (those are statements), so they never contribute an exit path
         if isinstance(node, HLILVar):
             reads = (node.var == var and not killed)
-            return (reads, killed, False)
+            return (reads, killed, ())
 
         if isinstance(node, HLILConst):
-            return (False, killed, False)
+            return (False, killed, ())
 
         if isinstance(node, HLILBinaryOp):
             left_reads, _, _ = self._can_read_original_value(var, node.lhs, killed)
             right_reads, _, _ = self._can_read_original_value(var, node.rhs, killed)
-            return (left_reads or right_reads, killed, False)
+            return (left_reads or right_reads, killed, ())
 
         if isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
             reads, _, _ = self._can_read_original_value(var, node.operand, killed)
-            return (reads, killed, False)
+            return (reads, killed, ())
 
         if isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
             for arg in node.args:
                 reads, _, _ = self._can_read_original_value(var, arg, killed)
                 if reads:
-                    return (True, killed, False)
-            return (False, killed, False)
+                    return (True, killed, ())
+            return (False, killed, ())
 
         # Statements
         if isinstance(node, HLILExprStmt):
             reads, _, _ = self._can_read_original_value(var, node.expr, killed)
-            return (reads, killed, False)
+            return (reads, killed, ())
 
         if isinstance(node, HLILAssign):
             # RHS is evaluated first
@@ -369,78 +403,72 @@ class ControlFlowOptimizationPass(Pass):
 
             # Check if this kills var
             dest_kills = isinstance(node.dest, HLILVar) and node.dest.var == var
-            return (rhs_reads or dest_reads, dest_kills or killed, False)
+            return (rhs_reads or dest_reads, dest_kills or killed, ())
 
         if isinstance(node, HLILBlock):
             any_reads = False
+            exit_paths = []
             current_killed = killed
 
             for stmt in node.statements:
-                reads, current_killed, exits = self._can_read_original_value(var, stmt, current_killed)
+                reads, fallthrough, stmt_exits = self._can_read_original_value(var, stmt, current_killed)
                 if reads:
                     any_reads = True
-                if exits:
-                    # Path exits, subsequent code unreachable
-                    return (any_reads, current_killed, True)
 
-            return (any_reads, current_killed, False)
+                exit_paths.extend(stmt_exits)
+
+                if fallthrough is None:
+                    # Nothing after this statement is reachable
+                    return (any_reads, None, tuple(exit_paths))
+
+                current_killed = fallthrough
+
+            return (any_reads, current_killed, tuple(exit_paths))
 
         if isinstance(node, HLILIf):
             # Check condition first
             cond_reads, _, _ = self._can_read_original_value(var, node.condition, killed)
 
-            # Check both branches
-            true_reads, true_killed, true_exits = self._can_read_original_value(var, node.true_block, killed)
-
-            if node.false_block:
-                false_reads, false_killed, false_exits = self._can_read_original_value(var, node.false_block, killed)
-
-            else:
-                false_reads, false_killed, false_exits = False, killed, False
+            # A missing else is the None node case: condition-false falls through unchanged
+            true_reads, true_fallthrough, true_exits = self._can_read_original_value(var, node.true_block, killed)
+            false_reads, false_fallthrough, false_exits = self._can_read_original_value(var, node.false_block, killed)
 
             any_reads = cond_reads or true_reads or false_reads
 
-            # Determine killed state after if
-            if true_exits and false_exits:
-                # Both exit - whole if exits
-                return (any_reads, killed, True)
+            # An if owns no break/continue of its own, so both arms' exits pass straight
+            # through - including an arm's exit whose sibling arm falls through instead
+            exit_paths = tuple(true_exits) + tuple(false_exits)
 
-            elif true_exits:
-                # Only false branch continues
-                killed_after = false_killed
+            if true_fallthrough is None and false_fallthrough is None:
+                # Neither arm continues - so neither does the if
+                fallthrough = None
 
-            elif false_exits:
-                # Only true branch continues
-                killed_after = true_killed
+            elif true_fallthrough is None:
+                # Only the false arm continues
+                fallthrough = false_fallthrough
+
+            elif false_fallthrough is None:
+                # Only the true arm continues
+                fallthrough = true_fallthrough
 
             else:
                 # Both continue - killed only if both kill
-                killed_after = true_killed and false_killed
+                fallthrough = true_fallthrough and false_fallthrough
 
-            return (any_reads, killed_after, False)
+            return (any_reads, fallthrough, exit_paths)
 
         if isinstance(node, HLILWhile):
-            # While may not execute at all, so can't guarantee kill
-            cond_reads, _, _ = self._can_read_original_value(var, node.condition, killed)
-            body_reads, _, _ = self._can_read_original_value(var, node.body, killed)
-            return (cond_reads or body_reads, killed, False)
+            return self._loop_result(var, node, killed, condition_checked_first = True)
 
         if isinstance(node, HLILDoWhile):
-            # Do-while executes body at least once
-            body_reads, body_killed, body_exits = self._can_read_original_value(var, node.body, killed)
-
-            if body_exits:
-                return (body_reads, body_killed, True)
-
-            cond_reads, _, _ = self._can_read_original_value(var, node.condition, body_killed)
-            return (body_reads or cond_reads, body_killed, False)
+            return self._loop_result(var, node, killed, condition_checked_first = False)
 
         if isinstance(node, HLILSwitch):
             scrutinee_reads, _, _ = self._can_read_original_value(var, node.scrutinee, killed)
 
             any_reads = scrutinee_reads
-            all_exit = True
-            all_kill = True
+            reaching_after = []
+            exit_paths = []
             has_default = False
 
             for case in node.cases:
@@ -455,40 +483,126 @@ class ControlFlowOptimizationPass(Pass):
                         if value_reads:
                             any_reads = True
 
-                case_reads, case_killed, case_exits = self._can_read_original_value(var, case.body, killed)
+                case_reads, case_fallthrough, case_exits = self._can_read_original_value(var, case.body, killed)
                 if case_reads:
                     any_reads = True
-                if not case_exits:
-                    all_exit = False
-                    if not case_killed:
-                        all_kill = False
+
+                if case_fallthrough is not None:
+                    reaching_after.append(case_fallthrough)
+
+                for exit_path in case_exits:
+                    # A switch owns only a bare break. It carries no label of its own, so a
+                    # labeled break can never name one, and continue belongs to a loop -
+                    # both escape to be resolved further out, exactly like a return.
+                    if exit_path.kind is ExitKind.BREAK and exit_path.label is None:
+                        reaching_after.append(exit_path.killed)
+
+                    else:
+                        exit_paths.append(exit_path)
 
             # With no default, a scrutinee value matching none of the cases takes an
-            # implicit path where nothing in the switch runs - var reaches the code after
-            # the switch unchanged, so the switch can neither be assumed to exit nor to
-            # kill var on every path, no matter what the explicit cases do.
+            # implicit path where nothing in the switch runs, reaching the code after it
+            # with var untouched, no matter what the explicit cases do.
             if not has_default:
-                all_exit = False
-                all_kill = False
+                reaching_after.append(killed)
 
-            if all_exit:
-                return (any_reads, killed, True)
-
-            return (any_reads, all_kill, False)
+            return (any_reads, self._merge_fallthrough(reaching_after), tuple(exit_paths))
 
         if isinstance(node, HLILReturn):
-            if node.value:
-                reads, _, _ = self._can_read_original_value(var, node.value, killed)
-                return (reads, killed, True)
-            return (False, killed, True)
+            # node.value is None for a bare return, which the None node case handles
+            reads, _, _ = self._can_read_original_value(var, node.value, killed)
+            return (reads, None, (ExitPath(ExitKind.RETURN, None, killed),))
 
-        if isinstance(node, (HLILBreak, HLILContinue)):
-            return (False, killed, True)
+        if isinstance(node, HLILBreak):
+            return (False, None, (ExitPath(ExitKind.BREAK, node.label, killed),))
+
+        if isinstance(node, HLILContinue):
+            return (False, None, (ExitPath(ExitKind.CONTINUE, node.label, killed),))
 
         if isinstance(node, HLILComment):
-            return (False, killed, False)
+            return (False, killed, ())
 
-        return (False, killed, False)
+        return (False, killed, ())
+
+    def _loop_result(self, var: HLILVariable, node, killed: bool, *,
+                     condition_checked_first: bool) -> tuple:
+        '''Shared while / do-while summary.
+
+        The two differ only in whether the condition can be reached without the body
+        running at all (while) or only after it (do-while). Everything else - which exits
+        the loop owns, how a continue rejoins the bottom check, how the surviving states
+        merge - is identical, so one walker serves both rather than two that have to be
+        kept in step by hand.
+
+        Iterates to a fixed point over the killed-states the body can be entered with.
+        killed only ever goes False -> True, so this closes after at most two rounds, and
+        that same monotonicity means one round would already be enough; the worklist stays
+        so the closure is explicit instead of resting on that argument holding forever.
+        '''
+        reaching_condition = {killed} if condition_checked_first else set()
+        pending = {killed}
+        analyzed = set()
+
+        body_reads = False
+        breaks_out = []
+        exit_paths = []
+
+        while pending:
+            state = pending.pop()
+            analyzed.add(state)
+
+            reads, fallthrough, exits = self._can_read_original_value(var, node.body, state)
+            if reads:
+                body_reads = True
+
+            if fallthrough is not None:
+                reaching_condition.add(fallthrough)
+
+            for exit_path in exits:
+                if not self._loop_absorbs(exit_path, node.label):
+                    exit_paths.append(exit_path)
+
+                elif exit_path.kind is ExitKind.CONTINUE:
+                    # A continue rejoins the same bottom check the body falls into
+                    reaching_condition.add(exit_path.killed)
+
+                else:
+                    # A break skips the check and lands after the loop
+                    breaks_out.append(exit_path.killed)
+
+            # Whatever reaches the check re-enters the body when it tests true
+            pending |= reaching_condition - analyzed
+
+        # The condition sees each state that reaches it - a killed=False arrival can expose
+        # a read that a killed=True arrival would hide
+        cond_reads = False
+        for state in reaching_condition:
+            reads, _, _ = self._can_read_original_value(var, node.condition, state)
+            if reads:
+                cond_reads = True
+
+        # The loop is left either by the condition testing false or by a break
+        after_loop = list(reaching_condition) + breaks_out
+        return (body_reads or cond_reads, self._merge_fallthrough(after_loop), tuple(exit_paths))
+
+    def _loop_absorbs(self, exit_path: ExitPath, loop_label: Optional[str]) -> bool:
+        '''Whether a loop owns this exit: a bare break/continue always belongs to the
+        nearest enclosing loop, a labeled one only to the loop carrying that label. A
+        return belongs to no construct and is never absorbed.'''
+        if exit_path.kind is ExitKind.RETURN:
+            return False
+
+        return exit_path.label is None or exit_path.label == loop_label
+
+    def _merge_fallthrough(self, states: List[bool]) -> Optional[bool]:
+        '''Killed-state where several paths rejoin. None when nothing arrives at all, so
+        the construct structurally cannot fall through; otherwise killed only when every
+        arriving path killed - one surviving path still holding the original value is
+        enough to keep a later read of it visible.'''
+        if not states:
+            return None
+
+        return all(states)
 
     def _remove_redundant_else_assign(self, if_stmt: HLILIf, preceding_stmts: List[HLILStatement]):
         '''Remove redundant var = source in else block for switch-case patterns.
