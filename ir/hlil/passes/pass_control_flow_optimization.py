@@ -354,35 +354,21 @@ class ControlFlowOptimizationPass(Pass):
               itself own, each carrying the killed-state where it happens. Collected
               unconditionally - a break on one arm of an if survives even when the other
               arm falls through, because it rejoins at a real location further out.
-              Duplicates are fine: these states get merged, never counted.
+              Multiplicity is irrelevant: whoever eventually owns a given exit contributes
+              only its killed-state to a merge (_merge_fallthrough), same as any other
+              path reaching that point - a return or a still-escaping labeled exit is
+              never merged at all, just propagated unchanged until something owns it.
         '''
         if node is None:
             return (False, killed, ())
 
-        # Expressions - don't kill, may read, and cannot contain a break/return/continue
-        # (those are statements), so they never contribute an exit path
-        if isinstance(node, HLILVar):
-            reads = (node.var == var and not killed)
+        # Expressions cannot contain a break/return/continue (those are statements) or kill
+        # anything themselves, so killed is fixed across the whole subtree - walked via the
+        # same _expr_children shape _tree_any uses elsewhere in this file, so a new
+        # expression node type can't drift between the two traversals.
+        if isinstance(node, HLILExpression):
+            reads = self._tree_any(node, lambda n: isinstance(n, HLILVar) and n.var == var and not killed)
             return (reads, killed, ())
-
-        if isinstance(node, HLILConst):
-            return (False, killed, ())
-
-        if isinstance(node, HLILBinaryOp):
-            left_reads, _, _ = self._can_read_original_value(var, node.lhs, killed)
-            right_reads, _, _ = self._can_read_original_value(var, node.rhs, killed)
-            return (left_reads or right_reads, killed, ())
-
-        if isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
-            reads, _, _ = self._can_read_original_value(var, node.operand, killed)
-            return (reads, killed, ())
-
-        if isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
-            for arg in node.args:
-                reads, _, _ = self._can_read_original_value(var, arg, killed)
-                if reads:
-                    return (True, killed, ())
-            return (False, killed, ())
 
         # Statements
         if isinstance(node, HLILExprStmt):
@@ -437,23 +423,13 @@ class ControlFlowOptimizationPass(Pass):
 
             # An if owns no break/continue of its own, so both arms' exits pass straight
             # through - including an arm's exit whose sibling arm falls through instead
-            exit_paths = tuple(true_exits) + tuple(false_exits)
+            exit_paths = true_exits + false_exits
 
-            if true_fallthrough is None and false_fallthrough is None:
-                # Neither arm continues - so neither does the if
-                fallthrough = None
-
-            elif true_fallthrough is None:
-                # Only the false arm continues
-                fallthrough = false_fallthrough
-
-            elif false_fallthrough is None:
-                # Only the true arm continues
-                fallthrough = true_fallthrough
-
-            else:
-                # Both continue - killed only if both kill
-                fallthrough = true_fallthrough and false_fallthrough
+            # Whichever arms continue rejoin right after the if - the same merge a loop's
+            # condition-check or a switch's post-switch position uses for their own
+            # multiple incoming states
+            fallthrough = self._merge_fallthrough(
+                [f for f in (true_fallthrough, false_fallthrough) if f is not None])
 
             return (any_reads, fallthrough, exit_paths)
 
@@ -530,14 +506,16 @@ class ControlFlowOptimizationPass(Pass):
 
         The two differ only in whether the condition can be reached without the body
         running at all (while) or only after it (do-while). Everything else - which exits
-        the loop owns, how a continue rejoins the bottom check, how the surviving states
-        merge - is identical, so one walker serves both rather than two that have to be
-        kept in step by hand.
+        the loop owns, how a continue rejoins the next condition check, how the surviving
+        states merge - is identical, so one walker serves both rather than two that have
+        to be kept in step by hand.
 
         Iterates to a fixed point over the killed-states the body can be entered with.
-        killed only ever goes False -> True, so this closes after at most two rounds, and
-        that same monotonicity means one round would already be enough; the worklist stays
-        so the closure is explicit instead of resting on that argument holding forever.
+        The worklist mechanically bounds this to at most two rounds, since killed only
+        ever goes False -> True; monotonicity goes further and proves the second round is
+        currently always redundant (a state reached with killed=True can never surface a
+        new killed=False state). The worklist stays regardless, so correctness does not
+        rest on that stronger argument continuing to hold as this file changes.
         '''
         reaching_condition = {killed} if condition_checked_first else set()
         pending = {killed}
@@ -563,7 +541,7 @@ class ControlFlowOptimizationPass(Pass):
                     exit_paths.append(exit_path)
 
                 elif exit_path.kind is ExitKind.CONTINUE:
-                    # A continue rejoins the same bottom check the body falls into
+                    # A continue rejoins the same next condition check the body falls into
                     reaching_condition.add(exit_path.killed)
 
                 else:

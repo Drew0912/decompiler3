@@ -232,10 +232,11 @@ class TestHLILDerefStoreReadsPointer(unittest.TestCase):
         ptr = HLILVariable('arg1')
         block = HLILBlock([HLILAssign(HLILDeref(HLILVar(ptr)), HLILConst(1))])
 
-        reads, killed, always_exits = ControlFlowOptimizationPass()._can_read_original_value(ptr, block)
+        reads, fallthrough_killed, exit_paths = ControlFlowOptimizationPass()._can_read_original_value(ptr, block)
 
         self.assertTrue(reads)
-        self.assertFalse(killed)
+        self.assertIs(fallthrough_killed, False)
+        self.assertEqual(exit_paths, ())
 
 
 class TestRegGlobalPropagationDerefInvalidation(unittest.TestCase):
