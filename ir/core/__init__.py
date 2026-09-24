@@ -11,5 +11,6 @@ __all__ = [
     'BinaryOperation',
     'UnaryOperation',
     'IRParameter',
+    'constant_values_equal',
     'ILOptions',
 ]

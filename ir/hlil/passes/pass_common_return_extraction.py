@@ -1,6 +1,7 @@
 '''Common Return Extraction Pass'''
 
 from typing import Optional
+from ir.core import constant_values_equal
 from ir.pipeline import Pass
 from ..hlil import (
     HighLevelILFunction,
@@ -11,6 +12,7 @@ from ..hlil import (
     HLILSwitch,
     HLILReturn,
     sub_blocks,
+    contains_bare_break,
 )
 
 
@@ -55,7 +57,11 @@ class CommonReturnExtractionPass(Pass):
             i += 1
 
     def _get_common_switch_return(self, switch_stmt: HLILSwitch) -> Optional[HLILReturn]:
-        if not switch_stmt.cases:
+        # An unmatched value, or a case's bare break, leaves the switch and runs what follows it
+        if not any(case.is_default() for case in switch_stmt.cases):
+            return None
+
+        if any(contains_bare_break(case.body) for case in switch_stmt.cases):
             return None
 
         common_return = None
@@ -85,7 +91,7 @@ class CommonReturnExtractionPass(Pass):
             return False
 
         if isinstance(ret1.value, HLILConst) and isinstance(ret2.value, HLILConst):
-            return ret1.value.value == ret2.value.value
+            return constant_values_equal(ret1.value.value, ret2.value.value)
 
         if isinstance(ret1.value, HLILVar) and isinstance(ret2.value, HLILVar):
             return ret1.value.var == ret2.value.var

@@ -593,6 +593,28 @@ def sub_blocks(stmt: 'HLILStatement') -> List['HLILBlock']:
     return []
 
 
+def contains_bare_break(block: Optional['HLILBlock']) -> bool:
+    '''Whether block holds an unlabeled break that leaves the construct owning block - one not
+    owned by a nested loop or switch. Walks sub_blocks, so a new block-owning statement type is
+    searched by default.'''
+    if block is None:
+        return False
+
+    for stmt in block.statements:
+        if isinstance(stmt, HLILBreak) and stmt.label is None:
+            return True
+
+        # Loops and switches own the bare breaks inside them
+        if isinstance(stmt, (HLILWhile, HLILDoWhile, HLILSwitch)):
+            continue
+
+        for sub_block in sub_blocks(stmt):
+            if contains_bare_break(sub_block):
+                return True
+
+    return False
+
+
 # ============================================================================
 # Function Container
 # ============================================================================

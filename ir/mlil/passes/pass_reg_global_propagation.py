@@ -1,11 +1,11 @@
 '''REG/GLOBAL value propagation pass'''
 
-import math
 from collections import deque
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
+from ir.core import constant_values_equal
 from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MediumLevelILInstruction,
@@ -384,14 +384,8 @@ class RegGlobalValuePropagator:
             return False
 
         if isinstance(a, MLILConst):
-            # Preserve constant types and make NaN reflexive for fixpoint comparison.
-            if type(a.value) != type(b.value):
-                return False
-
-            if isinstance(a.value, float):
-                return a.value == b.value or (math.isnan(a.value) and math.isnan(b.value))
-
-            return a.value == b.value
+            # NaN reflexive, so a NaN constant doesn't count as a change on every fixpoint pass
+            return constant_values_equal(a.value, b.value)
 
         elif isinstance(a, MLILVar):
             return a.var.name == b.var.name

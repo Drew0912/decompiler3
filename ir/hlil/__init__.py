@@ -58,6 +58,7 @@ __all__ = [
     'split_else_if_arm',
     'unwrap_address_taken_var',
     'sub_blocks',
+    'contains_bare_break',
 
     # Function
     'HighLevelILFunction',

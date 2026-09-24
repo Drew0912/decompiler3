@@ -1,8 +1,8 @@
 '''Control Flow Optimization Pass'''
 
-import math
 from enum import Enum, auto
 from typing import List, NamedTuple, Optional, Tuple
+from ir.core import constant_values_equal
 from ir.pipeline import Pass
 from ..hlil import (
     HighLevelILFunction,
@@ -35,6 +35,7 @@ from ..hlil import (
     BinaryOp,
     UnaryOp,
     unwrap_address_taken_var,
+    contains_bare_break,
 )
 
 
@@ -696,19 +697,10 @@ class ControlFlowOptimizationPass(Pass):
 
     def _source_matches(self, a: HLILExpression, b: HLILExpression) -> bool:
         '''True if a and b are the same constant value or the same plain variable - the only two
-        shapes source_expr is ever allowed to be by the time this is called. Constant comparison
-        mirrors pass_reg_global_propagation.py's _expr_equal: int and float are distinct
-        representations even at equal numeric value, and NaN compares equal to itself here
-        (ED9 floats decode straight from binary data, so NaN is a real, reachable constant).
+        shapes source_expr is ever allowed to be by the time this is called.
         '''
         if isinstance(a, HLILConst) and isinstance(b, HLILConst):
-            if type(a.value) != type(b.value):
-                return False
-
-            if isinstance(a.value, float):
-                return a.value == b.value or (math.isnan(a.value) and math.isnan(b.value))
-
-            return a.value == b.value
+            return constant_values_equal(a.value, b.value)
 
         if isinstance(a, HLILVar) and isinstance(b, HLILVar):
             return a.var == b.var
@@ -870,10 +862,10 @@ class ControlFlowOptimizationPass(Pass):
 
         # A bare loop break inside a case would become a switch break after conversion
         for _, case_body in cases:
-            if self._contains_bare_break(case_body):
+            if contains_bare_break(case_body):
                 return None
 
-        if default_body and self._contains_bare_break(default_body):
+        if default_body and contains_bare_break(default_body):
             return None
 
         switch_cases = [HLILSwitchCase([HLILConst(v) for v in values], body)
@@ -883,23 +875,6 @@ class ControlFlowOptimizationPass(Pass):
             switch_cases.append(HLILSwitchCase(None, default_body))
 
         return HLILSwitch(scrutinee, switch_cases)
-
-    def _contains_bare_break(self, block: Optional[HLILBlock]) -> bool:
-        '''Check for an unlabeled break not owned by a nested loop or switch'''
-        if not block or not block.statements:
-            return False
-
-        for stmt in block.statements:
-            if isinstance(stmt, HLILBreak) and stmt.label is None:
-                return True
-
-            if isinstance(stmt, HLILIf):
-                if self._contains_bare_break(stmt.true_block) or self._contains_bare_break(stmt.false_block):
-                    return True
-
-            # Breaks inside nested While/DoWhile/Switch belong to those constructs
-
-        return False
 
     def _merge_nested_switches(self, block: HLILBlock):
         if not block or not block.statements:
