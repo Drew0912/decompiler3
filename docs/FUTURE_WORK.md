@@ -98,7 +98,8 @@ Design rules for an executed DSL:
   explicitly, or tracked as an unconsumed call node (guarding against one node used twice). Build
   function bodies after all functions are registered, so calls to later functions resolve.
 - HLIL `&&`/`||` lower as short-circuit, using the VM's eager logical op only when the right side has
-  no side effects. That is only correct once no call is ever folded under a native VM logical op.
+  no side effects. That relies on no call ever being folded under a native VM logical op (true since
+  2026-09-24, see `docs/HLIL_DESIGN.md`, Call Results as Expressions).
 
 **Correctness** is the logic round trip of `docs/LLIL_DSL.md` §2 (game logic unchanged, fixed point
 within a few rounds), but its per-function fingerprint check can't transfer — an HLIL recompile is
@@ -108,7 +109,8 @@ comparison (see "Static Game-Logic Check" below) in cross-program mode. An execu
 bytecode emulator) was considered and deliberately not pursued.
 
 **Prerequisites.** Once HLIL compiles back, every HLIL pass must preserve game logic exactly, not just
-readability. Before starting: calls never folded under a native VM logical op; copy propagation never
+readability. Before starting: calls never folded under a native VM logical op (met 2026-09-24 - see
+`docs/HLIL_DESIGN.md`, Call Results as Expressions); copy propagation never
 forwarding a register/global past a redefinition (met 2026-09-24 - including clobbering calls whose
 record dead-code elimination drops; see `docs/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (`[hlil] dropped
 path` warnings — `system.dat` `MapJumpState` has 19); common-return extraction only hoisting from an

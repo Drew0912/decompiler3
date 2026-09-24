@@ -2,8 +2,8 @@
 
 import sys
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Dict, List, Set, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Dict, List, Set, Optional, Tuple
 
 from ir.mlil.mlil import *
 from ir.mlil.mlil_types import MLILType, MLILTypeKind
@@ -96,22 +96,6 @@ def _mlil_type_to_hlil(mlil_type: MLILType) -> HLILTypeKind:
 # ============================================================================
 # Call Result Folding
 # ============================================================================
-
-
-@dataclass
-class LoopStackEntry:
-    '''Active loop context for break/continue generation'''
-    header: int
-    exit: Optional[int]
-    label: Optional[str] = None
-
-
-@dataclass
-class FollowOn:
-    '''Block to carry on at after an if or a loop, in the same target block and stop point'''
-    block_idx: int
-    jump_source: Optional[MediumLevelILInstruction] = None
-    force_plain: bool = False
 
 
 class CallResultFolder:
@@ -521,6 +505,22 @@ class CallResultFolder:
 # ============================================================================
 # MLIL to HLIL Converter
 # ============================================================================
+
+@dataclass
+class LoopStackEntry:
+    '''Active loop context for break/continue generation'''
+    header: int
+    exit: Optional[int]
+    label: Optional[str] = None
+
+
+@dataclass
+class FollowOn:
+    '''Block to carry on at after an if or a loop, in the same target block and stop point'''
+    block_idx: int
+    jump_source: Optional[MediumLevelILInstruction] = None
+    force_plain: bool = False
+
 
 class MLILToHLILConverter:
 
@@ -1234,7 +1234,7 @@ class MLILToHLILConverter:
     def _reconstruct_control_flow(self, block_idx: int, target_block: HLILBlock,
                                    stop_at: Optional[int] = None,
                                    jump_source: Optional[MediumLevelILInstruction] = None,
-                                   force_plain: bool = False) -> Optional[int]:
+                                   force_plain: bool = False) -> None:
         '''Reconstruct structured statements starting at block_idx.
 
         Sequential block chains, including the code after an if or a loop
@@ -1295,7 +1295,7 @@ class MLILToHLILConverter:
                 # Reached the merge point - stop here, don't process this block
                 # The merge block will be processed after the if-else by the outer scope
                 self.visited_blocks.add(block_idx)
-                return block_idx
+                return None
 
             # Check if this is a loop header
             if not force_plain and block_idx in self.loop_headers:

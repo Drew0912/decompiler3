@@ -139,6 +139,16 @@ the reader's operand order matches call execution order. It can cross into a sin
 only when that block has one predecessor. Calls without outputs remain expression statements so
 their side effects are preserved; calls with non-foldable outputs remain assignments.
 
+The fold moves the call to the read's position, so that position must run exactly when the
+statement did (`CallResultFolder._read_unsafe_to_fold`). A fold is refused when an impure read (a
+deref or a `REG[]`/`GLOBAL[]` load) comes earlier in the reader's evaluation order, when the read
+sits under `&x`, and when it sits on the right of an MLIL logical AND/OR. The VM evaluates both
+sides of those, but HLIL `&&`/`||` short-circuit, so **no call is ever folded under a native VM
+logical op**. The converter's other `||` chains (funnel collapse) only fold calls into their first,
+always-evaluated test, so a call on the right side of an HLIL `&&`/`||` really is conditional. The
+cost: a refused call sits between `else` and the next test, so such `else if` chains nest instead of
+printing flat (`docs/FUTURE_WORK.md`, "HLIL Nesting Depth").
+
 This specialized folding belongs in conversion rather than the general copy-propagation pass: it
 uses MLIL instruction positions, CFG predecessor information, and call evaluation order before the
 graph is discarded.
@@ -189,7 +199,12 @@ The converter uses that analysis as decision support rather than asking it to em
 It queries loop membership and exits, merge points, back edges, and whether a branch looks like an
 inverted continuation chain. Recursive reconstruction remains responsible for owning blocks,
 emitting branch arms, recognizing active-loop transfers, and processing merge blocks exactly once.
-This separation keeps graph algorithms isolated from MLIL-to-HLIL node translation.
+This separation keeps graph algorithms isolated from MLIL-to-HLIL node translation. It recurses into
+branch arms and loop bodies only: the code after an if or a loop (its merge block or exit) is
+returned as a `FollowOn` and continued in `_reconstruct_control_flow`'s loop, so recursion depth
+grows with nesting, not with function length. Deep nesting still recurses - a long `else if`
+cascade nests one level per test - so `falcom/ed9/scena2py.py` and `tools/ir_semantic_validator.py`
+raise Python's recursion limit to 10,000.
 
 Before reconstruction, `CallResultFolder` computes its folding decisions. The converter then
 translates parameters, reconstructs from MLIL block zero, and finally declares the local variables
@@ -232,6 +247,8 @@ Several dedicated HLIL unit-test files exist today:
   into a do-while body via the shared `sub_blocks` helper.
 - `tests/test_hlil_copy_propagation.py` and `tests/test_hlil_call_fold_short_circuit.py` cover
   `CopyPropagationPass` and the MLIL->HLIL call-fold short-circuit safety work respectively.
+- `tests/test_hlil_long_functions.py` checks that long runs of sequential ifs and loops convert
+  without recursing once per statement.
 
 These tests directly exercise important tree rewrites, but they do not constitute end-to-end
 coverage of HLIL construction. `StructuralAnalyzer`, shared-region cloning, source metadata

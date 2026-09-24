@@ -57,7 +57,8 @@ args), `HLILExternCall` (`"module:func"` cross-script calls).
 `GLOBALS[index]`. Registers are ordinary `HLILVar`s with a different `VariableKind`. Separately,
 `CallResultFolder` decides when an MLIL call's `output` can be inlined straight into its single
 reader instead of materializing as a `REG` assignment — turning `reg0 = f(); use(reg0)` into
-`use(f())` wherever safe.
+`use(f())` wherever safe. It never folds a call under the right side of a native VM logical op:
+the VM evaluates both sides, HLIL `&&`/`||` short-circuit (see `docs/HLIL_DESIGN.md`).
 
 ## Conversion Pipeline
 
@@ -142,4 +143,4 @@ Two output modes exist side by side:
 Several dedicated test files: `tests/test_hlil_branch_order_normalization.py`,
 `tests/test_hlil_control_flow_optimization.py`, `tests/test_hlil_loop_recovery.py`,
 `tests/test_hlil_loop_traversal.py`, `tests/test_hlil_copy_propagation.py`,
-`tests/test_hlil_call_fold_short_circuit.py`.
+`tests/test_hlil_call_fold_short_circuit.py`, `tests/test_hlil_long_functions.py`.
