@@ -7,7 +7,6 @@
 	"settings": {
 		"search.exclude": {
 			"**/.claude": true,
-			"**/binaryninja-api": true,
 			"decompiler3.code-workspace": true,
 		}
 	},

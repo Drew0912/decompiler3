@@ -22,16 +22,6 @@ If any user request conflicts with this file, you must follow **this file** and,
 
 ## Mandatory Rules
 
-### 0. NEVER TOUCH binaryninja-api/
-
-**ABSOLUTELY FORBIDDEN** to modify any files in `binaryninja-api/` directory.
-
-- ✅ READ ONLY: Can read files for reference
-- ❌ NO WRITES: Never modify, create, or delete files
-- ❌ NO EDITS: Never edit any file under `binaryninja-api/`
-
-This is third-party code. Do not touch it under any circumstances.
-
 ### 1. NO HARDCODED MAGIC NUMBERS
 
 **NEVER** hardcode numeric constants. Always use named constants.
