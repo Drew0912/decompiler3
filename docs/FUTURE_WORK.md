@@ -85,7 +85,8 @@ bytecode emulator) was considered and deliberately not pursued.
 
 **Prerequisites.** Once HLIL compiles back, every HLIL pass must preserve game logic exactly, not just
 readability. Before starting: calls never folded under a native VM logical op; copy propagation never
-forwarding a register/global past a redefinition; HLIL never silently dropping a path (`[hlil] dropped
+forwarding a register/global past a redefinition (met 2026-09-24 - including clobbering calls whose
+record dead-code elimination drops; see `docs/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (`[hlil] dropped
 path` warnings — `system.dat` `MapJumpState` has 19); common-return extraction only hoisting from an
 exhaustive switch.
 

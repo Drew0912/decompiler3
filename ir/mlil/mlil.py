@@ -819,6 +819,10 @@ class MediumLevelILFunction:
         '''Check whether a variable models a VM global'''
         return var in self.global_vars.values()
 
+    def call_may_clobber(self, call: 'MediumLevelILCall', var: MLILVariable) -> bool:
+        '''Whether `call` may clobber the register/global storage represented by `var`'''
+        return call.clobbers_registers and (self.is_register_var(var) or self.is_global_var(var))
+
     def global_index_of(self, var: MLILVariable) -> int | None:
         '''Global var table index of a variable, or None if it does not model a global'''
         for index, global_var in self.global_vars.items():

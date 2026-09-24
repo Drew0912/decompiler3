@@ -201,7 +201,7 @@ class ExpressionInliningPass(Pass):
                     def_block, def_idx = def_pos
                     use_block, use_idx = use_pos
                     if not all(
-                        reaches_without_redefinition(storage, def_block, def_idx, use_block, use_idx)
+                        reaches_without_redefinition(func, storage, def_block, def_idx, use_block, use_idx)
                         for storage in storages
                     ):
                         continue

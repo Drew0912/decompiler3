@@ -150,6 +150,18 @@ condition simplification, negation normal form, dead-code elimination, and dead-
 Register/global value propagation (`pass_reg_global_propagation.py`) runs as its own pipeline stage
 in the Falcom entry point, after SSA deconstruction.
 
+Copy propagation and expression inlining never move a register/global read past anything that may
+redefine that storage: an explicit definition, a call's own output, or any call that may clobber it
+(`MediumLevelILFunction.call_may_clobber`, the same rule SSA construction uses for its `<undef>`
+pseudo-definitions). Both passes share one check, `reaches_without_redefinition`
+(`pass_ssa_copy_propagation.py`), which also scans the use block's own instructions before the use.
+The call itself is the barrier, not its pseudo-definitions or output: dead-code elimination drops an
+unread call output and dead register pseudo-definitions while the call - and its clobber - stays,
+so a later optimizer round must still see it (without this, a saved `reg0` value was forwarded past
+the next call in ~1,800 places across the corpus). Dead-code elimination refuses to drop a call
+output that is a global (it raises): call results only ever land in the result register, and
+dropping a global output would silently lose a global write.
+
 SCCP folds constant `+ - * & | ^ << >>`, `&&`/`||`, and comparisons, but deliberately never
 evaluates `MLIL_DIV`/`MLIL_MOD` to a lattice constant (`pass_ssa_sccp.py`'s `_eval_binary_op`) -
 Python's arithmetic doesn't match the VM's actual number format (`ScpValue`'s 30-bit-int/float32

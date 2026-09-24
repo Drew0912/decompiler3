@@ -49,6 +49,10 @@ class DeadCodeEliminationPass(Pass):
                     # An unread call result is dropped, the call itself stays
                     if isinstance(inst, MediumLevelILCall) and inst.output is not None:
                         if not self.ssa_uses.get(inst.output):
+                            # Never discard an observable global write
+                            if func.is_global_var(inst.output.base_var):
+                                raise ValueError(f'call output is a global: {inst}')
+
                             inst.output = None
 
                     new_instructions.append(inst)

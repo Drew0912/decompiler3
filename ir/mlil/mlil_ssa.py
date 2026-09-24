@@ -630,18 +630,9 @@ class SSAConstructor:
         return defined
 
     def _clobbered_reg_global_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
-        '''Registers/globals a call clobbers, besides its own output.
-
-        A callee may change any register or global, so every one of them other than the
-        variable receiving the result becomes undefined across the call - unless the call is
-        marked clobbers_registers=False (proven to have no VM register/global side effects at
-        all, e.g. a pure debug print), in which case it clobbers nothing here.
-        '''
-        if not inst.clobbers_registers:
-            return []
-
+        '''Registers/globals a call may clobber, excluding its own output'''
         return [var for var in list(self.function.register_vars.values()) + list(self.function.global_vars.values())
-                if var != inst.output]
+                if var != inst.output and self.function.call_may_clobber(inst, var)]
 
     def _insert_phi_nodes(self):
         '''Insert Phi nodes at dominance frontiers (worklist algorithm)'''

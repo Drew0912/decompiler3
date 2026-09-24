@@ -14,7 +14,13 @@ from ir.mlil.mlil import (
     MLILGt, MLILAdd, MLILCall, MLILSyscall, MLILDeref, MLILLoadGlobal,
 )
 from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILIf, MLILRet, MLILUndef, SSADeconstructor
-from ir.mlil.passes import CopyPropagationPass, ExpressionInliningPass
+from ir.mlil.passes import CopyPropagationPass, ExpressionInliningPass, SSADeadCodeEliminationPass
+from ir.mlil.passes.pass_ssa_copy_propagation import reaches_without_redefinition
+from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.ir.llil import ED9VMLifter
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+
+SORA2_ANI_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en' / 'ani'
 
 
 def make_func(name: str) -> MediumLevelILFunction:
@@ -478,6 +484,283 @@ class TestCopyPropagationBackwardReachabilityAcrossBranch(unittest.TestCase):
 
         self.assertEqual(str(b1.instructions[-1]), 'r#1 = reg0#1',
                           'a safe copy must still resolve through a branching def block into its sole successor')
+
+
+class TestReachabilityScansUseBlockPrefix(unittest.TestCase):
+    '''reaches_without_redefinition must also scan the use block's own instructions before the
+    use - a redefinition sitting there runs after every predecessor, so forwarding the old value
+    past it changes what the use reads.'''
+
+    def build_branch(self, func, b0_tail, b1_instructions):
+        '''b0: ...b0_tail; if (c#1) b1 else b2 - b1 is the use block, b0 its sole predecessor'''
+        func.locals['c'] = MLILVariable('c')
+        c1 = MLILVariableSSA(func.locals['c'], 1)
+        b0 = MediumLevelILBasicBlock(0)
+        b1 = MediumLevelILBasicBlock(1)
+        b2 = MediumLevelILBasicBlock(2)
+        b0.instructions = b0_tail + [MLILIf(MLILVarSSA(c1), b1, b2)]
+        b1.instructions = b1_instructions
+        b2.instructions = [MLILRet(MLILConst(0))]
+        b0.add_outgoing_edge(b1)
+        b0.add_outgoing_edge(b2)
+        func.basic_blocks = [b0, b1, b2]
+        return b0, b1
+
+    def test_global_restore_inside_branch_survives_deconstruction(self):
+        func = make_func('restore_in_branch')
+        global5 = func.get_or_create_global_var(5)
+        func.locals['tmp'] = MLILVariable('tmp')
+        g1, g2, g3 = (MLILVariableSSA(global5, n) for n in (1, 2, 3))
+        tmp1 = MLILVariableSSA(func.locals['tmp'], 1)
+
+        _, b1 = self.build_branch(func, [
+            MLILSetVarSSA(g1, MLILConst(99)),
+            MLILSetVarSSA(tmp1, MLILVarSSA(g1)),     # tmp#1 = global5#1          (save)
+        ], [
+            MLILSetVarSSA(g2, MLILConst(7)),         # global5#2 = 7              (overwrite, use block prefix)
+            MLILSetVarSSA(g3, MLILVarSSA(tmp1)),     # global5#3 = tmp#1          (restore)
+            MLILRet(MLILConst(0)),
+        ])
+
+        CopyPropagationPass().run(func)
+        SSADeconstructor(func).deconstruct()
+
+        self.assertIn('GLOBAL[5] = tmp', [str(inst) for inst in b1.instructions], 'the restore must survive')
+
+    def test_global_read_not_forwarded_past_store_in_use_block(self):
+        func = make_func('store_in_use_block')
+        global5 = func.get_or_create_global_var(5)
+        func.locals['t'] = MLILVariable('t')
+        g1, g2 = MLILVariableSSA(global5, 1), MLILVariableSSA(global5, 2)
+        t1 = MLILVariableSSA(func.locals['t'], 1)
+
+        _, b1 = self.build_branch(func, [
+            MLILSetVarSSA(t1, MLILVarSSA(g1)),       # t#1 = global5#1
+        ], [
+            MLILSetVarSSA(g2, MLILConst(7)),         # global5#2 = 7
+            MLILRet(MLILVarSSA(t1)),                 # return t#1 - must not become global5#1
+        ])
+
+        CopyPropagationPass().run(func)
+
+        self.assertEqual(str(b1.instructions[-1]), 'return t#1')
+
+    def test_entry_register_not_forwarded_past_call_in_use_block(self):
+        func = make_func('entry_reg_past_call')
+        reg0 = MLILVariable('reg0')
+        func.register_vars[0] = reg0
+        func.locals['saved'] = MLILVariable('saved')
+        reg0_entry, reg0_1 = MLILVariableSSA(reg0, 0), MLILVariableSSA(reg0, 1)
+        saved1 = MLILVariableSSA(func.locals['saved'], 1)
+
+        _, b1 = self.build_branch(func, [
+            MLILSetVarSSA(saved1, MLILVarSSA(reg0_entry)),  # saved#1 = reg0#0 (entry value)
+        ], [
+            MLILCall(0x1234, [], output = None),
+            MLILSetVarSSA(reg0_1, MLILUndef()),             # call's pseudo-def clobbers reg0
+            MLILRet(MLILVarSSA(saved1)),
+        ])
+
+        CopyPropagationPass().run(func)
+
+        self.assertEqual(str(b1.instructions[-1]), 'return saved#1', 'must not read reg0 after the call')
+
+    def test_expression_not_inlined_past_store_in_use_block(self):
+        func = make_func('inline_past_store_in_use_block')
+        global5 = func.get_or_create_global_var(5)
+        func.locals['x'] = MLILVariable('x')
+        g1, g2 = MLILVariableSSA(global5, 1), MLILVariableSSA(global5, 2)
+        x1 = MLILVariableSSA(func.locals['x'], 1)
+        b3 = MediumLevelILBasicBlock(3)
+        b4 = MediumLevelILBasicBlock(4)
+
+        _, b1 = self.build_branch(func, [
+            MLILSetVarSSA(x1, MLILGt(MLILVarSSA(g1), MLILConst(0))),  # x#1 = global5#1 > 0
+        ], [
+            MLILSetVarSSA(g2, MLILConst(-5)),                          # global5#2 = -5
+            MLILIf(MLILVarSSA(x1), b3, b4),                            # if (x#1)
+        ])
+        func.basic_blocks += [b3, b4]
+
+        ExpressionInliningPass().run(func)
+
+        self.assertIn('x#1', str(b1.instructions[-1]), 'must not inline global5#1 > 0 past the store')
+
+    def test_harmless_prefix_still_forwards_across_branch(self):
+        func = make_func('harmless_prefix')
+        reg0 = MLILVariable('reg0')
+        func.register_vars[0] = reg0
+        for n in ('a', 'spacer', 'r'):
+            func.locals[n] = MLILVariable(n)
+        reg0_1 = MLILVariableSSA(reg0, 1)
+        a1, spacer1, r1 = (MLILVariableSSA(func.locals[n], 1) for n in ('a', 'spacer', 'r'))
+
+        _, b1 = self.build_branch(func, [
+            MLILSetVarSSA(reg0_1, MLILConst(5)),
+            MLILSetVarSSA(a1, MLILVarSSA(reg0_1)),    # a#1 = reg0#1
+        ], [
+            MLILSetVarSSA(spacer1, MLILConst(0)),     # unrelated prefix statement
+            MLILSetVarSSA(r1, MLILVarSSA(a1)),        # r#1 = a#1
+            MLILRet(MLILVarSSA(r1)),
+        ])
+
+        CopyPropagationPass().run(func)
+
+        self.assertEqual(str(b1.instructions[1]), 'r#1 = reg0#1', 'a harmless prefix must not block forwarding')
+
+
+class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
+    '''Dead-code elimination drops an unread call output and dead register pseudo-defs, so on the
+    next optimizer round the call itself is the only evidence that it clobbered a register - the
+    reachability check must still treat it as a redefinition.'''
+
+    def reg0_func(self, name):
+        func = make_func(name)
+        reg0 = MLILVariable('reg0')
+        func.register_vars[0] = reg0
+        func.locals['t'] = MLILVariable('t')
+        return func, reg0, MLILVariableSSA(func.locals['t'], 1)
+
+    def optimize_rounds(self, func):
+        '''Two optimizer rounds with dead-code elimination in between, as SSAOptimizer runs them'''
+        CopyPropagationPass().run(func)
+        SSADeadCodeEliminationPass().run(func)
+        CopyPropagationPass().run(func)
+
+    def test_dropped_call_output_still_blocks_forward_into_branch(self):
+        func, reg0, t1 = self.reg0_func('dropped_output')
+        func.locals['c'] = MLILVariable('c')
+        reg0_1, reg0_2 = MLILVariableSSA(reg0, 1), MLILVariableSSA(reg0, 2)
+        c1 = MLILVariableSSA(func.locals['c'], 1)
+        b0, b1, b2 = (MediumLevelILBasicBlock(n) for n in range(3))
+        b0.instructions = [
+            MLILCall('produce', [], output = reg0_1),
+            MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),                # t#1 = reg0#1        (save)
+            MLILIf(MLILVarSSA(c1), b1, b2),
+        ]
+        b1.instructions = [
+            MLILCall('clobber', [], output = reg0_2),             # unread output - dead-code elimination drops it
+            MLILCall('consume', [MLILVarSSA(t1)]),
+            MLILRet(MLILConst(0)),
+        ]
+        b2.instructions = [MLILRet(MLILConst(0))]
+        b0.add_outgoing_edge(b1)
+        b0.add_outgoing_edge(b2)
+        func.basic_blocks = [b0, b1, b2]
+
+        self.optimize_rounds(func)
+
+        self.assertEqual(str(b1.instructions[0]), 'clobber()', 'the unread output must have been dropped')
+        self.assertEqual(str(b1.instructions[1]), 'consume(t#1)', 'reg0#1 must not be read after the clobbering call')
+
+    def test_dropped_pseudo_def_still_blocks_forward_in_same_block(self):
+        func, reg0, t1 = self.reg0_func('dropped_pseudo_def')
+        reg0_1, reg0_2 = MLILVariableSSA(reg0, 1), MLILVariableSSA(reg0, 2)
+        block = MediumLevelILBasicBlock(0)
+        block.instructions = [
+            MLILCall('produce', [], output = reg0_1),
+            MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),                # t#1 = reg0#1        (save)
+            MLILSyscall(6, 35, []),
+            MLILSetVarSSA(reg0_2, MLILUndef()),                   # the syscall's dead pseudo-def
+            MLILCall('consume', [MLILVarSSA(t1)]),
+            MLILRet(MLILConst(0)),
+        ]
+        func.basic_blocks = [block]
+
+        self.optimize_rounds(func)
+
+        lines = [str(inst) for inst in block.instructions]
+        self.assertFalse(any('reg0#2' in line for line in lines), 'the dead pseudo-def must have been dropped')
+        self.assertIn('consume(t#1)', lines, 'reg0#1 must not be read after the syscall')
+
+    def test_non_clobbering_call_does_not_block_forward(self):
+        func, reg0, t1 = self.reg0_func('non_clobbering')
+        reg0_1 = MLILVariableSSA(reg0, 1)
+        block = MediumLevelILBasicBlock(0)
+        block.instructions = [
+            MLILCall('produce', [], output = reg0_1),
+            MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),
+            MLILCall('debug_print', [], clobbers_registers = False),
+            MLILCall('consume', [MLILVarSSA(t1)]),
+            MLILRet(MLILConst(0)),
+        ]
+        func.basic_blocks = [block]
+
+        self.optimize_rounds(func)
+
+        self.assertIn('consume(reg0#1)', [str(inst) for inst in block.instructions])
+
+    def test_read_as_argument_of_the_clobbering_call_still_forwards(self):
+        '''Arguments are read before the call runs, so its own clobber does not apply to them'''
+        func, reg0, t1 = self.reg0_func('argument_of_clobbering_call')
+        reg0_1 = MLILVariableSSA(reg0, 1)
+        block = MediumLevelILBasicBlock(0)
+        block.instructions = [
+            MLILCall('produce', [], output = reg0_1),
+            MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),
+            MLILCall('consume', [MLILVarSSA(t1)]),
+            MLILRet(MLILConst(0)),
+        ]
+        func.basic_blocks = [block]
+
+        self.optimize_rounds(func)
+
+        self.assertIn('consume(reg0#1)', [str(inst) for inst in block.instructions])
+
+    def test_bare_call_is_a_redefinition_of_registers_and_globals(self):
+        func, reg0, _ = self.reg0_func('bare_call')
+        global5 = func.get_or_create_global_var(5)
+        block = MediumLevelILBasicBlock(0)
+        block.instructions = [MLILConst(0), MLILSyscall(6, 35, []), MLILConst(0)]
+
+        self.assertFalse(reaches_without_redefinition(func, reg0, block, 0, block, 2))
+        self.assertFalse(reaches_without_redefinition(func, global5, block, 0, block, 2))
+
+        block.instructions[1] = MLILCall('debug_print', [], clobbers_registers = False)
+        self.assertTrue(reaches_without_redefinition(func, reg0, block, 0, block, 2))
+
+
+class TestDeadCodeGlobalCallOutput(unittest.TestCase):
+    '''Call results only land in the result register - a global call output would be a global
+    write that dropping an unread output silently loses, so it must fail loudly instead.'''
+
+    def test_unread_global_call_output_raises(self):
+        func = make_func('global_call_output')
+        global5 = func.get_or_create_global_var(5)
+        block = MediumLevelILBasicBlock(0)
+        block.instructions = [MLILCall('produce', [], output = MLILVariableSSA(global5, 1)), MLILRet(MLILConst(0))]
+        func.basic_blocks = [block]
+
+        with self.assertRaises(ValueError):
+            SSADeadCodeEliminationPass().run(func)
+
+
+def optimized_corpus_mlil(dat_name: str, func_name: str) -> MediumLevelILFunction:
+    path = SORA2_ANI_DIR / dat_name
+    if not path.exists():
+        raise unittest.SkipTest(f'Test file not found: {path}')
+
+    parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
+    func = next(f for f in functions if f.name == func_name)
+    llil = ED9VMLifter(parser = parser).lift_function(func)
+    return convert_falcom_llil_to_mlil(llil, parser, optimize = True, infer_types = True)
+
+
+class TestCorpusRegisterReadAfterClobberingCall(unittest.TestCase):
+    '''Real functions whose bytecode saves reg0 to a stack slot before a call and later reads the
+    saved slot - the decompiled call after the clobber must read the saved copy, not reg0.'''
+
+    def call_text(self, mlil: MediumLevelILFunction, target: str) -> str:
+        return next(str(inst) for block in mlil.basic_blocks for inst in block.instructions
+                    if str(inst).startswith(f'{target}('))
+
+    def test_set_rotate_ani_param(self):
+        mlil = optimized_corpus_mlil('common.dat', 'SetRotateAniParam')
+        self.assertNotIn('reg0', self.call_text(mlil, 'chr_set_joint_rot'))
+
+    def test_ani_fall(self):
+        mlil = optimized_corpus_mlil('chr0003.dat', 'AniFall')
+        self.assertNotIn('reg0', self.call_text(mlil, 'chr_play_animeclip'))
 
 
 if __name__ == '__main__':

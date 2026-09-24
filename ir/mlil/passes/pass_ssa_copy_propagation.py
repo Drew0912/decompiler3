@@ -47,34 +47,24 @@ from ..mlil_ssa import (
 )
 
 
-def reaches_without_redefinition(base_var, def_block: MediumLevelILBasicBlock, def_idx: int,
-                                 use_block: MediumLevelILBasicBlock, use_idx: int) -> bool:
-    '''True if no instruction between (def_block, def_idx) and (use_block, use_idx) redefines
-    base_var - explicitly, via a call's pseudo-definition for a register/global it clobbers
-    (lowers to an explicit `var#new = <undef>` MLILSetVarSSA, so a plain SetVarSSA scan already
-    covers those), or via a call's own result landing in base_var (that one is NOT a
-    MLILSetVarSSA - it lives on the call instruction's own .output field instead, since the
-    variable receiving a call's result is excluded from the pseudo-definition sweep).
+def reaches_without_redefinition(func: MediumLevelILFunction, base_var, def_block: MediumLevelILBasicBlock,
+                                 def_idx: int, use_block: MediumLevelILBasicBlock, use_idx: int) -> bool:
+    '''True if nothing between (def_block, def_idx) and (use_block, use_idx) redefines base_var:
+    an explicit definition, a call's own output, or a call that may clobber it
+    (func.call_may_clobber). The call itself counts, not its `<undef>` pseudo-defs, which
+    dead-code elimination can drop while the clobber remains.
 
-    Walks BACKWARD from (use_block, use_idx) along single-predecessor edges until it reaches
-    def_block, checking every instruction along the way. Only use_block's and each intermediate
-    block's IN-degree matters here - never any block's OUT-degree, including def_block's own:
-    whether def_block (or any block on the path) branches elsewhere is irrelevant to whether
-    the ONE path actually taken to reach (use_block, use_idx) is hazard-free. If use_block's
-    only predecessor is some block P, every execution that reaches use_block did so via P, full
-    stop, regardless of what else P might lead to on a different run - so a def in a block that
-    ends in `if (cond) ...` still forwards safely into whichever arm has that block as its sole
-    predecessor. A merge point (in-degree != 1) makes the path ambiguous, so this conservatively
-    returns False rather than exploring multiple predecessors. Shared by CopyPropagationPass and
-    ExpressionInliningPass - both need the same "did this storage change before we got here"
-    check when forwarding a register/global SSA read.
+    Across blocks, use_block's prefix is scanned first, then the walk follows single-predecessor
+    edges back to def_block. Only in-degree matters: a def block that branches still forwards
+    into a successor whose sole predecessor it is, while a merge point or a cycle that never
+    reaches def_block returns False. Shared by CopyPropagationPass and ExpressionInliningPass.
     '''
     def redefines(inst) -> bool:
         if isinstance(inst, MLILSetVarSSA):
             return inst.var.base_var == base_var
 
         if isinstance(inst, MediumLevelILCall):
-            return inst.output is not None and inst.output.base_var == base_var
+            return (inst.output is not None and inst.output.base_var == base_var) or func.call_may_clobber(inst, base_var)
 
         return False
 
@@ -83,6 +73,9 @@ def reaches_without_redefinition(base_var, def_block: MediumLevelILBasicBlock, d
             return not any(redefines(inst) for inst in def_block.instructions[def_idx + 1:use_idx])
 
         return False  # use precedes def in program order - not a valid def->use edge
+
+    if any(redefines(inst) for inst in use_block.instructions[:use_idx]):
+        return False
 
     current = use_block
     visited = {use_block}
@@ -255,7 +248,7 @@ class CopyPropagationPass(Pass):
                 return var
 
             def_block, def_idx = self.def_positions[var]
-            if not reaches_without_redefinition(source_var.base_var, def_block, def_idx, use_block, use_idx):
+            if not reaches_without_redefinition(func, source_var.base_var, def_block, def_idx, use_block, use_idx):
                 return var
 
         visiting.add(var)
