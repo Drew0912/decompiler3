@@ -37,26 +37,64 @@ what the VM's exact answer turns out to be.
 
 ## Recompilation Pipeline (`docs/LLIL_DSL.md`)
 
-### 1. MLIL DSL and HLIL DSL
+### 1. HLIL DSL — a Python `.py` output generated from HLIL
 
-Extend the same pattern upward, one IR level at a time:
+**Planned, not started.** A second output beside `.ts`: a Python DSL file generated from HLIL (not
+from bytecode) that compiles back to game bytecode. No reference to `ScpWriter`, `handle_opcode`, or
+any bytecode-emission path exists anywhere in `ir/mlil/`, `ir/hlil/`, or `codegen/` today.
+Decisions already made (2026-09-23):
 
 ```
-HLIL DSL (.py) → lower → MLIL DSL (.py) → lower → LLIL DSL (.py, exists today) → ScpWriter → bytecode
+HLIL → HLIL DSL (.py) → exec() → lower → LLIL DSL (.py, exists today) → ScpWriter → bytecode
 ```
 
-A future MLIL-level writer takes a `.py` MLIL DSL file and lowers it to a `.py` LLIL DSL file
-(reusing today's real LLIL DSL → `ScpWriter` path unchanged), rather than talking to `ScpWriter`
-directly. HLIL would lower to MLIL DSL the same way. **Not started** — no reference to
-`ScpWriter`, `handle_opcode`, or any bytecode-emission path exists anywhere in `ir/mlil/`,
-`ir/hlil/`, or `codegen/` today.
+- **Executed, like the LLIL DSL.** The `.py` is run against a lowering writer, so control flow is
+  DSL-defined (`If`/`Elif`/`Else`, `While`/`DoWhile`, `Switch`/`Case`, `Break`/`Continue` with an
+  optional loop label, `Return`) rather than native Python syntax.
+- **Lowers straight to the LLIL DSL** and through today's `ScpWriter` path — the backend that already
+  passes the logic round trip on the full corpus (`docs/LLIL_DSL.md` §2). No intermediate MLIL DSL; an
+  MLIL-level DSL stays a separate idea, only worth building if MLIL output is wanted for its own sake.
+- **No renderer shared with the TypeScript generator.** Different syntax, and a different contract:
+  `codegen/typescript.py` is readable pseudocode (it rounds floats via `common.format_float`, folds
+  constant comparisons and rewrites boolean comparisons); this output must be exact. Its natural
+  sibling is the LLIL `.py` formatter (`falcom/ed9/disasm/`): exact `str(value)` floats,
+  `Formatter.format_param` signatures, decorators, common-function library conventions. With TS it
+  shares only HLIL-level structure helpers and language-neutral operator tables. Once it exists,
+  retire `HLILFormatter` / `.hlil.ts` (an unused debug dump) — this output is the faithful HLIL view.
+
+Design rules for an executed DSL:
+- Every DSL expression's `__bool__` raises, so an accidental Python `if`/`while`/`and`/`or`/`not` or
+  chained comparison fails loudly instead of being decided once, at build time.
+- Logical operators are functions (`And`/`Or`/`Not`): Python can't overload `and`/`or`/`not`, and
+  `&`/`|` are the VM's bitwise ops.
+- Never emit an operator applied only to Python literals — Python computes `7 / 2` as `3.5` while the
+  file runs, where the VM's integer DIV gives `3`. Wrap one side in a DSL constant.
+- Assignments and statement-level calls need DSL forms, since `x = ...` only rebinds a Python name
+  (e.g. `Set(x, e)`, or a namespace: `v.x = e`, `GLOBALS[n] = e`). A bare call statement is recorded
+  explicitly, or tracked as an unconsumed call node (guarding against one node used twice). Build
+  function bodies after all functions are registered, so calls to later functions resolve.
+- HLIL `&&`/`||` lower as short-circuit, using the VM's eager logical op only when the right side has
+  no side effects. That is only correct once no call is ever folded under a native VM logical op.
+
+**Correctness** is the logic round trip of `docs/LLIL_DSL.md` §2 (game logic unchanged, fixed point
+within a few rounds), but its per-function fingerprint check can't transfer — an HLIL recompile is
+not opcode-identical to its source — and a fixed point alone can't catch a decompiler bug that loses
+logic in the first decompilation (the loss repeats every round). The check is the static game-logic
+comparison (see "Static Game-Logic Check" below) in cross-program mode. An execution-based oracle (a
+bytecode emulator) was considered and deliberately not pursued.
+
+**Prerequisites.** Once HLIL compiles back, every HLIL pass must preserve game logic exactly, not just
+readability. Before starting: calls never folded under a native VM logical op; copy propagation never
+forwarding a register/global past a redefinition; HLIL never silently dropping a path (`[hlil] dropped
+path` warnings — `system.dat` `MapJumpState` has 19); common-return extraction only hoisting from an
+exhaustive switch.
 
 ### 2. Mixed-IR-Level Compilation, Per Function
 
 The idea: because jump opcodes don't cross function boundaries (an assumption this leans on —
 worth confirming explicitly, not just assuming), a single output `.py` file could hold some
-functions written at the LLIL DSL level, others at MLIL DSL level, others at HLIL DSL level, each
-lowered independently down to LLIL DSL / bytecode.
+functions written at the LLIL DSL level and others at HLIL DSL level (or MLIL DSL level, if one is
+ever built), each lowered independently down to LLIL DSL / bytecode.
 
 **This needs more than independent per-function lowering to actually work**, though — even once
 the jump-boundary assumption is confirmed, functions still participate in several script-wide
@@ -113,3 +151,32 @@ the operand-normalization details needing rework for the higher IR's shape.
 This has no independent risk or design work of its own beyond what item 1 already carries — it's
 gated entirely on item 1 landing and HLIL quality being trusted enough to compile back to bytecode,
 not a separate open question.
+
+## Static Game-Logic Check (`tools/ir_semantic_validator.py`)
+
+The validator already tracks game logic as *effect events* — engine/script calls, global writes,
+returns — plus branch conditions, and matches them LLIL → MLIL → HLIL on the in-memory IR that the
+`.llil.asm`/`.mlil.asm` dumps are printed from (it should keep reading the IR objects; parsing the dump
+text back would be fragile). Its known-noise and real-signal categories are documented in
+`notes/validator_guide.md`. Two basic gaps are scheduled as tooling fixes (it never built LLIL/MLIL
+control-flow edges; LLIL global stores are misread as register writes, so a dropped global write can't
+show as missing). **Not started** beyond those:
+
+- **Compare effect arguments and values**, resolved to layer-neutral expressions over inputs
+  (parameters, global reads, earlier call results). Today events are keyed `family:target` only, so a
+  call with changed arguments, or a return with a changed value, still matches.
+- **Compare each effect's guard** — the branch conditions it runs under (control dependence, from the
+  post-dominators the validator already computes), treating the right side of HLIL `&&`/`||` as
+  conditional. This catches an always-run call becoming conditional, and should also remove two
+  known-noise categories (matches paired across mutually exclusive branches; duplicated calls counted
+  as "added").
+- **Cross-program mode** for compile-back: source `.dat` vs recompiled `.dat`, both at LLIL — the
+  least-transformed level, so decompiler bugs and lowering bugs both show. There are no provenance
+  links across two programs, so matching leans on order, guards and arguments; legitimate
+  restructuring (a switch vs an if-chain, duplicated regions) needs normalizing.
+
+**Limits:** it flags differences but can't prove equivalence; heuristic matching can pair the wrong
+events; loops are approximate. With arguments and guards compared it is a strong regression net —
+both live bugs found by the 2026-09-23 review (a deleted global restore; an always-run call folded
+under a short-circuiting `&&`) would have been flagged. Useful for the decompiler today (within one
+decompilation), and the correctness gate for the HLIL DSL (Recompilation Pipeline §1).

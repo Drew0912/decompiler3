@@ -258,3 +258,6 @@ HLIL test file of their own.
   no `label` field); both fixed - see `HLIL_GUIDE.md`'s loop recovery section.
 - Direct tests for irreducible/shared CFG regions and the clone-budget warning paths are still
   needed; these are the cases where a goto-free tree representation is under the most pressure.
+- HLIL is the planned input of a Python DSL that compiles back to bytecode (`docs/FUTURE_WORK.md`,
+  Recompilation Pipeline §1). Once that exists, every HLIL pass must preserve game logic exactly -
+  readable-but-approximate rendering is only acceptable in the TypeScript generator.
