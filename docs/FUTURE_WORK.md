@@ -158,15 +158,18 @@ The validator already tracks game logic as *effect events* — engine/script cal
 returns — plus branch conditions, and matches them LLIL → MLIL → HLIL on the in-memory IR that the
 `.llil.asm`/`.mlil.asm` dumps are printed from (it should keep reading the IR objects; parsing the dump
 text back would be fragile). Its known-noise and real-signal categories are documented in
-`notes/validator_guide.md`. Two basic gaps are scheduled as tooling fixes (it never built LLIL/MLIL
-control-flow edges; LLIL global stores are misread as register writes, so a dropped global write can't
-show as missing). **Not started** beyond those:
+`notes/validator_guide.md`, including its current limitations: it builds no LLIL/MLIL control-flow edges
+and links only some HLIL ones (edges feed block matching only, never a pass/fail gate - fix all three
+builders together, since fixing one side alone makes block matching worse), and branch conditions
+carry no expression, so a changed condition is not detected. Global writes are matched on all three
+layers (a dropped one shows as `missing_write_anchor`). **Not started:**
 
 - **Compare effect arguments and values**, resolved to layer-neutral expressions over inputs
   (parameters, global reads, earlier call results). Today events are keyed `family:target` only, so a
   call with changed arguments, or a return with a changed value, still matches.
-- **Compare each effect's guard** — the branch conditions it runs under (control dependence, from the
-  post-dominators the validator already computes), treating the right side of HLIL `&&`/`||` as
+- **Compare each effect's guard** — the branch conditions it runs under (control dependence, which needs
+  real CFG edges, condition expressions and a post-dominator analysis - none of which the validator has
+  today), treating the right side of HLIL `&&`/`||` as
   conditional. This catches an always-run call becoming conditional, and should also remove two
   known-noise categories (matches paired across mutually exclusive branches; duplicated calls counted
   as "added").

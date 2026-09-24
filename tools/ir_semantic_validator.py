@@ -29,7 +29,7 @@ from ir.llil import LowLevelILFunction, LowLevelILInstruction, LowLevelILOperati
 from ir.mlil import MediumLevelILFunction, MediumLevelILInstruction, MediumLevelILOperation, MLILLoadGlobal
 from ir.hlil import (
     HighLevelILFunction, HLILInstruction, HLILOperation, HLILStatement, HLILExpression,
-    BinaryOp, UnaryOp
+    HLILVariable, VariableKind, BinaryOp, UnaryOp
 )
 from falcom.ed9.ir.llil.llil_ext import LowLevelILGlobalLoad
 from falcom.ed9.parser.scp import ScpParser
@@ -1347,7 +1347,7 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
 
     # Assignment
     elif op == HLILOperation.HLIL_ASSIGN:
-        if hasattr(instr, 'src') and hasattr(instr.src, 'operation'):
+        if hasattr(instr, 'src') and hasattr(instr.src, 'operation') and not _is_global_call_assignment(instr):
             src_op = instr.src.operation
             if src_op == HLILOperation.HLIL_CALL:
                 return SemanticOperation(
@@ -1369,7 +1369,7 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
 
         result = None
         if hasattr(instr, 'dest') and hasattr(instr.dest, 'var') and instr.dest.var is not None:
-            result = SemanticOperand(kind = 'var', value = instr.dest.var.name if hasattr(instr.dest.var, 'name') else str(instr.dest.var))
+            result = _hlil_var_operand(instr.dest.var)
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
             operator='ASSIGN',
@@ -1491,6 +1491,20 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
     )
 
 
+def _hlil_var_operand(var: Any) -> SemanticOperand:
+    """Operand for an HLIL variable; globals and registers have no name, only a slot"""
+    if not isinstance(var, HLILVariable):
+        return SemanticOperand(kind = 'var', value = str(var))
+
+    if var.kind == VariableKind.GLOBAL:
+        return SemanticOperand(kind = 'global', value = str(var))
+
+    if var.kind == VariableKind.REG:
+        return SemanticOperand(kind = 'reg', value = str(var))
+
+    return SemanticOperand(kind = 'var', value = var.name)
+
+
 def _extract_hlil_operands(instr: HLILInstruction) -> List[SemanticOperand]:
     """Extract operands from HLIL instruction"""
     operands = []
@@ -1508,8 +1522,7 @@ def _extract_hlil_operands(instr: HLILInstruction) -> List[SemanticOperand]:
         operands.append(SemanticOperand(kind='const', value=instr.value))
 
     if hasattr(instr, 'var') and instr.var is not None:
-        var_name = instr.var.name if hasattr(instr.var, 'name') else str(instr.var)
-        operands.append(SemanticOperand(kind='var', value=var_name))
+        operands.append(_hlil_var_operand(instr.var))
 
     # A plain var dest (e.g. HLIL_ASSIGN's x = ...) is already captured via that
     # operation's own `result` field - only a compound dest (e.g. *ptr = ...) needs
@@ -1594,8 +1607,6 @@ class CFGNode:
     predecessors: List[int] = field(default_factory=list)
     is_entry: bool = False
     is_exit: bool = False
-    dominator: Optional[int] = None
-    post_dominator: Optional[int] = None
     is_loop_header: bool = False
     loop_back_edges: List[int] = field(default_factory=list)
 
@@ -1761,8 +1772,22 @@ def _statement_expressions(instr: HLILInstruction) -> List[Any]:
     return []
 
 
+def _is_global_call_assignment(instr: HLILInstruction) -> bool:
+    """`GLOBALS[n] = call()` - normalized as the global write, its call kept as a folded call"""
+    dest_var = getattr(getattr(instr, 'dest', None), 'var', None)
+    src_op = getattr(getattr(instr, 'src', None), 'operation', None)
+    return (
+        isinstance(dest_var, HLILVariable)
+        and dest_var.kind == VariableKind.GLOBAL
+        and src_op in (HLILOperation.HLIL_CALL, HLILOperation.HLIL_SYSCALL)
+    )
+
+
 def _statement_own_call(instr: HLILInstruction) -> Optional[Any]:
     """Call expression the statement's own normalized operation already stands for"""
+    if _is_global_call_assignment(instr):
+        return None
+
     if hasattr(instr, 'dest') and hasattr(instr, 'src') and hasattr(instr.src, 'args'):
         return instr.src
 
@@ -1931,6 +1956,37 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     exits.append(header_id)  # Loop exit
                     continue
 
+                elif stmt.operation == HLILOperation.HLIL_DO_WHILE:
+                    # Save current block
+                    if current_ops:
+                        node = CFGNode(id = current_id, address = current_ops[0].source_location.scp_offset, operations = current_ops)
+                        cfg.add_node(node)
+                        current_id += 1
+                        current_ops = []
+
+                    # Body runs before the condition is first tested
+                    body_start = current_id
+                    body_exits: List[int] = []
+                    body_stmts = extract_statements(stmt.body if hasattr(stmt, 'body') else None)
+                    if body_stmts:
+                        body_id, body_exits = flatten_statements(body_stmts, current_id)
+                        current_id = max(body_id, current_id)
+
+                    # Condition block (condition calls run after the body on each iteration)
+                    cond_node = CFGNode(id = current_id, address = op.source_location.scp_offset, operations = folded_ops + [op])
+                    cfg.add_node(cond_node)
+                    cond_id = current_id
+                    current_id += 1
+
+                    for exit_id in body_exits:
+                        cfg.add_edge(exit_id, cond_id)
+
+                    # Back edge
+                    cfg.add_edge(cond_id, body_start)
+
+                    exits.append(cond_id)  # Loop exit
+                    continue
+
             current_ops.extend(folded_ops)
 
             if op.kind != OperationKind.NOP:
@@ -1969,132 +2025,6 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     cfg.exits.append(eid)
 
     return cfg
-
-
-def compute_dominators(cfg: CFG) -> None:
-    """Compute dominators using iterative data flow analysis"""
-    if not cfg.entry or cfg.entry not in cfg.nodes:
-        return
-
-    all_nodes = set(cfg.nodes.keys())
-    dom: Dict[int, set] = {n: all_nodes.copy() for n in cfg.nodes}
-    dom[cfg.entry] = {cfg.entry}
-
-    changed = True
-    while changed:
-        changed = False
-        for node_id in cfg.nodes:
-            if node_id == cfg.entry:
-                continue
-
-            node = cfg.nodes[node_id]
-            if not node.predecessors:
-                continue
-
-            new_dom = all_nodes.copy()
-            for pred in node.predecessors:
-                new_dom &= dom[pred]
-            new_dom.add(node_id)
-
-            if new_dom != dom[node_id]:
-                dom[node_id] = new_dom
-                changed = True
-
-    # Set immediate dominator
-    for node_id in cfg.nodes:
-        if node_id == cfg.entry:
-            cfg.nodes[node_id].dominator = None
-            continue
-
-        doms = dom[node_id] - {node_id}
-        if doms:
-            for d in doms:
-                if all(d in dom[other] or d == other for other in doms):
-                    cfg.nodes[node_id].dominator = d
-                    break
-
-
-def compute_post_dominators(cfg: CFG) -> None:
-    """Compute post-dominators (reverse dominance)"""
-    if not cfg.exits:
-        return
-
-    all_nodes = set(cfg.nodes.keys())
-    pdom: Dict[int, set] = {n: all_nodes.copy() for n in cfg.nodes}
-
-    for exit_id in cfg.exits:
-        pdom[exit_id] = {exit_id}
-
-    changed = True
-    while changed:
-        changed = False
-        for node_id in cfg.nodes:
-            if node_id in cfg.exits:
-                continue
-
-            node = cfg.nodes[node_id]
-            if not node.successors:
-                continue
-
-            new_pdom = all_nodes.copy()
-            for succ in node.successors:
-                new_pdom &= pdom[succ]
-            new_pdom.add(node_id)
-
-            if new_pdom != pdom[node_id]:
-                pdom[node_id] = new_pdom
-                changed = True
-
-    # Set immediate post-dominator
-    for node_id in cfg.nodes:
-        if node_id in cfg.exits:
-            cfg.nodes[node_id].post_dominator = None
-            continue
-
-        pdoms = pdom[node_id] - {node_id}
-        if pdoms:
-            for d in pdoms:
-                if all(d in pdom[other] or d == other for other in pdoms):
-                    cfg.nodes[node_id].post_dominator = d
-                    break
-
-
-def identify_loops(cfg: CFG) -> List[Tuple[int, List[int]]]:
-    """Identify natural loops using back edges"""
-    loops: List[Tuple[int, List[int]]] = []
-
-    compute_dominators(cfg)
-
-    for node_id, node in cfg.nodes.items():
-        for succ in node.successors:
-            succ_node = cfg.nodes.get(succ)
-            if succ_node and node.dominator == succ:
-                cfg.nodes[succ].is_loop_header = True
-                cfg.nodes[succ].loop_back_edges.append(node_id)
-
-                loop_body = _collect_loop_body(cfg, succ, node_id)
-                loops.append((succ, loop_body))
-
-    return loops
-
-
-def _collect_loop_body(cfg: CFG, header: int, tail: int) -> List[int]:
-    """Collect all nodes in a natural loop"""
-    body = {header, tail}
-    worklist = [tail]
-
-    while worklist:
-        node_id = worklist.pop()
-        node = cfg.nodes.get(node_id)
-        if not node:
-            continue
-
-        for pred in node.predecessors:
-            if pred not in body:
-                body.add(pred)
-                worklist.append(pred)
-
-    return list(body)
 
 
 def compute_block_signature(node: CFGNode) -> str:
@@ -2684,7 +2614,7 @@ CRITICAL_OPERATORS = {
     'CALL', 'SYSCALL', 'CALL_SCRIPT', 'RET', 'RETURN', 'STORE_GLOBAL', 'SET_GLOBAL', 'GLOBAL_STORE'
 }
 
-CRITICAL_BRANCH_OPERATORS = {'IF', 'GOTO', 'WHILE', 'FOR'}
+CRITICAL_BRANCH_OPERATORS = {'IF', 'GOTO', 'WHILE'}
 
 EFFECT_CATEGORY_CALL = 'call'
 EFFECT_CATEGORY_WRITE_GLOBAL = 'write_global'
@@ -2853,7 +2783,8 @@ def _extract_write_signature(op: SemanticOperation) -> Tuple[str, str]:
     elif op.operands:
         destination = str(op.operands[0].value)
 
-    if 'GLOBAL' in destination or op.operator in ('STORE_GLOBAL', 'SET_GLOBAL'):
+    # Only a global result is a global write - operand text can name a global that is only read
+    if op.result is not None and op.result.kind == 'global':
         return EFFECT_CATEGORY_WRITE_GLOBAL, destination
     return EFFECT_CATEGORY_WRITE_REG, destination
 
@@ -3022,7 +2953,7 @@ def _match_effect_events(
 
 
 def _normalize_condition_signature(op: SemanticOperation) -> str:
-    if op.operator in ('WHILE', 'FOR', 'IF'):
+    if op.operator in ('WHILE', 'IF'):
         operands = [f"{operand.kind}:{operand.value}" for operand in op.operands]
         joined = ",".join(sorted(operands))
         return f"branch_condition:{joined}"
@@ -3046,7 +2977,6 @@ def _is_condition_semantically_equivalent(source: SemanticOperation, target: Sem
 
     equivalent_pairs = {
         ('GOTO', 'WHILE'),
-        ('GOTO', 'FOR'),
     }
     if (source.operator, target.operator) in equivalent_pairs or (target.operator, source.operator) in equivalent_pairs:
         return True
