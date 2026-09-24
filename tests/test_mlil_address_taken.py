@@ -260,7 +260,7 @@ class TestRegGlobalPropagationAddressTaken(unittest.TestCase):
 class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
     '''reg0 = f(&x); y = x + reg0 - CallResultFolder must not fold this into
     y = x + f(&x), which would read x through the pointer before f's call actually writes
-    it. _reads_before_impure (ir/hlil/mlil_to_hlil.py) already defends a bare MLILDeref;
+    it. _read_unsafe_to_fold (ir/hlil/mlil_to_hlil.py) already defends a bare MLILDeref;
     Step A's lowering makes every address-taken read go through exactly that shape.'''
 
     def test_fold_is_blocked_by_the_intervening_deref_read(self):

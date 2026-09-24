@@ -37,6 +37,10 @@ from falcom.ed9.ir.llil.vm_lifter import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 
+# Same headroom as falcom/ed9/scena2py.py: the IR walkers recurse per nesting level, and Python's
+# default limit of 1000 is close for the most deeply nested scripts
+RECURSION_LIMIT = 10000
+
 
 # =============================================================================
 # Section 1: Enums
@@ -500,6 +504,8 @@ class IRPipeline:
     """Generates all IR layers from an SCP file"""
 
     def __init__(self, scp_path: str):
+        sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
+
         self.scp_path = scp_path
         self.scp = None
         self.fs = None

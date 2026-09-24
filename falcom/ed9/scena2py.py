@@ -29,6 +29,11 @@ from falcom.ed9.scena2py_config import ScenaDecompileConfig
 
 DAT_PATTERN = '*.dat'
 
+# The HLIL passes and the TS generator recurse once or twice per nesting level, and Python's
+# default limit of 1000 is close for the most deeply nested scripts; a RecursionError would drop
+# that function from the output. Past the real C stack, Python still raises rather than crashing.
+RECURSION_LIMIT = 10000
+
 def collect_paths(paths: list[str]) -> list[Path]:
     """Expand directories (recursively) to their .dat files; keep file paths as-is"""
     files = []
@@ -75,6 +80,8 @@ def write_debug_info(parser: ScpParser, functions: list[Function], out_path: Pat
     out_path.write_text('\n'.join(lines) + '\n', encoding = 'utf-8')
 
 def process_file(path: Path, config: ScenaDecompileConfig) -> None:
+    sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
+
     output_dir = config.output_dir / path.stem
     out = output_dir / path.name
     out_no_suffix = out.with_suffix('')
@@ -138,7 +145,7 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
 
         except Exception as e:
             # One bad function shouldn't lose the rest of the file's output
-            log.info(f'{path} [{func.name}]: {type(e).__name__}: {e}')
+            log.warning(f'{path} [{func.name}]: {type(e).__name__}: {e}')
 
     if config.write_llil_asm:
         out.with_suffix('.llil.asm').write_text('\n'.join(llil_asm_lines), encoding = 'utf-8')

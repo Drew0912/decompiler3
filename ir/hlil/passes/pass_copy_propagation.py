@@ -555,7 +555,7 @@ class CopyPropagationPass(Pass):
         Propagating an effectful/impure source into var's position must not let something
         that evaluates before var's own read - in the original code - end up running after
         it once var is replaced. Mirrors mlil_to_hlil.py's
-        CallResultFolder._reads_before_impure for the same reason, at the HLIL level; this
+        CallResultFolder._read_unsafe_to_fold for the same reason, at the HLIL level; this
         file's own convention (see _find_reachable_uses) is that an HLILAssign's src is
         evaluated before its dest.
 

@@ -106,6 +106,14 @@ class LoopStackEntry:
     label: Optional[str] = None
 
 
+@dataclass
+class FollowOn:
+    '''Block to carry on at after an if or a loop, in the same target block and stop point'''
+    block_idx: int
+    jump_source: Optional[MediumLevelILInstruction] = None
+    force_plain: bool = False
+
+
 class CallResultFolder:
     '''Decides which call results can be folded into the instruction that reads them.
 
@@ -234,9 +242,8 @@ class CallResultFolder:
                 if not self._is_dead_after(reader_block_idx, reader_instr_idx, var_name):
                     continue
 
-                # An impure read (deref or REG/GLOBAL load) earlier in the reader's own
-                # evaluation order would end up running after the folded call instead of before it
-                if self._reads_before_impure(reader_instr, var_name):
+                # The read's position must run the call exactly when and where the statement did
+                if self._read_unsafe_to_fold(reader_instr, var_name):
                     continue
 
                 self.folded_call[(block_idx, instr_idx)] = reader
@@ -447,24 +454,34 @@ class CallResultFolder:
 
         return False
 
-    def _reads_before_impure(self, node: MediumLevelILInstruction, var_name: str) -> bool:
-        '''Whether var_name's read inside node is preceded, in evaluation order, by an impure
-        read (pointer dereference or REG[]/GLOBAL[] load) elsewhere in node.
+    def _read_unsafe_to_fold(self, node: MediumLevelILInstruction, var_name: str, gated: bool = False) -> bool:
+        '''Whether replacing var_name's read inside node with its call changes what the call does.
 
-        Reader operands run in a fixed order (e.g. MLILStoreDeref evaluates dest before
-        value), but folding only replaces var_name's own read position with the call. If an
-        impure read sits earlier in that order, the call would now run after it instead of
-        before, letting the fold observe state the call itself may still be about to change.
+        Folding moves the call to the read's position, and that position differs from the
+        statement's when:
+        - an impure read (pointer dereference or REG[]/GLOBAL[] load) sits earlier in node's
+          evaluation order (e.g. MLILStoreDeref evaluates dest before value) - the call would now
+          run after it instead of before, so the read could miss what the call changes
+        - it is under the rhs of MLILLogicalAnd/Or (gated) - the VM evaluates both operands, but
+          HLIL's && / || short-circuit, so the call would only run sometimes
+        - it is under MLILAddressOf - &var names the variable's storage, which a call has not got
         '''
+        if isinstance(node, MLILVar):
+            return gated and node.var.name == var_name
+
+        if isinstance(node, MLILAddressOf):
+            return self._count_reads(node.operand, var_name) > 0
+
         if isinstance(node, MLILBinaryOp):
             if self._count_reads(node.rhs, var_name) > 0 and self._contains_impure_read(node.lhs):
                 return True
 
-            return (self._reads_before_impure(node.lhs, var_name) or
-                    self._reads_before_impure(node.rhs, var_name))
+            rhs_gated = gated or isinstance(node, (MLILLogicalAnd, MLILLogicalOr))
+            return (self._read_unsafe_to_fold(node.lhs, var_name, gated) or
+                    self._read_unsafe_to_fold(node.rhs, var_name, rhs_gated))
 
         if isinstance(node, MLILUnaryOp):
-            return self._reads_before_impure(node.operand, var_name)
+            return self._read_unsafe_to_fold(node.operand, var_name, gated)
 
         if isinstance(node, MediumLevelILCall):
             seen_impure = False
@@ -472,7 +489,7 @@ class CallResultFolder:
                 if seen_impure and self._count_reads(arg, var_name) > 0:
                     return True
 
-                if self._reads_before_impure(arg, var_name):
+                if self._read_unsafe_to_fold(arg, var_name, gated):
                     return True
 
                 seen_impure = seen_impure or self._contains_impure_read(arg)
@@ -480,133 +497,25 @@ class CallResultFolder:
             return False
 
         if isinstance(node, MLILSetVar):
-            return self._reads_before_impure(node.value, var_name)
+            return self._read_unsafe_to_fold(node.value, var_name)
 
         if isinstance(node, (MLILStoreReg, MLILStoreGlobal)):
-            return self._reads_before_impure(node.value, var_name)
+            return self._read_unsafe_to_fold(node.value, var_name)
 
         if isinstance(node, MLILStoreDeref):
             if self._count_reads(node.value, var_name) > 0 and self._contains_impure_read(node.dest):
                 return True
 
-            return (self._reads_before_impure(node.dest, var_name) or
-                    self._reads_before_impure(node.value, var_name))
+            return (self._read_unsafe_to_fold(node.dest, var_name) or
+                    self._read_unsafe_to_fold(node.value, var_name))
 
         if isinstance(node, MLILIf):
-            return self._reads_before_impure(node.condition, var_name)
+            return self._read_unsafe_to_fold(node.condition, var_name)
 
         if isinstance(node, MLILRet):
-            return self._reads_before_impure(node.value, var_name) if node.value is not None else False
+            return self._read_unsafe_to_fold(node.value, var_name) if node.value is not None else False
 
         return False
-
-
-def _is_unconditionally_reached(predecessors: Dict[int, List[int]], successors: Dict[int, List[int]],
-                                block_idx: int) -> bool:
-    '''True if block_idx runs on every execution path from the entry block (0)
-
-    Walking backward, every step must have exactly one predecessor, AND that predecessor must
-    have exactly one successor - not just "the only way in", but "that block unconditionally
-    leads here", ruling out the case where the predecessor branches and this is only one arm.
-    '''
-    current = block_idx
-    visited = {current}
-
-    while current != 0:
-        preds = predecessors.get(current, [])
-        if len(preds) != 1:
-            return False
-
-        pred = preds[0]
-        if len(successors.get(pred, [])) != 1 or pred in visited:
-            return False
-
-        visited.add(pred)
-        current = pred
-
-    return True
-
-
-# Statement types' own direct expression fields, for _extract_unsafe_calls/_unfold_unsafe_calls -
-# not their nested statements/blocks, which sub_blocks (ir/hlil/hlil.py) handles separately
-_UNFOLD_EXPR_FIELDS: Dict[type, Tuple[str, ...]] = {
-    HLILIf: ('condition',),
-    HLILWhile: ('condition',),
-    HLILDoWhile: ('condition',),
-    HLILSwitch: ('scrutinee',),
-    HLILReturn: ('value',),
-    HLILAssign: ('dest', 'src'),
-    HLILExprStmt: ('expr',),
-}
-
-
-def _extract_unsafe_calls(node: Optional[HLILExpression], gated: bool, unconditional_fold_ids: Set[int],
-                          var_names: Dict[int, str], prelude: List[HLILStatement]) -> Optional[HLILExpression]:
-    '''Return node with any short-circuit-gated, unconditional-pre-fold call swapped for a plain
-    variable read, appending a `var = call();` statement restoring its pre-fold shape to `prelude`
-    for each one, in left-to-right evaluation order. Mutates non-matching nodes' children in place
-    and returns node unchanged.
-
-    One traversal does what used to be two: track short-circuit gating through
-    HLILBinaryOp(AND/OR)'s rhs (the only construct in this IR that makes evaluation conditional
-    within an expression - call args, and every other binary/unary operand, always run) AND decide
-    whether to extract, in the same pass - not a separate read-only pass followed by a separate
-    mutating one that has to independently agree on which node types to recurse into. Recurses into
-    every node's children UNCONDITIONALLY, before checking whether node itself needs extracting - a
-    match is never treated as a leaf: one unsafe call can sit inside another's own argument list
-    (e.g. an outer call gated by `a && outer(...)`, one of whose own arguments is independently
-    gated by a local `b && inner()`) - recursing into a match's args before emitting its own
-    prelude entry (rather than stopping at the match) is what carries that inner extraction along,
-    in the same left-to-right order, so the whole prelude ends up in genuine evaluation order
-    (inner()'s statement lands before outer()'s, matching the original program's actual execution
-    order). unconditional_fold_ids is pre-filtered to calls that were unconditionally reached
-    pre-fold (position-independent, checked once up front) - a node only needs extracting when it's
-    ALSO currently gated at this specific tree position, which only this walk can determine.
-    '''
-    if node is None:
-        return None
-
-    if isinstance(node, HLILBinaryOp):
-        node.lhs = _extract_unsafe_calls(node.lhs, gated, unconditional_fold_ids, var_names, prelude)
-        node.rhs = _extract_unsafe_calls(node.rhs, gated or node.op in (BinaryOp.AND, BinaryOp.OR),
-                                         unconditional_fold_ids, var_names, prelude)
-
-    elif isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
-        node.operand = _extract_unsafe_calls(node.operand, gated, unconditional_fold_ids, var_names, prelude)
-
-    elif isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
-        node.args = [_extract_unsafe_calls(arg, gated, unconditional_fold_ids, var_names, prelude)
-                     for arg in node.args]
-
-    if gated and id(node) in unconditional_fold_ids:
-        var = HLILVariable(var_names[id(node)], None)
-        prelude.append(HLILAssign(HLILVar(var), node))
-        return HLILVar(var)
-
-    return node
-
-
-def _unfold_unsafe_calls(block: HLILBlock, unconditional_fold_ids: Set[int], var_names: Dict[int, str]):
-    '''Mutate block.statements in place: before any statement that reads a short-circuit-gated,
-    unconditional-pre-fold call, insert a `var = call();` statement restoring its pre-fold shape,
-    and splice that read back to a plain variable reference. Recurses into every nested block.
-    '''
-    new_statements = []
-
-    for stmt in block.statements:
-        prelude: List[HLILStatement] = []
-        for attr in _UNFOLD_EXPR_FIELDS.get(type(stmt), ()):
-            value = getattr(stmt, attr)
-            if value is not None:
-                setattr(stmt, attr, _extract_unsafe_calls(value, False, unconditional_fold_ids, var_names, prelude))
-
-        new_statements.extend(prelude)
-        new_statements.append(stmt)
-
-        for sub_block in sub_blocks(stmt):
-            _unfold_unsafe_calls(sub_block, unconditional_fold_ids, var_names)
-
-    block.statements = new_statements
 
 
 # ============================================================================
@@ -665,50 +574,10 @@ class MLILToHLILConverter:
         if self.mlil_func.basic_blocks:
             self._reconstruct_control_flow(0, self.hlil_func.body)
 
-        # Phase 5: Undo a fold that ended up short-circuit-gated despite the original call
-        # running unconditionally - see _unfold_unsafe_folds
-        self._unfold_unsafe_folds()
-
-        # Phase 6: Declare the variables the body actually uses (after phase 5, so a variable
-        # newly reintroduced by unfolding gets declared too)
+        # Phase 5: Declare the variables the body actually uses
         self._declare_used_variables()
 
         return self.hlil_func
-
-    def _unfold_unsafe_folds(self):
-        '''Undo a CallResultFolder decision if it ended up short-circuit-gated in the final HLIL
-        and the original call ran unconditionally in straight-line MLIL.
-
-        CallResultFolder decides every fold before _bare_test_block/_collapse_funnel_chain build
-        the &&/|| chains that can gate a fold, and before this pass's own negation/cascade
-        cleanup - so it has no way to know at decision time whether a reader position will end
-        up short-circuited. This VM evaluates strictly; JS && / || do not. Running this last,
-        against the fully-built tree, is what actually lets the check be made at all - and it
-        only touches the specific sites where that gap is real (measured: ~4% of all folds
-        corpus-wide), leaving every already-conditional fold (the much more common case -
-        cascade-flattened nested ifs, _bare_test_block chain links) untouched.
-        '''
-        if not self.folder.folded_call:
-            return
-
-        var_names: Dict[int, str] = {}
-        call_block_of: Dict[int, int] = {}
-
-        for call_key, hlil_expr in self.expr_cache.items():
-            call_instr = self.mlil_func.basic_blocks[call_key[0]].instructions[call_key[1]]
-            var_names[id(hlil_expr)] = call_instr.output.name
-            call_block_of[id(hlil_expr)] = call_key[0]
-
-        # Position-independent - whether a fold is ALSO currently gated at its one tree position
-        # is decided during the walk itself (_extract_unsafe_calls), not precomputed here
-        unconditional_fold_ids = {
-            expr_id for expr_id in var_names
-            if _is_unconditionally_reached(self.folder.predecessors, self.folder.block_successors,
-                                           call_block_of[expr_id])
-        }
-
-        if unconditional_fold_ids:
-            _unfold_unsafe_calls(self.hlil_func.body, unconditional_fold_ids, var_names)
 
     def _convert_parameters(self):
         '''Build the HLIL parameter list from the MLIL one'''
@@ -918,7 +787,7 @@ class MLILToHLILConverter:
         return None
 
     def _process_loop(self, header_idx: int, target_block: HLILBlock,
-                      stop_at: Optional[int]) -> Optional[int]:
+                      stop_at: Optional[int]) -> Optional[FollowOn]:
         '''Process a loop starting at header_idx'''
         mlil_block = self.mlil_func.basic_blocks[header_idx]
         header_label = mlil_block.label
@@ -927,7 +796,7 @@ class MLILToHLILConverter:
 
         if loop_info is None:
             print(f'[loop] no LoopInfo for header {header_label} in {self.mlil_func.name}', file = sys.stderr)
-            return self._reconstruct_control_flow(header_idx, target_block, stop_at, force_plain = True)
+            return FollowOn(header_idx, force_plain = True)
 
         last_instr = mlil_block.instructions[-1] if mlil_block.instructions else None
 
@@ -969,7 +838,7 @@ class MLILToHLILConverter:
 
             else:
                 print(f'[loop] cannot decide loop body at header {header_label} in {self.mlil_func.name} (treated as non-loop)', file = sys.stderr)
-                return self._reconstruct_control_flow(header_idx, target_block, stop_at, force_plain = True)
+                return FollowOn(header_idx, force_plain = True)
 
         elif isinstance(last_instr, MLILGoto) and last_instr.target is not None and last_instr.target.index in loop_info.body:
             loop_body_start = last_instr.target.index
@@ -978,7 +847,7 @@ class MLILToHLILConverter:
 
         else:
             print(f'[loop] cannot decide loop body at header {header_label} in {self.mlil_func.name} (treated as non-loop)', file = sys.stderr)
-            return self._reconstruct_control_flow(header_idx, target_block, stop_at, force_plain = True)
+            return FollowOn(header_idx, force_plain = True)
 
         self.visited_blocks.add(header_idx)
         self.globally_processed.add(header_idx)
@@ -1001,7 +870,11 @@ class MLILToHLILConverter:
         self.current_instr_idx = len(mlil_block.instructions) - 1
 
         if header_if_into_body:
-            self._process_if_statement(last_instr, header_idx, loop_body, stop_at = header_idx)
+            follow_on = self._process_if_statement(last_instr, header_idx, loop_body, stop_at = header_idx)
+
+            if follow_on is not None:
+                self._reconstruct_control_flow(follow_on.block_idx, loop_body, stop_at = header_idx,
+                                               jump_source = follow_on.jump_source)
 
         elif loop_body_start is not None:
             self._reconstruct_control_flow(loop_body_start, loop_body, stop_at = header_idx, jump_source = last_instr)
@@ -1018,15 +891,15 @@ class MLILToHLILConverter:
         while_stmt = HLILWhile(condition, loop_body, label = stack_entry.label)
         target_block.add_statement(while_stmt)
 
-        # Process code after the loop (outside the popped loop context)
+        # The caller carries on after the loop (outside the popped loop context)
         if exit_block_idx is not None:
             self.visited_blocks.discard(exit_block_idx)
-            return self._reconstruct_control_flow(exit_block_idx, target_block, stop_at = stop_at, jump_source = last_instr)
+            return FollowOn(exit_block_idx, jump_source = last_instr)
 
         return None
 
     def _process_if_statement(self, if_instr: MLILIf, block_idx: int,
-                               target_block: HLILBlock, stop_at: Optional[int]) -> Optional[int]:
+                               target_block: HLILBlock, stop_at: Optional[int]) -> Optional[FollowOn]:
         '''Process an if statement, detecting and handling else-if chains'''
         condition = self._convert_expr(if_instr.condition)
         true_target_idx = if_instr.true_target.index if if_instr.true_target else None
@@ -1186,12 +1059,10 @@ class MLILToHLILConverter:
 
             target_block.add_statement(if_stmt)
 
-        # Process merge block
-        if merge_block_idx is not None:
-            if stop_at is not None and merge_block_idx == stop_at:
-                return merge_block_idx
+        # The caller carries on at the merge block
+        if merge_block_idx is not None and merge_block_idx != stop_at:
             self.visited_blocks.discard(merge_block_idx)
-            return self._reconstruct_control_flow(merge_block_idx, target_block, stop_at=stop_at, jump_source = if_instr)
+            return FollowOn(merge_block_idx, jump_source = if_instr)
 
         return None
 
@@ -1366,8 +1237,9 @@ class MLILToHLILConverter:
                                    force_plain: bool = False) -> Optional[int]:
         '''Reconstruct structured statements starting at block_idx.
 
-        Sequential block chains are followed iteratively to keep recursion
-        depth bounded by control structure nesting, not chain length.
+        Sequential block chains, including the code after an if or a loop
+        (FollowOn), are followed iteratively, so recursion depth grows with
+        control structure nesting, not with function length.
         force_plain skips the loop-header dispatch for the first block only
         (used by _process_loop fallbacks to avoid bouncing back).
         '''
@@ -1427,7 +1299,12 @@ class MLILToHLILConverter:
 
             # Check if this is a loop header
             if not force_plain and block_idx in self.loop_headers:
-                return self._process_loop(block_idx, target_block, stop_at)
+                follow_on = self._process_loop(block_idx, target_block, stop_at)
+                if follow_on is None:
+                    return None
+
+                block_idx, jump_source, force_plain = follow_on.block_idx, follow_on.jump_source, follow_on.force_plain
+                continue
 
             force_plain = False
             self.visited_blocks.add(block_idx)
@@ -1450,9 +1327,12 @@ class MLILToHLILConverter:
             self.current_instr_idx = last_instr_idx
 
             if isinstance(last_instr, MLILIf):
-                return self._process_if_statement(
-                    last_instr, block_idx, target_block, stop_at
-                )
+                follow_on = self._process_if_statement(last_instr, block_idx, target_block, stop_at)
+                if follow_on is None:
+                    return None
+
+                block_idx, jump_source = follow_on.block_idx, follow_on.jump_source
+                continue
 
             elif isinstance(last_instr, MLILGoto):
                 if last_instr.target is None:

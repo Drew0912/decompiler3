@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for CallResultFolder short-circuit safety (LLIL/MLIL hardening plan Step 8):
-CallResultFolder decides every fold before the &&/|| chains that can gate it exist, so a call
-that ran unconditionally in straight-line MLIL can end up as a non-first &&/|| operand in the
-final HLIL - turning an always-runs call into a conditionally-runs one, which this VM's strict
-evaluation never does. MLILToHLILConverter._unfold_unsafe_folds undoes exactly that case, and
-only that case - an already-conditional call landing in the same shape must stay folded.'''
+'''Unit tests for CallResultFolder short-circuit safety: the VM evaluates both operands of
+MLILLogicalAnd/Or, while HLIL's && / || short-circuit, so a call result read under their rhs is
+never folded - the call stays its own statement wherever its block sits, and a run of calls keeps
+its order. A read on the lhs, and a fold into a test that HLIL structuring builds itself (a funnel
+chain's head, a loop test), stays folded. Every CFG gets real edges, as the funnel check reads them.'''
 
 from pathlib import Path
 import sys
@@ -13,149 +12,271 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILCall,
-    MLILIf, MLILGoto, MLILRet, MLILConst, MLILLogicalAnd, MLILVar,
+    MediumLevelILFunction, MLILCall, MLILIf, MLILGoto, MLILRet, MLILConst, MLILVar,
+    MLILLogicalAnd, MLILLogicalOr, MLILAddressOf,
 )
+from ir.hlil.hlil import HLILIf, HLILWhile, sub_blocks
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 
 
-def make_func(name: str) -> MediumLevelILFunction:
+def make_func(name: str, block_count: int):
+    '''Function with params arg1/arg2, registers reg0/reg1 and block_count empty blocks'''
     func = MediumLevelILFunction(name, 0)
-    for n in ('arg1', 'cond', 'reg0'):
-        func.locals[n] = MLILVariable(n)
-    return func
+    arg1 = func.get_or_create_parameter(1, 'arg1')
+    arg2 = func.get_or_create_parameter(2, 'arg2')
+    reg0 = func.get_or_create_register_var(0)
+    reg1 = func.get_or_create_register_var(1)
+    blocks = [func.create_block() for _ in range(block_count)]
+    return func, blocks, arg1, arg2, reg0, reg1
 
 
-class TestNestedUnsafeFoldInsideAnotherFoldsOwnArgument(unittest.TestCase):
-    '''One gated, unconditional-pre-fold call can sit inside ANOTHER gated, unconditional-pre-fold
-    call's own argument list: inner() folds into outer()'s args (outer(b && inner())), and outer()
-    itself folds into the outer if (if (a && outer(...))). Found by Codex (Rule 0 correctness
-    review, 2026-09-22): _extract_targets originally treated a matched call as a leaf, so hoisting
-    outer() to its own statement carried inner() along unchanged, still gated by its own local
-    `b &&` even after outer() itself became unconditional. Both calls must end up as their own
-    unconditional statements, in the order they actually ran.'''
+def connect(func: MediumLevelILFunction):
+    '''Add the edges each block's last instruction implies (fallthrough when it is not a branch)'''
+    blocks = func.basic_blocks
 
-    def test_both_calls_are_unfolded_in_evaluation_order(self):
-        func = make_func('nested_unsafe_fold')
-        a = func.locals['arg1']
-        b = MLILVariable('b')
-        func.locals['b'] = b
-        reg0 = func.locals['reg0']
-        reg1 = MLILVariable('reg1')
-        func.locals['reg1'] = reg1
+    for idx, block in enumerate(blocks):
+        last = block.instructions[-1]
 
-        block0 = MediumLevelILBasicBlock(0)
-        block1 = MediumLevelILBasicBlock(1)
-        block2 = MediumLevelILBasicBlock(2)
-        block3 = MediumLevelILBasicBlock(3)
-        block4 = MediumLevelILBasicBlock(4)
+        if isinstance(last, MLILIf):
+            block.add_outgoing_edge(last.true_target)
+            block.add_outgoing_edge(last.false_target)
 
-        block0.instructions = [
-            MLILCall('inner', [], reg0),      # unconditional - function entry
-            MLILGoto(block1),
+        elif isinstance(last, MLILGoto):
+            block.add_outgoing_edge(last.target)
+
+        elif not isinstance(last, MLILRet) and idx + 1 < len(blocks):
+            block.add_outgoing_edge(blocks[idx + 1])
+
+
+def convert(func: MediumLevelILFunction):
+    connect(func)
+    return MLILToHLILConverter(func).convert()
+
+
+def find_statement(block, predicate):
+    '''(owning block, index) of the first statement matching predicate, in pre-order'''
+    for idx, stmt in enumerate(block.statements):
+        if predicate(stmt):
+            return block, idx
+
+        for sub_block in sub_blocks(stmt):
+            found = find_statement(sub_block, predicate)
+            if found is not None:
+                return found
+
+    return None
+
+
+def if_with_condition(text: str):
+    return lambda stmt: isinstance(stmt, HLILIf) and str(stmt.condition) == text
+
+
+class TestGatedCallInConditionalBlock(unittest.TestCase):
+    '''reg0 = f() only runs when arg1 holds, then feeds the rhs of a native &&. Inside that arm
+    the call still runs every time, so it must stay a statement ahead of the test even though
+    its block is not reached on every path from entry.'''
+
+    def test_call_stays_a_statement_inside_the_arm(self):
+        func, (guard, body, then_block, exit_block), arg1, arg2, reg0, _ = make_func('conditional_block', 4)
+        guard.instructions = [MLILIf(MLILVar(arg1), body, exit_block)]
+        body.instructions = [
+            MLILCall('f', [], output = reg0),
+            MLILIf(MLILLogicalAnd(MLILVar(arg2), MLILVar(reg0)), then_block, exit_block),
         ]
-        block1.instructions = [
-            # outer()'s own argument reads reg0 - inner()'s result folds in here
-            MLILCall('outer', [MLILLogicalAnd(MLILVar(b), MLILVar(reg0))], reg1),
-            MLILGoto(block2),
-        ]
-        block2.instructions = [
-            MLILIf(MLILLogicalAnd(MLILVar(a), MLILVar(reg1)), block3, block4),
-        ]
-        block3.instructions = [MLILRet(MLILConst(1))]
-        block4.instructions = [MLILRet(MLILConst(0))]
+        then_block.instructions = [MLILCall('do_x', []), MLILGoto(exit_block)]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
 
-        func.basic_blocks = [block0, block1, block2, block3, block4]
+        hlil_func = convert(func)
+        found = find_statement(hlil_func.body, if_with_condition('arg2 && reg0'))
 
-        hlil_func = MLILToHLILConverter(func).convert()
-        rendered = [str(s) for s in hlil_func.body.statements]
+        self.assertIsNotNone(found, 'the native && must read the captured reg0, not a folded f()')
+        block, idx = found
+        self.assertGreater(idx, 0)
+        self.assertEqual(str(block.statements[idx - 1]), 'reg0 = f()')
 
-        self.assertEqual(rendered[0], 'reg0 = inner()',
-                         f'inner() must run first, as its own statement: {rendered}')
-        self.assertEqual(rendered[1], 'reg1 = outer(b && reg0)',
-                         f'outer() must read the captured reg0, not re-inline inner(): {rendered}')
-        self.assertEqual(str(hlil_func.body.statements[2].condition), 'arg1 && reg1',
-                         f'the if must read the captured reg1: {rendered}')
+
+class TestGatedCallInLowerIndexBlock(unittest.TestCase):
+    '''The call's block comes after its reader's block in block order and is only reached when
+    arg2 is false; the refusal must not depend on either.'''
+
+    def test_call_stays_a_statement(self):
+        func, (entry, reader, then_block, call_block, exit_block), arg1, arg2, reg0, _ = make_func('lower_index', 5)
+        entry.instructions = [MLILIf(MLILVar(arg2), call_block, exit_block)]
+        reader.instructions = [MLILIf(MLILLogicalAnd(MLILVar(arg1), MLILVar(reg0)), then_block, exit_block)]
+        then_block.instructions = [MLILCall('do_x', []), MLILGoto(exit_block)]
+        call_block.instructions = [MLILCall('f', [], output = reg0), MLILGoto(reader)]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
+
+        hlil_func = convert(func)
+        found = find_statement(hlil_func.body, if_with_condition('arg1 && reg0'))
+
+        self.assertIsNotNone(found, 'the native && must read the captured reg0, not a folded f()')
+        block, idx = found
+        self.assertEqual(str(block.statements[idx - 1]), 'reg0 = f()')
 
 
 class TestUnconditionalCallGatedByNativeAnd(unittest.TestCase):
-    '''reg0 = f() runs unconditionally (function entry, straight-line, no branch) and folds
-    into becoming the RHS of `arg1 && reg0` - short-circuit-gated where the VM never gated it.
-    Must come back out as its own statement.'''
+    '''reg0 = f() runs at function entry and is read under the rhs of `arg1 && reg0`'''
 
-    def test_call_is_unfolded_back_to_its_own_statement(self):
-        func = make_func('unconditional_gated')
-        arg1 = func.locals['arg1']
-        reg0 = func.locals['reg0']
-
-        block0 = MediumLevelILBasicBlock(0)
-        block1 = MediumLevelILBasicBlock(1)
-        block2 = MediumLevelILBasicBlock(2)
-        block3 = MediumLevelILBasicBlock(3)
-
-        block0.instructions = [
-            MLILCall('f', [], reg0),          # unconditional - block0 is the entry block
-            MLILGoto(block1),
+    def test_call_stays_its_own_statement(self):
+        func, (body, then_block, exit_block), arg1, _, reg0, _ = make_func('unconditional_gated', 3)
+        body.instructions = [
+            MLILCall('f', [], output = reg0),
+            MLILIf(MLILLogicalAnd(MLILVar(arg1), MLILVar(reg0)), then_block, exit_block),
         ]
-        block1.instructions = [
-            MLILIf(MLILLogicalAnd(MLILVar(arg1), MLILVar(reg0)), block2, block3),
+        then_block.instructions = [MLILRet(MLILConst(1))]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
+
+        statements = convert(func).body.statements
+
+        self.assertEqual(str(statements[0]), 'reg0 = f()')
+        self.assertEqual(str(statements[1].condition), 'arg1 && reg0')
+
+
+class TestGateReachesThroughNestedOperators(unittest.TestCase):
+    '''reg0 sits on the lhs of an inner && that is itself the rhs of ||, so it is still gated'''
+
+    def test_call_stays_its_own_statement(self):
+        func, (body, then_block, exit_block), arg1, arg2, reg0, _ = make_func('nested_gate', 3)
+        body.instructions = [
+            MLILCall('f', [], output = reg0),
+            MLILIf(MLILLogicalOr(MLILVar(arg1), MLILLogicalAnd(MLILVar(reg0), MLILVar(arg2))),
+                   then_block, exit_block),
         ]
-        block2.instructions = [MLILRet(MLILConst(1))]
-        block3.instructions = [MLILRet(MLILConst(0))]
+        then_block.instructions = [MLILCall('do_x', []), MLILGoto(exit_block)]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
 
-        func.basic_blocks = [block0, block1, block2, block3]
+        statements = [str(s) for s in convert(func).body.statements]
 
-        hlil_func = MLILToHLILConverter(func).convert()
-        rendered = str(hlil_func.body.statements)
-
-        first_stmt = hlil_func.body.statements[0]
-        self.assertEqual(str(first_stmt), 'reg0 = f()',
-                         f'the call must run as its own unconditional statement first, got: {rendered}')
-
-        if_stmt = hlil_func.body.statements[1]
-        self.assertEqual(str(if_stmt.condition), 'arg1 && reg0',
-                         f'the condition must read the captured variable, not re-inline the call: {rendered}')
+        self.assertEqual(statements[0], 'reg0 = f()')
 
 
-class TestAlreadyConditionalCallStaysFolded(unittest.TestCase):
-    '''reg0 = f() only runs when block0's own branch takes the block1 arm - already conditional
-    before any fold happened. Landing gated (RHS of &&) changes nothing observable, so this must
-    stay folded/inlined exactly as CallResultFolder originally decided.'''
+class TestNestedGatedFoldInsideAnotherCallsArgument(unittest.TestCase):
+    '''inner()'s result is gated by outer()'s own `arg2 && ...` argument, and outer()'s by the if's
+    `arg1 && ...` - both stay statements, in the order they ran.'''
 
-    def test_call_stays_inlined(self):
-        func = make_func('already_conditional')
-        arg1 = func.locals['arg1']
-        cond = func.locals['cond']
-        reg0 = func.locals['reg0']
-
-        block0 = MediumLevelILBasicBlock(0)
-        block1 = MediumLevelILBasicBlock(1)
-        block2 = MediumLevelILBasicBlock(2)
-        block3 = MediumLevelILBasicBlock(3)
-        block4 = MediumLevelILBasicBlock(4)
-        block5 = MediumLevelILBasicBlock(5)
-
-        block0.instructions = [MLILIf(MLILVar(cond), block1, block3)]
-        block1.instructions = [
-            MLILCall('f', [], reg0),          # only reached when block0 took the block1 arm
-            MLILGoto(block2),
+    def test_both_calls_stay_statements_in_order(self):
+        func, (body, then_block, exit_block), arg1, arg2, reg0, reg1 = make_func('nested_calls', 3)
+        body.instructions = [
+            MLILCall('inner', [], output = reg0),
+            MLILCall('outer', [MLILLogicalAnd(MLILVar(arg2), MLILVar(reg0))], output = reg1),
+            MLILIf(MLILLogicalAnd(MLILVar(arg1), MLILVar(reg1)), then_block, exit_block),
         ]
-        block2.instructions = [
-            MLILIf(MLILLogicalAnd(MLILVar(arg1), MLILVar(reg0)), block4, block5),
+        then_block.instructions = [MLILRet(MLILConst(1))]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
+
+        statements = convert(func).body.statements
+        rendered = [str(s) for s in statements]
+
+        self.assertEqual(rendered[:2], ['reg0 = inner()', 'reg1 = outer(arg2 && reg0)'])
+        self.assertEqual(str(statements[2].condition), 'arg1 && reg1')
+
+
+class TestCallOrderKeptWhenLaterCallIsRefused(unittest.TestCase):
+    '''f() and g() both feed `reg0 || reg1`; g() is gated, so f() cannot fold past it either -
+    folding only f() would run it after g()'''
+
+    def test_both_calls_stay_statements_in_order(self):
+        func, (body, then_block, exit_block), _, _, reg0, reg1 = make_func('call_order', 3)
+        body.instructions = [
+            MLILCall('f', [], output = reg0),
+            MLILCall('g', [], output = reg1),
+            MLILIf(MLILLogicalOr(MLILVar(reg0), MLILVar(reg1)), then_block, exit_block),
         ]
-        block3.instructions = [MLILRet(MLILConst(0))]
-        block4.instructions = [MLILRet(MLILConst(1))]
-        block5.instructions = [MLILRet(MLILConst(0))]
+        then_block.instructions = [MLILCall('do_x', []), MLILGoto(exit_block)]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
 
-        func.basic_blocks = [block0, block1, block2, block3, block4, block5]
+        statements = [str(s) for s in convert(func).body.statements]
 
-        hlil_func = MLILToHLILConverter(func).convert()
+        self.assertEqual(statements[:2], ['reg0 = f()', 'reg1 = g()'])
 
-        # Only one real path (block0's if) should carry the call - it must not have been
-        # promoted to its own top-level statement ahead of everything else.
-        top_level = [str(s) for s in hlil_func.body.statements]
-        self.assertFalse(any(s == 'reg0 = f()' for s in top_level),
-                         f'an already-conditional call must not be unfolded to the top level: {top_level}')
+
+class TestRefusedCallKeepsItsOwnArgumentFold(unittest.TestCase):
+    '''g() is gated and stays a statement, but f() feeds g()'s ungated argument and still folds'''
+
+    def test_inner_call_folds_into_the_refused_call(self):
+        func, (body, then_block, exit_block), arg1, _, reg0, reg1 = make_func('refused_outer', 3)
+        body.instructions = [
+            MLILCall('f', [], output = reg0),
+            MLILCall('g', [MLILVar(reg0)], output = reg1),
+            MLILIf(MLILLogicalOr(MLILVar(arg1), MLILVar(reg1)), then_block, exit_block),
+        ]
+        then_block.instructions = [MLILCall('do_x', []), MLILGoto(exit_block)]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
+
+        statements = convert(func).body.statements
+
+        self.assertEqual(str(statements[0]), 'reg1 = g(f())')
+        self.assertEqual(str(statements[1].condition), 'arg1 || reg1')
+
+
+class TestLhsReadStaysFolded(unittest.TestCase):
+    '''The lhs of && always runs, so a read there still folds'''
+
+    def test_call_is_folded(self):
+        func, (body, then_block, exit_block), arg1, _, reg0, _ = make_func('lhs_read', 3)
+        body.instructions = [
+            MLILCall('f', [], output = reg0),
+            MLILIf(MLILLogicalAnd(MLILVar(reg0), MLILVar(arg1)), then_block, exit_block),
+        ]
+        then_block.instructions = [MLILCall('do_x', []), MLILGoto(exit_block)]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
+
+        statements = convert(func).body.statements
+
+        self.assertEqual(str(statements[0].condition), 'f() && arg1')
+
+
+class TestFunnelChainHeadStaysFolded(unittest.TestCase):
+    '''Two tests sharing a body collapse into one ||. The head's test is its lhs and always
+    runs, so a call folded into it stays folded.'''
+
+    def test_call_is_folded(self):
+        func, (head, link, body, exit_block), arg1, _, reg0, _ = make_func('funnel_chain', 4)
+        head.instructions = [MLILCall('f', [], output = reg0), MLILIf(MLILVar(reg0), body, link)]
+        link.instructions = [MLILIf(MLILVar(arg1), body, exit_block)]
+        body.instructions = [MLILCall('do_x', []), MLILGoto(exit_block)]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
+
+        statements = convert(func).body.statements
+
+        self.assertEqual(str(statements[0].condition), 'f() || arg1')
+
+
+class TestLoopTestStaysFolded(unittest.TestCase):
+    '''A call in the loop header runs once per test, and so does the recovered while condition'''
+
+    def test_call_is_folded_into_the_while_condition(self):
+        func, (entry, header, body, exit_block), _, _, reg0, _ = make_func('loop_test', 4)
+        entry.instructions = [MLILGoto(header)]
+        header.instructions = [MLILCall('f', [], output = reg0), MLILIf(MLILVar(reg0), body, exit_block)]
+        body.instructions = [MLILCall('do_x', []), MLILGoto(header)]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
+
+        connect(func)
+        hlil_func = convert_falcom_mlil_to_hlil(func)
+        found = find_statement(hlil_func.body, lambda stmt: isinstance(stmt, HLILWhile))
+
+        self.assertIsNotNone(found)
+        block, idx = found
+        self.assertEqual(str(block.statements[idx].condition), 'f()')
+
+
+class TestAddressOfReadNotFolded(unittest.TestCase):
+    '''&reg0 names reg0's storage; a call result has none, so `&f()` would be wrong'''
+
+    def test_call_stays_a_statement(self):
+        func, (body,), _, _, reg0, _ = make_func('address_of', 1)
+        body.instructions = [
+            MLILCall('f', [], output = reg0),
+            MLILCall('takes_pointer', [MLILAddressOf(MLILVar(reg0))]),
+            MLILRet(MLILConst(0)),
+        ]
+
+        statements = [str(s) for s in convert(func).body.statements]
+
+        self.assertEqual(statements[:2], ['reg0 = f()', 'takes_pointer(&reg0)'])
 
 
 if __name__ == '__main__':

@@ -35,6 +35,30 @@ what the VM's exact answer turns out to be.
   `0xFFFFFFFF` bitwise identities assume a 32-bit int against the VM's 30-bit constant encoding -
   both predate this idea and are independent of it, but a natural pass to make at the same time.
 
+## HLIL Nesting Depth (`docs/HLIL_GUIDE.md`)
+
+A call whose result is read on the right side of the VM's eager `&&`/`||` stays its own statement,
+since HLIL `&&`/`||` short-circuit (`CallResultFolder` in `ir/hlil/mlil_to_hlil.py`). Inside an
+`else if` chain that statement sits between `else` and the next test, so the chain can no longer
+print flat and nests one level per such test: `sound.dat` `InitBGM` went from 53 to 230 indent
+levels on 2026-09-24 (only 3 files in the corpus got deeper). Accepted for now as faithful output.
+
+**Not started:**
+- **Check indent levels** across the corpus: report each function's maximum nesting depth and flag
+  outliers, so a readability regression like this shows up in a dump diff instead of being noticed
+  by hand.
+- **Keep chains flat where it's safe:** when the left operand is side-effect free and reads nothing
+  the call could change (no call, deref or `REG[]`/`GLOBAL[]` load), swapping the operands puts the
+  call on the always-evaluated side, so it can stay folded: `var_s2 == 102 && flag(16002) == 0`
+  becomes `flag(16002) == 0 && var_s2 == 102`. It reorders operands the script author wrote, and the
+  folder and the converter would have to agree on when the swap applies.
+- **Iterative tree walkers.** The MLIL->HLIL converter, the HLIL passes and the TS generator recurse
+  once or twice per nesting level, and an `else if` cascade nests one level per test (TS prints it
+  flat): `InitBGM`'s ~490-level cascade needs 989 frames in the converter, just under Python's default
+  limit of 1000. `falcom/ed9/scena2py.py` and `tools/ir_semantic_validator.py` raise the limit to
+  10,000 for now; building cascades in a loop and walking the tree with explicit stacks would remove
+  the dependence on it.
+
 ## Recompilation Pipeline (`docs/LLIL_DSL.md`)
 
 ### 1. HLIL DSL — a Python `.py` output generated from HLIL
