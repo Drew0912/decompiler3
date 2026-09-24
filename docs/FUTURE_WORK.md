@@ -114,7 +114,7 @@ readability. Before starting: calls never folded under a native VM logical op (m
 forwarding a register/global past a redefinition (met 2026-09-24 - including clobbering calls whose
 record dead-code elimination drops; see `docs/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (`[hlil] dropped
 path` warnings — `system.dat` `MapJumpState` has 19); common-return extraction only hoisting from an
-exhaustive switch.
+exhaustive switch (met 2026-09-24 - see `docs/HLIL_GUIDE.md`, Passes).
 
 ### 2. Mixed-IR-Level Compilation, Per Function
 

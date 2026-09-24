@@ -249,6 +249,9 @@ Several dedicated HLIL unit-test files exist today:
   `CopyPropagationPass` and the MLIL->HLIL call-fold short-circuit safety work respectively.
 - `tests/test_hlil_long_functions.py` checks that long runs of sequential ifs and loops convert
   without recursing once per statement.
+- `tests/test_hlil_common_return_extraction.py` covers when `CommonReturnExtractionPass` may hoist a
+  shared return (switch default and bare-break guards, `if` without `else`, int/float and NaN
+  constants) plus the shared `constant_values_equal` and `contains_bare_break` helpers.
 
 These tests directly exercise important tree rewrites, but they do not constitute end-to-end
 coverage of HLIL construction. `StructuralAnalyzer`, shared-region cloning, source metadata

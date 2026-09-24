@@ -89,7 +89,7 @@ Two passes exist in the codebase but are currently **wired off** in this pipelin
 | `pass_mlil_to_hlil.py` | Thin wrapper invoking `MLILToHLILConverter.convert()` — the conversion step itself, not a post-conversion cleanup pass. |
 | `pass_control_flow_optimization.py` | Inlines `var = bool_expr; if (var)` into `if (bool_expr)`; folds `==`/`!=`/`\|\|` chains on one variable into an `HLILSwitch`; inverts empty-then `if`s; merges nested switches that share a scrutinee. |
 | `pass_loop_recovery.py` | Rewrites `while(1) { if (c) break; ... }` into a real `while(!c)` or `do...while`; hoists a leading `if (c) return` out of the loop. The `do...while` rewrite refuses when the body has a `continue` targeting this loop (`continue` means something different in the two shapes - always jumps to the top in `while(1)`, can exit in `do...while`) and carries a labelled loop's label through (`HLILDoWhile.label`), instead of silently dropping it. |
-| `pass_common_return_extraction.py` | Hoists a `return` shared by every arm of an `if`/`switch` to after the construct. |
+| `pass_common_return_extraction.py` | Hoists a `return` shared by every arm of an `if`/`switch` to after the construct - only when no path can leave the construct without one of those returns: an `if` needs both arms, a `switch` needs a `default` and no case holding a bare `break` (`contains_bare_break`, `ir/hlil/hlil.py`), since an unmatched value or that `break` would otherwise run the hoisted return instead of the code after the switch. Constants compare with `constant_values_equal` (`ir/core/il_base.py`): `1` and `1.0` are different returns, NaN matches NaN. |
 | `pass_copy_propagation.py` | Single-use `var = expr; use(var)` propagation with loop/side-effect safety checks. Implemented and tested; **currently disabled** (see above) — not part of the 5 active post-conversion transformations. |
 | `pass_dead_code_elimination.py` | Truncates a block immediately after `return`/`break`/`continue`. |
 | `pass_branch_order_normalization.py` | The sole if/else arm-order decision point: swaps arms and negates the condition (De Morgan) to match the original source's `line(N)` order, with block depth as a tiebreak. Also decides which of two structurally-similar else-if chains to flatten, via "same-head" matching — this is where cascade-flattening behavior actually lives; there is no separate cascade-flattening pass. |
@@ -143,4 +143,5 @@ Two output modes exist side by side:
 Several dedicated test files: `tests/test_hlil_branch_order_normalization.py`,
 `tests/test_hlil_control_flow_optimization.py`, `tests/test_hlil_loop_recovery.py`,
 `tests/test_hlil_loop_traversal.py`, `tests/test_hlil_copy_propagation.py`,
-`tests/test_hlil_call_fold_short_circuit.py`, `tests/test_hlil_long_functions.py`.
+`tests/test_hlil_call_fold_short_circuit.py`, `tests/test_hlil_long_functions.py`,
+`tests/test_hlil_common_return_extraction.py`.

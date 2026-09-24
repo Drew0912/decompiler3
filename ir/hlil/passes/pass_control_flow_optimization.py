@@ -861,11 +861,7 @@ class ControlFlowOptimizationPass(Pass):
             return None
 
         # A bare loop break inside a case would become a switch break after conversion
-        for _, case_body in cases:
-            if contains_bare_break(case_body):
-                return None
-
-        if default_body and contains_bare_break(default_body):
+        if any(contains_bare_break(body) for _, body in cases) or contains_bare_break(default_body):
             return None
 
         switch_cases = [HLILSwitchCase([HLILConst(v) for v in values], body)
