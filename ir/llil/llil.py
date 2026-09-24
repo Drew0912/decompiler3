@@ -793,6 +793,13 @@ class LowLevelILFunction:
                     f'Block {block} {block.label} ends with non-terminal instruction: {last_inst}'
                 )
 
+        # A reachable empty block has no terminal either - control would leave the function
+        # without passing an exit instruction
+        entry = self.get_block_by_addr(self.start_addr)
+        for block in self.basic_blocks:
+            if not block.instructions and (block is entry or block.incoming_edges):
+                raise RuntimeError(f'Block {block} {block.label} is reachable but has no instructions')
+
     def __str__(self) -> str:
         result = f'; ---------- {self.name} ----------\n'
         for block in self.basic_blocks:

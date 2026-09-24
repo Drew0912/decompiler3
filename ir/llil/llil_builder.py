@@ -39,6 +39,21 @@ class _VirtualStack:
     def size(self) -> int:
         return len(self._items)
 
+    def index_of_slot(self, slot_index: int) -> Optional[int]:
+        '''List index of the entry tracking slot_index, or None if that slot is not tracked'''
+        for index in range(len(self._items) - 1, -1, -1):
+            entry_slot = self._items[index].slot_index
+            if entry_slot == slot_index:
+                return index
+
+            if entry_slot < slot_index:
+                break
+
+        return None
+
+    def replace(self, index: int, expr: LowLevelILExpr):
+        self._items[index] = expr
+
     def snapshot(self) -> List[LowLevelILExpr]:
         return list(self._items)
 
@@ -62,7 +77,6 @@ class LowLevelILBuilder:
         self.frame_base_sp: Optional[int] = None  # Stack pointer at function entry (for frame-relative access)
         self.__vstack = _VirtualStack()  # Virtual stack for expression tracking
         self.saved_stacks: dict[int, StackSnapshot] = {}  # offset -> StackSnapshot for branches
-        self.__stack_load_to_expr: dict[LowLevelILStackLoad, LowLevelILExpr] = {}  # StackLoad -> source expr
         self.__current_address: int = 0  # Current source instruction address
 
     # === Function and Block Creation ===
@@ -187,13 +201,25 @@ class LowLevelILBuilder:
         '''Get current vstack size'''
         return self.__vstack.size()
 
-    def get_source_expr(self, stack_load: LowLevelILStackLoad) -> Optional[LowLevelILExpr]:
-        '''Get the original expression for a StackLoad'''
-        return self.__stack_load_to_expr.get(stack_load)
+    def vstack_entry_at_slot(self, slot_index: int) -> Optional[LowLevelILExpr]:
+        '''The vstack entry tracking slot_index, or None if that slot is not on the vstack'''
+        index = self.__vstack.index_of_slot(slot_index)
+        return None if index is None else self.__vstack.peek(index)
 
-    def set_source_expr(self, stack_load: LowLevelILStackLoad, expr: LowLevelILExpr):
-        '''Set the original expression for a StackLoad'''
-        self.__stack_load_to_expr[stack_load] = expr
+    def _refresh_stored_slot(self, store: Union[LowLevelILStackStore, LowLevelILFrameStore]):
+        '''An in-place store gives its slot a new value, so a vstack entry still tracking that slot
+        is replaced by a fresh StackLoad - identity checks on the old entry then see the overwrite.'''
+        if isinstance(store, LowLevelILStackStore):
+            slot_index = store.slot_index
+
+        else:
+            slot_index = self.frame_base_sp + store.offset // WORD_SIZE
+
+        index = self.__vstack.index_of_slot(slot_index)
+        if index is None:
+            return
+
+        self.__vstack.replace(index, LowLevelILStackLoad(offset = 0, slot_index = slot_index))
 
     def _require_registered_block(self, block: LowLevelILBasicBlock):
         if block not in self.function.basic_blocks:
@@ -276,6 +302,9 @@ class LowLevelILBuilder:
         if isinstance(inst, LowLevelILSpAdd):
             self.__sp_adjust(inst.delta)
 
+        elif isinstance(inst, (LowLevelILStackStore, LowLevelILFrameStore)):
+            self._refresh_stored_slot(inst)
+
     # === Virtual Stack Management ===
 
     def _to_expr(self, value: Union[LowLevelILExpr, int, float, str]) -> LowLevelILExpr:
@@ -309,9 +338,7 @@ class LowLevelILBuilder:
         self.emit_sp_add(1, hidden_for_formatter = hidden_for_formatter)
         # Track on vstack: always use StackLoad reference
         # SCCP will propagate constants where needed
-        stack_load = LowLevelILStackLoad(offset = 0, slot_index = slot_index)
-        self.__vstack_push(stack_load)
-        self.set_source_expr(stack_load, expr)
+        self.__vstack_push(LowLevelILStackLoad(offset = 0, slot_index = slot_index))
 
         return expr
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 '''Unit tests for LLIL lifting-order/state-management fixes (Step J).'''
 
+from dataclasses import replace
 from pathlib import Path
 import sys
 import unittest
@@ -8,7 +9,6 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.llil.llil import LowLevelILBasicBlock, WORD_SIZE
-from ir.llil.llil_builder import StackSnapshot
 from falcom.ed9.disasm.basic_block import BasicBlock
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
@@ -110,7 +110,9 @@ class TestBlockLifecycle(unittest.TestCase):
         other = builder.create_basic_block(SECOND_BLOCK_START, 'other')
 
         builder.push_int(1)
-        builder.saved_stacks[SECOND_BLOCK_START] = StackSnapshot(sp = DELIBERATELY_DIFFERENT_SP, values = [])
+        builder.saved_stacks[SECOND_BLOCK_START] = replace(
+            builder.save_stack_state(), sp = DELIBERATELY_DIFFERENT_SP, values = []
+        )
 
         builder.begin_block(other)
 
@@ -276,6 +278,26 @@ class TestRPOIntegration(unittest.TestCase):
 
         builder.begin_block(ret_target)
         builder.ret()   # must see sp=0 regardless of what other_branch did in between
+
+        builder.finalize()
+
+
+class TestReachableEmptyBlocks(unittest.TestCase):
+    '''Every reachable block must end in a terminal - an empty one has none, so control would
+    leave the function without passing an exit check.'''
+
+    def test_jump_to_empty_block_raises_at_finalize(self):
+        builder = make_builder()
+        empty = builder.create_basic_block(SECOND_BLOCK_START, 'empty')
+        builder.jmp(empty)
+
+        with self.assertRaises(RuntimeError):
+            builder.finalize()
+
+    def test_unreferenced_empty_block_is_allowed(self):
+        builder = make_builder()
+        builder.create_basic_block(SECOND_BLOCK_START, 'unused')
+        builder.ret()
 
         builder.finalize()
 

@@ -1,13 +1,39 @@
 '''Falcom VM Builder - High-level builder with Falcom VM patterns'''
 
-from math import exp
-from typing import Union
+from dataclasses import dataclass, replace
+from enum import Enum, auto
+from typing import List, Optional, Tuple, Union
 from ir.llil import *
 from .constants import *
 from .llil_ext import *
 
 
 EMPTY_STACK_SP = 0   # ED9 calling convention: any real exit must leave the VM stack empty
+LOCAL_SETUP_SLOTS = 2    # func_id, ret_addr
+CALLER_FRAME_SLOTS = 5   # func_id, ret_addr, script pointer (2 slots), script_name
+
+
+class CallSetupKind(Enum):
+    '''Which call a pending setup is for'''
+    LOCAL = auto()    # PUSH_CURRENT_FUNC_ID + PUSH_RET_ADDR ... CALL
+    SCRIPT = auto()   # PUSH_CALLER_FRAME ... CALL_SCRIPT
+
+
+@dataclass(frozen = True)
+class PendingCallSetup:
+    '''A call setup pushed but not yet consumed by its call. slot_loads are the exact vstack
+    entries the setup pushed, lowest slot first; the call checks they are all still in place.'''
+    kind: CallSetupKind
+    sp_before_call: int
+    slot_loads: Tuple[LowLevelILStackLoad, ...]
+    return_block: Optional[LowLevelILBasicBlock]   # None while a LOCAL setup awaits PUSH_RET_ADDR
+    caller_frame: Optional[LowLevelILPushCallerFrame] = None
+
+
+@dataclass
+class FalcomStackSnapshot(StackSnapshot):
+    '''Pending call setups are stack state too: a branch's arms each see the setups pushed before it'''
+    pending_setups: Tuple[PendingCallSetup, ...]
 
 
 class FalcomVMBuilder(LowLevelILBuilder):
@@ -16,9 +42,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def __init__(self):
         '''Create builder without function (call create_function first)'''
         super().__init__()
-        self.sp_before_call_stack = []  # Stack of sp values before calls for nested calls
-        self.return_target_stack = []  # Stack of return target blocks for nested calls
-        self.caller_frame_inst = None  # Track PUSH_CALLER_FRAME instruction for call_script
+        self._pending_setups: List[PendingCallSetup] = []   # Innermost last
         self._finalized = False
 
     def add_instruction(self, inst):
@@ -28,32 +52,16 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def finalize(self) -> 'LowLevelILFunction':
         '''Finalize builder and return function'''
-
-        self._finish_block()
-
-        # RPO can end on a non-exit block; exit operations validate their own stack state.
-        self.function.build_cfg()
-
         if self.function is None:
             raise RuntimeError('No function created. Call create_function() first.')
 
         if self._finalized:
             raise RuntimeError('Builder already finalized')
 
-        # Check for pending call setup
-        if self.sp_before_call_stack:
-            pending_sp = ', '.join([str(sp) for sp in self.sp_before_call_stack])
-            raise RuntimeError(
-                f'Function ended with pending call setups at sp={pending_sp}. '
-                f'Incomplete call sequence detected (push_func_id without call).'
-            )
+        self._finish_block()
 
-        if self.return_target_stack:
-            pending = ', '.join([block.label for block in self.return_target_stack])
-            raise RuntimeError(
-                f'Function ended with pending return targets: {pending}. '
-                f'Incomplete call sequence detected (push_ret_addr without call).'
-            )
+        # RPO can end on a non-exit block; exit operations validate their own stack state.
+        self.function.build_cfg()
 
         self.function.reindex_in_block_order()
         self._finalized = True
@@ -70,189 +78,162 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
         return super().push(value, hidden_for_formatter = hidden_for_formatter)
 
+    def save_stack_state(self) -> FalcomStackSnapshot:
+        '''Snapshot sp, the virtual stack and the pending call setups together'''
+        snapshot = super().save_stack_state()
+        return FalcomStackSnapshot(snapshot.sp, snapshot.values, tuple(self._pending_setups))
+
+    def restore_stack_state(self, snapshot: FalcomStackSnapshot):
+        '''Restore sp, the virtual stack and the pending call setups'''
+        if not isinstance(snapshot, FalcomStackSnapshot):
+            raise TypeError(f'Expected FalcomStackSnapshot, got {type(snapshot).__name__}')
+
+        super().restore_stack_state(snapshot)
+        self._pending_setups = list(snapshot.pending_setups)
+
+    # === Call Setup Tracking ===
+
+    def _check_setup_slots(self, setup: PendingCallSetup):
+        '''Every slot the setup pushed must still hold that push - after a POP, re-push or in-place
+        store (POP_TO) over it, the call would read something else.'''
+        for stack_load in setup.slot_loads:
+            if stack_load.slot_index >= self.sp_get() or self.vstack_entry_at_slot(stack_load.slot_index) is not stack_load:
+                raise RuntimeError(
+                    f'{setup.kind.name} call setup slot {stack_load.slot_index} was popped or overwritten '
+                    f'before its call'
+                )
+
+    def _require_setup(self, kind: CallSetupKind) -> PendingCallSetup:
+        '''The innermost pending setup, checked to be a complete `kind` setup with its slots intact.
+        Not popped here - the call pops it once the call is emitted.'''
+        if not self._pending_setups:
+            raise RuntimeError(f'{kind.name} call without a pending call setup')
+
+        setup = self._pending_setups[-1]
+        if setup.kind != kind:
+            raise RuntimeError(f'{kind.name} call, but the innermost pending call setup is {setup.kind.name}')
+
+        if setup.return_block is None:
+            raise RuntimeError(f'{kind.name} call, but the innermost pending call setup has no return address yet')
+
+        self._check_setup_slots(setup)
+        return setup
+
+    def _consume_setup(self, setup: PendingCallSetup, call_slots: int):
+        '''After the call is emitted: the callee pops the setup and args, and the return edge continues
+        from that state - without the consumed setup.'''
+        self._cleanup_stack(call_slots)
+        self._pending_setups.pop()
+        self.save_stack_for_offset(setup.return_block.start)
+
+    def _require_no_pending_setups(self, exit_name: str):
+        '''A real exit ends the function, so no call setup may still be waiting for its call'''
+        if self._pending_setups:
+            raise RuntimeError(f'{exit_name} with {len(self._pending_setups)} call setup(s) still pending')
+
     # === Falcom Specific Constants ===
 
     def push_func_id(self):
-        '''Push current function ID - marks the start of call setup'''
-        # Save sp before we start pushing for the call (supports nesting)
-        self.sp_before_call_stack.append(self.sp_get())
+        '''Push current function ID - opens a local call setup, completed by push_ret_addr'''
+        sp_before_call = self.sp_get()
         self.stack_push(FalcomConstants.current_func_id())
+        self._pending_setups.append(PendingCallSetup(
+            CallSetupKind.LOCAL, sp_before_call, (self.vstack_peek(),), return_block = None
+        ))
 
     def push_ret_addr(self, target: LowLevelILBasicBlock):
-        '''Push return address and remember it for call instruction'''
-        # Verify push_func_id was called first
-
+        '''Push return address - completes the open local call setup'''
         if not isinstance(target, LowLevelILBasicBlock):
             raise RuntimeError(f'target must be a LowLevelILBasicBlock, got {type(target)}')
 
-        if not self.sp_before_call_stack:
+        setup = self._pending_setups[-1] if self._pending_setups else None
+        if setup is None or setup.kind != CallSetupKind.LOCAL or setup.return_block is not None:
             raise RuntimeError(
-                'push_ret_addr called without push_func_id. '
-                'Call push_func_id() first to set up the call.'
+                'push_ret_addr needs the innermost pending call setup to be a local one still '
+                'waiting for its return address'
             )
-        # Push return target onto stack (supports nested calls)
-        self.return_target_stack.append(target)
+
+        # The return address must land directly above the setup's function ID
+        self._check_setup_slots(setup)
+        if self.sp_get() != setup.sp_before_call + len(setup.slot_loads):
+            raise RuntimeError(
+                f'push_ret_addr at sp={self.sp_get()}, but its function ID ends the stack at '
+                f'sp={setup.sp_before_call + len(setup.slot_loads)}'
+            )
+
         self.stack_push(FalcomConstants.ret_addr_block(target))
+        self._pending_setups[-1] = replace(
+            setup, slot_loads = setup.slot_loads + (self.vstack_peek(),), return_block = target
+        )
 
     def push_caller_frame(self, return_target: LowLevelILBasicBlock):
-        '''PUSH_CALLER_FRAME operation - save caller frame for module call'''
-        # Save sp before we start pushing for the call (supports nesting)
-        self.sp_before_call_stack.append(self.sp_get())
+        '''PUSH_CALLER_FRAME operation - opens a script call setup, consumed by call_script'''
+        sp_before_call = self.sp_get()
 
-        # Prepare the 4 values
         func_id = FalcomConstants.current_func_id()
         ret_addr = FalcomConstants.ret_addr_block(return_target)
         script = FalcomConstants.current_script()
         script_name = FalcomConstants.current_script_name('')  # Empty string for now
 
-        # Push return target onto stack (supports nested calls)
-        self.return_target_stack.append(return_target)
-
-        # Create and add the atomic PUSH_CALLER_FRAME instruction
-        # This occupies 4 stack slots
+        # The atomic PUSH_CALLER_FRAME instruction, occupying CALLER_FRAME_SLOTS stack slots
         push_frame_inst = LowLevelILPushCallerFrame(func_id, ret_addr, script, script_name)
-        push_frame_inst.slot_index = self.sp_get()
-        # self.add_instruction(push_frame_instr)
+        push_frame_inst.slot_index = sp_before_call
 
         self.push(func_id)
         self.push(ret_addr)
         self.push(script)
         self.push(script_name)
 
-        # Save reference for call_script to use
-        self.caller_frame_inst = push_frame_inst
+        frame_loads = tuple(reversed(self.vstack_peek_many(CALLER_FRAME_SLOTS)))
+        self._pending_setups.append(PendingCallSetup(
+            CallSetupKind.SCRIPT, sp_before_call, frame_loads, return_target, push_frame_inst
+        ))
 
     def call(self, target):
         '''Falcom VM call - automatically cleans up stack (callee cleanup convention)'''
-        # Verify call setup was done
-        if not self.return_target_stack:
+        setup = self._require_setup(CallSetupKind.LOCAL)
+        return_block = setup.return_block
+        call_slots = self.sp_get() - setup.sp_before_call   # func_id + ret_addr + args
+
+        # A return block that is already built must start at the sp this call restores
+        if return_block.instructions and return_block.sp_in != setup.sp_before_call:
             raise RuntimeError(
-                'No return target set. Did you forget to call push_ret_addr()?'
-            )
-        if not self.sp_before_call_stack:
-            raise RuntimeError(
-                'No call setup found. Did you forget to call push_func_id()?'
-            )
-
-        # Pop return block and sp from stacks
-        return_block = self.return_target_stack.pop()
-        sp_before_call = self.sp_before_call_stack.pop()
-
-        # Calculate argc: total values pushed = sp_get() - sp_before_call
-        # This includes: func_id (1) + ret_addr (1) + args (N)
-        argc = self.sp_get() - sp_before_call
-
-        if argc < 0:
-            raise RuntimeError(f'argc is negative: {argc}')
-
-        # Verify we have at least func_id and ret_addr
-        if argc < 2:
-            raise RuntimeError(
-                f'Expected at least 2 values (func_id, ret_addr), got {argc}'
+                f'Stack pointer mismatch when connecting to {return_block.block_name}: '
+                f'call restores sp to {setup.sp_before_call}, but target block has sp_in={return_block.sp_in}. '
+                f'This indicates inconsistent stack management.'
             )
 
-        # Verify sp alignment: restored sp must match target block's entry sp
-        # Only check if block has been visited (has instructions or sp_in was explicitly set)
-        restored_sp = sp_before_call
-        if return_block.instructions:
-            # Block has been built, verify sp matches
-            if return_block.sp_in != restored_sp:
-                raise RuntimeError(
-                    f'Stack pointer mismatch when connecting to {return_block.block_name}: '
-                    f'call restores sp to {restored_sp}, but target block has sp_in={return_block.sp_in}. '
-                    f'This indicates inconsistent stack management.'
-                )
+        arg_count = call_slots - LOCAL_SETUP_SLOTS
+        args = self.vstack_peek_many(arg_count) if arg_count > 0 else []
 
-        # Peek arguments from vstack before cleanup
-        if argc is not None and argc > 2:
-            # argc includes func_id + ret_addr + actual args
-            # Peek actual args (argc - 2)
-            args = self.vstack_peek_many(argc - 2)
-        else:
-            args = []
-
-        # Create call with arguments
         super().call(target, return_target = return_block, args = args)
-
-        # Clean up stack (func_id + ret_addr + args)
-        if argc > 0:
-            self._cleanup_stack(argc)
-
-        # Save the post-call stack state for the return edge.
-        self.save_stack_for_offset(return_block.start)
+        self._consume_setup(setup, call_slots)
 
     def call_script(self, module: str, func: str, arg_count: int):
         '''CALL_SCRIPT operation - call a script function'''
-        # Verify call setup was done
-        if not self.return_target_stack:
+        setup = self._require_setup(CallSetupKind.SCRIPT)
+
+        call_slots = CALLER_FRAME_SLOTS + arg_count
+        if self.sp_get() != setup.sp_before_call + call_slots:
             raise RuntimeError(
-                'No return target set. Did you forget to call push_caller_frame()?'
-            )
-        if not self.sp_before_call_stack:
-            raise RuntimeError(
-                'No call setup found. Did you forget to call push_caller_frame()?'
-            )
-        if self.caller_frame_inst is None:
-            raise RuntimeError(
-                'No caller frame instruction found. Did you forget to call push_caller_frame()?'
+                f'Stack mismatch in call_script: sp={self.sp_get()}, but the caller frame and '
+                f'{arg_count} args end at sp={setup.sp_before_call + call_slots}'
             )
 
-        # Pop return block and sp from stacks
-        return_block = self.return_target_stack.pop()
-        sp_before_call = self.sp_before_call_stack.pop()
+        args = self.vstack_peek_many(arg_count) if arg_count > 0 else []   # last pushed first
 
-        # Pop arguments from vstack (in reverse order: last arg first)
-        offset = -1
-        args = [self.vstack_peek(offset - i) for i in range(arg_count)]
-
-        # Verify caller frame via StackLoad -> expr mapping
-        func_id_load     = self.vstack_peek(offset - arg_count - 4)
-        ret_addr_load    = self.vstack_peek(offset - arg_count - 3)
-        script_load      = self.vstack_peek(offset - arg_count - 1)
-        script_name_load = self.vstack_peek(offset - arg_count - 0)
-
-        if not all([
-            self.get_source_expr(func_id_load) is self.caller_frame_inst.func_id,
-            self.get_source_expr(ret_addr_load) is self.caller_frame_inst.ret_addr,
-            self.get_source_expr(script_load) is self.caller_frame_inst.script_ptr,
-            self.get_source_expr(script_name_load) is self.caller_frame_inst.script_name,
-        ]):
-            raise RuntimeError('Caller frame mismatch')
-
-        # Create and add CALL_SCRIPT instruction
-        # This represents the call that cleans up args + 4 caller frame values
-        call_inst = LowLevelILCallScript(module, func, self.caller_frame_inst, args, return_block)
-        self.add_instruction(call_inst)
-
-        # Emit SpAdd to represent stack cleanup (arg_count + 4 caller frame values)
-
-        cleanup_count = arg_count + (1 + 1 + 2 + 1)
-        self._cleanup_stack(cleanup_count)
-
-        # Verify stack is balanced
-        if self.sp_get() != sp_before_call:
-            raise RuntimeError(
-                f'Stack imbalance in call_script: after cleaning up {arg_count} args + 4 caller frame, '
-                f'current_sp={self.sp_get()} but expected sp_before_call={sp_before_call}'
-            )
-
-        # Clean up state
-        self.caller_frame_inst = None
-
-        # Save the post-call stack state for the return edge.
-        self.save_stack_for_offset(return_block.start)
+        self.add_instruction(LowLevelILCallScript(module, func, setup.caller_frame, args, setup.return_block))
+        self._consume_setup(setup, call_slots)
 
     def call_script_no_return(self, module: str, func: str, arg_count: int):
         '''CALL_SCRIPT_NO_RETURN operation - tail call to a script function, no return to caller
 
-        No push_caller_frame/push_ret_addr pair precedes this opcode in the bytecode, so
-        return_target_stack/sp_before_call_stack are not touched. The args stay logically on the
-        vstack (the callee's frame takes over rather than this function reading them back), so
-        _cleanup_stack brings the tracked sp back to 0 without emitting IL - matching the bytecode,
-        which emits no cleanup POP before a tail call.
+        No call setup precedes this opcode in the bytecode, and it never consumes one. The args
+        stay logically on the vstack (the callee's frame takes over rather than this function
+        reading them back), so _cleanup_stack brings the tracked sp back to 0 without emitting IL -
+        matching the bytecode, which emits no cleanup POP before a tail call.
         '''
-        offset = -1
-        args = [self.vstack_peek(offset - i) for i in range(arg_count)]
+        args = self.vstack_peek_many(arg_count) if arg_count > 0 else []   # last pushed first
 
         call_inst = LowLevelILCallScriptNoReturn(module, func, args)
         self.add_instruction(call_inst)
@@ -267,12 +248,16 @@ class FalcomVMBuilder(LowLevelILBuilder):
                 f'current_sp={self.sp_get()} but a tail call must leave sp={EMPTY_STACK_SP}'
             )
 
+        self._require_no_pending_setups('Tail call')
+
     def ret(self):
         '''RETURN operation - the VM calling convention requires an empty stack at any real exit'''
         if self.sp_get() != EMPTY_STACK_SP:
             raise RuntimeError(
                 f'Stack imbalance at return: current sp={self.sp_get()}, expected {EMPTY_STACK_SP}'
             )
+
+        self._require_no_pending_setups('Return')
         super().ret()
 
     # === VM Operations ===

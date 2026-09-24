@@ -91,14 +91,13 @@ class TestPopKeepsVstackInSync(unittest.TestCase):
 
         builder.push_func_id()
         builder.push_ret_addr(ret_block)
-        arg_value = builder.const_int(42)
-        builder.stack_push(arg_value)
+        builder.stack_push(builder.const_int(42))
+        arg_load = builder.vstack_peek()
         builder.call('some_func')
 
         call_inst = builder.current_block.instructions[-1]
         self.assertIsInstance(call_inst, LowLevelILCall)
-        self.assertEqual(len(call_inst.args), 1)
-        self.assertIs(builder.get_source_expr(call_inst.args[0]), arg_value)
+        self.assertEqual(call_inst.args, [arg_load])
 
     def test_pop_before_branch_preserves_trimmed_state(self):
         builder = make_builder()
