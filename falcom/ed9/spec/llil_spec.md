@@ -1,5 +1,12 @@
 # Falcom LLIL Spec
 
+> **Outdated draft - does not describe the current builder.** Among other differences: the virtual
+> stack tracks slot loads, not the pushed values; frame nodes take a byte offset from the frame base;
+> and a parameter slot is frame storage (`argN`) only while it still holds the caller's value - a
+> value pushed there after the function popped the parameter is an ordinary stack slot. The current
+> behavior is documented in `ir/llil/llil_builder.py`, `falcom/ed9/ir/llil/llil_builder.py` and
+> `docs/`. A full rewrite of this file is pending.
+
 > 版本：draft
 > 说明：本文件是 **Falcom_LLIL 方言** 的规范，约束 Falcom VM 在使用 Core LLIL 时的栈 / SP / 调用等行为。
 

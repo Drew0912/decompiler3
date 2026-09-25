@@ -309,45 +309,30 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def pop_to(self, offset: int):
         '''POP_TO operation - pop and store to STACK[sp + offset]'''
         val = self.pop(hidden_for_formatter = True)
-        # offset is relative to sp AFTER pop (new_sp + offset)
-        slot_index = self.sp_get() + offset // WORD_SIZE
-
-        # A parameter slot is frame-relative (mirrors load_stack's parameter check below) so a
-        # reassigned argument keeps its identity instead of becoming a new, disconnected local.
-        num_params = self.function.num_params
-        if 0 <= slot_index < num_params:
-            self.frame_store(val, slot_index * WORD_SIZE)
-
-        else:
-            self.add_instruction(LowLevelILStackStore(val, offset = offset, slot_index = slot_index))
+        # offset is relative to sp after the pop
+        self._store_slot(val, self._slot_index(offset), offset)
 
     def _resolve_deref_param_ptr(self, slot_index: int, opcode_name: str):
-        '''Validate a dereference target and load it frame-relative, like load_stack's own
-        parameter check. Every dereference in the corpus targets a parameter slot (a
-        caller-supplied out-param pointer) - a non-parameter slot raises rather than silently
-        mis-modelling it.'''
-        num_params = self.function.num_params
-        if not (0 <= slot_index < num_params):
+        '''The pointer a dereference goes through - only a caller-supplied one, in a parameter the function still
+        holds: a pointer in any other slot may point into this function's own frame.'''
+        if not self._holds_parameter(slot_index):
             raise NotImplementedError(
-                f'{opcode_name} at non-parameter slot {slot_index} is not supported - '
-                f'every dereference in the corpus targets a parameter slot.'
+                f'{opcode_name} requires a slot still holding a caller parameter, got slot {slot_index}'
             )
 
-        return self.frame_load(slot_index * WORD_SIZE)
+        return self.frame_load(self._frame_offset(slot_index))
 
     def load_stack_deref(self, offset: int):
         '''LOAD_STACK_DEREF operation - dereference the pointer at STACK[sp + offset], push *ptr'''
-        absolute_pos = self.sp_get() + offset // WORD_SIZE
-        ptr = self._resolve_deref_param_ptr(absolute_pos, 'LOAD_STACK_DEREF')
+        ptr = self._resolve_deref_param_ptr(self._slot_index(offset), 'LOAD_STACK_DEREF')
         self.stack_push(LowLevelILLoad(ptr))
 
     def pop_to_deref(self, offset: int):
         '''POP_TO_DEREF operation - pop and store through the pointer at STACK[sp + offset]
         (*ptr = value)'''
         val = self.pop(hidden_for_formatter = True)
-        # offset is relative to sp AFTER pop (mirrors pop_to)
-        slot_index = self.sp_get() + offset // WORD_SIZE
-        ptr = self._resolve_deref_param_ptr(slot_index, 'POP_TO_DEREF')
+        # offset is relative to sp after the pop (mirrors pop_to)
+        ptr = self._resolve_deref_param_ptr(self._slot_index(offset), 'POP_TO_DEREF')
         self.add_instruction(LowLevelILStore(ptr, val))
 
     def pop_jmp_zero(self, true_target, false_target):

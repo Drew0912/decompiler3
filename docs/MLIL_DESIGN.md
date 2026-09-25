@@ -72,6 +72,11 @@ Two coexisting representations, not a single evolving one:
   SSA construction is dominance-based (`SSAConstructor`) and includes critical-edge splitting;
   deconstruction (`SSADeconstructor`) converts back to non-SSA form afterward.
 
+Stack slots are named `var_sN` and parameters `argN`. Which one an access gets is decided by the
+LLIL builder from the slot's current lifetime (`LowLevelILBuilder._holds_parameter`): a parameter
+slot is `argN` only while it still holds the caller's value, and a value pushed there after the
+function popped the parameter is a `var_sN`, like any other push.
+
 SSA is not optional or a future addition — it's where essentially all real optimization work
 happens. `optimize_mlil()` (`ir/mlil/mlil_optimizer.py`) converts non-SSA MLIL to SSA, runs the
 full `SSAOptimizer` pass suite plus type inference, then deconstructs back to non-SSA before

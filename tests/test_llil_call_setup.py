@@ -150,7 +150,7 @@ class TestCallSetupCorruption(unittest.TestCase):
         self.make_local_setup(builder)            # slots 0, 1
         builder.push_int(FILLER_VALUE)
         builder.push_int(REPLACEMENT_VALUE)
-        builder.pop_to(-2 * WORD_SIZE)            # slot 1 is a parameter slot: emitted as a frame store
+        builder.pop_to(-2 * WORD_SIZE)            # slot 1 was re-pushed after the parameter was popped: a stack store
 
         with self.assertRaises(RuntimeError):
             builder.call('f')

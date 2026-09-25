@@ -430,8 +430,8 @@ class TestStrictEdgeState(unittest.TestCase):
             builder.call_script(MODULE_NAME, 'f', 0)   # returns at sp 0
 
     def test_parameter_kept_on_one_arm_and_repushed_on_the_other_raises(self):
-        '''Until Step O gives a parameter slot one storage name, the arms name slot 0 differently
-        (arg1 vs a re-pushed stack value), so a read after the join would be wrong for one of them.'''
+        '''The arms hold different lifetimes in slot 0 - the caller's parameter (arg1) and a pushed value
+        (var_s0) - so no single name is right for a read after the join.'''
         builder, left, right, join = self.make_diamond(num_params = 1)
         builder.begin_block(left)
         builder.pop_n(1)

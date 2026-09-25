@@ -50,11 +50,16 @@ class TestPushStackAddrParameterSlot(unittest.TestCase):
         self.assertEqual(stack_store.value.offset, 0)
 
     def test_non_parameter_slot_still_emits_stack_addr(self):
-        # 1 parameter (slot 0). sp starts at 1, so offset 0 targets slot 1 - a local, not
-        # the parameter - unaffected by this fix, must keep today's StackAddr behavior.
-        _, entry = build_function_with_push_stack_addr(num_params = 1, offset = 0)
+        # 1 parameter (slot 0) and a pushed local (slot 1): offset -WORD_SIZE targets the local,
+        # not the parameter - unaffected by this fix, must keep today's StackAddr behavior.
+        builder = FalcomVMBuilder()
+        builder.create_function('push_addr_test', FUNC_START, num_params = 1)
+        entry = builder.create_basic_block(FUNC_START, 'push_addr_test')
+        builder.set_current_block(entry)
+        builder.push_int(0)                     # slot 1; sp 1->2
+        builder.push_stack_addr(-WORD_SIZE)
 
-        stack_store = entry.instructions[0]
+        stack_store = entry.instructions[-2]    # the address's own store, before its SpAdd
         self.assertIsInstance(stack_store.value, LowLevelILStackAddr)
         self.assertEqual(stack_store.value.slot_index, 1)
 

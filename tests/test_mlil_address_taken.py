@@ -526,14 +526,15 @@ class TestAddressTakenFromRealLLIL(unittest.TestCase):
         entry = builder.create_basic_block(FUNC_START, 'addr_taken_repro')
         builder.set_current_block(entry)
 
-        builder.push_int(5)                    # var_s0 = 5; sp 0->1
-        builder.push_stack_addr(-WORD_SIZE)     # push &var_s0 (slot 0); sp 1->2
-        builder.pop_to(0)                       # var_s1 (slot 1) = &var_s0; sp 2->1
-        builder.load_stack(0)                   # push var_s1's value fresh; sp 1->2
-        builder.syscall(1, 1, 1)                # syscall(var_s1) - sp stays 2
-        builder.load_stack(-2 * WORD_SIZE)      # push var_s0's value; sp 2->3
-        builder.set_reg(0)                      # reg0 = var_s0's value; sp 3->2
-        builder.pop_bytes(2 * WORD_SIZE)        # sp 2->0 (discard the two remaining temps)
+        builder.push_int(5)                     # var_s0 = 5; sp 0->1
+        builder.push_int(0)                     # var_s1, the temp's slot; sp 1->2
+        builder.push_stack_addr(-2 * WORD_SIZE) # push &var_s0 (slot 0); sp 2->3
+        builder.pop_to(-WORD_SIZE)              # var_s1 (slot 1) = &var_s0; sp 3->2
+        builder.load_stack(-WORD_SIZE)          # push var_s1's value fresh; sp 2->3
+        builder.syscall(1, 1, 1)                # syscall(var_s2) - sp stays 3
+        builder.load_stack(-3 * WORD_SIZE)      # push var_s0's value; sp 3->4
+        builder.set_reg(0)                      # reg0 = var_s0's value; sp 4->3
+        builder.pop_bytes(3 * WORD_SIZE)        # sp 3->0 (discard the three remaining temps)
         builder.ret()
 
         mlil_func = convert_falcom_llil_to_mlil(builder.function, optimize = True, infer_types = False)

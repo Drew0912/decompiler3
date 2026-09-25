@@ -64,8 +64,8 @@ class TestDerefLift(unittest.TestCase):
     exactly like load_stack (frame-relative), then wraps it in Load/Store.'''
 
     def test_load_stack_deref_wraps_frame_load(self):
-        # 1 parameter (slot 0). offset=0 at entry (sp=1) -> absolute_pos = 1 + 0 = 1... use
-        # -WORD_SIZE so absolute_pos = 1 - 1 = 0, the sole parameter slot.
+        # 1 parameter (slot 0). offset=0 at entry (sp=1) -> slot_index = 1 + 0 = 1... use
+        # -WORD_SIZE so slot_index = 1 - 1 = 0, the sole parameter slot.
         _, entry = build_function_with_deref(num_params = 1, offset = -WORD_SIZE, deref_write = False)
 
         # load_stack_deref pushes via stack_push(LowLevelILLoad(...)), i.e. a StackStore whose
@@ -85,7 +85,7 @@ class TestDerefLift(unittest.TestCase):
         self.assertEqual(inst.dest.offset, 0)
 
     def test_load_stack_deref_at_non_parameter_slot_raises(self):
-        # 1 parameter (slot 0). offset=0 -> absolute_pos = 1, not a parameter slot.
+        # 1 parameter (slot 0). offset=0 -> slot_index = 1, not a parameter slot.
         with self.assertRaises(NotImplementedError):
             build_function_with_deref(num_params = 1, offset = 0, deref_write = False)
 

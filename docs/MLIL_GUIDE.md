@@ -51,8 +51,12 @@ wires HLIL.
 Two representations coexist rather than one replacing the other:
 
 - **Non-SSA** — the default, on-the-wire form. Stack slots become named variables
-  (`var_s0`, `var_s1`, ...), parameters become `param_0`, `param_1`, ..., and translation
-  introduces temporaries as needed.
+  (`var_s0`, `var_s1`, ...), parameters become `arg1` ... `argN` (`arg1` is the highest
+  parameter slot), and translation introduces temporaries as needed. A parameter slot is `argN`
+  only while it still holds the caller's value: once the function pops the parameter and pushes a
+  new value into its slot (the usual tail-call pattern), every access to that slot uses the push's
+  `var_sN`, like any other push. The LLIL builder decides this (`_holds_parameter`); MLIL maps
+  frame accesses to `argN` and stack accesses to `var_sN`.
 - **SSA** — used internally during optimization. Every assignment gets a fresh version, and
   control-flow joins get explicit `Phi` nodes. A function is converted to SSA, optimized, and
   converted back to non-SSA before anything downstream (including HLIL) ever sees it.

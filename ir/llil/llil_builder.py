@@ -88,6 +88,8 @@ class LowLevelILBuilder:
         # (source block, terminal, target) of every edge whose stack state was recorded
         self._recorded_edges: set[tuple[LowLevelILBasicBlock, LowLevelILInstruction, LowLevelILBasicBlock]] = set()
         self.__current_address: int = 0  # Current source instruction address
+        if function is not None:
+            self._seed_entry_state()
 
     # === Function and Block Creation ===
 
@@ -270,7 +272,7 @@ class LowLevelILBuilder:
         return StackSnapshot(self.sp_get(), self.__vstack.snapshot())
 
     def restore_stack_state(self, snapshot: StackSnapshot):
-        '''Restore stack pointer and virtual stack'''
+        '''Restore a trusted snapshot; its tracked slots determine slot storage.'''
         self.__sp_set(snapshot.sp)
         self.__vstack.restore(snapshot.values)
 
@@ -400,7 +402,7 @@ class LowLevelILBuilder:
         self.emit_sp_add(-1, hidden_for_formatter = hidden_for_formatter)
         return self.__vstack_pop()
 
-    # === Legacy Stack Operations (kept for compatibility) ===
+    # === Stack and Frame Operations ===
 
     def stack_push(self, value: Union[LowLevelILExpr, int, str]):
         '''STACK[sp++] = value (legacy, use push() instead)'''
@@ -416,16 +418,14 @@ class LowLevelILBuilder:
 
     def stack_store(self, value: Union[LowLevelILExpr, int, str], offset: int):
         '''STACK[sp + offset] = value (no sp change)'''
-        expr = self._to_expr(value)
-        slot_index = self.sp_get() + offset // WORD_SIZE
-        self.add_instruction(LowLevelILStackStore(expr, offset = offset, slot_index = slot_index))
+        self._store_slot(self._to_expr(value), self._slot_index(offset), offset)
 
     def frame_load(self, offset: int) -> 'LowLevelILFrameLoad':
-        '''STACK[frame + offset] - Frame-relative load (for function parameters/locals)'''
+        '''STACK[frame + offset] - Frame-relative load (for function parameters)'''
         return LowLevelILFrameLoad(offset)
 
     def frame_store(self, value: Union[LowLevelILExpr, int, str], offset: int):
-        '''STACK[frame + offset] = value - Frame-relative store (for function parameters/locals)'''
+        '''STACK[frame + offset] = value - Frame-relative store (for function parameters)'''
         expr = self._to_expr(value)
         self.add_instruction(LowLevelILFrameStore(expr, offset))
 
@@ -435,47 +435,72 @@ class LowLevelILBuilder:
         self.stack_push(frame_val)
 
     def frame_addr(self, offset: int) -> 'LowLevelILFrameAddr':
-        '''&STACK[frame + offset] - Frame-relative address (for function parameters/locals)'''
+        '''&STACK[frame + offset] - Frame-relative address (for function parameters)'''
         return LowLevelILFrameAddr(offset)
+
+    # === Slot Storage (one rule for every access by slot) ===
+
+    def _slot_index(self, offset: int) -> int:
+        '''Absolute slot of the byte offset from sp'''
+        return self.sp_get() + offset // WORD_SIZE
+
+    def _is_param_slot(self, slot_index: int) -> bool:
+        '''The caller pushed the arguments into the slots starting at the frame base'''
+        return self.frame_base_sp <= slot_index < self.frame_base_sp + self.function.num_params
+
+    def _holds_parameter(self, slot_index: int) -> bool:
+        '''Whether slot_index still holds the caller's parameter, so accesses to it are frame-relative (argN).
+        A push starts a new lifetime - in a parameter slot too - and the vstack tracks every pushed slot until
+        it is popped, never a parameter: a live parameter is a parameter slot below sp that no entry tracks.'''
+        return (
+            self._is_param_slot(slot_index)
+            and slot_index < self.sp_get()
+            and self.vstack_entry_at_slot(slot_index) is None
+        )
+
+    def _frame_offset(self, slot_index: int) -> int:
+        '''Byte offset of slot_index from the frame base'''
+        return (slot_index - self.frame_base_sp) * WORD_SIZE
+
+    def _require_live_slot(self, slot_index: int, access: str):
+        '''A slot at or above sp holds no live value, so reading it or taking its address is not modelled'''
+        if slot_index >= self.sp_get():
+            raise NotImplementedError(
+                f'{access} of slot {slot_index} at or above sp={self.sp_get()} is not supported - '
+                f'the slot holds no live value'
+            )
+
+    def _load_slot(self, slot_index: int, offset: int) -> LowLevelILExpr:
+        '''Read of a live slot (offset: its byte offset from sp)'''
+        self._require_live_slot(slot_index, 'Read')
+        if self._holds_parameter(slot_index):
+            return self.frame_load(self._frame_offset(slot_index))
+
+        return self.stack_load(offset, slot_index)
+
+    def _slot_address(self, slot_index: int) -> LowLevelILExpr:
+        '''Address of a live slot'''
+        self._require_live_slot(slot_index, 'Address')
+        if self._holds_parameter(slot_index):
+            return self.frame_addr(self._frame_offset(slot_index))
+
+        return LowLevelILStackAddr(slot_index)
+
+    def _store_slot(self, value: LowLevelILExpr, slot_index: int, offset: int):
+        '''In-place store (offset: the slot's byte offset from sp); a slot at or above sp is a dead stack slot'''
+        if self._holds_parameter(slot_index):
+            self.frame_store(value, self._frame_offset(slot_index))
+
+        else:
+            self.add_instruction(LowLevelILStackStore(value, offset = offset, slot_index = slot_index))
 
     def load_stack(self, offset: int):
         '''Load from sp + offset and push to stack'''
-        # Calculate word offset
-        word_offset = offset // WORD_SIZE
-        # Calculate absolute stack position
-        sp = self.sp_get()
-        absolute_pos = sp + word_offset
-
-        # Check if accessing parameter area
-        # New scheme: fp = 0, parameters at STACK[0..num_params-1]
-        num_params = self.function.num_params
-        if absolute_pos >= 0 and absolute_pos < num_params:
-            # Accessing parameters - use fp-relative
-            # absolute_pos = fp + fp_offset, and fp = 0, so fp_offset = absolute_pos
-            fp_offset = absolute_pos * WORD_SIZE  # Convert to bytes
-            self.load_frame(fp_offset)
-        else:
-            # Accessing within current stack frame (temporaries/locals) - use sp-relative
-            stack_val = self.stack_load(offset, slot_index = absolute_pos)
-            self.stack_push(stack_val)
+        self.stack_push(self._load_slot(self._slot_index(offset), offset))
 
     def push_stack_addr(self, offset: int):
         '''Push the address of stack location (sp + offset)'''
-        # Convert byte offset to word offset
-        word_offset = offset // WORD_SIZE
-        # Calculate absolute slot index using current sp
-        slot_index = self.sp_get() + word_offset
-
-        # A parameter slot is frame-relative (mirrors load_stack's own parameter check) so
-        # taking its address produces &arg_N, not the address of an unrelated phantom local.
-        num_params = self.function.num_params
-        if 0 <= slot_index < num_params:
-            stack_addr = self.frame_addr(slot_index * WORD_SIZE)
-
-        else:
-            stack_addr = LowLevelILStackAddr(slot_index)
-
-        self.stack_push(stack_addr)
+        self.stack_push(self._slot_address(self._slot_index(offset)))
 
     # REMOVED: sp_add() - use emit_sp_add() instead
     # def sp_add(self, delta: int):
