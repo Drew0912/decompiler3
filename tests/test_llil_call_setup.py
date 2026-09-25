@@ -24,6 +24,8 @@ STORED_VALUE = 5
 CONDITION_VALUE = 1
 LOCAL_PARAM_COUNT = 2
 MODULE_NAME = 'module'
+FUNC_ID_SLOT = 0    # a local setup pushed on an empty stack
+RET_ADDR_SLOT = 1
 
 
 def make_builder(num_params: int = 0) -> FalcomVMBuilder:
@@ -196,8 +198,6 @@ class TestCallSetupInSnapshots(unittest.TestCase):
         builder.push_ret_addr(ret_block)
         builder.push_int(CONDITION_VALUE)
         builder.pop_jmp_zero(left, right)
-        builder.save_stack_for_offset(left.start)
-        builder.save_stack_for_offset(right.start)
 
         builder.begin_block(left)
         builder.call('f')
@@ -232,8 +232,6 @@ class TestCallSetupInSnapshots(unittest.TestCase):
         builder.push_ret_addr(ret_block)
         builder.push_int(CONDITION_VALUE)
         builder.pop_jmp_zero(mid, detour)
-        builder.save_stack_for_offset(mid.start)
-        builder.save_stack_for_offset(detour.start)
 
         builder.begin_block(mid)
         builder.call('f')
@@ -339,6 +337,102 @@ class TestStoresBelowAPendingSetup(unittest.TestCase):
         builder.pop_to(-4 * WORD_SIZE)            # sp 5 -> 4, stores into parameter slot 0
 
         builder.call('f')
+
+
+class TestCallSetupsAtJoins(unittest.TestCase):
+    '''Every edge into a join must bring the same pending setups in the same state - otherwise the
+    arm recorded first would decide what the call at the join sees.'''
+
+    def make_branch(self, builder: FalcomVMBuilder):
+        left = add_block(builder, 'left')
+        right = add_block(builder, 'right')
+        join = add_block(builder, 'join')
+        builder.push_int(CONDITION_VALUE)
+        builder.pop_jmp_zero(left, right)
+        return left, right, join
+
+    def make_branch_after_local_setup(self, builder: FalcomVMBuilder):
+        ret_block = add_block(builder, 'ret')
+        builder.push_func_id()                    # FUNC_ID_SLOT
+        builder.push_ret_addr(ret_block)          # RET_ADDR_SLOT
+        return self.make_branch(builder)
+
+    def overwrite_setup_slot(self, builder: FalcomVMBuilder, slot: int):
+        builder.push_int(REPLACEMENT_VALUE)       # slot 2
+        builder.pop_to((slot - LOCAL_SETUP_SLOTS) * WORD_SIZE)   # sp 3 -> 2, stores into `slot`
+
+    def test_arm_that_overwrote_the_ret_addr_raises_at_the_join(self):
+        for broken_arm_first in (True, False):
+            with self.subTest(broken_arm_first = broken_arm_first):
+                builder = make_builder()
+                left, right, join = self.make_branch_after_local_setup(builder)
+                builder.begin_block(left)
+                if broken_arm_first:
+                    self.overwrite_setup_slot(builder, RET_ADDR_SLOT)
+
+                builder.jmp(join)
+                builder.begin_block(right)
+                if not broken_arm_first:
+                    self.overwrite_setup_slot(builder, RET_ADDR_SLOT)
+
+                with self.assertRaises(RuntimeError):
+                    builder.jmp(join)
+
+    def test_arms_breaking_different_setup_slots_raise_at_the_join(self):
+        builder = make_builder()
+        left, right, join = self.make_branch_after_local_setup(builder)
+        builder.begin_block(left)
+        self.overwrite_setup_slot(builder, FUNC_ID_SLOT)
+        builder.jmp(join)
+        builder.begin_block(right)
+        self.overwrite_setup_slot(builder, RET_ADDR_SLOT)
+
+        with self.assertRaises(RuntimeError):
+            builder.jmp(join)
+
+    def test_setup_on_one_arm_only_raises_at_the_join(self):
+        builder = make_builder()
+        left, right, join = self.make_branch(builder)
+        builder.begin_block(left)
+        builder.push_func_id()
+        builder.push_ret_addr(add_block(builder, 'ret'))
+        builder.jmp(join)
+        builder.begin_block(right)
+        builder.push_int(FILLER_VALUE)
+        builder.push_int(FILLER_VALUE)            # same height, no setup
+
+        with self.assertRaises(RuntimeError):
+            builder.jmp(join)
+
+    def test_arms_pushing_their_own_equal_setup_are_accepted(self):
+        builder = make_builder()
+        left, right, join = self.make_branch(builder)
+        ret_block = add_block(builder, 'ret')
+        for arm in (left, right):
+            builder.begin_block(arm)
+            builder.push_func_id()
+            builder.push_ret_addr(ret_block)
+            builder.jmp(join)
+
+        builder.begin_block(join)
+        builder.call('f')
+        builder.begin_block(ret_block)
+        builder.ret()
+
+        builder.finalize()
+
+    def test_argument_pushed_differently_on_each_arm_is_accepted(self):
+        builder = make_builder()
+        left, right, join = self.make_branch_after_local_setup(builder)
+        for arm, value in ((left, ARG_VALUE), (right, FILLER_VALUE)):
+            builder.begin_block(arm)
+            builder.push_int(value)
+            builder.jmp(join)
+
+        builder.begin_block(join)
+        builder.call('f')
+
+        self.assertEqual(last_instruction(builder).args[0].slot_index, LOCAL_SETUP_SLOTS)
 
 
 if __name__ == '__main__':

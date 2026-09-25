@@ -693,6 +693,9 @@ class LowLevelILFunction:
 
     def add_basic_block(self, block: LowLevelILBasicBlock):
         '''Add basic block to function'''
+        if block.start in self._block_map:
+            raise RuntimeError(f'A block already starts at {block.start:#x}')
+
         block.index = len(self.basic_blocks)
         block.function = self
         self.basic_blocks.append(block)

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, replace
 from enum import Enum, auto
-from typing import List, Optional, Tuple, Union
+from typing import List, NamedTuple, Optional, Tuple, Union
 from ir.llil import *
 from .constants import *
 from .llil_ext import *
@@ -30,10 +30,38 @@ class PendingCallSetup:
     caller_frame: Optional[LowLevelILPushCallerFrame] = None
 
 
+class SetupShape(NamedTuple):
+    '''A pending setup as code after an edge observes it; intact[i] is whether slot load i is still the
+    vstack entry at its slot - the call checks each one'''
+    kind: str
+    sp_before_call: int
+    return_block: Optional[str]
+    intact: Tuple[bool, ...]
+
+
+class FalcomStackShape(NamedTuple):
+    sp: int
+    slots: Tuple[int, ...]
+    setups: Tuple[SetupShape, ...]
+
+
 @dataclass
 class FalcomStackSnapshot(StackSnapshot):
     '''Pending call setups are stack state too: a branch's arms each see the setups pushed before it'''
     pending_setups: Tuple[PendingCallSetup, ...]
+
+    def shape(self) -> FalcomStackShape:
+        values_by_slot = {value.slot_index: value for value in self.values}
+        setups = tuple(
+            SetupShape(
+                setup.kind.name,
+                setup.sp_before_call,
+                None if setup.return_block is None else setup.return_block.block_name,
+                tuple(values_by_slot.get(load.slot_index) is load for load in setup.slot_loads),
+            )
+            for setup in self.pending_setups
+        )
+        return FalcomStackShape(*super().shape(), setups)
 
 
 class FalcomVMBuilder(LowLevelILBuilder):
@@ -62,6 +90,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
         # RPO can end on a non-exit block; exit operations validate their own stack state.
         self.function.build_cfg()
+        self._require_recorded_edges()
 
         self.function.reindex_in_block_order()
         self._finalized = True
@@ -119,12 +148,12 @@ class FalcomVMBuilder(LowLevelILBuilder):
         self._check_setup_slots(setup)
         return setup
 
-    def _consume_setup(self, setup: PendingCallSetup, call_slots: int):
+    def _consume_setup(self, setup: PendingCallSetup, call_slots: int, call_inst: LowLevelILInstruction):
         '''After the call is emitted: the callee pops the setup and args, and the return edge continues
         from that state - without the consumed setup.'''
         self._cleanup_stack(call_slots)
         self._pending_setups.pop()
-        self.save_stack_for_offset(setup.return_block.start)
+        self._record_edge_state(call_inst, setup.return_block)
 
     def _require_no_pending_setups(self, exit_name: str):
         '''A real exit ends the function, so no call setup may still be waiting for its call'''
@@ -192,22 +221,13 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def call(self, target):
         '''Falcom VM call - automatically cleans up stack (callee cleanup convention)'''
         setup = self._require_setup(CallSetupKind.LOCAL)
-        return_block = setup.return_block
         call_slots = self.sp_get() - setup.sp_before_call   # func_id + ret_addr + args
-
-        # A return block that is already built must start at the sp this call restores
-        if return_block.instructions and return_block.sp_in != setup.sp_before_call:
-            raise RuntimeError(
-                f'Stack pointer mismatch when connecting to {return_block.block_name}: '
-                f'call restores sp to {setup.sp_before_call}, but target block has sp_in={return_block.sp_in}. '
-                f'This indicates inconsistent stack management.'
-            )
 
         arg_count = call_slots - LOCAL_SETUP_SLOTS
         args = self.vstack_peek_many(arg_count) if arg_count > 0 else []
 
-        super().call(target, return_target = return_block, args = args)
-        self._consume_setup(setup, call_slots)
+        call_inst = super().call(target, return_target = setup.return_block, args = args)
+        self._consume_setup(setup, call_slots, call_inst)
 
     def call_script(self, module: str, func: str, arg_count: int):
         '''CALL_SCRIPT operation - call a script function'''
@@ -222,8 +242,9 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
         args = self.vstack_peek_many(arg_count) if arg_count > 0 else []   # last pushed first
 
-        self.add_instruction(LowLevelILCallScript(module, func, setup.caller_frame, args, setup.return_block))
-        self._consume_setup(setup, call_slots)
+        call_inst = LowLevelILCallScript(module, func, setup.caller_frame, args, setup.return_block)
+        self.add_instruction(call_inst)
+        self._consume_setup(setup, call_slots, call_inst)
 
     def call_script_no_return(self, module: str, func: str, arg_count: int):
         '''CALL_SCRIPT_NO_RETURN operation - tail call to a script function, no return to caller
@@ -331,14 +352,8 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def pop_jmp_zero(self, true_target, false_target):
         '''POP_JMP_ZERO operation - branch if popped value is zero'''
-        # Pop from stack using StackPop expression
         cond = self.pop(hidden_for_formatter = True)
-        # Create EQ(cond, 0) without adding as instruction
-        # This is just used as the branch condition expression
-        zero = self.const_int(0)
-        is_zero = LowLevelILEq(cond, zero)
-        # Create If with both targets explicitly specified
-        self.add_instruction(LowLevelILIf(is_zero, true_target, false_target))
+        self.branch_if(LowLevelILEq(cond, self.const_int(0)), true_target, false_target)
 
     def pop_jmp_not_zero(self, true_target, false_target):
         '''POP_JMP_NOT_ZERO operation - branch if popped value is not zero'''

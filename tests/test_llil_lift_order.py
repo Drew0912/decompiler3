@@ -8,7 +8,8 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ir.llil.llil import LowLevelILBasicBlock, WORD_SIZE
+from ir.llil.llil import LowLevelILBasicBlock, LowLevelILEq, LowLevelILJmp, WORD_SIZE
+from ir.llil.llil_builder import LowLevelILBuilder
 from falcom.ed9.disasm.basic_block import BasicBlock
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
@@ -17,9 +18,15 @@ from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 FUNC_START = 0x1000
 SECOND_BLOCK_START = FUNC_START + 0x10
 THIRD_BLOCK_START = FUNC_START + 0x20
+FOURTH_BLOCK_START = FUNC_START + 0x30
 UNREGISTERED_BLOCK_OFFSET = 0x9999
 DELIBERATELY_DIFFERENT_SP = 9
 SENTINEL_SP_OUT = 999
+CONDITION_VALUE = 0
+LEFT_VALUE = 1
+RIGHT_VALUE = 2
+SEED_PARAM_COUNT = 2
+MODULE_NAME = 'module'
 
 
 def make_rpo_lifter() -> ED9VMLifter:
@@ -155,6 +162,13 @@ class TestBlockLifecycle(unittest.TestCase):
 
         self.assertEqual(entry.sp_out, 0)
 
+    def test_duplicate_block_start_raises(self):
+        builder = make_builder()
+        builder.create_basic_block(SECOND_BLOCK_START, 'first')
+
+        with self.assertRaises(RuntimeError):
+            builder.create_basic_block(SECOND_BLOCK_START, 'second')
+
 
 class TestComputeRPO(unittest.TestCase):
     '''_compute_rpo over the disassembler CFG (BasicBlock/succs), independent of the LLIL
@@ -213,27 +227,24 @@ class TestRPOIntegration(unittest.TestCase):
     saving - proven together at the builder level.'''
 
     def test_loop_with_carried_state_does_not_confuse_the_exit_check(self):
-        '''header/body/exit, matching TestComputeRPO's own loop shape: body legitimately carries
-        state across the back edge; exit reaches RETURN cleanly. Neither finalize() nor ret()
-        should be confused by body being lifted last.'''
-        builder = make_builder()
+        '''header/body/exit, matching TestComputeRPO's own loop shape, with one parameter: body is
+        lifted last and ends at sp 1 (the parameter is still on the stack) as it jumps back; exit pops
+        the parameter and returns. Neither finalize() nor ret() should be confused by body being
+        lifted last.'''
+        builder = make_builder(num_params = 1)
         header = builder.function.basic_blocks[0]
         exit_block = builder.create_basic_block(SECOND_BLOCK_START, 'exit')
         body = builder.create_basic_block(THIRD_BLOCK_START, 'body')
 
-        builder.push_int(42)   # loop-carried value - never popped along the body path
-        builder.push_int(0)    # condition
+        builder.push_int(CONDITION_VALUE)
         builder.pop_jmp_zero(exit_block, body)
-        builder.save_stack_for_offset(exit_block.start)
-        builder.save_stack_for_offset(body.start)
 
         builder.begin_block(exit_block)   # RPO lifts exit before body - see TestComputeRPO
-        builder.pop_bytes(WORD_SIZE)       # exit path cleans up the loop-carried value
+        builder.pop_bytes(WORD_SIZE)       # exit path pops the parameter
         builder.ret()                      # must not raise
 
         builder.begin_block(body)
-        builder.jmp(header)   # back edge - body's own carried value is still on the stack here
-        builder.save_stack_for_offset(header.start)
+        builder.jmp(header)   # back edge - same stack as the header's entry state
 
         builder.finalize()   # must not raise either
 
@@ -248,28 +259,31 @@ class TestRPOIntegration(unittest.TestCase):
 
         builder.push_int(1)
         builder.jmp(farther)
-        builder.save_stack_for_offset(farther.start)
 
         builder.begin_block(farther)
         builder.pop_bytes(WORD_SIZE)
         builder.jmp(ret_block)
-        builder.save_stack_for_offset(ret_block.start)
 
         builder.begin_block(ret_block)
-        builder.ret()   # must not raise - sp is genuinely 0 here, restored from farther's save
+        builder.ret()   # must not raise - sp is genuinely 0 here, restored from farther's edge state
 
         builder.finalize()
 
     def test_call_return_state_correct_even_when_not_lift_order_adjacent(self):
-        '''call()'s own save_stack_for_offset means the return block's state doesn't depend on
+        '''call() records its own return edge, so the return block's state doesn't depend on
         whatever happens to be lifted immediately before it.'''
         builder = make_builder()
-        other_branch = builder.create_basic_block(SECOND_BLOCK_START, 'other_branch')
-        ret_target = builder.create_basic_block(THIRD_BLOCK_START, 'ret_target')
+        call_block = builder.create_basic_block(SECOND_BLOCK_START, 'call_block')
+        other_branch = builder.create_basic_block(THIRD_BLOCK_START, 'other_branch')
+        ret_target = builder.create_basic_block(FOURTH_BLOCK_START, 'ret_target')
 
+        builder.push_int(CONDITION_VALUE)
+        builder.pop_jmp_zero(call_block, other_branch)
+
+        builder.begin_block(call_block)
         builder.push_func_id()
         builder.push_ret_addr(ret_target)
-        builder.call('some_func')   # should save_stack_for_offset(ret_target.start) internally
+        builder.call('some_func')   # records the edge into ret_target itself
 
         builder.begin_block(other_branch)   # lifted before ret_target, leaves unrelated state
         builder.push_int(999)
@@ -300,6 +314,201 @@ class TestReachableEmptyBlocks(unittest.TestCase):
         builder.ret()
 
         builder.finalize()
+
+
+class TestEntrySeed(unittest.TestCase):
+    '''create_function records the entry state: only the parameters on the stack, none tracked.'''
+
+    def test_entry_block_starts_with_only_the_parameters(self):
+        builder = make_builder(num_params = SEED_PARAM_COUNT)
+
+        self.assertEqual(builder.function.basic_blocks[0].sp_in, SEED_PARAM_COUNT)
+        self.assertEqual(builder.vstack_size(), 0)
+        self.assertEqual((builder.frame_base_sp, builder.function.frame_base_sp), (0, 0))
+
+    def test_back_edge_into_entry_with_the_entry_state_is_accepted(self):
+        builder = make_builder(num_params = SEED_PARAM_COUNT)
+        entry = builder.function.basic_blocks[0]
+        body = builder.create_basic_block(SECOND_BLOCK_START, 'body')
+        builder.jmp(body)
+
+        builder.begin_block(body)
+        builder.jmp(entry)   # must not raise
+
+    def test_back_edge_into_entry_with_a_different_sp_raises(self):
+        builder = make_builder(num_params = SEED_PARAM_COUNT)
+        entry = builder.function.basic_blocks[0]
+        body = builder.create_basic_block(SECOND_BLOCK_START, 'body')
+        builder.jmp(body)
+
+        builder.begin_block(body)
+        builder.push_int(LEFT_VALUE)
+
+        with self.assertRaises(RuntimeError):
+            builder.jmp(entry)
+
+
+class TestStrictEdgeState(unittest.TestCase):
+    '''The first edge into a block records its state; every other edge must bring the same shape.'''
+
+    def make_diamond(self, num_params: int = 0):
+        builder = make_builder(num_params = num_params)
+        left = builder.create_basic_block(SECOND_BLOCK_START, 'left')
+        right = builder.create_basic_block(THIRD_BLOCK_START, 'right')
+        join = builder.create_basic_block(FOURTH_BLOCK_START, 'join')
+        builder.push_int(CONDITION_VALUE)
+        builder.pop_jmp_zero(left, right)
+        return builder, left, right, join
+
+    def test_begin_block_without_recorded_state_raises(self):
+        builder = make_builder()
+        orphan = builder.create_basic_block(SECOND_BLOCK_START, 'orphan')
+
+        with self.assertRaises(RuntimeError):
+            builder.begin_block(orphan)
+
+    def test_join_with_different_sp_raises(self):
+        builder, left, right, join = self.make_diamond()
+        builder.begin_block(left)
+        builder.push_int(LEFT_VALUE)
+        builder.jmp(join)
+        builder.begin_block(right)
+
+        with self.assertRaises(RuntimeError):
+            builder.jmp(join)
+
+    def test_join_with_different_values_in_one_slot_is_accepted(self):
+        builder, left, right, join = self.make_diamond()
+        builder.begin_block(left)
+        builder.push_int(LEFT_VALUE)
+        builder.jmp(join)
+        builder.begin_block(right)
+        builder.push_int(RIGHT_VALUE)
+        builder.jmp(join)
+
+        builder.begin_block(join)
+
+        self.assertEqual(builder.vstack_peek().slot_index, 0)   # the join reads the slot, whichever arm wrote it
+
+    def test_back_edge_with_a_grown_stack_raises(self):
+        builder = make_builder()
+        header = builder.create_basic_block(SECOND_BLOCK_START, 'header')
+        exit_block = builder.create_basic_block(THIRD_BLOCK_START, 'exit')
+        body = builder.create_basic_block(FOURTH_BLOCK_START, 'body')
+        builder.jmp(header)
+        builder.begin_block(header)
+        builder.push_int(CONDITION_VALUE)
+        builder.pop_jmp_zero(exit_block, body)
+        builder.begin_block(body)
+        builder.push_int(LEFT_VALUE)
+
+        with self.assertRaises(RuntimeError):
+            builder.jmp(header)
+
+    def enter_caller_after_return_block_lifted_at_sp_one(self):
+        builder, direct, caller, ret_block = self.make_diamond()
+        builder.begin_block(direct)
+        builder.push_int(LEFT_VALUE)
+        builder.jmp(ret_block)
+        builder.begin_block(ret_block)   # lifted with sp 1
+        builder.begin_block(caller)
+        return builder, ret_block
+
+    def test_local_call_return_into_a_lifted_block_with_a_different_sp_raises(self):
+        builder, ret_block = self.enter_caller_after_return_block_lifted_at_sp_one()
+        builder.push_func_id()
+        builder.push_ret_addr(ret_block)
+
+        with self.assertRaises(RuntimeError):
+            builder.call('f')   # returns at sp 0
+
+    def test_script_call_return_into_a_lifted_block_with_a_different_sp_raises(self):
+        builder, ret_block = self.enter_caller_after_return_block_lifted_at_sp_one()
+        builder.push_caller_frame(ret_block)
+
+        with self.assertRaises(RuntimeError):
+            builder.call_script(MODULE_NAME, 'f', 0)   # returns at sp 0
+
+    def test_parameter_kept_on_one_arm_and_repushed_on_the_other_raises(self):
+        '''Until Step O gives a parameter slot one storage name, the arms name slot 0 differently
+        (arg1 vs a re-pushed stack value), so a read after the join would be wrong for one of them.'''
+        builder, left, right, join = self.make_diamond(num_params = 1)
+        builder.begin_block(left)
+        builder.pop_n(1)
+        builder.push_int(LEFT_VALUE)
+        builder.jmp(join)
+        builder.begin_block(right)
+
+        with self.assertRaises(RuntimeError):
+            builder.jmp(join)
+
+
+class TestEdgeRecording(unittest.TestCase):
+    '''Each terminal records the stack state of its own edges; finalize() checks the records are
+    exactly the CFG's edges.'''
+
+    def test_terminals_record_their_edges(self):
+        builder = make_builder()
+        left = builder.create_basic_block(SECOND_BLOCK_START, 'left')
+        right = builder.create_basic_block(THIRD_BLOCK_START, 'right')
+        join = builder.create_basic_block(FOURTH_BLOCK_START, 'join')
+        builder.push_int(CONDITION_VALUE)
+        builder.pop_jmp_zero(left, right)
+
+        builder.begin_block(left)
+        condition = LowLevelILEq(builder.const_int(CONDITION_VALUE), builder.const_int(CONDITION_VALUE))
+        builder.branch_if(condition, join, right)
+        builder.begin_block(right)
+        builder.jmp(join)
+        builder.begin_block(join)
+        builder.ret()
+
+        builder.finalize()   # every edge recorded without a manual save
+
+    def test_generic_call_edge_without_a_record_raises_at_finalize(self):
+        builder = make_builder()
+        ret_block = builder.create_basic_block(SECOND_BLOCK_START, 'ret')
+        LowLevelILBuilder.call(builder, 'f', ret_block)   # records nothing
+        builder.set_current_block(ret_block)
+        builder.ret()
+
+        with self.assertRaisesRegex(RuntimeError, 'no recorded stack state'):
+            builder.finalize()
+
+    def test_manual_save_does_not_stand_in_for_a_raw_terminal_edge(self):
+        builder = make_builder()
+        target = builder.create_basic_block(SECOND_BLOCK_START, 'target')
+        builder.save_stack_for_offset(target.start)   # sp 0
+        builder.push_int(LEFT_VALUE)
+        builder.add_instruction(LowLevelILJmp(target))   # the edge carries sp 1
+        builder.begin_block(target)
+        builder.ret()
+
+        with self.assertRaisesRegex(RuntimeError, 'no recorded stack state'):
+            builder.finalize()
+
+    def test_recorded_edge_outside_the_cfg_raises_at_finalize(self):
+        builder = make_builder()
+        target = builder.create_basic_block(SECOND_BLOCK_START, 'target')
+        other = builder.create_basic_block(THIRD_BLOCK_START, 'other')
+        jmp_inst = LowLevelILJmp(target)
+        builder.add_instruction(jmp_inst)
+        builder._record_edge_state(jmp_inst, target)
+        builder._record_edge_state(jmp_inst, other)
+        builder.begin_block(target)
+        builder.ret()
+        builder.begin_block(other)
+        builder.ret()
+
+        with self.assertRaisesRegex(RuntimeError, 'not a CFG edge'):
+            builder.finalize()
+
+    def test_edge_record_for_a_terminal_that_does_not_end_the_block_raises(self):
+        builder = make_builder()
+        target = builder.create_basic_block(SECOND_BLOCK_START, 'target')
+
+        with self.assertRaises(RuntimeError):
+            builder._record_edge_state(LowLevelILJmp(target), target)
 
 
 if __name__ == '__main__':

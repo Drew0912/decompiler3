@@ -205,7 +205,6 @@ class ED9VMLifter:
             case ED9Opcode.JMP:
                 target = self._require_block(inst.operands[0].value, block_map, llil_blocks)
                 builder.jmp(target)
-                builder.save_stack_for_offset(target.start)
 
             case ED9Opcode.POP_JMP_ZERO:
                 true_block = self._branch_target(block.true_succs, llil_blocks)
@@ -213,19 +212,11 @@ class ED9VMLifter:
 
                 builder.pop_jmp_zero(true_block, false_block)
 
-                # Save current stack state for both branch targets before popping
-                builder.save_stack_for_offset(true_block.start)
-                builder.save_stack_for_offset(false_block.start)
-
             case ED9Opcode.POP_JMP_NOT_ZERO:
                 true_block = self._branch_target(block.true_succs, llil_blocks)
                 false_block = self._branch_target(block.false_succs, llil_blocks)
 
                 builder.pop_jmp_not_zero(true_block, false_block)
-
-                # Save current stack state for both branch targets before popping
-                builder.save_stack_for_offset(true_block.start)
-                builder.save_stack_for_offset(false_block.start)
 
             case ED9Opcode.CALL:
                 func_id = int(inst.operands[0].value)

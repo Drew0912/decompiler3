@@ -1,12 +1,10 @@
 '''LLIL Builder'''
 
 from dataclasses import dataclass
-from typing import Union, Optional, List, TYPE_CHECKING
+from typing import Union, Optional, List, NamedTuple, Tuple
 
+from ir.core import IRParameter
 from .llil import *
-
-if TYPE_CHECKING:
-    from ir.core import IRParameter
 
 
 class _VirtualStack:
@@ -61,10 +59,20 @@ class _VirtualStack:
         self._items = list(snapshot)
 
 
+class StackShape(NamedTuple):
+    '''What code after an edge observes of a stack state apart from slot values: predecessors may push
+    different values into one slot (SSA merges them), but must agree on the stack layout.'''
+    sp: int
+    slots: Tuple[int, ...]
+
+
 @dataclass
 class StackSnapshot:
     sp: int
     values: List[LowLevelILExpr]
+
+    def shape(self) -> StackShape:
+        return StackShape(self.sp, tuple(value.slot_index for value in self.values))
 
 
 class LowLevelILBuilder:
@@ -76,12 +84,14 @@ class LowLevelILBuilder:
         self.__current_sp: int = 0  # Track current stack pointer state (for block sp_in/sp_out) - PRIVATE
         self.frame_base_sp: Optional[int] = None  # Stack pointer at function entry (for frame-relative access)
         self.__vstack = _VirtualStack()  # Virtual stack for expression tracking
-        self.saved_stacks: dict[int, StackSnapshot] = {}  # offset -> StackSnapshot for branches
+        self.saved_stacks: dict[int, StackSnapshot] = {}  # block start -> the state every edge into it must match
+        # (source block, terminal, target) of every edge whose stack state was recorded
+        self._recorded_edges: set[tuple[LowLevelILBasicBlock, LowLevelILInstruction, LowLevelILBasicBlock]] = set()
         self.__current_address: int = 0  # Current source instruction address
 
     # === Function and Block Creation ===
 
-    def create_function(self, name: str, start_addr: int, params: Union[List['IRParameter'], int] = None, *, num_params: int = None, is_common_func: bool = False):
+    def create_function(self, name: str, start_addr: int, params: Union[List[IRParameter], int] = None, *, num_params: int = None, is_common_func: bool = False):
         '''Create function inside builder
 
         Args:
@@ -94,14 +104,21 @@ class LowLevelILBuilder:
 
         # Handle backward compatibility: num_params keyword or int positional
         if num_params is not None:
-            from ir.core import IRParameter
             params = [IRParameter(f'arg{i + 1}') for i in range(num_params)]
 
         elif isinstance(params, int):
-            from ir.core import IRParameter
             params = [IRParameter(f'arg{i + 1}') for i in range(params)]
 
-        self.function = LowLevelILFunction(name, start_addr, params, is_common_func=is_common_func)
+        self.function = LowLevelILFunction(name, start_addr, params, is_common_func = is_common_func)
+        self._seed_entry_state()
+
+    def _seed_entry_state(self):
+        '''The entry block starts with only the parameters on the stack (fp = 0 points at the first one), none
+        of them tracked on the vstack. Recorded directly - it is the entry's state, not an edge.'''
+        self.__sp_set(self.function.num_params)
+        self.frame_base_sp = 0
+        self.function.frame_base_sp = 0
+        self.saved_stacks[self.function.start_addr] = self.save_stack_state()
 
     def create_basic_block(self, start: int, label: str = None) -> LowLevelILBasicBlock:
         '''Create basic block and automatically add to function'''
@@ -231,22 +248,9 @@ class LowLevelILBuilder:
             self.current_block.sp_out = self.sp_get()
 
     def _start_block(self, block: LowLevelILBasicBlock):
-        '''Start a registered block using the active stack state.'''
+        '''Start a registered block using the active stack state (create_function seeds the entry's).'''
         self.current_block = block
-
-        # Set new block's sp_in and current sp
-        if self.frame_base_sp is None:
-            # First block: use function's parameter count as initial sp
-            self.__sp_set(self.function.num_params)
-        # else: continue from previous block's sp
-
         block.sp_in = self.sp_get()
-
-        # Save frame base sp on first block (function entry)
-        # New scheme: fp = 0 (points to first parameter)
-        if self.frame_base_sp is None:
-            self.frame_base_sp = 0
-            self.function.frame_base_sp = 0
 
     def set_current_block(self, block: LowLevelILBasicBlock):
         '''Set the current basic block for instruction insertion'''
@@ -255,7 +259,7 @@ class LowLevelILBuilder:
         self._start_block(block)
 
     def begin_block(self, block: LowLevelILBasicBlock):
-        '''Close the current block, restore `block`'s saved stack state if present, and open it.'''
+        '''Close the current block, restore `block`'s recorded stack state, and open it.'''
         self._require_registered_block(block)
         self._finish_block()
         self.restore_stack_for_offset(block.start)
@@ -271,14 +275,63 @@ class LowLevelILBuilder:
         self.__vstack.restore(snapshot.values)
 
     def save_stack_for_offset(self, offset: int):
-        '''Save current stack state for given offset (branch target)'''
+        '''Merge the current stack state into `offset`'s: the first merge records it, every later one must
+        bring the same shape. Records no CFG edge - terminals record theirs via _record_edge_state.'''
+        snapshot = self.save_stack_state()
+        recorded = self.saved_stacks.get(offset)
+        if recorded is None:
+            self.saved_stacks[offset] = snapshot
+            return
 
-        self.saved_stacks[offset] = self.save_stack_state()
+        incoming, expected = snapshot.shape(), recorded.shape()
+        if incoming != expected:
+            source = self.current_block.block_name if self.current_block is not None else 'outside any block'
+            raise RuntimeError(
+                f'Stack state mismatch on an edge from {source} into {offset:#x}: '
+                f'incoming {incoming}, expected {expected}'
+            )
 
     def restore_stack_for_offset(self, offset: int):
-        '''Restore stack state for given offset, if saved'''
-        if offset in self.saved_stacks:
-            self.restore_stack_state(self.saved_stacks[offset])
+        '''Restore the stack state recorded for `offset`'''
+        snapshot = self.saved_stacks.get(offset)
+        if snapshot is None:
+            raise RuntimeError(f'No stack state recorded for the block at {offset:#x} - no lifted edge reaches it')
+
+        self.restore_stack_state(snapshot)
+
+    def _record_edge_state(self, terminal: LowLevelILInstruction, target: LowLevelILBasicBlock):
+        '''Record the CFG edge terminal -> target and merge the stack state it carries into target - only while
+        terminal still ends the current block, so the state is the one the edge carries.'''
+        block = self.current_block
+        if block is None or not block.instructions or block.instructions[-1] is not terminal:
+            raise RuntimeError(
+                f'Edge into {target.block_name} recorded for {terminal}, which does not end the current block'
+            )
+
+        self._recorded_edges.add((block, terminal, target))
+        self.save_stack_for_offset(target.start)
+
+    def _require_recorded_edges(self):
+        '''After build_cfg: the recorded edges must be exactly the CFG's, so every real edge had its stack
+        state checked and no stale or manual record stands in for one.'''
+        cfg_edges = {
+            (block, block.instructions[-1], target)
+            for block in self.function.basic_blocks
+            for target in block.outgoing_edges
+        }
+
+        def first(edges):
+            return min(edges, key = lambda edge: (edge[0].index, edge[2].index))
+
+        missing = cfg_edges - self._recorded_edges
+        if missing:
+            block, _, target = first(missing)
+            raise RuntimeError(f'CFG edge {block.block_name} -> {target.block_name} has no recorded stack state')
+
+        extra = self._recorded_edges - cfg_edges
+        if extra:
+            block, _, target = first(extra)
+            raise RuntimeError(f'Recorded edge {block.block_name} -> {target.block_name} is not a CFG edge')
 
     def get_block_by_addr(self, addr: int) -> Optional[LowLevelILBasicBlock]:
         '''Get block by start address'''
@@ -596,41 +649,43 @@ class LowLevelILBuilder:
 
     # === Control Flow ===
 
+    def _resolve_block(self, target: Union[str, LowLevelILBasicBlock]) -> LowLevelILBasicBlock:
+        '''A jump target given as a block or a label name'''
+        if not isinstance(target, str):
+            return target
+
+        block = self.get_block_by_label(target)
+        if block is None:
+            raise ValueError(f'Undefined label: {target}')
+
+        return block
+
     def jmp(self, target: Union[str, LowLevelILBasicBlock]):
         '''Unconditional jump - target can be label or block'''
-        if isinstance(target, str):
-            target_block = self.get_block_by_label(target)
-            if target_block is None:
-                raise ValueError(f'Undefined label: {target}')
-            target = target_block
-        self.add_instruction(LowLevelILJmp(target))
+        target = self._resolve_block(target)
+        jmp_inst = LowLevelILJmp(target)
+        self.add_instruction(jmp_inst)
+        self._record_edge_state(jmp_inst, target)
 
     def branch_if(self, condition: LowLevelILInstruction,
                   true_target: Union[str, LowLevelILBasicBlock],
                   false_target: Union[str, LowLevelILBasicBlock]):
         '''Conditional branch - targets can be labels or blocks'''
-        # Resolve true target
-        if isinstance(true_target, str):
-            true_block = self.get_block_by_label(true_target)
-            if true_block is None:
-                raise ValueError(f'Undefined label: {true_target}')
-            true_target = true_block
-
-        # Resolve false target
-        if isinstance(false_target, str):
-            false_block = self.get_block_by_label(false_target)
-            if false_block is None:
-                raise ValueError(f'Undefined label: {false_target}')
-            false_target = false_block
-
-        self.add_instruction(LowLevelILIf(condition, true_target, false_target))
+        true_target = self._resolve_block(true_target)
+        false_target = self._resolve_block(false_target)
+        if_inst = LowLevelILIf(condition, true_target, false_target)
+        self.add_instruction(if_inst)
+        self._record_edge_state(if_inst, true_target)
+        self._record_edge_state(if_inst, false_target)
 
     def call(self, target: str,
              return_target: LowLevelILBasicBlock,
-             args: List[LowLevelILExpr] = None):
-        '''Function call (terminal instruction)'''
-
-        self.add_instruction(LowLevelILCall(target, return_target, args))
+             args: List[LowLevelILExpr] = None) -> LowLevelILCall:
+        '''Function call (terminal instruction). Records no edge: the return edge's stack state is known only
+        after the callee's cleanup, so the caller records it.'''
+        call_inst = LowLevelILCall(target, return_target, args)
+        self.add_instruction(call_inst)
+        return call_inst
 
     def ret(self):
         '''Return'''
