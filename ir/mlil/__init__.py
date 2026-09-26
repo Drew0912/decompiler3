@@ -7,7 +7,6 @@ from .mlil_optimizer import *
 from .mlil_ssa_optimizer import *
 from .mlil_ssa import *
 from .mlil_types import *
-from .mlil_type_inference import *
 from .mlil_passes import *
 from .mlil import *
 
@@ -25,6 +24,7 @@ __all__ = [
     'MLILFormatter',
     'format_mlil_function',
     'SSAOptimizer',
+    'mlil_optimization_passes',
     'optimize_mlil',
 
     # Passes
@@ -33,7 +33,6 @@ __all__ = [
     'SSAOptimizationPass',
     'SSATypeInferencePass',
     'SSADeconstructionPass',
-    'DeadCodeEliminationPass',
 
     # SSA
     'MLILVariableSSA',
@@ -51,8 +50,6 @@ __all__ = [
     'MLILTypeKind',
     'MLILVariantType',
     'unify_types',
-    'MLILTypeInference',
-    'infer_types',
 
     # Core
     'MediumLevelILOperation',

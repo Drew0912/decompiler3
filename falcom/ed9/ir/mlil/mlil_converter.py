@@ -1,12 +1,10 @@
 '''Falcom LLIL to MLIL Converter'''
 
 from common.logging import log
-from ir.llil import *
-from ir.mlil import *
-from ir.pipeline import *
-from ir.mlil.mlil_passes import *
-from ir.mlil.passes import SSATypeInferencePass
-from .mlil_passes import *
+from ir.llil import LowLevelILFunction
+from ir.mlil import MediumLevelILFunction, mlil_optimization_passes
+from ir.pipeline import Pipeline
+from .mlil_passes import ED9LLILToMLILPass
 from .type_signatures import ED9TypeSignatures
 
 
@@ -24,28 +22,11 @@ def convert_falcom_llil_to_mlil(llil_func: LowLevelILFunction,
     '''
     log.info(f'Translating {llil_func.name} @ 0x{llil_func.start_addr:08X}')
 
-    pipeline = Pipeline()
+    passes = [ED9LLILToMLILPass()]
 
-    # Phase 1: LLIL to MLIL conversion
-    pipeline.add_pass(ED9LLILToMLILPass())
-
-    # Phase 2: SSA-based optimization (optional)
+    # optimize=False keeps the raw block-per-LLIL-boundary translation
     if optimize:
-        # A LowLevelILCall is a block terminator, so nearly every call site is one goto away
-        # from its return block - undo that split before any SSA analysis runs, so every later
-        # pass sees the smaller CFG. optimize=False keeps the raw, untouched, block-per-LLIL-
-        # boundary translation (Scena2PyConfig.optimize_mlil is a real, reachable way to ask for it).
-        pipeline.add_pass(BlockMergePass())
-        pipeline.add_pass(SSAConversionPass())
-        pipeline.add_pass(SSAOptimizationPass())
+        signature_db = ED9TypeSignatures(parser) if parser and infer_types else None
+        passes.extend(mlil_optimization_passes(infer_types, signature_db))
 
-        # Type inference (on SSA form)
-        if infer_types:
-            signature_db = ED9TypeSignatures(parser) if parser else None
-            pipeline.add_pass(SSATypeInferencePass(signature_db))
-
-        pipeline.add_pass(SSADeconstructionPass())
-        # pipeline.add_pass(DeadCodeEliminationPass())  # TODO: check if needed
-        pipeline.add_pass(RegGlobalValuePropagationPass())
-
-    return pipeline.run(llil_func, debug=False)
+    return Pipeline(passes).run(llil_func)

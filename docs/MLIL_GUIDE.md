@@ -105,6 +105,10 @@ ED9LLILToMLILPass → BlockMergePass (optimize only) → SSAConversionPass → S
 SSATypeInferencePass (optional) → SSADeconstructionPass → RegGlobalValuePropagationPass
 ```
 
+Every pass after `ED9LLILToMLILPass` comes from `mlil_optimization_passes()`
+(`ir/mlil/mlil_optimizer.py`), and `optimize_mlil()` runs that same list on an already translated
+function - there is one MLIL pipeline, not a production one and a test one.
+
 `BlockMergePass` splices any block whose only way in is another block's unconditional goto into
 that block - mainly undoing the call-return split every `LowLevelILCall` forces (it is a block
 terminator), but it also removes real bytecode `JMP`s that happen to land on a single-predecessor
@@ -117,11 +121,8 @@ expression inlining, expression/condition simplification, negation normal form c
 flavors of dead-code elimination (dead statements, dead `Phi` nodes) — all defined under
 `ir/mlil/passes/`.
 
-One pass instance, a standalone `DeadCodeEliminationPass()`, is present in the code but commented
-out in the Falcom pipeline with a `# TODO: check if needed` note. This doesn't leave dead-code
-elimination actually missing — the SSA-level DCE passes above still run, plus a further
-post-de-SSA dead-code pass inside `ir/mlil/mlil_optimizer.py`'s `optimize_mlil()`. It's one
-specific, seemingly redundant pass instance sitting unused, not a gap in DCE coverage overall.
+No dead-code pass runs after SSA deconstruction: a census of production output found no unread
+local assignment (500-file sample, 2026-09-26).
 
 ## Formatting
 
@@ -130,12 +131,10 @@ debug dumps — analogous to `HLILFormatter` on the HLIL side.
 
 ## Known Gaps
 
-- The disabled `DeadCodeEliminationPass()` in the Falcom pipeline has an open "check if needed"
-  TODO rather than a resolved decision either way.
-- Dedicated test coverage for the MLIL-SSA machinery (construction, deconstruction, critical-edge
-  splitting, and the individual optimizer passes) doesn't exist yet — see `docs/MLIL_DESIGN.md`'s
-  Testing section. `tests/test_mlil_metadata.py` is currently the only dedicated MLIL test file.
+- Four SSA optimizer passes have no test of their own: negation normal form, expression
+  simplification, constant propagation and dead-`Phi` elimination.
 
 ## Testing
 
-`tests/test_mlil_metadata.py` — the only dedicated MLIL test file at present.
+`tests/test_mlil_*.py` (and `tests/test_llil_deref.py`) - see `docs/MLIL_DESIGN.md`'s Testing
+section.

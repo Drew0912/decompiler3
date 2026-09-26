@@ -1,7 +1,6 @@
-'''SCCP - Sparse Conditional Constant Propagation Pass'''
+'''SCCP - Sparse Conditional Constant Propagation'''
 
 from typing import Dict, List, Set
-from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
     MediumLevelILInstruction,
@@ -686,13 +685,3 @@ class SCCP:
 
         else:
             return expr
-
-
-class SCCPPass(Pass):
-    '''SCCP optimization pass'''
-
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
-        '''Run SCCP on the function'''
-        sccp = SCCP(func)
-        sccp.run()
-        return func

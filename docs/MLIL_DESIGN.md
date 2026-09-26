@@ -26,9 +26,8 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil.py` | Core non-SSA data structures: `MediumLevelILInstruction` base, the `MediumLevelILExpr`/`MediumLevelILStatement` split, `MLILVariable`, `MediumLevelILBasicBlock`, `MediumLevelILFunction`. |
 | `ir/mlil/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
 | `ir/mlil/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
-| `ir/mlil/mlil_optimizer.py` | Top-level `optimize_mlil()`: SSA-convert → run `SSAOptimizer` → type inference → de-SSA → a post-de-SSA dead-code pass. |
-| `ir/mlil/mlil_type_inference.py` | `MLILTypeInference`, operating on SSA variables/`Phi` nodes. |
-| `ir/mlil/passes/` | The actual pass implementations (~16 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_dead_code.py`, and others. |
+| `ir/mlil/mlil_optimizer.py` | `mlil_optimization_passes()`, the one list of passes that runs after LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
+| `ir/mlil/passes/` | The actual pass implementations (14 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_block_merge.py`. |
 | `ir/mlil/mlil_passes.py` | Re-export shim over `ir/mlil/passes/` — mirrors HLIL's `hlil_passes.py`. |
 | `ir/mlil/mlil_builder.py` | Builder API for constructing MLIL directly. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging). |
@@ -78,9 +77,9 @@ slot is `argN` only while it still holds the caller's value, and a value pushed 
 function popped the parameter is a `var_sN`, like any other push.
 
 SSA is not optional or a future addition — it's where essentially all real optimization work
-happens. `optimize_mlil()` (`ir/mlil/mlil_optimizer.py`) converts non-SSA MLIL to SSA, runs the
-full `SSAOptimizer` pass suite plus type inference, then deconstructs back to non-SSA before
-returning. HLIL's converter (`falcom/ed9/ir/hlil/hlil_converter.py`) imports and consumes
+happens. The shared pass list (`mlil_optimization_passes()` in `ir/mlil/mlil_optimizer.py`) merges
+call-split blocks, converts to SSA, runs the full `SSAOptimizer` pass suite plus optional type
+inference, deconstructs back to non-SSA, then propagates register/global values. HLIL's converter (`falcom/ed9/ir/hlil/hlil_converter.py`) imports and consumes
 non-SSA `MediumLevelILFunction` — it does not read SSA form directly; by the time HLIL sees a
 function, SSA construction/optimization/deconstruction has already happened upstream in the MLIL
 pipeline.
@@ -141,11 +140,11 @@ ED9LLILToMLILPass → BlockMergePass (optimize only) → SSAConversionPass → S
 SSATypeInferencePass (optional) → SSADeconstructionPass → RegGlobalValuePropagationPass
 ```
 
-One pass is explicitly disabled in this pipeline: `DeadCodeEliminationPass()` is commented out
-with a `# TODO: check if needed` note. This doesn't mean dead-code elimination is actually missing
-from the live path — other DCE passes still run: `pass_ssa_dead_code.py` and
-`pass_ssa_dead_phi.py` inside `SSAOptimizer`, plus a separate post-de-SSA dead-code step inlined in
-`ir/mlil/mlil_optimizer.py`. Only this one specific pass instance is unused.
+Every pass after `ED9LLILToMLILPass` comes from `mlil_optimization_passes()`
+(`ir/mlil/mlil_optimizer.py`); `optimize_mlil()` runs the same list on an already translated
+function, so tests that call it run what production runs. No dead-code pass runs after SSA
+deconstruction: a census of production output found no unread local assignment (500-file sample,
+2026-09-26).
 
 ### Optimization Passes (inside `SSAOptimizer`)
 
@@ -188,10 +187,7 @@ said only one existed.
 
 ## Open Items
 
-- `DeadCodeEliminationPass()` in the Falcom pipeline is commented out with an unresolved
-  "check if needed" note — worth actually resolving given other DCE passes already cover most of
-  the same ground.
-- Dedicated MLIL-SSA test coverage (construction, deconstruction, critical-edge splitting, each of
-  the ~10 optimizer passes) doesn't exist yet, unlike HLIL's per-pass test files.
+- Four SSA optimizer passes have no test of their own: negation normal form, expression
+  simplification, constant propagation and dead-`Phi` elimination.
 - This document and `docs/MLIL_GUIDE.md` should be kept in sync with `ir/mlil/passes/` as passes
   are added, removed, or reordered — that directory is the actual source of truth for what runs.
