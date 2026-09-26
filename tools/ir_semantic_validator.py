@@ -1672,17 +1672,8 @@ def build_cfg_from_llil(llil_func: LowLevelILFunction) -> CFG:
         )
         cfg.add_node(node)
 
-    # Build edges from basic block targets
-    for i, bb in enumerate(llil_func.basic_blocks):
-        if hasattr(bb, 'outgoing_edges'):
-            for edge in bb.outgoing_edges:
-                if hasattr(edge, 'target') and hasattr(edge.target, 'index'):
-                    cfg.add_edge(i, edge.target.index)
-
-        elif hasattr(bb, 'successors'):
-            for succ in bb.successors:
-                if hasattr(succ, 'index'):
-                    cfg.add_edge(i, succ.index)
+    # No edges on purpose: edges on one layer alone make block matching worse, so all three CFG builders get them
+    # together (docs/FUTURE_WORK.md, "Static Game-Logic Check")
 
     # Mark exit nodes
     for node_id, node in cfg.nodes.items():
@@ -1715,17 +1706,8 @@ def build_cfg_from_mlil(mlil_func: MediumLevelILFunction) -> CFG:
         )
         cfg.add_node(node)
 
-    # Build edges
-    for i, bb in enumerate(mlil_func.basic_blocks):
-        if hasattr(bb, 'outgoing_edges'):
-            for edge in bb.outgoing_edges:
-                if hasattr(edge, 'target') and hasattr(edge.target, 'index'):
-                    cfg.add_edge(i, edge.target.index)
-
-        elif hasattr(bb, 'successors'):
-            for succ in bb.successors:
-                if hasattr(succ, 'index'):
-                    cfg.add_edge(i, succ.index)
+    # No edges on purpose: edges on one layer alone make block matching worse, so all three CFG builders get them
+    # together (docs/FUTURE_WORK.md, "Static Game-Logic Check")
 
     # Mark exit nodes
     for node_id, node in cfg.nodes.items():
