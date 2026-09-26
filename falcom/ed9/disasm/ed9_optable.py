@@ -94,6 +94,10 @@ class InstructionEntry:
     flags: InstructionFlags = InstructionFlags.NONE
 
 
+LOCAL_SETUP_SLOTS  = 2   # CALL: func_id, ret_addr
+CALLER_FRAME_SLOTS = 5   # PUSH_CALLER_FRAME: func_id, ret_addr, script pointer (2 slots), script_name
+
+
 # ED9 Instruction Table
 ED9_OPCODE_TABLE = [
     # Stack operations

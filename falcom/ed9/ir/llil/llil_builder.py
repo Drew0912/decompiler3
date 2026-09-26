@@ -4,13 +4,12 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import List, NamedTuple, Optional, Tuple, Union
 from ir.llil import *
+from falcom.ed9.disasm.ed9_optable import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from .constants import *
 from .llil_ext import *
 
 
 EMPTY_STACK_SP = 0   # ED9 calling convention: any real exit must leave the VM stack empty
-LOCAL_SETUP_SLOTS = 2    # func_id, ret_addr
-CALLER_FRAME_SLOTS = 5   # func_id, ret_addr, script pointer (2 slots), script_name
 
 
 class CallSetupKind(Enum):

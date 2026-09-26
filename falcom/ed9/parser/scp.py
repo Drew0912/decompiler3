@@ -1,7 +1,5 @@
-from re import S
 from .types_scp import *
 from .types_parser import *
-from pprint import pprint
 from ml import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
@@ -12,7 +10,10 @@ from ..writer.metadata.signature import function_fingerprint, fingerprint_digest
 from common.config import default_encoding
 from common.logging import log
 from ir.llil import WORD_SIZE
-from typing import Any, Callable
+from collections import Counter
+from enum import Enum, auto
+from typing import Any, Callable, NamedTuple
+import bisect
 import keyword
 import pathlib
 import struct
@@ -92,8 +93,7 @@ SCRIPT_CALL_OPS = (
 )
 
 OPCODE_SIZE             = 1     # every opcode is one byte, followed by its operands
-CALL_FRAME_SLOTS        = 2     # PUSH_CURRENT_FUNC_ID + PUSH_RET_ADDR, popped by CALL
-CALLER_FRAME_SLOTS      = 1     # PUSH_CALLER_FRAME is simulated as one slot, popped by CALL_SCRIPT
+TRACKED_FRAME_SLOTS     = 1     # the debug-info tracker models PUSH_CALLER_FRAME as one slot, popped by CALL_SCRIPT
 BINARY_OPERAND_COUNT    = 2
 UNARY_OPERAND_COUNT     = 1
 POPPED_VALUE_COUNT      = 1     # POP_VALUE_OPS / CONDITIONAL_JUMPS
@@ -176,20 +176,20 @@ class CallDebugInfoTracker:
 
         elif opcode == ED9Opcode.CALL:
             args = self.pop(self.get_param_count(operands[0]))
-            self.pop(CALL_FRAME_SLOTS)
+            self.pop(LOCAL_SETUP_SLOTS)
             key, ret_label = self.close_frame()
             self.add_call(CallType.Local, operands[0], ret_label, args, key)
 
         elif opcode == ED9Opcode.CALL_SCRIPT:
             module, func, argc = operands
             args = self.pop(argc)
-            self.pop(CALLER_FRAME_SLOTS)
+            self.pop(TRACKED_FRAME_SLOTS)
             key, _ = self.close_frame()
             self.add_call(CallType.Script, (module, func), None, args, key)
 
         elif opcode == ED9Opcode.CALL_SCRIPT_NO_RETURN:
             # No PUSH_CALLER_FRAME precedes this opcode - only the arguments were pushed. Popping
-            # CALLER_FRAME_SLOTS or closing a frame here would consume state belonging to an
+            # TRACKED_FRAME_SLOTS or closing a frame here would consume state belonging to an
             # enclosing call and corrupt its debug-record ordering. Its own key must still sort
             # before any call nested in its arguments (source pre-order) - same reasoning as SYSCALL.
             module, func, argc = operands
@@ -250,27 +250,270 @@ class CallDebugInfoTracker:
             self.calls.append(TrackedCall(call_type, target, ret_label, args, key))
 
 
+@dataclass(eq = False)
+class ParamEntry:
+    """Simulated stack entry for a parameter the caller pushed"""
+    index : int
+
+
+@dataclass(eq = False)
+class FrameSlot:
+    """One of the CALLER_FRAME_SLOTS entries a PUSH_CALLER_FRAME pushes"""
+    frame : Instruction
+    index : int
+
+
+class RoleKind(Enum):
+    FUNC_ID     = auto()    # PUSH_CURRENT_FUNC_ID of a local call
+    RET_ADDR    = auto()    # PUSH_RET_ADDR of a local call
+    FRAME       = auto()    # one slot of a script call's caller frame
+
+
+class Role(NamedTuple):
+    """What a call consumes a group of stack entries as"""
+    kind    : RoleKind
+    target  : int | None = None     # return offset (RET_ADDR, FRAME)
+    slot    : int | None = None     # caller frame slot (FRAME)
+
+    def __str__(self) -> str:
+        if self.kind == RoleKind.FUNC_ID:
+            return 'the function ID'
+
+        if self.kind == RoleKind.RET_ADDR:
+            return f'the return address 0x{self.target:X}'
+
+        return f'caller frame slot {self.slot} returning to 0x{self.target:X}'
+
+
+def format_stack_entry(entry) -> str:
+    if isinstance(entry, ParamEntry):
+        return f'param_{entry.index}'
+
+    if isinstance(entry, FrameSlot):
+        return f'frame_{entry.index}@0x{entry.frame.offset:X}'
+
+    return f'{entry.mnemonic}@0x{entry.offset:X}'
+
+
+def format_stack(state) -> str:
+    return '[' + ', '.join(format_stack_entry(entry) for entry in state) + ']'
+
+
+def is_push(entry, opcode: int) -> bool:
+    return isinstance(entry, Instruction) and entry.opcode == opcode
+
+
+def encoded_return(entry) -> int | None:
+    """The return offset a return-address push encodes, before or after its rewrite"""
+    if isinstance(entry, Instruction) and entry.opcode in (ED9Opcode.PUSH_RAW, ED9Opcode.PUSH_RET_ADDR):
+        return int(entry.operands[0].value)
+
+    return None
+
+
+def frame_return(entry) -> int | None:
+    """The return offset of the caller frame a frame slot belongs to"""
+    return entry.frame.operands[0].value if isinstance(entry, FrameSlot) else None
+
+
+def edge_source(block: BasicBlock) -> int:
+    """The instruction an edge out of block is keyed by: its last real instruction, not a synthetic fall-through JMP"""
+    return next(inst.offset for inst in reversed(block.instructions) if inst.size != SYNTHETIC_INSTRUCTION_SIZE)
+
+
+class StackEntryGroups:
+    """Union-find over simulated stack entries. Entries that stand at the same position when two edges meet are one
+    group: after the join either may be there. A call that consumes a group gives it a role every member must fit.
+    Keyed by identity: Instruction is an unhashable dataclass, and equal-looking pushes are still different pushes."""
+
+    def __init__(self):
+        self.parent     : dict[int, int] = {}       # id(entry) -> id(parent entry)
+        self.members    : dict[int, list] = {}      # id(root) -> entries
+        self.roles      : dict[int, Role] = {}      # id(root) -> the role a call consumed the group as
+
+    def find(self, entry) -> int:
+        key = id(entry)
+        if key not in self.parent:
+            self.parent[key] = key
+            self.members[key] = [entry]
+            return key
+
+        root = key
+        while self.parent[root] != root:
+            root = self.parent[root]
+
+        while self.parent[key] != root:
+            self.parent[key], key = root, self.parent[key]
+
+        return root
+
+    def role_of(self, entry) -> Role | None:
+        """The role entry's group was consumed as, without creating a group for it"""
+        if id(entry) not in self.parent:
+            return None
+
+        return self.roles.get(self.find(entry))
+
+    def union(self, entry, other) -> tuple[Role | None, Role | None]:
+        """Merge two groups; returns the roles either was consumed as (none when they already were one group)"""
+        root, other_root = self.find(entry), self.find(other)
+        if root == other_root:
+            return None, None
+
+        self.parent[other_root] = root
+        self.members[root].extend(self.members.pop(other_root))
+        return self.roles.pop(root, None), self.roles.pop(other_root, None)
+
+
 @dataclass
 class ScpDisassemblerContext(DisassemblerContext):
-    """ED9/SCP-specific disassembler context with optimization state"""
-    current_func     : 'Function | None' = None  # Current function being disassembled
-    stack_simulation : list = None  # Stack simulation for current block
-    saved_stacks     : dict[int, list] = None  # offset -> stack snapshot for branches
+    """ED9/SCP disassembler context: the simulated stack and the state recorded for every edge"""
+    current_func     : 'Function | None' = None     # Function being disassembled
+    current_func_id  : int | None = None            # Its index in the function table - what PUSH_CURRENT_FUNC_ID pushes
+    code_end         : int | None = None            # Where the next function's code starts (None: last function)
+    current_inst     : Instruction | None = None    # Instruction being simulated
+    stack_simulation : list = field(default_factory = list)                 # Simulated stack of the block being decoded
+    edge_states      : dict[int, tuple] = field(default_factory = dict)     # block start -> state; later edges match its height
+    recorded_edges   : Counter = field(default_factory = Counter)           # (source offset, target, kind) -> count
+    inst_states      : dict[int, tuple] = field(default_factory = dict)     # instruction offset -> the stack before it
+    groups           : StackEntryGroups = field(default_factory = StackEntryGroups)
+    plain_uses       : dict[int, object] = field(default_factory = dict)    # id -> entry an ordinary consumer used
+    declares_call_returns : bool = True             # CALL and CALL_SCRIPT return their own return edges
 
-    def __post_init__(self):
-        if self.stack_simulation is None:
-            self.stack_simulation = []
-        if self.saved_stacks is None:
-            self.saved_stacks = {}
+    def fail(self, message: str, inst: Instruction | None = None):
+        where = f' {inst.mnemonic} at 0x{inst.offset:X}:' if inst is not None else ''
+        raise ValueError(f'{self.current_func.name}:{where} {message}')
 
-    def save_stack_for_offset(self, offset: int):
-        """Save current stack state for given offset"""
-        self.saved_stacks[offset] = self.stack_simulation.copy()
+    def record_edge(self, source: int, target: int, state: tuple, kind: BranchKind):
+        """The first edge into a block records its state. Every later edge - also one arriving after the block was
+        decoded - must match its height; entries that differ become one group."""
+        self.recorded_edges[(source, target, kind)] += 1
+        recorded = self.edge_states.get(target)
+        if recorded is None:
+            self.edge_states[target] = state
+            return
 
-    def restore_stack_for_offset(self, offset: int):
-        """Restore stack state for given offset, if saved"""
-        if offset in self.saved_stacks:
-            self.stack_simulation = self.saved_stacks[offset].copy()
+        if len(state) != len(recorded):
+            self.fail(
+                f'the stack on the edge 0x{source:X} -> 0x{target:X} is {format_stack(state)}, but an earlier edge '
+                f'into 0x{target:X} recorded {format_stack(recorded)}',
+                self.current_inst,
+            )
+
+        for entry, other in zip(recorded, state):
+            if entry is not other:
+                for role in self.groups.union(entry, other):
+                    if role is not None:
+                        self.consume(entry, role)
+
+    def consume(self, entry, role: Role):
+        """A call consumes entry's group as role: every member must fit it, and setup pushes are rewritten for it"""
+        root = self.groups.find(entry)
+        current = self.groups.roles.get(root)
+        if current is not None and current != role:
+            self.fail(f'{format_stack_entry(entry)} is consumed as {role} and as {current}', self.current_inst)
+
+        for member in self.groups.members[root]:
+            self.fit(member, role)
+
+        self.groups.roles[root] = role
+
+    def fit(self, member, role: Role):
+        """Check that member can be consumed as role; a setup PUSH_RAW becomes its pseudo-instruction"""
+        if id(member) in self.plain_uses:
+            self.fail(f'expects {role}, but {format_stack_entry(member)} is also used as a plain value',
+                      self.current_inst)
+
+        if role.kind == RoleKind.FRAME:
+            fits = isinstance(member, FrameSlot) and member.index == role.slot and frame_return(member) == role.target
+
+        elif role.kind == RoleKind.FUNC_ID:
+            fits = is_push(member, ED9Opcode.PUSH_CURRENT_FUNC_ID) or (
+                is_push(member, ED9Opcode.PUSH_RAW) and member.operands[0].value == self.current_func_id
+            )
+
+        else:
+            fits = encoded_return(member) == role.target
+
+        if not fits:
+            self.fail(f'expects {role}, found {format_stack_entry(member)}', self.current_inst)
+
+        if not is_push(member, ED9Opcode.PUSH_RAW):
+            return
+
+        if role.kind == RoleKind.FUNC_ID:
+            self.retarget_push(member, ED9Opcode.PUSH_CURRENT_FUNC_ID)
+
+        else:
+            self.retarget_push(member, ED9Opcode.PUSH_RET_ADDR, member.operands[0].value)
+
+    def retarget_push(self, push: Instruction, opcode: int, *values):
+        """Turn a setup push into a pseudo-instruction with the given operand values"""
+        push.opcode = opcode
+        push.descriptor = self.instruction_table.get_descriptor(opcode)
+        op_descs = OperandDescriptor.from_format_string(push.descriptor.operand_fmt, ED9_FORMAT_TABLE)
+        push.operands = [Operand(descriptor = op_desc, value = value) for op_desc, value in zip(op_descs, values)]
+
+    def return_target(self, entry, target: int | None) -> int:
+        """The return offset entry encodes, which must lie in this function's code"""
+        if target is None:
+            self.fail(f'expects a return address, found {format_stack_entry(entry)}', self.current_inst)
+
+        if target < self.current_func.offset or (self.code_end is not None and target >= self.code_end):
+            self.fail(f'return offset 0x{target:X} is outside the function', self.current_inst)
+
+        return target
+
+    def enter_block(self, offset: int):
+        """Start a block from the state its edges recorded"""
+        recorded = self.edge_states.get(offset)
+        if recorded is None:
+            self.fail(f'block 0x{offset:X} has no recorded stack state')
+
+        self.stack_simulation = list(recorded)
+
+    def pop_entries(self, count: int) -> list:
+        """Pop count entries, bottom first, for an ordinary consumer: their values are read or discarded"""
+        popped = self.pop_call_setup(count)
+        for entry in popped:
+            self.use_plainly(entry)
+
+        return popped
+
+    def use_plainly(self, entry):
+        """An ordinary consumer reads or discards entry, so no call may consume it as a setup or frame on any path"""
+        if isinstance(entry, FrameSlot):
+            self.fail(f'discards caller frame slot {entry.index} of 0x{entry.frame.offset:X} without its CALL_SCRIPT',
+                      self.current_inst)
+
+        role = self.groups.role_of(entry)
+        if role is not None:
+            self.fail(f'uses {format_stack_entry(entry)} as a plain value, but a call consumes it as {role}',
+                      self.current_inst)
+
+        self.plain_uses[id(entry)] = entry
+
+    def pop_call_setup(self, count: int) -> list:
+        """Pop count entries, bottom first, for the call that consumes them as its setup or caller frame"""
+        stack = self.stack_simulation
+        if count > len(stack):
+            self.fail(f'pops {count} entries, the stack has {len(stack)}: {format_stack(stack)}', self.current_inst)
+
+        popped = stack[len(stack) - count:]
+        del stack[len(stack) - count:]
+        return popped
+
+    def write_slot(self, offset: int):
+        """POP_TO's in-place write: the written position now holds the current instruction's value and its old value is
+        discarded (at or above sp: a dead store)"""
+        stack = self.stack_simulation
+        position = len(stack) + offset // WORD_SIZE
+        if position < 0:
+            self.fail('writes below the stack', self.current_inst)
+
+        if position < len(stack):
+            self.use_plainly(stack[position])
+            stack[position] = self.current_inst
 
 
 class ScpParser(StrictBase):
@@ -457,163 +700,199 @@ class ScpParser(StrictBase):
     # disassemble
 
     def on_disasm_function(self, context: ScpDisassemblerContext, offset: int, name: str):
-        """Initialize stack simulation with function parameters"""
-        # Get function object and parameter count
-        func = next((f for f in self.functions if f.offset == offset or f.name == name), None)
-        argc = len(func.params) if func else 0
-
-        # Store current function in context
-        context.current_func = func
-
-        # Clear stack and push parameters
-        context.stack_simulation.clear()
-        context.saved_stacks.clear()
-
-        # Create simple placeholder objects for parameters
-        class ParamPlaceholder:
-            def __init__(self, idx: int, offset: int):
-                self.offset = offset
-                self.mnemonic = f'param_{idx}'
-
-        for i in range(argc):
-            param_inst = ParamPlaceholder(i, offset - (argc - i))
-            context.stack_simulation.append(param_inst)
+        """The entry block starts with the caller's parameters"""
+        context.edge_states[offset] = tuple(ParamEntry(index) for index in range(len(context.current_func.params)))
 
     def on_block_start(self, context: ScpDisassemblerContext, offset: int):
-        """Restore stack state for this block"""
-        context.restore_stack_for_offset(offset)
+        """Start the block from its recorded state"""
+        context.enter_block(offset)
 
     def on_pre_add_branch(self, context: ScpDisassemblerContext, target: BranchTarget):
-        """Called before adding a branch - save stack state for branch target"""
-        context.save_stack_for_offset(target.offset)
+        """Record the state the edge carries into its target (a branch or a fall-through)"""
+        context.record_edge(context.current_inst.offset, target.offset, tuple(context.stack_simulation), target.kind)
+
+    def on_block_split(self, context: ScpDisassemblerContext, source_offset: int, split_offset: int):
+        """The head falls through into the tail with the state the tail's first instruction was simulated with"""
+        context.record_edge(source_offset, split_offset, context.inst_states[split_offset], BranchKind.UNCONDITIONAL)
 
     def on_instruction_decoded(self, context: ScpDisassemblerContext, inst: Instruction, block: BasicBlock) -> list[BranchTarget]:
-        """Called for every instruction during disassembly"""
-
-        if not True:
-            if inst.opcode == ED9Opcode.DEBUG_SET_LINENO:
-                print(f'[0x{inst.offset:08X}] Decoded: {inst.mnemonic}({inst.operands[0].value}) (opcode=0x{inst.opcode:02X})')
-            else:
-                print(f'[0x{inst.offset:08X}] Decoded: {inst.mnemonic:<20} (opcode=0x{inst.opcode:02X})')
-
-        # Simulate stack operations
+        """Simulate the instruction's stack effect; a call returns its return edge"""
         stack = context.stack_simulation
+        context.current_inst = inst
+        context.inst_states[inst.offset] = tuple(stack)
         opcode = inst.opcode
 
         if opcode == ED9Opcode.RETURN:
             if stack:
-                raise ValueError(f'Stack is not empty at return: {stack}')
+                context.fail(f'the stack is not empty: {format_stack(stack)}', inst)
 
-        # PUSH operations - add to stack
-        if opcode in PUSH_VARIANTS:
+        elif opcode in PUSH_VARIANTS or opcode in PUSH_VALUE_OPS:
             stack.append(inst)
 
-        # GET_REG, LOAD_GLOBAL, LOAD_STACK, etc - push value
-        elif opcode in PUSH_VALUE_OPS:
-            stack.append(inst)
-
-        # POP operations - remove from stack
         elif opcode == ED9Opcode.POP:
-            count = inst.operands[0].value if inst.operands else 1
-            count //= 4
-            for _ in range(count):
-                stack.pop()
+            size = inst.operands[0].value
+            if size % WORD_SIZE:
+                context.fail(f'pops {size} bytes, not whole slots', inst)
+
+            context.pop_entries(size // WORD_SIZE)
 
         elif opcode == ED9Opcode.DEBUG_LOG:
-            count = inst.operands[0].value if inst.operands else 0
-            for _ in range(count):
-                stack.pop()
+            context.pop_entries(inst.operands[0].value)
 
-        # SET_REG, SET_GLOBAL, POP_TO, etc - pop value
-        elif opcode in POP_VALUE_OPS:
-            stack.pop()
+        elif opcode == ED9Opcode.POP_TO:
+            context.pop_entries(POPPED_VALUE_COUNT)
+            context.write_slot(inst.operands[0].value)
 
-        # Binary operations - pop 2, push 1
+        elif opcode in POP_VALUE_OPS or opcode in CONDITIONAL_JUMPS:
+            context.pop_entries(POPPED_VALUE_COUNT)
+
         elif opcode in BINARY_OPS:
-            stack.pop()
-            stack.pop()
-            stack.append(inst)  # Result of operation
+            context.pop_entries(BINARY_OPERAND_COUNT)
+            stack.append(inst)
 
-        # Unary operations - pop 1, push 1
         elif opcode in UNARY_OPS:
-            stack.pop()
-            stack.append(inst)  # Result of operation
+            context.pop_entries(UNARY_OPERAND_COUNT)
+            stack.append(inst)
 
-        # Conditional jumps - pop 1
-        elif opcode in CONDITIONAL_JUMPS:
-            stack.pop()
+        elif opcode == ED9Opcode.PUSH_CALLER_FRAME:
+            stack.extend(FrameSlot(inst, index) for index in range(CALLER_FRAME_SLOTS))
 
-        # Optimize CALL pattern
-        if opcode == ED9Opcode.CALL:
-            if len(stack) < 2:
-                return []
+        elif opcode == ED9Opcode.CALL:
+            return self.simulate_call(context, inst)
 
-            func_id = inst.operands[0].value
-            argc = context.get_func_argc(func_id)
+        elif opcode == ED9Opcode.CALL_SCRIPT:
+            return self.simulate_call_script(context, inst)
 
-            # Pattern: PUSH(func_id), PUSH(ret_addr), PUSH(arg1), ..., PUSH(argN), CALL
-            # Stack (top to bottom): argN, ..., arg1, ret_addr, func_id
-            if len(stack) < argc + 2:
-                return []
-
-            targets = []
-
-            # Pop argc arguments from stack simulation to get ret_addr and func_id
-            ret_addr_inst = stack[-(argc + 1)]
-            func_id_inst = stack[-(argc + 2)]
-
-            for _ in range(argc + 2):
-                stack.pop()
-
-            # Check if these are PUSH instructions (not results of operations)
-            if not isinstance(ret_addr_inst, Instruction) or not isinstance(func_id_inst, Instruction):
-                return []
-
-            # Optimize func_id PUSH to PUSH_CURRENT_FUNC_ID
-            if func_id_inst.opcode in PUSH_VARIANTS:
-                func_id_inst.opcode = ED9Opcode.PUSH_CURRENT_FUNC_ID
-                func_id_inst.descriptor = context.instruction_table.get_descriptor(ED9Opcode.PUSH_CURRENT_FUNC_ID)
-                func_id_inst.operands.clear()
-
-            # Optimize ret_addr PUSH to PUSH_RET_ADDR
-            if ret_addr_inst.opcode in PUSH_VARIANTS:
-                ret_addr = ret_addr_inst.operands[0].value
-                ret_addr_inst.opcode = ED9Opcode.PUSH_RET_ADDR
-                ret_addr_inst.descriptor = context.instruction_table.get_descriptor(ED9Opcode.PUSH_RET_ADDR)
-                # Change operand to OFFSET from instruction descriptor
-                op_desc = OperandDescriptor.from_format_string(ret_addr_inst.descriptor.operand_fmt, ED9_FORMAT_TABLE)[0]
-                ret_addr_inst.operands = [Operand(descriptor = op_desc, value = ret_addr)]
-                # Create branch target for return address
-                targets.append(BranchTarget.unconditional(int(ret_addr)))
-
-            return targets
+        elif opcode == ED9Opcode.CALL_SCRIPT_NO_RETURN:
+            self.simulate_tail_call(context, inst)
 
         return []
+
+    def simulate_call(self, context: ScpDisassemblerContext, inst: Instruction) -> list[BranchTarget]:
+        """PUSH(func_id) PUSH(ret_addr) args... CALL: the callee pops the args and both setup pushes and returns to
+        the pushed return address. The setup pushes become PUSH_CURRENT_FUNC_ID / PUSH_RET_ADDR."""
+        context.pop_entries(context.get_func_argc(inst.operands[0].value))
+        func_id, ret_addr = context.pop_call_setup(LOCAL_SETUP_SLOTS)
+        target = context.return_target(ret_addr, encoded_return(ret_addr))
+        context.consume(func_id, Role(RoleKind.FUNC_ID))
+        context.consume(ret_addr, Role(RoleKind.RET_ADDR, target))
+        return [BranchTarget.unconditional(target)]
+
+    def simulate_call_script(self, context: ScpDisassemblerContext, inst: Instruction) -> list[BranchTarget]:
+        """PUSH_CALLER_FRAME(ret) args... CALL_SCRIPT: the callee pops the args and the caller frame, and returns to
+        the frame's return address"""
+        context.pop_entries(inst.operands[2].value)
+        frame = context.pop_call_setup(CALLER_FRAME_SLOTS)
+        target = context.return_target(frame[0], frame_return(frame[0]))
+        for slot, entry in enumerate(frame):
+            context.consume(entry, Role(RoleKind.FRAME, target, slot))
+
+        return [BranchTarget.unconditional(target)]
+
+    def simulate_tail_call(self, context: ScpDisassemblerContext, inst: Instruction):
+        """CALL_SCRIPT_NO_RETURN: the callee takes over the args, which must be all that is left on the stack"""
+        context.pop_entries(inst.operands[2].value)
+        if context.stack_simulation:
+            context.fail(f'leaves {format_stack(context.stack_simulation)} below its args', inst)
+
+    @classmethod
+    def require_recorded_edges(cls, func: Function, context: ScpDisassemblerContext):
+        """The CFG's edges must be exactly the recorded ones, kind and count included"""
+        cfg_edges = Counter()
+        for block in Formatter.collect_blocks(func.entry_block):
+            for succ in block.succs:
+                kinds = [
+                    kind for kind, succs in ((BranchKind.TRUE, block.true_succs), (BranchKind.FALSE, block.false_succs))
+                    if succ in succs
+                ]
+                for kind in kinds or [BranchKind.UNCONDITIONAL]:
+                    cfg_edges[(edge_source(block), succ.offset, kind)] += 1
+
+        if cfg_edges != context.recorded_edges:
+            missing = sorted(
+                (hex(src), hex(target), kind.name) for src, target, kind in cfg_edges - context.recorded_edges
+            )
+            extra = sorted(
+                (hex(src), hex(target), kind.name) for src, target, kind in context.recorded_edges - cfg_edges
+            )
+            context.fail(f'CFG edges without a recorded stack state {missing}, recorded edges not in the CFG {extra}')
+
+    def require_code_before_strings(self, functions: list[Function]):
+        """Every reachable instruction must end before the string pool, whose start is known only from references: the
+        function names and the strings decoded code references. Unreachable references count only when
+        keep_unreachable_code decoded them; undecoded or filtered-out code does not tighten the bound."""
+        code_end = self.get_code_end(functions)
+        if self.keep_unreachable_code:
+            unreachable = [inst for func in functions for block in func.unreachable_blocks for inst in block.instructions]
+            code_end = min([code_end, *self.get_string_refs(unreachable)])
+
+        for func in functions:
+            for inst in self.get_instructions(func):
+                if inst.offset + inst.size > code_end:
+                    raise ValueError(
+                        f'{func.name}: {inst.mnemonic} at 0x{inst.offset:X} runs past the end of the code '
+                        f'(0x{code_end:X})'
+                    )
+
+    def require_disjoint_instructions(self, functions: list[Function]):
+        """Functions may share code - the same instruction at the same offset - but no instruction may partially overlap
+        another, and no function may start inside one. Within a function the Disassembler already checks this."""
+        sizes = {}
+        for func in functions:
+            for inst in self.get_instructions(func):
+                size = sizes.setdefault(inst.offset, inst.size)
+                if size != inst.size:
+                    raise ValueError(
+                        f'{func.name}: {inst.mnemonic} at 0x{inst.offset:X} decodes differently in another function'
+                    )
+
+        offsets = sorted(sizes)
+        for offset, next_offset in zip(offsets, offsets[1:]):
+            if offset + sizes[offset] > next_offset:
+                raise ValueError(f'The instruction at 0x{offset:X} overlaps the instruction at 0x{next_offset:X}')
+
+        for func in self.functions:
+            index = bisect.bisect_right(offsets, func.offset) - 1
+            if index >= 0 and offsets[index] < func.offset < offsets[index] + sizes[offsets[index]]:
+                raise ValueError(
+                    f'{func.name} starts at 0x{func.offset:X}, inside the instruction at 0x{offsets[index]:X}'
+                )
+
+    def disasm_context(self, func_id: int, code_end: int | None) -> ScpDisassemblerContext:
+        """A fresh context for disassembling the function at func_id, whose code ends at code_end"""
+        return ScpDisassemblerContext(
+            get_func_argc           = self.get_func_argc,
+            on_disasm_function      = self.on_disasm_function,
+            on_block_start          = self.on_block_start,
+            on_instruction_decoded  = self.on_instruction_decoded,
+            on_pre_add_branch       = self.on_pre_add_branch,
+            on_block_split          = self.on_block_split,
+            create_fallthrough_jump = ed9_create_fallthrough_jump,
+            current_func            = self.functions[func_id],
+            current_func_id         = func_id,
+            code_end                = code_end,
+        )
 
     def disasm_all_functions(self, filter_func = None) -> list[Function]:
         """Disassemble all functions in the SCP file"""
         disassembled_functions = []
+        starts = sorted({func.offset for func in self.functions})
 
-        for func in self.functions:
+        for func_id, func in enumerate(self.functions):
             # Apply filter if provided
             if filter_func and not filter_func(func):
                 continue
 
             log.info(f'Disassembling {func.name} @ 0x{func.offset:08X}')
 
-            # Create new context for each function
-            context = ScpDisassemblerContext(
-                get_func_argc           = self.get_func_argc,
-                on_disasm_function      = self.on_disasm_function,
-                on_block_start          = self.on_block_start,
-                on_instruction_decoded  = self.on_instruction_decoded,
-                on_pre_add_branch       = self.on_pre_add_branch,
-                create_fallthrough_jump = ed9_create_fallthrough_jump,
-            )
+            # Create new context for each function; its code ends where the next function starts
+            next_start = bisect.bisect_right(starts, func.offset)
+            context = self.disasm_context(func_id, starts[next_start] if next_start < len(starts) else None)
 
             disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
             try:
                 func.entry_block = disasm.disasm_function(self.fs, offset = func.offset, name = func.name)
+                self.require_recorded_edges(func, context)
                 disassembled_functions.append(func)
             except Exception as e:
                 log.error(f'Error disassembling {func.name} @ 0x{func.offset:08X}: {e}')
@@ -622,8 +901,12 @@ class ScpParser(StrictBase):
             if self.round_trip:
                 self.pair_call_debug_info(func)
 
+        self.require_disjoint_instructions(disassembled_functions)
+
         if self.keep_unreachable_code:
             self.find_unreachable_code(disassembled_functions, has_all_functions = filter_func is None)
+
+        self.require_code_before_strings(disassembled_functions)
 
         # The table is sorted by name, but code is laid out in source order
         disassembled_functions.sort(key = lambda func: func.offset)

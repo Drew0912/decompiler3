@@ -42,6 +42,18 @@ parses operands. Instruction encoding/decoding is table-driven (an opcode table 
 its mnemonic and operand format), so adding a new instruction is a table entry rather than new
 parsing code.
 
+While the disassembler decodes a function, `ScpParser` simulates the VM stack to find each call's
+setup: the two pushes a `CALL` consumes (rewritten to `PUSH_CURRENT_FUNC_ID` / `PUSH_RET_ADDR`) and
+the caller frame a `CALL_SCRIPT` consumes. Each call's return edge comes from the address it
+encodes. The simulation records the stack on every CFG edge - branch, fall-through and block split
+- and every edge into a block must carry the same stack height. Pushes that meet at one stack
+position on a join form one group, and a call checks and rewrites every push in its setup groups.
+A push that an ordinary consumer reads, discards or overwrites cannot also be a call setup. The
+parser also rejects overlapping instructions, targets inside an instruction, and code that runs
+into the string pool. The pool's start is known only from references (function names, and the
+strings the decoded code references), so a string referenced only by undecoded dead code does not
+bound it. See `tests/test_scp_stack_simulation.py`.
+
 ## Layer 3: Lifter — Done
 
 **Location:** `falcom/ed9/ir/llil/` (`ED9VMLifter` and related classes), building on `ir/llil/`

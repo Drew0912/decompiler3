@@ -84,7 +84,7 @@ class ED9VMLifter:
         return self._compute_rpo(entry)
 
     def _compute_rpo(self, entry: BasicBlock) -> list[BasicBlock]:
-        '''Reverse post-order over succs only (never preds - split_block() leaves it unreliable).
+        '''Reverse post-order over succs.
         In the returned order, every non-entry block follows at least one predecessor.'''
         visited: set[int] = set()
         postorder: list[BasicBlock] = []
