@@ -71,9 +71,9 @@ __all__ = [
 
     # Passes
     'MLILToHLILPass',
-    'CopyPropagationPass',
     'ControlFlowOptimizationPass',
     'LoopRecoveryPass',
     'CommonReturnExtractionPass',
     'DeadCodeEliminationPass',
+    'BranchOrderNormalizationPass',
 ]

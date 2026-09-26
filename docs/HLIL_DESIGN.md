@@ -36,7 +36,7 @@ work happen upstream; HLIL favors explicit tree ownership and straightforward co
 | `ir/hlil/mlil_to_hlil.py` | Generic MLIL → HLIL conversion, including CFG construction, call-result folding, loop/branch reconstruction, shared-region cloning, and variable declaration. |
 | `ir/hlil/structural_analysis.py` | Dominator calculation, natural-loop discovery, iterative region reduction, and merge-point queries used by the converter. |
 | `ir/hlil/hlil_formatter.py` | Debug formatter for rendering an HLIL tree. It is separate from the TypeScript code generator. |
-| `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: control-flow optimization, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and the currently disabled copy-propagation pass. |
+| `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: control-flow optimization, loop recovery, common-return extraction, dead-code elimination, and branch-order normalization. |
 | `ir/hlil/hlil_passes.py` | Compatibility re-export of `ir/hlil/passes/`. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, formatter, converter, and passes. |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry point, `convert_falcom_mlil_to_hlil()`, and its pass ordering/configuration. |
@@ -149,7 +149,7 @@ always-evaluated test, so a call on the right side of an HLIL `&&`/`||` really i
 cost: a refused call sits between `else` and the next test, so such `else if` chains nest instead of
 printing flat (`docs/FUTURE_WORK.md`, "HLIL Nesting Depth").
 
-This specialized folding belongs in conversion rather than the general copy-propagation pass: it
+This specialized folding belongs in conversion rather than a post-conversion tree pass: it
 uses MLIL instruction positions, CFG predecessor information, and call evaluation order before the
 graph is discarded.
 
@@ -227,9 +227,10 @@ they divide into shape recovery (`ControlFlowOptimizationPass`, `LoopRecoveryPas
 (`BranchOrderNormalizationPass`). The last pass is optional through `normalize_branch_order`
 because it deliberately prefers recovered source-line order over bytecode emission order.
 
-`CopyPropagationPass` is implemented but not added to the production pipeline; its role moved to
-MLIL SSA optimization. The imported `FalcomTypeInferencePass` hook is also disabled and marked as
-testing. See `docs/HLIL_GUIDE.md` for the detailed transformations performed by each active pass.
+HLIL has no copy-propagation pass: copy propagation happens in MLIL SSA optimization (the disabled
+HLIL `CopyPropagationPass` was removed on 2026-09-27). The imported `FalcomTypeInferencePass` hook
+is disabled and marked as testing. See `docs/HLIL_GUIDE.md` for the detailed transformations
+performed by each active pass and why the copy-propagation pass was removed.
 
 ## Testing
 
@@ -245,8 +246,8 @@ Several dedicated HLIL unit-test files exist today:
 - `tests/test_hlil_loop_traversal.py` (Step H, 2026-09-22) covers `DeadCodeEliminationPass`,
   `CommonReturnExtractionPass`, and `TypeScriptGenerator._infer_return_type` each correctly seeing
   into a do-while body via the shared `sub_blocks` helper.
-- `tests/test_hlil_copy_propagation.py` and `tests/test_hlil_call_fold_short_circuit.py` cover
-  `CopyPropagationPass` and the MLIL->HLIL call-fold short-circuit safety work respectively.
+- `tests/test_hlil_call_fold_short_circuit.py` covers the MLIL->HLIL call-fold short-circuit safety
+  work.
 - `tests/test_hlil_long_functions.py` checks that long runs of sequential ifs and loops convert
   without recursing once per statement.
 - `tests/test_hlil_common_return_extraction.py` covers when `CommonReturnExtractionPass` may hoist a
@@ -262,15 +263,13 @@ HLIL test file of their own.
 
 - `FalcomTypeInferencePass` is wired off as "testing," leaving the intended ownership of final HLIL
   type refinement unresolved.
-- `CopyPropagationPass` remains implemented and exported despite being disabled in favor of MLIL
-  SSA propagation. Its long-term API/maintenance status should be decided.
 - **Resolved (Step H, 2026-09-22):** `HLILFor` (no construction site, and already-wrong rendering)
   was deleted rather than fixed. Tree-walking passes that only recursed into simple nested blocks -
   `DeadCodeEliminationPass`, `CommonReturnExtractionPass`, `TypeScriptGenerator._infer_return_type`
   - used to skip `HLILDoWhile` entirely; all three now share one traversal helper (`sub_blocks` in
     `ir/hlil/hlil.py`) covering every structured node that owns a nested block, so a future node
-  type needs one edit there instead of one per walker. `pass_copy_propagation.py` and
-  `pass_control_flow_optimization.py` keep their own tailored `_expr_children`/`_stmt_children`/
+  type needs one edit there instead of one per walker. `pass_control_flow_optimization.py` keeps
+  its own tailored `_expr_children`/`_stmt_children`/
   `_tree_any` (deeper expression-level walkers `sub_blocks` doesn't replace) - left alone since
   big-plan Step 12 is active in that code. Separately, `LoopRecoveryPass`'s `while(1)` -> `do-while`
   rewrite was unsound when the body held a `continue` targeting the loop (different exit-target

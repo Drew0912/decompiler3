@@ -712,11 +712,10 @@ class ControlFlowOptimizationPass(Pass):
 
         Note: a call (HLILExprStmt wrapping one, or nested inside an expression) is NOT
         considered to modify a named variable - REGS in this VM are only modified via direct
-        assignment, unlike the conservative "any call may write anything" policy used
-        elsewhere in this codebase (e.g. pass_copy_propagation.py) for a different hazard.
-        Recognizes the address-taken *(&x) = v write shape too (ir/mlil/mlil_ssa.py's memory-
-        form lowering), not just a plain HLILAssign(HLILVar, ...) - a call taking &x is still
-        invisible here, a separate, larger gap this predicate does not attempt to close.
+        assignment. Recognizes the address-taken *(&x) = v write shape too
+        (ir/mlil/mlil_ssa.py's memory-form lowering), not just a plain HLILAssign(HLILVar, ...) -
+        a call taking &x is still invisible here, a separate, larger gap this predicate does not
+        attempt to close.
         '''
         def modifies(n) -> bool:
             if not isinstance(n, HLILAssign):

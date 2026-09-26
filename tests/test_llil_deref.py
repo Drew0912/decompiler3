@@ -24,10 +24,9 @@ from ir.mlil.passes import (
     RegGlobalValuePropagationPass,
 )
 from ir.hlil.hlil import (
-    HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock, HLILReturn,
+    HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock,
 )
 from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
-from ir.hlil.passes.pass_copy_propagation import CopyPropagationPass as HLILCopyPropagationPass
 
 
 FUNC_START = 0x1000
@@ -262,29 +261,6 @@ class TestRegGlobalPropagationDerefInvalidation(unittest.TestCase):
         # the store instead of using REG[0]'s actual (pre-store) captured value.
         final_ret = block.instructions[-1]
         self.assertIsInstance(final_ret.value, MLILLoadReg)
-
-
-class TestHLILCopyPropagationDerefStaleness(unittest.TestCase):
-    '''Codex Rule 2 second-pass finding: an impure read (e.g. *p) must not be propagated past
-    an intervening store through a pointer, even outside a loop - the read's value can change
-    due to aliasing that _modifies_vars (which only tracks named variables) cannot see.'''
-
-    def test_deref_read_is_not_propagated_across_an_intervening_deref_store(self):
-        ptr = HLILVariable('arg1')
-        temp = HLILVariable('var_s1')
-
-        assign = HLILAssign(HLILVar(temp), HLILDeref(HLILVar(ptr)))
-        store = HLILAssign(HLILDeref(HLILVar(ptr)), HLILConst(1))
-        ret = HLILReturn(HLILVar(temp))
-        block = HLILBlock([assign, store, ret])
-
-        HLILCopyPropagationPass()._propagate_copies(block)
-
-        # If wrongly propagated, `assign` would be removed and `ret.value` would become the
-        # HLILDeref expression directly - re-reading *p AFTER the store instead of using the
-        # value captured before it.
-        self.assertIn(assign, block.statements)
-        self.assertIsInstance(ret.value, HLILVar)
 
 
 class TestDerefStoreVersionsAddressTakenLocal(unittest.TestCase):
