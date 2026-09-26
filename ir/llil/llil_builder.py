@@ -241,8 +241,10 @@ class LowLevelILBuilder:
         self.__vstack.replace(index, LowLevelILStackLoad(offset = 0, slot_index = slot_index))
 
     def _require_registered_block(self, block: LowLevelILBasicBlock):
-        if block not in self.function.basic_blocks:
-            raise RuntimeError(f'Block {block} has not been added to function. Call function.add_basic_block() first.')
+        '''Raise unless block belongs to this function.'''
+        if not self.function.owns_block(block):
+            name = block.label if isinstance(block, LowLevelILBasicBlock) else repr(block)
+            raise RuntimeError(f'{name} is not a block of {self.function.name}')
 
     def _finish_block(self):
         '''Record the current block's exit sp, if any.'''
@@ -304,6 +306,7 @@ class LowLevelILBuilder:
     def _record_edge_state(self, terminal: LowLevelILInstruction, target: LowLevelILBasicBlock):
         '''Record the CFG edge terminal -> target and merge the stack state it carries into target - only while
         terminal still ends the current block, so the state is the one the edge carries.'''
+        self._require_registered_block(target)
         block = self.current_block
         if block is None or not block.instructions or block.instructions[-1] is not terminal:
             raise RuntimeError(
@@ -675,8 +678,9 @@ class LowLevelILBuilder:
     # === Control Flow ===
 
     def _resolve_block(self, target: Union[str, LowLevelILBasicBlock]) -> LowLevelILBasicBlock:
-        '''A jump target given as a block or a label name'''
+        '''A jump target given as a block or a label name, checked to be one of this function's blocks'''
         if not isinstance(target, str):
+            self._require_registered_block(target)
             return target
 
         block = self.get_block_by_label(target)
@@ -708,6 +712,7 @@ class LowLevelILBuilder:
              args: List[LowLevelILExpr] = None) -> LowLevelILCall:
         '''Function call (terminal instruction). Records no edge: the return edge's stack state is known only
         after the callee's cleanup, so the caller records it.'''
+        self._require_registered_block(return_target)
         call_inst = LowLevelILCall(target, return_target, args)
         self.add_instruction(call_inst)
         return call_inst

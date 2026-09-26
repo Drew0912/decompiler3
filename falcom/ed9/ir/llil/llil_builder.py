@@ -171,9 +171,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def push_ret_addr(self, target: LowLevelILBasicBlock):
         '''Push return address - completes the open local call setup'''
-        if not isinstance(target, LowLevelILBasicBlock):
-            raise RuntimeError(f'target must be a LowLevelILBasicBlock, got {type(target)}')
-
+        self._require_registered_block(target)
         setup = self._pending_setups[-1] if self._pending_setups else None
         if setup is None or setup.kind != CallSetupKind.LOCAL or setup.return_block is not None:
             raise RuntimeError(
@@ -196,6 +194,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def push_caller_frame(self, return_target: LowLevelILBasicBlock):
         '''PUSH_CALLER_FRAME operation - opens a script call setup, consumed by call_script'''
+        self._require_registered_block(return_target)
         sp_before_call = self.sp_get()
 
         func_id = FalcomConstants.current_func_id()
