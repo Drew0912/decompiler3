@@ -10,7 +10,7 @@ from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MediumLevelILInstruction,
     MLILConst, MLILVar, MLILBinaryOp, MLILUnaryOp, MLILSetVar,
-    MLILIf, MLILRet, MLILCall, MLILSyscall, MLILCallScript,
+    MLILIf, MLILRet, MediumLevelILCall,
     MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg,
     MLILDeref, MLILStoreDeref,
 )
@@ -182,7 +182,7 @@ class RegGlobalValuePropagator:
             new_state.global_[inst.index] = resolved if self._is_closed_form(resolved) else None
             return new_state
 
-        elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+        elif isinstance(inst, MediumLevelILCall):
             new_state = state.copy()
             for k in new_state.reg:
                 new_state.reg[k] = None
@@ -230,7 +230,7 @@ class RegGlobalValuePropagator:
 
             return (inst, state)
 
-        elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+        elif isinstance(inst, MediumLevelILCall):
             new_args = [self._substitute(arg, state) for arg in inst.args]
             new_state = state.copy()
             for k in new_state.reg:

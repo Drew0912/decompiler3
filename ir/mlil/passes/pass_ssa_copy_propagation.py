@@ -9,24 +9,7 @@ from ..mlil import (
     MediumLevelILFunction,
     MediumLevelILBasicBlock,
     MediumLevelILInstruction,
-    MLILAdd,
-    MLILSub,
-    MLILMul,
-    MLILDiv,
-    MLILMod,
-    MLILAnd,
-    MLILOr,
-    MLILXor,
-    MLILShl,
-    MLILShr,
-    MLILLogicalAnd,
-    MLILLogicalOr,
-    MLILEq,
-    MLILNe,
-    MLILLt,
-    MLILLe,
-    MLILGt,
-    MLILGe,
+    MLILBinaryOp,
     MLILNeg,
     MLILLogicalNot,
     MLILBitwiseNot,
@@ -35,10 +18,12 @@ from ..mlil import (
     MediumLevelILCall,
     MLILStoreGlobal,
     MLILStoreReg,
+    MLILAddressOf,
     MLILDeref,
     MLILStoreDeref,
 )
 from ..mlil_ssa import (
+    iter_ssa_reads,
     MLILVariableSSA,
     MLILVarSSA,
     MLILSetVarSSA,
@@ -140,48 +125,11 @@ class CopyPropagationPass(Pass):
                 for var in self._collect_uses(inst):
                     self.use_counts[var] = self.use_counts.get(var, 0) + 1
 
-    def _collect_uses(self, node: MediumLevelILInstruction) -> List[MLILVariableSSA]:
-        '''SSA variables read by an instruction or expression'''
-        if isinstance(node, MLILVarSSA):
-            return [node.var]
-
-        if isinstance(node, MLILPhi):
-            return [source_var for source_var, _ in node.sources]
-
-        if isinstance(node, MLILSetVarSSA):
-            return self._collect_uses(node.value)
-
-        if isinstance(node, (MLILStoreGlobal, MLILStoreReg)):
-            return self._collect_uses(node.value)
-
-        if isinstance(node, MLILStoreDeref):
-            return self._collect_uses(node.dest) + self._collect_uses(node.value)
-
-        if isinstance(node, MLILDeref):
-            return self._collect_uses(node.operand)
-
-        if isinstance(node, MLILIf):
-            return self._collect_uses(node.condition)
-
-        if isinstance(node, MLILRet):
-            return self._collect_uses(node.value) if node.value is not None else []
-
-        if isinstance(node, MediumLevelILCall):
-            uses = []
-            for arg in node.args:
-                uses.extend(self._collect_uses(arg))
-            return uses
-
-        if isinstance(node, (MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod,
-                             MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr,
-                             MLILLogicalAnd, MLILLogicalOr,
-                             MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
-            return self._collect_uses(node.lhs) + self._collect_uses(node.rhs)
-
-        if isinstance(node, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero)):
-            return self._collect_uses(node.operand)
-
-        return []
+    @classmethod
+    def _collect_uses(cls, node: MediumLevelILInstruction) -> List[MLILVariableSSA]:
+        '''SSA variables node reads. A read under & is not counted: this pass never rewrites the
+        operand of &.'''
+        return [var for var, _ in iter_ssa_reads(node, skip = (MLILAddressOf,))]
 
     def _propagate_once(self, func: MediumLevelILFunction) -> bool:
         '''Single copy propagation pass - resolves each read to its effective root'''
@@ -312,10 +260,7 @@ class CopyPropagationPass(Pass):
             if root is not expr.var:
                 return MLILVarSSA(root)
 
-        elif isinstance(expr, (MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod,
-                               MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr,
-                               MLILLogicalAnd, MLILLogicalOr,
-                               MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
+        elif isinstance(expr, MLILBinaryOp):
             lhs = self._replace_in_expr(expr.lhs, func, block, idx)
             rhs = self._replace_in_expr(expr.rhs, func, block, idx)
             if lhs is not expr.lhs or rhs is not expr.rhs:

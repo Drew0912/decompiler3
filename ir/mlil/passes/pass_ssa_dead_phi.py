@@ -9,25 +9,14 @@ from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
     MediumLevelILInstruction,
-    MediumLevelILBasicBlock,
     MLILConst,
     MLILDebug,
-    MLILBinaryOp,
-    MLILUnaryOp,
-    MLILRet,
-    MLILCall,
-    MLILSyscall,
-    MLILCallScript,
-    MLILStoreGlobal,
-    MLILStoreReg,
-    MLILStoreDeref,
 )
 from ..mlil_ssa import (
+    iter_ssa_reads,
     MLILVariableSSA,
-    MLILVarSSA,
     MLILSetVarSSA,
     MLILPhi,
-    MLILIf,
 )
 
 
@@ -35,9 +24,7 @@ class DeadPhiSourceEliminationPass(Pass):
     '''Eliminate dead Phi nodes and definitions feeding them'''
 
     def __init__(self, sccp_replaced_vars: Set[MLILVariableSSA] = None):
-        self.ssa_defs: Dict[MLILVariableSSA, MediumLevelILInstruction] = {}
         self.ssa_uses: Dict[MLILVariableSSA, List[MediumLevelILInstruction]] = {}
-        self.inst_block: Dict[MediumLevelILInstruction, MediumLevelILBasicBlock] = {}
         self.sccp_replaced_vars = sccp_replaced_vars or set()
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
@@ -47,62 +34,13 @@ class DeadPhiSourceEliminationPass(Pass):
         return func
 
     def _build_info(self, func: MediumLevelILFunction):
-        '''Build def-use chains and mappings'''
-        self.ssa_defs = {}
+        '''Build SSA use chains'''
         self.ssa_uses = {}
-        self.inst_block = {}
 
         for block in func.basic_blocks:
             for inst in block.instructions:
-                self.inst_block[inst] = block
-
-                if isinstance(inst, MLILSetVarSSA):
-                    self.ssa_defs[inst.var] = inst
-                    self._collect_uses(inst.value, inst)
-
-                elif isinstance(inst, MLILPhi):
-                    self.ssa_defs[inst.dest] = inst
-                    for src_var, _ in inst.sources:
-                        if src_var not in self.ssa_uses:
-                            self.ssa_uses[src_var] = []
-                        self.ssa_uses[src_var].append(inst)
-
-                else:
-                    self._collect_uses_in_stmt(inst, inst)
-
-    def _collect_uses(self, expr, user):
-        '''Collect variable uses in expression'''
-        if isinstance(expr, MLILVarSSA):
-            if expr.var not in self.ssa_uses:
-                self.ssa_uses[expr.var] = []
-            self.ssa_uses[expr.var].append(user)
-
-        elif isinstance(expr, MLILBinaryOp):
-            self._collect_uses(expr.lhs, user)
-            self._collect_uses(expr.rhs, user)
-
-        elif isinstance(expr, MLILUnaryOp):
-            self._collect_uses(expr.operand, user)
-
-    def _collect_uses_in_stmt(self, stmt, user):
-        '''Collect variable uses in statement'''
-        if isinstance(stmt, MLILIf):
-            self._collect_uses(stmt.condition, user)
-
-        elif isinstance(stmt, MLILRet):
-            if stmt.value:
-                self._collect_uses(stmt.value, user)
-
-        elif isinstance(stmt, (MLILCall, MLILSyscall, MLILCallScript)):
-            for arg in stmt.args:
-                self._collect_uses(arg, user)
-
-        elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
-            self._collect_uses(stmt.value, user)
-
-        elif isinstance(stmt, MLILStoreDeref):
-            self._collect_uses(stmt.dest, user)
-            self._collect_uses(stmt.value, user)
+                for var, _ in iter_ssa_reads(inst):
+                    self.ssa_uses.setdefault(var, []).append(inst)
 
     def _eliminate_dead_phis(self, func: MediumLevelILFunction):
         '''Eliminate dead Phi nodes and definitions feeding them'''

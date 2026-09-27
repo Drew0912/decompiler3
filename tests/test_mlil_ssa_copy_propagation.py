@@ -177,7 +177,7 @@ class TestCopyPropagationLocalRootStopsAtUnsafeLink(unittest.TestCase):
 
 class TestExpressionInliningRegisterReadAcrossCall(unittest.TestCase):
     '''A register/global read wrapped in a compound expression must not inline across a call
-    that clobbers that storage - _is_impure_read previously checked for MLILLoadReg/
+    that clobbers that storage - the inliner's impure-read check previously looked for MLILLoadReg/
     MLILLoadGlobal, node shapes that never occur in SSA-form expressions (a register/global
     read is MLILVarSSA at this layer), so the guard never fired at all.'''
 
@@ -364,7 +364,7 @@ class TestExpressionInliningUnraisedGlobalRead(unittest.TestCase):
     an SSA-tracked variable by SSA construction (mlil_ssa.py's _raise_globals leaves it alone)
     - it survives as a bare MLILLoadGlobal even in SSA form. Since it has no SSA base variable,
     reaches_without_redefinition cannot track it; it must be treated as untrackable (poisoned),
-    like MLILDeref, not as pure - a prior rewrite of _is_impure_read (switching to
+    like MLILDeref, not as pure - a prior rewrite of the inliner's impure-read check (switching to
     MLILVarSSA-based detection for the common raised case) dropped this case entirely, making
     every such read freely movable with no adjacency check at all, not even the old strict one.'''
 

@@ -1,7 +1,7 @@
 '''MLIL SSA - SSA form with dominance analysis and Phi placement'''
 
 from __future__ import annotations
-from typing import Dict, List, Set, Optional, Tuple, Deque
+from typing import Dict, Iterator, List, Set, Optional, Tuple, Deque
 from collections import deque, defaultdict
 from .mlil import *
 
@@ -55,6 +55,9 @@ class MLILSetVarSSA(MediumLevelILStatement):
         self.var = var
         self.value = value
 
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return (self.value,)
+
     def __str__(self) -> str:
         return f'{self.var} = {self.value}'
 
@@ -73,6 +76,19 @@ class MLILPhi(MediumLevelILStatement):
 
         src_strs = ', '.join(f'{var} from {block.label}' for var, block in self.sources)
         return f'{self.dest} = φ({src_strs})'
+
+
+def iter_ssa_reads(node: MediumLevelILInstruction,
+                   skip: Tuple[type, ...] = ()) -> Iterator[Tuple[MLILVariableSSA, MediumLevelILInstruction]]:
+    '''Every SSA variable node reads, as (variable, reader) in evaluation order: the reader is the
+    MLILVarSSA expression, or the MLILPhi for each phi source. skip is passed to walk().'''
+    for current in walk(node, skip):
+        if isinstance(current, MLILVarSSA):
+            yield current.var, current
+
+        elif isinstance(current, MLILPhi):
+            for source_var, _ in current.sources:
+                yield source_var, current
 
 
 # ============================================================================
@@ -318,7 +334,9 @@ class SSAConstructor:
 
         for block in self.function.basic_blocks:
             for inst in block.instructions:
-                self._collect_address_taken_in(inst, address_taken)
+                for node in walk(inst, skip = (MLILAddressOf,)):
+                    if isinstance(node, MLILAddressOf) and isinstance(node.operand, MLILVar):
+                        address_taken.add(node.operand.var)
 
         for var in address_taken:
             if self.function.is_register_var(var) or self.function.is_global_var(var):
@@ -327,43 +345,6 @@ class SSAConstructor:
                     f'produces this today, and it is not covered by address-taken lowering')
 
         return address_taken
-
-    def _collect_address_taken_in(self, node: MediumLevelILInstruction, address_taken: Set[MLILVariable]):
-        '''Recursively find every AddressOf(var) in an instruction/expression tree'''
-        if node is None:
-            return
-
-        if isinstance(node, MLILAddressOf):
-            if isinstance(node.operand, MLILVar):
-                address_taken.add(node.operand.var)
-            return
-
-        if isinstance(node, MLILBinaryOp):
-            self._collect_address_taken_in(node.lhs, address_taken)
-            self._collect_address_taken_in(node.rhs, address_taken)
-
-        elif isinstance(node, MLILUnaryOp):
-            self._collect_address_taken_in(node.operand, address_taken)
-
-        elif isinstance(node, MediumLevelILCall):
-            for arg in node.args:
-                self._collect_address_taken_in(arg, address_taken)
-
-        elif isinstance(node, MLILSetVar):
-            self._collect_address_taken_in(node.value, address_taken)
-
-        elif isinstance(node, (MLILStoreReg, MLILStoreGlobal)):
-            self._collect_address_taken_in(node.value, address_taken)
-
-        elif isinstance(node, MLILStoreDeref):
-            self._collect_address_taken_in(node.dest, address_taken)
-            self._collect_address_taken_in(node.value, address_taken)
-
-        elif isinstance(node, MLILIf):
-            self._collect_address_taken_in(node.condition, address_taken)
-
-        elif isinstance(node, MLILRet):
-            self._collect_address_taken_in(node.value, address_taken)
 
     def _decompose_address_taken_call_outputs(self):
         '''A call's own output is a def path independent of MLILSetVar - if it would alias an
@@ -906,8 +887,6 @@ class SSADeconstructor:
     def __init__(self, function: MediumLevelILFunction):
         self.function = function
         self.all_ssa_vars: Set[MLILVariableSSA] = set()
-        self.var_defs: Dict[MLILVariableSSA, Tuple[MediumLevelILBasicBlock, int]] = {}
-        self.var_uses: Dict[MLILVariableSSA, List[Tuple[MediumLevelILBasicBlock, int]]] = defaultdict(list)
         self.live_in: Dict[MediumLevelILBasicBlock, Set[MLILVariableSSA]] = {}
         self.live_out: Dict[MediumLevelILBasicBlock, Set[MLILVariableSSA]] = {}
         self.interference: Dict[MLILVariableSSA, Set[MLILVariableSSA]] = defaultdict(set)
@@ -956,12 +935,11 @@ class SSADeconstructor:
         return self.function
 
     def _collect_ssa_vars(self):
-        '''Collect all SSA variables and their definition/use sites'''
+        '''Collect every SSA variable the function defines or reads'''
         for block in self.function.basic_blocks:
-            for inst_idx, inst in enumerate(block.instructions):
+            for inst in block.instructions:
                 if isinstance(inst, MLILSetVarSSA):
                     self.all_ssa_vars.add(inst.var)
-                    self.var_defs[inst.var] = (block, inst_idx)
 
                     if isinstance(inst.value, MLILUndef):
                         self.undef_defs.add(inst.var)
@@ -970,14 +948,11 @@ class SSADeconstructor:
                         self.copy_affinity[inst.var].add(inst.value.var)
                         self.copy_affinity[inst.value.var].add(inst.var)
 
-                    self._collect_uses_in_expr(inst.value, block, inst_idx)
+                elif isinstance(inst, MediumLevelILCall) and inst.output is not None:
+                    self.all_ssa_vars.add(inst.output)
 
-                else:
-                    if isinstance(inst, MediumLevelILCall) and inst.output is not None:
-                        self.all_ssa_vars.add(inst.output)
-                        self.var_defs[inst.output] = (block, inst_idx)
-
-                    self._collect_uses_in_stmt(inst, block, inst_idx)
+                for var, _ in iter_ssa_reads(inst):
+                    self.all_ssa_vars.add(var)
 
     def _collect_undefined_register_versions(self):
         '''Register versions that hold no value known inside this function
@@ -1006,42 +981,10 @@ class SSADeconstructor:
             if ssa_var.base_var in self.reg_index_by_var and ssa_var not in defined:
                 self.undefined_reg_versions.add(ssa_var)
 
-    def _collect_uses_in_expr(self, expr, block: MediumLevelILBasicBlock, inst_idx: int):
-        '''Recursively collect variable uses in an expression'''
-        if isinstance(expr, MLILVarSSA):
-            self.all_ssa_vars.add(expr.var)
-            self.var_uses[expr.var].append((block, inst_idx))
-
-        elif isinstance(expr, MLILBinaryOp):
-            self._collect_uses_in_expr(expr.lhs, block, inst_idx)
-            self._collect_uses_in_expr(expr.rhs, block, inst_idx)
-
-        elif isinstance(expr, MLILAddressOf):
-            # AddressOf uses the variable (its address is passed to function)
-            self._collect_uses_in_expr(expr.operand, block, inst_idx)
-
-        elif isinstance(expr, MLILUnaryOp):
-            self._collect_uses_in_expr(expr.operand, block, inst_idx)
-
-    def _collect_uses_in_stmt(self, stmt, block: MediumLevelILBasicBlock, inst_idx: int):
-        '''Collect variable uses in a statement'''
-        if isinstance(stmt, MLILIf):
-            self._collect_uses_in_expr(stmt.condition, block, inst_idx)
-
-        elif isinstance(stmt, MLILRet):
-            if stmt.value:
-                self._collect_uses_in_expr(stmt.value, block, inst_idx)
-
-        elif isinstance(stmt, (MLILCall, MLILSyscall, MLILCallScript)):
-            for arg in stmt.args:
-                self._collect_uses_in_expr(arg, block, inst_idx)
-
-        elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
-            self._collect_uses_in_expr(stmt.value, block, inst_idx)
-
-        elif isinstance(stmt, MLILStoreDeref):
-            self._collect_uses_in_expr(stmt.dest, block, inst_idx)
-            self._collect_uses_in_expr(stmt.value, block, inst_idx)
+    @classmethod
+    def _ssa_reads(cls, node: MediumLevelILInstruction) -> Set[MLILVariableSSA]:
+        '''SSA variables node reads (phis are already eliminated when this runs)'''
+        return {var for var, _ in iter_ssa_reads(node)}
 
     def _compute_liveness(self):
         '''Compute live-in and live-out sets for each block using dataflow analysis'''
@@ -1069,12 +1012,12 @@ class SSADeconstructor:
                 for inst in block.instructions:
                     if isinstance(inst, MLILSetVarSSA):
                         def_set.add(inst.var)
-                        for var in self._get_vars_in_expr(inst.value):
+                        for var in self._ssa_reads(inst.value):
                             if var not in def_set:
                                 use_set.add(var)
 
                     else:
-                        for var in self._get_vars_in_stmt(inst):
+                        for var in self._ssa_reads(inst):
                             if var not in def_set:
                                 use_set.add(var)
 
@@ -1089,44 +1032,6 @@ class SSADeconstructor:
                     self.live_in[block] = new_live_in
                     self.live_out[block] = new_live_out
 
-    def _get_vars_in_expr(self, expr) -> Set[MLILVariableSSA]:
-        '''Get all SSA variables used in an expression'''
-        result = set()
-        if isinstance(expr, MLILVarSSA):
-            result.add(expr.var)
-
-        elif isinstance(expr, MLILBinaryOp):
-            result |= self._get_vars_in_expr(expr.lhs)
-            result |= self._get_vars_in_expr(expr.rhs)
-
-        elif isinstance(expr, (MLILAddressOf, MLILUnaryOp)):
-            result |= self._get_vars_in_expr(expr.operand)
-
-        return result
-
-    def _get_vars_in_stmt(self, stmt) -> Set[MLILVariableSSA]:
-        '''Get all SSA variables used in a statement'''
-        result = set()
-        if isinstance(stmt, MLILIf):
-            result |= self._get_vars_in_expr(stmt.condition)
-
-        elif isinstance(stmt, MLILRet):
-            if stmt.value:
-                result |= self._get_vars_in_expr(stmt.value)
-
-        elif isinstance(stmt, (MLILCall, MLILSyscall, MLILCallScript)):
-            for arg in stmt.args:
-                result |= self._get_vars_in_expr(arg)
-
-        elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
-            result |= self._get_vars_in_expr(stmt.value)
-
-        elif isinstance(stmt, MLILStoreDeref):
-            result |= self._get_vars_in_expr(stmt.dest)
-            result |= self._get_vars_in_expr(stmt.value)
-
-        return result
-
     def _build_interference_graph(self):
         '''Build interference graph: two variables interfere if live at same point'''
         for block in self.function.basic_blocks:
@@ -1139,15 +1044,15 @@ class SSADeconstructor:
                     # All currently live variables interfere with defined_var
                     self._add_interference(defined_var, live)
                     live.discard(defined_var)
-                    live |= self._get_vars_in_expr(inst.value)
+                    live |= self._ssa_reads(inst.value)
 
                 elif isinstance(inst, MediumLevelILCall) and inst.output is not None:
                     self._add_interference(inst.output, live)
                     live.discard(inst.output)
-                    live |= self._get_vars_in_stmt(inst)
+                    live |= self._ssa_reads(inst)
 
                 else:
-                    live |= self._get_vars_in_stmt(inst)
+                    live |= self._ssa_reads(inst)
 
     def _add_interference(self, defined_var: MLILVariableSSA, live: Set[MLILVariableSSA]):
         '''Record interference between a defined variable and everything live at that point'''

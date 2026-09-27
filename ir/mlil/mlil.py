@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterator, List, Optional, Union, TYPE_CHECKING
+from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, TYPE_CHECKING
 
 from common import *
 from ir.core import *
@@ -148,6 +148,11 @@ class MediumLevelILInstruction(ILInstruction):
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__} {self.operation_name}>'
 
+    def operands(self) -> Tuple['MediumLevelILInstruction', ...]:
+        '''Direct expression operands in evaluation order - none for a leaf. Every node holding
+        an expression overrides this; walk() and the use collectors are built on it.'''
+        return ()
+
     def copy_metadata_from(self, source: 'MediumLevelILInstruction') -> 'MediumLevelILInstruction':
         '''Copy source tracking metadata from another MLIL instruction.'''
         self.address = source.address
@@ -251,6 +256,9 @@ class MLILSetVar(MediumLevelILStatement):
         self.var = var
         self.value = value
 
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return (self.value,)
+
     def __str__(self) -> str:
         return f'{self.var} = {self.value}'
 
@@ -269,6 +277,9 @@ class MLILBinaryOp(MediumLevelILExpr, BinaryOperation):
         '''Copy of this operation with new operands, keeping metadata. Every subclass takes
         (lhs, rhs, **kwargs) and only fixes its operation.'''
         return type(self)(lhs, rhs).copy_metadata_from(self)
+
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return (self.lhs, self.rhs)
 
     def __str__(self) -> str:
         op_map = {
@@ -401,6 +412,9 @@ class MLILUnaryOp(MediumLevelILExpr, UnaryOperation):
         (operand, **kwargs) and only fixes its operation.'''
         return type(self)(operand).copy_metadata_from(self)
 
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return (self.operand,)
+
     def __str__(self) -> str:
         op_map = {
             MediumLevelILOperation.MLIL_NEG: '-',
@@ -467,6 +481,9 @@ class MLILIf(MediumLevelILStatement, Terminal):
         self.true_target = true_target
         self.false_target = false_target
 
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return (self.condition,)
+
     def __str__(self) -> str:
         return f'if ({self.condition}) goto {self.true_target.label} else {self.false_target.label}'
 
@@ -477,6 +494,9 @@ class MLILRet(MediumLevelILStatement, Terminal):
     def __init__(self, value: Optional[MediumLevelILInstruction] = None, **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_RET, **kwargs)
         self.value = value
+
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return (self.value,) if self.value is not None else ()
 
     def __str__(self) -> str:
         if self.value is not None:
@@ -507,6 +527,9 @@ class MediumLevelILCall(MediumLevelILStatement):
         self.args = args
         self.output = output
         self.clobbers_registers = clobbers_registers
+
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return tuple(self.args)
 
     def format_with_output(self, call_str: str) -> str:
         '''Prefix the call text with its output assignment'''
@@ -598,6 +621,9 @@ class MLILStoreGlobal(MediumLevelILStatement):
         self.index = index
         self.value = value
 
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return (self.value,)
+
     def __str__(self) -> str:
         return f'GLOBAL[{self.index}] = {self.value}'
 
@@ -622,6 +648,9 @@ class MLILStoreReg(MediumLevelILStatement):
         super().__init__(MediumLevelILOperation.MLIL_STORE_REG, **kwargs)
         self.index = index
         self.value = value
+
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return (self.value,)
 
     def __str__(self) -> str:
         return f'REG[{self.index}] = {self.value}'
@@ -670,7 +699,7 @@ def _parenthesize_deref_operand(operand: MediumLevelILInstruction) -> str:
 class MLILDeref(MLILUnaryOp):
     '''Load *ptr - dereference a pointer expression. Impure: unlike a variable read, the target
     memory is not tracked by SSA, so this can never be assumed constant across a store through
-    any pointer (see the inliner's _is_impure_read and RegGlobalValuePropagator's
+    any pointer (see the inliner's _impure_read_storages and RegGlobalValuePropagator's
     _is_closed_form, which never caches a deref read under a REG/GLOBAL slot at all).
     '''
 
@@ -695,8 +724,24 @@ class MLILStoreDeref(MediumLevelILStatement):
         '''Copy of this store with a new dest/value, keeping metadata'''
         return MLILStoreDeref(dest, value).copy_metadata_from(self)
 
+    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+        return (self.dest, self.value)
+
     def __str__(self) -> str:
         return f'*{_parenthesize_deref_operand(self.dest)} = {self.value}'
+
+
+# === Traversal ===
+
+def walk(node: MediumLevelILInstruction, skip: Tuple[type, ...] = ()) -> Iterator[MediumLevelILInstruction]:
+    '''node and every expression below it, pre-order in evaluation order. A node that is an
+    instance of a type in skip (subclasses included) is yielded but not descended into.'''
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        yield current
+        if not isinstance(current, skip):
+            pending.extend(reversed(current.operands()))
 
 
 # === Basic Block ===

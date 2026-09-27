@@ -11,22 +11,12 @@ from ..mlil import (
     MediumLevelILCall,
     MLILConst,
     MLILDebug,
-    MLILBinaryOp,
-    MLILUnaryOp,
-    MLILRet,
-    MLILCall,
-    MLILSyscall,
-    MLILCallScript,
-    MLILStoreGlobal,
-    MLILStoreReg,
-    MLILStoreDeref,
 )
 from ..mlil_ssa import (
+    iter_ssa_reads,
     MLILVariableSSA,
-    MLILVarSSA,
     MLILSetVarSSA,
     MLILPhi,
-    MLILIf,
 )
 
 
@@ -88,48 +78,5 @@ class DeadCodeEliminationPass(Pass):
 
         for block in func.basic_blocks:
             for inst in block.instructions:
-                self._collect_uses_in_inst(inst)
-
-    def _collect_uses_in_inst(self, inst: MediumLevelILInstruction):
-        '''Collect SSA variable uses in instruction'''
-        if isinstance(inst, MLILVarSSA):
-            if inst.var not in self.ssa_uses:
-                self.ssa_uses[inst.var] = []
-            self.ssa_uses[inst.var].append(inst)
-
-        elif isinstance(inst, MLILSetVarSSA):
-            self._collect_uses_in_expr(inst.value)
-
-        elif isinstance(inst, MLILPhi):
-            for source_var, _ in inst.sources:
-                if source_var not in self.ssa_uses:
-                    self.ssa_uses[source_var] = []
-                self.ssa_uses[source_var].append(inst)
-
-        elif isinstance(inst, MLILBinaryOp):
-            self._collect_uses_in_expr(inst.lhs)
-            self._collect_uses_in_expr(inst.rhs)
-
-        elif isinstance(inst, MLILUnaryOp):
-            self._collect_uses_in_expr(inst.operand)
-
-        elif isinstance(inst, MLILIf):
-            self._collect_uses_in_expr(inst.condition)
-
-        elif isinstance(inst, MLILRet):
-            if inst.value is not None:
-                self._collect_uses_in_expr(inst.value)
-
-        elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
-            for arg in inst.args:
-                self._collect_uses_in_expr(arg)
-
-        elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
-            self._collect_uses_in_expr(inst.value)
-
-        elif isinstance(inst, MLILStoreDeref):
-            self._collect_uses_in_expr(inst.dest)
-            self._collect_uses_in_expr(inst.value)
-
-    def _collect_uses_in_expr(self, expr: MediumLevelILInstruction):
-        self._collect_uses_in_inst(expr)
+                for var, reader in iter_ssa_reads(inst):
+                    self.ssa_uses.setdefault(var, []).append(reader)

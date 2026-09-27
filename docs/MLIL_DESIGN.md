@@ -67,6 +67,15 @@ and the call and `MLILStoreDeref` rebuilds. There is no per-pass reconstruction 
 that produces a different operation (NNF's De Morgan, comparison inversion) builds the new node
 directly.
 
+Reading is shared the same way. Every node's `operands()` returns the expressions it holds, in
+evaluation order; `walk()` (`ir/mlil/mlil.py`) visits a node and everything below it, and
+`iter_ssa_reads()` (`ir/mlil/mlil_ssa.py`) yields each SSA variable it reads with the node that
+reads it (the `MLILVarSSA`, or the phi for a phi source). Every use collector - SSA construction's
+address-taken scan, de-SSA liveness, SCCP, dead code, dead phis, copy propagation, inlining - is
+built on these, so a new node type needs only its own `operands()`. Copy propagation passes
+`skip = (MLILAddressOf,)`: it never rewrites the operand of `&`, so a read there is not one of its
+uses.
+
 ## Variable Model & SSA
 
 Two coexisting representations, not a single evolving one:

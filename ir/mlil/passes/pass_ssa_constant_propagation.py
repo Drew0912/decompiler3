@@ -8,32 +8,13 @@ from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
     MediumLevelILInstruction,
+    MediumLevelILCall,
     MLILConst,
-    MLILAdd,
-    MLILSub,
-    MLILMul,
-    MLILDiv,
-    MLILMod,
-    MLILAnd,
-    MLILOr,
-    MLILXor,
-    MLILShl,
-    MLILShr,
-    MLILLogicalAnd,
-    MLILLogicalOr,
-    MLILEq,
-    MLILNe,
-    MLILLt,
-    MLILLe,
-    MLILGt,
-    MLILGe,
+    MLILBinaryOp,
     MLILNeg,
     MLILLogicalNot,
     MLILBitwiseNot,
     MLILRet,
-    MLILCall,
-    MLILSyscall,
-    MLILCallScript,
     MLILStoreGlobal,
     MLILStoreReg,
     MLILDeref,
@@ -110,7 +91,7 @@ class ConstantPropagationPass(Pass):
                 if new_value is not inst.value:
                     return MLILRet(new_value, address = inst.address).copy_metadata_from(inst)
 
-        elif isinstance(inst, (MLILCall, MLILSyscall, MLILCallScript)):
+        elif isinstance(inst, MediumLevelILCall):
             new_args = [self._propagate_in_expr(arg) for arg in inst.args]
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
                 return inst.rebuild(new_args)
@@ -138,10 +119,7 @@ class ConstantPropagationPass(Pass):
             if expr.var in self.constants:
                 return MLILConst(self.constants[expr.var], is_hex = False)
 
-        elif isinstance(expr, (MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod,
-                               MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr,
-                               MLILLogicalAnd, MLILLogicalOr,
-                               MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
+        elif isinstance(expr, MLILBinaryOp):
             lhs = self._propagate_in_expr(expr.lhs)
             rhs = self._propagate_in_expr(expr.rhs)
 
