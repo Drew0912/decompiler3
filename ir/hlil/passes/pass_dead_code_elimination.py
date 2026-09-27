@@ -4,15 +4,13 @@ from ir.pipeline import Pass
 from ..hlil import (
     HighLevelILFunction,
     HLILBlock,
-    HLILReturn,
-    HLILBreak,
-    HLILContinue,
+    TERMINAL_STATEMENTS,
     sub_blocks,
 )
 
 
 class DeadCodeEliminationPass(Pass):
-    '''Remove unreachable code after return/break/continue'''
+    '''Remove unreachable code after a terminal statement'''
 
     def run(self, func: HighLevelILFunction) -> HighLevelILFunction:
         self._remove_unreachable(func.body)
@@ -27,7 +25,7 @@ class DeadCodeEliminationPass(Pass):
                 self._remove_unreachable(child)
 
         for i, stmt in enumerate(block.statements):
-            if isinstance(stmt, (HLILReturn, HLILBreak, HLILContinue)):
+            if isinstance(stmt, TERMINAL_STATEMENTS):
                 if i + 1 < len(block.statements):
                     block.statements = block.statements[:i + 1]
                 break

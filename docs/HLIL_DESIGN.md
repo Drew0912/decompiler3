@@ -73,6 +73,16 @@ matters because MLIL `AND`/`OR` become bitwise operators, while MLIL `LOGICAL_AN
 become boolean operators. MLIL logical-not and test-zero operations are represented as equality
 with zero; other unary operations map to negation or bitwise-not.
 
+Operator knowledge lives once, in `ir/hlil/hlil.py`, in two groups. The language-neutral group -
+`COMPARISON_OPS`, `BOOLEAN_BINARY_OPS`/`is_boolean_expr`, `NEGATED_COMPARISON_OP`, `DE_MORGAN_OP` and
+`negate_condition` (negation distributed through `&&`/`||`) - is what any output language needs,
+including the planned HLIL DSL. The C-family syntax group - the `BINARY_OP_STR`/`UNARY_OP_STR`
+symbols, `BINARY_OP_PRECEDENCE`, `NON_ASSOCIATIVE_OPS` and `needs_parentheses` - serves only the
+TypeScript generator and the debug formatter; a non-C output needs its own. `TERMINAL_STATEMENTS`
+(return, break, continue) is the one list of statements that never fall through.
+`ControlFlowOptimizationPass` keeps its own negation, which wraps a non-comparison as `== 0` instead
+of `!`.
+
 `HLILSwitchCase` is a helper owned by `HLILSwitch`, not an `HLILInstruction`. Its `values` field is
 either a list of expressions or `None` for the default case. A list permits several case labels to
 share one body, which preserves a recovered chain such as `x == A || x == B` without duplicating
@@ -253,11 +263,14 @@ Several dedicated HLIL unit-test files exist today:
 - `tests/test_hlil_common_return_extraction.py` covers when `CommonReturnExtractionPass` may hoist a
   shared return (switch default and bare-break guards, `if` without `else`, int/float and NaN
   constants) plus the shared `constant_values_equal` and `contains_bare_break` helpers.
+- `tests/test_hlil_operators.py` covers the shared operator tables (every operator has a symbol and
+  a precedence, comparison negation is the complement), `negate_condition`, `needs_parentheses`,
+  and the debug formatter's operator symbols and switch-case `break`s.
 
 These tests directly exercise important tree rewrites, but they do not constitute end-to-end
 coverage of HLIL construction. `StructuralAnalyzer`, shared-region cloning, source metadata
-propagation, variable declaration, and formatting (`hlil_formatter.py`) still have no dedicated
-HLIL test file of their own.
+propagation, variable declaration, and the rest of formatting (`hlil_formatter.py`) still have no
+dedicated HLIL test file of their own.
 
 ## Open Items
 

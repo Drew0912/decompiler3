@@ -40,13 +40,12 @@ from ..hlil import (
     HLILVar,
     HLILWhile,
     UnaryOp,
+    COMPARISON_OPS,
+    negate_condition,
 )
-from ..mlil_to_hlil import _negate_condition
 
 
 LINE_COMMENT = re.compile(r'line\((\d+)\)')
-
-_COMPARISON_OPS = {BinaryOp.EQ, BinaryOp.NE, BinaryOp.LT, BinaryOp.LE, BinaryOp.GT, BinaryOp.GE}
 
 
 class BranchOrderNormalizationPass(Pass):
@@ -183,7 +182,7 @@ class BranchOrderNormalizationPass(Pass):
             return cls._scrutinee(condition.operand)
 
         if isinstance(condition, HLILBinaryOp):
-            if condition.op in _COMPARISON_OPS:
+            if condition.op in COMPARISON_OPS:
                 return condition.lhs
 
             if condition.op in (BinaryOp.AND, BinaryOp.OR):
@@ -193,7 +192,7 @@ class BranchOrderNormalizationPass(Pass):
 
     @classmethod
     def _swap(cls, stmt: HLILIf):
-        stmt.condition = _negate_condition(stmt.condition)
+        stmt.condition = negate_condition(stmt.condition)
         stmt.true_block, stmt.false_block = stmt.false_block, stmt.true_block
 
     def _should_swap(self, stmt: HLILIf) -> bool:

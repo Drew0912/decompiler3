@@ -9,38 +9,6 @@ class HLILFormatter:
     '''Format HLIL functions for debugging'''
 
     @classmethod
-    def _needs_parentheses(cls, child_op: str, parent_op: str, is_left: bool) -> bool:
-        '''Check if child expression needs parentheses based on operator precedence'''
-        # Operator precedence (lower number = lower precedence)
-        precedence = {
-            '||': 1,
-            '&&': 2,
-            '|': 3,
-            '^': 4,
-            '&': 5,
-            '==': 6, '!=': 6,
-            '<': 7, '<=': 7, '>': 7, '>=': 7,
-            '<<': 8, '>>': 8,
-            '+': 9, '-': 9,
-            '*': 10, '/': 10, '%': 10,
-        }
-
-        child_prec = precedence.get(child_op, 100)
-        parent_prec = precedence.get(parent_op, 100)
-
-        # Need parentheses if child has lower precedence
-        if child_prec < parent_prec:
-            return True
-
-        # For same precedence, only right operand needs parentheses for non-associative ops
-        if child_prec == parent_prec and not is_left:
-            # Non-associative: -, /, %
-            if parent_op in {'-', '/', '%'}:
-                return True
-
-        return False
-
-    @classmethod
     def _format_expr(cls, expr: HLILExpression) -> str:
         '''Format an HLIL expression'''
         if isinstance(expr, HLILVar):
@@ -65,22 +33,20 @@ class HLILFormatter:
             rhs_str = cls._format_expr(expr.rhs)
 
             # Add parentheses if needed based on precedence
-            if isinstance(expr.lhs, HLILBinaryOp):
-                if cls._needs_parentheses(expr.lhs.op, expr.op, True):
-                    lhs_str = f'({lhs_str})'
+            if isinstance(expr.lhs, HLILBinaryOp) and needs_parentheses(expr.lhs.op, expr.op, True):
+                lhs_str = f'({lhs_str})'
 
-            if isinstance(expr.rhs, HLILBinaryOp):
-                if cls._needs_parentheses(expr.rhs.op, expr.op, False):
-                    rhs_str = f'({rhs_str})'
+            if isinstance(expr.rhs, HLILBinaryOp) and needs_parentheses(expr.rhs.op, expr.op, False):
+                rhs_str = f'({rhs_str})'
 
-            return f'{lhs_str} {expr.op} {rhs_str}'
+            return f'{lhs_str} {BINARY_OP_STR[expr.op]} {rhs_str}'
 
         elif isinstance(expr, HLILUnaryOp):
             operand = cls._format_expr(expr.operand)
             # Add parentheses around binary operands for clarity
             if isinstance(expr.operand, HLILBinaryOp):
                 operand = f'({operand})'
-            return f'{expr.op}{operand}'
+            return f'{UNARY_OP_STR[expr.op]}{operand}'
 
         elif isinstance(expr, HLILAddressOf):
             operand = cls._format_expr(expr.operand)
@@ -229,11 +195,11 @@ class HLILFormatter:
                         lines.append(f'{indent_str}{case_indent}case {cls._format_expr(value)}:')
                 lines.extend(cls._format_block(case.body, indent + 2))
 
-                # Add break if case doesn't end with return/break/continue
-                if case.body.statements:
-                    last_stmt = case.body.statements[-1]
-                    if not isinstance(last_stmt, (HLILReturn, HLILBreak, HLILContinue)):
-                        lines.append(f'{indent_str}{case_body_indent}break;')
+                # Add break unless the case ends in a terminal statement - an empty case
+                # included, which would otherwise read as sharing the next case's body
+                last_stmt = case.body.statements[-1] if case.body.statements else None
+                if not isinstance(last_stmt, TERMINAL_STATEMENTS):
+                    lines.append(f'{indent_str}{case_body_indent}break;')
 
             lines.append(f'{indent_str}}}')
 

@@ -194,6 +194,37 @@ class HLILConst(HLILExpression):
         return f'HLILConst({self.value})'
 
 
+# ============================================================================
+# Operator Semantics (language-neutral - shared by every output language)
+# ============================================================================
+
+COMPARISON_OPS = frozenset({BinaryOp.EQ, BinaryOp.NE, BinaryOp.LT, BinaryOp.LE, BinaryOp.GT, BinaryOp.GE})
+
+# Binary operators whose result is a boolean
+BOOLEAN_BINARY_OPS = COMPARISON_OPS | {BinaryOp.AND, BinaryOp.OR}
+
+# !(a op b) == a NEGATED_COMPARISON_OP[op] b
+NEGATED_COMPARISON_OP = {
+    BinaryOp.EQ : BinaryOp.NE,
+    BinaryOp.NE : BinaryOp.EQ,
+    BinaryOp.LT : BinaryOp.GE,
+    BinaryOp.LE : BinaryOp.GT,
+    BinaryOp.GT : BinaryOp.LE,
+    BinaryOp.GE : BinaryOp.LT,
+}
+
+# De Morgan's: negating && / || swaps the operator
+DE_MORGAN_OP = {
+    BinaryOp.AND : BinaryOp.OR,
+    BinaryOp.OR  : BinaryOp.AND,
+}
+
+
+# ============================================================================
+# C-Family Syntax (TypeScript codegen and the debug formatter - a non-C output
+# needs its own symbols and precedence)
+# ============================================================================
+
 BINARY_OP_STR = {
     BinaryOp.ADD        : '+',
     BinaryOp.SUB        : '-',
@@ -220,6 +251,42 @@ UNARY_OP_STR = {
     UnaryOp.NOT         : '!',
     UnaryOp.BIT_NOT     : '~',
 }
+
+# Higher binds tighter
+BINARY_OP_PRECEDENCE = {
+    BinaryOp.OR         : 1,
+    BinaryOp.AND        : 2,
+    BinaryOp.BIT_OR     : 3,
+    BinaryOp.BIT_XOR    : 4,
+    BinaryOp.BIT_AND    : 5,
+    BinaryOp.EQ         : 6,
+    BinaryOp.NE         : 6,
+    BinaryOp.LT         : 7,
+    BinaryOp.LE         : 7,
+    BinaryOp.GT         : 7,
+    BinaryOp.GE         : 7,
+    BinaryOp.SHL        : 8,
+    BinaryOp.SHR        : 8,
+    BinaryOp.ADD        : 9,
+    BinaryOp.SUB        : 9,
+    BinaryOp.MUL        : 10,
+    BinaryOp.DIV        : 10,
+    BinaryOp.MOD        : 10,
+}
+
+# a - (b - c) is not (a - b) - c
+NON_ASSOCIATIVE_OPS = frozenset({BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD})
+
+
+def needs_parentheses(child_op: BinaryOp, parent_op: BinaryOp, is_left: bool) -> bool:
+    '''Whether a binary child printed as parent_op's lhs (is_left) or rhs needs parentheses'''
+    child_precedence = BINARY_OP_PRECEDENCE[child_op]
+    parent_precedence = BINARY_OP_PRECEDENCE[parent_op]
+
+    if child_precedence != parent_precedence:
+        return child_precedence < parent_precedence
+
+    return not is_left and parent_op in NON_ASSOCIATIVE_OPS
 
 
 class HLILBinaryOp(HLILExpression):
@@ -497,6 +564,10 @@ class HLILReturn(HLILStatement):
         return f'HLILReturn({self.value})'
 
 
+# Statements that never fall through to the next statement in their block
+TERMINAL_STATEMENTS = (HLILReturn, HLILBreak, HLILContinue)
+
+
 # ============================================================================
 # Other Statements
 # ============================================================================
@@ -542,6 +613,32 @@ class HLILComment(HLILStatement):
 
     def __repr__(self) -> str:
         return f'HLILComment({self.text})'
+
+
+def is_boolean_expr(expr: HLILExpression) -> bool:
+    '''Whether expr's value is a boolean: a comparison, && / ||, or !'''
+    if isinstance(expr, HLILBinaryOp):
+        return expr.op in BOOLEAN_BINARY_OPS
+
+    return isinstance(expr, HLILUnaryOp) and expr.op == UnaryOp.NOT
+
+
+def negate_condition(cond: HLILExpression) -> HLILExpression:
+    '''Negate a condition, distributing through && / || (De Morgan's) rather than wrapping them'''
+    # Double negation: !!a -> a
+    if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT:
+        return cond.operand
+
+    # Comparison negation: !(a == b) -> a != b
+    if isinstance(cond, HLILBinaryOp) and cond.op in NEGATED_COMPARISON_OP:
+        return HLILBinaryOp(NEGATED_COMPARISON_OP[cond.op], cond.lhs, cond.rhs)
+
+    # De Morgan's: !(a && b) -> !a || !b, !(a || b) -> !a && !b
+    if isinstance(cond, HLILBinaryOp) and cond.op in DE_MORGAN_OP:
+        return HLILBinaryOp(DE_MORGAN_OP[cond.op], negate_condition(cond.lhs), negate_condition(cond.rhs))
+
+    # Default: wrap with NOT
+    return HLILUnaryOp(UnaryOp.NOT, cond)
 
 
 def split_else_if_arm(block: HLILBlock) -> Optional[Tuple[List[HLILComment], HLILIf]]:

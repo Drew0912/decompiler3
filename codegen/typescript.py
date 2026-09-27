@@ -4,11 +4,6 @@ from common import *
 from typing import List, Optional
 from ir.hlil import *
 
-# Constant folding at codegen time only covers comparisons (arithmetic/bitwise/logical constant
-# pairs are printed literally via BINARY_OP_STR instead - see the isinstance(HLILBinaryOp) branch
-# below). Matches ir/hlil/passes/pass_branch_order_normalization.py's _COMPARISON_OPS.
-_COMPARISON_OPS = (BinaryOp.EQ, BinaryOp.NE, BinaryOp.LT, BinaryOp.LE, BinaryOp.GT, BinaryOp.GE)
-
 
 class TypeScriptGenerator:
     _current_func: 'HighLevelILFunction' = None
@@ -149,53 +144,6 @@ class TypeScriptGenerator:
         return 'void'
 
     @classmethod
-    def _needs_parentheses(cls, child_op: str, parent_op: str, is_left: bool) -> bool:
-        # Operator precedence (lower number = lower precedence)
-        precedence = {
-            '||': 1,
-            '&&': 2,
-            '|': 3,
-            '^': 4,
-            '&': 5,
-            '==': 6, '!=': 6,
-            '<': 7, '<=': 7, '>': 7, '>=': 7,
-            '<<': 8, '>>': 8,
-            '+': 9, '-': 9,
-            '*': 10, '/': 10, '%': 10,
-        }
-
-        child_prec = precedence.get(child_op, 100)
-        parent_prec = precedence.get(parent_op, 100)
-
-        # Need parentheses if child has lower precedence
-        if child_prec < parent_prec:
-            return True
-
-        # For same precedence, only right operand needs parentheses for non-associative ops
-        if child_prec == parent_prec and not is_left:
-            # Non-associative: -, /, %
-            if parent_op in {'-', '/', '%'}:
-                return True
-
-        return False
-
-    BOOLEAN_BINARY_OPS = {
-        BinaryOp.EQ, BinaryOp.NE,
-        BinaryOp.LT, BinaryOp.LE, BinaryOp.GT, BinaryOp.GE,
-        BinaryOp.AND, BinaryOp.OR,
-    }
-
-    @classmethod
-    def _is_boolean_expr(cls, expr: HLILExpression) -> bool:
-        if isinstance(expr, HLILBinaryOp):
-            return expr.op in cls.BOOLEAN_BINARY_OPS
-
-        elif isinstance(expr, HLILUnaryOp):
-            return expr.op == UnaryOp.NOT
-
-        return False
-
-    @classmethod
     def _is_number_var(cls, expr: HLILExpression) -> bool:
         if not isinstance(expr, HLILVar):
             return False
@@ -226,7 +174,7 @@ class TypeScriptGenerator:
         dest_str = cls._format_expr(dest)
         src_str = cls._format_expr(src)
 
-        if cls._is_boolean_expr(src) and cls._is_number_var(dest):
+        if is_boolean_expr(src) and cls._is_number_var(dest):
             src_str = f'int({src_str})'
 
         return f'{indent_str}{dest_str} = {src_str};'
@@ -267,7 +215,7 @@ class TypeScriptGenerator:
             # Constant folding for comparison operators only - an arithmetic/bitwise/logical op
             # with two constant operands (e.g. a compile-time 5 / 2) falls through to the plain
             # BINARY_OP_STR rendering below instead of hitting the comparison-only match below.
-            if isinstance(expr.lhs, HLILConst) and isinstance(expr.rhs, HLILConst) and expr.op in _COMPARISON_OPS:
+            if isinstance(expr.lhs, HLILConst) and isinstance(expr.rhs, HLILConst) and expr.op in COMPARISON_OPS:
                 lhs_val, rhs_val = expr.lhs.value, expr.rhs.value
 
                 match expr.op:
@@ -296,7 +244,7 @@ class TypeScriptGenerator:
             # (bool_expr) == 0 -> !bool_expr
             # (!x) == 0 -> x (double negation elimination)
             if isinstance(expr.rhs, HLILConst) and expr.rhs.value == 0:
-                if cls._is_boolean_expr(expr.lhs):
+                if is_boolean_expr(expr.lhs):
                     if expr.op == BinaryOp.NE:
                         # (bool) != 0 -> bool
                         return cls._format_expr(expr.lhs)
@@ -315,18 +263,15 @@ class TypeScriptGenerator:
 
             lhs_str = cls._format_expr(expr.lhs)
             rhs_str = cls._format_expr(expr.rhs)
-            op_str = BINARY_OP_STR[expr.op]
 
             # Add parentheses if needed based on precedence
-            if isinstance(expr.lhs, HLILBinaryOp):
-                if cls._needs_parentheses(BINARY_OP_STR[expr.lhs.op], op_str, True):
-                    lhs_str = f'({lhs_str})'
+            if isinstance(expr.lhs, HLILBinaryOp) and needs_parentheses(expr.lhs.op, expr.op, True):
+                lhs_str = f'({lhs_str})'
 
-            if isinstance(expr.rhs, HLILBinaryOp):
-                if cls._needs_parentheses(BINARY_OP_STR[expr.rhs.op], op_str, False):
-                    rhs_str = f'({rhs_str})'
+            if isinstance(expr.rhs, HLILBinaryOp) and needs_parentheses(expr.rhs.op, expr.op, False):
+                rhs_str = f'({rhs_str})'
 
-            return f'{lhs_str} {op_str} {rhs_str}'
+            return f'{lhs_str} {BINARY_OP_STR[expr.op]} {rhs_str}'
 
         elif isinstance(expr, HLILUnaryOp):
             # Simplify !(x == 0) -> x and !(x != 0) -> !x
@@ -434,23 +379,14 @@ class TypeScriptGenerator:
 
         return lines
 
-    NEGATION_MAP = {
-        BinaryOp.EQ: BinaryOp.NE,
-        BinaryOp.NE: BinaryOp.EQ,
-        BinaryOp.LT: BinaryOp.GE,
-        BinaryOp.GE: BinaryOp.LT,
-        BinaryOp.GT: BinaryOp.LE,
-        BinaryOp.LE: BinaryOp.GT,
-    }
-
     @classmethod
     def _negate_condition_str(cls, cond: HLILExpression) -> str:
         '''Format negated condition as string'''
         if isinstance(cond, HLILBinaryOp):
-            if cond.op in cls.NEGATION_MAP:
+            if cond.op in NEGATED_COMPARISON_OP:
                 lhs = cls._format_expr(cond.lhs)
                 rhs = cls._format_expr(cond.rhs)
-                negated_op = BINARY_OP_STR[cls.NEGATION_MAP[cond.op]]
+                negated_op = BINARY_OP_STR[NEGATED_COMPARISON_OP[cond.op]]
                 return f'{lhs} {negated_op} {rhs}'
 
         # Fallback: wrap original in !()
@@ -537,11 +473,11 @@ class TypeScriptGenerator:
                     lines.append(f'{indent_str}{case_indent}case {cls._format_expr(case.values[-1])}: {{')
                 lines.extend(cls._generate_block(case.body, indent + 2))
 
-                # Add break if case doesn't end with return/break/continue - including an
-                # empty case body (no last statement at all), which otherwise falls through
-                # into the next case instead of doing nothing
+                # Add break unless the case ends in a terminal statement - including an empty
+                # case body (no last statement at all), which otherwise falls through into the
+                # next case instead of doing nothing
                 last_stmt = case.body.statements[-1] if case.body.statements else None
-                if not isinstance(last_stmt, (HLILReturn, HLILBreak, HLILContinue)):
+                if not isinstance(last_stmt, TERMINAL_STATEMENTS):
                     lines.append(f'{indent_str}{case_body_indent}break;')
 
                 lines.append(f'{indent_str}{case_indent}}}')

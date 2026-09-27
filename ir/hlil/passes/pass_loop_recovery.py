@@ -28,8 +28,8 @@ from ..hlil import (
     HLILReturn,
     HLILComment,
     BinaryOp,
+    negate_condition,
 )
-from ..mlil_to_hlil import _negate_condition
 
 
 class LoopRecoveryPass(Pass):
@@ -127,7 +127,7 @@ class LoopRecoveryPass(Pass):
             new_body = stmt.true_block or HLILBlock()
 
         elif self._is_only_break(stmt.true_block) and stmt.false_block:
-            condition = _negate_condition(stmt.condition)
+            condition = negate_condition(stmt.condition)
             new_body = stmt.false_block
 
         else:
@@ -164,7 +164,7 @@ class LoopRecoveryPass(Pass):
         # break's own comments stay where the test was, since the break becomes that test
         comments = [s for s in stmt.true_block.statements if isinstance(s, HLILComment)]
         body.statements[index : index + 1] = comments
-        return _negate_condition(stmt.condition)
+        return negate_condition(stmt.condition)
 
     def _leading_exit_return(self, body: HLILBlock) -> Optional[tuple]:
         '''Leading `if (c) { return x; }` becomes the test, with the return after the loop
@@ -188,7 +188,7 @@ class LoopRecoveryPass(Pass):
         trailing = list(stmt.true_block.statements)
         del body.statements[index]
 
-        return (_negate_condition(stmt.condition), trailing)
+        return (negate_condition(stmt.condition), trailing)
 
     def _is_lone_return(self, stmt: HLILStatement) -> bool:
         '''Check for `if (c) { return x; }` with no else branch'''
@@ -283,7 +283,7 @@ class LoopRecoveryPass(Pass):
         # The break becomes the loop test, so its comments stay where the test was
         comments = [s for s in stmt.true_block.statements if isinstance(s, HLILComment)]
         body.statements[-1:] = comments
-        return _negate_condition(stmt.condition)
+        return negate_condition(stmt.condition)
 
     def _is_lone_break(self, stmt: HLILStatement) -> bool:
         '''Check for `if (c) break;` with no else branch'''

@@ -49,44 +49,10 @@ _MLIL_TYPE_MAP = {
     MLILTypeKind.VOID     : HLILTypeKind.VOID,
 }
 
-# Negation map for comparison operators
-_NEGATE_CMP_OP = {
-    BinaryOp.EQ : BinaryOp.NE,
-    BinaryOp.NE : BinaryOp.EQ,
-    BinaryOp.LT : BinaryOp.GE,
-    BinaryOp.LE : BinaryOp.GT,
-    BinaryOp.GT : BinaryOp.LE,
-    BinaryOp.GE : BinaryOp.LT,
-}
-
-# De Morgan's: negating && / || swaps the operator
-_DE_MORGAN_OP = {
-    BinaryOp.AND : BinaryOp.OR,
-    BinaryOp.OR  : BinaryOp.AND,
-}
-
 # Re-emitting a block reached from several conditions is the only faithful option
 # without goto, but it grows output, so cap how far it can run per function.
 CLONE_STATEMENT_BUDGET   = 400  # total statements re-emitted per function
 CLONE_MAX_REGION_BLOCKS  = 48   # blocks in one re-emitted region
-
-
-def _negate_condition(cond: HLILExpression) -> HLILExpression:
-    '''Negate a condition, distributing through && / || (De Morgan's) rather than wrapping them'''
-    # Double negation: !!a -> a
-    if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT:
-        return cond.operand
-
-    # Comparison negation: !(a == b) -> a != b
-    if isinstance(cond, HLILBinaryOp) and cond.op in _NEGATE_CMP_OP:
-        return HLILBinaryOp(_NEGATE_CMP_OP[cond.op], cond.lhs, cond.rhs)
-
-    # De Morgan's: !(a && b) -> !a || !b, !(a || b) -> !a && !b
-    if isinstance(cond, HLILBinaryOp) and cond.op in _DE_MORGAN_OP:
-        return HLILBinaryOp(_DE_MORGAN_OP[cond.op], _negate_condition(cond.lhs), _negate_condition(cond.rhs))
-
-    # Default: wrap with NOT
-    return HLILUnaryOp(UnaryOp.NOT, cond)
 
 
 def _mlil_type_to_hlil(mlil_type: MLILType) -> HLILTypeKind:
@@ -829,7 +795,7 @@ class MLILToHLILConverter:
             elif false_in_body and not true_in_body:
                 loop_body_start = false_target
                 exit_block_idx = true_target
-                condition = _negate_condition(self._convert_expr(last_instr.condition))
+                condition = negate_condition(self._convert_expr(last_instr.condition))
 
             elif true_in_body and false_in_body:
                 # Loop condition is not at the header: while(1) with the if inside the body
@@ -947,7 +913,7 @@ class MLILToHLILConverter:
             not true_is_empty and
             self.structural_analyzer.should_invert_condition(true_target_idx, false_target_idx)):
             # Swap branches and negate condition
-            condition = _negate_condition(condition)
+            condition = negate_condition(condition)
             old_true_target = true_target_idx  # Save for checking merge block conflict
             true_target_idx, false_target_idx = false_target_idx, true_target_idx
             true_is_empty, false_is_empty = false_is_empty, False  # else-if block is never empty
@@ -1025,7 +991,7 @@ class MLILToHLILConverter:
                     target_block.add_statement(stmt)
 
             else:
-                if_stmt = HLILIf(_negate_condition(condition), false_block, None)
+                if_stmt = HLILIf(negate_condition(condition), false_block, None)
                 target_block.add_statement(if_stmt)
                 for stmt in true_block.statements:
                     target_block.add_statement(stmt)
@@ -1037,7 +1003,7 @@ class MLILToHLILConverter:
                 target_block.add_statement(stmt)
 
         elif false_ends_with_return:
-            if_stmt = HLILIf(_negate_condition(condition), false_block, None)
+            if_stmt = HLILIf(negate_condition(condition), false_block, None)
             target_block.add_statement(if_stmt)
             for stmt in true_block.statements:
                 target_block.add_statement(stmt)
@@ -1048,7 +1014,7 @@ class MLILToHLILConverter:
             # Handle empty branches: negate condition if true branch is empty
             if not true_block.statements and false_block.statements:
                 # true branch is empty, negate and use false as body
-                if_stmt = HLILIf(_negate_condition(condition), false_block, None)
+                if_stmt = HLILIf(negate_condition(condition), false_block, None)
 
             elif true_block.statements and not false_block.statements:
                 # false branch is empty, use true as body
@@ -1109,7 +1075,7 @@ class MLILToHLILConverter:
                 continue
 
             first = self._convert_expr(if_instr.condition)
-            conditions = [_negate_condition(first) if shared == false_idx else first]
+            conditions = [negate_condition(first) if shared == false_idx else first]
             current = following
 
             while True:
@@ -1134,7 +1100,7 @@ class MLILToHLILConverter:
                 finally:
                     self.current_block_idx, self.current_instr_idx = saved_block, saved_instr
 
-                conditions.append(_negate_condition(cond) if shared == link_false else cond)
+                conditions.append(negate_condition(cond) if shared == link_false else cond)
                 current = link_false if shared == link_true else link_true
 
             if len(conditions) < 2 or current == shared:

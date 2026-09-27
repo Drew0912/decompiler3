@@ -36,6 +36,8 @@ from ..hlil import (
     UnaryOp,
     unwrap_address_taken_var,
     contains_bare_break,
+    is_boolean_expr,
+    NEGATED_COMPARISON_OP,
 )
 
 
@@ -87,7 +89,7 @@ class ControlFlowOptimizationPass(Pass):
 
             # Try inline: [nop*, assign, if] -> [nop*, if(bool_expr)]
             if isinstance(stmt, HLILAssign) and isinstance(stmt.dest, HLILVar):
-                if self._is_boolean_expr(stmt.src):
+                if is_boolean_expr(stmt.src):
                     if i + 1 < len(block.statements):
                         next_stmt = block.statements[i + 1]
                         inlined = self._try_inline_condition(stmt, next_stmt)
@@ -112,7 +114,7 @@ class ControlFlowOptimizationPass(Pass):
                     assign_stmt = block.statements[j]
                     if_stmt = block.statements[j + 1]
                     if isinstance(assign_stmt, HLILAssign) and isinstance(assign_stmt.dest, HLILVar):
-                        if self._is_boolean_expr(assign_stmt.src):
+                        if is_boolean_expr(assign_stmt.src):
                             inlined = self._try_inline_condition(assign_stmt, if_stmt)
                             if inlined:
                                 # Collect leading nops
@@ -162,22 +164,6 @@ class ControlFlowOptimizationPass(Pass):
             i += 1
 
         block.statements = optimized
-
-    # Operators that produce boolean results
-    BOOLEAN_BINARY_OPS = {
-        BinaryOp.EQ, BinaryOp.NE,
-        BinaryOp.LT, BinaryOp.LE, BinaryOp.GT, BinaryOp.GE,
-        BinaryOp.AND, BinaryOp.OR,
-    }
-
-    def _is_boolean_expr(self, expr: HLILExpression) -> bool:
-        if isinstance(expr, HLILBinaryOp):
-            return expr.op in self.BOOLEAN_BINARY_OPS
-
-        elif isinstance(expr, HLILUnaryOp):
-            return expr.op == UnaryOp.NOT
-
-        return False
 
     def _try_inline_condition(self, assign_stmt: HLILAssign, next_stmt: HLILStatement) -> Optional[HLILIf]:
         '''
@@ -905,19 +891,10 @@ class ControlFlowOptimizationPass(Pass):
             elif isinstance(stmt, HLILWhile):
                 self._merge_nested_switches(stmt.body)
 
-    NEGATION_MAP = {
-        BinaryOp.EQ: BinaryOp.NE,
-        BinaryOp.NE: BinaryOp.EQ,
-        BinaryOp.LT: BinaryOp.GE,
-        BinaryOp.GE: BinaryOp.LT,
-        BinaryOp.GT: BinaryOp.LE,
-        BinaryOp.LE: BinaryOp.GT,
-    }
-
     def _negate_condition(self, condition: HLILExpression) -> HLILExpression:
         if isinstance(condition, HLILBinaryOp):
-            if condition.op in self.NEGATION_MAP:
-                return HLILBinaryOp(self.NEGATION_MAP[condition.op], condition.lhs, condition.rhs)
+            if condition.op in NEGATED_COMPARISON_OP:
+                return HLILBinaryOp(NEGATED_COMPARISON_OP[condition.op], condition.lhs, condition.rhs)
 
             elif condition.op in (BinaryOp.AND, BinaryOp.OR):
                 return HLILBinaryOp(BinaryOp.EQ, condition, HLILConst(0))

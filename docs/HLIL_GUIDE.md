@@ -132,7 +132,9 @@ no visible trace of the underlying memory-form representation.
 Two output modes exist side by side:
 - **`.ts`** — `generate_typescript()`'s real pseudocode output.
 - **`.hlil.ts`** — a raw `HLILFormatter` tree dump, explicitly documented in-repo as
-  "not recompilable code." Useful for debugging the IR, not as generated output.
+  "not recompilable code." Useful for debugging the IR, not as generated output. It prints the
+  same operator symbols, precedence parentheses and case `break`s as `.ts`, from the shared
+  tables in `ir/hlil/hlil.py`.
 
 ## Known Gaps / Active Work
 
@@ -145,4 +147,5 @@ Two output modes exist side by side:
 Several dedicated test files: `tests/test_hlil_branch_order_normalization.py`,
 `tests/test_hlil_control_flow_optimization.py`, `tests/test_hlil_loop_recovery.py`,
 `tests/test_hlil_loop_traversal.py`, `tests/test_hlil_call_fold_short_circuit.py`,
-`tests/test_hlil_long_functions.py`, `tests/test_hlil_common_return_extraction.py`.
+`tests/test_hlil_long_functions.py`, `tests/test_hlil_common_return_extraction.py`,
+`tests/test_hlil_operators.py`.
