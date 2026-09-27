@@ -193,6 +193,9 @@ this is narrower than "DIV/MOD always print unfolded" - a separate pass
 literally 1, including a fully-constant one like `10 / 1 → 10`, since that identity holds
 regardless of numeric semantics. See `docs/FUTURE_WORK.md` for what a verified SCCP fix would need.
 
+A phi of constants folds to a constant only when `constant_values_equal` (`ir/core/il_base.py`)
+says they are equal: `1` and `1.0` differ, and NaN equals NaN.
+
 ## Testing
 
 Several dedicated MLIL test files exist today (`test_mlil_metadata.py`,
@@ -205,5 +208,9 @@ said only one existed.
 
 - Four SSA optimizer passes have no test of their own: negation normal form, expression
   simplification, constant propagation and dead-`Phi` elimination.
+- SCCP's edge reachability is coarse, and kept that way on purpose: a statement it does not model (a
+  call, a store) marks every edge out of its block reachable, and so does an `if` whose condition is
+  not known yet. This only loses folding - production SCCP never removes blocks - and tighter
+  reachability would fold more constants, moving output further from the bytecode.
 - This document and `docs/MLIL_GUIDE.md` should be kept in sync with `ir/mlil/passes/` as passes
   are added, removed, or reordered — that directory is the actual source of truth for what runs.

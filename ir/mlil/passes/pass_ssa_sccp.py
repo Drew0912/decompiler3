@@ -1,6 +1,8 @@
 '''SCCP - Sparse Conditional Constant Propagation'''
 
 from typing import Dict, List, Set
+
+from ir.core import constant_values_equal
 from ..mlil import (
     MediumLevelILFunction,
     MediumLevelILInstruction,
@@ -93,7 +95,7 @@ class LatticeValue:
             return LatticeValue.bottom()
 
         # CONSTANT meet CONSTANT
-        if self.value == other.value:
+        if constant_values_equal(self.value, other.value):
             return self
 
         return LatticeValue.bottom()
@@ -106,7 +108,7 @@ class LatticeValue:
             return False
 
         if self.is_constant():
-            return self.value == other.value
+            return constant_values_equal(self.value, other.value)
 
         return True
 
