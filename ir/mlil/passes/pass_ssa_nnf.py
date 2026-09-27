@@ -81,7 +81,7 @@ class NNFPass(Pass):
                 lhs = self._push_negation(expr.lhs, False)
                 rhs = self._push_negation(expr.rhs, False)
                 if lhs is not expr.lhs or rhs is not expr.rhs:
-                    return MLILLogicalAnd(lhs, rhs)
+                    return expr.rebuild(lhs, rhs)
                 return expr
 
         elif isinstance(expr, MLILLogicalOr):
@@ -95,7 +95,7 @@ class NNFPass(Pass):
                 lhs = self._push_negation(expr.lhs, False)
                 rhs = self._push_negation(expr.rhs, False)
                 if lhs is not expr.lhs or rhs is not expr.rhs:
-                    return MLILLogicalOr(lhs, rhs)
+                    return expr.rebuild(lhs, rhs)
                 return expr
 
         elif isinstance(expr, MLILTestZero):

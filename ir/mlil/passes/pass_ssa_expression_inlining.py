@@ -404,95 +404,11 @@ class ExpressionInliningPass(Pass):
             lhs = self._inline_in_expr(expr.lhs, inlinable)
             rhs = self._inline_in_expr(expr.rhs, inlinable)
             if lhs is not expr.lhs or rhs is not expr.rhs:
-                return self._reconstruct_binary_op(expr, lhs, rhs)
+                return expr.rebuild(lhs, rhs)
 
-        elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero)):
+        elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero, MLILDeref)):
             operand = self._inline_in_expr(expr.operand, inlinable)
             if operand is not expr.operand:
-                return self._reconstruct_unary_op(expr, operand)
-
-        elif isinstance(expr, MLILDeref):
-            operand = self._inline_in_expr(expr.operand, inlinable)
-            if operand is not expr.operand:
-                return MLILDeref(operand)
+                return expr.rebuild(operand)
 
         return expr
-
-    def _reconstruct_binary_op(self, expr: MediumLevelILInstruction,
-                               lhs: MediumLevelILInstruction,
-                               rhs: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        '''Reconstruct binary operation with new operands'''
-        if isinstance(expr, MLILAdd):
-            return MLILAdd(lhs, rhs)
-
-        elif isinstance(expr, MLILSub):
-            return MLILSub(lhs, rhs)
-
-        elif isinstance(expr, MLILMul):
-            return MLILMul(lhs, rhs)
-
-        elif isinstance(expr, MLILDiv):
-            return MLILDiv(lhs, rhs)
-
-        elif isinstance(expr, MLILMod):
-            return MLILMod(lhs, rhs)
-
-        elif isinstance(expr, MLILAnd):
-            return MLILAnd(lhs, rhs)
-
-        elif isinstance(expr, MLILOr):
-            return MLILOr(lhs, rhs)
-
-        elif isinstance(expr, MLILXor):
-            return MLILXor(lhs, rhs)
-
-        elif isinstance(expr, MLILShl):
-            return MLILShl(lhs, rhs)
-
-        elif isinstance(expr, MLILShr):
-            return MLILShr(lhs, rhs)
-
-        elif isinstance(expr, MLILLogicalAnd):
-            return MLILLogicalAnd(lhs, rhs)
-
-        elif isinstance(expr, MLILLogicalOr):
-            return MLILLogicalOr(lhs, rhs)
-
-        elif isinstance(expr, MLILEq):
-            return MLILEq(lhs, rhs)
-
-        elif isinstance(expr, MLILNe):
-            return MLILNe(lhs, rhs)
-
-        elif isinstance(expr, MLILLt):
-            return MLILLt(lhs, rhs)
-
-        elif isinstance(expr, MLILLe):
-            return MLILLe(lhs, rhs)
-
-        elif isinstance(expr, MLILGt):
-            return MLILGt(lhs, rhs)
-
-        elif isinstance(expr, MLILGe):
-            return MLILGe(lhs, rhs)
-
-        else:
-            raise NotImplementedError(f'Unhandled binary operation: {type(expr).__name__}')
-
-    def _reconstruct_unary_op(self, expr: MediumLevelILInstruction,
-                              operand: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        '''Reconstruct unary operation with new operand'''
-        if isinstance(expr, MLILNeg):
-            return MLILNeg(operand)
-
-        elif isinstance(expr, MLILLogicalNot):
-            return MLILLogicalNot(operand)
-
-        elif isinstance(expr, MLILBitwiseNot):
-            return MLILBitwiseNot(operand)
-
-        elif isinstance(expr, MLILTestZero):
-            return MLILTestZero(operand)
-
-        else:
-            raise NotImplementedError(f'Unhandled unary operation: {type(expr).__name__}')

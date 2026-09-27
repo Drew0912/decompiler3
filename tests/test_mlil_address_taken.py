@@ -419,7 +419,7 @@ class TestAddressTakenPrinting(unittest.TestCase):
 
 
 class TestRebuildOpsPreserveMetadata(unittest.TestCase):
-    '''_rebuild_binary_op/_rebuild_unary_op must copy source metadata (address) onto the
+    '''MLILBinaryOp.rebuild()/MLILUnaryOp.rebuild() must copy source metadata (address) onto the
     node they construct - previously silently dropped, and this step's lowering exercises
     that path far more often (every expression containing an address-taken read).'''
 

@@ -30,6 +30,7 @@ from ..mlil import (
     MLILLogicalNot,
     MLILBitwiseNot,
     MLILTestZero,
+    MLILAddressOf,
     MLILIf,
     MLILGoto,
     MLILRet,
@@ -38,7 +39,6 @@ from ..mlil import (
     MLILCallScript,
     MLILStoreGlobal,
     MLILStoreReg,
-    MLILDeref,
     MLILStoreDeref,
 )
 from ..mlil_ssa import (
@@ -596,92 +596,17 @@ class SCCP:
             new_rhs = self._replace_constants_in_expr(expr.rhs, child_is_bitwise)
 
             if new_lhs is not expr.lhs or new_rhs is not expr.rhs:
-                return self._rebuild_binary_op(expr, new_lhs, new_rhs)
+                return expr.rebuild(new_lhs, new_rhs)
+
+        elif isinstance(expr, MLILAddressOf):
+            # &x names x's storage, not its value - never substitute a constant under it
+            return expr
 
         elif isinstance(expr, MLILUnaryOp):
             child_is_bitwise = isinstance(expr, MLILBitwiseNot)
             new_operand = self._replace_constants_in_expr(expr.operand, child_is_bitwise)
 
             if new_operand is not expr.operand:
-                return self._rebuild_unary_op(expr, new_operand)
+                return expr.rebuild(new_operand)
 
         return expr
-
-    def _rebuild_binary_op(self, expr, lhs, rhs) -> MediumLevelILInstruction:
-        '''Rebuild binary operation with new operands'''
-        if isinstance(expr, MLILAdd):
-            return MLILAdd(lhs, rhs)
-
-        elif isinstance(expr, MLILSub):
-            return MLILSub(lhs, rhs)
-
-        elif isinstance(expr, MLILMul):
-            return MLILMul(lhs, rhs)
-
-        elif isinstance(expr, MLILDiv):
-            return MLILDiv(lhs, rhs)
-
-        elif isinstance(expr, MLILMod):
-            return MLILMod(lhs, rhs)
-
-        elif isinstance(expr, MLILAnd):
-            return MLILAnd(lhs, rhs)
-
-        elif isinstance(expr, MLILOr):
-            return MLILOr(lhs, rhs)
-
-        elif isinstance(expr, MLILXor):
-            return MLILXor(lhs, rhs)
-
-        elif isinstance(expr, MLILShl):
-            return MLILShl(lhs, rhs)
-
-        elif isinstance(expr, MLILShr):
-            return MLILShr(lhs, rhs)
-
-        elif isinstance(expr, MLILLogicalAnd):
-            return MLILLogicalAnd(lhs, rhs)
-
-        elif isinstance(expr, MLILLogicalOr):
-            return MLILLogicalOr(lhs, rhs)
-
-        elif isinstance(expr, MLILEq):
-            return MLILEq(lhs, rhs)
-
-        elif isinstance(expr, MLILNe):
-            return MLILNe(lhs, rhs)
-
-        elif isinstance(expr, MLILLt):
-            return MLILLt(lhs, rhs)
-
-        elif isinstance(expr, MLILLe):
-            return MLILLe(lhs, rhs)
-
-        elif isinstance(expr, MLILGt):
-            return MLILGt(lhs, rhs)
-
-        elif isinstance(expr, MLILGe):
-            return MLILGe(lhs, rhs)
-
-        else:
-            return expr
-
-    def _rebuild_unary_op(self, expr, operand) -> MediumLevelILInstruction:
-        '''Rebuild unary operation with new operand'''
-        if isinstance(expr, MLILNeg):
-            return MLILNeg(operand)
-
-        elif isinstance(expr, MLILLogicalNot):
-            return MLILLogicalNot(operand)
-
-        elif isinstance(expr, MLILBitwiseNot):
-            return MLILBitwiseNot(operand)
-
-        elif isinstance(expr, MLILTestZero):
-            return MLILTestZero(operand)
-
-        elif isinstance(expr, MLILDeref):
-            return MLILDeref(operand)
-
-        else:
-            return expr

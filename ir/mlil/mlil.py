@@ -265,6 +265,11 @@ class MLILBinaryOp(MediumLevelILExpr, BinaryOperation):
         self.lhs = lhs
         self.rhs = rhs
 
+    def rebuild(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> 'MLILBinaryOp':
+        '''Copy of this operation with new operands, keeping metadata. Every subclass takes
+        (lhs, rhs, **kwargs) and only fixes its operation.'''
+        return type(self)(lhs, rhs).copy_metadata_from(self)
+
     def __str__(self) -> str:
         op_map = {
             MediumLevelILOperation.MLIL_ADD: '+',
@@ -391,6 +396,11 @@ class MLILUnaryOp(MediumLevelILExpr, UnaryOperation):
         super().__init__(operation, **kwargs)
         self.operand = operand
 
+    def rebuild(self, operand: MediumLevelILInstruction) -> 'MLILUnaryOp':
+        '''Copy of this operation with a new operand, keeping metadata. Every subclass takes
+        (operand, **kwargs) and only fixes its operation.'''
+        return type(self)(operand).copy_metadata_from(self)
+
     def __str__(self) -> str:
         op_map = {
             MediumLevelILOperation.MLIL_NEG: '-',
@@ -507,7 +517,7 @@ class MediumLevelILCall(MediumLevelILStatement):
 
     @abstractmethod
     def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MediumLevelILCall':
-        '''Copy of this call with new arguments, keeping target, output and metadata'''
+        '''Copy of this call with new arguments, keeping target, output, clobbers_registers and metadata'''
         raise NotImplementedError
 
 
@@ -520,8 +530,8 @@ class MLILCall(MediumLevelILCall):
         self.target = target
 
     def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MLILCall':
-        return MLILCall(self.target, args, self.output, clobbers_registers = self.clobbers_registers,
-                        address = self.address).copy_metadata_from(self)
+        return MLILCall(self.target, args, self.output,
+                        clobbers_registers = self.clobbers_registers).copy_metadata_from(self)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)
@@ -537,7 +547,8 @@ class MLILSyscall(MediumLevelILCall):
         self.cmd = cmd
 
     def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MLILSyscall':
-        return MLILSyscall(self.subsystem, self.cmd, args, self.output, address = self.address).copy_metadata_from(self)
+        return MLILSyscall(self.subsystem, self.cmd, args, self.output,
+                           clobbers_registers = self.clobbers_registers).copy_metadata_from(self)
 
     def __str__(self) -> str:
             args = [
@@ -558,7 +569,8 @@ class MLILCallScript(MediumLevelILCall):
         self.func = func
 
     def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MLILCallScript':
-        return MLILCallScript(self.module, self.func, args, self.output, address = self.address).copy_metadata_from(self)
+        return MLILCallScript(self.module, self.func, args, self.output,
+                              clobbers_registers = self.clobbers_registers).copy_metadata_from(self)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)
@@ -681,7 +693,7 @@ class MLILStoreDeref(MediumLevelILStatement):
 
     def rebuild(self, dest: MediumLevelILInstruction, value: MediumLevelILInstruction) -> 'MLILStoreDeref':
         '''Copy of this store with a new dest/value, keeping metadata'''
-        return MLILStoreDeref(dest, value, address = self.address).copy_metadata_from(self)
+        return MLILStoreDeref(dest, value).copy_metadata_from(self)
 
     def __str__(self) -> str:
         return f'*{_parenthesize_deref_operand(self.dest)} = {self.value}'

@@ -60,6 +60,13 @@ these two categories, covering:
 | Calls | `MLIL_CALL`, `MLIL_CALL_SCRIPT`, `MLIL_SYSCALL` |
 | Falcom specific | Derived metadata on top of generic ops — stack-setup helpers like `PUSH_CALLER_FRAME`/`PUSH_FUNC_ID`/`PUSH_RET_ADDR` are fully lowered to regular variables/arguments, with no dedicated MLIL opcode. |
 
+When a pass replaces an expression's operands and keeps its operation, it calls the node's own
+`rebuild()`, which keeps the source metadata (address, indices): `MLILBinaryOp.rebuild()` and
+`MLILUnaryOp.rebuild()` (one method each, since every subclass constructor takes only its operands),
+and the call and `MLILStoreDeref` rebuilds. There is no per-pass reconstruction table. A rewrite
+that produces a different operation (NNF's De Morgan, comparison inversion) builds the new node
+directly.
+
 ## Variable Model & SSA
 
 Two coexisting representations, not a single evolving one:

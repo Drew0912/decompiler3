@@ -444,7 +444,7 @@ class SSAConstructor:
             if new_lhs is expr.lhs and new_rhs is expr.rhs:
                 return expr
 
-            return self._rebuild_binary_op(expr, new_lhs, new_rhs)
+            return expr.rebuild(new_lhs, new_rhs)
 
         elif isinstance(expr, MLILUnaryOp):
             new_operand = self._lower_expr(expr.operand)
@@ -452,7 +452,7 @@ class SSAConstructor:
             if new_operand is expr.operand:
                 return expr
 
-            return self._rebuild_unary_op(expr, new_operand)
+            return expr.rebuild(new_operand)
 
         else:
             return expr
@@ -552,7 +552,7 @@ class SSAConstructor:
             if new_lhs is expr.lhs and new_rhs is expr.rhs:
                 return expr
 
-            return self._rebuild_binary_op(expr, new_lhs, new_rhs)
+            return expr.rebuild(new_lhs, new_rhs)
 
         elif isinstance(expr, MLILUnaryOp):
             new_operand = self._raise_expr(expr.operand)
@@ -560,7 +560,7 @@ class SSAConstructor:
             if new_operand is expr.operand:
                 return expr
 
-            return self._rebuild_unary_op(expr, new_operand)
+            return expr.rebuild(new_operand)
 
         else:
             return expr
@@ -831,8 +831,7 @@ class SSAConstructor:
             if new_lhs is expr.lhs and new_rhs is expr.rhs:
                 return expr
 
-            # Explicit reconstruction (no type() hack)
-            return self._rebuild_binary_op(expr, new_lhs, new_rhs)
+            return expr.rebuild(new_lhs, new_rhs)
 
         elif isinstance(expr, MLILUnaryOp):
             new_operand = self._rename_expr(expr.operand)
@@ -840,7 +839,7 @@ class SSAConstructor:
             if new_operand is expr.operand:
                 return expr
 
-            return self._rebuild_unary_op(expr, new_operand)
+            return expr.rebuild(new_operand)
 
         else:
             # Other expressions (LoadGlobal, LoadReg, etc.)
@@ -885,92 +884,6 @@ class SSAConstructor:
                 return stmt.rebuild(new_dest, new_value)
 
         return stmt
-
-    def _rebuild_binary_op(self, expr: MLILBinaryOp, lhs, rhs) -> MediumLevelILInstruction:
-        '''Rebuild binary operation (explicit, not type())'''
-        if isinstance(expr, MLILAdd):
-            rebuilt = MLILAdd(lhs, rhs)
-
-        elif isinstance(expr, MLILSub):
-            rebuilt = MLILSub(lhs, rhs)
-
-        elif isinstance(expr, MLILMul):
-            rebuilt = MLILMul(lhs, rhs)
-
-        elif isinstance(expr, MLILDiv):
-            rebuilt = MLILDiv(lhs, rhs)
-
-        elif isinstance(expr, MLILMod):
-            rebuilt = MLILMod(lhs, rhs)
-
-        elif isinstance(expr, MLILAnd):
-            rebuilt = MLILAnd(lhs, rhs)
-
-        elif isinstance(expr, MLILOr):
-            rebuilt = MLILOr(lhs, rhs)
-
-        elif isinstance(expr, MLILXor):
-            rebuilt = MLILXor(lhs, rhs)
-
-        elif isinstance(expr, MLILShl):
-            rebuilt = MLILShl(lhs, rhs)
-
-        elif isinstance(expr, MLILShr):
-            rebuilt = MLILShr(lhs, rhs)
-
-        elif isinstance(expr, MLILLogicalAnd):
-            rebuilt = MLILLogicalAnd(lhs, rhs)
-
-        elif isinstance(expr, MLILLogicalOr):
-            rebuilt = MLILLogicalOr(lhs, rhs)
-
-        elif isinstance(expr, MLILEq):
-            rebuilt = MLILEq(lhs, rhs)
-
-        elif isinstance(expr, MLILNe):
-            rebuilt = MLILNe(lhs, rhs)
-
-        elif isinstance(expr, MLILLt):
-            rebuilt = MLILLt(lhs, rhs)
-
-        elif isinstance(expr, MLILLe):
-            rebuilt = MLILLe(lhs, rhs)
-
-        elif isinstance(expr, MLILGt):
-            rebuilt = MLILGt(lhs, rhs)
-
-        elif isinstance(expr, MLILGe):
-            rebuilt = MLILGe(lhs, rhs)
-
-        else:
-            raise NotImplementedError(f'Unknown binary op: {type(expr).__name__}')
-
-        return rebuilt.copy_metadata_from(expr)
-
-    def _rebuild_unary_op(self, expr: MLILUnaryOp, operand) -> MediumLevelILInstruction:
-        '''Rebuild unary operation (explicit, not type())'''
-        if isinstance(expr, MLILNeg):
-            rebuilt = MLILNeg(operand)
-
-        elif isinstance(expr, MLILLogicalNot):
-            rebuilt = MLILLogicalNot(operand)
-
-        elif isinstance(expr, MLILBitwiseNot):
-            rebuilt = MLILBitwiseNot(operand)
-
-        elif isinstance(expr, MLILTestZero):
-            rebuilt = MLILTestZero(operand)
-
-        elif isinstance(expr, MLILAddressOf):
-            rebuilt = MLILAddressOf(operand)
-
-        elif isinstance(expr, MLILDeref):
-            rebuilt = MLILDeref(operand)
-
-        else:
-            raise NotImplementedError(f'Unknown unary op: {type(expr).__name__}')
-
-        return rebuilt.copy_metadata_from(expr)
 
     def _new_version(self, var: MLILVariable) -> int:
         '''Allocate new SSA version for variable'''
@@ -1389,15 +1302,13 @@ class SSADeconstructor:
             new_rhs = self._apply_mapping_to_expr(expr.rhs)
             if new_lhs is expr.lhs and new_rhs is expr.rhs:
                 return expr
-            constructor = SSAConstructor(self.function)
-            return constructor._rebuild_binary_op(expr, new_lhs, new_rhs)
+            return expr.rebuild(new_lhs, new_rhs)
 
         elif isinstance(expr, MLILUnaryOp):
             new_operand = self._apply_mapping_to_expr(expr.operand)
             if new_operand is expr.operand:
                 return expr
-            constructor = SSAConstructor(self.function)
-            return constructor._rebuild_unary_op(expr, new_operand)
+            return expr.rebuild(new_operand)
 
         else:
             return expr
