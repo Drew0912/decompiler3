@@ -1,6 +1,5 @@
 """ED9 VM bytecode → Falcom LLIL lifter"""
 
-from dataclasses import dataclass
 from typing import *
 
 from ir.llil.llil import *
@@ -12,14 +11,6 @@ from ...parser import *
 
 if TYPE_CHECKING:
     from ...parser.scp import *
-
-
-@dataclass
-class LiftResult:
-    """Helper container with both Function metadata and its lifted LLIL."""
-
-    function: Function
-    llil: LowLevelILFunction
 
 
 class ED9VMLifter:
@@ -60,12 +51,6 @@ class ED9VMLifter:
                 self._translate_instruction(builder, inst, block, block_map, llil_blocks)
 
         return builder.finalize()
-
-    def lift_functions(self, functions: Iterable[Function]) -> list[LiftResult]:
-        results: list[LiftResult] = []
-        for func in functions:
-            results.append(LiftResult(function = func, llil = self.lift_function(func)))
-        return results
 
     # --------------------------------------------------------------- helpers --
     def _convert_params(self, params: list[FunctionParam]) -> list[IRParameter]:

@@ -507,7 +507,6 @@ class MLILToHLILConverter:
 
         # Loop detection
         self.loop_headers: Set[int] = set()  # Blocks that are loop headers
-        self.loop_ends: Dict[int, int] = {}  # back_edge_source -> loop_header
 
         # Active loops, innermost last (for break/continue generation)
         self.loop_stack: List[LoopStackEntry] = []
@@ -618,16 +617,11 @@ class MLILToHLILConverter:
             self.structural_analyzer = StructuralAnalyzer(num_blocks, self.block_successors)
 
     def _detect_loops(self):
-        '''Detect loops using structural analyzer'''
+        '''Record the loop headers the structural analyzer found'''
         if not self.mlil_func.basic_blocks or self.structural_analyzer is None:
             return
 
-        # Use structural analyzer's loop detection
-        for header, loop_info in self.structural_analyzer.loops.items():
-            self.loop_headers.add(header)
-            # Record back edges
-            for tail, _ in loop_info.back_edges:
-                self.loop_ends[tail] = header
+        self.loop_headers.update(self.structural_analyzer.loops)
 
     def _find_merge_block(self, cond_block_idx: int, true_target_idx: int, false_target_idx: int) -> Optional[int]:
         '''Find merge point for if-else using structural analyzer.'''
@@ -827,7 +821,7 @@ class MLILToHLILConverter:
         if true_target_idx == false_target_idx and true_target_idx is not None:
             always_true = HLILBinaryOp(BinaryOp.OR, condition, HLILConst(1))
             body = HLILBlock()
-            self._reconstruct_control_flow(true_target_idx, body, stop_at=stop_at, jump_source = if_instr)
+            self._reconstruct_control_flow(true_target_idx, body, stop_at = stop_at, jump_source = if_instr)
             if_stmt = HLILIf(always_true, body, None)
             target_block.add_statement(HLILComment(f'if (C || true) {{ A }}'))
             target_block.add_statement(if_stmt)
@@ -878,42 +872,21 @@ class MLILToHLILConverter:
         if branch_stop is not None:
             self.pending_merges.append(branch_stop)
 
-        # Process true branch (skip if empty - it's just the merge point)
+        # Process each branch (skip if empty - it's just the merge point); an else-if
+        # chain is just an if inside the false branch
         # MLIL: if (C) goto true_target else false_target
         # C true -> true_target, C false -> false_target
         true_block = HLILBlock()
         if true_target_idx is not None and not true_is_empty:
-            self.visited_blocks = saved_visited.copy()
-            # Add outer stop_at to visited, but not if it's our true_target
-            if stop_at is not None and stop_at != merge_block_idx and stop_at != true_target_idx:
-                self.visited_blocks.add(stop_at)
-            self._reconstruct_control_flow(true_target_idx, true_block, stop_at=branch_stop, jump_source = if_instr)
+            true_block = self._emit_branch(true_target_idx, saved_visited, stop_at, merge_block_idx, branch_stop, if_instr)
 
+        # Taken from visited_blocks, not rebuilt from saved_visited: a branch can remove
+        # blocks as well as add them
         all_visited = self.visited_blocks.copy()
 
-        # Check if false_target is an else-if block (skip if empty)
-        # Structural check: false_target is a condition block if it has 2 successors
-        # Exclude loop headers - they have 2 successors but are not else-if blocks
-        false_is_condition = (
-            self.structural_analyzer is not None and
-            len(self.structural_analyzer.original_successors.get(false_target_idx, [])) == 2 and
-            not self.structural_analyzer.is_loop_header(false_target_idx)
-        )
         false_block = HLILBlock()
-        if false_target_idx is not None and not false_is_empty and false_is_condition:
-            # Else-if chain: recursively build nested if structure
-            self.visited_blocks = saved_visited.copy()
-            if stop_at is not None and stop_at != merge_block_idx and stop_at != false_target_idx:
-                self.visited_blocks.add(stop_at)
-            self._reconstruct_control_flow(false_target_idx, false_block, stop_at=branch_stop, jump_source = if_instr)
-            all_visited |= self.visited_blocks
-
-        elif false_target_idx is not None and not false_is_empty:
-            # Normal else branch
-            self.visited_blocks = saved_visited.copy()
-            if stop_at is not None and stop_at != merge_block_idx and stop_at != false_target_idx:
-                self.visited_blocks.add(stop_at)
-            self._reconstruct_control_flow(false_target_idx, false_block, stop_at=branch_stop, jump_source = if_instr)
+        if false_target_idx is not None and not false_is_empty:
+            false_block = self._emit_branch(false_target_idx, saved_visited, stop_at, merge_block_idx, branch_stop, if_instr)
             all_visited |= self.visited_blocks
 
         if branch_stop is not None:
@@ -981,6 +954,19 @@ class MLILToHLILConverter:
             return FollowOn(merge_block_idx, jump_source = if_instr)
 
         return None
+
+    def _emit_branch(self, target_idx: int, saved_visited: Set[int], stop_at: Optional[int],
+                     merge_block_idx: Optional[int], branch_stop: Optional[int], if_instr: MLILIf) -> HLILBlock:
+        '''Build one branch of an if, starting from the blocks visited before the if'''
+        block = HLILBlock()
+        self.visited_blocks = saved_visited.copy()
+
+        # The outer stop point is off limits, unless it is the merge or this branch's own start
+        if stop_at is not None and stop_at != merge_block_idx and stop_at != target_idx:
+            self.visited_blocks.add(stop_at)
+
+        self._reconstruct_control_flow(target_idx, block, stop_at = branch_stop, jump_source = if_instr)
+        return block
 
     def _bare_test_block(self, block_idx: int) -> Optional[Tuple[MLILIf, int, int]]:
         '''The test and its targets, if block_idx holds nothing but a 2-way test.
@@ -1180,7 +1166,7 @@ class MLILToHLILConverter:
                         stmt = HLILContinue(label = label)
 
                     if jump_source is not None:
-                        self._set_hlil_source_info(stmt, jump_source, jump_source.inst_index)
+                        self._set_hlil_source_info(stmt, jump_source)
 
                     else:
                         first_instrs = self.mlil_func.basic_blocks[block_idx].instructions
@@ -1276,12 +1262,11 @@ class MLILToHLILConverter:
                 block_idx = block_idx + 1
                 continue
 
-    def _set_hlil_source_info(self, hlil_instr: HLILInstruction,
-                               mlil_instr: MediumLevelILInstruction,
-                               mlil_index: int) -> None:
+    @classmethod
+    def _set_hlil_source_info(cls, hlil_instr: HLILInstruction, mlil_instr: MediumLevelILInstruction) -> None:
         '''Propagate source address info from MLIL to HLIL'''
         hlil_instr.address = mlil_instr.address
-        hlil_instr.mlil_index = mlil_index
+        hlil_instr.mlil_index = mlil_instr.inst_index
 
     def _convert_instruction(self, instr: MediumLevelILInstruction,
                               block_idx: int, instr_idx: int) -> List[HLILStatement]:
@@ -1289,12 +1274,9 @@ class MLILToHLILConverter:
         key = (block_idx, instr_idx)
         result = []
 
-        # Get global instruction index for MLIL
-        mlil_index = instr.inst_index
-
         if isinstance(instr, MLILDebug):
             stmt = HLILComment(f'{instr.debug_type}({instr.value})')
-            self._set_hlil_source_info(stmt, instr, mlil_index)
+            self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
 
         elif isinstance(instr, MLILNop):
@@ -1307,7 +1289,7 @@ class MLILToHLILConverter:
             else:
                 stmt = HLILReturn()
 
-            self._set_hlil_source_info(stmt, instr, mlil_index)
+            self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
 
         elif isinstance(instr, MLILSetVar):
@@ -1315,7 +1297,7 @@ class MLILToHLILConverter:
                 HLILVar(HLILVariable(instr.var.name, None)),
                 self._convert_expr(instr.value)
             )
-            self._set_hlil_source_info(stmt, instr, mlil_index)
+            self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
 
         elif isinstance(instr, (MLILStoreReg, MLILStoreGlobal)):
@@ -1324,12 +1306,12 @@ class MLILToHLILConverter:
             kind = VariableKind.REG if isinstance(instr, MLILStoreReg) else VariableKind.GLOBAL
             var = HLILVariable(kind = kind, index = instr.index)
             stmt = HLILAssign(HLILVar(var), self._convert_expr(instr.value))
-            self._set_hlil_source_info(stmt, instr, mlil_index)
+            self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
 
         elif isinstance(instr, MLILStoreDeref):
             stmt = HLILAssign(HLILDeref(self._convert_expr(instr.dest)), self._convert_expr(instr.value))
-            self._set_hlil_source_info(stmt, instr, mlil_index)
+            self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
 
         elif isinstance(instr, MediumLevelILCall):
@@ -1342,13 +1324,13 @@ class MLILToHLILConverter:
             elif instr.output is None:
                 # Result unused: keep the call for its side effects
                 stmt = HLILExprStmt(call_expr)
-                self._set_hlil_source_info(stmt, instr, mlil_index)
+                self._set_hlil_source_info(stmt, instr)
                 result.append(stmt)
 
             else:
                 var = HLILVariable(instr.output.name, None)
                 stmt = HLILAssign(HLILVar(var), call_expr)
-                self._set_hlil_source_info(stmt, instr, mlil_index)
+                self._set_hlil_source_info(stmt, instr)
                 result.append(stmt)
 
         elif isinstance(instr, (MLILIf, MLILGoto)):
@@ -1356,7 +1338,7 @@ class MLILToHLILConverter:
 
         elif isinstance(instr, MediumLevelILExpr):
             stmt = HLILExprStmt(self._convert_expr(instr))
-            self._set_hlil_source_info(stmt, instr, mlil_index)
+            self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
 
         return result

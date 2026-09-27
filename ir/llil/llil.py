@@ -59,8 +59,7 @@ class LowLevelILOperation(IntEnum2):
 
     # Constants and special
     LLIL_CONST              = 50    # constant value
-    LLIL_LABEL              = 51    # label
-    LLIL_NOP                = 52    # no operation
+    LLIL_NOP               = 52    # no operation
 
     # VM specific
     LLIL_SYSCALL            = 60    # system call
@@ -267,10 +266,6 @@ class LowLevelILFrameAddr(LowLevelILExpr):
             return f'&STACK[fp + {word_offset}]'
         else:
             return f'&STACK[fp - {-word_offset}]'
-
-
-# Alias for compatibility
-LowLevelILVspAdd = LowLevelILSpAdd
 
 
 # === Register Operations ===
@@ -546,17 +541,6 @@ class LowLevelILConst(LowLevelILExpr, Constant):
             return str(self.value)
 
 
-class LowLevelILLabelInstr(LowLevelILStatement):
-    '''Label instruction (for marking positions in code) (statement)'''
-
-    def __init__(self, name: str):
-        super().__init__(LowLevelILOperation.LLIL_LABEL)
-        self.name = name
-
-    def __str__(self) -> str:
-        return f'{self.name}:'
-
-
 class LowLevelILDebug(LowLevelILStatement):
     '''Debug information (statement)'''
 
@@ -652,13 +636,6 @@ class LowLevelILBasicBlock:
     def block_name(self) -> str:
         '''Get canonical block name for jump targets and references'''
         return f'block_{self.index}'
-
-    @property
-    def label_name(self) -> Optional[str]:
-        '''Get label name if this block starts with a label instruction'''
-        if self.instructions and isinstance(self.instructions[0], LowLevelILLabelInstr):
-            return self.instructions[0].name
-        return None
 
     def __str__(self) -> str:
         result = f'{self.block_name} {self.label} @ {hex(self.start)}: [sp={self.sp_in}]\n'

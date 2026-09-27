@@ -407,14 +407,6 @@ class LowLevelILBuilder:
 
     # === Stack and Frame Operations ===
 
-    def stack_push(self, value: Union[LowLevelILExpr, int, str]):
-        '''STACK[sp++] = value (legacy, use push() instead)'''
-        self.push(value)
-
-    def stack_pop(self) -> LowLevelILExpr:
-        '''STACK[--sp] (legacy, use pop() instead)'''
-        return self.pop()
-
     def stack_load(self, offset: int, slot_index: int) -> LowLevelILStackLoad:
         '''STACK[sp + offset] (no sp change) - returns expression'''
         return LowLevelILStackLoad(offset = offset, slot_index = slot_index)
@@ -435,7 +427,7 @@ class LowLevelILBuilder:
     def load_frame(self, offset: int):
         '''Load from frame + offset and push to stack'''
         frame_val = self.frame_load(offset)
-        self.stack_push(frame_val)
+        self.push(frame_val)
 
     def frame_addr(self, offset: int) -> 'LowLevelILFrameAddr':
         '''&STACK[frame + offset] - Frame-relative address (for function parameters)'''
@@ -499,11 +491,11 @@ class LowLevelILBuilder:
 
     def load_stack(self, offset: int):
         '''Load from sp + offset and push to stack'''
-        self.stack_push(self._load_slot(self._slot_index(offset), offset))
+        self.push(self._load_slot(self._slot_index(offset), offset))
 
     def push_stack_addr(self, offset: int):
         '''Push the address of stack location (sp + offset)'''
-        self.stack_push(self._slot_address(self._slot_index(offset)))
+        self.push(self._slot_address(self._slot_index(offset)))
 
     # REMOVED: sp_add() - use emit_sp_add() instead
     # def sp_add(self, delta: int):
@@ -723,12 +715,6 @@ class LowLevelILBuilder:
 
     # === Special ===
 
-    def label(self, name: str):
-        '''Label - inserts a label instruction at current position'''
-        if self.current_block is None:
-            raise RuntimeError('No current block to label')
-        self.add_instruction(LowLevelILLabelInstr(name))
-
     def debug_line(self, line_no: int):
         '''Debug line number'''
         self.add_instruction(LowLevelILDebug('line', line_no))
@@ -913,15 +899,9 @@ class LLILFormatter:
 
             result.append(', '.join(block_info))
 
-            # Skip LowLevelILLabelInstr if present (redundant with block.label)
-            if block.instructions and isinstance(block.instructions[0], LowLevelILLabelInstr):
-                instructions_to_format = block.instructions[1:]
-            else:
-                instructions_to_format = block.instructions
-
             # Format instructions - now returns list
             indent = '  '
-            result.extend(cls.format_instruction_sequence(instructions_to_format, indent))
+            result.extend(cls.format_instruction_sequence(block.instructions, indent))
             result.append('')
 
         return result
@@ -958,14 +938,7 @@ class LLILFormatter:
             label_parts.append('-' * 40 + '\\l')
 
             # Format instructions using expand format (same as format_llil_function)
-            # Skip LowLevelILLabelInstr if present
-            if block.instructions and isinstance(block.instructions[0], LowLevelILLabelInstr):
-                instructions_to_format = block.instructions[1:]
-            else:
-                instructions_to_format = block.instructions
-
-            # Use format_instruction_sequence to get expanded format
-            formatted_lines = cls.format_instruction_sequence(instructions_to_format, '')
+            formatted_lines = cls.format_instruction_sequence(block.instructions, '')
             for line in formatted_lines:
                 # Escape for DOT format
                 escaped = line.replace('\\', '\\\\').replace('"', '\\"')

@@ -261,9 +261,8 @@ def _names_in_use(function: MediumLevelILFunction) -> Set[str]:
 class SSAConstructor:
     '''Convert MLIL to SSA form (iterative algorithms)'''
 
-    def __init__(self, function: MediumLevelILFunction, remove_unreachable: bool = False):
+    def __init__(self, function: MediumLevelILFunction):
         self.function = function
-        self.remove_unreachable = remove_unreachable
         self.dom_analysis = DominanceAnalysis(function)
 
         # Variable tracking
@@ -284,12 +283,6 @@ class SSAConstructor:
 
         # Step 1: Dominance analysis
         self.dom_analysis.analyze()
-
-        # Optionally remove unreachable blocks
-        if self.remove_unreachable:
-            reachable_set = set(self.dom_analysis.blocks)
-            self.function.basic_blocks = [b for b in self.function.basic_blocks if b in reachable_set]
-            self.function.renumber_blocks()
 
         # Step 2: Collect address-taken locals/parameters - a stable storage identity, not
         # a scalar SSA value, so they are lowered to explicit *(&x) memory form below rather

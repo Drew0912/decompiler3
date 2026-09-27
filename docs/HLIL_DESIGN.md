@@ -216,7 +216,7 @@ performs iterative region reduction in this priority order: loops, conditionals,
 sequences.
 
 The converter uses that analysis as decision support rather than asking it to emit the HLIL tree.
-It queries loop membership and exits, merge points, back edges, and whether a branch looks like an
+It queries loop membership and exits, merge points, and whether a branch looks like an
 inverted continuation chain. Recursive reconstruction remains responsible for owning blocks,
 emitting branch arms, recognizing active-loop transfers, and processing merge blocks exactly once.
 This separation keeps graph algorithms isolated from MLIL-to-HLIL node translation. It recurses into

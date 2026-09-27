@@ -91,7 +91,7 @@ class TestPopKeepsVstackInSync(unittest.TestCase):
 
         builder.push_func_id()
         builder.push_ret_addr(ret_block)
-        builder.stack_push(builder.const_int(42))
+        builder.push(builder.const_int(42))
         arg_load = builder.vstack_peek()
         builder.call('some_func')
 

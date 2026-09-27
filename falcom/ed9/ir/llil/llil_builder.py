@@ -72,11 +72,6 @@ class FalcomVMBuilder(LowLevelILBuilder):
         self._pending_setups: List[PendingCallSetup] = []   # Innermost last
         self._finalized = False
 
-    def add_instruction(self, inst):
-        '''Override to handle Falcom-specific instructions'''
-
-        super().add_instruction(inst)
-
     def finalize(self) -> 'LowLevelILFunction':
         '''Finalize builder and return function'''
         if self.function is None:
@@ -164,7 +159,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def push_func_id(self):
         '''Push current function ID - opens a local call setup, completed by push_ret_addr'''
         sp_before_call = self.sp_get()
-        self.stack_push(FalcomConstants.current_func_id())
+        self.push(FalcomConstants.current_func_id())
         self._pending_setups.append(PendingCallSetup(
             CallSetupKind.LOCAL, sp_before_call, (self.vstack_peek(),), return_block = None
         ))
@@ -187,7 +182,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
                 f'sp={setup.sp_before_call + len(setup.slot_loads)}'
             )
 
-        self.stack_push(FalcomConstants.ret_addr_block(target))
+        self.push(FalcomConstants.ret_addr_block(target))
         self._pending_setups[-1] = replace(
             setup, slot_loads = setup.slot_loads + (self.vstack_peek(),), return_block = target
         )
@@ -283,15 +278,15 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def push_int(self, value: int, is_hex: bool = False):
         '''PUSH_INT operation'''
-        self.stack_push(self.const_int(value, is_hex = is_hex))
+        self.push(self.const_int(value, is_hex = is_hex))
 
     def push_str(self, value: str):
         '''PUSH_STR operation'''
-        self.stack_push(self.const_str(value))
+        self.push(self.const_str(value))
 
     def push_raw(self, value: int):
         '''PUSH_RAW operation - push raw 4-byte value without type info'''
-        self.stack_push(self.const_raw(value))
+        self.push(self.const_raw(value))
 
     def set_reg(self, reg_index: int):
         '''SET_REG operation'''
@@ -302,7 +297,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def get_reg(self, reg_index: int):
         '''GET_REG operation'''
         reg_val = self.reg_load(reg_index)
-        self.stack_push(reg_val)
+        self.push(reg_val)
 
     def pop_to(self, offset: int):
         '''POP_TO operation - pop and store to STACK[sp + offset]'''
@@ -323,7 +318,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def load_stack_deref(self, offset: int):
         '''LOAD_STACK_DEREF operation - dereference the pointer at STACK[sp + offset], push *ptr'''
         ptr = self._resolve_deref_param_ptr(self._slot_index(offset), 'LOAD_STACK_DEREF')
-        self.stack_push(LowLevelILLoad(ptr))
+        self.push(LowLevelILLoad(ptr))
 
     def pop_to_deref(self, offset: int):
         '''POP_TO_DEREF operation - pop and store through the pointer at STACK[sp + offset]
@@ -377,7 +372,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def load_global(self, index: int):
         '''LOAD_GLOBAL operation - push global variable onto stack'''
         global_val = LowLevelILGlobalLoad(index)
-        self.stack_push(global_val)
+        self.push(global_val)
 
     def set_global(self, index: int):
         '''SET_GLOBAL operation - pop from stack and store to global'''

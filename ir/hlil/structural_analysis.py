@@ -675,17 +675,9 @@ class StructuralAnalyzer:
 
         return True
 
-    def is_loop_header(self, block: int) -> bool:
-        '''Check if block is a loop header'''
-        return block in self.loops
-
     def get_loop_info(self, header: int) -> Optional[LoopInfo]:
         '''Get loop information'''
         return self.loops.get(header)
-
-    def is_back_edge(self, src: int, dst: int) -> bool:
-        '''Check if edge is a back edge'''
-        return (src, dst) in self.back_edges
 
     def get_region(self, block: int) -> Optional[Region]:
         '''Get region starting at block'''

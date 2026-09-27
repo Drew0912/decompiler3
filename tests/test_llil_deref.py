@@ -67,7 +67,7 @@ class TestDerefLift(unittest.TestCase):
         # -WORD_SIZE so slot_index = 1 - 1 = 0, the sole parameter slot.
         _, entry = build_function_with_deref(num_params = 1, offset = -WORD_SIZE, deref_write = False)
 
-        # load_stack_deref pushes via stack_push(LowLevelILLoad(...)), i.e. a StackStore whose
+        # load_stack_deref pushes via push(LowLevelILLoad(...)), i.e. a StackStore whose
         # value is the Load, followed by the push's own (visible) SpAdd.
         store_inst = entry.instructions[-2]
         self.assertIsInstance(store_inst.value, LowLevelILLoad)

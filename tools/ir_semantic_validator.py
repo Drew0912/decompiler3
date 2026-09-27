@@ -874,8 +874,7 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
 
     # NOP and internal
     elif op in (LowLevelILOperation.LLIL_NOP, LowLevelILOperation.LLIL_DEBUG,
-                LowLevelILOperation.LLIL_LABEL, LowLevelILOperation.LLIL_SP_ADD,
-                LowLevelILOperation.LLIL_PUSH_CALLER_FRAME):
+                LowLevelILOperation.LLIL_SP_ADD, LowLevelILOperation.LLIL_PUSH_CALLER_FRAME):
         return SemanticOperation(
             kind=OperationKind.NOP,
             operator=op.name.replace('LLIL_', ''),
