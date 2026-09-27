@@ -133,8 +133,8 @@ class MediumLevelILInstruction(ILInstruction):
         super().__init__()
         self.operation = operation
         self.address = address
-        self.inst_index = UNASSIGNED_INST_INDEX  # Inherited from LLIL instruction index
-        self.llil_index = UNASSIGNED_INST_INDEX  # Source LLIL instruction index (for debugging/mapping)
+        self.inst_index = UNASSIGNED_INST_INDEX  # Statement number, final once the MLIL pipeline ends
+        self.llil_index = UNASSIGNED_INST_INDEX  # Source LLIL instruction index
         self.options = ILOptions()
 
     @property
@@ -154,7 +154,7 @@ class MediumLevelILInstruction(ILInstruction):
         return ()
 
     def copy_metadata_from(self, source: 'MediumLevelILInstruction') -> 'MediumLevelILInstruction':
-        '''Copy source tracking metadata from another MLIL instruction.'''
+        '''Copy address and index metadata from another MLIL instruction.'''
         self.address = source.address
         self.inst_index = source.inst_index
         self.llil_index = source.llil_index
@@ -799,7 +799,6 @@ class MediumLevelILFunction:
         self.register_vars: Dict[int, MLILVariable] = {}  # VM register index -> variable
         self.global_vars: Dict[int, MLILVariable] = {}  # Global var table index -> variable
         self.llil_function: Optional[LowLevelILFunction] = None
-        self._inst_block_map: Dict[int, MediumLevelILBasicBlock] = {}
         self.var_types: Dict[str, 'MLILType'] = {}  # Variable name -> inferred type
         self.is_common_func = is_common_func
 
@@ -812,17 +811,14 @@ class MediumLevelILFunction:
         self.basic_blocks.append(block)
 
     def renumber_blocks(self):
-        '''Renumber basic blocks to match list positions after a structural change, and rebuild
-        the inst_index -> block map, which goes stale for the same reason (a removed block would
-        otherwise stay reachable through it)'''
-        self._inst_block_map = {}
-
+        '''Renumber basic blocks to match list positions after a structural change'''
         for i, block in enumerate(self.basic_blocks):
             block.index = i
 
-            for inst in block.instructions:
-                if inst.inst_index != UNASSIGNED_INST_INDEX:
-                    self._inst_block_map[inst.inst_index] = block
+    def renumber_instructions(self):
+        '''Give every statement a unique inst_index, 0..N-1 in block order'''
+        for i, inst in enumerate(self.iter_instructions()):
+            inst.inst_index = i
 
     def create_block(self, start: int = 0, label: str = None) -> MediumLevelILBasicBlock:
         block = MediumLevelILBasicBlock(len(self.basic_blocks), start, label)
@@ -887,14 +883,6 @@ class MediumLevelILFunction:
                 return index
 
         return None
-
-    def register_instruction(self, block: MediumLevelILBasicBlock, inst: MediumLevelILInstruction):
-        if inst.inst_index == UNASSIGNED_INST_INDEX:
-            raise RuntimeError('MLIL instruction must have inst_index set')
-        self._inst_block_map[inst.inst_index] = block
-
-    def get_block_for_instruction(self, inst_index: int) -> Optional[MediumLevelILBasicBlock]:
-        return self._inst_block_map.get(inst_index)
 
     def iter_blocks(self) -> Iterator[MediumLevelILBasicBlock]:
         return iter(self.basic_blocks)

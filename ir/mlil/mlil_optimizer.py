@@ -35,4 +35,6 @@ def optimize_mlil(function: MediumLevelILFunction,
                   infer_types_enabled: bool = True,
                   signature_db: Optional[FunctionSignatureDB] = None) -> MediumLevelILFunction:
     '''Run the production MLIL passes on an already translated function'''
-    return Pipeline(mlil_optimization_passes(infer_types_enabled, signature_db)).run(function)
+    function = Pipeline(mlil_optimization_passes(infer_types_enabled, signature_db)).run(function)
+    function.renumber_instructions()
+    return function

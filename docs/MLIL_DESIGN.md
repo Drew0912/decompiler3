@@ -44,8 +44,13 @@ tree. This table now reflects the real path.
 ## Operations & Node Types
 
 All MLIL nodes derive from a common `MediumLevelILInstruction` base carrying an
-`operation` enum value, an optional source `address`, and an `inst_index` inherited from LLIL for
-cross-layer traceability. Nodes are split into `MediumLevelILExpr` (produces a value) and
+`operation` enum value and source tracking: `address` (the SCP offset), `llil_index` (the LLIL
+instruction the statement comes from - every statement one LLIL instruction produces shares it, and a
+statement de-SSA places on a CFG edge, a phi copy or a split-edge goto, takes the branch that leaves
+along that edge) and `inst_index` (the statement's own number: `convert_falcom_llil_to_mlil()` and
+`optimize_mlil()` end by numbering every statement 0..N-1 in block order, and HLIL copies it as
+`mlil_index`). Only statements carry them; expressions keep the defaults. A pass that replaces a
+statement copies all three with `copy_metadata_from()`. Nodes are split into `MediumLevelILExpr` (produces a value) and
 `MediumLevelILStatement` (side effects only) — roughly 32 concrete instruction classes exist across
 these two categories, covering:
 
@@ -143,8 +148,9 @@ definitions.) Predecessor/successor edges are `incoming_edges`/`outgoing_edges`,
 `succs`. Each MLIL block mirrors an LLIL block when `optimize=False` - the `BlockMergePass` (part
 of the SSA optimization pipeline, so it does not run when `optimize=False`) collapses call-return
 and other single-predecessor goto chains when optimization is enabled, so this 1:1 property does
-not hold for `optimize=True` output. The LLIL `inst_index` carried on each instruction is how
-debugging tools jump between layers, rather than a separate `llil_inst_to_mlil` map.
+not hold for `optimize=True` output. A statement's `llil_index` is how tools get back to LLIL
+(`MediumLevelILFunction.llil_function` is the LLIL function it was translated from); there is no
+separate LLIL-to-MLIL map.
 
 ## LLIL → MLIL Pipeline
 

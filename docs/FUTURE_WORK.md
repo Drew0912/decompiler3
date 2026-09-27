@@ -200,6 +200,15 @@ layers (a dropped one shows as `missing_write_anchor`). **Not started:**
   conditional. This catches an always-run call becoming conditional, and should also remove two
   known-noise categories (matches paired across mutually exclusive branches; duplicated calls counted
   as "added").
+- **Provenance for HLIL `if`/`while`/`switch`** (deferred from the Codex IR review plan's Step E,
+  2026-09-27). No HLIL `if`/`while`/`switch` carries an `mlil_index` (17,673 of them in a 500-file
+  sample), so no branch condition is ever provenance-matched MLIL -> HLIL. A prototype that stamped
+  them from their MLIL branch (the `mlil_to_hlil.py` construction sites and the control-flow pass's
+  rebuilt `if`/new `switch`) changed no HARD_FAIL on 7 files, since conditions compare no operands; it
+  only moved per-operation statuses (`mp2000`: 55 MLIL `IF` vs HLIL `SWITCH` and 17 `IF` vs `WHILE`
+  newly "different", for lack of a transformation rule). Do it together with comparing condition
+  expressions, add `IF` -> `WHILE` / `IF` -> `SWITCH` rules, and keep a call folded into a condition on
+  its own MLIL call's index (the statement fallback would give it the `if`'s).
 - **Cross-program mode** for compile-back: source `.dat` vs recompiled `.dat`, both at LLIL — the
   least-transformed level, so decompiler bugs and lowering bugs both show. There are no provenance
   links across two programs, so matching leans on order, guards and arguments; legitimate

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''Unit tests for tools/ir_semantic_validator.py: HLIL global/register operands, do-while flattening,
-and missing_write_anchor detection for dropped global writes'''
+missing_write_anchor detection for dropped global writes, and layer-tagged provenance keys'''
 
 from pathlib import Path
 import sys
@@ -25,6 +25,7 @@ from ir.hlil import (
 from ir.llil import LowLevelILConst
 from ir.mlil import (
     MLILAddressOf,
+    MLILCall,
     MLILConst,
     MLILLoadGlobal,
     MLILStoreDeref,
@@ -39,12 +40,14 @@ from ir_semantic_validator import (
     IRLayer,
     SemanticOperand,
     _extract_hard_fail_category,
+    _match_atoms_provenance_first,
     _extract_hlil_operands,
     build_cfg_from_hlil,
     normalize_hlil_operation,
     normalize_llil_operation,
     normalize_mlil_operation,
     semantic_op_to_effect_event,
+    semantic_operation_to_atom,
     validate_hard_fail_semantics,
 )
 
@@ -52,6 +55,9 @@ GLOBAL_INDEX = 5
 REG_INDEX = 0
 STORED_VALUE = 7
 MISSING_WRITE_ANCHOR = 'missing_write_anchor'
+LLIL_INDEX = 3
+CALL_TARGET = 'get_value'
+MLIL_INDEX = 8
 
 
 def hlil_global_var() -> HLILVariable:
@@ -62,12 +68,17 @@ def hlil_global_store_op():
     return normalize_hlil_operation(HLILAssign(HLILVar(hlil_global_var()), HLILConst(STORED_VALUE)))
 
 
-def mlil_global_store_op():
-    return normalize_mlil_operation(MLILStoreGlobal(GLOBAL_INDEX, MLILConst(STORED_VALUE)))
+def mlil_global_store_op(llil_index: int = -1, inst_index: int = -1):
+    store = MLILStoreGlobal(GLOBAL_INDEX, MLILConst(STORED_VALUE))
+    store.llil_index = llil_index
+    store.inst_index = inst_index
+    return normalize_mlil_operation(store)
 
 
-def llil_global_store_op():
-    return normalize_llil_operation(LowLevelILGlobalStore(GLOBAL_INDEX, LowLevelILConst(STORED_VALUE)))
+def llil_global_store_op(inst_index: int = -1):
+    store = LowLevelILGlobalStore(GLOBAL_INDEX, LowLevelILConst(STORED_VALUE))
+    store.inst_index = inst_index
+    return normalize_llil_operation(store)
 
 
 def hard_fail_categories(source_ops, target_ops, source_layer, target_layer) -> list[str]:
@@ -183,6 +194,37 @@ class TestDoWhileFlattening(unittest.TestCase):
         ops = self.build_ops(HLILCall('cond_call', []))
         calls = [target for operator, target in ops if operator == 'CALL']
         self.assertEqual(calls, ['body_call', 'cond_call'])
+
+
+class TestProvenanceKeys(unittest.TestCase):
+    '''Provenance keys are tagged by layer: LLIL->MLIL matches on the LLIL index, MLIL->HLIL on the MLIL index,
+    and equal numbers of different layers never match'''
+
+    def provenance_match_count(self, source_op, target_op) -> int:
+        source, target = semantic_operation_to_atom(source_op), semantic_operation_to_atom(target_op)
+        _, provenance_matches, _ = _match_atoms_provenance_first([source], [target])
+        return provenance_matches
+
+    def test_mlil_operation_carries_both_layers(self):
+        atom = semantic_operation_to_atom(mlil_global_store_op(LLIL_INDEX, MLIL_INDEX))
+        self.assertEqual(atom.provenance_keys, [(IRLayer.LLIL.name, LLIL_INDEX), (IRLayer.MLIL.name, MLIL_INDEX)])
+
+    def test_llil_to_mlil_matches_on_the_llil_index(self):
+        source = llil_global_store_op(LLIL_INDEX)
+        self.assertEqual(self.provenance_match_count(source, mlil_global_store_op(LLIL_INDEX, MLIL_INDEX)), 1)
+
+    def test_equal_index_of_another_layer_does_not_match(self):
+        source = llil_global_store_op(MLIL_INDEX)
+        self.assertEqual(self.provenance_match_count(source, mlil_global_store_op(LLIL_INDEX, MLIL_INDEX)), 0)
+
+    def test_mlil_to_hlil_matches_on_the_mlil_index(self):
+        mlil_call = MLILCall(CALL_TARGET, [])
+        mlil_call.llil_index = LLIL_INDEX
+        mlil_call.inst_index = MLIL_INDEX
+        hlil_call = HLILExprStmt(HLILCall(CALL_TARGET, []))
+        hlil_call.mlil_index = MLIL_INDEX
+        source, target = normalize_mlil_operation(mlil_call), normalize_hlil_operation(hlil_call)
+        self.assertEqual(self.provenance_match_count(source, target), 1)
 
 
 if __name__ == '__main__':

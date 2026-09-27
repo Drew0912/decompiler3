@@ -45,7 +45,7 @@ class BlockMergePass(Pass):
 
         if absorbed:
             mlil_func.basic_blocks = [b for b in mlil_func.basic_blocks if b not in absorbed]
-            mlil_func.renumber_blocks()  # also drops the absorbed blocks' stale _inst_block_map entries
+            mlil_func.renumber_blocks()
 
         return mlil_func
 

@@ -62,9 +62,9 @@ bound it. See `tests/test_scp_stack_simulation.py`.
 Lifts disassembled instructions to LLIL: manages virtual stack and register state, and resolves VM
 semantics such as calls, branches, and CFG shape. It does **not** recover `if`/`else`, loops, or
 switch structure — that recovery is entirely HLIL's job, several layers up. The LLIL `Function`
-assigns every instruction a global `inst_index`, queryable via `get_instruction_by_index()`,
-`get_instruction_block_by_index()`, and `iter_instructions()`, which later MLIL/HLIL passes use for
-data-flow analysis.
+assigns every instruction a global `inst_index` (see `get_instruction_by_index()`,
+`get_instruction_block_by_index()`, `iter_instructions()`); each MLIL statement records the one it
+comes from as its `llil_index`.
 
 ## Layer 4: MLIL — Implemented
 

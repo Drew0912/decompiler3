@@ -35,8 +35,9 @@ deals with VM-level calls, branches, and CFG shape.
 ## Node / Instruction Model
 
 All nodes derive from `HLILInstruction`, split into `HLILStatement` (side effects) and
-`HLILExpression` (produces a value); both carry `address`/`mlil_index` back-references to the
-source MLIL for traceability.
+`HLILExpression` (produces a value); both have `address`/`mlil_index` back-references to the
+source MLIL. A statement converted from an MLIL statement fills them in; the `if`/`while`/`switch`
+nodes structuring builds do not (`docs/FUTURE_WORK.md`, "Static Game-Logic Check").
 
 **Control flow statements:** `HLILIf`, `HLILWhile` (optional label), `HLILDoWhile` (optional
 label), `HLILSwitch`/`HLILSwitchCase` (supports multi-value case labels for merged `||` tests),

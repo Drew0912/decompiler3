@@ -16,10 +16,12 @@ class MLILBuilder:
         self.current_block: Optional[MediumLevelILBasicBlock] = None
         self._inst_counter = 0  # For generating unique inst_index
         self._current_address = 0  # Source SCP address for current instruction
+        self._current_llil_index = UNASSIGNED_INST_INDEX
 
-    def set_current_address(self, address: int):
-        '''Set source address for subsequent instructions'''
+    def set_current_source(self, address: int, llil_index: int):
+        '''Set the provenance (source address and LLIL instruction) of subsequently added statements'''
         self._current_address = address
+        self._current_llil_index = llil_index
 
     # === Function Management ===
 
@@ -74,16 +76,12 @@ class MLILBuilder:
         if self.current_block is None:
             raise RuntimeError('No current block set')
 
-        # Assign instruction index and address
         inst.inst_index = self._inst_counter
         inst.address = self._current_address
+        inst.llil_index = self._current_llil_index
         self._inst_counter += 1
 
-        # Add to block
         self.current_block.add_instruction(inst)
-
-        # Register with function
-        self.function.register_instruction(self.current_block, inst)
 
     # === Variable Management ===
 

@@ -1274,7 +1274,7 @@ class SSADeconstructor:
         '''Insert a block of its own along the pred -> succ edge'''
         split = MediumLevelILBasicBlock(pred_block.index, succ_block.start,
                                         f'{pred_block.label}_to_{succ_block.label}')
-        split.instructions.append(MLILGoto(succ_block, address = succ_block.start))
+        split.instructions.append(MLILGoto(succ_block).copy_metadata_from(pred_block.instructions[-1]))
 
         self._retarget_branch(pred_block, succ_block, split)
 
@@ -1353,16 +1353,9 @@ class SSADeconstructor:
             self.function.renumber_blocks()
 
     def _eliminate_phi_nodes(self):
-        '''Replace Phi nodes with SSA copies in predecessor blocks'''
+        '''Replace Phi nodes with SSA copies on their incoming edges'''
         # Build set of parameter variables for quick lookup
         param_vars = set(self.function.parameters)
-
-        # Build SSA variable → defining instruction address map
-        def_addr = {}
-        for block in self.function.basic_blocks:
-            for inst in block.instructions:
-                if isinstance(inst, MLILSetVarSSA):
-                    def_addr[inst.var] = inst.address
 
         split_cache: Dict[Tuple[MediumLevelILBasicBlock, MediumLevelILBasicBlock],
                           MediumLevelILBasicBlock] = {}
@@ -1376,7 +1369,7 @@ class SSADeconstructor:
             # Remove Phi nodes from this block
             block.instructions = [inst for inst in block.instructions if not isinstance(inst, MLILPhi)]
 
-            # Insert SSA copies in predecessors
+            # Insert SSA copies on the incoming edges
             for phi in phi_nodes:
                 for ssa_var, pred_block in phi.sources:
                     # Skip if source and dest are the exact same SSA variable
@@ -1392,19 +1385,15 @@ class SSADeconstructor:
                             and not self.function.is_global_var(ssa_var.base_var)):
                         continue
 
-                    # Insert SSA copy: phi.dest = ssa_var
-                    # This preserves SSA info for liveness analysis
-                    copy = MLILSetVarSSA(phi.dest, MLILVarSSA(ssa_var),
-                                         address = def_addr.get(ssa_var, 0))
-
                     copy_block = self._phi_copy_block(pred_block, block, split_cache)
 
-                    # Insert before terminal instruction
-                    if copy_block.instructions and copy_block.has_terminal:
-                        copy_block.instructions.insert(-1, copy)
+                    if not copy_block.has_terminal:
+                        raise RuntimeError(f'Phi copy block {copy_block.label} has no terminal')
 
-                    else:
-                        copy_block.instructions.append(copy)
+                    # Edge copy phi.dest = ssa_var before the terminal, with the outgoing branch's provenance
+                    terminal = copy_block.instructions[-1]
+                    copy = MLILSetVarSSA(phi.dest, MLILVarSSA(ssa_var)).copy_metadata_from(terminal)
+                    copy_block.instructions.insert(-1, copy)
 
         if split_cache:
             self.function.renumber_blocks()

@@ -206,40 +206,6 @@ class TestBackwardListPosition(unittest.TestCase):
         self.assertIsInstance(head.instructions[-1], MLILRet)
 
 
-class TestInstBlockMapRebuild(unittest.TestCase):
-    '''_inst_block_map must track every surviving instruction into its new block, and drop the
-    dropped goto's entry, once renumber_blocks() runs.'''
-
-    def test_map_points_absorbed_instructions_at_the_surviving_block(self):
-        func = MediumLevelILFunction('map_test')
-        head = func.create_block(start = FUNC_START, label = 'head')
-        target = func.create_block(start = FUNC_START + 4, label = 'target')
-
-        call_inst = MLILCall('Foo', [])
-        call_inst.inst_index = 10
-        goto_inst = MLILGoto(target)
-        goto_inst.inst_index = 11
-        ret_inst = MLILRet(None)
-        ret_inst.inst_index = 12
-
-        head.add_instruction(call_inst)
-        head.add_instruction(goto_inst)
-        func.register_instruction(head, call_inst)
-        func.register_instruction(head, goto_inst)
-
-        target.add_instruction(ret_inst)
-        func.register_instruction(target, ret_inst)
-
-        head.add_outgoing_edge(target)
-
-        BlockMergePass().run(func)
-
-        self.assertEqual(func.basic_blocks, [head])
-        self.assertIs(func.get_block_for_instruction(10), head)
-        self.assertIs(func.get_block_for_instruction(12), head)
-        self.assertIsNone(func.get_block_for_instruction(11))  # the dropped goto
-
-
 class TestIdempotence(unittest.TestCase):
     '''Running the pass again once nothing is left to merge must be a true no-op.'''
 

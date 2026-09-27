@@ -98,6 +98,9 @@ STATUS_SYMBOLS = {
 }
 
 
+ProvenanceKey = Tuple[str, int]  # (layer name, instruction index in that layer)
+
+
 @dataclass
 class SourceLocation:
     """Maps IR instruction to original SCP bytecode offset"""
@@ -108,6 +111,15 @@ class SourceLocation:
 
     def __str__(self) -> str:
         return f"0x{self.scp_offset:04X}"
+
+    def provenance_keys(self) -> List[ProvenanceKey]:
+        """Instruction indices this location names, tagged by layer so indices of different layers never match"""
+        keys = []
+        if self.llil_index >= 0:
+            keys.append((IRLayer.LLIL.name, self.llil_index))
+        if self.mlil_index >= 0:
+            keys.append((IRLayer.MLIL.name, self.mlil_index))
+        return keys
 
 
 @dataclass
@@ -142,7 +154,10 @@ class SemanticOperation:
     operands: List[SemanticOperand] = field(default_factory = list)
     result: Optional[SemanticOperand] = None
     source_location: SourceLocation = field(default_factory = SourceLocation)
-    provenance_mlil_indices: List[int] = field(default_factory = list)
+
+    @property
+    def provenance_keys(self) -> List[ProvenanceKey]:
+        return self.source_location.provenance_keys()
 
     def __str__(self) -> str:
         ops_str = ", ".join(str(op) for op in self.operands)
@@ -267,7 +282,7 @@ class SemanticAtom:
     operator: str
     operands: List[SemanticOperand] = field(default_factory = list)
     source_location: SourceLocation = field(default_factory = SourceLocation)
-    provenance_mlil_indices: List[int] = field(default_factory = list)
+    provenance_keys: List[ProvenanceKey] = field(default_factory = list)
     fingerprint: str = ""
     critical: bool = False
 
@@ -280,7 +295,7 @@ class EffectEvent:
     family: str = ""
     target_key: str = ""
     source_location: SourceLocation = field(default_factory = SourceLocation)
-    provenance_mlil_indices: List[int] = field(default_factory = list)
+    provenance_keys: List[ProvenanceKey] = field(default_factory = list)
 
 
 @dataclass
@@ -957,12 +972,11 @@ def normalize_mlil_operation(
     register_names = register_names or {}
     op = instr.operation
     scp_offset = instr.address if hasattr(instr, 'address') else 0
-    mlil_index = _get_instruction_index(instr, MLIL_INDEX_ATTRIBUTES)
     loc = SourceLocation(
         scp_offset = scp_offset,
-        mlil_index = mlil_index
+        llil_index = _get_instruction_index(instr, LLIL_INDEX_ATTRIBUTES),
+        mlil_index = _get_instruction_index(instr, MLIL_INDEX_ATTRIBUTES),
     )
-    provenance = [loc.mlil_index] if loc.mlil_index >= 0 else []
 
     # Arithmetic operations
     if op in (MediumLevelILOperation.MLIL_ADD, MediumLevelILOperation.MLIL_SUB,
@@ -973,7 +987,6 @@ def normalize_mlil_operation(
             operator=op.name.replace('MLIL_', ''),
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_NEG:
@@ -982,7 +995,6 @@ def normalize_mlil_operation(
             operator='NEG',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Comparison operations
@@ -994,7 +1006,6 @@ def normalize_mlil_operation(
             operator=op.name.replace('MLIL_', ''),
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_TEST_ZERO:
@@ -1003,7 +1014,6 @@ def normalize_mlil_operation(
             operator='TEST_ZERO',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Logical operations
@@ -1013,7 +1023,6 @@ def normalize_mlil_operation(
             operator=op.name.replace('MLIL_', ''),
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_LOGICAL_NOT:
@@ -1022,7 +1031,6 @@ def normalize_mlil_operation(
             operator='LOGICAL_NOT',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Bitwise operations
@@ -1034,7 +1042,6 @@ def normalize_mlil_operation(
             operator=op.name.replace('MLIL_', ''),
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_BITWISE_NOT:
@@ -1043,7 +1050,6 @@ def normalize_mlil_operation(
             operator='BITWISE_NOT',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Control flow
@@ -1053,7 +1059,6 @@ def normalize_mlil_operation(
             operator='GOTO',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_IF:
@@ -1062,7 +1067,6 @@ def normalize_mlil_operation(
             operator='IF',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_CALL:
@@ -1071,7 +1075,6 @@ def normalize_mlil_operation(
             operator='CALL',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_SYSCALL:
@@ -1080,7 +1083,6 @@ def normalize_mlil_operation(
             operator='SYSCALL',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_CALL_SCRIPT:
@@ -1089,7 +1091,6 @@ def normalize_mlil_operation(
             operator='CALL_SCRIPT',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_RET:
@@ -1098,7 +1099,6 @@ def normalize_mlil_operation(
             operator='RET',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Variable operations
@@ -1110,7 +1110,6 @@ def normalize_mlil_operation(
             operator='LOAD_REG' if is_register else 'VAR',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_SET_VAR:
@@ -1132,7 +1131,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             result=result,
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_CONST:
@@ -1141,7 +1139,6 @@ def normalize_mlil_operation(
             operator='CONST',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Global and register
@@ -1151,7 +1148,6 @@ def normalize_mlil_operation(
             operator='LOAD_GLOBAL',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_STORE_GLOBAL:
@@ -1164,7 +1160,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             result=result,
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_LOAD_REG:
@@ -1173,7 +1168,6 @@ def normalize_mlil_operation(
             operator='LOAD_REG',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_STORE_REG:
@@ -1186,7 +1180,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             result=result,
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Pointer dereference
@@ -1196,7 +1189,6 @@ def normalize_mlil_operation(
             operator='DEREF',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == MediumLevelILOperation.MLIL_STORE_DEREF:
@@ -1205,7 +1197,6 @@ def normalize_mlil_operation(
             operator='STORE_DEREF',
             operands=_extract_mlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # NOP
@@ -1214,7 +1205,6 @@ def normalize_mlil_operation(
             kind=OperationKind.NOP,
             operator=op.name.replace('MLIL_', ''),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Unknown
@@ -1223,7 +1213,6 @@ def normalize_mlil_operation(
         kind=OperationKind.UNKNOWN,
         operator=op.name,
         source_location=loc,
-        provenance_mlil_indices=provenance,
     )
 
 
@@ -1286,7 +1275,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
     scp_offset = instr.address if hasattr(instr, 'address') else 0
     mlil_index = _get_instruction_index(instr, HLIL_INDEX_ATTRIBUTES)
     loc = SourceLocation(scp_offset = scp_offset, mlil_index = mlil_index)
-    provenance = [mlil_index] if mlil_index >= 0 else []
 
     # Control flow statements
     if op == HLILOperation.HLIL_IF:
@@ -1295,7 +1283,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='IF',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_WHILE:
@@ -1304,7 +1291,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='WHILE',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_DO_WHILE:
@@ -1313,7 +1299,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='DO_WHILE',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_SWITCH:
@@ -1322,7 +1307,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='SWITCH',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_BREAK:
@@ -1330,7 +1314,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             kind=OperationKind.CONTROL_FLOW,
             operator='BREAK',
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_CONTINUE:
@@ -1338,7 +1321,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             kind=OperationKind.CONTROL_FLOW,
             operator='CONTINUE',
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_RETURN:
@@ -1347,7 +1329,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='RETURN',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Assignment
@@ -1360,7 +1341,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
                     operator='CALL',
                     operands=_extract_hlil_operands(instr.src),
                     source_location=loc,
-                    provenance_mlil_indices=provenance,
                 )
 
             elif src_op == HLILOperation.HLIL_SYSCALL:
@@ -1369,7 +1349,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
                     operator='SYSCALL',
                     operands=_extract_hlil_operands(instr.src),
                     source_location=loc,
-                    provenance_mlil_indices=provenance,
                 )
 
         result = None
@@ -1381,7 +1360,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             result=result,
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Block
@@ -1390,24 +1368,18 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             kind=OperationKind.NOP,
             operator='BLOCK',
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Expression statement - unwrap
     elif op == HLILOperation.HLIL_EXPR_STMT:
         if hasattr(instr, 'expr') and instr.expr is not None:
-            return _apply_location_fallback(
-                normalize_hlil_operation(instr.expr),
-                loc,
-                provenance,
-            )
+            return _apply_location_fallback(normalize_hlil_operation(instr.expr), loc)
 
         return SemanticOperation(
             kind=OperationKind.NOP,
             operator='EXPR_STMT',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Comment
@@ -1416,7 +1388,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             kind=OperationKind.NOP,
             operator='COMMENT',
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Expressions
@@ -1426,7 +1397,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='VAR',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_CONST:
@@ -1435,7 +1405,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='CONST',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_BINARY_OP:
@@ -1445,7 +1414,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator=bin_op.name if bin_op else 'BINARY_OP',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_UNARY_OP:
@@ -1455,7 +1423,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator=unary_op.name if unary_op else 'UNARY_OP',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_CALL:
@@ -1464,7 +1431,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='CALL',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_SYSCALL:
@@ -1473,7 +1439,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='SYSCALL',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     elif op == HLILOperation.HLIL_DEREF:
@@ -1482,7 +1447,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='DEREF',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
-            provenance_mlil_indices=provenance,
         )
 
     # Unknown
@@ -1492,7 +1456,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
         kind=OperationKind.UNKNOWN,
         operator=op_name,
         source_location=loc,
-        provenance_mlil_indices=provenance,
     )
 
 
@@ -1800,10 +1763,9 @@ def _folded_call_operations(instr: HLILInstruction) -> List[SemanticOperation]:
     scp_offset = instr.address if hasattr(instr, 'address') else 0
     mlil_index = _get_instruction_index(instr, HLIL_INDEX_ATTRIBUTES)
     loc = SourceLocation(scp_offset = scp_offset, mlil_index = mlil_index)
-    provenance = [mlil_index] if mlil_index >= 0 else []
 
     return [
-        _apply_location_fallback(normalize_hlil_operation(call), loc, provenance)
+        _apply_location_fallback(normalize_hlil_operation(call), loc)
         for call in found
         if call is not own_call
     ]
@@ -2038,16 +2000,8 @@ class BlockSimilarity:
 def compute_operation_similarity(op1: SemanticOperation, op2: SemanticOperation) -> float:
     """Compare two SemanticOperations (0.0-1.0 score)"""
     score = 0.0
-    source_indices = set(op1.provenance_mlil_indices)
-    target_indices = set(op2.provenance_mlil_indices)
-
-    if not source_indices and op1.source_location.mlil_index >= 0:
-        source_indices = {op1.source_location.mlil_index}
-    if not target_indices and op2.source_location.mlil_index >= 0:
-        target_indices = {op2.source_location.mlil_index}
-
     # Provenance-first bonus to stabilize mapping under HLIL restructuring.
-    if source_indices and target_indices and source_indices.intersection(target_indices):
+    if _has_provenance_overlap(op1.provenance_keys, op2.provenance_keys):
         score += 0.3
 
     # Kind match (40%)
@@ -2624,6 +2578,7 @@ CONDITION_EQUIVALENT_MATCH_SCORE = 40
 MIN_EFFECT_MATCH_SCORE = FAMILY_TARGET_MATCH_SCORE
 MIN_CONDITION_MATCH_SCORE = CONDITION_EQUIVALENT_MATCH_SCORE
 
+LLIL_INDEX_ATTRIBUTES = ('llil_index',)
 MLIL_INDEX_ATTRIBUTES = ('inst_index', 'instr_index', 'mlil_index')
 HLIL_INDEX_ATTRIBUTES = ('mlil_index', 'inst_index')
 
@@ -2634,10 +2589,6 @@ def _semantic_fingerprint(op: SemanticOperation) -> str:
 
 
 def semantic_operation_to_atom(op: SemanticOperation) -> SemanticAtom:
-    provenance = list(op.provenance_mlil_indices)
-    if not provenance and op.source_location.mlil_index >= 0:
-        provenance = [op.source_location.mlil_index]
-
     critical = (
         op.operator in CRITICAL_OPERATORS
         or op.operator in CRITICAL_BRANCH_OPERATORS
@@ -2649,7 +2600,7 @@ def semantic_operation_to_atom(op: SemanticOperation) -> SemanticAtom:
         operator = op.operator,
         operands = list(op.operands),
         source_location = op.source_location,
-        provenance_mlil_indices = sorted(set(provenance)),
+        provenance_keys = sorted(set(op.provenance_keys)),
         fingerprint = _semantic_fingerprint(op),
         critical = critical,
     )
@@ -2659,10 +2610,10 @@ def extract_semantic_atoms(ops: List[SemanticOperation]) -> List[SemanticAtom]:
     return [semantic_operation_to_atom(op) for op in ops]
 
 
-def _build_provenance_index(atoms: List[SemanticAtom]) -> Dict[int, List[int]]:
-    provenance_index: Dict[int, List[int]] = {}
+def _build_provenance_index(atoms: List[SemanticAtom]) -> Dict[ProvenanceKey, List[int]]:
+    provenance_index: Dict[ProvenanceKey, List[int]] = {}
     for atom_idx, atom in enumerate(atoms):
-        for provenance in atom.provenance_mlil_indices:
+        for provenance in atom.provenance_keys:
             provenance_index.setdefault(provenance, []).append(atom_idx)
     return provenance_index
 
@@ -2683,7 +2634,7 @@ def _normalized_operator_family(operator: str) -> str:
     return operator
 
 
-def _has_provenance_overlap(left: List[int], right: List[int]) -> bool:
+def _has_provenance_overlap(left: List[ProvenanceKey], right: List[ProvenanceKey]) -> bool:
     return bool(set(left).intersection(right))
 
 
@@ -2697,7 +2648,7 @@ def _atom_match_score(source_atom: SemanticAtom, target_atom: SemanticAtom) -> i
     if source_family != target_family:
         return score
 
-    if _has_provenance_overlap(source_atom.provenance_mlil_indices, target_atom.provenance_mlil_indices):
+    if _has_provenance_overlap(source_atom.provenance_keys, target_atom.provenance_keys):
         score += PROVENANCE_MATCH_SCORE
 
     if source_atom.fingerprint == target_atom.fingerprint:
@@ -2728,7 +2679,7 @@ def _match_atoms_provenance_first(
         matched_target_idx = -1
 
         # Pass 1: provenance-first mapping.
-        for provenance in source_atom.provenance_mlil_indices:
+        for provenance in source_atom.provenance_keys:
             candidate_indices = target_by_provenance.get(provenance, [])
             for candidate_idx in candidate_indices:
                 if candidate_idx in used_target_indices:
@@ -2787,29 +2738,23 @@ def _normalize_operand_key(operand: Optional[SemanticOperand]) -> str:
 def _apply_location_fallback(
     op: SemanticOperation,
     source_location: SourceLocation,
-    provenance: List[int],
 ) -> SemanticOperation:
     """Preserve statement source info when HLIL expressions drop it."""
     if op.source_location.scp_offset == 0 and source_location.scp_offset != 0:
         op.source_location.scp_offset = source_location.scp_offset
     if op.source_location.mlil_index < 0 and source_location.mlil_index >= 0:
         op.source_location.mlil_index = source_location.mlil_index
-    if not op.provenance_mlil_indices and provenance:
-        op.provenance_mlil_indices = list(provenance)
     return op
 
 
 def _build_effect_event(op: SemanticOperation, category: str, family: str, target_key: str) -> EffectEvent:
-    provenance = list(op.provenance_mlil_indices)
-    if not provenance and op.source_location.mlil_index >= 0:
-        provenance = [op.source_location.mlil_index]
     return EffectEvent(
         category = category,
         signature = f"{family}:{target_key}",
         family = family,
         target_key = target_key,
         source_location = op.source_location,
-        provenance_mlil_indices = provenance,
+        provenance_keys = op.provenance_keys,
     )
 
 
@@ -2849,7 +2794,7 @@ def build_effect_event_sequence(ops: List[SemanticOperation]) -> List[EffectEven
 
 
 def _effect_match_kind(source_event: EffectEvent, target_event: EffectEvent) -> str:
-    if _has_provenance_overlap(source_event.provenance_mlil_indices, target_event.provenance_mlil_indices):
+    if _has_provenance_overlap(source_event.provenance_keys, target_event.provenance_keys):
         return MATCH_KIND_PROVENANCE
     if (
         source_event.source_location.scp_offset != 0
@@ -2866,7 +2811,7 @@ def _effect_match_score(source_event: EffectEvent, target_event: EffectEvent) ->
         return 0
 
     score = 0
-    if _has_provenance_overlap(source_event.provenance_mlil_indices, target_event.provenance_mlil_indices):
+    if _has_provenance_overlap(source_event.provenance_keys, target_event.provenance_keys):
         score += PROVENANCE_MATCH_SCORE
 
     if (
@@ -2973,8 +2918,8 @@ def _is_condition_semantically_equivalent(source: SemanticOperation, target: Sem
 def _condition_match_score(source_condition: SemanticOperation, target_condition: SemanticOperation) -> int:
     score = 0
     if _has_provenance_overlap(
-        source_condition.provenance_mlil_indices,
-        target_condition.provenance_mlil_indices,
+        source_condition.provenance_keys,
+        target_condition.provenance_keys,
     ):
         score += PROVENANCE_MATCH_SCORE
 
@@ -3132,7 +3077,7 @@ def _compute_quality_metrics(
         source_atoms, target_atoms
     )
 
-    source_with_provenance = sum(1 for atom in source_atoms if atom.provenance_mlil_indices)
+    source_with_provenance = sum(1 for atom in source_atoms if atom.provenance_keys)
     provenance_coverage = 100.0 * source_with_provenance / len(source_atoms) if source_atoms else 100.0
 
     matched_source_indices = {source_idx for source_idx, _ in matched_pairs}

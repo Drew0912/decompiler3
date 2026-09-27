@@ -29,4 +29,6 @@ def convert_falcom_llil_to_mlil(llil_func: LowLevelILFunction,
         signature_db = ED9TypeSignatures(parser) if parser and infer_types else None
         passes.extend(mlil_optimization_passes(infer_types, signature_db))
 
-    return Pipeline(passes).run(llil_func)
+    mlil_func = Pipeline(passes).run(llil_func)
+    mlil_func.renumber_instructions()
+    return mlil_func

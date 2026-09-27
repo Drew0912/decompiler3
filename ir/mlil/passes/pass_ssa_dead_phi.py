@@ -83,7 +83,7 @@ class DeadPhiSourceEliminationPass(Pass):
                     # Skip if variable was replaced by SCCP (string is now in function args)
                     if isinstance(inst.value, MLILConst) and isinstance(inst.value.value, str):
                         if inst.var not in self.sccp_replaced_vars:
-                            debug_comment = MLILDebug('string', inst.value.value)
+                            debug_comment = MLILDebug('string', inst.value.value).copy_metadata_from(inst)
                             new_instructions.append(debug_comment)
 
                     continue
