@@ -31,17 +31,16 @@ from ..hlil import (
     HLILBlock,
     HLILCall,
     HLILComment,
-    HLILDoWhile,
     HLILExternCall,
     HLILIf,
-    HLILSwitch,
     HLILSyscall,
     HLILUnaryOp,
     HLILVar,
-    HLILWhile,
     UnaryOp,
     COMPARISON_OPS,
     negate_condition,
+    sole_statement,
+    sub_blocks,
 )
 
 
@@ -60,19 +59,13 @@ class BranchOrderNormalizationPass(Pass):
             return
 
         for stmt in block.statements:
+            # Settle nested arms first: a swap below changes the first line
+            # this level reads
+            for child in sub_blocks(stmt):
+                self._process_block(child)
+
             if isinstance(stmt, HLILIf):
-                # Settle nested arms first: a swap below changes the first line
-                # this level reads
-                self._process_block(stmt.true_block)
-                self._process_block(stmt.false_block)
                 self._normalize(stmt)
-
-            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
-                self._process_block(stmt.body)
-
-            elif isinstance(stmt, HLILSwitch):
-                for case in stmt.cases:
-                    self._process_block(case.body)
 
     def _normalize(self, stmt: HLILIf):
         '''Swap this if's arms when the other order reads better'''
@@ -126,10 +119,10 @@ class BranchOrderNormalizationPass(Pass):
     @classmethod
     def _chain_length(cls, block: Optional[HLILBlock]) -> int:
         '''How many further else-if links follow from this lone-if block'''
-        if not cls._is_else_if_chain(block):
+        inner_if = sole_statement(block)
+        if not isinstance(inner_if, HLILIf):
             return 0
 
-        inner_if = next(s for s in block.statements if isinstance(s, HLILIf))
         return 1 + max(cls._chain_length(inner_if.true_block), cls._chain_length(inner_if.false_block))
 
     @classmethod
@@ -140,8 +133,8 @@ class BranchOrderNormalizationPass(Pass):
         scrutinee can't be identified, since the cost of a missed swap is just a less
         tidy chain, while wrongly reordering a real dispatch chain would bury it again.
         '''
-        inner_if = next((s for s in chain_block.statements if isinstance(s, HLILIf)), None)
-        if inner_if is None:
+        inner_if = sole_statement(chain_block)
+        if not isinstance(inner_if, HLILIf):
             return True
 
         head = cls._chain_head(condition)
@@ -242,12 +235,7 @@ class BranchOrderNormalizationPass(Pass):
     @classmethod
     def _is_else_if_chain(cls, block: Optional[HLILBlock]) -> bool:
         '''An else branch that is nothing but the next test in a chain'''
-        if not block or not block.statements:
-            return False
-
-        real_stmts = [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
-
-        return len(real_stmts) == 1 and isinstance(real_stmts[0], HLILIf)
+        return isinstance(sole_statement(block), HLILIf)
 
     def _first_line(self, block: Optional[HLILBlock]) -> Optional[int]:
         '''First line number this block prints, nested statements included'''
@@ -260,21 +248,9 @@ class BranchOrderNormalizationPass(Pass):
                 if match:
                     return int(match.group(1))
 
-            elif isinstance(stmt, HLILIf):
-                for branch in (stmt.true_block, stmt.false_block):
-                    line = self._first_line(branch)
-                    if line is not None:
-                        return line
-
-            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
-                line = self._first_line(stmt.body)
+            for child in sub_blocks(stmt):
+                line = self._first_line(child)
                 if line is not None:
                     return line
-
-            elif isinstance(stmt, HLILSwitch):
-                for case in stmt.cases:
-                    line = self._first_line(case.body)
-                    if line is not None:
-                        return line
 
         return None

@@ -69,10 +69,18 @@ __all__ = [
     'HLILComment',
 
     # Shape helpers
+    'sole_statement',
     'split_else_if_arm',
     'unwrap_address_taken_var',
     'sub_blocks',
+    'contains_escaping_exit',
     'contains_bare_break',
+
+    # Tree walking
+    'expr_children',
+    'stmt_children',
+    'read_children',
+    'iter_tree',
 
     # Function
     'HighLevelILFunction',

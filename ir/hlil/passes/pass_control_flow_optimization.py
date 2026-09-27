@@ -14,11 +14,7 @@ from ..hlil import (
     HLILConst,
     HLILBinaryOp,
     HLILUnaryOp,
-    HLILAddressOf,
     HLILDeref,
-    HLILCall,
-    HLILSyscall,
-    HLILExternCall,
     HLILIf,
     HLILWhile,
     HLILDoWhile,
@@ -37,6 +33,10 @@ from ..hlil import (
     unwrap_address_taken_var,
     contains_bare_break,
     is_boolean_expr,
+    iter_tree,
+    read_children,
+    sole_statement,
+    sub_blocks,
     NEGATED_COMPARISON_OP,
 )
 
@@ -69,12 +69,12 @@ class ExitPath(NamedTuple):
 
 
 class ControlFlowOptimizationPass(Pass):
-    '''Control flow optimizations: if-to-switch, empty-if inversion, else-if flattening, switch merging'''
+    '''Control flow optimizations: if-to-switch (absorbing a switch already built from the rest of the chain),
+    empty-if inversion, else-if flattening'''
 
     def run(self, func: HighLevelILFunction) -> HighLevelILFunction:
         self._func_body = func.body
         self._optimize_block(func.body)
-        self._merge_nested_switches(func.body)
         return func
 
     def _optimize_block(self, block: HLILBlock):
@@ -95,8 +95,9 @@ class ControlFlowOptimizationPass(Pass):
                         inlined = self._try_inline_condition(stmt, next_stmt)
                         if inlined:
                             # Recursively optimize the inlined if's sub-blocks
-                            self._optimize_block(inlined.true_block)
-                            self._optimize_block(inlined.false_block)
+                            for child in sub_blocks(inlined):
+                                self._optimize_block(child)
+
                             # Remove redundant assignments
                             self._remove_redundant_else_assign(inlined, optimized)
                             optimized.append(inlined)
@@ -121,18 +122,19 @@ class ControlFlowOptimizationPass(Pass):
                                 for k in range(i, j):
                                     optimized.append(block.statements[k])
 
-                                self._optimize_block(inlined.true_block)
-                                self._optimize_block(inlined.false_block)
+                                for child in sub_blocks(inlined):
+                                    self._optimize_block(child)
+
                                 # Remove redundant assignments
                                 self._remove_redundant_else_assign(inlined, optimized)
                                 optimized.append(inlined)
                                 i = j + 2
                                 continue
 
-            if isinstance(stmt, HLILIf):
-                self._optimize_block(stmt.true_block)
-                self._optimize_block(stmt.false_block)
+            for child in sub_blocks(stmt):
+                self._optimize_block(child)
 
+            if isinstance(stmt, HLILIf):
                 # Remove redundant var = source in else block for switch-case patterns
                 self._remove_redundant_else_assign(stmt, optimized)
 
@@ -146,19 +148,10 @@ class ControlFlowOptimizationPass(Pass):
                 # Invert empty if: if (c) {} else {...} -> if (!c) {...}
                 # But skip if else block is [nop*, if] to preserve else-if chain
                 if not stmt.true_block.statements and stmt.false_block and stmt.false_block.statements:
-                    non_nop_stmts = [s for s in stmt.false_block.statements if not self._is_nop_stmt(s)]
-                    is_else_if_pattern = len(non_nop_stmts) == 1 and isinstance(non_nop_stmts[0], HLILIf)
-                    if not is_else_if_pattern:
+                    if not isinstance(sole_statement(stmt.false_block), HLILIf):
                         stmt.condition = self._negate_condition(stmt.condition)
                         stmt.true_block = stmt.false_block
                         stmt.false_block = None
-
-            elif isinstance(stmt, HLILWhile):
-                self._optimize_block(stmt.body)
-
-            elif isinstance(stmt, HLILSwitch):
-                for case in stmt.cases:
-                    self._optimize_block(case.body)
 
             optimized.append(stmt)
             i += 1
@@ -236,80 +229,6 @@ class ControlFlowOptimizationPass(Pass):
 
         return HLILIf(new_condition, new_true_block, new_false_block)
 
-    def _expr_children(self, node) -> list:
-        '''Immediate sub-expressions of an expression node, for a uniform "walk everything
-        underneath" traversal. Leaves (HLILVar, HLILConst) and anything not an expression
-        return no children.'''
-        if isinstance(node, HLILBinaryOp):
-            return [node.lhs, node.rhs]
-
-        if isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
-            return [node.operand]
-
-        if isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
-            return list(node.args)
-
-        return []
-
-    def _stmt_children(self, node) -> list:
-        '''Immediate sub-statement/expression nodes of a statement-shaped node, falling
-        through to _expr_children for anything that isn't a statement - lets _tree_any walk
-        a mixed statement+expression tree with one recursive helper instead of every
-        predicate hand-rolling its own dispatch list (the drift between hand-rolled lists is
-        what let a switch case *label* go unscanned for variable reads - Codex Rule 2 review
-        of Step 4's fix, finding 5).
-        '''
-        if isinstance(node, HLILAssign):
-            # A plain-Var dest is a write, not a read - only a store through a pointer
-            # (*dest = value) reads dest's own value too, so only that case is a child here
-            # (matches _can_read_original_value's own dest handling below).
-            if isinstance(node.dest, HLILDeref):
-                return [node.dest, node.src]
-
-            return [node.src]
-
-        if isinstance(node, HLILExprStmt):
-            return [node.expr]
-
-        if isinstance(node, HLILReturn):
-            return [node.value]
-
-        if isinstance(node, HLILBlock):
-            return list(node.statements)
-
-        if isinstance(node, HLILIf):
-            return [node.condition, node.true_block, node.false_block]
-
-        if isinstance(node, HLILWhile):
-            return [node.condition, node.body]
-
-        if isinstance(node, HLILDoWhile):
-            return [node.body, node.condition]
-
-        if isinstance(node, HLILSwitch):
-            children = [node.scrutinee]
-            for case in node.cases:
-                if case.values:
-                    children.extend(case.values)
-                children.append(case.body)
-            return children
-
-        return self._expr_children(node)
-
-    def _tree_any(self, node, predicate, exclude: tuple = ()) -> bool:
-        '''Whether predicate holds for node, or anywhere beneath it - statement or
-        expression, via _stmt_children. The shared traversal behind every "does X occur
-        anywhere in this tree" check in this file. A node whose id() is in exclude is
-        skipped entirely (not recursed into), for callers that need to carve out a specific
-        already-handled subtree rather than filter by node shape.'''
-        if node is None or id(node) in exclude:
-            return False
-
-        if predicate(node):
-            return True
-
-        return any(self._tree_any(child, predicate, exclude) for child in self._stmt_children(node))
-
     def _var_read_elsewhere(self, var: HLILVariable, exclude: tuple) -> bool:
         '''Check if var is read anywhere in the function, outside the excluded nodes.
 
@@ -318,7 +237,7 @@ class ControlFlowOptimizationPass(Pass):
         being considered. That is deliberately conservative: it only ever blocks an
         optimization, never causes one, so it cannot turn a safe deletion into an unsafe one.
         '''
-        return self._tree_any(self._func_body, lambda n: isinstance(n, HLILVar) and n.var == var, exclude)
+        return any(isinstance(n, HLILVar) and n.var == var for n in iter_tree(self._func_body, read_children, exclude))
 
     def _is_nop_stmt(self, stmt: HLILStatement) -> bool:
         '''Check if statement has no side effects (can be skipped)'''
@@ -350,11 +269,10 @@ class ControlFlowOptimizationPass(Pass):
             return (False, killed, ())
 
         # Expressions cannot contain a break/return/continue (those are statements) or kill
-        # anything themselves, so killed is fixed across the whole subtree - walked via the
-        # same _expr_children shape _tree_any uses elsewhere in this file, so a new
-        # expression node type can't drift between the two traversals.
+        # anything themselves, so killed is fixed across the whole subtree - walked with the
+        # shared iter_tree, so a new expression node type can't drift from the other walkers.
         if isinstance(node, HLILExpression):
-            reads = self._tree_any(node, lambda n: isinstance(n, HLILVar) and n.var == var and not killed)
+            reads = not killed and any(isinstance(n, HLILVar) and n.var == var for n in iter_tree(node, read_children))
             return (reads, killed, ())
 
         # Statements
@@ -713,7 +631,7 @@ class ControlFlowOptimizationPass(Pass):
             unwrapped = unwrap_address_taken_var(n.dest)
             return unwrapped is not None and unwrapped.var in vars_set
 
-        return self._tree_any(stmt, modifies)
+        return any(modifies(n) for n in iter_tree(stmt, read_children))
 
     def _equality_labels(self, cond) -> Optional[Tuple[HLILVar, List[int]]]:
         '''Values a test accepts, for `x == k` or any || chain of those
@@ -811,14 +729,14 @@ class ControlFlowOptimizationPass(Pass):
             current_if = None
 
             if continuation and continuation.statements:
-                real_stmts = [s for s in continuation.statements if not self._is_nop_stmt(s)]
+                sole = sole_statement(continuation)
 
-                if len(real_stmts) == 1 and isinstance(real_stmts[0], HLILIf):
-                    current_if = real_stmts[0]
+                if isinstance(sole, HLILIf):
+                    current_if = sole
                     pending_comments = [s for s in continuation.statements if self._is_nop_stmt(s)]
 
-                elif len(real_stmts) == 1 and isinstance(real_stmts[0], HLILSwitch):
-                    nested = real_stmts[0]
+                elif isinstance(sole, HLILSwitch):
+                    nested = sole
 
                     if not isinstance(nested.scrutinee, HLILVar) or nested.scrutinee.var != scrutinee.var:
                         return None
@@ -856,40 +774,6 @@ class ControlFlowOptimizationPass(Pass):
             switch_cases.append(HLILSwitchCase(None, default_body))
 
         return HLILSwitch(scrutinee, switch_cases)
-
-    def _merge_nested_switches(self, block: HLILBlock):
-        if not block or not block.statements:
-            return
-
-        for stmt in block.statements:
-            if isinstance(stmt, HLILSwitch):
-                for case in stmt.cases:
-                    self._merge_nested_switches(case.body)
-
-                    comments = [s for s in case.body.statements if self._is_nop_stmt(s)]
-                    rest = [s for s in case.body.statements if not self._is_nop_stmt(s)]
-
-                    if len(rest) == 1:
-                        nested_stmt = rest[0]
-                        if isinstance(nested_stmt, HLILSwitch):
-                            if isinstance(nested_stmt.scrutinee, HLILVar) and isinstance(stmt.scrutinee, HLILVar):
-                                if nested_stmt.scrutinee.var == stmt.scrutinee.var:
-                                    if case.is_default():
-                                        # The merge drops this case, so its comments move to what replaces it
-                                        if comments and nested_stmt.cases:
-                                            nested_stmt.cases[0].body.statements[:0] = comments
-
-                                        stmt.cases.remove(case)
-                                        stmt.cases.extend(nested_stmt.cases)
-                                        self._merge_nested_switches(block)
-                                        return
-
-            elif isinstance(stmt, HLILIf):
-                self._merge_nested_switches(stmt.true_block)
-                self._merge_nested_switches(stmt.false_block)
-
-            elif isinstance(stmt, HLILWhile):
-                self._merge_nested_switches(stmt.body)
 
     def _negate_condition(self, condition: HLILExpression) -> HLILExpression:
         if isinstance(condition, HLILBinaryOp):

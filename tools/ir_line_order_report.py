@@ -46,10 +46,7 @@ from ir.mlil.mlil import MLILDebug
 from ir.hlil.hlil import (
     HLILBlock,
     HLILComment,
-    HLILDoWhile,
-    HLILIf,
-    HLILSwitch,
-    HLILWhile,
+    sub_blocks,
 )
 
 
@@ -141,16 +138,8 @@ def collect_hlil_lines(hlil_func) -> List[int]:
                 if match:
                     lines.append(int(match.group(1)))
 
-            elif isinstance(stmt, HLILIf):
-                walk(stmt.true_block)
-                walk(stmt.false_block)
-
-            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
-                walk(stmt.body)
-
-            elif isinstance(stmt, HLILSwitch):
-                for case in stmt.cases:
-                    walk(case.body)
+            for child in sub_blocks(stmt):
+                walk(child)
 
     walk(hlil_func.body)
     return lines

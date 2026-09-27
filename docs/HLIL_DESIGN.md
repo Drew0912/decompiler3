@@ -83,6 +83,16 @@ TypeScript generator and the debug formatter; a non-C output needs its own. `TER
 `ControlFlowOptimizationPass` keeps its own negation, which wraps a non-comparison as `== 0` instead
 of `!`.
 
+Tree walking is shared the same way. `sub_blocks` gives the blocks a structured statement owns;
+`stmt_children` gives every child of a node in source order (a switch contributes each case's
+labels, then its body), `read_children` the same without a plain assignment target, and
+`iter_tree` walks a whole subtree without recursion. `contains_escaping_exit` says whether a
+`break`/`continue` leaves a block (a loop owns both, a switch only a `break`), and `sole_statement`
+finds a block's one non-comment statement. The passes, the converter's variable declaration and
+the renderers are built on these, so a new node type needs a sample in
+`tests/test_hlil_traversal.py` and an entry in `stmt_children` (a statement) or `expr_children` (an
+expression), plus `sub_blocks` if it owns a block - that test fails until both exist.
+
 `HLILSwitchCase` is a helper owned by `HLILSwitch`, not an `HLILInstruction`. Its `values` field is
 either a list of expressions or `None` for the default case. A list permits several case labels to
 share one body, which preserves a recovered chain such as `x == A || x == B` without duplicating
@@ -266,6 +276,9 @@ Several dedicated HLIL unit-test files exist today:
 - `tests/test_hlil_operators.py` covers the shared operator tables (every operator has a symbol and
   a precedence, comparison negation is the complement), `negate_condition`, `needs_parentheses`,
   and the debug formatter's operator symbols and switch-case `break`s.
+- `tests/test_hlil_traversal.py` covers the shared tree walkers: every node type's children, source
+  order, `iter_tree`'s exclusion, the escaping-exit rules, `sole_statement`, declaration order, and
+  control-flow optimization reaching into a do-while body.
 
 These tests directly exercise important tree rewrites, but they do not constitute end-to-end
 coverage of HLIL construction. `StructuralAnalyzer`, shared-region cloning, source metadata
@@ -281,10 +294,12 @@ dedicated HLIL test file of their own.
   `DeadCodeEliminationPass`, `CommonReturnExtractionPass`, `TypeScriptGenerator._infer_return_type`
   - used to skip `HLILDoWhile` entirely; all three now share one traversal helper (`sub_blocks` in
     `ir/hlil/hlil.py`) covering every structured node that owns a nested block, so a future node
-  type needs one edit there instead of one per walker. `pass_control_flow_optimization.py` keeps
-  its own tailored `_expr_children`/`_stmt_children`/
-  `_tree_any` (deeper expression-level walkers `sub_blocks` doesn't replace) - left alone since
-  big-plan Step 12 is active in that code. Separately, `LoopRecoveryPass`'s `while(1)` -> `do-while`
+  type needs one edit there instead of one per walker. Since PR Step 6b (2026-09-27) the
+  general-purpose walkers in control-flow optimization, branch-order normalization, loop recovery and
+  the converter's variable declaration use the shared tree helpers too (see Operations & Node Types);
+  branch order's specialized `_if_depth` stays hand-written (it counts only ifs nested in if arms;
+  whether it should also count through loops and switches is still open).
+  Separately, `LoopRecoveryPass`'s `while(1)` -> `do-while`
   rewrite was unsound when the body held a `continue` targeting the loop (different exit-target
   semantics between the two shapes) and silently dropped a labelled loop's label (`HLILDoWhile` had
   no `label` field); both fixed - see `HLIL_GUIDE.md`'s loop recovery section.

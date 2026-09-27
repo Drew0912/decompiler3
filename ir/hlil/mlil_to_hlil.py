@@ -574,61 +574,11 @@ class MLILToHLILConverter:
             declared.add(name)
             self.hlil_func.variables.append(HLILVariable(name, type_hint = self._get_type_hint(name)))
 
-    def _collect_used_var_names(self, node) -> List[str]:
-        '''Variable names appearing in an HLIL subtree, in order'''
-        names: List[str] = []
-
-        if node is None:
-            return names
-
-        if isinstance(node, HLILVar):
-            if node.var.kind == VariableKind.LOCAL:
-                names.append(node.var.name)
-
-        elif isinstance(node, HLILBlock):
-            for stmt in node.statements:
-                names.extend(self._collect_used_var_names(stmt))
-
-        elif isinstance(node, HLILBinaryOp):
-            names.extend(self._collect_used_var_names(node.lhs))
-            names.extend(self._collect_used_var_names(node.rhs))
-
-        elif isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
-            names.extend(self._collect_used_var_names(node.operand))
-
-        elif isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
-            for arg in node.args:
-                names.extend(self._collect_used_var_names(arg))
-
-        elif isinstance(node, HLILAssign):
-            names.extend(self._collect_used_var_names(node.dest))
-            names.extend(self._collect_used_var_names(node.src))
-
-        elif isinstance(node, HLILExprStmt):
-            names.extend(self._collect_used_var_names(node.expr))
-
-        elif isinstance(node, HLILReturn):
-            names.extend(self._collect_used_var_names(node.value))
-
-        elif isinstance(node, HLILIf):
-            names.extend(self._collect_used_var_names(node.condition))
-            names.extend(self._collect_used_var_names(node.true_block))
-            names.extend(self._collect_used_var_names(node.false_block))
-
-        elif isinstance(node, (HLILWhile, HLILDoWhile)):
-            names.extend(self._collect_used_var_names(node.condition))
-            names.extend(self._collect_used_var_names(node.body))
-
-        elif isinstance(node, HLILSwitch):
-            names.extend(self._collect_used_var_names(node.scrutinee))
-            for case in node.cases:
-                if case.values is not None:
-                    for value in case.values:
-                        names.extend(self._collect_used_var_names(value))
-
-                names.extend(self._collect_used_var_names(case.body))
-
-        return names
+    @classmethod
+    def _collect_used_var_names(cls, node) -> List[str]:
+        '''Local variable names appearing in an HLIL subtree, in source order - an assignment
+        target included'''
+        return [n.var.name for n in iter_tree(node) if isinstance(n, HLILVar) and n.var.kind == VariableKind.LOCAL]
 
     def _get_type_hint(self, var_name: str) -> Optional[HLILTypeKind]:
         mlil_type = self.mlil_func.var_types.get(var_name)

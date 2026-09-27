@@ -1,6 +1,6 @@
 '''HLIL - Structured control flow (if/while/do-while) from unstructured MLIL (goto/label)'''
 
-from typing import List, Optional, Tuple, Union
+from typing import Callable, Iterator, List, Optional, Sequence, Tuple, Union
 from enum import auto
 from common import *
 
@@ -641,22 +641,26 @@ def negate_condition(cond: HLILExpression) -> HLILExpression:
     return HLILUnaryOp(UnaryOp.NOT, cond)
 
 
+def sole_statement(block: Optional[HLILBlock]) -> Optional[HLILStatement]:
+    '''The one non-comment statement in block, or None when it has none or several'''
+    if block is None:
+        return None
+
+    rest = [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
+    return rest[0] if len(rest) == 1 else None
+
+
 def split_else_if_arm(block: HLILBlock) -> Optional[Tuple[List[HLILComment], HLILIf]]:
     '''An else arm's comments and its single inner if, or None if it is not an else-if
 
     Comments annotate the inner if's test, so they belong before the `} else if` line
     rather than inside the arm. Shared so both renderers agree on the shape.
     '''
-    if not block or not block.statements:
+    inner_if = sole_statement(block)
+    if not isinstance(inner_if, HLILIf):
         return None
 
-    comments = [stmt for stmt in block.statements if isinstance(stmt, HLILComment)]
-    rest = [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
-
-    if len(rest) != 1 or not isinstance(rest[0], HLILIf):
-        return None
-
-    return comments, rest[0]
+    return [stmt for stmt in block.statements if isinstance(stmt, HLILComment)], inner_if
 
 
 def unwrap_address_taken_var(expr: 'HLILExpression') -> Optional['HLILVar']:
@@ -690,24 +694,110 @@ def sub_blocks(stmt: 'HLILStatement') -> List['HLILBlock']:
     return []
 
 
-def contains_bare_break(block: Optional['HLILBlock']) -> bool:
-    '''Whether block contains a bare break not owned by a nested loop or switch.'''
+def expr_children(node: HLILInstruction) -> Sequence[HLILExpression]:
+    '''Direct sub-expressions of an expression, in evaluation order - none for a leaf'''
+    if isinstance(node, HLILBinaryOp):
+        return [node.lhs, node.rhs]
+
+    if isinstance(node, (HLILUnaryOp, HLILAddressOf, HLILDeref)):
+        return [node.operand]
+
+    if isinstance(node, (HLILCall, HLILSyscall, HLILExternCall)):
+        return list(node.args)
+
+    return []
+
+
+def stmt_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
+    '''Every direct child of node - statements, blocks and expressions - in source order. A
+    switch contributes each case's labels, then that case's body.'''
+    if isinstance(node, HLILAssign):
+        return [node.dest, node.src]
+
+    if isinstance(node, HLILExprStmt):
+        return [node.expr]
+
+    if isinstance(node, HLILReturn):
+        return [node.value] if node.value is not None else []
+
+    if isinstance(node, HLILBlock):
+        return list(node.statements)
+
+    if isinstance(node, HLILIf):
+        return [node.condition, *sub_blocks(node)]
+
+    if isinstance(node, HLILWhile):
+        return [node.condition, node.body]
+
+    if isinstance(node, HLILDoWhile):
+        return [node.body, node.condition]
+
+    if isinstance(node, HLILSwitch):
+        children = [node.scrutinee]
+        for case in node.cases:
+            children.extend(case.values or [])
+            children.append(case.body)
+
+        return children
+
+    return expr_children(node)
+
+
+def read_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
+    '''stmt_children without a plain assignment target: writing x does not read it, while a
+    store through a pointer (*p = v) still reads p'''
+    if isinstance(node, HLILAssign) and not isinstance(node.dest, HLILDeref):
+        return [node.src]
+
+    return stmt_children(node)
+
+
+def iter_tree(node: Optional[HLILInstruction],
+              children: Callable[[HLILInstruction], Sequence[HLILInstruction]] = stmt_children,
+              exclude: Tuple[int, ...] = ()) -> Iterator[HLILInstruction]:
+    '''node and everything below it, pre-order in children's order, without recursion. A node
+    whose id() is in exclude is skipped together with everything below it.'''
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        if current is None or id(current) in exclude:
+            continue
+
+        yield current
+        pending.extend(reversed(children(current)))
+
+
+def contains_escaping_exit(block: Optional[HLILBlock], exit_type: type, include_labeled: bool = False) -> bool:
+    '''Whether block holds an exit_type statement (HLILBreak or HLILContinue) that leaves it: a
+    bare one that no construct inside block owns - a loop owns both kinds, a switch only a
+    break - or, with include_labeled, a labeled one anywhere, since its label may name a loop
+    outside block.'''
+    return _contains_escaping_exit(block, exit_type, include_labeled, owned = False)
+
+
+def _contains_escaping_exit(block: Optional[HLILBlock], exit_type: type, include_labeled: bool, owned: bool) -> bool:
     if block is None:
         return False
 
     for stmt in block.statements:
-        if isinstance(stmt, HLILBreak) and stmt.label is None:
+        if isinstance(stmt, exit_type) and (include_labeled if stmt.label is not None else not owned):
             return True
 
-        # Loops and switches own the bare breaks inside them
-        if isinstance(stmt, (HLILWhile, HLILDoWhile, HLILSwitch)):
+        owner = isinstance(stmt, (HLILWhile, HLILDoWhile)) or (exit_type is HLILBreak and isinstance(stmt, HLILSwitch))
+
+        # Only a labeled exit can get out of an owner, and none is being looked for
+        if owner and not include_labeled:
             continue
 
-        for sub_block in sub_blocks(stmt):
-            if contains_bare_break(sub_block):
-                return True
+        if any(_contains_escaping_exit(child, exit_type, include_labeled, owned or owner) for child in sub_blocks(stmt)):
+            return True
 
     return False
+
+
+def contains_bare_break(block: Optional[HLILBlock]) -> bool:
+    '''Whether block contains a bare break not owned by a nested loop or switch.'''
+    return contains_escaping_exit(block, HLILBreak)
 
 
 # ============================================================================

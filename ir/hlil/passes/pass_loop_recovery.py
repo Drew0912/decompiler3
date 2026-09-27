@@ -22,13 +22,15 @@ from ..hlil import (
     HLILIf,
     HLILWhile,
     HLILDoWhile,
-    HLILSwitch,
     HLILBreak,
     HLILContinue,
     HLILReturn,
     HLILComment,
     BinaryOp,
+    contains_escaping_exit,
     negate_condition,
+    sole_statement,
+    sub_blocks,
 )
 
 
@@ -48,25 +50,11 @@ class LoopRecoveryPass(Pass):
         recovered: List[HLILStatement] = []
 
         for stmt in block.statements:
-            if isinstance(stmt, HLILIf):
-                self._process_block(stmt.true_block)
-                self._process_block(stmt.false_block)
-                recovered.append(stmt)
+            for child in sub_blocks(stmt):
+                self._process_block(child)
 
-            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
-                self._process_block(stmt.body)
-
-                if isinstance(stmt, HLILWhile):
-                    recovered.extend(self._recover_loop(stmt))
-
-                else:
-                    recovered.append(stmt)
-
-            elif isinstance(stmt, HLILSwitch):
-                for case in stmt.cases:
-                    self._process_block(case.body)
-
-                recovered.append(stmt)
+            if isinstance(stmt, HLILWhile):
+                recovered.extend(self._recover_loop(stmt))
 
             else:
                 recovered.append(stmt)
@@ -100,7 +88,7 @@ class LoopRecoveryPass(Pass):
         # Checked before _trailing_exit_condition, which mutates loop.body - refusing after
         # that mutation would return a "left unchanged" while(1) loop that had already lost
         # its own trailing break
-        if self._contains_loop_continue(loop.body):
+        if contains_escaping_exit(loop.body, HLILContinue, include_labeled = True):
             return [loop]
 
         trailing_exit = self._trailing_exit_condition(loop.body)
@@ -141,14 +129,8 @@ class LoopRecoveryPass(Pass):
 
     def _is_only_break(self, block: Optional[HLILBlock]) -> bool:
         '''Check that a block does nothing but leave the loop'''
-        if not block or not block.statements:
-            return False
-
-        real_stmts = [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
-        if len(real_stmts) != 1:
-            return False
-
-        return isinstance(real_stmts[0], HLILBreak) and real_stmts[0].label is None
+        inner = sole_statement(block)
+        return isinstance(inner, HLILBreak) and inner.label is None
 
     def _leading_exit_condition(self, body: HLILBlock) -> Optional[HLILExpression]:
         '''Condition of a leading `if (c) break;`, negated to become the loop test'''
@@ -180,7 +162,7 @@ class LoopRecoveryPass(Pass):
         if not self._is_lone_return(stmt):
             return None
 
-        if self._contains_loop_break(body):
+        if contains_escaping_exit(body, HLILBreak, include_labeled = True):
             return None
 
         # The guard's whole body moves out, comments included, so a line comment
@@ -198,74 +180,7 @@ class LoopRecoveryPass(Pass):
         if stmt.false_block and stmt.false_block.statements:
             return False
 
-        if not stmt.true_block:
-            return False
-
-        real_stmts = [inner for inner in stmt.true_block.statements
-                      if not isinstance(inner, HLILComment)]
-
-        return len(real_stmts) == 1 and isinstance(real_stmts[0], HLILReturn)
-
-    def _contains_loop_break(self, block: Optional[HLILBlock], nested: bool = False) -> bool:
-        '''Check for a break that would leave this loop
-
-        A bare break inside a nested loop or switch belongs to that construct, but a
-        labelled one can still name this loop, so any label counts wherever it sits.
-        '''
-        if not block or not block.statements:
-            return False
-
-        for stmt in block.statements:
-            if isinstance(stmt, HLILBreak):
-                if stmt.label is not None or not nested:
-                    return True
-
-            elif isinstance(stmt, HLILIf):
-                if (self._contains_loop_break(stmt.true_block, nested) or
-                        self._contains_loop_break(stmt.false_block, nested)):
-                    return True
-
-            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
-                if self._contains_loop_break(stmt.body, True):
-                    return True
-
-            elif isinstance(stmt, HLILSwitch):
-                for case in stmt.cases:
-                    if self._contains_loop_break(case.body, True):
-                        return True
-
-        return False
-
-    def _contains_loop_continue(self, block: Optional[HLILBlock], nested: bool = False) -> bool:
-        '''Check for a continue that would target this loop
-
-        Same rule as _contains_loop_break, except a switch does NOT absorb a bare continue -
-        continue always targets the nearest enclosing loop, never a switch - so switch cases
-        are walked without setting nested, the one place this differs from _contains_loop_break.
-        '''
-        if not block or not block.statements:
-            return False
-
-        for stmt in block.statements:
-            if isinstance(stmt, HLILContinue):
-                if stmt.label is not None or not nested:
-                    return True
-
-            elif isinstance(stmt, HLILIf):
-                if (self._contains_loop_continue(stmt.true_block, nested) or
-                        self._contains_loop_continue(stmt.false_block, nested)):
-                    return True
-
-            elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
-                if self._contains_loop_continue(stmt.body, True):
-                    return True
-
-            elif isinstance(stmt, HLILSwitch):
-                for case in stmt.cases:
-                    if self._contains_loop_continue(case.body, nested):
-                        return True
-
-        return False
+        return isinstance(sole_statement(stmt.true_block), HLILReturn)
 
     def _trailing_exit_condition(self, body: HLILBlock) -> Optional[HLILExpression]:
         '''Condition of a trailing `if (c) break;`, negated to become the loop test'''
@@ -293,15 +208,7 @@ class LoopRecoveryPass(Pass):
         if stmt.false_block and stmt.false_block.statements:
             return False
 
-        if not stmt.true_block:
-            return False
-
-        rest = [s for s in stmt.true_block.statements if not isinstance(s, HLILComment)]
-        if len(rest) != 1:
-            return False
-
-        inner = rest[0]
-        return isinstance(inner, HLILBreak) and inner.label is None
+        return self._is_only_break(stmt.true_block)
 
     def _first_real_statement(self, body: HLILBlock) -> Optional[int]:
         '''Index of the first statement that is not a comment'''
