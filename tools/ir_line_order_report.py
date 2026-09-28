@@ -4,7 +4,7 @@
 Line numbers reach the output as real statements (the `DEBUG_SET_LINENO` opcode
 becomes `LowLevelILDebug` -> `MLILDebug` -> `HLILComment`), so their order is
 purely a consequence of where those statements end up. The `.py`/LLIL/MLIL
-levels are all in address order and should agree exactly; only HLIL restructures.
+levels are all read in address order and should agree exactly; only HLIL restructures.
 
 That makes the useful number the *difference* between HLIL and MLIL: backward
 steps present at MLIL are inherited from the game's own bytecode and are not a
@@ -34,8 +34,6 @@ from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ml import *
-from common import *
 from falcom.ed9 import ScpParser
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
 from falcom.ed9.ir.llil import ED9VMLifter
@@ -53,6 +51,10 @@ from ir.hlil.hlil import (
 LEVELS = ('py', 'llil', 'mlil', 'hlil')
 LINE_COMMENT = re.compile(r'line\((\d+)\)')
 DEFAULT_WORST = 10
+
+# Same headroom as falcom/ed9/scena2py.py: the IR walkers recurse per nesting level, and Python's
+# default limit of 1000 is close for the most deeply nested scripts
+RECURSION_LIMIT = 10000
 
 
 class FunctionReport:
@@ -115,13 +117,20 @@ def collect_llil_lines(llil_func) -> List[int]:
 
 
 def collect_mlil_lines(mlil_func) -> List[int]:
-    lines = []
-    for block in mlil_func.basic_blocks:
-        for inst in block.instructions:
-            if isinstance(inst, MLILDebug) and inst.debug_type == 'line':
-                lines.append(int(inst.value))
+    '''Line directives in address order
 
-    return lines
+    Block order is not address order at MLIL: BlockMergePass splices a block onto
+    its only predecessor, wherever that sits in the block list.
+    '''
+    directives = [
+        inst
+        for block in mlil_func.basic_blocks
+        for inst in block.instructions
+        if isinstance(inst, MLILDebug) and inst.debug_type == 'line'
+    ]
+    directives.sort(key = lambda inst: inst.address)
+
+    return [int(inst.value) for inst in directives]
 
 
 def collect_hlil_lines(hlil_func) -> List[int]:
@@ -146,31 +155,29 @@ def collect_hlil_lines(hlil_func) -> List[int]:
 
 
 def analyse_file(path: Path) -> List[FunctionReport]:
+    '''Line sequences per function, from the pipeline scena2py.py decompiles with'''
+    sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
     reports = []
 
-    with fileio.FileStream(str(path), encoding = default_encoding()) as fs:
-        parser = ScpParser(fs, path.name)
+    with contextlib.redirect_stdout(io.StringIO()):
+        parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
 
-        with contextlib.redirect_stdout(io.StringIO()):
-            parser.parse()
-            functions = parser.disasm_all_functions()
+    for func in functions:
+        lifter = ED9VMLifter(parser = parser)
 
-        for func in functions:
-            lifter = ED9VMLifter(parser = parser)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            llil_func = lifter.lift_function(func)
+            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = True)
+            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
 
-            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                llil_func = lifter.lift_function(func)
-                mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = True)
-                hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
+            sequences = {
+                'py'  : collect_dsl_lines(lifter, func),
+                'llil': collect_llil_lines(llil_func),
+                'mlil': collect_mlil_lines(mlil_func),
+                'hlil': collect_hlil_lines(hlil_func),
+            }
 
-                sequences = {
-                    'py'  : collect_dsl_lines(lifter, func),
-                    'llil': collect_llil_lines(llil_func),
-                    'mlil': collect_mlil_lines(mlil_func),
-                    'hlil': collect_hlil_lines(hlil_func),
-                }
-
-            reports.append(FunctionReport(func.name, sequences))
+        reports.append(FunctionReport(func.name, sequences))
 
     return reports
 
