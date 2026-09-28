@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for push_stack_addr's parameter-slot check - Step 11 (bug 2) of the LLIL/MLIL
-hardening plan.'''
+'''Unit tests for push_stack_addr's parameter-slot check: the address of a slot that still holds
+the caller's parameter is frame-relative (&argN), not the address of a new local.'''
 
 from pathlib import Path
 import sys

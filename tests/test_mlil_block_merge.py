@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for BlockMergePass - Step 10 of the LLIL/MLIL hardening plan. A LowLevelILCall is
+'''Unit tests for BlockMergePass. A LowLevelILCall is
 a block terminator, so the LLIL->MLIL translator ends every call block with a plain `goto` to its
 return block; this pass splices any block whose only way in is another block's unconditional
 goto into that block, undoing the split (and any real bytecode JMP that happens to land on a

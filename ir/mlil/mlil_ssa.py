@@ -1088,8 +1088,7 @@ class SSADeconstructor:
             # suffix. Each version joins the first existing class it doesn't interfere with,
             # preferring one already holding a direct copy_affinity partner so the self-assignment
             # skip in _apply_mapping_to_inst can elide that copy. A new class is minted only when
-            # nothing fits - previously, the allocator only ever tried the base-name class, so every
-            # conflicting version minted its own fresh suffix instead of reusing an earlier one.
+            # nothing fits.
             classes: List[List[MLILVariableSSA]] = [[]]
 
             for ssa_var in ssa_vars:

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for parameter-slot stores becoming frame stores - Step 2 of the LLIL/MLIL hardening plan.'''
+'''Unit tests for parameter-slot stores: pop_to into a slot that still holds the caller's parameter is
+a frame store (argN), not a new local.'''
 
 from pathlib import Path
 import sys

@@ -12,6 +12,3 @@ class ED9LLILToMLILPass(LLILToMLILPass):
 
     def __init__(self):
         super().__init__(translator_class=FalcomLLILToMLILTranslator)
-
-
-# REMOVED: ED9TypeInferencePass - replaced by SSATypeInferencePass in ir/mlil/passes/

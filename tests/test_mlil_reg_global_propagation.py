@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for RegGlobalValuePropagator - Step 9 of the LLIL/MLIL hardening plan. Covers all
-six confirmed bugs: 2 (worklist fixpoint) and 6 (constant equality) fixed directly; 1/3/4/5 (a
-live/stale cached reference surviving a write to whatever it depends on) closed by Candidate B -
-only a fully closed-form (constant) expression is ever cached under a REG/GLOBAL slot, so nothing
-cached can ever go stale, chosen over Candidate A (generalized dependency invalidation) after a
-full-corpus, cross-game measurement showed zero real difference between them.'''
+'''Unit tests for RegGlobalValuePropagator: the analysis reaches a real fixpoint over loops,
+compares constants by representation (1 is not 1.0, NaN equals NaN), and caches only fully
+closed-form (constant) expressions under a REG/GLOBAL slot, so a cached value can never go stale
+after a write to whatever it was computed from.'''
 
 from pathlib import Path
 import sys
@@ -27,9 +25,9 @@ FUNC_START = 0x1000
 
 
 class TestWorklistFixpointRecordsInStateOnEveryVisit(unittest.TestCase):
-    '''Bug 2: _analyze only recorded block_in when out_state changed, so a loop block whose
-    out_state stabilizes early (a call clobbers state to unknown on every visit regardless of
-    what flows in) kept a stale, over-optimistic first-visit in_state forever.'''
+    '''_analyze records block_in on every visit, not only when out_state changes: a loop block
+    whose out_state stabilizes early (a call clobbers state to unknown on every visit, whatever
+    flows in) must not keep an over-optimistic first-visit in_state.'''
 
     def test_loop_global_is_not_folded_past_a_clobbering_call_on_the_back_edge(self):
         func = MediumLevelILFunction('worklist_test')
@@ -57,11 +55,10 @@ class TestWorklistFixpointRecordsInStateOnEveryVisit(unittest.TestCase):
 
 
 class TestConstantEqualityIsRepresentationSafe(unittest.TestCase):
-    '''Bug 6: _expr_equal compared MLILConst values with bare `==`, which conflates int/float
-    representations (1 == 1.0) and considers NaN unequal to itself (nan == nan is False in
-    Python), the latter of which means _analyze's fixpoint loop never converges for a function
-    whose tracked state includes a NaN constant - ED9 floats decode straight from binary data,
-    so NaN is reachable.'''
+    '''_expr_equal compares MLILConst values by representation, not with bare `==`: int and
+    float never match (1 vs 1.0), and NaN matches NaN - otherwise _analyze's fixpoint loop never
+    converges for a function whose tracked state holds a NaN constant (ED9 floats decode straight
+    from binary data, so NaN is reachable).'''
 
     def setUp(self):
         self.propagator = RegGlobalValuePropagator(MediumLevelILFunction('equality_test'))
@@ -89,13 +86,13 @@ class TestConstantEqualityIsRepresentationSafe(unittest.TestCase):
         self.assertTrue(self.propagator._state_equal(left, right))
 
 
-class TestClosedFormCachingClosesLiveReferenceBugs(unittest.TestCase):
-    '''Bugs 1/3/4/5: only a fully closed-form (constant) expression is ever cached under a
+class TestClosedFormCachingNeverGoesStale(unittest.TestCase):
+    '''Only a fully closed-form (constant) expression is ever cached under a
     REG/GLOBAL slot - a live reference to another slot, a local, or a pointer dereference is
     never cached, so none of these can go stale.'''
 
-    def test_bug1_copy_of_an_unresolved_slot_is_not_cached_as_a_live_reference(self):
-        func = MediumLevelILFunction('bug1')
+    def test_copy_of_an_unresolved_slot_is_not_cached_as_a_live_reference(self):
+        func = MediumLevelILFunction('unresolved_slot_copy')
         block = func.create_block()
         block.add_instruction(MLILStoreReg(0, MLILLoadReg(1)))
         block.add_instruction(MLILStoreReg(1, MLILConst(7)))
@@ -108,8 +105,8 @@ class TestClosedFormCachingClosesLiveReferenceBugs(unittest.TestCase):
         self.assertIsInstance(final_ret.value, MLILLoadReg)
         self.assertEqual(final_ret.value.index, 0)
 
-    def test_bug3_reassigning_a_local_does_not_leak_into_an_earlier_global_read(self):
-        func = MediumLevelILFunction('bug3')
+    def test_reassigning_a_local_does_not_leak_into_an_earlier_global_read(self):
+        func = MediumLevelILFunction('local_reassignment')
         block = func.create_block()
         x = func.get_or_create_local('var_s0', 0)
         block.add_instruction(MLILStoreGlobal(5, MLILVar(x)))
@@ -122,8 +119,8 @@ class TestClosedFormCachingClosesLiveReferenceBugs(unittest.TestCase):
         call_inst = block.instructions[-1]
         self.assertIsInstance(call_inst.args[0], MLILLoadGlobal)
 
-    def test_bug4_a_self_referential_store_does_not_double_apply(self):
-        func = MediumLevelILFunction('bug4')
+    def test_a_self_referential_store_does_not_double_apply(self):
+        func = MediumLevelILFunction('self_referential_store')
         block = func.create_block()
         block.add_instruction(MLILStoreReg(0, MLILAdd(MLILLoadReg(0), MLILConst(1))))
         block.add_instruction(MLILRet(MLILLoadReg(0)))
@@ -135,8 +132,8 @@ class TestClosedFormCachingClosesLiveReferenceBugs(unittest.TestCase):
         final_ret = block.instructions[-1]
         self.assertIsInstance(final_ret.value, MLILLoadReg)
 
-    def test_bug5_a_pointer_write_does_not_retroactively_change_an_earlier_global_snapshot(self):
-        func = MediumLevelILFunction('bug5')
+    def test_a_pointer_write_does_not_retroactively_change_an_earlier_global_snapshot(self):
+        func = MediumLevelILFunction('pointer_write')
         block = func.create_block()
         x = func.get_or_create_local('x', 0)
         block.add_instruction(MLILSetVar(x, MLILConst(1)))

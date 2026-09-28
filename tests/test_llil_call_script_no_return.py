@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for CALL_SCRIPT_NO_RETURN (opcode 0x23) - Step 1 of the LLIL/MLIL hardening plan.'''
+'''Unit tests for CALL_SCRIPT_NO_RETURN (opcode 0x23), a script tail call that never gives control
+back to the calling function.'''
 
 from pathlib import Path
 import sys
@@ -71,7 +72,7 @@ class TestCallScriptNoReturnLLIL(unittest.TestCase):
         itself, not deferred to finalize(): this block has no successor, so a leak here would
         never propagate anywhere for finalize()'s end-of-function check to see, and a later block
         reached via a different branch would restore its own saved sp snapshot and silently paper
-        over it (Codex Rule 0 finding - see notes/codex_rules.md).'''
+        over it.'''
         builder = FalcomVMBuilder()
         builder.create_function('unbalanced', FUNC_START, num_params = 0)
         entry = builder.create_basic_block(FUNC_START, 'unbalanced')
@@ -112,7 +113,7 @@ class TestCallScriptNoReturnMLIL(unittest.TestCase):
 
 class TestCallScriptNoReturnDebugInfoTracker(unittest.TestCase):
     '''CallDebugInfoTracker.on_opcode: a tail call whose own argument is the result of a nested
-    call must still sort before that nested call in source pre-order (Codex Rule 0 finding).'''
+    call must still sort before that nested call in source pre-order.'''
 
     def test_nested_call_in_own_argument_sorts_after_tail_call(self):
         # return outer(inner()) - INNER is an ordinary local CALL, its result becomes the tail

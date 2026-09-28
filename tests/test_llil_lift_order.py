@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for LLIL lifting-order/state-management fixes (Step J).'''
+'''Unit tests for LLIL lifting order and block state: instructions are indexed in block order, blocks
+lift in reverse post-order, every CFG edge records the stack state it carries, and a join or back edge
+with a different stack height raises.'''
 
 from dataclasses import replace
 from pathlib import Path

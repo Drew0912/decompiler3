@@ -11,8 +11,8 @@
 ## Overview
 
 Layered architecture with two directions: **decompilation** (bytecode → readable output) and
-**recompilation** (a Python DSL source file → bytecode). See `docs/MLIL_DESIGN.md` /
-`docs/MLIL_GUIDE.md` for MLIL, `docs/HLIL_GUIDE.md` for HLIL, and `docs/LLIL_DSL.md` for the
+**recompilation** (a Python DSL source file → bytecode). See `docs/LLIL_DESIGN.md` for LLIL,
+`docs/MLIL_DESIGN.md` / `docs/MLIL_GUIDE.md` for MLIL, `docs/HLIL_GUIDE.md` for HLIL, and `docs/LLIL_DSL.md` for the
 recompilation pipeline in detail.
 
 ```
@@ -64,7 +64,8 @@ semantics such as calls, branches, and CFG shape. It does **not** recover `if`/`
 switch structure — that recovery is entirely HLIL's job, several layers up. The LLIL `Function`
 assigns every instruction a global `inst_index` (see `get_instruction_by_index()`,
 `get_instruction_block_by_index()`, `iter_instructions()`); each MLIL statement records the one it
-comes from as its `llil_index`.
+comes from as its `llil_index`. The stack model, slot lifetimes, call setups and per-edge stack state
+are in `docs/LLIL_DESIGN.md`.
 
 ## Layer 4: MLIL — Implemented
 

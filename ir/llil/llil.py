@@ -639,8 +639,6 @@ class LowLevelILBasicBlock:
 
     def __str__(self) -> str:
         result = f'{self.block_name} {self.label} @ {hex(self.start)}: [sp={self.sp_in}]\n'
-        # for i, inst in enumerate(self.instructions):
-        #     result += f'  {inst}\n'
         if self.outgoing_edges:
             targets = [b.block_name for b in self.outgoing_edges]
             result += f'  -> {', '.join(targets)}\n'

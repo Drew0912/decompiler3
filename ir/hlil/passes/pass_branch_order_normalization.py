@@ -10,14 +10,13 @@ costs nothing but the negation:
 
     if (!c) { /* line 758 */ } else { /* line 766 */ }
 
-This is the only place arm order is decided. The TypeScript emitter used to make
-the same choice again by nesting depth, which contradicted source order 146 times
-against 7 and left `.hlil.ts` and `.ts` disagreeing about the same function; that
-rule now lives here as the tie-break for arms carrying no line number.
+After structuring, this is the only place arm order is decided, so `.hlil.ts` and
+`.ts` agree on it. When the arms do not carry distinct line numbers, nesting depth
+decides.
 
 This is the one pass that deliberately diverges from the order the bytecode was
 emitted in, so it is optional - see `normalize_branch_order` in
-falcom/ed9/hlil_converter.py.
+falcom/ed9/ir/hlil/hlil_converter.py.
 '''
 
 import re
@@ -191,9 +190,9 @@ class BranchOrderNormalizationPass(Pass):
     def _should_swap(self, stmt: HLILIf) -> bool:
         '''Whether the false arm belongs first
 
-        Source order decides wherever both arms carry a line number, because the
-        corpus says the nesting rule contradicts it 146 times against 7. Depth is
-        the tie-break for the rest, which is where that rule went uncontested.
+        Source order decides when both arms carry distinct line numbers; corpus
+        measurements favor it over nesting depth by 146 cases to 7. Depth is the
+        tie-break for the rest.
         '''
         true_line = self._first_line(stmt.true_block)
         false_line = self._first_line(stmt.false_block)

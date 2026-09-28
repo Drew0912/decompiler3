@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for SSADeconstructor._allocate_variables - Step 7 of the LLIL/MLIL hardening plan:
-SSA deconstruction must reuse already-minted suffix classes instead of minting a fresh one on every
-conflict, must never let a defined-but-unused version fall back to an interference-unaware raw base
-name, must never let a minted suffix collide with an unrelated real variable, and must track every
-phi-elimination copy partner for a destination, not just the last one seen.'''
+'''Unit tests for SSADeconstructor._allocate_variables: SSA deconstruction must reuse
+already-minted suffix classes instead of minting a fresh one on every conflict, must never let a
+defined-but-unused version fall back to an interference-unaware raw base name, must never let a
+minted suffix collide with an unrelated real variable, and must track every phi-elimination copy
+partner for a destination, not just the last one seen.'''
 
 from pathlib import Path
 import sys

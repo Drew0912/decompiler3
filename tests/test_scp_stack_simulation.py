@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for the parser's disassembly-time stack simulation - Step P of the Codex IR review plan. Every edge into a
+'''Unit tests for the parser's disassembly-time stack simulation. Every edge into a
 block must carry the same stack height; entries that meet at one position on a join form one group, and a call checks
 and rewrites every push of the groups it consumes. Calls declare their own return edges. A push an ordinary consumer
 uses or overwrites cannot also be a call setup, no instruction may overlap another (in any function), and code must end

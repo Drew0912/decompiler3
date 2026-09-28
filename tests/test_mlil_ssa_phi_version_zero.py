@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for SSADeconstructor._eliminate_phi_nodes's version-0 skip - Step 11 (bug 3) of the
-LLIL/MLIL hardening plan: a parameter/register/global's SSA version 0 is a real value already live
-at function entry, not an undefined initial value like a plain local's version 0 - skipping the
-phi-source copy for it can drop that value on the path where the variable was never reassigned.'''
+'''Unit tests for SSADeconstructor._eliminate_phi_nodes's version-0 skip: a parameter/register/
+global's SSA version 0 is a real value already live at function entry, not an undefined initial
+value like a plain local's version 0 - skipping the phi-source copy for it can drop that value on
+the path where the variable was never reassigned.'''
 
 from pathlib import Path
 import sys

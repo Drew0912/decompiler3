@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for SSAOptimizer - Step C of the Codex IR review plan: the fixpoint loop's
-_snapshot must compare instruction structure, not repr() (which no MLIL class overrides), or
-an operand-only rewrite can look unchanged and stop the loop one iteration early.'''
+'''Unit tests for SSAOptimizer: the fixpoint loop's _snapshot must compare instruction structure,
+not repr() (which no MLIL class overrides), or an operand-only rewrite can look unchanged and stop
+the loop one iteration early.'''
 
 from pathlib import Path
 import sys
@@ -80,10 +80,9 @@ class TestIdempotence(unittest.TestCase):
 
 
 class TestStructuralKeyExactness(unittest.TestCase):
-    '''Direct tests of _structural_key/_snapshot - a Codex Rule 2 pass on this step's draft
-    found the first version collapsed distinct types to the same key (e.g. a float and a
-    string that happen to share the float's hex text) and silently accepted dict-valued
-    attributes as an unfrozen, potentially-unsound key.'''
+    '''Direct tests of _structural_key/_snapshot: distinct types never share a key (e.g. a float
+    and a string holding the float's hex text), and a dict-valued attribute raises instead of
+    becoming an unfrozen, potentially unsound key.'''
 
     def test_float_and_matching_hex_string_do_not_collide(self):
         float_key = SSAOptimizer._structural_key(1.0)

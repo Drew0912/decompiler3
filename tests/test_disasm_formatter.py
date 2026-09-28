@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for .py label emission (only offsets something references) - Step 5 of the LLIL/MLIL hardening plan.'''
+'''Unit tests for .py label emission: only an offset something references gets a label.'''
 
 from pathlib import Path
 import sys

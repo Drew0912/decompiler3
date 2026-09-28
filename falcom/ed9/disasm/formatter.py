@@ -236,6 +236,5 @@ class Formatter:
         """Format a label"""
         return [
             f'def _{name}(): pass',
-            # '',
             f"label('{name}'){comment}",
         ]

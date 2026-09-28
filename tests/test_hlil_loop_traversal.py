@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for uniform HLIL child-block traversal (Step H of the Codex IR review plan).
-DeadCodeEliminationPass, CommonReturnExtractionPass, and TypeScriptGenerator._infer_return_type
-used to recurse into HLILWhile bodies only, so a do-while's body was invisible to all three -
-latent in the real corpus (0 do-whiles in the plan's verification sample) but a live gap in the
-walkers themselves, confirmed here on hand-built cases.'''
+'''Unit tests for uniform HLIL child-block traversal: DeadCodeEliminationPass,
+CommonReturnExtractionPass and TypeScriptGenerator._infer_return_type see into every loop body,
+a do-while's as well as a while's. Checked on hand-built cases.'''
 
 from pathlib import Path
 import sys

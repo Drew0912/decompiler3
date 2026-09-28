@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for dereference opcodes (LOAD_STACK_DEREF/POP_TO_DEREF) - Step 3 of the
-LLIL/MLIL hardening plan.'''
+'''Unit tests for dereference opcodes (LOAD_STACK_DEREF/POP_TO_DEREF) and the pointer reads and
+writes they become in MLIL and HLIL.'''
 
 from pathlib import Path
 import sys
@@ -222,10 +222,10 @@ class TestDerefMetadataPreservation(unittest.TestCase):
 
 
 class TestHLILDerefStoreReadsPointer(unittest.TestCase):
-    '''Codex Rule 2 finding: a store through a pointer (*dest = value) reads dest's own value
-    too, same as it reads value - ControlFlowOptimizationPass (the one HLIL pass actually wired
-    into the live pipeline that inspects assignment reads/kills) must not treat the pointer
-    variable as unread just because it only appears on the dest side of a deref-store.'''
+    '''A store through a pointer (*dest = value) reads dest's own value too, same as it reads
+    value - ControlFlowOptimizationPass (the HLIL pass that inspects assignment reads/kills) must
+    not treat the pointer variable as unread just because it only appears on the dest side of a
+    deref-store.'''
 
     def test_deref_store_dest_counts_as_a_read_of_the_pointer(self):
         ptr = HLILVariable('arg1')
@@ -238,7 +238,7 @@ class TestHLILDerefStoreReadsPointer(unittest.TestCase):
         self.assertEqual(exit_paths, ())
 
 
-class TestRegGlobalPropagationDerefInvalidation(unittest.TestCase):
+class TestRegGlobalPropagationSkipsDerefReads(unittest.TestCase):
     '''A REG/GLOBAL value read through a pointer (e.g. REG[0] = *arg1) must never be propagated
     across a later store through a pointer - otherwise the propagator could re-evaluate a stale
     expression after the store instead of using the value actually captured into REG[0]
@@ -246,7 +246,7 @@ class TestRegGlobalPropagationDerefInvalidation(unittest.TestCase):
     this by never caching a deref read under a REG/GLOBAL slot in the first place, rather than
     caching it and invalidating on a later pointer store.'''
 
-    def test_cached_deref_value_is_invalidated_by_a_later_store_deref(self):
+    def test_deref_read_is_not_propagated_past_a_later_store_deref(self):
         func = MediumLevelILFunction('reg_global_test')
         block = func.create_block(start = FUNC_START)
         ptr_param = func.get_or_create_parameter(1, 'arg1')
@@ -263,14 +263,10 @@ class TestRegGlobalPropagationDerefInvalidation(unittest.TestCase):
         self.assertIsInstance(final_ret.value, MLILLoadReg)
 
 
-class TestDerefStoreVersionsAddressTakenLocal(unittest.TestCase):
-    '''Originally: Codex Rule 2 round 6 finding that MLILStoreDeref never created an SSA
-    version for the variable it might write through, fixed with a pseudo-definition that
-    clobbered every address-taken local on every deref store. Step A (2026-09-22) replaced
-    that pseudo-definition mechanism entirely: an address-taken local is now lowered to
-    explicit *(&x) memory form during SSA construction and never scalar-versioned at all, so
-    the semantic property to guard is "reads/writes go through the memory form and a stale
-    scalar version can never be read" rather than "a new SSA version gets created".'''
+class TestAddressTakenLocalStoresUseMemoryForm(unittest.TestCase):
+    '''An address-taken local is lowered to explicit *(&x) memory form during SSA construction
+    and never scalar-versioned, so its reads and writes all go through that form and a stale
+    scalar version can never be read.'''
 
     def test_address_taken_local_lowers_to_memory_form_not_scalar_ssa(self):
         # x = 1; *(&x) = 2; return x - both writes become *(&x) stores and the read becomes
@@ -312,14 +308,10 @@ class TestDerefStoreVersionsAddressTakenLocal(unittest.TestCase):
         self.assertFalse(isinstance(ret_inst.value, MLILConst) and ret_inst.value.value == 1)
 
 
-class TestCallAddressTakenArgPhiPlacement(unittest.TestCase):
-    '''Originally: Fable's independent review finding that the call-&arg pseudo-def mechanism
-    created a pseudo-definition at rename time that _collect_defs never knew about, so no phi
-    was placed at a merge point downstream of a conditional call. Step A (2026-09-22) removed
-    that pseudo-definition mechanism entirely: an address-taken local is lowered to explicit
-    *(&x) memory form and never scalar-versioned, so it needs no phi at all - the semantic
-    property to guard is now "no phi, and every read sees the one stable address" rather than
-    "a phi gets placed".'''
+class TestCallAddressTakenArgNeedsNoPhi(unittest.TestCase):
+    '''A local whose address a call receives is lowered to explicit *(&x) memory form and never
+    scalar-versioned, so a merge after a conditional call needs no phi for it: every read sees
+    the one stable address.'''
 
     def _build_diamond_with_addr_taken_call(self, name: str) -> MediumLevelILFunction:
         # var_s0 = 0; if (arg1 == 0) { f(&var_s0) } ; return var_s0 + 1

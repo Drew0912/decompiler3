@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-'''MLIL->HLIL structuring never silently loses or invents a path (CX Step G).
+'''MLIL->HLIL structuring never silently loses or invents a path.
 
-Each shape comes from a real loss in the sora2_1.0 corpus or from the design review, and every
-test runs the result against its MLIL for every parameter assignment (hlil_cfg_utils.classify):
+Each shape comes from a real loss in the sora2_1.0 corpus or is a constructed case of the same
+kind, and every test runs the result against its MLIL for every parameter assignment
+(hlil_cfg_utils.classify):
 - merge points that are not merges: an early-exit arm (ai_chr0123_e00 CheckAlgoUse), a merge
   past the enclosing merge inside a loop (mon5027_c11 AniFieldSwarmAttack), a case falling
   into the next case's code (mp3000 TK_KUNO);

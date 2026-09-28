@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for CopyPropagationPass and ExpressionInliningPass - Step 6 of the LLIL/MLIL
-hardening plan: copy propagation and expression inlining must not forward a register/global
-SSA value past a point where that same storage gets redefined.'''
+'''Unit tests for CopyPropagationPass and ExpressionInliningPass: copy propagation and expression
+inlining must not forward a register/global SSA value past a point where that same storage gets
+redefined.'''
 
 from pathlib import Path
 import sys
@@ -30,8 +30,7 @@ def make_func(name: str) -> MediumLevelILFunction:
 class TestCopyPropagationGlobalSaveRestore(unittest.TestCase):
     '''tmp = GLOBAL[n]; GLOBAL[n] = x; ...; GLOBAL[n] = tmp must keep the restore - forwarding
     GLOBAL[n]'s original value directly to the restore site would make de-SSA collapse it into
-    a no-op, since a global's SSA version identity is erased once it lowers back to GLOBALS[n]
-    (Fable's finding from Step 3's closure verification, confirmed by direct repro).'''
+    a no-op, since a global's SSA version identity is erased once it lowers back to GLOBALS[n].'''
 
     def test_restore_survives_copy_propagation_and_deconstruction(self):
         func = make_func('save_restore')

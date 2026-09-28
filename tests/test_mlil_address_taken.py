@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for address-taken locals as memory during SSA - Step A of the Codex IR review
-plan (independent-fix-steps A-K). Address-taken locals/parameters are lowered to explicit
-*(&x) deref/store form during SSA construction (ir/mlil/mlil_ssa.py's
-_lower_address_taken_vars) instead of being versioned like ordinary scalars - closing the
-bug class where a call's real effect on an out-parameter was silently dropped (real examples:
-mp0000_ev.EVENT_END_BTL, QSM410_00_01/QSM802_00_01).'''
+'''Unit tests for address-taken locals as memory during SSA. Address-taken locals/parameters
+are lowered to explicit *(&x) deref/store form during SSA construction (ir/mlil/mlil_ssa.py's
+_lower_address_taken_vars) instead of being versioned like ordinary scalars, so a call's real
+effect on an out-parameter is never dropped (real examples: mp0000_ev.EVENT_END_BTL,
+QSM410_00_01/QSM802_00_01).'''
 
 from pathlib import Path
 import sys
@@ -77,8 +76,7 @@ class TestStackTempOutParamNoStaleConstant(unittest.TestCase):
 
 class TestSequentialOutParamCallsWithMidCopy(unittest.TestCase):
     '''x = 5; ptr = &x; f(ptr); old = x; f(ptr); return x - old - two distinct post-call
-    values of x must never be conflated into `return 0`. Matches the example Codex's Rule 0
-    root-cause review traced independently against real source.'''
+    values of x must never be conflated into `return 0`.'''
 
     def _build(self) -> MediumLevelILFunction:
         func = MediumLevelILFunction('sequential_out_param_test')
@@ -237,9 +235,9 @@ class TestRegGlobalPropagationAddressTaken(unittest.TestCase):
     '''GLOBAL[n] = x; *(&x) = 5; use(GLOBAL[n]) - the value captured into GLOBAL[0] before
     the store must not be replaced by a re-read of *x after it. RegGlobalValuePropagator's
     closed-form-only caching already defends this - a deref read is never cached under a
-    REG/GLOBAL slot at all, so there is nothing for the later store to invalidate; Step A's
-    lowering makes an address-taken local's ordinary reassignment go through exactly the same
-    StoreDeref shape.'''
+    REG/GLOBAL slot at all, so there is nothing for the later store to invalidate; SSA
+    construction's lowering makes an address-taken local's ordinary reassignment go through
+    exactly the same StoreDeref shape.'''
 
     def test_stale_global_copy_not_substituted_after_address_taken_reassignment(self):
         func = MediumLevelILFunction('reg_global_addr_taken_test')
@@ -261,7 +259,7 @@ class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
     '''reg0 = f(&x); y = x + reg0 - CallResultFolder must not fold this into
     y = x + f(&x), which would read x through the pointer before f's call actually writes
     it. _read_unsafe_to_fold (ir/hlil/mlil_to_hlil.py) already defends a bare MLILDeref;
-    Step A's lowering makes every address-taken read go through exactly that shape.'''
+    SSA construction's lowering makes every address-taken read go through exactly that shape.'''
 
     def test_fold_is_blocked_by_the_intervening_deref_read(self):
         func = MediumLevelILFunction('call_result_fold_test', 0)
@@ -320,11 +318,10 @@ class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
 
 
 class TestCFORedundantElseAssignAddressTakenReload(unittest.TestCase):
-    '''Codex Rule 0 correction, 2026-09-22: making the DISCRIMINANT itself address-taken
-    would never reach _stmt_modifies_any at all - _remove_redundant_else_assign requires a
-    plain HLILVar discriminant and returns immediately otherwise. Correct shape: keep the
-    discriminant plain; make the reloaded value read a DIFFERENT, address-taken variable
-    that the case body writes through *(&x).'''
+    '''The discriminant stays a plain HLILVar (_remove_redundant_else_assign returns
+    immediately for any other discriminant, so an address-taken one would never reach
+    _stmt_modifies_any); the reloaded value reads a different, address-taken variable that
+    the case body writes through *(&x).'''
 
     def test_reload_of_address_taken_source_is_not_removed(self):
         # if (selector == 1) { *(&addr_var) = 99 }

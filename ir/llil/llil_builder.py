@@ -387,7 +387,7 @@ class LowLevelILBuilder:
             raise TypeError(f'Cannot convert {type(value)} to expression')
 
     def push(self, value: Union[LowLevelILExpr, int, float, str], *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
-        '''Push value onto stack (SPEC-compliant: StackStore + SpAdd)'''
+        '''Push value onto stack: StackStore + SpAdd (see docs/LLIL_DESIGN.md)'''
         expr = self._to_expr(value)
         slot_index = self.sp_get()
         # 1. StackStore(sp+0, value)
@@ -496,10 +496,6 @@ class LowLevelILBuilder:
     def push_stack_addr(self, offset: int):
         '''Push the address of stack location (sp + offset)'''
         self.push(self._slot_address(self._slot_index(offset)))
-
-    # REMOVED: sp_add() - use emit_sp_add() instead
-    # def sp_add(self, delta: int):
-    #     '''DEPRECATED: Use emit_sp_add() instead'''
 
     # === Register Operations ===
 
@@ -846,8 +842,6 @@ class LLILFormatter:
             return cls._format_unary_op_expanded(inst)
 
         return None
-        # # For non-binary operations, return single line
-        # return [str(inst)]
 
     @classmethod
     def format_instruction_sequence(cls, instructions: List[LowLevelILInstruction], indent: str = '  ') -> list[str]:

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for MediumLevelILCall.clobbers_registers - Step 11 (bug 4) of the LLIL/MLIL
-hardening plan: a call proven to have no VM register/global side effects at all (the Falcom
-debug.log translation) must not make generic SSA construction give every register, including
-reg0, a fresh undefined pseudo-definition - that contradicts the translator's own documented
-invariant that DEBUG_LOG leaves the result register alone.'''
+'''Unit tests for MediumLevelILCall.clobbers_registers: a call proven to have no VM
+register/global side effects at all (the Falcom debug.log translation) must not make generic SSA
+construction give every register, including reg0, a fresh undefined pseudo-definition - that
+contradicts the translator's own documented invariant that DEBUG_LOG leaves the result register
+alone.'''
 
 from pathlib import Path
 import sys

@@ -93,7 +93,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
     # === Virtual Stack Management ===
 
     def push(self, value: Union[LowLevelILExpr, int, float, str], *, hidden_for_formatter: bool = False):
-        '''Push value onto stack (SPEC-compliant: StackStore + SpAdd)'''
+        '''Push value onto stack: StackStore + SpAdd (see docs/LLIL_DESIGN.md)'''
 
         if isinstance(value, LowLevelILConstScript):
             # 8 bytes script pointer

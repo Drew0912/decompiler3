@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for slot lifetimes in the LLIL builder - Step O of the Codex IR review plan. A parameter slot is
+'''Unit tests for slot lifetimes in the LLIL builder. A parameter slot is
 frame storage (argN) only while it still holds the caller's parameter; once the function pops the parameter, a push
 into the slot starts a stack lifetime, and every access to the slot uses that storage.'''
 
