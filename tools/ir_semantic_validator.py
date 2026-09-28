@@ -25,10 +25,11 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ml import fileio
 from common.config import default_encoding
+from ir.core import UNASSIGNED_INST_INDEX
 from ir.llil import LowLevelILFunction, LowLevelILInstruction, LowLevelILOperation
 from ir.mlil import MediumLevelILFunction, MediumLevelILInstruction, MediumLevelILOperation, MLILLoadGlobal
 from ir.hlil import (
-    HighLevelILFunction, HLILInstruction, HLILOperation, HLILStatement, HLILExpression,
+    HighLevelILFunction, HLILInstruction, HLILOperation, HLILStatement,
     HLILUnstructured, HLILVariable, VariableKind, BinaryOp, UnaryOp, reachable_statements
 )
 from falcom.ed9.ir.llil.llil_ext import LowLevelILGlobalLoad
@@ -105,9 +106,9 @@ ProvenanceKey = Tuple[str, int]  # (layer name, instruction index in that layer)
 class SourceLocation:
     """Maps IR instruction to original SCP bytecode offset"""
     scp_offset: int = 0
-    llil_index: int = -1
-    mlil_index: int = -1
-    hlil_index: int = -1
+    llil_index: int = UNASSIGNED_INST_INDEX
+    mlil_index: int = UNASSIGNED_INST_INDEX
+    hlil_index: int = UNASSIGNED_INST_INDEX
 
     def __str__(self) -> str:
         return f"0x{self.scp_offset:04X}"
@@ -4116,8 +4117,6 @@ class Validator:
 
     def output_dir(self, dir_path: str) -> int:
         """Write LLIL-MLIL and MLIL-HLIL results to separate files"""
-        from pathlib import Path
-
         out_path = Path(dir_path)
         out_path.mkdir(parents=True, exist_ok=True)
 

@@ -1,6 +1,6 @@
 '''MLIL Builder - Helper for constructing MLIL functions'''
 
-from typing import Optional, Union, List, TYPE_CHECKING
+from typing import Optional, List, TYPE_CHECKING
 
 from .mlil import *
 

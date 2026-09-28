@@ -11,7 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst,
-    MLILGt, MLILAdd, MLILCall, MLILSyscall, MLILDeref, MLILLoadGlobal,
+    MLILGt, MLILCall, MLILSyscall, MLILDeref, MLILLoadGlobal,
 )
 from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILIf, MLILRet, MLILUndef, SSADeconstructor
 from ir.mlil.passes import CopyPropagationPass, ExpressionInliningPass, SSADeadCodeEliminationPass

@@ -1,7 +1,7 @@
 '''TypeScript Code Generator - HLIL to production TypeScript'''
 
 from common import *
-from typing import List, Optional
+from typing import List
 from ir.hlil import *
 
 
@@ -206,9 +206,7 @@ class TypeScriptGenerator:
                 return format_float(expr.value)
 
             elif isinstance(expr.value, int) and expr.is_hex:
-                # Display as unsigned 32-bit hex
-                unsigned = expr.value & 0xFFFFFFFF
-                return f'0x{unsigned:08X}'
+                return format_uint32_hex(expr.value)
 
             else:
                 return str(expr.value)
@@ -365,7 +363,7 @@ class TypeScriptGenerator:
             lines.append('')
 
         # Function body
-        body_lines = cls._generate_block(func.body, indent=1)
+        body_lines = cls._generate_block(func.body, indent = 1)
         lines.extend(body_lines)
 
         lines.append('}')

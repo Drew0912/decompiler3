@@ -34,8 +34,8 @@ class Region:
     type: RegionType
     entry: int                              # Entry block index
     exit: Optional[int] = None              # Exit block index (None for infinite loops)
-    blocks: Set[int] = field(default_factory=set)  # All blocks in this region
-    children: List['Region'] = field(default_factory=list)  # Nested regions
+    blocks: Set[int] = field(default_factory = set)  # All blocks in this region
+    children: List['Region'] = field(default_factory = list)  # Nested regions
     condition_block: Optional[int] = None   # Block containing the condition (for if/loop)
 
     def __hash__(self):
@@ -48,7 +48,7 @@ class LoopInfo:
     header: int
     body: Set[int]
     back_edges: List[Tuple[int, int]]
-    exits: Set[int] = field(default_factory=set)
+    exits: Set[int] = field(default_factory = set)
 
 
 class StructuralAnalyzer:
@@ -206,9 +206,9 @@ class StructuralAnalyzer:
             self.loops[header].body |= body
         else:
             self.loops[header] = LoopInfo(
-                header=header,
-                body=body,
-                back_edges=[(tail, header)]
+                header = header,
+                body = body,
+                back_edges = [(tail, header)]
             )
 
         # Find exits over the merged body, so a second back edge cannot report
@@ -253,7 +253,7 @@ class StructuralAnalyzer:
         # Sort by size (smallest/innermost first)
         sorted_loops = sorted(
             [(h, l) for h, l in self.loops.items() if h in self.active_nodes],
-            key=lambda x: len(x[1].body)
+            key = lambda x: len(x[1].body)
         )
 
         for header, loop in sorted_loops:
@@ -263,11 +263,11 @@ class StructuralAnalyzer:
 
             # Create loop region
             region = Region(
-                type=RegionType.NATURAL_LOOP,
-                entry=header,
-                exit=min(loop.exits) if loop.exits else None,
-                blocks=loop.body.copy(),
-                condition_block=header
+                type = RegionType.NATURAL_LOOP,
+                entry = header,
+                exit = min(loop.exits) if loop.exits else None,
+                blocks = loop.body.copy(),
+                condition_block = header
             )
 
             self.regions[header] = region
@@ -323,11 +323,11 @@ class StructuralAnalyzer:
             # Create region
             all_blocks = {node} | then_blocks | else_blocks
             region = Region(
-                type=region_type,
-                entry=node,
-                exit=merge,
-                blocks=all_blocks,
-                condition_block=node
+                type = region_type,
+                entry = node,
+                exit = merge,
+                blocks = all_blocks,
+                condition_block = node
             )
 
             self.regions[node] = region
@@ -369,10 +369,10 @@ class StructuralAnalyzer:
 
             # Collapse succ into node
             region = Region(
-                type=RegionType.SEQUENCE,
-                entry=node,
-                exit=succ,
-                blocks={node, succ}
+                type = RegionType.SEQUENCE,
+                entry = node,
+                exit = succ,
+                blocks = {node, succ}
             )
 
             self.regions[node] = region

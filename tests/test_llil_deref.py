@@ -16,7 +16,7 @@ from ir.mlil.mlil import (
     MLILConst, MLILCall, MLILStoreReg, MLILLoadReg, MLILRet, MLILAddressOf, MLILIf, MLILGoto,
     MLILAdd, MLILEq,
 )
-from ir.mlil.mlil_ssa import MLILSetVarSSA, MLILVariableSSA, MLILVarSSA, MLILPhi
+from ir.mlil.mlil_ssa import MLILVarSSA, MLILPhi
 from ir.mlil.mlil_passes import SSAConversionPass, SSADeconstructionPass
 from ir.mlil.mlil_optimizer import optimize_mlil
 from ir.mlil.passes import (

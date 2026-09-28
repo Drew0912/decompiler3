@@ -1,7 +1,7 @@
 '''Falcom-specific LLIL Extensions'''
 
 from enum import IntEnum
-from typing import Optional, Union, List, TYPE_CHECKING
+from typing import Optional, List
 from ir.llil import *
 from .constants import *
 

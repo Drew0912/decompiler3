@@ -807,7 +807,6 @@ class LLILFormatter:
         line = str(inst)
 
         if isinstance(inst, LowLevelILStackStore) and inst.offset != 0:
-            line = f'STACK[sp + {inst.offset // WORD_SIZE}] = STACK[sp--] ; {inst.value}'
             line = f'STACK[{inst.slot_index}] = STACK[--sp] ; {inst.value}'
 
         elif isinstance(inst, (LowLevelILStackStore, LowLevelILStackLoad)):

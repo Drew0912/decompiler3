@@ -27,7 +27,7 @@ class ReturnHint:
 @dataclass
 class FunctionSig:
     '''Function signature'''
-    params: List[ParamHint] = field(default_factory=list)
+    params: List[ParamHint] = field(default_factory = list)
     return_hint: Optional[ReturnHint] = None
 
 
@@ -37,7 +37,7 @@ class SyscallSig:
     name: str
     subsystem: int
     cmd: int
-    params: List[ParamHint] = field(default_factory=list)
+    params: List[ParamHint] = field(default_factory = list)
     return_hint: Optional[ReturnHint] = None
 
 
@@ -52,7 +52,7 @@ class FormatSignatureDB:
 
     def load_yaml(self, path: Path):
         '''Load signatures from YAML file'''
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(path, 'r', encoding = 'utf-8') as f:
             data = yaml.safe_load(f)
 
         if not data:
@@ -100,7 +100,7 @@ class FormatSignatureDB:
         params = [self._parse_param(p) for p in data.get('params', [])]
         self._validate_params(params, 'function')
         return_hint = self._parse_return(data.get('return'))
-        return FunctionSig(params=params, return_hint=return_hint)
+        return FunctionSig(params = params, return_hint = return_hint)
 
     def _parse_syscall_sig(self, name: str, data: Dict) -> SyscallSig:
         '''Parse syscall signature from dict'''
@@ -109,11 +109,11 @@ class FormatSignatureDB:
         self._validate_params(params, f'syscall {name}')
         return_hint = self._parse_return(data.get('return'))
         return SyscallSig(
-            name=name,
-            subsystem=id_tuple[0],
-            cmd=id_tuple[1],
-            params=params,
-            return_hint=return_hint,
+            name = name,
+            subsystem = id_tuple[0],
+            cmd = id_tuple[1],
+            params = params,
+            return_hint = return_hint,
         )
 
     @classmethod
@@ -132,10 +132,10 @@ class FormatSignatureDB:
             param_type = ' | '.join(param_type)
 
         return ParamHint(
-            name=name,
-            type=param_type,
-            format=data.get('format'),
-            variadic=data.get('variadic', False),
+            name = name,
+            type = param_type,
+            format = data.get('format'),
+            variadic = data.get('variadic', False),
         )
 
     @classmethod
@@ -145,12 +145,12 @@ class FormatSignatureDB:
             return None
 
         if isinstance(data, str):
-            return ReturnHint(type=data)
+            return ReturnHint(type = data)
 
         return ReturnHint(
-            name=data.get('name'),
-            type=data.get('type'),
-            format=data.get('format'),
+            name = data.get('name'),
+            type = data.get('type'),
+            format = data.get('format'),
         )
 
     def get_function(self, name: str) -> Optional[FunctionSig]:

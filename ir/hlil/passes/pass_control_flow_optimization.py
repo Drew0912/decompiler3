@@ -7,7 +7,6 @@ from ir.pipeline import Pass
 from ..hlil import (
     HighLevelILFunction,
     HLILBlock,
-    HLILInstruction,
     HLILStatement,
     HLILExpression,
     HLILVar,

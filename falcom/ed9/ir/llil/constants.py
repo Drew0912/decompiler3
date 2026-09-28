@@ -1,6 +1,5 @@
 '''Falcom VM specific constants and types'''
 
-from typing import TYPE_CHECKING
 from ir.llil.llil import *
 
 
@@ -9,7 +8,7 @@ class LowLevelILConstFuncId(LowLevelILConst):
 
     def __init__(self):
         # Special constant with no actual value
-        super().__init__(None, is_hex=False)
+        super().__init__(None, is_hex = False)
 
     def __str__(self) -> str:
         return '<func_id>'
@@ -20,7 +19,7 @@ class LowLevelILConstRetAddr(LowLevelILConst):
 
     def __init__(self, label: str):
         # Store label as the value
-        super().__init__(label, is_hex=False)
+        super().__init__(label, is_hex = False)
         self.label = label
 
     def __str__(self) -> str:
@@ -32,7 +31,7 @@ class LowLevelILConstRetAddrBlock(LowLevelILConst):
 
     def __init__(self, block: 'LowLevelILBasicBlock'):
         # Store block reference as the value
-        super().__init__(block, is_hex=False)
+        super().__init__(block, is_hex = False)
         self.block = block
 
     def __str__(self) -> str:
@@ -44,7 +43,7 @@ class LowLevelILConstScript(LowLevelILConst):
 
     def __init__(self):
         # Special constant with no actual value
-        super().__init__(None, is_hex=False)
+        super().__init__(None, is_hex = False)
 
     def __str__(self) -> str:
         return '<script_ptr>'

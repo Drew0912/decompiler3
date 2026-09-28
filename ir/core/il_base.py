@@ -1,7 +1,10 @@
 '''Base IL traits for LLIL, MLIL, HLIL'''
 
 import math
-from abc import ABC, abstractmethod
+from abc import ABC
+
+
+UNASSIGNED_INST_INDEX = -1   # Index before one is assigned (inst_index, llil_index, mlil_index)
 
 
 class ILInstruction(ABC):
@@ -37,7 +40,7 @@ class UnaryOperation(ILInstruction):
 class IRParameter:
     '''Function parameter with type and default value'''
 
-    def __init__(self, name: str, type_name: str = None, default_value=None):
+    def __init__(self, name: str, type_name: str = None, default_value = None):
         self.name = name
         self.type_name = type_name  # Type as string (e.g. 'int', 'str', 'float')
         self.default_value = default_value

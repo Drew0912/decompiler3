@@ -4,6 +4,7 @@ from typing import Callable, Iterator, List, Optional, Sequence, Tuple, Union
 from enum import auto
 import operator
 from common import *
+from ir.core import UNASSIGNED_INST_INDEX
 
 
 class HLILTypeKind(IntEnum2):
@@ -88,7 +89,7 @@ class HLILInstruction:
     def __init__(self, operation: HLILOperation):
         self.operation = operation
         self.address: int = 0  # Source SCP bytecode offset (inherited from MLIL)
-        self.mlil_index: int = -1  # Source MLIL instruction index (for debugging/mapping)
+        self.mlil_index: int = UNASSIGNED_INST_INDEX  # Source MLIL instruction index (for debugging/mapping)
 
     def __str__(self) -> str:
         return f'{self.operation.name}'
@@ -187,9 +188,7 @@ class HLILConst(HLILExpression):
             return 'true' if self.value else 'false'
 
         elif isinstance(self.value, int) and self.is_hex:
-            # Display as unsigned 32-bit hex
-            unsigned = self.value & 0xFFFFFFFF
-            return f'0x{unsigned:08X}'
+            return format_uint32_hex(self.value)
 
         return str(self.value)
 

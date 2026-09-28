@@ -587,8 +587,8 @@ class MLILToHLILConverter:
             if i < len(self.mlil_func.source_params):
                 default_value = self.mlil_func.source_params[i].default_value
 
-            hlil_var = HLILVariable(mlil_var.name, type_hint=type_hint,
-                                    default_value=default_value, kind=VariableKind.PARAM)
+            hlil_var = HLILVariable(mlil_var.name, type_hint = type_hint,
+                                    default_value = default_value, kind = VariableKind.PARAM)
             self.hlil_func.parameters.append(hlil_var)
 
     def _declare_used_variables(self):

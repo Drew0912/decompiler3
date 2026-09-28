@@ -1,6 +1,6 @@
 """ED9 VM bytecode → Falcom LLIL lifter"""
 
-from typing import *
+from typing import Dict, TYPE_CHECKING
 
 from ir.llil.llil import *
 from ir.core import IRParameter
@@ -32,7 +32,7 @@ class ED9VMLifter:
 
         builder = FalcomVMBuilder()
         ir_params = self._convert_params(func.params)
-        builder.create_function(func.name, func.offset, ir_params, is_common_func=func.is_common_func)
+        builder.create_function(func.name, func.offset, ir_params, is_common_func = func.is_common_func)
 
         lift_blocks = self._compute_rpo(func.entry_block)
         layout_blocks = sorted(lift_blocks, key = lambda b: b.offset)   # preserve address-order block indices

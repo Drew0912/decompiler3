@@ -40,4 +40,4 @@ def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Opti
     if normalize_branch_order:
         pipeline.add_pass(BranchOrderNormalizationPass())
 
-    return pipeline.run(mlil_func, debug=False)
+    return pipeline.run(mlil_func, debug = False)

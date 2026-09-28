@@ -4,11 +4,12 @@ from common import *
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from .basic_block import BranchKind
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
+from .instruction import Instruction
 
 if TYPE_CHECKING:
     from ml import fileio
-    from .instruction import Instruction, Operand
+    from .instruction import Operand
     from .formatter import FormatterContext
 
 
@@ -126,23 +127,23 @@ class OperandDescriptor:
 
 # Initialize format table
 def _oprdesc(opr_type: OperandType, is_hex: bool = False):
-    return OperandDescriptor(OperandFormat(opr_type, is_hex=is_hex))
+    return OperandDescriptor(OperandFormat(opr_type, is_hex = is_hex))
 
 OperandDescriptor.format_table.update({
-    'c' : _oprdesc(OperandType.SInt8, is_hex=False),
-    'C' : _oprdesc(OperandType.UInt8, is_hex=False),
-    'b' : _oprdesc(OperandType.SInt8, is_hex=True),
-    'B' : _oprdesc(OperandType.UInt8, is_hex=True),
+    'c' : _oprdesc(OperandType.SInt8, is_hex = False),
+    'C' : _oprdesc(OperandType.UInt8, is_hex = False),
+    'b' : _oprdesc(OperandType.SInt8, is_hex = True),
+    'B' : _oprdesc(OperandType.UInt8, is_hex = True),
 
-    'h' : _oprdesc(OperandType.SInt16, is_hex=False),
-    'H' : _oprdesc(OperandType.UInt16, is_hex=False),
-    'w' : _oprdesc(OperandType.SInt16, is_hex=True),
-    'W' : _oprdesc(OperandType.UInt16, is_hex=True),
+    'h' : _oprdesc(OperandType.SInt16, is_hex = False),
+    'H' : _oprdesc(OperandType.UInt16, is_hex = False),
+    'w' : _oprdesc(OperandType.SInt16, is_hex = True),
+    'W' : _oprdesc(OperandType.UInt16, is_hex = True),
 
-    'i' : _oprdesc(OperandType.SInt32, is_hex=False),
-    'I' : _oprdesc(OperandType.UInt32, is_hex=False),
-    'l' : _oprdesc(OperandType.SInt32, is_hex=True),
-    'L' : _oprdesc(OperandType.UInt32, is_hex=True),
+    'i' : _oprdesc(OperandType.SInt32, is_hex = False),
+    'I' : _oprdesc(OperandType.UInt32, is_hex = False),
+    'l' : _oprdesc(OperandType.SInt32, is_hex = True),
+    'L' : _oprdesc(OperandType.UInt32, is_hex = True),
 
     'f' : _oprdesc(OperandType.Float32),
 
@@ -196,7 +197,7 @@ class InstructionDescriptor:
         """Check if instruction starts a new basic block"""
         return bool(self.flags & InstructionFlags.START_BLOCK)
 
-    def get_branch_targets(self, inst: 'Instruction', current_pos: int) -> list[BranchTarget]:
+    def get_branch_targets(self, inst: Instruction, current_pos: int) -> list[BranchTarget]:
         """Get branch targets from this instruction"""
         return []
 
@@ -204,7 +205,7 @@ class InstructionDescriptor:
         """Format operands for display"""
         return [op.descriptor.format_operand(op, context) for op in operands]
 
-    def format_instruction(self, inst: 'Instruction', context: 'FormatterContext') -> str:
+    def format_instruction(self, inst: Instruction, context: 'FormatterContext') -> str:
         """Format instruction for display"""
         ops = self.format_operands(inst.operands, context)
         return f'{self.mnemonic}({", ".join(ops)})'
@@ -227,7 +228,7 @@ class InstructionTable(ABC):
     def read_operands(
         self,
         fs: 'fileio.FileStream',
-        inst: 'Instruction',
+        inst: Instruction,
         offset: int
     ) -> list['Operand']:
         """Read operands for instruction"""
@@ -237,10 +238,8 @@ class InstructionTable(ABC):
         self,
         fs: 'fileio.FileStream',
         offset: int
-    ) -> 'Instruction':
+    ) -> Instruction:
         """Decode a complete instruction"""
-        from .instruction import Instruction
-
         # Read opcode
         opcode = self.read_opcode(fs)
 

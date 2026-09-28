@@ -1,7 +1,7 @@
 '''HLIL Formatter - Format HLIL for debugging'''
 
 from common import *
-from typing import List, Optional
+from typing import List
 from .hlil import *
 
 
@@ -101,7 +101,7 @@ class HLILFormatter:
             lines.append('')
 
         # Function body
-        body_lines = cls._format_block(func.body, indent=1)
+        body_lines = cls._format_block(func.body, indent = 1)
         lines.extend(body_lines)
 
         lines.append('}')

@@ -1,6 +1,6 @@
 '''LLIL to MLIL Translator - Stack elimination (core operations only)'''
 
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 from ir.llil import *
 from .mlil import *
@@ -33,11 +33,11 @@ class LLILToMLILTranslator:
         for llil_block in llil_func.basic_blocks:
             mlil_block = self.block_map[llil_block]
             self.builder.set_current_block(mlil_block)
-            self._translate_block(llil_block, mlil_block)
+            self._translate_block(llil_block)
 
         return self.builder.finalize()
 
-    def _translate_block(self, llil_block: LowLevelILBasicBlock, mlil_block: MediumLevelILBasicBlock):
+    def _translate_block(self, llil_block: LowLevelILBasicBlock):
         '''Translate a single LLIL block to MLIL'''
         for llil_inst in llil_block.instructions:
             self.builder.set_current_source(llil_inst.address, llil_inst.inst_index)

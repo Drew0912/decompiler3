@@ -1,6 +1,6 @@
 '''LLIL - Stack-based low-level IR'''
 
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from typing import Any, List, Optional, Union, TYPE_CHECKING
 from common import *
 from ir.core import *
@@ -86,7 +86,7 @@ class LowLevelILInstruction(ILInstruction):
     def __init__(self, operation: LowLevelILOperation):
         super().__init__()
         self.address = 0
-        self.inst_index = -1  # Assigned via LowLevelILFunction._register_instruction
+        self.inst_index = UNASSIGNED_INST_INDEX  # Assigned via LowLevelILFunction._register_instruction
         self.operation = operation
         self.options = ILOptions()  # Formatting and processing options
 
@@ -607,7 +607,7 @@ class LowLevelILBasicBlock:
                 f'block already has terminal instruction {self.instructions[-1]}'
             )
 
-        if inst.inst_index != -1:
+        if inst.inst_index != UNASSIGNED_INST_INDEX:
             raise RuntimeError(
                 f'Instruction {inst} already registered (inst_index = {inst.inst_index}). '
                 f'Instructions should not be reused across blocks.'

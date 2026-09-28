@@ -3,7 +3,7 @@
 Replace SSA variables with constant values (no folding).
 '''
 
-from typing import Dict, List, Optional
+from typing import Dict
 from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
@@ -24,7 +24,6 @@ from ..mlil_ssa import (
     MLILVariableSSA,
     MLILVarSSA,
     MLILSetVarSSA,
-    MLILPhi,
     MLILIf,
 )
 

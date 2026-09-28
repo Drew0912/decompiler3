@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 '''Unit tests for MLIL operand traversal - operands(), walk() and iter_ssa_reads(), the one
-shared answer to "what does this node read" that every use collector is built on (previously
-eight hand-written walkers, each re-listing the statement and expression kinds).'''
+shared answer to "what does this node read" that every use collector is built on.'''
 
 from pathlib import Path
+import itertools
 import sys
 import unittest
 
@@ -35,8 +35,12 @@ def concrete_subclasses(base: type) -> set:
     return found
 
 
-def c(value) -> MLILConst:
-    return MLILConst(value)
+_const_values = itertools.count()
+
+
+def c() -> MLILConst:
+    '''A constant whose value no other c() call returns, so every operand is distinct'''
+    return MLILConst(next(_const_values))
 
 
 def samples() -> list:
@@ -45,15 +49,15 @@ def samples() -> list:
     var = MLILVariable('x')
     ssa_var = MLILVariableSSA(var, 1)
     nodes = [
-        MLILConst(1), MLILUndef(), MLILVar(var), MLILSetVar(var, c(1)),
-        MLILGoto(block), MLILIf(c(1), block, block), MLILRet(c(1)), MLILRet(),
-        MLILCall('f', [c(1), c(2)]), MLILSyscall(1, 2, [c(1), c(2)]), MLILCallScript('m', 'f', [c(1), c(2)]),
-        MLILLoadGlobal(0), MLILStoreGlobal(0, c(1)), MLILLoadReg(0), MLILStoreReg(0, c(1)),
-        MLILNop(), MLILDebug('line', 5), MLILStoreDeref(c(1), c(2)),
-        MLILVarSSA(ssa_var), MLILSetVarSSA(ssa_var, c(1)), MLILPhi(ssa_var, [(MLILVariableSSA(var, 0), block)]),
+        c(), MLILUndef(), MLILVar(var), MLILSetVar(var, c()),
+        MLILGoto(block), MLILIf(c(), block, block), MLILRet(c()), MLILRet(),
+        MLILCall('f', [c(), c()]), MLILSyscall(1, 2, [c(), c()]), MLILCallScript('m', 'f', [c(), c()]),
+        MLILLoadGlobal(0), MLILStoreGlobal(0, c()), MLILLoadReg(0), MLILStoreReg(0, c()),
+        MLILNop(), MLILDebug('line', 5), MLILStoreDeref(c(), c()),
+        MLILVarSSA(ssa_var), MLILSetVarSSA(ssa_var, c()), MLILPhi(ssa_var, [(MLILVariableSSA(var, 0), block)]),
     ]
-    nodes += [cls(c(1), c(2)) for cls in concrete_subclasses(MLILBinaryOp)]
-    nodes += [cls(c(1)) for cls in concrete_subclasses(MLILUnaryOp)]
+    nodes += [cls(c(), c()) for cls in concrete_subclasses(MLILBinaryOp)]
+    nodes += [cls(c()) for cls in concrete_subclasses(MLILUnaryOp)]
     return nodes
 
 
@@ -71,7 +75,7 @@ def expression_fields(node) -> list:
 class TestOperandsCoverEveryExpressionField(unittest.TestCase):
     '''operands() is the single list of a node's direct child expressions: every node type must
     return exactly the expressions it holds. A new node type fails here until it has a sample and
-    its own operands() - the drift that once left one walker without a MLILStoreDeref case.'''
+    its own operands().'''
 
     def test_every_node_type_has_a_sample(self):
         sampled = {type(node) for node in samples()}
@@ -84,9 +88,9 @@ class TestOperandsCoverEveryExpressionField(unittest.TestCase):
                 self.assertCountEqual(map(id, node.operands()), map(id, expression_fields(node)))
 
     def test_operands_are_in_evaluation_order(self):
-        lhs, rhs = c(1), c(2)
-        args = [c(3), c(4), c(5)]
-        dest, value = c(6), c(7)
+        lhs, rhs = c(), c()
+        args = [c(), c(), c()]
+        dest, value = c(), c()
 
         self.assertEqual(list(MLILAdd(lhs, rhs).operands()), [lhs, rhs])
         self.assertEqual(list(MLILCall('f', args).operands()), args)
@@ -97,7 +101,7 @@ class TestWalk(unittest.TestCase):
     '''walk() yields a node and everything below it, pre-order in evaluation order.'''
 
     def test_pre_order_left_to_right(self):
-        a, b, d = c(1), c(2), c(3)
+        a, b, d = c(), c(), c()
         add = MLILAdd(a, b)
         neg = MLILNeg(d)
         mul = MLILMul(add, neg)
@@ -143,7 +147,7 @@ class TestIterSSAReads(unittest.TestCase):
 
 
 class TestWalkerRulesKept(unittest.TestCase):
-    '''Rules the individual walkers had before they shared one traversal.'''
+    '''Rules individual passes keep on top of the shared traversal.'''
 
     def test_copy_propagation_does_not_count_a_read_under_address_of(self):
         # it never rewrites the operand of &, so that read is not one of its uses
@@ -153,7 +157,7 @@ class TestWalkerRulesKept(unittest.TestCase):
         self.assertEqual(CopyPropagationPass._collect_uses(call), [x1])
 
     def test_call_types_are_exactly_the_three_call_classes(self):
-        # passes test isinstance(inst, MediumLevelILCall) where they once listed these three
+        # passes rely on MediumLevelILCall covering exactly these three call classes
         self.assertEqual(concrete_subclasses(MediumLevelILCall), {MLILCall, MLILSyscall, MLILCallScript})
 
     def test_inliner_rejects_a_call_inside_an_expression(self):
@@ -162,7 +166,7 @@ class TestWalkerRulesKept(unittest.TestCase):
         x1 = MLILVariableSSA(MLILVariable('x'), 1)
         block = MediumLevelILBasicBlock(0)
         block.instructions = [
-            MLILSetVarSSA(x1, MLILAdd(MLILCall('f', []), c(1))),
+            MLILSetVarSSA(x1, MLILAdd(MLILCall('f', []), c())),
             MLILRet(MLILVarSSA(x1)),
         ]
         func.basic_blocks = [block]

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import Any, Dict, Iterator, List, Optional, Tuple, Union, TYPE_CHECKING
+from abc import abstractmethod
+from typing import Any, Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
 
 from common import *
 from ir.core import *
@@ -12,7 +12,6 @@ from ir.core import *
 FLOAT_ROUND_REL_TOL = 1e-6
 FLOAT_ROUND_ABS_TOL = 1e-9
 
-UNASSIGNED_INST_INDEX = -1
 UNASSIGNED_SLOT_INDEX = -1
 
 if TYPE_CHECKING:
@@ -210,9 +209,7 @@ class MLILConst(MediumLevelILExpr, Constant):
     def __str__(self) -> str:
         if isinstance(self.value, int):
             if self.is_hex:
-                # Display as unsigned 32-bit hex
-                unsigned = self.value & 0xFFFFFFFF
-                return f'0x{unsigned:08X}'
+                return format_uint32_hex(self.value)
 
             return str(self.value)
 

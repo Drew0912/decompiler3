@@ -12,5 +12,6 @@ __all__ = [
     'UnaryOperation',
     'IRParameter',
     'constant_values_equal',
+    'UNASSIGNED_INST_INDEX',
     'ILOptions',
 ]

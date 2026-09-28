@@ -9,7 +9,7 @@ from .type_signatures import ED9TypeSignatures
 
 
 def convert_falcom_llil_to_mlil(llil_func: LowLevelILFunction,
-                                 parser=None,
+                                 parser = None,
                                  optimize: bool = True,
                                  infer_types: bool = True) -> MediumLevelILFunction:
     '''Convert LLIL function to MLIL with Falcom-specific handling

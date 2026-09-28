@@ -10,8 +10,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
 
 from falcom.ed9.disasm import *
-from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump, ED9_FORMAT_TABLE
-from falcom.ed9.disasm.instruction import SYNTHETIC_INSTRUCTION_SIZE
+from falcom.ed9.disasm.ed9_optable import ED9_FORMAT_TABLE
 from falcom.ed9.disasm.instruction_table import OperandDescriptor
 from falcom.ed9.parser import *
 from scp_roundtrip_validator import (

@@ -30,7 +30,7 @@ class ED9OperandDescriptor(OperandDescriptor):
                 return fs.ReadUShort()
 
             case ED9OperandType.Value:
-                return ScpValue(fs=fs)
+                return ScpValue(fs = fs)
 
             case ED9OperandType.GlobalVar:
                 return fs.ReadLong()
@@ -68,7 +68,7 @@ class ED9OperandDescriptor(OperandDescriptor):
 
 # ED9 operand descriptor factory
 def _ed9_oprdesc(opr_type: OperandType | ED9OperandType, is_hex: bool = False):
-    return ED9OperandDescriptor(OperandFormat(opr_type, is_hex=is_hex))
+    return ED9OperandDescriptor(OperandFormat(opr_type, is_hex = is_hex))
 
 # Extend format table with ED9-specific types
 ED9_FORMAT_TABLE = OperandDescriptor.format_table.copy()
@@ -354,7 +354,7 @@ class ED9InstructionTable(InstructionTable):
         operands = []
         for op_desc in operand_descriptors:
             value = op_desc.read_value(fs)
-            operands.append(Operand(descriptor=op_desc, value=value))
+            operands.append(Operand(descriptor = op_desc, value = value))
 
         # Special handling for PUSH instruction
         if descriptor.opcode == ED9Opcode.PUSH:
@@ -385,7 +385,7 @@ class ED9InstructionTable(InstructionTable):
             inst.descriptor = self.get_descriptor(opcode)
             # Get operand descriptor from instruction descriptor
             op_desc = OperandDescriptor.from_format_string(inst.descriptor.operand_fmt, ED9_FORMAT_TABLE)[0]
-            inst.operands = [Operand(descriptor=op_desc, value=operand_value)]
+            inst.operands = [Operand(descriptor = op_desc, value = operand_value)]
 
         # Replace descriptor and operands based on value type
         match value.type:
