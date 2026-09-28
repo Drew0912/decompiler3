@@ -28,8 +28,24 @@ class DeadCodeEliminationPass(Pass):
         self.sccp_replaced_vars = sccp_replaced_vars or set()
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
-        '''Eliminate dead code'''
+        '''Eliminate dead code
+
+        Removing an assignment or phi can leave the definitions it read unread too, so one sweep
+        only removes the unread end of a dead chain - sweep until a sweep removes none.
+        '''
+        while self._sweep(func):
+            pass
+
+        return func
+
+    def _sweep(self, func: MediumLevelILFunction) -> bool:
+        '''Remove every assignment and phi nothing reads now; whether any was removed
+
+        Clearing an unread call output does not count: it drops no read, so it cannot make
+        anything else dead.
+        '''
         self._build_use_chains(func)
+        removed = False
 
         for block in func.basic_blocks:
             new_instructions = []
@@ -57,6 +73,8 @@ class DeadCodeEliminationPass(Pass):
                         new_instructions.append(inst)
 
                     else:
+                        removed = True
+
                         # Preserve string constants as debug comments
                         # Skip if variable was replaced by SCCP (string is now in function args)
                         if isinstance(inst.value, MLILConst) and isinstance(inst.value.value, str):
@@ -68,9 +86,12 @@ class DeadCodeEliminationPass(Pass):
                     if len(self.ssa_uses.get(inst.dest, [])) > 0:
                         new_instructions.append(inst)
 
+                    else:
+                        removed = True
+
             block.instructions = new_instructions
 
-        return func
+        return removed
 
     def _build_use_chains(self, func: MediumLevelILFunction):
         '''Build SSA use chains'''

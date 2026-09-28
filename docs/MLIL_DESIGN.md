@@ -173,6 +173,10 @@ deconstruction: a census of production output found no unread local assignment (
 Run on SSA form, in `ir/mlil/mlil_ssa_optimizer.py`'s configured order: sparse conditional constant
 propagation (SCCP), constant propagation, copy propagation, expression inlining, expression/
 condition simplification, negation normal form, dead-code elimination, and dead-`Phi` elimination.
+SCCP runs once; the other passes repeat until a round changes nothing, for at most
+`SSA_OPTIMIZER_MAX_ITERATIONS` (10) rounds - hitting the cap prints a "did not converge" warning.
+Dead-code elimination repeats its own sweep until nothing more is removed, so a dead chain goes in
+one round rather than one link per round.
 Register/global value propagation (`pass_reg_global_propagation.py`) runs as its own pipeline stage
 in the Falcom entry point, after SSA deconstruction.
 
