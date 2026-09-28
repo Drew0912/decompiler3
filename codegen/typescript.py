@@ -28,6 +28,7 @@ class TypeScriptGenerator:
                 HLILTypeKind.STRING: 'string',
                 HLILTypeKind.BOOL: 'boolean',
                 HLILTypeKind.VOID: 'void',
+                HLILTypeKind.POINTER: 'Pointer',
             }
             return type_map.get(type_hint, 'any')
 
@@ -157,8 +158,9 @@ class TypeScriptGenerator:
                     hint = var.type_hint
                     break
 
+        # Pointer aliases number in the generated header
         if isinstance(hint, HLILTypeKind):
-            return hint in (HLILTypeKind.INT, HLILTypeKind.FLOAT)
+            return hint in (HLILTypeKind.INT, HLILTypeKind.FLOAT, HLILTypeKind.POINTER)
 
         elif isinstance(hint, str):
             return hint.lower() in ('int', 'float', 'number')
@@ -549,6 +551,9 @@ def generate_typescript_header() -> str:
     return '''// VM state
 const GLOBALS: any[] = [];
 const REGS: any[] = new Array(16);
+
+// Out-parameter type: a stack address the callee writes through
+type Pointer = number;
 
 // Intrinsic function: address-of operator (for output parameters)
 function addr_of<T>(value: T): T { return value; }

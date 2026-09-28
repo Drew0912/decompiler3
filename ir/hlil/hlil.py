@@ -14,6 +14,7 @@ class HLILTypeKind(IntEnum2):
     STRING  = auto()
     BOOL    = auto()
     VOID    = auto()
+    POINTER = auto()    # Out-parameter: a stack address the callee writes through
 
 
 class BinaryOp(IntEnum2):

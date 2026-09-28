@@ -1,6 +1,6 @@
 '''MLIL Type System - Type definitions for type inference'''
 
-from typing import Optional, Set
+from typing import AbstractSet, Optional
 from enum import Enum, auto
 
 
@@ -79,22 +79,23 @@ class MLILType:
         return MLILType(MLILTypeKind.POINTER)
 
     @classmethod
-    def variant_type(cls) -> 'MLILType':
-        '''Create variant type (multiple conflicting types)'''
-        return MLILType(MLILTypeKind.VARIANT)
-
-    @classmethod
     def void_type(cls) -> 'MLILType':
         '''Create void type'''
         return MLILType(MLILTypeKind.VOID)
 
 
 class MLILVariantType(MLILType):
-    '''Variant type representing multiple possible types (type conflict)'''
+    '''Variant type (a type conflict), identified by its member types'''
 
-    def __init__(self, types: Set[MLILType]):
+    def __init__(self, types: AbstractSet[MLILType]):
         super().__init__(MLILTypeKind.VARIANT)
-        self.types = types
+        self.types = frozenset(types)
+
+    def __eq__(self, other) -> bool:
+        return isinstance(other, MLILVariantType) and self.types == other.types
+
+    def __hash__(self) -> int:
+        return hash((self.kind, self.types))
 
     def __str__(self) -> str:
         type_names = ', '.join(str(t) for t in sorted(self.types, key = lambda t: t.kind.value))

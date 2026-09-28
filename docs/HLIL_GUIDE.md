@@ -115,9 +115,10 @@ splitting, which is deconstruction machinery living in `ir/mlil/mlil_ssa.py`, en
 ## Codegen
 
 `codegen/typescript.py` is a real TypeScript emitter, not generic pseudocode: typed signatures and
-`let` declarations, a generated header with `GLOBALS`/`REGS` arrays and `addr_of`/`deref`/
-`deref_set`/`int`/`extern_call`/`syscall`/`debug.log` intrinsics, and per-syscall wrapper functions
-from a signature database. TypeScript has no `*ptr` syntax, so a pointer read is a `deref(ptr)`
+`let` declarations, a generated header with `GLOBALS`/`REGS` arrays, a `Pointer` type for
+out-parameters (`type Pointer = number;`, so a `Pointer` takes the same `int(...)` coercion as a
+number) and `addr_of`/`deref`/`deref_set`/`int`/`extern_call`/`syscall`/`debug.log` intrinsics, and
+per-syscall wrapper functions from a signature database. TypeScript has no `*ptr` syntax, so a pointer read is a `deref(ptr)`
 call and a store through one (`HLILAssign` whose `dest` is `HLILDeref`) becomes a `deref_set(ptr,
 value)` call instead of an assignment - matching the existing `addr_of(x)` convention for `&x`. It
 also does its own peephole simplification at print time (constant-folds

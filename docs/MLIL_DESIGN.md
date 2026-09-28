@@ -202,11 +202,20 @@ regardless of numeric semantics. See `docs/FUTURE_WORK.md` for what a verified S
 A phi of constants folds to a constant only when `constant_values_equal` (`ir/core/il_base.py`)
 says they are equal: `1` and `1.0` differ, and NaN equals NaN.
 
+### Type Inference
+
+`SSATypeInferencePass` types parameters from their declared kinds, `SetVar`/`Phi` targets, and
+address-taken locals through their `*(&x) = v` stores, takes backward hints from comparisons with a
+constant and from arithmetic, then unifies every SSA version into one type
+per variable name (`func.var_types`, printed as the `.mlil.asm` "Inferred Types" list). Conflicting
+kinds unify to an `MLILVariantType`, which is identified by its members (`mlil_types.py`), so a
+member that arrives after the variable is already a variant is still recorded.
+
 ## Testing
 
 Several dedicated MLIL test files exist today (`test_mlil_metadata.py`,
 `test_mlil_ssa_optimizer.py`, `test_mlil_sccp_folding.py`, `test_mlil_address_taken.py`,
-`test_mlil_reg_global_propagation.py`, and others) covering SSA construction/deconstruction, the
+`test_mlil_reg_global_propagation.py`, `test_mlil_types.py`, and others) covering SSA construction/deconstruction, the
 SSA optimizer's passes, and register/global propagation - a closed gap from when this line last
 said only one existed.
 
@@ -218,5 +227,10 @@ said only one existed.
   call, a store) marks every edge out of its block reachable, and so does an `if` whose condition is
   not known yet. This only loses folding - production SCCP never removes blocks - and tighter
   reachability would fold more constants, moving output further from the bytecode.
+- Type inference is due to move to an HLIL pass (CX Step F, 2026-09-28; follow-up plan). Known gaps
+  it should close: call results are never typed (a call is a statement with an `output`, which the
+  pass never reads, and the signature DB's syscall/script tables are empty); `Value32`/`Nullable32`
+  parameters claim `int` although they mean int or float; and types are keyed by pre-deconstruction
+  names, so a split variable (`var_s11_v0`) finds no type (78 locals in the corpus).
 - This document and `docs/MLIL_GUIDE.md` should be kept in sync with `ir/mlil/passes/` as passes
   are added, removed, or reordered — that directory is the actual source of truth for what runs.

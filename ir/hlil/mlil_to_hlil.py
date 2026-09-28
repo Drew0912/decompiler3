@@ -44,7 +44,7 @@ _MLIL_TYPE_MAP = {
     MLILTypeKind.FLOAT    : HLILTypeKind.FLOAT,
     MLILTypeKind.STRING   : HLILTypeKind.STRING,
     MLILTypeKind.BOOL     : HLILTypeKind.INT,
-    MLILTypeKind.POINTER  : HLILTypeKind.INT,
+    MLILTypeKind.POINTER  : HLILTypeKind.POINTER,
     MLILTypeKind.VARIANT  : HLILTypeKind.UNKNOWN,
     MLILTypeKind.VOID     : HLILTypeKind.VOID,
 }

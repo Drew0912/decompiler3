@@ -142,10 +142,10 @@ the non-SSA `MediumLevelILFunction` produced by the upstream MLIL pipeline. This
 close to a source-language variable model and avoids exposing optimizer machinery to codegen.
 
 Type information is deliberately lightweight. `HLILTypeKind` contains `UNKNOWN`, `INT`, `FLOAT`,
-`STRING`, `BOOL`, and `VOID`, but types are hints on variables rather than types attached to every
-expression. During conversion, MLIL booleans and pointers currently map to `INT`, and MLIL variants
-map to unknown. Parameter default values are copied from MLIL source-parameter metadata when
-available.
+`STRING`, `BOOL`, `VOID`, and `POINTER`, but types are hints on variables rather than types attached
+to every expression. During conversion, MLIL booleans map to `INT`, MLIL pointers (`Pointer`
+out-parameters) to `POINTER`, and MLIL variants to unknown. Parameter default values are copied from
+MLIL source-parameter metadata when available.
 
 ### Call Results as Expressions
 
@@ -296,8 +296,9 @@ dedicated HLIL test file of their own.
 
 ## Open Items
 
-- `FalcomTypeInferencePass` is wired off as "testing," leaving the intended ownership of final HLIL
-  type refinement unresolved.
+- `FalcomTypeInferencePass` is wired off as "testing". Type inference ownership is decided (CX Step F,
+  2026-09-28): it moves to an HLIL pass in a follow-up plan. Until then call results stay untyped
+  (`any` in TypeScript), which is most of the untyped locals.
 - **Resolved (Step H, 2026-09-22):** `HLILFor` (no construction site, and already-wrong rendering)
   was deleted rather than fixed. Tree-walking passes that only recursed into simple nested blocks -
   `DeadCodeEliminationPass`, `CommonReturnExtractionPass`, `TypeScriptGenerator._infer_return_type`
