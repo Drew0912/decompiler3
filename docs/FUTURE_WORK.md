@@ -112,8 +112,10 @@ bytecode emulator) was considered and deliberately not pursued.
 readability. Before starting: calls never folded under a native VM logical op (met 2026-09-24 - see
 `docs/HLIL_DESIGN.md`, Call Results as Expressions); copy propagation never
 forwarding a register/global past a redefinition (met 2026-09-24 - including clobbering calls whose
-record dead-code elimination drops; see `docs/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (`[hlil] dropped
-path` warnings — `system.dat` `MapJumpState` has 19); common-return extraction only hoisting from an
+record dead-code elimination drops; see `docs/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (met
+2026-09-28 - a jump the tree cannot express is an `HLILUnstructured` node, which the DSL must refuse
+to compile, and `tools/hlil_path_check.py` finds 0 of 80,571 sora2_1.0 functions losing or inventing a
+path; see `docs/HLIL_DESIGN.md`, Open Items); common-return extraction only hoisting from an
 exhaustive switch (met 2026-09-24 - see `docs/HLIL_GUIDE.md`, Passes).
 
 ### 2. Mixed-IR-Level Compilation, Per Function
@@ -179,6 +181,26 @@ This has no independent risk or design work of its own beyond what item 1 alread
 gated entirely on item 1 landing and HLIL quality being trusted enough to compile back to bytecode,
 not a separate open question.
 
+## Structuring the Remaining Reducible Shapes (`docs/HLIL_DESIGN.md`)
+
+Since 2026-09-28 a jump the HLIL tree cannot express becomes an `HLILUnstructured` node: loud, but the
+path is lost to the reader (and to a future HLIL DSL). None remains on the sora2_1.0 corpus. On random
+CFGs (`tests/test_hlil_structuring_fuzz.py`'s generator) 96 of 6,000 are reducible yet get a reachable
+node - a reducible CFG can always be structured, so these are converter gaps; the 14 among the test's
+1,000 seeds are pinned, so a new one fails the suite. Two causes (nodes counted over those 96):
+
+- 57 fall-outs to a merge that a loop lies in front of: a loop with several non-returning exits keeps
+  one as its `break` target, and a path leaving through another one cannot reach the enclosing merge
+  by falling out of the loop body.
+- 46 re-emissions refused because the region reaches the active loop's header, where
+  `_reconstruct_control_flow` would in fact emit `continue` (or at an exit, `break`).
+
+Options, cheapest first: let `_clone_region_blocks` treat the active loops' headers and exits as
+region boundaries instead of refusing; express a loop with several exits with a labelled block
+(`label: { ... break label; }` is valid TypeScript) or an exit flag; keep goto emulation
+(`while (true) switch (state)`) for irreducible regions only. Measure each change with the fuzz test
+(no wrong run, fewer pinned seeds) and with `tools/hlil_path_check.py` over the corpus.
+
 ## Static Game-Logic Check (`tools/ir_semantic_validator.py`)
 
 The validator already tracks game logic as *effect events* — engine/script calls, global writes,
@@ -189,7 +211,10 @@ text back would be fragile). Its known-noise and real-signal categories are docu
 and links only some HLIL ones (edges feed block matching only, never a pass/fail gate - fix all three
 builders together, since fixing one side alone makes block matching worse), and branch conditions
 carry no expression, so a changed condition is not detected. Global writes are matched on all three
-layers (a dropped one shows as `missing_write_anchor`). **Not started:**
+layers (a dropped one shows as `missing_write_anchor`). For MLIL -> HLIL, `tools/hlil_path_check.py`
+already checks control paths: every reachable call and store appears, and each HLIL occurrence of a
+statement is followed by exactly what MLIL runs next - but it cannot see which way a condition sends
+control either, so a negated condition passes both tools. **Not started:**
 
 - **Compare effect arguments and values**, resolved to layer-neutral expressions over inputs
   (parameters, global reads, earlier call results). Today events are keyed `family:target` only, so a
@@ -207,8 +232,9 @@ layers (a dropped one shows as `missing_write_anchor`). **Not started:**
   rebuilt `if`/new `switch`) changed no HARD_FAIL on 7 files, since conditions compare no operands; it
   only moved per-operation statuses (`mp2000`: 55 MLIL `IF` vs HLIL `SWITCH` and 17 `IF` vs `WHILE`
   newly "different", for lack of a transformation rule). Do it together with comparing condition
-  expressions, add `IF` -> `WHILE` / `IF` -> `SWITCH` rules, and keep a call folded into a condition on
-  its own MLIL call's index (the statement fallback would give it the `if`'s).
+  expressions and add `IF` -> `WHILE` / `IF` -> `SWITCH` rules (a call folded into a condition already
+  keeps its own MLIL call's index, since 2026-09-28). With it, and a note of which arm is the
+  condition's true side, `tools/hlil_path_check.py` could check condition polarity as well.
 - **Cross-program mode** for compile-back: source `.dat` vs recompiled `.dat`, both at LLIL — the
   least-transformed level, so decompiler bugs and lowering bugs both show. There are no provenance
   links across two programs, so matching leans on order, guards and arguments; legitimate

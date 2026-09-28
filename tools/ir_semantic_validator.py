@@ -29,7 +29,7 @@ from ir.llil import LowLevelILFunction, LowLevelILInstruction, LowLevelILOperati
 from ir.mlil import MediumLevelILFunction, MediumLevelILInstruction, MediumLevelILOperation, MLILLoadGlobal
 from ir.hlil import (
     HighLevelILFunction, HLILInstruction, HLILOperation, HLILStatement, HLILExpression,
-    HLILVariable, VariableKind, BinaryOp, UnaryOp
+    HLILUnstructured, HLILVariable, VariableKind, BinaryOp, UnaryOp, reachable_statements
 )
 from falcom.ed9.ir.llil.llil_ext import LowLevelILGlobalLoad
 from falcom.ed9.parser.scp import ScpParser
@@ -1329,6 +1329,13 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operator='RETURN',
             operands=_extract_hlil_operands(instr),
             source_location=loc,
+        )
+
+    elif op == HLILOperation.HLIL_UNSTRUCTURED:
+        return SemanticOperation(
+            kind = OperationKind.CONTROL_FLOW,
+            operator = 'UNSTRUCTURED',
+            source_location = loc,
         )
 
     # Assignment
@@ -3359,6 +3366,7 @@ class IRLayerComparator:
         var_mapping: Dict[str, str],
         min_provenance_coverage: float = 0.0,
         max_unmatched_critical: int = -1,
+        target_hard_fails: Optional[List[ComparisonResult]] = None,
     ):
         self.source_cfg = source_cfg
         self.target_cfg = target_cfg
@@ -3368,6 +3376,9 @@ class IRLayerComparator:
         self.var_mapping = var_mapping
         self.min_provenance_coverage = min_provenance_coverage
         self.max_unmatched_critical = max_unmatched_critical
+
+        # Failures found in the target layer itself rather than by comparing it
+        self.target_hard_fails = target_hard_fails or []
 
     def compare(self) -> ComparisonReport:
         """Run full CFG-based comparison and return a ComparisonReport."""
@@ -3548,6 +3559,7 @@ class IRLayerComparator:
         report.hard_fail_violations = validate_hard_fail_semantics(
             all_source_ops, all_target_ops, self.source_layer, self.target_layer
         )
+        report.hard_fail_violations.extend(self.target_hard_fails)
         report.quality_metrics = _compute_quality_metrics(
             all_source_ops, all_target_ops, report.hard_fail_violations
         )
@@ -3645,6 +3657,21 @@ def compare_llil_mlil(
     return report
 
 
+def _unstructured_jump_failures(hlil_func: HighLevelILFunction) -> List[ComparisonResult]:
+    """A HARD_FAIL for every jump HLIL could not express on a path that can run"""
+    return [
+        _build_hard_fail(
+            'unstructured_jump',
+            IRLayer.MLIL,
+            IRLayer.HLIL,
+            f"Unstructured jump to {stmt.target} ({stmt.reason})",
+            SourceLocation(scp_offset = stmt.address, mlil_index = stmt.mlil_index),
+        )
+        for stmt in reachable_statements(hlil_func.body)
+        if isinstance(stmt, HLILUnstructured)
+    ]
+
+
 def compare_mlil_hlil(
     mlil_func: MediumLevelILFunction,
     hlil_func: HighLevelILFunction,
@@ -3658,14 +3685,15 @@ def compare_mlil_hlil(
     var_mapping = _build_mlil_hlil_var_mapping(mlil_func)
 
     comparator = IRLayerComparator(
-        source_cfg=mlil_cfg,
-        target_cfg=hlil_cfg,
-        source_layer=IRLayer.MLIL,
-        target_layer=IRLayer.HLIL,
-        transform_rules=MLIL_HLIL_TRANSFORMATIONS,
-        var_mapping=var_mapping,
-        min_provenance_coverage=min_provenance_coverage,
-        max_unmatched_critical=max_unmatched_critical,
+        source_cfg = mlil_cfg,
+        target_cfg = hlil_cfg,
+        source_layer = IRLayer.MLIL,
+        target_layer = IRLayer.HLIL,
+        transform_rules = MLIL_HLIL_TRANSFORMATIONS,
+        var_mapping = var_mapping,
+        min_provenance_coverage = min_provenance_coverage,
+        max_unmatched_critical = max_unmatched_critical,
+        target_hard_fails = _unstructured_jump_failures(hlil_func),
     )
     report = comparator.compare()
     report.function_name = func_name

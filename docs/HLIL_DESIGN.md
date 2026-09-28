@@ -197,15 +197,19 @@ This exclusive nesting is what makes recursive optimization and code generation 
 
 Removing CFG edges creates a representational constraint: HLIL has no goto node. Most shared tails
 become code after an enclosing construct, but a body reached independently from several conditions
-cannot always be expressed that way. The converter may reconstruct that region again, bounded by
-`CLONE_STATEMENT_BUDGET` per function and `CLONE_MAX_REGION_BLOCKS` per region. It warns when a
-region is unsafe or too large to repeat rather than silently treating the second path as ordinary
-fallthrough.
+cannot always be expressed that way. The converter may reconstruct that region again (a loop
+entered again is rebuilt whole), bounded by `CLONE_STATEMENT_BUDGET` statements per function -
+nested statements counted, a region repeated inside another charged once - and
+`CLONE_MAX_REGION_BLOCKS` blocks per region (both overridable in the converter's constructor, for
+tests). A jump it cannot express - a region it may not repeat, or a merge that falling out of a
+branch would not reach (a loop entered since, or a nearer merge in between) - becomes an
+`HLILUnstructured` node rather than a fallthrough to whatever follows: the path ends there, visibly.
 
 Nested loop exits are represented with optional labels. The converter maintains a loop stack; a
-jump to an active loop header becomes `continue`, and a jump to its selected exit becomes `break`.
-When an edge targets an outer rather than the innermost loop, the outer loop and transfer receive a
-generated label.
+jump to an active loop header becomes `continue`, and a jump to its selected exit becomes `break` -
+also through goto-only blocks, since the exit is compared after skipping them, while a loop header
+is never skipped. When an edge targets an outer rather than the innermost loop, the outer loop and
+transfer receive a generated label.
 
 ## MLIL → HLIL Pipeline
 
@@ -217,7 +221,12 @@ sequences.
 
 The converter uses that analysis as decision support rather than asking it to emit the HLIL tree.
 It queries loop membership and exits, merge points, and whether a branch looks like an
-inverted continuation chain. Recursive reconstruction remains responsible for owning blocks,
+inverted continuation chain. A merge point is where both arms of an if continue once they fall out
+of it, so it has to be a real merge: `find_merge_point` keeps the heuristic's answer (a reduction
+region, else reachability on the original graph) only when, within the innermost loop around the if
+and before the converter's enclosing stop, no path gets around it into the code after it or reaches
+the enclosing stop first; otherwise the nearest real merge both arms reach is used, and with none
+the arms run up to the enclosing stop. A self-loop's natural loop is just its header. Recursive reconstruction remains responsible for owning blocks,
 emitting branch arms, recognizing active-loop transfers, and processing merge blocks exactly once.
 This separation keeps graph algorithms isolated from MLIL-to-HLIL node translation. It recurses into
 branch arms and loop bodies only: the code after an if or a loop (its merge block or exit) is
@@ -303,8 +312,16 @@ dedicated HLIL test file of their own.
   rewrite was unsound when the body held a `continue` targeting the loop (different exit-target
   semantics between the two shapes) and silently dropped a labelled loop's label (`HLILDoWhile` had
   no `label` field); both fixed - see `HLIL_GUIDE.md`'s loop recovery section.
-- Direct tests for irreducible/shared CFG regions and the clone-budget warning paths are still
-  needed; these are the cases where a goto-free tree representation is under the most pressure.
+- **Resolved (Codex IR review plan Step G, 2026-09-28):** structuring used to lose or invent paths
+  in 94 sora2_1.0 functions - 47 behind the 89 `[hlil] dropped path` warnings, 47 with no warning at
+  all (loops that never exited, a case's code run twice). The causes were merge points that were not
+  merges and loop exits through goto-only blocks, not the clone limits. `tests/test_hlil_structuring.py`
+  pins each shape and the node's handling; `tests/test_hlil_structuring_fuzz.py` runs 1,000 random
+  CFGs through the pipeline against their MLIL for every parameter assignment; `tools/hlil_path_check.py`
+  checks real scripts (0 of 80,571 sora2_1.0 functions lose or invent a path). Still open: 14 of the
+  1,000 random CFGs are reducible yet need a node (pinned in the fuzz test; `docs/FUTURE_WORK.md`,
+  Structuring the Remaining Reducible Shapes), and the path check does not see which way a condition
+  sends control.
 - HLIL is the planned input of a Python DSL that compiles back to bytecode (`docs/FUTURE_WORK.md`,
   Recompilation Pipeline §1). Once that exists, every HLIL pass must preserve game logic exactly -
   readable-but-approximate rendering is only acceptable in the TypeScript generator.

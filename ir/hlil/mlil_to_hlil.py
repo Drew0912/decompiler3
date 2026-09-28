@@ -59,6 +59,26 @@ def _mlil_type_to_hlil(mlil_type: MLILType) -> HLILTypeKind:
     return _MLIL_TYPE_MAP[mlil_type.kind]
 
 
+def constant_condition_truth(condition: MediumLevelILInstruction) -> Optional[bool]:
+    '''constant_truth of an MLIL branch condition, read with the converter's own operator tables'''
+    return constant_truth(_constant_expr(condition))
+
+
+def _constant_expr(expr: MediumLevelILInstruction) -> HLILExpression:
+    '''expr in HLIL where it is built from constants and operators alone; anything else becomes
+    an opaque variable'''
+    if isinstance(expr, MLILConst):
+        return HLILConst(expr.value, expr.is_hex)
+
+    if isinstance(expr, MLILBinaryOp) and expr.operation in _BINARY_OP_MAP:
+        return HLILBinaryOp(_BINARY_OP_MAP[expr.operation], _constant_expr(expr.lhs), _constant_expr(expr.rhs))
+
+    if isinstance(expr, (MLILLogicalNot, MLILTestZero)):
+        return HLILBinaryOp(BinaryOp.EQ, _constant_expr(expr.operand), HLILConst(0))
+
+    return HLILVar(HLILVariable('<non-constant>', None))
+
+
 # ============================================================================
 # Call Result Folding
 # ============================================================================
@@ -477,6 +497,7 @@ class LoopStackEntry:
     '''Active loop context for break/continue generation'''
     header: int
     exit: Optional[int]
+    exit_target: Optional[int] = None  # exit after its goto-only blocks, where a jump through them lands
     label: Optional[str] = None
 
 
@@ -488,22 +509,31 @@ class FollowOn:
     force_plain: bool = False
 
 
+@dataclass
+class PendingMerge:
+    '''A merge point an enclosing if emits after itself, and the loop depth that if sits at'''
+    block_idx: int
+    loop_depth: int
+
+
 class MLILToHLILConverter:
 
-    def __init__(self, mlil_func: MediumLevelILFunction):
+    def __init__(self, mlil_func: MediumLevelILFunction, clone_budget: int = CLONE_STATEMENT_BUDGET,
+                 max_region_blocks: int = CLONE_MAX_REGION_BLOCKS):
         self.mlil_func = mlil_func
-        self.hlil_func = HighLevelILFunction(mlil_func.name, mlil_func.start_addr, is_common_func=mlil_func.is_common_func)
+        self.hlil_func = HighLevelILFunction(mlil_func.name, mlil_func.start_addr, is_common_func = mlil_func.is_common_func)
 
         self.block_successors: Dict[int, List[int]] = {}
         self.visited_blocks: Set[int] = set()
         self.globally_processed: Set[int] = set()
 
-        # Blocks currently being re-emitted, and the remaining re-emission allowance
+        # Blocks currently being re-emitted, the remaining re-emission allowance, and the region size cap
         self.cloning_blocks: Set[int] = set()
-        self.clone_budget = CLONE_STATEMENT_BUDGET
+        self.clone_budget = clone_budget
+        self.max_region_blocks = max_region_blocks
 
-        # Merge points an enclosing if will emit after itself, innermost last
-        self.pending_merges: List[int] = []
+        # Merge points the enclosing ifs will emit after themselves, innermost last
+        self.pending_merges: List[PendingMerge] = []
 
         # Loop detection
         self.loop_headers: Set[int] = set()  # Blocks that are loop headers
@@ -623,14 +653,15 @@ class MLILToHLILConverter:
 
         self.loop_headers.update(self.structural_analyzer.loops)
 
-    def _find_merge_block(self, cond_block_idx: int, true_target_idx: int, false_target_idx: int) -> Optional[int]:
-        '''Find merge point for if-else using structural analyzer.'''
+    def _find_merge_block(self, cond_block_idx: int, true_target_idx: int, false_target_idx: int,
+                          stop_at: Optional[int]) -> Optional[int]:
+        '''Find merge point for if-else using structural analyzer; its arms stop at stop_at'''
         if true_target_idx == false_target_idx:
             return true_target_idx
 
         if self.structural_analyzer is not None:
             return self.structural_analyzer.find_merge_point(
-                cond_block_idx, true_target_idx, false_target_idx
+                cond_block_idx, true_target_idx, false_target_idx, stop_at
             )
 
         return None
@@ -647,12 +678,14 @@ class MLILToHLILConverter:
         )
 
     def _skip_passthrough_blocks(self, block_idx: int, stop_at: Optional[int] = None) -> int:
-        '''Follow a chain of blocks that only jump onward, to the first real block'''
+        '''Follow a chain of blocks that only jump onward, to the first real block. A loop header
+        is never skipped: it has to start its loop, or be recognized as a continue.'''
         seen: Set[int] = set()
 
         while (self._is_passthrough_block(block_idx) and
                block_idx not in seen and
-               block_idx != stop_at):
+               block_idx != stop_at and
+               block_idx not in self.loop_headers):
             seen.add(block_idx)
             last_instr = self.mlil_func.basic_blocks[block_idx].instructions[-1]
 
@@ -674,11 +707,13 @@ class MLILToHLILConverter:
 
         Exits that return are emitted inline as return statements and need no break.
         With several non-returning exits there is no single place to continue, so the
-        loop keeps no break target.
+        loop keeps no break target. Exits whose goto-only chains end at the same block are
+        one exit; the raw block is returned, so the code after the loop still stops where
+        its caller's stop point lies inside that chain.
         '''
-        candidates: List[int] = []
+        raw_exits: Dict[int, int] = {}
 
-        for exit_idx in loop_info.exits:
+        for exit_idx in sorted(loop_info.exits):
             effective_idx = self._skip_passthrough_blocks(exit_idx)
 
             # A passthrough chain can lead back into the loop
@@ -688,11 +723,10 @@ class MLILToHLILConverter:
             if self._block_ends_with_return(effective_idx):
                 continue
 
-            if effective_idx not in candidates:
-                candidates.append(effective_idx)
+            raw_exits.setdefault(effective_idx, exit_idx)
 
-        if len(candidates) == 1:
-            return candidates[0]
+        if len(raw_exits) == 1:
+            return next(iter(raw_exits.values()))
 
         return None
 
@@ -762,7 +796,8 @@ class MLILToHLILConverter:
         self.visited_blocks.add(header_idx)
         self.globally_processed.add(header_idx)
 
-        stack_entry = LoopStackEntry(header = header_idx, exit = exit_block_idx)
+        exit_target = self._skip_passthrough_blocks(exit_block_idx) if exit_block_idx is not None else None
+        stack_entry = LoopStackEntry(header = header_idx, exit = exit_block_idx, exit_target = exit_target)
         self.loop_stack.append(stack_entry)
 
         loop_body = HLILBlock()
@@ -836,7 +871,7 @@ class MLILToHLILConverter:
         # Find merge block for the entire if/else-if chain
         merge_block_idx = None
         if true_target_idx is not None and false_target_idx is not None:
-            merge_block_idx = self._find_merge_block(block_idx, true_target_idx, false_target_idx)
+            merge_block_idx = self._find_merge_block(block_idx, true_target_idx, false_target_idx, stop_at)
 
         branch_stop = merge_block_idx if merge_block_idx is not None else stop_at
         saved_visited = self.visited_blocks.copy()
@@ -870,7 +905,7 @@ class MLILToHLILConverter:
         # A branch reaching this merge falls through to it once the if ends, so
         # meeting it again is not a lost path and must not be re-emitted.
         if branch_stop is not None:
-            self.pending_merges.append(branch_stop)
+            self.pending_merges.append(PendingMerge(branch_stop, len(self.loop_stack)))
 
         # Process each branch (skip if empty - it's just the merge point); an else-if
         # chain is just an if inside the false branch
@@ -961,8 +996,9 @@ class MLILToHLILConverter:
         block = HLILBlock()
         self.visited_blocks = saved_visited.copy()
 
-        # The outer stop point is off limits, unless it is the merge or this branch's own start
-        if stop_at is not None and stop_at != merge_block_idx and stop_at != target_idx:
+        # The outer stop point is off limits unless it is the merge: reaching it means falling out
+        # of this if, which the pending-merge check allows only when nothing lies in between
+        if stop_at is not None and stop_at != merge_block_idx:
             self.visited_blocks.add(stop_at)
 
         self._reconstruct_control_flow(target_idx, block, stop_at = branch_stop, jump_source = if_instr)
@@ -1050,10 +1086,27 @@ class MLILToHLILConverter:
 
         return None
 
-    def _warn_dropped_path(self, block_idx: int, reason: str):
-        block_label = self.mlil_func.basic_blocks[block_idx].label
-        print(f'[hlil] dropped path to {block_label} in {self.mlil_func.name} ({reason})',
-              file = sys.stderr)
+    def _unstructured(self, block_idx: int, reason: str,
+                      jump_source: Optional[MediumLevelILInstruction]) -> HLILUnstructured:
+        '''The node for a jump to block_idx that cannot be expressed here. Not reported here: one
+        made inside a re-emission that is later refused never reaches the output.'''
+        stmt = HLILUnstructured(self.mlil_func.basic_blocks[block_idx].label, reason)
+
+        if jump_source is not None:
+            self._set_hlil_source_info(stmt, jump_source)
+
+        return stmt
+
+    @classmethod
+    def _statement_count(cls, block: HLILBlock) -> int:
+        '''Statements in block, nested ones included'''
+        return sum(1 + sum(cls._statement_count(sub) for sub in sub_blocks(stmt)) for stmt in block.statements)
+
+    def _falls_out_to(self, block_idx: int) -> bool:
+        '''Whether falling out of the current branch reaches pending merge block_idx: it has to be
+        the innermost pending merge, pushed at the current loop depth'''
+        innermost = self.pending_merges[-1]
+        return innermost.block_idx == block_idx and innermost.loop_depth == len(self.loop_stack)
 
     def _clone_region_blocks(self, block_idx: int, stop_at: Optional[int]) -> Optional[Set[int]]:
         '''Blocks reachable from block_idx up to stop_at, or None if unsafe to repeat.
@@ -1080,7 +1133,7 @@ class MLILToHLILConverter:
 
             region.add(current)
 
-            if len(region) > CLONE_MAX_REGION_BLOCKS:
+            if len(region) > self.max_region_blocks:
                 return None
 
             queue.extend(self.block_successors.get(current, []))
@@ -1089,25 +1142,27 @@ class MLILToHLILConverter:
 
     def _clone_processed_region(self, block_idx: int, target_block: HLILBlock,
                                 stop_at: Optional[int],
-                                jump_source: Optional[MediumLevelILInstruction]) -> bool:
-        '''Re-emit a region already emitted on another path.
+                                jump_source: Optional[MediumLevelILInstruction]) -> None:
+        '''Re-emit a region already emitted on another path into target_block, or an
+        unstructured-jump node when it cannot be repeated.
 
         Rebuilds it rather than deep-copying so nested structuring, merge detection
         and break/continue all resolve against this path's context.
         '''
         if block_idx in self.cloning_blocks:
-            self._warn_dropped_path(block_idx, 'already being re-emitted')
-            return False
+            target_block.add_statement(self._unstructured(block_idx, 'already being re-emitted', jump_source))
+            return
 
         region = self._clone_region_blocks(block_idx, stop_at)
 
         if region is None:
-            self._warn_dropped_path(block_idx, 'region not repeatable')
-            return False
+            target_block.add_statement(self._unstructured(block_idx, 'region not repeatable', jump_source))
+            return
 
         scratch = HLILBlock()
         saved_visited = self.visited_blocks.copy()
         saved_processed = self.globally_processed.copy()
+        budget_before = self.clone_budget
 
         self.visited_blocks -= region
         self.globally_processed -= region
@@ -1122,16 +1177,19 @@ class MLILToHLILConverter:
             self.visited_blocks = saved_visited
             self.globally_processed |= saved_processed
 
-        if len(scratch.statements) > self.clone_budget:
-            self._warn_dropped_path(block_idx, f'{len(scratch.statements)} statements over budget')
-            return False
+        # Regions re-emitted inside this one were charged already; a refused region gives their share back
+        size = self._statement_count(scratch)
+        charge = size - (budget_before - self.clone_budget)
 
-        self.clone_budget -= len(scratch.statements)
+        if charge > self.clone_budget:
+            self.clone_budget = budget_before
+            target_block.add_statement(self._unstructured(block_idx, f'{size} statements over budget', jump_source))
+            return
+
+        self.clone_budget -= charge
 
         for stmt in scratch.statements:
             target_block.add_statement(stmt)
-
-        return True
 
     def _reconstruct_control_flow(self, block_idx: int, target_block: HLILBlock,
                                    stop_at: Optional[int] = None,
@@ -1151,15 +1209,18 @@ class MLILToHLILConverter:
             if block_idx >= len(self.mlil_func.basic_blocks):
                 return None
 
-            # Jump to an active loop's exit becomes break, to its header becomes continue
+            # Jump to an active loop's exit becomes break, to its header becomes continue; the exit
+            # counts also where a jump through its goto-only blocks lands
             for depth, entry in enumerate(reversed(self.loop_stack)):
-                if entry.exit == block_idx or entry.header == block_idx:
+                is_exit = block_idx in (entry.exit, entry.exit_target)
+
+                if is_exit or entry.header == block_idx:
                     if depth > 0 and entry.label is None:
                         entry.label = f'loop_{entry.header}'
 
                     label = entry.label if depth > 0 else None
 
-                    if entry.exit == block_idx:
+                    if is_exit:
                         stmt = HLILBreak(label = label)
 
                     else:
@@ -1177,19 +1238,19 @@ class MLILToHLILConverter:
 
             # Already emitted somewhere else in the function
             if block_idx in self.visited_blocks or block_idx in self.globally_processed:
-                if block_idx in self.loop_headers and block_idx in self.globally_processed:
-                    block_label = self.mlil_func.basic_blocks[block_idx].label
-                    print(f'[loop] jump into inactive loop header {block_label} in {self.mlil_func.name} (possible lost path)', file = sys.stderr)
-                    return None
+                # An enclosing if emits its merge point after itself, so control reaches it by
+                # falling out of this branch - unless a loop or a nearer merge lies in between.
+                if any(merge.block_idx == block_idx for merge in self.pending_merges):
+                    if not self._falls_out_to(block_idx):
+                        target_block.add_statement(
+                            self._unstructured(block_idx, 'merge not reachable by falling out', jump_source))
 
-                # An enclosing if emits its merge point after itself, so control
-                # reaches it by falling out of this branch - nothing is lost.
-                if block_idx in self.pending_merges:
                     return None
 
                 # Still reachable from here too - several conditions funnelling into one
-                # shared body. HLIL has no goto, so repeating it is the only faithful
-                # representation; refusing warns rather than dropping the path silently.
+                # shared body, or a loop entered again. HLIL has no goto, so repeating it is
+                # the only faithful representation; one that cannot be repeated ends in an
+                # unstructured-jump node rather than falling through.
                 self._clone_processed_region(block_idx, target_block, stop_at, jump_source)
                 return None
 
@@ -1315,7 +1376,9 @@ class MLILToHLILConverter:
             result.append(stmt)
 
         elif isinstance(instr, MediumLevelILCall):
+            # The call keeps its own provenance, also where it folds into the instruction reading it
             call_expr = self._convert_expr(instr)
+            self._set_hlil_source_info(call_expr, instr)
 
             if self.folder.is_folded(block_idx, instr_idx):
                 # The instruction reading the result emits this call

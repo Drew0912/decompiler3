@@ -496,6 +496,11 @@ class TypeScriptGenerator:
             else:
                 lines.append(f'{indent_str}continue;')
 
+        elif isinstance(stmt, HLILUnstructured):
+            # A jump HLIL could not express: say so, and end this path instead of falling through
+            lines.append(f'{indent_str}// {stmt}')
+            lines.append(f'{indent_str}throw new Error("unstructured: {stmt.target}");')
+
         elif isinstance(stmt, HLILReturn):
             if stmt.value is not None:
                 value_str = cls._format_expr(stmt.value)

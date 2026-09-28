@@ -2,6 +2,7 @@
 
 from typing import Callable, Iterator, List, Optional, Sequence, Tuple, Union
 from enum import auto
+import operator
 from common import *
 
 
@@ -61,6 +62,7 @@ class HLILOperation(IntEnum2):
     HLIL_BREAK          = auto()
     HLIL_CONTINUE       = auto()
     HLIL_RETURN         = auto()
+    HLIL_UNSTRUCTURED   = auto()
 
     # Other statements
     HLIL_BLOCK          = auto()
@@ -217,6 +219,16 @@ NEGATED_COMPARISON_OP = {
 DE_MORGAN_OP = {
     BinaryOp.AND : BinaryOp.OR,
     BinaryOp.OR  : BinaryOp.AND,
+}
+
+# What each comparison computes, for evaluating one between two constants
+COMPARISON_FUNCTIONS = {
+    BinaryOp.EQ : operator.eq,
+    BinaryOp.NE : operator.ne,
+    BinaryOp.LT : operator.lt,
+    BinaryOp.LE : operator.le,
+    BinaryOp.GT : operator.gt,
+    BinaryOp.GE : operator.ge,
 }
 
 
@@ -564,8 +576,24 @@ class HLILReturn(HLILStatement):
         return f'HLILReturn({self.value})'
 
 
+class HLILUnstructured(HLILStatement):
+    '''A jump HLIL cannot express (HLIL has no goto): the path ends here, visibly, instead of
+    falling through to whatever follows'''
+
+    def __init__(self, target: str, reason: str):
+        super().__init__(HLILOperation.HLIL_UNSTRUCTURED)
+        self.target = target
+        self.reason = reason
+
+    def __str__(self) -> str:
+        return f'unstructured jump to {self.target} ({self.reason})'
+
+    def __repr__(self) -> str:
+        return f'HLILUnstructured({self.target})'
+
+
 # Statements that never fall through to the next statement in their block
-TERMINAL_STATEMENTS = (HLILReturn, HLILBreak, HLILContinue)
+TERMINAL_STATEMENTS = (HLILReturn, HLILBreak, HLILContinue, HLILUnstructured)
 
 
 # ============================================================================
@@ -639,6 +667,40 @@ def negate_condition(cond: HLILExpression) -> HLILExpression:
 
     # Default: wrap with NOT
     return HLILUnaryOp(UnaryOp.NOT, cond)
+
+
+def constant_truth(cond: HLILExpression) -> Optional[bool]:
+    '''The value a condition always has - a numeric constant, a comparison of two, or !, && and ||
+    over such conditions - or None when it depends on anything else'''
+    if isinstance(cond, HLILConst):
+        return bool(cond.value) if isinstance(cond.value, (int, float)) else None
+
+    if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT:
+        inner = constant_truth(cond.operand)
+        return None if inner is None else not inner
+
+    if not isinstance(cond, HLILBinaryOp):
+        return None
+
+    if cond.op in COMPARISON_FUNCTIONS:
+        operands = (cond.lhs, cond.rhs)
+        if all(isinstance(o, HLILConst) and isinstance(o.value, (int, float)) for o in operands):
+            return COMPARISON_FUNCTIONS[cond.op](cond.lhs.value, cond.rhs.value)
+
+        return None
+
+    if cond.op in DE_MORGAN_OP:
+        # True decides || on its own, False decides &&
+        decisive = cond.op == BinaryOp.OR
+        sides = (constant_truth(cond.lhs), constant_truth(cond.rhs))
+
+        if decisive in sides:
+            return decisive
+
+        if sides == (not decisive, not decisive):
+            return not decisive
+
+    return None
 
 
 def sole_statement(block: Optional[HLILBlock]) -> Optional[HLILStatement]:
@@ -798,6 +860,109 @@ def _contains_escaping_exit(block: Optional[HLILBlock], exit_type: type, include
 def contains_bare_break(block: Optional[HLILBlock]) -> bool:
     '''Whether block contains a bare break not owned by a nested loop or switch.'''
     return contains_escaping_exit(block, HLILBreak)
+
+
+def reachable_statements(block: HLILBlock) -> List[HLILStatement]:
+    '''Every statement control can reach from the start of block, nested ones included, in source
+    order. Only constant conditions prune (constant_truth: the arm of if (0), the code after a
+    while (1) no break leaves), so a statement left out can never run.'''
+    reached: List[HLILStatement] = []
+    _reach_block(block, reached, [])
+    return reached
+
+
+class _ExitTarget:
+    '''A loop or switch that a break inside it (for a loop, also a continue) can leave'''
+
+    def __init__(self, stmt: HLILStatement):
+        self.label = getattr(stmt, 'label', None)
+        self.is_switch = isinstance(stmt, HLILSwitch)
+        self.broken = False
+        self.continued = False
+
+
+def resolve_exit_target(targets: Sequence, label: Optional[str], loop_only: bool):
+    '''The innermost of targets - records of the enclosing loops and switches, outermost first,
+    each with a label and an is_switch - that a break (loop_only False) or a continue (True)
+    carrying label leaves'''
+    for target in reversed(targets):
+        if label is not None:
+            if target.label == label and not target.is_switch:
+                return target
+
+        elif not (loop_only and target.is_switch):
+            return target
+
+    return None
+
+
+def _reach_block(block: Optional[HLILBlock], reached: List[HLILStatement], targets: List[_ExitTarget]) -> bool:
+    '''Record block's reachable statements; whether control can fall out of its end'''
+    if block is None:
+        return True
+
+    for stmt in block.statements:
+        reached.append(stmt)
+        if not _reach_statement(stmt, reached, targets):
+            return False
+
+    return True
+
+
+def _reach_statement(stmt: HLILStatement, reached: List[HLILStatement], targets: List[_ExitTarget]) -> bool:
+    '''Record the reachable statements nested in stmt; whether control can fall through past it'''
+    if isinstance(stmt, (HLILBreak, HLILContinue)):
+        target = resolve_exit_target(targets, stmt.label, loop_only = isinstance(stmt, HLILContinue))
+        if target is not None and isinstance(stmt, HLILBreak):
+            target.broken = True
+
+        elif target is not None:
+            target.continued = True
+
+        return False
+
+    if isinstance(stmt, TERMINAL_STATEMENTS):
+        return False
+
+    if isinstance(stmt, HLILIf):
+        truth = constant_truth(stmt.condition)
+        falls_through = False
+
+        if truth is not False:
+            falls_through |= _reach_block(stmt.true_block, reached, targets)
+
+        if truth is not True:
+            falls_through |= _reach_block(stmt.false_block, reached, targets)
+
+        return falls_through
+
+    if isinstance(stmt, HLILWhile):
+        truth = constant_truth(stmt.condition)
+        loop = _ExitTarget(stmt)
+
+        if truth is not False:
+            _reach_block(stmt.body, reached, targets + [loop])
+
+        return truth is not True or loop.broken
+
+    if isinstance(stmt, HLILDoWhile):
+        loop = _ExitTarget(stmt)
+        condition_reached = _reach_block(stmt.body, reached, targets + [loop]) or loop.continued
+        return loop.broken or (condition_reached and constant_truth(stmt.condition) is not True)
+
+    if isinstance(stmt, HLILSwitch):
+        switch = _ExitTarget(stmt)
+        falls_through = not any(case.is_default() for case in stmt.cases)
+
+        for case in stmt.cases:
+            falls_through |= _reach_block(case.body, reached, targets + [switch])
+
+        return falls_through or switch.broken
+
+    if isinstance(stmt, HLILBlock):
+        return _reach_block(stmt, reached, targets)
+
+    return True
 
 
 # ============================================================================

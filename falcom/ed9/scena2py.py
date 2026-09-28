@@ -23,6 +23,7 @@ from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.mlil.mlil_formatter import MLILFormatter
+from ir.hlil.hlil import HLILUnstructured, reachable_statements
 from ir.hlil.hlil_formatter import HLILFormatter
 from codegen import generate_typescript, generate_typescript_header
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
@@ -136,6 +137,12 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
                 continue
 
             hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
+
+            unstructured_targets = [stmt.target for stmt in reachable_statements(hlil_func.body)
+                                    if isinstance(stmt, HLILUnstructured)]
+            if unstructured_targets:
+                log.warning(f'{path} [{func.name}]: {len(unstructured_targets)} unstructured jump(s) to '
+                            f'{", ".join(unstructured_targets)}')
 
             if config.write_hlil_ts:
                 hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))

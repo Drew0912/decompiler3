@@ -26,8 +26,10 @@ from ..hlil import (
     HLILContinue,
     HLILReturn,
     HLILComment,
+    HLILUnstructured,
     BinaryOp,
     contains_escaping_exit,
+    iter_tree,
     negate_condition,
     sole_statement,
     sub_blocks,
@@ -63,6 +65,10 @@ class LoopRecoveryPass(Pass):
 
     def _recover_loop(self, loop: HLILWhile) -> List[HLILStatement]:
         '''Rewrite an unconditional loop whose body only guards its own exit'''
+        # A jump HLIL could not express may leave or re-enter the loop: keep the loop as built
+        if any(isinstance(node, HLILUnstructured) for node in iter_tree(loop.body)):
+            return [loop]
+
         self._drop_trailing_continue(loop.body)
         loop.condition = self._fold_constant_condition(loop.condition)
 

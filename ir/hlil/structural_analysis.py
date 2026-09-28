@@ -190,7 +190,9 @@ class StructuralAnalyzer:
     def _build_loop(self, tail: int, header: int):
         '''Build natural loop from back edge'''
         body = {header, tail}
-        worklist = [tail]
+
+        # Walk back from the tail, never past the header: a self back edge's loop is the header alone
+        worklist = [tail] if tail != header else []
 
         while worklist:
             node = worklist.pop()
@@ -470,8 +472,8 @@ class StructuralAnalyzer:
         if not common:
             return None
 
-        # Return nearest (minimum combined distance)
-        return min(common, key=lambda b: reach_true[b] + reach_false[b])
+        # Return nearest (minimum combined distance, then block order)
+        return min(common, key = lambda b: (reach_true[b] + reach_false[b], b))
 
     def _unconditional_reach(self, start: int) -> Dict[int, int]:
         '''Forward reachability following only unconditional (single-successor) edges
@@ -535,9 +537,26 @@ class StructuralAnalyzer:
 
     # ========== Public API ==========
 
-    def find_merge_point(self, cond_block: int, true_target: int, false_target: int) -> Optional[int]:
+    def find_merge_point(self, cond_block: int, true_target: int, false_target: int,
+                         stop: Optional[int] = None) -> Optional[int]:
         '''
-        Find merge point for if-else.
+        Merge point of the if ending cond_block, whose arms stop at stop (the enclosing merge or
+        loop header, None at function level): the heuristic's answer when it is a real merge (see
+        _MergeScope), else the nearest real merge both arms reach, else None.
+        '''
+        merge = self._heuristic_merge_point(cond_block, true_target, false_target)
+        if true_target == false_target or (merge is not None and merge == stop):
+            return merge
+
+        scope = _MergeScope(self, cond_block, stop)
+        if merge is not None and scope.is_valid(merge):
+            return merge
+
+        return scope.nearest_valid_join(true_target, false_target)
+
+    def _heuristic_merge_point(self, cond_block: int, true_target: int, false_target: int) -> Optional[int]:
+        '''
+        Merge point candidate for if-else.
 
         First checks if a region was identified during structural analysis.
         Falls back to reachability search on the original graph.
@@ -595,8 +614,8 @@ class StructuralAnalyzer:
         if not common:
             return None
 
-        # Return nearest (minimum combined distance)
-        return min(common, key=lambda b: reach_true[b] + reach_false[b])
+        # Return nearest (minimum combined distance, then block order)
+        return min(common, key = lambda b: (reach_true[b] + reach_false[b], b))
 
     def _unconditional_reach_original(self, start: int) -> Dict[int, int]:
         '''_unconditional_reach, but over the original (unmodified) CFG'''
@@ -682,3 +701,83 @@ class StructuralAnalyzer:
     def get_region(self, block: int) -> Optional[Region]:
         '''Get region starting at block'''
         return self.regions.get(block)
+
+
+class _MergeScope:
+    '''
+    The part of the CFG an if's merge point must lie in, and what makes a block a real merge.
+
+    Inside the innermost natural loop around the if, a path ends at a back edge, at an edge
+    leaving the loop body or at its header (break / continue); anywhere, it ends at a return and
+    at the enclosing stop. A merge M is valid when paths reach it inside this scope, no path gets
+    around M into code that follows M (falling out of an arm would miss that code or run it
+    twice), and - unless the stop is the loop header, where a jump is an explicit continue - no
+    path reaches the enclosing stop without passing M (falling out there would run M first).
+    '''
+
+    def __init__(self, analyzer: StructuralAnalyzer, cond_block: int, stop: Optional[int]):
+        self.analyzer = analyzer
+        self.cond_block = cond_block
+        self.stop = stop
+
+        # Natural loops are nested or disjoint, so the smallest one holding the if is unique
+        loops = [loop for loop in analyzer.loops.values() if cond_block in loop.body]
+        self.loop = min(loops, key = lambda loop: len(loop.body)) if loops else None
+
+        self.stop_falls_out = stop is not None and not (self.loop is not None and stop == self.loop.header)
+        self._reach_cache: Dict[Tuple[int, Optional[int]], Dict[int, int]] = {}
+
+    def follows(self, src: int, dst: int) -> bool:
+        '''Whether a path inside the scope continues along src -> dst'''
+        if dst >= self.analyzer.num_blocks or dst == self.stop or (src, dst) in self.analyzer.back_edges:
+            return False
+
+        return self.loop is None or (dst in self.loop.body and dst != self.loop.header)
+
+    def reach(self, start: int, barrier: Optional[int] = None) -> Dict[int, int]:
+        '''Blocks reachable from start inside the scope without entering barrier, with distances'''
+        key = (start, barrier)
+        cached = self._reach_cache.get(key)
+        if cached is not None:
+            return cached
+
+        dist: Dict[int, int] = {}
+        queue = deque([(start, 0)])
+
+        while queue:
+            block, depth = queue.popleft()
+            if block in dist or block == barrier:
+                continue
+
+            dist[block] = depth
+            for succ in self.analyzer.original_successors.get(block, []):
+                if self.follows(block, succ):
+                    queue.append((succ, depth + 1))
+
+        self._reach_cache[key] = dist
+        return dist
+
+    def is_valid(self, merge: int) -> bool:
+        '''Whether merge is a real merge of the if (see the class docstring)'''
+        before = self.reach(self.cond_block, barrier = merge)
+        successors = self.analyzer.original_successors
+
+        if not any(merge in successors.get(block, []) and self.follows(block, merge) for block in before):
+            return False
+
+        if self.stop_falls_out and any(self.stop in successors.get(block, []) for block in before):
+            return False
+
+        return not (before.keys() & self.reach(merge).keys())
+
+    def nearest_valid_join(self, true_target: int, false_target: int) -> Optional[int]:
+        '''The nearest valid merge that both arms reach (an arm target itself counts), or None'''
+        reach_true = self.reach(true_target) if self.follows(self.cond_block, true_target) else {}
+        reach_false = self.reach(false_target) if self.follows(self.cond_block, false_target) else {}
+        joins = sorted(reach_true.keys() & reach_false.keys(), key = lambda b: (reach_true[b] + reach_false[b], b))
+
+        for merge in joins:
+            if self.is_valid(merge):
+                return merge
+
+        return None

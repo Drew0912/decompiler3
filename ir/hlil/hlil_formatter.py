@@ -222,6 +222,9 @@ class HLILFormatter:
             else:
                 lines.append(f'{indent_str}return;')
 
+        elif isinstance(stmt, HLILUnstructured):
+            lines.append(f'{indent_str}goto {stmt.target}; // unstructured ({stmt.reason})')
+
         elif isinstance(stmt, HLILAssign):
             dest_str = cls._format_expr(stmt.dest)
             src_str = cls._format_expr(stmt.src)

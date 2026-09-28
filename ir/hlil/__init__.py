@@ -18,8 +18,10 @@ __all__ = [
     'BOOLEAN_BINARY_OPS',
     'NEGATED_COMPARISON_OP',
     'DE_MORGAN_OP',
+    'COMPARISON_FUNCTIONS',
     'is_boolean_expr',
     'negate_condition',
+    'constant_truth',
 
     # C-family syntax
     'BINARY_OP_STR',
@@ -61,6 +63,7 @@ __all__ = [
     'HLILBreak',
     'HLILContinue',
     'HLILReturn',
+    'HLILUnstructured',
     'TERMINAL_STATEMENTS',
 
     # Statements
@@ -75,6 +78,8 @@ __all__ = [
     'sub_blocks',
     'contains_escaping_exit',
     'contains_bare_break',
+    'reachable_statements',
+    'resolve_exit_target',
 
     # Tree walking
     'expr_children',

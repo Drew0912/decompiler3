@@ -31,6 +31,7 @@ from ir.hlil import (
     HLILSwitch,
     HLILSwitchCase,
     HLILUnaryOp,
+    HLILUnstructured,
     HLILVar,
     HLILVariable,
     is_boolean_expr,
@@ -86,7 +87,7 @@ class TestSharedTables(unittest.TestCase):
         self.assertEqual(DE_MORGAN_OP, {BinaryOp.AND: BinaryOp.OR, BinaryOp.OR: BinaryOp.AND})
 
     def test_terminal_statements(self):
-        self.assertEqual(set(TERMINAL_STATEMENTS), {HLILReturn, HLILBreak, HLILContinue})
+        self.assertEqual(set(TERMINAL_STATEMENTS), {HLILReturn, HLILBreak, HLILContinue, HLILUnstructured})
 
 
 class TestNeedsParentheses(unittest.TestCase):

@@ -26,6 +26,7 @@ from ..hlil import (
     HLILBreak,
     HLILContinue,
     HLILComment,
+    HLILUnstructured,
     HLILVariable,
     VariableKind,
     BinaryOp,
@@ -399,6 +400,10 @@ class ControlFlowOptimizationPass(Pass):
 
         if isinstance(node, HLILContinue):
             return (False, None, (ExitPath(ExitKind.CONTINUE, node.label, killed),))
+
+        if isinstance(node, HLILUnstructured):
+            # A jump HLIL could not express: whatever runs next may read var
+            return (True, None, ())
 
         if isinstance(node, HLILComment):
             return (False, killed, ())
