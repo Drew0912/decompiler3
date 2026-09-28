@@ -307,8 +307,9 @@ dedicated HLIL test file of their own.
   type needs one edit there instead of one per walker. Since PR Step 6b (2026-09-27) the
   general-purpose walkers in control-flow optimization, branch-order normalization, loop recovery and
   the converter's variable declaration use the shared tree helpers too (see Operations & Node Types);
-  branch order's specialized `_if_depth` stays hand-written (it counts only ifs nested in if arms;
-  whether it should also count through loops and switches is still open).
+  since PR Step 10c (2026-09-28) so does branch order's `_if_depth`, the arm-order tie-break for
+  arms without distinct line numbers: it counts ifs inside loops and switches too, and only an if
+  adds a level.
   Separately, `LoopRecoveryPass`'s `while(1)` -> `do-while`
   rewrite was unsound when the body held a `continue` targeting the loop (different exit-target
   semantics between the two shapes) and silently dropped a labelled loop's label (`HLILDoWhile` had

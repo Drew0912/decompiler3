@@ -19,8 +19,11 @@ from ir.hlil import (
     HLILConst,
     HLILExprStmt,
     HLILIf,
+    HLILSwitch,
+    HLILSwitchCase,
     HLILVar,
     HLILVariable,
+    HLILWhile,
 )
 
 
@@ -28,6 +31,7 @@ EARLY_LINE = 100
 LATE_LINE = 200
 THIRD_LINE = 300
 THRESHOLD = 2
+CASE_VALUE = 1
 
 
 def make_var(name: str = 'selector') -> HLILVar:
@@ -44,6 +48,11 @@ def make_arm(line: int) -> HLILBlock:
         HLILComment(f'line({line})'),
         HLILExprStmt(HLILCall(f'work_{line}', [])),
     ])
+
+
+def guarded_call(name: str) -> HLILIf:
+    '''if (selector > THRESHOLD) name(); - no else, no line number'''
+    return HLILIf(make_condition(), HLILBlock([HLILExprStmt(HLILCall(name, []))]), None)
 
 
 def run_pass(stmt) -> HighLevelILFunction:
@@ -128,6 +137,56 @@ class TestBranchOrderNormalization(unittest.TestCase):
 
         self.assertEqual(result.condition.op, BinaryOp.GT)
         self.assertIs(result.true_block, left)
+
+    def test_if_inside_a_loop_counts_toward_nesting_depth(self):
+        # A loop is not an else-if chain, so only the depth tie-break can move this arm
+        deep = HLILBlock([HLILWhile(make_condition(), HLILBlock([guarded_call('deep')]))])
+        shallow = HLILBlock([HLILExprStmt(HLILCall('shallow', []))])
+        stmt = HLILIf(make_condition(BinaryOp.GT), deep, shallow)
+
+        func = run_pass(stmt)
+        result = func.body.statements[0]
+
+        self.assertEqual(result.condition.op, BinaryOp.LE)
+        self.assertIs(result.true_block, shallow)
+
+    def test_if_inside_a_switch_case_counts_toward_nesting_depth(self):
+        case = HLILSwitchCase([HLILConst(CASE_VALUE)], HLILBlock([guarded_call('deep')]))
+        deep = HLILBlock([HLILSwitch(make_var(), [case])])
+        shallow = HLILBlock([HLILExprStmt(HLILCall('shallow', []))])
+        stmt = HLILIf(make_condition(BinaryOp.GT), deep, shallow)
+
+        func = run_pass(stmt)
+        result = func.body.statements[0]
+
+        self.assertEqual(result.condition.op, BinaryOp.LE)
+        self.assertIs(result.true_block, shallow)
+
+    def test_loop_without_an_if_adds_no_depth(self):
+        # Only ifs are levels: a loop around plain calls ties with a plain arm
+        loop = HLILBlock([HLILWhile(make_condition(), HLILBlock([HLILExprStmt(HLILCall('body', []))]))])
+        plain = HLILBlock([HLILExprStmt(HLILCall('plain', []))])
+        stmt = HLILIf(make_condition(BinaryOp.GT), loop, plain)
+
+        func = run_pass(stmt)
+        result = func.body.statements[0]
+
+        self.assertEqual(result.condition.op, BinaryOp.GT)
+        self.assertIs(result.true_block, loop)
+
+    def test_two_levels_outweigh_one(self):
+        two_levels = HLILBlock([HLILWhile(make_condition(), HLILBlock([
+            HLILIf(make_condition(), HLILBlock([guarded_call('deep')]), None),
+        ]))])
+        # after() keeps this arm from being a lone if, which the else-if chain rule would decide first
+        one_level = HLILBlock([guarded_call('shallow'), HLILExprStmt(HLILCall('after', []))])
+        stmt = HLILIf(make_condition(BinaryOp.GT), two_levels, one_level)
+
+        func = run_pass(stmt)
+        result = func.body.statements[0]
+
+        self.assertEqual(result.condition.op, BinaryOp.LE)
+        self.assertIs(result.true_block, one_level)
 
     def test_empty_arm_is_refused(self):
         stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(LATE_LINE), HLILBlock())

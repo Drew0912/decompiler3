@@ -200,16 +200,13 @@ class BranchOrderNormalizationPass(Pass):
         if true_line is not None and false_line is not None and true_line != false_line:
             return false_line < true_line
 
-        # Shallower arm first, so the deeper one lands in the else and flattens
-        # into an else-if chain instead of nesting
+        # Heavier arm last: the arm with deeper if nesting goes in the else, where
+        # a lone if also flattens into an else-if chain instead of nesting
         return self._if_depth(stmt.true_block) > self._if_depth(stmt.false_block)
 
     @classmethod
     def _if_depth(cls, block: Optional[HLILBlock]) -> int:
-        '''Maximum if nesting depth inside a block'''
-        if not block or not block.statements:
-            return 0
-
+        '''Maximum if nesting depth inside a block, ifs inside loops and switches included'''
         max_depth = 0
         stack = [(block, 0)]
 
@@ -220,10 +217,13 @@ class BranchOrderNormalizationPass(Pass):
                 continue
 
             for stmt in current.statements:
+                inner_depth = depth
+
                 if isinstance(stmt, HLILIf):
-                    max_depth = max(max_depth, depth + 1)
-                    stack.append((stmt.true_block, depth + 1))
-                    stack.append((stmt.false_block, depth + 1))
+                    inner_depth = depth + 1
+                    max_depth = max(max_depth, inner_depth)
+
+                stack.extend((child, inner_depth) for child in sub_blocks(stmt))
 
         return max_depth
 
