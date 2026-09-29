@@ -95,23 +95,26 @@ against a `ScpWriter`, which emits bytecode via the same per-opcode calls.
 delete the temporary *copy* of the source `.dat` it made for the run (the original input file is
 never touched), exec the generated `.py` in a subprocess, byte-compare the result against the
 original. This mechanism — the automated byte-exact comparison itself — is real and implemented.
+Inputs must be named `<name>.dat`: the generated header names the compiled output after the whole
+file name, so a two-suffix input (`X.original.dat`) compiles to `X.original.dat`, and
+`--logic-round-trip` reports its round as a failed compile. No script in the corpora has such a
+name.
 
 **What's opt-in, not default:** round-trip fidelity depends on
-`ScpParser(round_trip=True, keep_unreachable_code=True)`. The validator doesn't set these
-explicitly; it relies on `ScpParser`'s class defaults, which currently happen to be `True`.
-`scena2py_config.py` — the everyday CLI config — overrides both to `False` by default. So the
-validator's correctness currently depends on the parser's class defaults staying `True`; if those
-defaults ever changed, the validator would silently stop being round-trip-safe without any config
-change of its own. Anyone using `scena2py.py` directly for recompilation needs to know to flip
-these two flags explicitly rather than relying on defaults either way.
+`ScpParser(round_trip=True, keep_unreachable_code=True)`. `scena2py_config.py` — the everyday CLI
+config — sets both to `False`. The validator passes both explicitly (`decompile_to_python`: `True`
+for `--round-trip`, `False` for `--logic-round-trip`), so it does not depend on `ScpParser`'s class
+defaults. Anyone using `scena2py.py` directly for byte-exact recompilation needs to set both flags
+to `True`.
 
-**What's actually verified, and what isn't:** the validator's documented baseline (5 samples:
-`e0000`, `e2000`, `system.original`, `mp0000_ev`, `ai_chr0100_e00`) is a *format-check* baseline
-only — it does not run `--round-trip`. There is no persisted "identical (N bytes)" result anywhere
-in the repo for any file. Separately, plain (non-fidelity) decompilation has run at much larger
-scale (~1090 files via `notes/baseline_step0/dump_set.py`), but that run didn't exercise round-trip
-either. In short: the mechanism to verify byte-exact round-trip exists and is automated; actual
-corpus-scale confirmation that it currently passes does not yet exist in this repo.
+**What's actually verified, and what isn't:** `--round-trip` is byte-identical on the validator's 5
+baseline samples (`script_en/scena/e0000.dat`, `e2000.dat`, `mp0000_ev.dat`,
+`script_en/ai/ai_chr0100_e00.dat`, and `sora2_1.0/script_en/scena/system.dat`, which replaced a
+deleted `system.original.dat`), and `--logic-round-trip` converges at round 2 on all 5 (re-run
+2026-09-29; results in the gitignored `notes/post_review_2026-09-23/step11_findings/11b/`). The
+logic round trip is also measured corpus-wide (above); the byte-exact one is not. Of 5 sampled `ani/`
+scripts, all recompile but none is byte-identical: debug records around `ScriptNoReturn` tail calls
+do not pair with their call sites, so the rebuilt records differ.
 
 ## 3. Common-Function Shared Library — Implemented
 

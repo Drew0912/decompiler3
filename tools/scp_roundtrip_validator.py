@@ -5,10 +5,10 @@ Checks that ED9-VM .dat scripts follow the layout rules ScpWriter relies on for 
 round trip, and optionally decompiles, recompiles and byte-compares each file.
 
 Usage:
-    python tools/scp_roundtrip_validator.py script_en/scena/e2000.original.dat
+    python tools/scp_roundtrip_validator.py script_en/scena/e2000.dat
     python tools/scp_roundtrip_validator.py script_en --verbose
-    python tools/scp_roundtrip_validator.py script_en/scena/e0000.original.dat --round-trip
-    python tools/scp_roundtrip_validator.py script_en/scena/e0000.original.dat --logic-round-trip
+    python tools/scp_roundtrip_validator.py script_en/scena/e0000.dat --round-trip
+    python tools/scp_roundtrip_validator.py script_en/scena/e0000.dat --logic-round-trip
 
 Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler limitation):
     layout          default params, param flags, debug records and debug args are contiguous in table
@@ -37,14 +37,17 @@ fixed point within a few rounds are):
                             the global table, and header dword_14 - checked every round, not just once
     logic round trip        PASS once compiled bytes and decompiled text both stop changing, within
                             MAX_CONVERGENCE_ROUNDS rounds; FAIL otherwise
+Name inputs <name>.dat: the generated header names its output after the whole file name, so a
+two-suffix input (X.original.dat) compiles to X.original.dat and the round is reported as a failed
+compile.
 
-Baseline (2026-09-17, format checks, no FAIL):
-    e0000.original.dat      PASS, 1 debug record
-    e2000.original.dat      PASS, 235 debug records (42 with dropped default args)
-    system.original.dat     WARN: unreachable code - 62 JMPs after RETURN, 1 after a JMP, 2 trailing returns,
-                            4805 debug records (747 dropped)
-    mp0000_ev.dat           WARN: 3 unreachable JMPs, 19461 debug records (7872 dropped)
-    ai_chr0100_e00.dat      WARN: 1 unreachable JMP, 37 debug records
+Baseline (2026-09-29, format checks, no FAIL; all five byte-identical under --round-trip and
+converged at round 2 under --logic-round-trip):
+    script_en/scena/e0000.dat           PASS, 1 debug record
+    script_en/scena/e2000.dat           PASS, 235 debug records (42 with dropped default args)
+    sora2_1.0/script_en/scena/system.dat WARN: 63 unreachable ranges, 4806 debug records (740 dropped)
+    script_en/scena/mp0000_ev.dat       WARN: 3 unreachable JMPs, 19461 debug records (7872 dropped)
+    script_en/ai/ai_chr0100_e00.dat     WARN: 1 unreachable JMP, 37 debug records
 """
 
 import argparse

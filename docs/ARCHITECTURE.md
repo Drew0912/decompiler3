@@ -120,17 +120,17 @@ sketched rather than fully designed. Full detail in `docs/LLIL_DSL.md`; not-yet-
 ```
 1. SCP File
    ↓
-2. ScpParser.parse()
+2. ScpParser.parse() (ScpParser.load() runs this and step 4)
    ↓
 3. Function objects (with bytecode)
    ↓
-4. Disassembler.disassemble()
+4. ScpParser.disasm_all_functions() → Disassembler.disasm_function()
    ↓
-5. Instruction list
+5. Basic blocks of instructions
    ↓
-6. Lifter (ED9VMLifter) → LowLevelILFunction
+6. Lifter (ED9VMLifter.lift_function) → LowLevelILFunction
    ↓
-7. MLIL (translate_llil_to_mlil)
+7. MLIL (convert_falcom_llil_to_mlil)
    ↓
 8. HLIL (convert_falcom_mlil_to_hlil)
    ↓

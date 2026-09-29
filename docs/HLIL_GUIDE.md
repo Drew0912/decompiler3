@@ -158,4 +158,6 @@ Several dedicated test files: `tests/test_hlil_branch_order_normalization.py`,
 `tests/test_hlil_control_flow_optimization.py`, `tests/test_hlil_loop_recovery.py`,
 `tests/test_hlil_loop_traversal.py`, `tests/test_hlil_call_fold_short_circuit.py`,
 `tests/test_hlil_long_functions.py`, `tests/test_hlil_common_return_extraction.py`,
-`tests/test_hlil_operators.py`, `tests/test_hlil_traversal.py`.
+`tests/test_hlil_operators.py`, `tests/test_hlil_traversal.py`, `tests/test_hlil_structuring.py`,
+`tests/test_hlil_structuring_fuzz.py`, `tests/test_hlil_path_check.py` (see `HLIL_DESIGN.md`'s
+Testing section for what each covers).

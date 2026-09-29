@@ -41,7 +41,7 @@ instead of tracking a stack pointer — easier to read and to run further analys
 
 See `docs/MLIL_DESIGN.md`'s Module Layout table for the full file-by-file breakdown. In short:
 `ir/mlil/` holds the generic engine (non-SSA node types, the SSA layer, the optimizer, the
-builder/formatter), `ir/mlil/passes/` holds the ~16 actual pass implementations, and
+builder/formatter), `ir/mlil/passes/` holds the 14 pass modules, and
 `falcom/ed9/ir/mlil/` holds Falcom-specific wiring — `mlil_converter.py` is the real production
 entry point (`convert_falcom_llil_to_mlil()`), mirroring how `falcom/ed9/ir/hlil/hlil_converter.py`
 wires HLIL.
@@ -115,11 +115,12 @@ terminator), but it also removes real bytecode `JMP`s that happen to land on a s
 target. Only runs when `optimize=True`; `optimize=False` keeps the untouched, block-per-LLIL-
 boundary translation.
 
-`SSAOptimizationPass` internally runs the `SSAOptimizer` (`ir/mlil/mlil_ssa_optimizer.py`), which
-chains together sparse conditional constant propagation, constant propagation, copy propagation,
-expression inlining, expression/condition simplification, negation normal form conversion, and two
-flavors of dead-code elimination (dead statements, dead `Phi` nodes) — all defined under
-`ir/mlil/passes/`.
+`SSAOptimizationPass` internally runs the `SSAOptimizer` (`ir/mlil/mlil_ssa_optimizer.py`): sparse
+conditional constant propagation once, then, in this order until a round changes nothing (at most
+`SSA_OPTIMIZER_MAX_ITERATIONS` = 10 rounds), constant
+propagation, expression simplification, condition simplification, negation normal form conversion,
+copy propagation, expression inlining, and two flavors of dead-code elimination (dead statements,
+dead `Phi` nodes) — all defined under `ir/mlil/passes/`.
 
 No dead-code pass runs after SSA deconstruction: a census of production output found no unread
 local assignment (500-file sample, 2026-09-26).
@@ -131,8 +132,9 @@ debug dumps — analogous to `HLILFormatter` on the HLIL side.
 
 ## Known Gaps
 
-- Four SSA optimizer passes have no test of their own: negation normal form, expression
-  simplification, constant propagation and dead-`Phi` elimination.
+- Four SSA optimizer passes have no behaviour test of their own: negation normal form, expression
+  simplification, constant propagation and dead-`Phi` elimination (three appear only in metadata
+  checks: `test_mlil_rebuild.py`, `test_mlil_provenance.py`).
 
 ## Testing
 

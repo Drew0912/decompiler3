@@ -1,7 +1,8 @@
 # High Level IL (HLIL) Design
 
-> Status: Implemented, active development. This document describes the real implementation as of
-> 2026-09-20. See `docs/HLIL_GUIDE.md` for practical usage and the current pass-by-pass behavior;
+> Status: Implemented, active development. This document was rewritten against the real
+> implementation on 2026-09-20 and is kept current by each change's doc correction (last full
+> review 2026-09-29). See `docs/HLIL_GUIDE.md` for practical usage and the current pass-by-pass behavior;
 > this document focuses on the node model, structural-analysis boundary, and architectural reasons
 > behind the MLIL-to-HLIL conversion.
 
@@ -62,6 +63,7 @@ The concrete model is small and source-oriented:
 | --- | --- |
 | Containers | `HLILBlock` owns an ordered list of statements. `HighLevelILFunction` owns one root block. |
 | Structured control flow | `HLILIf`, `HLILWhile`, `HLILDoWhile`, `HLILSwitch`, `HLILBreak`, `HLILContinue`, `HLILReturn`. |
+| Unexpressible jump | `HLILUnstructured` - a jump the tree cannot express; the path ends there (see Basic Blocks & Functions). |
 | Ordinary statements | `HLILAssign`, `HLILExprStmt`, `HLILComment`. |
 | Leaf expressions | `HLILVar`, `HLILConst`. Constants retain an `is_hex` display hint. |
 | Operators | `HLILBinaryOp`, `HLILUnaryOp`, `HLILAddressOf`, using `BinaryOp` and `UnaryOp`. |
@@ -79,7 +81,7 @@ Operator knowledge lives once, in `ir/hlil/hlil.py`, in two groups. The language
 including the planned HLIL DSL. The C-family syntax group - the `BINARY_OP_STR`/`UNARY_OP_STR`
 symbols, `BINARY_OP_PRECEDENCE`, `NON_ASSOCIATIVE_OPS` and `needs_parentheses` - serves only the
 TypeScript generator and the debug formatter; a non-C output needs its own. `TERMINAL_STATEMENTS`
-(return, break, continue) is the one list of statements that never fall through.
+(return, break, continue, `HLILUnstructured`) is the one list of statements that never fall through.
 `ControlFlowOptimizationPass` keeps its own negation, which wraps a non-comparison as `== 0` instead
 of `!`.
 
@@ -288,11 +290,18 @@ Several dedicated HLIL unit-test files exist today:
 - `tests/test_hlil_traversal.py` covers the shared tree walkers: every node type's children, source
   order, `iter_tree`'s exclusion, the escaping-exit rules, `sole_statement`, declaration order, and
   control-flow optimization reaching into a do-while body.
+- `tests/test_hlil_structuring.py` (CX Step G, 2026-09-28) runs small CFGs through structuring
+  against their MLIL for every parameter assignment: merge points, loop exits and headers, the
+  region-repeat limits, and the `HLILUnstructured` node (reachability, passes, rendering, validator
+  report).
+- `tests/test_hlil_structuring_fuzz.py` does the same for 1,000 random CFGs.
+- `tests/test_hlil_path_check.py` covers `tools/hlil_path_check.py`: each way of losing or inventing
+  a path, deleting an effect, or changing what a repeated region does is reported.
 
-These tests directly exercise important tree rewrites, but they do not constitute end-to-end
-coverage of HLIL construction. `StructuralAnalyzer`, shared-region cloning, source metadata
-propagation, variable declaration, and the rest of formatting (`hlil_formatter.py`) still have no
-dedicated HLIL test file of their own.
+These tests directly exercise important tree rewrites and structuring, but not every part of HLIL
+construction. `StructuralAnalyzer`'s own analyses (dominators, natural loops, region reduction),
+source metadata propagation, variable declaration, and the rest of formatting (`hlil_formatter.py`)
+still have no dedicated test file of their own.
 
 ## Open Items
 

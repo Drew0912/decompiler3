@@ -34,6 +34,7 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil_types.py` | Type-kind/unification support, `FunctionSignatureDB`. |
 | `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator`/`translate_llil_to_mlil` (not Falcom-specific). |
 | `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
+| `falcom/ed9/ir/mlil/mlil_passes.py` | `ED9LLILToMLILPass`, the pipeline's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
 | `falcom/ed9/ir/mlil/mlil_translator.py` | Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
 | `falcom/ed9/ir/mlil/type_signatures.py` | Type signature data used by Falcom-specific passes. |
 | `tests/test_mlil_metadata.py` | One of several dedicated MLIL test files today — see Testing below. |
@@ -51,8 +52,7 @@ along that edge) and `inst_index` (the statement's own number: `convert_falcom_l
 `optimize_mlil()` end by numbering every statement 0..N-1 in block order, and HLIL copies it as
 `mlil_index`). Only statements carry them; expressions keep the defaults. A pass that replaces a
 statement copies all three with `copy_metadata_from()`. Nodes are split into `MediumLevelILExpr` (produces a value) and
-`MediumLevelILStatement` (side effects only) — roughly 32 concrete instruction classes exist across
-these two categories, covering:
+`MediumLevelILStatement` (side effects only); the concrete instruction classes in both cover:
 
 | Category | Examples |
 | --- | --- |
@@ -63,7 +63,7 @@ these two categories, covering:
 | Pointer dereference | `MLILDeref` (`*ptr`, a unary expression) / `MLILStoreDeref` (`*dest = value`, modelled on `MLILStoreGlobal` but with an expression target instead of a static index) — for `LOAD_STACK_DEREF`/`POP_TO_DEREF`, where the address is a runtime value (e.g. a caller-supplied out-parameter) rather than a statically known stack/frame slot. Unlike `MLILAddressOf`, a `MLILDeref`'s operand is an ordinary value and safe to copy-propagate through; a `MLILStoreDeref` is always kept (never DCE'd) since its target isn't a tracked SSA variable. |
 | Control flow | `MLIL_GOTO`, `MLIL_IF`, `MLIL_RET` |
 | Calls | `MLIL_CALL`, `MLIL_CALL_SCRIPT`, `MLIL_SYSCALL` |
-| Falcom specific | Derived metadata on top of generic ops — stack-setup helpers like `PUSH_CALLER_FRAME`/`PUSH_FUNC_ID`/`PUSH_RET_ADDR` are fully lowered to regular variables/arguments, with no dedicated MLIL opcode. |
+| Falcom specific | Derived metadata on top of generic ops — stack-setup helpers like `PUSH_CALLER_FRAME`/`PUSH_CURRENT_FUNC_ID`/`PUSH_RET_ADDR` are fully lowered to regular variables/arguments, with no dedicated MLIL opcode. |
 
 When a pass replaces an expression's operands and keeps its operation, it calls the node's own
 `rebuild()`, which keeps the source metadata (address, indices): `MLILBinaryOp.rebuild()` and
@@ -105,7 +105,7 @@ non-SSA `MediumLevelILFunction` — it does not read SSA form directly; by the t
 function, SSA construction/optimization/deconstruction has already happened upstream in the MLIL
 pipeline.
 
-Falcom-specific stack-setup helpers (`PUSH_CALLER_FRAME`, `PUSH_FUNC_ID`, `PUSH_RET_ADDR`) are
+Falcom-specific stack-setup helpers (`PUSH_CALLER_FRAME`, `PUSH_CURRENT_FUNC_ID`, `PUSH_RET_ADDR`) are
 fully lowered to regular variables/arguments in MLIL — there is no dedicated MLIL opcode for them
 once the stack layout is eliminated.
 
@@ -143,8 +143,8 @@ class MediumLevelILFunction:
     basic_blocks: list[MediumLevelILBasicBlock]
 ```
 
-(Simplified for illustration — see `ir/mlil/mlil.py:632` and `:672` for the real class
-definitions.) Predecessor/successor edges are `incoming_edges`/`outgoing_edges`, not `preds`/
+(Simplified for illustration — the real classes are `MediumLevelILBasicBlock` and
+`MediumLevelILFunction` in `ir/mlil/mlil.py`.) Predecessor/successor edges are `incoming_edges`/`outgoing_edges`, not `preds`/
 `succs`. Each MLIL block mirrors an LLIL block when `optimize=False` - the `BlockMergePass` (part
 of the SSA optimization pipeline, so it does not run when `optimize=False`) collapses call-return
 and other single-predecessor goto chains when optimization is enabled, so this 1:1 property does
@@ -171,8 +171,9 @@ deconstruction: a census of production output found no unread local assignment (
 ### Optimization Passes (inside `SSAOptimizer`)
 
 Run on SSA form, in `ir/mlil/mlil_ssa_optimizer.py`'s configured order: sparse conditional constant
-propagation (SCCP), constant propagation, copy propagation, expression inlining, expression/
-condition simplification, negation normal form, dead-code elimination, and dead-`Phi` elimination.
+propagation (SCCP), then constant propagation, expression simplification, condition simplification,
+negation normal form, copy propagation, expression inlining, dead-code elimination, and dead-`Phi`
+elimination.
 SCCP runs once; the other passes repeat until a round changes nothing, for at most
 `SSA_OPTIMIZER_MAX_ITERATIONS` (10) rounds - hitting the cap prints a "did not converge" warning.
 Dead-code elimination repeats its own sweep until nothing more is removed, so a dead chain goes in
@@ -225,8 +226,9 @@ said only one existed.
 
 ## Open Items
 
-- Four SSA optimizer passes have no test of their own: negation normal form, expression
-  simplification, constant propagation and dead-`Phi` elimination.
+- Four SSA optimizer passes have no behaviour test of their own: negation normal form, expression
+  simplification, constant propagation and dead-`Phi` elimination (three appear only in metadata
+  checks: `test_mlil_rebuild.py`, `test_mlil_provenance.py`).
 - SCCP's edge reachability is coarse, and kept that way on purpose: a statement it does not model (a
   call, a store) marks every edge out of its block reachable, and so does an `if` whose condition is
   not known yet. This only loses folding - production SCCP never removes blocks - and tighter
