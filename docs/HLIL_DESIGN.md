@@ -46,8 +46,8 @@ work happen upstream; HLIL favors explicit tree ownership and straightforward co
 | `tests/test_hlil_loop_recovery.py` | Unit tests for guarded-loop recovery and its safety checks. |
 
 The generic/project-specific split is deliberate. The core converter understands MLIL nodes and
-structured control flow; the Falcom entry point chooses the production pass sequence and owns the
-optional Falcom type-inference hook.
+structured control flow; the Falcom entry point chooses the production pass sequence and runs
+`FalcomTypeInferencePass`, which types parameters from the flags the script declares.
 
 ## Operations & Node Types
 
@@ -144,10 +144,13 @@ the non-SSA `MediumLevelILFunction` produced by the upstream MLIL pipeline. This
 close to a source-language variable model and avoids exposing optimizer machinery to codegen.
 
 Type information is deliberately lightweight. `HLILTypeKind` contains `UNKNOWN`, `INT`, `FLOAT`,
-`STRING`, `BOOL`, `VOID`, and `POINTER`, but types are hints on variables rather than types attached
-to every expression. During conversion, MLIL booleans map to `INT`, MLIL pointers (`Pointer`
-out-parameters) to `POINTER`, and MLIL variants to unknown. Parameter default values are copied from
-MLIL source-parameter metadata when available.
+`STRING`, `BOOL`, `VOID`, `POINTER` and `NUMBER` (int or float), but types are hints on variables
+rather than types attached to every expression. During conversion, MLIL booleans map to `INT`, MLIL
+pointers (`Pointer` out-parameters) to `POINTER`, and MLIL variants to unknown. Parameter default
+values are copied from MLIL source-parameter metadata when available. When the script's function is
+given, `FalcomTypeInferencePass` then sets each parameter's type from its declared flag -
+`Value32`/`Nullable32` -> `NUMBER`, `str`/`NullableStr` -> `STRING`, `Pointer` -> `POINTER` - so a
+signature never depends on MLIL inference; locals still take the MLIL SSA types.
 
 ### Call Results as Expressions
 
@@ -247,9 +250,9 @@ The production entry point is `convert_falcom_mlil_to_hlil()` in
 `falcom/ed9/ir/hlil/hlil_converter.py`. Its configured pipeline is:
 
 ```
-MLILToHLILPass → ControlFlowOptimizationPass → LoopRecoveryPass →
-CommonReturnExtractionPass → DeadCodeEliminationPass →
-BranchOrderNormalizationPass (enabled by default)
+MLILToHLILPass → FalcomTypeInferencePass (when the script function is given) →
+ControlFlowOptimizationPass → LoopRecoveryPass → CommonReturnExtractionPass →
+DeadCodeEliminationPass → BranchOrderNormalizationPass (enabled by default)
 ```
 
 The post-conversion passes operate on the tree, not on the original CFG. In architectural terms,
@@ -259,8 +262,9 @@ they divide into shape recovery (`ControlFlowOptimizationPass`, `LoopRecoveryPas
 because it deliberately prefers recovered source-line order over bytecode emission order.
 
 HLIL has no copy-propagation pass: copy propagation happens in MLIL SSA optimization (the disabled
-HLIL `CopyPropagationPass` was removed on 2026-09-27). The imported `FalcomTypeInferencePass` hook
-is disabled and marked as testing. See `docs/HLIL_GUIDE.md` for the detailed transformations
+HLIL `CopyPropagationPass` was removed on 2026-09-27). `FalcomTypeInferencePass` only sets parameter
+types (see Variable Model); it is also the planned home of Falcom semantic types such as character
+IDs. See `docs/HLIL_GUIDE.md` for the detailed transformations
 performed by each active pass and why the copy-propagation pass was removed.
 
 ## Testing
@@ -297,6 +301,9 @@ Several dedicated HLIL unit-test files exist today:
 - `tests/test_hlil_structuring_fuzz.py` does the same for 1,000 random CFGs.
 - `tests/test_hlil_path_check.py` covers `tools/hlil_path_check.py`: each way of losing or inventing
   a path, deleting an effect, or changing what a repeated region does is reported.
+- `tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared
+  parameter flag gives, the declared flag winning over an inferred int/float variant, and default
+  values still printed once.
 
 These tests directly exercise important tree rewrites and structuring, but not every part of HLIL
 construction. `StructuralAnalyzer`'s own analyses (dominators, natural loops, region reduction),
@@ -305,9 +312,11 @@ still have no dedicated test file of their own.
 
 ## Open Items
 
-- `FalcomTypeInferencePass` is wired off as "testing". Type inference ownership is decided (CX Step F,
-  2026-09-28): it moves to an HLIL pass in a follow-up plan. Until then call results stay untyped
-  (`any` in TypeScript), which is most of the untyped locals.
+- Parameter types come from the declared flags (`FalcomTypeInferencePass`, since 2026-09-29); local
+  types still come from the MLIL SSA type pass, so the planned rewrite, which deletes that pass, leaves
+  locals `any` until typing resumes. The HLIL type-inference plan for locals (CX Step F's follow-up) is
+  parked until the tool is nearly done; call results stay untyped (`any` in TypeScript), which is most
+  of the untyped locals.
 - **Resolved (Step H, 2026-09-22):** `HLILFor` (no construction site, and already-wrong rendering)
   was deleted rather than fixed. Tree-walking passes that only recursed into simple nested blocks -
   `DeadCodeEliminationPass`, `CommonReturnExtractionPass`, `TypeScriptGenerator._infer_return_type`

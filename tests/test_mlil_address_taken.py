@@ -26,7 +26,7 @@ from ir.mlil.passes import SSATypeInferencePass, RegGlobalValuePropagationPass
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from ir.hlil.hlil import (
     HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock, HLILAddressOf,
-    HLILBinaryOp, BinaryOp, HighLevelILFunction, HLILIf, HLILCall, HLILExprStmt,
+    HLILBinaryOp, BinaryOp, HighLevelILFunction, HLILIf, HLILCall, HLILExprStmt, HLILTypeKind,
 )
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
@@ -384,7 +384,7 @@ class TestAddressTakenCodegenBooleanCoercion(unittest.TestCase):
     assignment branch's coercion rather than a second, unreimplemented copy.'''
 
     def test_boolean_assigned_to_numeric_address_taken_local_gets_int_wrapped(self):
-        x = HLILVariable('x', 'int')
+        x = HLILVariable('x', HLILTypeKind.INT)
         a = HLILVariable('a')
         b = HLILVariable('b')
         bool_expr = HLILBinaryOp(BinaryOp.EQ, HLILVar(a), HLILVar(b))
@@ -399,7 +399,7 @@ class TestAddressTakenPrinting(unittest.TestCase):
     deref_set(addr_of(x), v) - in both the TypeScript codegen and the debug HLIL formatter.'''
 
     def test_typescript_read_and_write_fold_back_to_plain_variable(self):
-        x = HLILVariable('x', 'int')
+        x = HLILVariable('x', HLILTypeKind.INT)
         lowered_read = HLILDeref(HLILAddressOf(HLILVar(x)))
 
         self.assertEqual(TypeScriptGenerator._format_expr(lowered_read), 'x')

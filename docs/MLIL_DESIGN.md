@@ -210,8 +210,9 @@ says they are equal: `1` and `1.0` differ, and NaN equals NaN.
 ### Type Inference
 
 `SSATypeInferencePass` types parameters from their declared kinds, `SetVar`/`Phi` targets, and
-address-taken locals through their `*(&x) = v` stores, takes backward hints from comparisons with a
-constant and from arithmetic, then unifies every SSA version into one type
+address-taken locals through their `*(&x) = v` stores, takes backward hints from the top level of
+each `if` condition (a comparison with a constant, arithmetic, a bare truth test), then unifies every
+SSA version into one type
 per variable name (`func.var_types`, printed as the `.mlil.asm` "Inferred Types" list). Conflicting
 kinds unify to an `MLILVariantType`, which is identified by its members (`mlil_types.py`), so a
 member that arrives after the variable is already a variant is still recorded.
@@ -233,10 +234,14 @@ said only one existed.
   call, a store) marks every edge out of its block reachable, and so does an `if` whose condition is
   not known yet. This only loses folding - production SCCP never removes blocks - and tighter
   reachability would fold more constants, moving output further from the bytecode.
-- Type inference is due to move to an HLIL pass (CX Step F, 2026-09-28; follow-up plan). Known gaps
-  it should close: call results are never typed (a call is a statement with an `output`, which the
-  pass never reads, and the signature DB's syscall/script tables are empty); `Value32`/`Nullable32`
-  parameters claim `int` although they mean int or float; and types are keyed by pre-deconstruction
-  names, so a split variable (`var_s11_v0`) finds no type (78 locals in the corpus).
+- Rendered parameter types no longer come from this pass: since 2026-09-29 HLIL's
+  `FalcomTypeInferencePass` takes them from the declared flags, so `Value32`/`Nullable32` - which this
+  pass still calls `int` - reach a signature as `number` (int or float). Locals still use this pass's
+  types. An HLIL type pass for locals (CX Step F's follow-up plan) is parked until the tool is nearly
+  done. Known gaps until then: call results are never typed (a call is a statement with an `output`,
+  which the pass never reads, and the signature DB's syscall/script tables are empty); use hints come
+  only from the top level of an `if` condition, so a comparison nested under `&&`/`||` gives none; and
+  types are keyed by pre-deconstruction names, so a split variable (`var_s11_v0`) finds no type (78
+  locals in the corpus).
 - This document and `docs/MLIL_GUIDE.md` should be kept in sync with `ir/mlil/passes/` as passes
   are added, removed, or reordered — that directory is the actual source of truth for what runs.

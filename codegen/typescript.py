@@ -17,34 +17,16 @@ class TypeScriptGenerator:
     @classmethod
     def _format_type(cls, type_hint) -> str:
         '''Map HLIL type to TypeScript'''
-        if not type_hint:
-            return 'any'
-
-        # Handle HLILTypeKind enum
-        if isinstance(type_hint, HLILTypeKind):
-            type_map = {
-                HLILTypeKind.INT: 'number',
-                HLILTypeKind.FLOAT: 'number',
-                HLILTypeKind.STRING: 'string',
-                HLILTypeKind.BOOL: 'boolean',
-                HLILTypeKind.VOID: 'void',
-                HLILTypeKind.POINTER: 'Pointer',
-            }
-            return type_map.get(type_hint, 'any')
-
-        # Handle string type hints (from FalcomTypeInferencePass)
-        if isinstance(type_hint, str):
-            type_map = {
-                'int': 'number',
-                'float': 'number',
-                'number': 'number',
-                'bool': 'boolean',
-                'string': 'string',
-                'void': 'void',
-            }
-            return type_map.get(type_hint.lower(), type_hint)
-
-        return 'any'
+        type_map = {
+            HLILTypeKind.INT: 'number',
+            HLILTypeKind.FLOAT: 'number',
+            HLILTypeKind.NUMBER: 'number',
+            HLILTypeKind.STRING: 'string',
+            HLILTypeKind.BOOL: 'boolean',
+            HLILTypeKind.VOID: 'void',
+            HLILTypeKind.POINTER: 'Pointer',
+        }
+        return type_map.get(type_hint, 'any')
 
     @classmethod
     def _format_default_value(cls, value) -> str:
@@ -159,13 +141,7 @@ class TypeScriptGenerator:
                     break
 
         # Pointer aliases number in the generated header
-        if isinstance(hint, HLILTypeKind):
-            return hint in (HLILTypeKind.INT, HLILTypeKind.FLOAT, HLILTypeKind.POINTER)
-
-        elif isinstance(hint, str):
-            return hint.lower() in ('int', 'float', 'number')
-
-        return False
+        return hint in (HLILTypeKind.INT, HLILTypeKind.FLOAT, HLILTypeKind.NUMBER, HLILTypeKind.POINTER)
 
     @classmethod
     def _format_var_assignment(cls, dest: HLILVar, src: HLILExpression, indent_str: str) -> str:

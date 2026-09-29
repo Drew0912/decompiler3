@@ -27,9 +27,9 @@ def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Opti
     pipeline = Pipeline()
     pipeline.add_pass(MLILToHLILPass())
 
-    # DISABLED: FalcomTypeInferencePass - testing
-    # if scp_func:
-    #     pipeline.add_pass(FalcomTypeInferencePass(scp_func))
+    # Parameter types come from the script's declared flags, not from MLIL inference
+    if scp_func:
+        pipeline.add_pass(FalcomTypeInferencePass(scp_func))
 
     pipeline.add_pass(ControlFlowOptimizationPass())
     pipeline.add_pass(LoopRecoveryPass())

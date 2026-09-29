@@ -24,6 +24,7 @@ from ir.hlil import (
     HLILTypeKind,
     HLILVar,
     HLILVariable,
+    VariableKind,
 )
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from ir.mlil.mlil import MediumLevelILFunction, MLILRet
@@ -85,6 +86,27 @@ class TestPointerCodegen(unittest.TestCase):
         func.add_statement(HLILAssign(HLILVar(pointer), bool_expr))
 
         self.assertIn('arg1 = int(', generate_typescript(func))
+
+
+class TestNumberCodegen(unittest.TestCase):
+    '''NUMBER (int or float) renders as number and takes the int(...) coercion.'''
+
+    def test_number_parameter_renders_as_number(self):
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.parameters = [HLILVariable('arg1', HLILTypeKind.NUMBER, kind = VariableKind.PARAM)]
+
+        self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: number)', generate_typescript(func))
+
+    def test_boolean_assigned_to_a_number_local_gets_int_wrapped(self):
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.variables = [HLILVariable('x', HLILTypeKind.NUMBER)]
+        bool_expr = HLILBinaryOp(BinaryOp.EQ, HLILVar(HLILVariable('a')), HLILVar(HLILVariable('b')))
+        func.add_statement(HLILAssign(HLILVar(HLILVariable('x')), bool_expr))
+
+        ts = generate_typescript(func)
+
+        self.assertIn('let x: number;', ts)
+        self.assertIn('x = int(', ts)
 
 
 if __name__ == '__main__':

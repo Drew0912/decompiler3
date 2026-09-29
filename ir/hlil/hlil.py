@@ -16,6 +16,7 @@ class HLILTypeKind(IntEnum2):
     BOOL    = auto()
     VOID    = auto()
     POINTER = auto()    # Out-parameter: a stack address the callee writes through
+    NUMBER  = auto()    # Int or float
 
 
 class BinaryOp(IntEnum2):
@@ -123,7 +124,7 @@ class VariableKind(IntEnum2):
 class HLILVariable:
     '''HLIL variable with optional type information'''
 
-    def __init__(self, name: Optional[str] = None, type_hint: Optional[str] = None, default_value: Optional[str] = None,
+    def __init__(self, name: Optional[str] = None, type_hint: Optional[HLILTypeKind] = None, default_value: Optional[str] = None,
                  kind: VariableKind = None, index: Optional[int] = None):
         self.name = name
         self.type_hint = type_hint

@@ -82,12 +82,15 @@ The real production entry point is `convert_falcom_mlil_to_hlil()`
 (`falcom/ed9/ir/hlil/hlil_converter.py`), which builds a `Pipeline` and runs, in order:
 
 ```
-MLILToHLILPass → ControlFlowOptimizationPass → LoopRecoveryPass →
-CommonReturnExtractionPass → DeadCodeEliminationPass → BranchOrderNormalizationPass (default on)
+MLILToHLILPass → FalcomTypeInferencePass (when the script function is given) →
+ControlFlowOptimizationPass → LoopRecoveryPass → CommonReturnExtractionPass →
+DeadCodeEliminationPass → BranchOrderNormalizationPass (default on)
 ```
 
-`FalcomTypeInferencePass` exists in the codebase but is currently **wired off** in this pipeline
-(disabled, marked "testing").
+`FalcomTypeInferencePass` sets each parameter's type from the flag the script declares for it
+(`Value32`/`Nullable32` -> `number`, `str`/`NullableStr` -> `string`, `Pointer` -> `Pointer`), so
+signatures don't depend on MLIL inference; local variables still take the MLIL SSA types. It is also
+the planned home of Falcom semantic types such as character IDs.
 
 HLIL has no copy-propagation pass: copy propagation happens earlier, at the MLIL-SSA layer. An HLIL
 `CopyPropagationPass`, disabled since 2025-12, was removed on 2026-09-27. Re-enabled on the full
@@ -159,5 +162,5 @@ Several dedicated test files: `tests/test_hlil_branch_order_normalization.py`,
 `tests/test_hlil_loop_traversal.py`, `tests/test_hlil_call_fold_short_circuit.py`,
 `tests/test_hlil_long_functions.py`, `tests/test_hlil_common_return_extraction.py`,
 `tests/test_hlil_operators.py`, `tests/test_hlil_traversal.py`, `tests/test_hlil_structuring.py`,
-`tests/test_hlil_structuring_fuzz.py`, `tests/test_hlil_path_check.py` (see `HLIL_DESIGN.md`'s
-Testing section for what each covers).
+`tests/test_hlil_structuring_fuzz.py`, `tests/test_hlil_path_check.py`,
+`tests/test_falcom_param_types.py` (see `HLIL_DESIGN.md`'s Testing section for what each covers).
