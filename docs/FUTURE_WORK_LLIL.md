@@ -1,101 +1,231 @@
 # Future Work: LLIL
 
 > Ideas for the LLIL layer (the LLIL DSL `.py`, the writer and the `.llil.asm` listing) from a
-> 2026-09-30 review of the decompiled output. Nothing here is started. HLIL-level ideas from the same
-> review, including the HLIL DSL, are in `docs/FUTURE_WORK.md` (HLIL). As there, each entry links back
-> to the doc or code it extends.
+> 2026-09-30 review of the decompiled output. All of them were decided with the user on 2026-10-01 and
+> are planned, not started: the plan is `llil-dsl-neatening.md` (Steps 1-11; kept with Claude's active
+> plans while it runs, then archived to `notes/plans/archive/`), and the decisions, with the evidence
+> behind them, are in `notes/llil_dsl_neatening_handoff.md`. Both are local, gitignored notes. Each
+> entry names its handoff item and plan step and is marked done when the step lands. HLIL-level ideas
+> from the same review, including the HLIL DSL, are in `docs/FUTURE_WORK.md` (HLIL). As there, each
+> entry links back to the doc or code it extends.
 
 ## LLIL DSL (`docs/LLIL_DSL.md`)
 
 The LLIL DSL is the exact, recompilable stack view. It is used mostly for debugging and analysis and
 is easier to read than the `.llil.asm`, but it can still be edited. Keep it close to the stack: one
-opcode per line, arguments in push order, byte offsets, exact float32 values. The ideas below add
-information without changing any operand.
+opcode per line, arguments in push order, byte offsets, floats that encode to the exact stored word.
+The changes below add comments or change how an operand is spelled; none of them changes a compiled
+byte.
 
-- **Stack-slot comments.** The same variable gets a different offset as the stack moves:
-  `LOAD_STACK(-16)` is `arg2` at `CheckAlgoUse`'s source line 162 and `arg3` at line 168. Annotate the
-  stack state the way the `.llil.asm` shows it, as comments: `# sp = N` at each label, and the absolute
-  slot and variable on each offset-based op. The parser already simulates the stack, so the numbers
-  exist.
+- **Shortest floats** (item 1; Steps 3-4). The VM stores a float as a float32 with its 2 lowest
+  mantissa bits dropped (`ScpValue.to_bytes`, `falcom/ed9/parser/types_scp.py`), so each stored word
+  stands for 4 float32 values, and the `.py` prints the one with those bits zero, in full:
+  `PUSH_FLOAT(0.2999999523162842)`. Print the shortest decimal that encodes to the same word instead,
+  always as a float literal: `PUSH_FLOAT(0.3)`, `PUSH_FLOAT(1.0)`, `PUSH_FLOAT(-0.0)`, in `PUSH_FLOAT`
+  operands and float parameter defaults (Step 3). One helper in `common/utils.py`, generic over the
+  number of dropped bits, also replaces the float text of the other outputs (Step 4): the `.ts`,
+  `.hlil.ts` and `.mlil.asm` round to `float_precision_decimals` (3) today, which is neither exact nor
+  short (`0.033299997448921204` prints in full, `-2738.1494140625` as `-2738.149`, which encodes to a
+  different word). The `.llil.asm` is under Listings. How floats the optimizer computed (folded
+  constants) print is decided in Step 4.
+- **Float bits comment, opt-in** (item 2; Step 8a). `PUSH_FLOAT(0.3)  # f32 0x3E999998, raw 0x8FA66666`:
+  the float32 the VM computes with and the stored word a hex editor shows. Off by default, a
+  `ScenaDecompileConfig` flag (`falcom/ed9/scena2py_config.py`).
+- **Stack-slot comments, on by default** (item 8; Steps 6a, 6b, 7). The same variable gets a different
+  offset as the stack moves: `LOAD_STACK(-16)` is `arg2` at `CheckAlgoUse`'s source line 162 and `arg3`
+  at line 168. The parser's stack simulation already knows every slot (`context.inst_states`,
+  `falcom/ed9/parser/scp.py`) but discards it after disassembly. Keep the layout on `Function` (Step 6a)
+  and comment the `.py` the way the `.llil.asm` shows the stack:
+  - the 5 offset opcodes with the absolute slot and what it holds (`POP_TO`'s offset counts from sp
+    after its pop);
+  - `# sp = N` at each label, and the slot count on `POP(n)`;
+  - a push as `(local)` only when the code later addresses its slot by offset.
+
+  Parameters are numbered as in every other output (`arg1` is the highest parameter slot); a parameter
+  slot that is popped and pushed again (the tail-call idiom) is a local from then on. Unreachable code
+  (fidelity mode) has no simulated stack, so it gets no comments. A `ScenaDecompileConfig` flag turns
+  them off; the validator keeps the default, so the logic round trip checks that the comments reach the
+  fixed point too. The common library's modules get them as well, always on (Step 7), from the same
+  helper.
   ```python
-  LOAD_STACK(-16)                # slot 1 = arg2
-  PUSH_RAW(RawInt(0x00000000))   # local slot 3
-  POP(20)                        # 5 slots
+  def CheckAlgoUse(arg1: Value32, arg2: Value32, arg3: Value32):
+      DEBUG_SET_LINENO(161)
+      LOAD_STACK(-4)                  # slot 2 = arg1
+      ...
+      LOAD_STACK(-16)                 # slot 1 = arg2
+      LOAD_STACK(-24)                 # slot 0 = arg3
+      CALL(CheckSBreak)
+      ...
+      POP(12)                         # 3 slots
+      RETURN()
+
+      def _loc_3444(): pass
+      label('loc_3444')               # sp = 3
+
+      DEBUG_SET_LINENO(167)
+      PUSH_RAW(RawInt(0x00000000))    # slot 3 (local)
+      PUSH_INT(65535)
+      POP_TO(-4)                      # slot 3
+      DEBUG_SET_LINENO(168)
+      LOAD_STACK(-16)                 # slot 0 = arg3
   ```
-- **Provenance header:** the source file, the commit, the `round_trip`/`keep_unreachable_code` flags
-  and the float precision the file was generated with, and what the `<stem>_hook` import is for.
-- **Per-function comment** with the function's table index and offset, as decompiler2's output had
-  (`# id: 0x0000 offset: 0x12FC`).
-- **A short hand-editing section** in `docs/LLIL_DSL.md`: arguments are pushed last-first; `POP(n)`
-  counts bytes; locals are reserved by a push (usually `PUSH_RAW(RawInt(0))`) and freed by the `POP(n)`
-  before `RETURN`; labels must be unique, and `genLabel()` makes one; syscalls have no names beyond the
-  wrapper functions the scripts themselves define.
-- **Keep** the `def _loc_X(): pass` stubs (they make labels symbols in an editor's outline) and the
-  blank and spacer lines that mark blocks. The spacer after each label is four spaces rather than an
-  empty line, so editors that trim trailing whitespace change it: harmless for compiling, noisy in
-  diffs.
-- **Not wanted,** because they move away from the stack view: a one-line call form, names in place of
-  stack offsets, rounded floats.
+- **Call-argument comments, opt-in** (item 16; Step 8a). Each argument's last push gets the callee's
+  parameter name, numbered like the callee (`arg1` is the last push): `PUSH_INT(1000)  # arg1`. Where a
+  stack-slot comment is already on the line, the caller's and the callee's names meet as "passed as":
+  ```python
+      LOAD_STACK(-16)                 # slot 1 = arg2, passed as arg2
+      LOAD_STACK(-24)                 # slot 0 = arg3, passed as arg1
+      CALL(CheckSBreak)
+  ```
+  Off by default; when on, every call gets them. Which call kinds besides `CALL` get them (`CALL_SCRIPT`,
+  and `SYSCALL`, which doesn't pop its arguments) is decided in Step 8a. Script `.py` only, not the
+  library.
+- **Per-function comment, opt-in** (item 3; Step 8a), with the function's table index and code offset,
+  as decompiler2's output had: `# id: 0x0000 offset: 0x12FC`. The offset changes after the first
+  recompile (library functions are registered first), like `loc_` labels; the fixed point still holds
+  from round 2.
+- **Provenance header** (item 17; Step 2a). Two comment lines at the top of each script: the flags it
+  was generated with and what the hook import is for.
+  ```python
+  # Decompiled from ai_chr5122_e00.dat (round_trip=False, keep_unreachable_code=False)
+  # ai_chr5122_e00_hook.py, if present next to this file, is imported to patch this script.
+  ```
+  Base name only, with no path, timestamp or commit hash: the logic round trip compares the `.py` text
+  between rounds, and every round keeps the stem and the flags. The earlier idea's float-precision line
+  is dropped; the `.py` has no such setting.
+- **The hook import re-raises real errors** (item 6; Step 2a). The generated
+  `except ModuleNotFoundError: pass` (`gen_python_header`, `falcom/ed9/parser/scp.py`) also swallows a
+  failed import inside the hook: the registrations before the failing line run, the rest are skipped,
+  and the script exits 0. It re-raises unless the missing module is the hook itself, in both the
+  `import` and the `__import__` form:
+  ```python
+  try:
+      import ai_chr5122_e00_hook
+  except ModuleNotFoundError as e:
+      if e.name != 'ai_chr5122_e00_hook':
+          raise
+  ```
+- **Whitespace, footer and line endings** (items 4, 5, 18; Step 2a). Keep the `def _loc_X(): pass`
+  stubs (they make labels symbols in an editor's outline) and the blank lines that mark blocks, but
+  write the spacer after each label as an empty line instead of four spaces (editors that trim trailing
+  whitespace change it: harmless for compiling, noisy in diffs). The footer loses its trailing spaces
+  and calls `main()` instead of `Try(main)`, which prints the traceback, waits for a key and exits with
+  code 0 even after an error. Every generated text file (script `.py`, `.ts`, `.hlil.ts`, `.llil.asm`,
+  `.mlil.asm`, `.dot`, `.debug.txt`, the library modules, `common_index.py` and `common_all.py`) is
+  written with `\n` line endings; today `write_text` uses the platform default, CRLF on Windows. Game
+  strings and the `.dat` don't change.
+- **`CALL_SCRIPT` with plain strings** (item 7; Step 3): `CALL_SCRIPT("this", "GetCoolClone", 0)`
+  instead of `CALL_SCRIPT(ScpValue('this'), ScpValue('GetCoolClone'), 0)`, quoted like `PUSH_STR`. The
+  writer already wraps a bare value.
+- **`__all__` in the library modules** (item 14; Step 3). Pyright and Pylance flag every parameter
+  annotation in a generated script ("Variable not allowed in type expression") and its `common_all`
+  import (`MAX_PATH` is `Final`): no module in the import chain has an `__all__`, so the header's second
+  import brings the helper's names in again and `Value32` gets a second declaration. The generator
+  writes each module's own function names as its `__all__`, and `common_all.py` imports `log` under a
+  private name. No runtime change.
 - **Debugging dumps** can use fidelity mode (`round_trip=True, keep_unreachable_code=True`), which keeps
   library functions and unreachable code inline.
 
 ## Writer (`falcom/ed9/writer/`)
 
-- **Catch stack mistakes.** Compiling a `.py` checks operand counts and types (the asserts in each
-  opcode function and in `handle_opcode`) and labels, but nothing tracks the stack or checks argument
-  counts (`_get_param_count` only feeds debug records). A wrong `POP(n)`, a missing push or an extra
-  argument compiles into a `.dat`, and only decompiling that `.dat` again notices: the parser's stack
-  simulation (`ScpParser.on_instruction_decoded`) raises with the function and the bytecode offset. The
-  round-trip validator does that for generated files; a hand edit gets no check. Build the check on
-  the writer's opcode calls, not on the compiled bytes: `EmitLLIL` lists (`docs/FUTURE_WORK.md`, HLIL
-  DSL: Mixing LLIL and HLIL) must be checked before anything is written and refer to variables by
-  name, jump targets are only written at the end of `run2`, and errors can name the function and the
-  `.py` line.
-  - **Effect table:** per opcode, the slots popped and pushed, worked out from the operands (`POP(n)`
-    pops `n / WORD_SIZE`, `DEBUG_LOG(argc)` pops `argc`, `CALL` the callee's parameter count plus the
-    2 call-setup slots, `CALL_SCRIPT` its `argc` plus the 5 caller-frame slots), and whether it falls
-    through, jumps or stops. The parser keeps this as opcode groups (`PUSH_VARIANTS`, `BINARY_OPS`, …)
-    and an `if` chain; one table used by both is the shared stack model (`docs/FUTURE_WORK.md`, HLIL
-    DSL: Recompile Path).
-  - **Walker:** follows fall-through and jumps from a starting depth, records the depth at each label
-    and reports the first mismatch. Like the parser, it tracks which opcode pushed each slot, so an
-    extra argument fails at its `CALL` (the slots under the arguments are not the two setup pushes)
-    rather than at `RETURN`. Unreachable code is skipped; the parser does not simulate it either.
-  - **LLIL functions** are checked after each body runs in `compileFunctions`, which needs each
-    function's opcodes and labels in order (today there is one file-wide `self.calls` list, without
-    labels): start at the parameter count, never go below 0, `RETURN` only at 0, and no offset reaches
-    below the bottom of the stack. Lowered HLIL functions and hook callbacks go through the same
-    `handle_opcode`, so this also covers lowered HLIL code, `EmitLLIL` contents and patches.
-  - **`EmitLLIL` lists** use the same walker: start at the HLIL compiler's depth at that statement and
-    never go below it; end there or in a `JMP`, with no `RETURN` or tail call; numeric offsets reach
-    only slots the list pushed, and names cover the rest. This check points the error at the list
-    itself.
-  - **Limits:** at LLIL level, an offset inside the stack but on the wrong variable stays invisible,
-    since nothing says which variable was meant. Re-lifting (decompiling the compiled output again)
-    stays as a test-time check, since it also catches encoding bugs a check of the source can't see.
-    Every generated `.py` should pass unchanged, since the parser accepted the same bytecode; one full
-    round-trip run confirms it.
-- **Hook callbacks.** Every generated script imports `<stem>_hook`, but the writer has nothing for it
-  to register with; only a commented-out loop remains in `ScpWriter.run`. Restore decompiler2's
-  `registerFuncCallback` (replace a function by name at registration), `registerRunCallback` (add
-  functions before compiling) and `registerOpCodeCallback` (intercept emitted opcodes). Create the
-  lists in `__init__`: `create_scp_writer()` calls `init()`, which resets only the name and the globals,
-  so a hook imported at the top of a script keeps its registrations. Add a public accessor
-  (`get_scena()`), and check at the end of compiling that every function a hook named exists. The
-  callbacks work for today's LLIL DSL scripts as soon as they exist; decorator shorthand and tree hooks
-  build on them (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).
-- **Per-function label namespaces.** Labels are one file-wide namespace (`add_label`). Generated names
-  are unique (addresses or `genLabel()` uuids), but hand-written names would collide across functions.
-- **Error context.** A failure should name the function and the DSL call; an undefined label is a bare
-  `KeyError` today.
-- **In-memory compile.** `run2` always writes the output file; exactness checks want the bytes in
-  memory.
-- **Clear errors for bad values.** `ScpValue(True)` fails with a bare `KeyError`, because `bool` is not
-  in its type map (`falcom/ed9/parser/types_scp.py`).
+- **In-memory compile, written only on success** (item 9; Step 5). `run2` opens the output file before
+  it patches label references, so a failed compile leaves a broken `.dat`. Split it into
+  `build(g) -> bytes` and the write, so a failed compile writes nothing.
+- **Per-function labels and error context** (item 10; Step 5). Labels are one file-wide namespace
+  (`add_label`). Generated names are unique (addresses or `genLabel()` uuids), but hand-written names
+  collide across functions. Scope labels to their function and resolve each function's references when
+  its body finishes: an undefined label then fails naming the function (a bare `KeyError` today), a
+  duplicate names its function, and a reference into another function is an error. Compiled bytes
+  don't change; `debug_argc`'s return-label keys still resolve per function.
+- **Catch stack mistakes by re-parsing and re-lifting** (item 11; Step 9). Compiling a `.py` checks
+  operand counts, types and labels, but nothing tracks the stack: a wrong `POP(n)`, a missing push or
+  an extra argument compiles into a `.dat`, and only decompiling it again notices. After `build()`,
+  parse and lift the bytes in memory with the decompiler's own `ScpParser` and `ED9VMLifter`, and map an
+  error back to the `.py` line that emitted the opcode (`file:line: function: detail`). A separate check
+  module keeps `ScpWriter` an encoder and adds no import cycle. The check lands off, is measured on the
+  corpus (every generated `.py` should pass, since the parser accepted the same bytecode), and is turned
+  on only after that. This replaces the earlier design of a writer-side walker over an effect table, a
+  second stack model next to the parser's; moving the parser's per-opcode stack effects into the opcode
+  table is a separate plan (`notes/opcode_table_handoff.md`). Limits: neither the parser nor the lifter
+  catches a read below the stack bottom today, and an offset inside the stack but on the wrong variable
+  stays invisible at LLIL level. Checking an HLIL DSL `EmitLLIL` list before anything is written stays
+  with the HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Mixing LLIL and HLIL).
+- **Hook callbacks** (item 19; Step 10, the plan's last step), moved here from the HLIL DSL work. Every
+  generated script imports `<stem>_hook`, but the writer has nothing for a hook to register with (only a
+  commented-out loop remains in `ScpWriter.run`), so a hook can add a function but not replace one: the
+  script's own definition then hits `functionDecorator`'s duplicate-name `ValueError`. Restore
+  decompiler2's raw callbacks: `registerFuncCallback` (replace a function by name, library functions
+  included), `registerRunCallback` (add functions before compiling) and `registerOpCodeCallback`
+  (intercept emitted opcodes). The lists are created in `ScpWriter.__init__`: the hook is imported
+  before the header's `create_scp_writer()`, whose `init()` resets only the name and the globals, so
+  registrations made at import survive. Hooks reach the writer through the existing `get_scp_writer()`;
+  no `get_scena()` is needed. Compiling checks that every function a hook names exists and warns when
+  two hooks replace the same one. The exact signatures are decided in Step 10. Decorator shorthand and
+  tree hooks stay with the HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).
+- **Clear errors for bad values** (item 12; Step 2b). `ScpValue(True)` fails with a bare `KeyError`
+  (`bool` is not in its type map, `falcom/ed9/parser/types_scp.py`), and `PUSH_INT(True)` passes its
+  `int` assert; both raise a clear error instead. `CALL` is annotated `func: str` but takes the function
+  itself, so a hand edit that follows the annotation (`CALL('CheckSBreak')`) fails with an
+  `AttributeError` and Pyright flags every `CALL(...)` line. It becomes `CALL(func: Callable)`, with an
+  assertion that names the mistake.
+- **`GLOBAL_VAR` and `label()` move into `scp_writer_helper.py`** (item 13; Step 2b), next to
+  `genLabel()`: they are DSL statements that emit no instruction. `GLOBAL_VAR` is the only non-opcode in
+  the opcode handler, and `label()` sits at the end of `scp_writer.py`. No output change.
 
 ## Listings and Docstrings
 
-- **`.llil.asm` strings** are printed in single quotes without escaping (`'Thunder God's Descent'`, raw
-  backslashes). Harmless for a debug listing, but anything that parses it breaks.
-- **`LOAD_STACK`'s docstring** (`falcom/ed9/writer/scp_writer_opcode_handler.py`) says parameter
-  offsets are frame-relative; the encoding is always stack-pointer-relative.
+- **`.llil.asm` floats** (item 20; Step 4): the shortest value, spelled as in the `.py` and `.ts` so one
+  search finds a value in all three, plus an always-on comment with the bits:
+  ```
+    STACK[sp] = 27.2 ; [5] f32 0x41D99998, raw 0x90766666
+  ```
+  Today the value prints with 6 fixed decimals (`ir/llil/llil.py`): `27.199997`, and any float below
+  0.0000005 as `0`, which looks like an integer.
+- **`.llil.asm` strings** (item 12; Step 2b) are printed in single quotes without escaping
+  (`'Thunder God's Descent'`, raw backslashes). Print them with `quote_string(value, "'")`.
+- **Docstrings** (item 12; Step 2b) in `falcom/ed9/writer/scp_writer_opcode_handler.py`: `LOAD_STACK`
+  says parameter offsets are frame-relative, but the encoding is always sp-relative
+  (`stack[sp + offset // WORD_SIZE]`); `POP_TO` and `POP_TO_DEREF` take sp after their pop; the others
+  are checked against the LLIL builder. `tools/ir_semantic_validator.py`'s example variable name
+  `"arg0"` becomes `"arg1"`, since parameters are numbered from `arg1`.
+- **A readable `.dat` listing** (item 15; Steps 8b, 8c). Today's `.debug.txt` prints the header, each
+  function's table entry and its debug records, with no code, so a record can't be matched to its call.
+  Extend it into a read-only listing of the whole file as the VM sees it, with one opt-in
+  `ScenaDecompileConfig` flag per section, replacing `write_debug_info`: header, global variables,
+  function entries, code, call records and string pool. The code section shows each instruction's
+  offset, raw bytes, real opcode and operands as encoded, with the symbolic meaning as a comment; every
+  push pseudo-op (`PUSH_INT`, `PUSH_RET_ADDR`, ...) prints as the real `PUSH`:
+  ```
+  0x03416  00 04 00 00 00 00    PUSH 4, Raw(0x0)           ; func id: CheckAlgoUse
+  0x0341C  00 04 2f 34 00 00    PUSH 4, Raw(0x342F)        ; return address -> loc_342F
+  0x03422  02 f0 ff ff ff       LOAD_STACK -16             ; slot 1 = arg2
+  0x0342C  0c 01 00             CALL 1                     ; CheckSBreak
+                                                           ;   record 0: Local CheckSBreak(Variable, Variable)
+  ```
+  A call's debug record is printed under it only where a per-pair content check confirms the pairing
+  (`notes/debug_records_handoff.md`); otherwise the function notes `records not paired`. The string pool
+  lists each string's section (code, names, defaults, debug-only, global names); the section split moves
+  from the round-trip validator into `falcom/` first (Step 8b).
+
+## Not Doing
+
+Decided against on 2026-10-01 (reasons in the handoff):
+
+- A one-line call form, names in place of stack offsets, and lossy rounded floats: they move away from
+  the stack view. The shortest floats above encode to the same word, so they are not rounded.
+- A raw-opcode mode for the `.py`. `PUSH_INT`, `PUSH_FLOAT`, `PUSH_STR` and `PUSH_RAW` are spellings of
+  `PUSH` that show the value's type tag, and `PUSH_CURRENT_FUNC_ID`, `PUSH_RET_ADDR` and `CALL(f)` are
+  references the writer resolves, like a label in an assembler; raw numbers would only be valid for an
+  unedited byte-exact recompile. The `.debug.txt` code section gives the opcode view instead.
+- Hex float operands, and hex in the HLIL DSL.
+- A writer-side stack walker (see the re-lifting check above).
+- 0-based `arg0..` parameter names: every layer names parameters from `arg1`, as Binary Ninja, IDA and
+  Ghidra do.
+- `# fmt: off`, a `run_script` helper, and `# pyright: ignore[reportMissingImports]` on the hook import.
+- A single-import module for the generated header: it saves one line. Revisit with the HLIL DSL, whose
+  scripts need more imports.
+- A hand-editing section in `docs/LLIL_DSL.md`, for now; the handoff keeps a draft of its contents.
+
+Known and left as is: `common_all.py`'s own `except ModuleNotFoundError` swallows a failed import inside
+a library module, the way the hook import does today; `ScpValue` quiets signaling-NaN float words (none
+in the corpus).

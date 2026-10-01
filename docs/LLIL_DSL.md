@@ -108,13 +108,15 @@ defaults. Anyone using `scena2py.py` directly for byte-exact recompilation needs
 to `True`.
 
 **What's actually verified, and what isn't:** `--round-trip` is byte-identical on the validator's 5
-baseline samples (`script_en/scena/e0000.dat`, `e2000.dat`, `mp0000_ev.dat`,
-`script_en/ai/ai_chr0100_e00.dat`, and `sora2_1.0/script_en/scena/system.dat`, which replaced a
-deleted `system.original.dat`), and `--logic-round-trip` converges at round 2 on all 5 (re-run
-2026-09-29; results in the gitignored `notes/post_review_2026-09-23/step11_findings/11b/`). The
-logic round trip is also measured corpus-wide (above); the byte-exact one is not. Of 5 sampled `ani/`
-scripts, all recompile but none is byte-identical: debug records around `ScriptNoReturn` tail calls
-do not pair with their call sites, so the rebuilt records differ.
+baseline samples (`sora2_1.0/script_en/scena/e0000.dat`, `e2000.dat`, `mp0000_ev.dat`, `system.dat`,
+and `sora2_1.0/script_en/ai/ai_chr0100_e00.dat`), and `--logic-round-trip` converges at round 2 on
+all 5 (2026-10-01). On a 300-file quota sample of `sora2_1.0` that includes them (2026-10-01; list
+and results in the gitignored `notes/llil_dsl_neatening/validator300/`), 265 files are byte-identical
+and all 300 converge at round 2. The logic round trip is also measured corpus-wide (above), and so is
+the byte-exact one: 855 of 1,082 `sora2_1.0` files are byte-identical (2026-10-01,
+`notes/debug_records_handoff.md`). Nearly all of the others differ only in their rebuilt debug
+records, most of them `ani/` scripts, where records around `ScriptNoReturn` tail calls do not pair
+with their call sites.
 
 ## 3. Common-Function Shared Library — Implemented
 
@@ -167,8 +169,8 @@ closure of anything calling an excluded function (asserting the closure holds), 
 rewrite of the output directory every run — hand edits to generated files don't survive
 regeneration.
 
-**`falcom/ed9/writer/metadata/common/` is gitignored, not checked in** — like `sora2_1.0`/
-`script_en` themselves, its generated modules are a substantive translation of the game's own
+**`falcom/ed9/writer/metadata/common/` is gitignored, not checked in** — like the `sora2_1.0/`
+scripts it is generated from, its generated modules are a substantive translation of the game's own
 script content (real function bodies, not original project code), so it's treated the same way:
 regenerated locally, never committed. `metadata/common_index.py` and `metadata/common_all.py`
 (pure data/import-statements — names, module keys, fingerprint digests, `import *` lines, no
