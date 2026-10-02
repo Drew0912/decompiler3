@@ -86,10 +86,15 @@ category as the pre-library baseline).
 
 **Generation** (bytecode → `.py`): `Formatter.format_function`/`format_block`
 (`falcom/ed9/disasm/formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
-`scena2py.write_python_dsl` (`falcom/ed9/scena2py.py`).
+`scena2py.write_python_dsl` (`falcom/ed9/scena2py.py`). A generated script imports the helper, an
+optional `<stem>_hook` module for patches kept outside the generated file (only a missing hook is
+ignored; an import error inside the hook stops the compile), and the library (§3). Its footer calls
+`main()`, which compiles the script when it is run directly. Every generated text file is written
+with `\n` line endings.
 
-**Compilation** (`.py` → bytecode): the `.py` file is executed (`runpy.run_path(...)['main']()`)
-against a `ScpWriter`, which emits bytecode via the same per-opcode calls.
+**Compilation** (`.py` → bytecode): the `.py` file is executed (`python e0000.py`, or the
+validator's `runpy.run_path(...)['main']()`) against a `ScpWriter`, which emits bytecode via the same
+per-opcode calls.
 
 **Validation**: `tools/scp_roundtrip_validator.py` automates a full loop — decompile a script,
 delete the temporary *copy* of the source `.dat` it made for the run (the original input file is

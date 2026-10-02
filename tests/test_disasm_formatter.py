@@ -23,8 +23,7 @@ def disasm_to_dsl(name: str, bytecode: bytes) -> list[str]:
     func.is_common_func = False
     func.entry_block = disasm.disasm_function(bytecode, offset = 0, name = name)
 
-    lines = Formatter(FormatterContext()).format_function(func)
-    return [line.rstrip() for line in lines]
+    return Formatter(FormatterContext()).format_function(func)
 
 
 class TestDeadFallthroughLabelOmitted(unittest.TestCase):
@@ -78,6 +77,21 @@ class TestReferencedEntryBlockGetsLabel(unittest.TestCase):
         self.assertEqual(lines[3], "label('loc_0')")
         self.assertNotIn("label('loc_E')", lines)
         self.assertIn("label('loc_1E')", lines)
+
+    def test_spacer_after_each_label_is_empty(self):
+        '''Not indented: editors that trim trailing whitespace would change four spaces'''
+        bytecode = bytes([
+            0x09, 0x00,                          # 0x00: GET_REG(0)
+            0x0F, 0x0C, 0x00, 0x00, 0x00,        # 0x02: POP_JMP_ZERO('loc_C')
+            0x0B, 0x00, 0x00, 0x00, 0x00,        # 0x07: JMP('loc_0')  <- back-edge to the entry block
+            0x0D,                                # 0x0C: RETURN()
+        ])
+
+        lines = disasm_to_dsl('test_spacers', bytecode)
+        label_indices = [index for index, line in enumerate(lines) if line.strip().startswith('label(')]
+
+        self.assertEqual(len(label_indices), 2)
+        self.assertEqual([lines[index + 1] for index in label_indices], ['', ''])
 
 
 if __name__ == '__main__':

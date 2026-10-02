@@ -58,7 +58,7 @@ COMMON_FUNCTIONS_OMITTED_COMMENT = (
 
 def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *, common_functions_omitted: bool = False) -> None:
     preamble = [*COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines(), ''] if common_functions_omitted else []
-    out_path.write_text(parser.gen_python_script(functions, preamble = preamble), encoding = 'utf-8')
+    out_path.write_text(parser.gen_python_script(functions, preamble = preamble), encoding = 'utf-8', newline = '\n')
 
 def write_debug_info(parser: ScpParser, functions: list[Function], out_path: Path) -> None:
     """Dump the parsed header, each function's raw ScpFunctionEntry, and its per-call debug info"""
@@ -78,7 +78,7 @@ def write_debug_info(parser: ScpParser, functions: list[Function], out_path: Pat
 
         lines.append('')
 
-    out_path.write_text('\n'.join(lines) + '\n', encoding = 'utf-8')
+    out_path.write_text('\n'.join(lines) + '\n', encoding = 'utf-8', newline = '\n')
 
 def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
@@ -119,7 +119,7 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
                 llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
 
             if config.write_llil_dot:
-                (output_dir / f'{out_no_suffix.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8')
+                (output_dir / f'{out_no_suffix.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8', newline = '\n')
 
             need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
             if not need_mlil:
@@ -131,7 +131,7 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
 
             if config.write_mlil_dot:
-                (output_dir / f'{out_no_suffix.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8')
+                (output_dir / f'{out_no_suffix.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8', newline = '\n')
 
             if not (config.write_hlil_ts or config.write_ts):
                 continue
@@ -155,16 +155,16 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
             log.warning(f'{path} [{func.name}]: {type(e).__name__}: {e}')
 
     if config.write_llil_asm:
-        out.with_suffix('.llil.asm').write_text('\n'.join(llil_asm_lines), encoding = 'utf-8')
+        out.with_suffix('.llil.asm').write_text('\n'.join(llil_asm_lines), encoding = 'utf-8', newline = '\n')
 
     if config.write_mlil_asm:
-        out.with_suffix('.mlil.asm').write_text('\n'.join(mlil_asm_lines), encoding = 'utf-8')
+        out.with_suffix('.mlil.asm').write_text('\n'.join(mlil_asm_lines), encoding = 'utf-8', newline = '\n')
 
     if config.write_hlil_ts:
-        out.with_suffix('.hlil.ts').write_text('\n'.join(hlil_ts_lines), encoding = 'utf-8')
+        out.with_suffix('.hlil.ts').write_text('\n'.join(hlil_ts_lines), encoding = 'utf-8', newline = '\n')
 
     if config.write_ts:
-        out.with_suffix('.ts').write_text(generate_typescript_header() + '\n'.join(ts_chunks), encoding = 'utf-8')
+        out.with_suffix('.ts').write_text(generate_typescript_header() + '\n'.join(ts_chunks), encoding = 'utf-8', newline = '\n')
 
 def main() -> int:
     parser = argparse.ArgumentParser(description = 'Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')

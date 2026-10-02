@@ -5,10 +5,10 @@ Checks that ED9-VM .dat scripts follow the layout rules ScpWriter relies on for 
 round trip, and optionally decompiles, recompiles and byte-compares each file.
 
 Usage:
-    python tools/scp_roundtrip_validator.py script_en/scena/e2000.dat
-    python tools/scp_roundtrip_validator.py script_en --verbose
-    python tools/scp_roundtrip_validator.py script_en/scena/e0000.dat --round-trip
-    python tools/scp_roundtrip_validator.py script_en/scena/e0000.dat --logic-round-trip
+    python tools/scp_roundtrip_validator.py sora2_1.0/script_en/scena/e2000.dat
+    python tools/scp_roundtrip_validator.py sora2_1.0/script_en --verbose
+    python tools/scp_roundtrip_validator.py sora2_1.0/script_en/scena/e0000.dat --round-trip
+    python tools/scp_roundtrip_validator.py sora2_1.0/script_en/scena/e0000.dat --logic-round-trip
 
 Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler limitation):
     layout          default params, param flags, debug records and debug args are contiguous in table
@@ -41,13 +41,13 @@ Name inputs <name>.dat: the generated header names its output after the whole fi
 two-suffix input (X.original.dat) compiles to X.original.dat and the round is reported as a failed
 compile.
 
-Baseline (2026-09-29, format checks, no FAIL; all five byte-identical under --round-trip and
+Baseline (2026-10-01, format checks, no FAIL; all five byte-identical under --round-trip and
 converged at round 2 under --logic-round-trip):
-    script_en/scena/e0000.dat           PASS, 1 debug record
-    script_en/scena/e2000.dat           PASS, 235 debug records (42 with dropped default args)
-    sora2_1.0/script_en/scena/system.dat WARN: 63 unreachable ranges, 4806 debug records (740 dropped)
-    script_en/scena/mp0000_ev.dat       WARN: 3 unreachable JMPs, 19461 debug records (7872 dropped)
-    script_en/ai/ai_chr0100_e00.dat     WARN: 1 unreachable JMP, 37 debug records
+    sora2_1.0/script_en/scena/e0000.dat           PASS, 1 debug record
+    sora2_1.0/script_en/scena/e2000.dat           PASS, 235 debug records (42 with dropped default args)
+    sora2_1.0/script_en/scena/system.dat          WARN: 63 unreachable ranges, 4806 debug records (740 dropped)
+    sora2_1.0/script_en/scena/mp0000_ev.dat       WARN: 3 unreachable JMPs, 19461 debug records (7872 dropped)
+    sora2_1.0/script_en/ai/ai_chr0100_e00.dat     WARN: 1 unreachable JMP, 37 debug records
 """
 
 import argparse
@@ -107,7 +107,7 @@ REACHABLE_TERMINATORS   = (ED9Opcode.RETURN, ED9Opcode.JMP, ED9Opcode.CALL_SCRIP
 PAIRED_CALL_OPS         = {ED9Opcode.CALL: ED9Opcode.PUSH_RET_ADDR, ED9Opcode.CALL_SCRIPT: ED9Opcode.PUSH_CALLER_FRAME}
 MAX_CONVERGENCE_ROUNDS  = 4  # --logic-round-trip: give up if compile/decompile hasn't hit a fixed point by then
 
-# Runs a generated script without Try(main), which pauses for a key press on errors
+# Runs a generated script's main() under a fixed run_name, so its own __main__ guard stays off
 ROUND_TRIP_RUNNER = "import runpy, sys; runpy.run_path(sys.argv[1], run_name = 'scp_roundtrip')['main']()"
 
 
@@ -699,7 +699,7 @@ def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = Tru
     with contextlib.redirect_stdout(io.StringIO()):
         parser, functions = ScpParser.load(dat_path, round_trip = round_trip, keep_unreachable_code = keep_unreachable_code)
 
-    py_path.write_text(parser.gen_python_script(functions), encoding = 'utf-8')
+    py_path.write_text(parser.gen_python_script(functions), encoding = 'utf-8', newline = '\n')
     return parser, functions
 
 
@@ -806,7 +806,7 @@ def compile_and_decompile_round(stem: str, round_dir: Path, py_text: str) -> tup
     result back. Returns (returncode, compile output tail, the round's .dat path or None on failure)."""
     round_dir.mkdir()
     py_path = round_dir / f'{stem}.py'
-    py_path.write_text(py_text, encoding = 'utf-8')
+    py_path.write_text(py_text, encoding = 'utf-8', newline = '\n')
 
     returncode, tail = compile_dsl(py_path, round_dir)
     dat_path = round_dir / f'{stem}.dat'

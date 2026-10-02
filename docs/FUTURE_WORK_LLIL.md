@@ -84,20 +84,12 @@ byte.
   as decompiler2's output had: `# id: 0x0000 offset: 0x12FC`. The offset changes after the first
   recompile (library functions are registered first), like `loc_` labels; the fixed point still holds
   from round 2.
-- **Provenance header** (item 17; Step 2a). Two comment lines at the top of each script: the flags it
-  was generated with and what the hook import is for.
-  ```python
-  # Decompiled from ai_chr5122_e00.dat (round_trip=False, keep_unreachable_code=False)
-  # ai_chr5122_e00_hook.py, if present next to this file, is imported to patch this script.
-  ```
-  Base name only, with no path, timestamp or commit hash: the logic round trip compares the `.py` text
-  between rounds, and every round keeps the stem and the flags. The earlier idea's float-precision line
-  is dropped; the `.py` has no such setting.
-- **The hook import re-raises real errors** (item 6; Step 2a). The generated
-  `except ModuleNotFoundError: pass` (`gen_python_header`, `falcom/ed9/parser/scp.py`) also swallows a
-  failed import inside the hook: the registrations before the failing line run, the rest are skipped,
-  and the script exits 0. It re-raises unless the missing module is the hook itself, in both the
-  `import` and the `__import__` form:
+- **The hook import re-raises real errors** (item 6; Step 2a, done). The generated
+  `except ModuleNotFoundError: pass` also swallowed a failed import inside the hook: the registrations
+  before the failing line ran, the rest were skipped, and the script exited 0. The block
+  (`gen_hook_import`, `falcom/ed9/parser/scp.py`) now re-raises unless the missing module is the hook
+  itself, in both the `import` and the `__import__` form; for a dotted stem a missing parent package is
+  ignored too (`if e.name not in ('X', 'X.original_hook')`):
   ```python
   try:
       import ai_chr5122_e00_hook
@@ -105,7 +97,7 @@ byte.
       if e.name != 'ai_chr5122_e00_hook':
           raise
   ```
-- **Whitespace, footer and line endings** (items 4, 5, 18; Step 2a). Keep the `def _loc_X(): pass`
+- **Whitespace, footer and line endings** (items 4, 5, 18; Step 2a, done). Keep the `def _loc_X(): pass`
   stubs (they make labels symbols in an editor's outline) and the blank lines that mark blocks, but
   write the spacer after each label as an empty line instead of four spaces (editors that trim trailing
   whitespace change it: harmless for compiling, noisy in diffs). The footer loses its trailing spaces
@@ -225,7 +217,11 @@ Decided against on 2026-10-01 (reasons in the handoff):
 - A single-import module for the generated header: it saves one line. Revisit with the HLIL DSL, whose
   scripts need more imports.
 - A hand-editing section in `docs/LLIL_DSL.md`, for now; the handoff keeps a draft of its contents.
+- A provenance comment at the top of each script naming its source and the `round_trip` /
+  `keep_unreachable_code` flags (item 17; user, 2026-10-02, after it was implemented in Step 2a): everyday
+  scripts always use the same flags, fidelity output is recognizable without it (no library manifest,
+  unreachable code kept), and it adds lines to every file.
 
 Known and left as is: `common_all.py`'s own `except ModuleNotFoundError` swallows a failed import inside
-a library module, the way the hook import does today; `ScpValue` quiets signaling-NaN float words (none
-in the corpus).
+a library module, the way the hook import did before Step 2a; `ScpValue` quiets signaling-NaN float words
+(none in the corpus).

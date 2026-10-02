@@ -1091,10 +1091,7 @@ class ScpParser(StrictBase):
         """
         lines = f'''\
 {SCP_WRITER_HELPER_IMPORT}
-try:
-    {self.gen_hook_import()}
-except ModuleNotFoundError:
-    pass
+{self.gen_hook_import()}
 
 {COMMON_LIBRARY_ALL_IMPORT}
 
@@ -1194,19 +1191,36 @@ scena = create_scp_writer('{self.name}')
         return lines
 
     def gen_hook_import(self) -> str:
-        """Import of the optional <stem>_hook module - __import__ when the stem isn't a valid module path (e.g. mon5078+)"""
+        """The try/except block importing the optional <stem>_hook module - __import__ when the stem isn't a valid module
+        path (e.g. mon5078+). Only a missing hook is ignored (for a dotted stem, also a missing parent package); a failed
+        import inside the hook re-raises"""
         module = f'{pathlib.Path(self.name).stem.strip()}_hook'
-        if all(part.isidentifier() and not keyword.iskeyword(part) for part in module.split('.')):
-            return f'import {module}'
+        parts = module.split('.')
+        if all(part.isidentifier() and not keyword.iskeyword(part) for part in parts):
+            statement = f'import {module}'
 
-        return f'__import__({module!r})'
+        else:
+            statement = f'__import__({module!r})'
+
+        if len(parts) == 1:
+            check = f'e.name != {module!r}'
+
+        else:
+            prefixes = tuple('.'.join(parts[:end]) for end in range(1, len(parts) + 1))  # parents, then the hook
+            check = f'e.name not in {prefixes!r}'
+
+        return f'''\
+try:
+    {statement}
+except ModuleNotFoundError as e:
+    if {check}:
+        raise'''
 
     def gen_python_footer(self) -> list[str]:
         """Generate Python footer lines for output script execution"""
-        return f'''\
+        return '''\
 def main():
     scena.run(globals())
 
 if __name__ == '__main__':
-    Try(main)          
-        '''.splitlines()
+    main()'''.splitlines()

@@ -408,7 +408,7 @@ def write_output(canon: dict[str, CanonicalFunction], included: set[str], name_t
         stale.unlink()
 
     OUTPUT_DIR.mkdir(parents = True, exist_ok = True)
-    (OUTPUT_DIR / '__init__.py').write_text('"""Generated common-function library modules, one per syscall subsystem"""\n', encoding = 'utf-8')
+    (OUTPUT_DIR / '__init__.py').write_text('"""Generated common-function library modules, one per syscall subsystem"""\n', encoding = 'utf-8', newline = '\n')
 
     names_by_module: dict[str, list[str]] = {}
     for name in included:
@@ -416,10 +416,10 @@ def write_output(canon: dict[str, CanonicalFunction], included: set[str], name_t
 
     for module_key, names in names_by_module.items():
         text = render_module(module_key, names, canon, name_to_module)
-        (OUTPUT_DIR / f'{module_key}.py').write_text(text, encoding = 'utf-8')
+        (OUTPUT_DIR / f'{module_key}.py').write_text(text, encoding = 'utf-8', newline = '\n')
 
-    INDEX_PATH.write_text(render_index(canon, included, name_to_module), encoding = 'utf-8')
-    ALL_PATH.write_text(render_all(sorted(names_by_module)), encoding = 'utf-8')
+    INDEX_PATH.write_text(render_index(canon, included, name_to_module), encoding = 'utf-8', newline = '\n')
+    ALL_PATH.write_text(render_all(sorted(names_by_module)), encoding = 'utf-8', newline = '\n')
 
 
 def generate(corpus_root: Path) -> dict[str, CanonicalFunction]:

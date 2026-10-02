@@ -81,7 +81,7 @@ class Formatter:
             else:
                 block_lines = self.format_block(block)
 
-            lines.extend(self.indent + line for line in block_lines)
+            lines.extend(self.indent + line if line else line for line in block_lines)
             if lines and lines[-1] != '':
                 lines.append('')
 
