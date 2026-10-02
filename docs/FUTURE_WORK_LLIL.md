@@ -154,15 +154,17 @@ byte.
   no `get_scena()` is needed. Compiling checks that every function a hook names exists and warns when
   two hooks replace the same one. The exact signatures are decided in Step 10. Decorator shorthand and
   tree hooks stay with the HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).
-- **Clear errors for bad values** (item 12; Step 2b). `ScpValue(True)` fails with a bare `KeyError`
-  (`bool` is not in its type map, `falcom/ed9/parser/types_scp.py`), and `PUSH_INT(True)` passes its
-  `int` assert; both raise a clear error instead. `CALL` is annotated `func: str` but takes the function
-  itself, so a hand edit that follows the annotation (`CALL('CheckSBreak')`) fails with an
-  `AttributeError` and Pyright flags every `CALL(...)` line. It becomes `CALL(func: Callable)`, with an
-  assertion that names the mistake.
-- **`GLOBAL_VAR` and `label()` move into `scp_writer_helper.py`** (item 13; Step 2b), next to
-  `genLabel()`: they are DSL statements that emit no instruction. `GLOBAL_VAR` is the only non-opcode in
-  the opcode handler, and `label()` sits at the end of `scp_writer.py`. No output change.
+- **Clear errors for bad values** (item 12; Step 2b, done). `ScpValue(True)` failed with a bare
+  `KeyError` (`bool` is not in its type map, `falcom/ed9/parser/types_scp.py`), and `POP(True)` compiled
+  silently as `POP(1)`, since `bool` passes every `int` check. `ScpValue` now rejects any type it can't
+  encode, `ScpWriter.handle_opcode` rejects a `bool` operand for every opcode (`PUSH_INT(True)`,
+  `POP(True)`, `SYSCALL(True, ...)`), and `GLOBAL_VAR` rejects a `bool` type. `CALL` was annotated
+  `func: str` but takes the function itself, so a hand edit that followed the annotation
+  (`CALL('CheckSBreak')`) failed with an `AttributeError` and Pyright flagged every `CALL(...)` line. It
+  is now `CALL(func: Callable)`, with an assertion that names the mistake.
+- **`GLOBAL_VAR` and `label()` moved into `scp_writer_helper.py`** (item 13; Step 2b, done), next to
+  `genLabel()`: they are DSL statements that emit no instruction. `GLOBAL_VAR` was the only non-opcode in
+  the opcode handler, and `label()` sat at the end of `scp_writer.py`. No output change.
 
 ## Listings and Docstrings
 
@@ -173,13 +175,16 @@ byte.
   ```
   Today the value prints with 6 fixed decimals (`ir/llil/llil.py`): `27.199997`, and any float below
   0.0000005 as `0`, which looks like an integer.
-- **`.llil.asm` strings** (item 12; Step 2b) are printed in single quotes without escaping
-  (`'Thunder God's Descent'`, raw backslashes). Print them with `quote_string(value, "'")`.
-- **Docstrings** (item 12; Step 2b) in `falcom/ed9/writer/scp_writer_opcode_handler.py`: `LOAD_STACK`
-  says parameter offsets are frame-relative, but the encoding is always sp-relative
-  (`stack[sp + offset // WORD_SIZE]`); `POP_TO` and `POP_TO_DEREF` take sp after their pop; the others
-  are checked against the LLIL builder. `tools/ir_semantic_validator.py`'s example variable name
-  `"arg0"` becomes `"arg1"`, since parameters are numbered from `arg1`.
+- **`.llil.asm` strings** (item 12; Step 2b, done) were printed in single quotes without escaping
+  (`'Thunder God's Descent'`, raw backslashes, a raw newline splitting the line). They now go through
+  `quote_string(value, "'")`.
+- **Docstrings** (item 12; Step 2b, done) in `falcom/ed9/writer/scp_writer_opcode_handler.py`, checked
+  against the LLIL builder and lifter: `LOAD_STACK` said parameter offsets are frame-relative, but the
+  encoding is always sp-relative (`stack[sp + offset // WORD_SIZE]`); `POP_TO` and `POP_TO_DEREF` take sp
+  after their pop; `RETURN` claimed to set `REG[0]`, but it only needs an empty stack (the script sets
+  `REG[0]` with `SET_REG(0)`); `LOAD_STACK_DEREF`, `SYSCALL` (reads its arguments without popping) and
+  `JMP` were vague. `tools/ir_semantic_validator.py`'s example variable name `"arg0"` is now `"arg1"`,
+  since parameters are numbered from `arg1`.
 - **A readable `.dat` listing** (item 15; Steps 8b, 8c). Today's `.debug.txt` prints the header, each
   function's table entry and its debug records, with no code, so a record can't be matched to its call.
   Extend it into a read-only listing of the whole file as the VM sees it, with one opt-in

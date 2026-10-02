@@ -173,8 +173,9 @@ Each block also keeps `sp_in` / `sp_out`, the `sp` at its start and end.
 
 `falcom/ed9/scena2py.py` writes `FalcomLLILFormatter.format_llil_function()` to `<script>.llil.asm`:
 one header per block (`block_N(0xADDR), label, [sp = N]`, plus `fp` on the entry) and each
-instruction in an expanded pseudo-code form (`STACK[sp] = ...`, `STACK[--sp]`).
-`hidden_for_formatter` drops the `SpAdd` lines that form already spells out. `to_dot()` draws a
+instruction in an expanded pseudo-code form (`STACK[sp] = ...`, `STACK[--sp]`). String constants
+print single-quoted with Python escapes (`quote_string`), so a quote or line break stays inside
+its token. `hidden_for_formatter` drops the `SpAdd` lines that form already spells out. `to_dot()` draws a
 function's CFG (`.llil.dot`).
 
 ## Testing

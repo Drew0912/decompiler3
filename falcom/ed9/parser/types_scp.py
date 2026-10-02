@@ -113,6 +113,10 @@ class ScpValue:
         self.value  = value
 
         if value is not None:
+            # Exact type lookup: bool (an int subclass) and other types are rejected rather than mis-encoded
+            if type(value) not in self.ClassMap:
+                raise TypeError(f'ScpValue takes int, float, str or RawInt, not {type(value).__name__}: {value!r}')
+
             self.type = self.ClassMap[type(value)]
         else:
             self.type = None

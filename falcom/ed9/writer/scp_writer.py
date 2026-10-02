@@ -25,13 +25,6 @@ from ..parser.types_scp import (
 )
 from ..parser.utils import str_to_bytes
 
-# __all__ = (
-#     'ScpWriter',
-#     'create_scp_writer',
-#     'get_scp_writer',
-#     'label',
-# )
-
 # PUSH's leading byte - 4 in every sample script (checked by tools/scp_roundtrip_validator.py)
 PUSH_SIZE_BYTE = 4
 
@@ -352,6 +345,11 @@ class ScpWriter:
     def handle_opcode(self, opcode: int, *args):
         # log.debug(f'handle opcode 0x{opcode:X} @ 0x{self.fs.Position:X}')
 
+        # bool is an int subclass, so the opcode functions' isinstance asserts accept True/False
+        for arg in args:
+            if isinstance(arg, bool):
+                raise TypeError(f'{ED9Opcode(opcode).name} takes no bool operand: {arg!r}')
+
         self.calls.append((opcode, args))
 
         # PUSH and its pseudo-ops all collapse to the on-disk PUSH opcode + size byte + ScpValue
@@ -595,7 +593,3 @@ def create_scp_writer(name: str) -> ScpWriter:
 
 def get_scp_writer() -> ScpWriter:
     return _gScp
-
-
-def label(name: str):
-    get_scp_writer().add_label(name)

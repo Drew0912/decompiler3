@@ -1,5 +1,7 @@
 """Per-opcode Python functions for the scp_writer DSL, mirroring the ED9 VM instruction set"""
 
+from typing import Callable
+
 from .scp_writer import *
 from ..disasm import ED9Opcode
 from ..parser.types_scp import *
@@ -26,13 +28,13 @@ def POP(byte_count: uint8):
 
 
 def LOAD_STACK(offset: sint32):
-    '''Opcode 0x02: Load stack[fp(param)/sp(local) + offset // WORD_SIZE]'''
+    '''Opcode 0x02: Push stack[sp + offset // WORD_SIZE] (always sp-relative, parameters included)'''
     assert isinstance(offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.LOAD_STACK, offset)
 
 
 def LOAD_STACK_DEREF(offset: sint32):
-    '''Opcode 0x03: Load *stack[sp + offset // WORD_SIZE] (only with REG[0]?)'''
+    '''Opcode 0x03: Push *stack[sp + offset // WORD_SIZE] - reads through a pointer the caller passed in a parameter slot'''
     assert isinstance(offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.LOAD_STACK_DEREF, offset)
 
@@ -44,22 +46,15 @@ def PUSH_STACK_OFFSET(offset: sint32):
 
 
 def POP_TO(offset: sint32):
-    '''Opcode 0x05: Pop to stack[sp + offset]'''
+    '''Opcode 0x05: Pop, then store to stack[sp + offset // WORD_SIZE] (sp taken after the pop)'''
     assert isinstance(offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.POP_TO, offset)
 
 
 def POP_TO_DEREF(offset: sint32):
-    '''Opcode 0x06: Pop dereferenced value to stack[sp + offset]'''
+    '''Opcode 0x06: Pop, then store through the pointer in stack[sp + offset // WORD_SIZE] (sp taken after the pop)'''
     assert isinstance(offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.POP_TO_DEREF, offset)
-
-
-def GLOBAL_VAR(name: str, type: sint32):
-    '''Declares one entry of the script's global variable table (see @scena.GlobalVars())'''
-    assert isinstance(name, str)
-    assert isinstance(type, sint32)
-    return get_scp_writer().add_global_var(name, type)
 
 
 def LOAD_GLOBAL(name: str | sint32):
@@ -89,23 +84,20 @@ def SET_REG(index: uint8):
 
 
 def JMP(target: str):
-    '''Opcode 0x0B: Jump to label/offset'''
+    '''Opcode 0x0B: Jump to a label, by name'''
     assert isinstance(target, str)
     return get_scp_writer().handle_opcode(ED9Opcode.JMP, target)
 
 
-def CALL(func: str):
-    '''Opcode 0x0C: Call function based on id, neated to take func name.'''
-    assert isinstance(func.__name__, str)
-
-    # if not any(f.name == func.__name__ for f in get_scp_writer().functions):
-    #     raise TypeError("Call has unknown func.")
-    
+def CALL(func: Callable):
+    '''Opcode 0x0C: Call a script function, passed as the function itself (CALL(Foo), not CALL('Foo'))'''
+    assert callable(func), f'CALL takes the function itself, not {func!r}'
     return get_scp_writer().handle_opcode(ED9Opcode.CALL, func)
 
 
 def RETURN():
-    '''Return instruction, restores caller frame and sets return value to REG[0] (Opcode 0x0D)'''
+    '''Return to the caller; the stack must be empty (parameters and locals popped), and a return value is set
+    beforehand with SET_REG(0) (Opcode 0x0D)'''
     return get_scp_writer().handle_opcode(ED9Opcode.RETURN)
 
 
@@ -228,7 +220,7 @@ def CALL_SCRIPT_NO_RETURN(module: str | ScpValue, func: str | ScpValue, argc: ui
 
 
 def SYSCALL(subsystem: uint8, cmd: uint8, argc: uint8):
-    '''System call, takes argc in LLIL (Opcode 0x24)'''
+    '''System call on the top argc stack values, which it reads without popping (Opcode 0x24)'''
     assert isinstance(subsystem, uint8)
     assert isinstance(cmd, uint8)
     assert isinstance(argc, uint8)

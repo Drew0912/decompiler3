@@ -38,9 +38,10 @@ Compilation (the actual recompilation direction):
 
 `falcom/ed9/writer/scp_writer_opcode_handler.py` defines one Python function per VM opcode
 (`PUSH`, `LOAD_STACK`, `JMP`, `CALL_SCRIPT`, `DEBUG_LOG`, etc.), each calling
-`get_scp_writer().handle_opcode(...)`. `falcom/ed9/writer/scp_writer_helper.py` layers
-user-facing utilities over that (currently just `genLabel()`, a fresh label name for a
-hand-written or generated function body) and re-exports the opcode primitives via
+`get_scp_writer().handle_opcode(...)`, which rejects a `bool` operand (`True` would otherwise
+pass the `int` checks and encode as 1). `falcom/ed9/writer/scp_writer_helper.py` layers the DSL
+statements that emit no instruction over that (`label()`, `GLOBAL_VAR`, and `genLabel()`, a fresh
+label name for a hand-written or generated function body) and re-exports the opcode primitives via
 `from .scp_writer_opcode_handler import *`, so every generated `.py` only ever needs to import
 the helper module. A "DSL file" is a `.py` file that calls these functions in sequence, at the
 same granularity as the disassembly — one opcode, one call. It is opcode-level Python assembly,

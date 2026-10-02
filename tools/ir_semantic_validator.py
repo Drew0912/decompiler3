@@ -329,7 +329,7 @@ class BatchReport:
 class VariableMapping:
     """Tracks variable correspondence across IR layers"""
     llil_storage: str       # e.g., "Stack[0]", "Frame[0]", "Reg[0]"
-    mlil_var: str           # e.g., "var_s0", "arg0"
+    mlil_var: str           # e.g., "var_s0", "arg1"
     hlil_var: str = ""      # e.g., "local_count", "param_target"
     type_info: str = ""     # e.g., "int", "str"
 

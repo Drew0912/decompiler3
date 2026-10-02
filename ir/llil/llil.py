@@ -510,7 +510,7 @@ class LowLevelILConst(LowLevelILExpr, Constant):
 
     def __str__(self) -> str:
         if isinstance(self.value, str):
-            return f"'{self.value}'"
+            return quote_string(self.value, "'")
 
         elif isinstance(self.value, float):
             # Format float with up to 6 decimal places, strip trailing zeros
