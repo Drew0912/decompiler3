@@ -20,6 +20,8 @@ from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer import scp_writer_gen_common_funcs as gen
 from falcom.ed9.writer.metadata import SCP_WRITER_HELPER_IMPORT
+from falcom.ed9.writer.metadata import common_all
+from falcom.ed9.writer.metadata.common_index import COMMON_FUNCTIONS
 import scp_roundtrip_validator
 from scp_roundtrip_validator import compile_and_decompile_round, decompile_to_python
 
@@ -206,6 +208,37 @@ class TestLineEndings(unittest.TestCase):
                 compile_and_decompile_round('e0000', Path(tmp) / 'round1', first.read_text(encoding = 'utf-8'))
 
             self.assert_lf_only([first, Path(tmp) / 'round1' / 'e0000.py'])
+
+
+class TestLibraryExports(unittest.TestCase):
+    '''Scripts star-import common_all after the helper; re-exporting the helper's names a second time
+    turns aliases like Value32 into variables for type checkers'''
+
+    def public_names(self, namespace: dict) -> set[str]:
+        return {name for name in namespace if not name.startswith('_')}
+
+    def test_module_exports_only_its_own_functions(self):
+        canon = {
+            name: gen.CanonicalFunction(name = name, params = [], instructions = [], referenced_offsets = set(), touches_global = False,
+                                        call_targets = set(), subsystem = None, digest = '')
+            for name in ('Zeta', 'Alpha')
+        }
+        namespace = {}
+        exec(gen.render_module(f'{gen.MODULE_PREFIX}0', list(canon), canon, {}), namespace)
+
+        self.assertEqual(namespace['__all__'], ('Alpha', 'Zeta'))
+
+    def test_all_module_keeps_its_logger_private(self):
+        namespace = {}
+        exec(gen.render_all(['not_generated']), namespace)
+
+        self.assertEqual(self.public_names(namespace), {'COMMON_LIBRARY_GENERATED'})
+
+    def test_generated_library_exports_only_library_functions(self):
+        if not common_all.COMMON_LIBRARY_GENERATED:
+            raise unittest.SkipTest('common-function library not generated')
+
+        self.assertEqual(self.public_names(vars(common_all)), set(COMMON_FUNCTIONS) | {'COMMON_LIBRARY_GENERATED'})
 
 
 if __name__ == '__main__':

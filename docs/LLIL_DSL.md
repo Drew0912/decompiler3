@@ -47,6 +47,16 @@ the helper module. A "DSL file" is a `.py` file that calls these functions in se
 same granularity as the disassembly — one opcode, one call. It is opcode-level Python assembly,
 not the TypeScript/HLIL-level output a person would read to understand a script.
 
+**Operand spelling.** A float is stored as float32 bits with the lowest 2 dropped
+(`ScpValue.FLOAT_DROPPED_BITS`), so each stored value covers 4 float32 values. The `.py` prints the
+shortest float literal that stores the same word (`ScpValue.float_literal`): `PUSH_FLOAT(0.3)`, not the
+decoded `PUSH_FLOAT(0.2999999523162842)`, and the same for float parameter defaults (`= 0.2`). It is
+always a float literal (`1.0`, `-0.0`), because the writer picks the encoding from the Python type;
+`PUSH_FLOAT` itself converts an `int` with `float()`, so a hand-written `PUSH_FLOAT(1)` still pushes a
+float. Non-finite floats, which the game can't use, print as `float('inf')`/`float('nan')`: decoding one
+logs a warning and compiling it raises. `CALL_SCRIPT`/`CALL_SCRIPT_NO_RETURN` names print as plain
+strings, `CALL_SCRIPT("this", "GetCoolClone", 0)` - the writer wraps a bare `str` itself.
+
 ## 2. Round-Trip Policy
 
 Two tiers, in priority order:
@@ -134,7 +144,10 @@ function they used. Across the 1082-file sora2_1.0 corpus: 953 distinct common-f
 `falcom/ed9/writer/metadata/common/scp_writer_common_{N}.py` (one module per first-syscall
 subsystem, or `scp_writer_common_no_syscall.py`), plus `falcom/ed9/writer/metadata/common_index.py`
 (pure data: `name -> (module, fingerprint digest)`) and `falcom/ed9/writer/metadata/common_all.py`
-(re-exports every generated module via `import *`, see Gating below for its `try`/`except`). At
+(re-exports every generated module via `import *`, see Gating below for its `try`/`except`). Each
+module lists only its own functions in `__all__`, so `common_all` exports library functions and
+`COMMON_LIBRARY_GENERATED` and nothing else: re-exporting the helper's names a second time made type
+checkers treat aliases like `Value32` as variables. At
 decompile time, `ScpParser` (`scp.py`) matches each of a script's own common functions against the
 index by name *and* fingerprint (`match_library_functions`) — a name whose body diverges from the
 canonical library variant is left inline, unchanged. **Every generated script unconditionally

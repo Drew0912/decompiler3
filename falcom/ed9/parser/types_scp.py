@@ -1,5 +1,9 @@
+import math
+import struct
+
 from ml import *
 from common import *
+from common.logging import log
 from . import utils
 
 class ScpParamFlags(IntEnum2):
@@ -96,6 +100,10 @@ class ScpValue:
     TYPE_SHIFT      = 30                        # type tag is the top 2 bits
     PAYLOAD_MASK    = (1 << TYPE_SHIFT) - 1     # value, or string pool offset for String
 
+    FLOAT32_BITS                    = 32
+    FLOAT_DROPPED_BITS              = FLOAT32_BITS - TYPE_SHIFT     # a Float payload is float32 bits >> FLOAT_DROPPED_BITS
+    FLOAT32_MAX_SIGNIFICANT_DIGITS  = 9                             # enough to name any float32 exactly
+
     class Type(IntEnum2):
         Raw             = 0
         Integer         = 1
@@ -131,6 +139,7 @@ class ScpValue:
         return self.from_value(value, fs = fs)
 
     def from_value(self, value: int, *, fs: fileio.FileStream = None):
+        word = value
         typ = value >> 30
 
         match typ:
@@ -143,8 +152,9 @@ class ScpValue:
                 value = int.from_bytes((sign | (value >> 2)).to_bytes(4, 'little'), 'little', signed = True)
 
             case ScpValue.Type.Float:
-                float_bytes = ((value << 2) & 0xFFFFFFFF).to_bytes(4, 'little')
-                value = struct.unpack('f', float_bytes)[0]
+                value = self.float32_from_bits((value << self.FLOAT_DROPPED_BITS) & UINT32_MASK)
+                if not math.isfinite(value):
+                    log.warning(f"non-finite float {value} (word 0x{word:08X}): the game can't use it, so compiling the .py will fail")
 
             case ScpValue.Type.String:
                 with fs.PositionSaver:
@@ -168,14 +178,61 @@ class ScpValue:
                 v = int(v).to_bytes(4, default_endian(), signed = False)
 
             case ScpValue.Type.Float:
-                v = int.from_bytes(struct.pack('f', self.value), default_endian())
-                v = (v >> 2) | (ScpValue.Type.Float << 30)
+                v = (self.float32_bits(self.value) >> self.FLOAT_DROPPED_BITS) | (ScpValue.Type.Float << 30)
                 v = v.to_bytes(4, default_endian())
 
             case _:
                 raise NotImplementedError(f'unsupported type: {self.value}')
 
         return v
+
+    def to_word(self) -> int:
+        '''The 32-bit word to_bytes() writes'''
+        return int.from_bytes(self.to_bytes(), default_endian())
+
+    @classmethod
+    def float32_bits(cls, value: float) -> int:
+        return struct.unpack('<I', struct.pack('<f', value))[0]
+
+    @classmethod
+    def float32_from_bits(cls, bits: int) -> float:
+        return struct.unpack('<f', struct.pack('<I', bits))[0]
+
+    @classmethod
+    def float_literal(cls, value: float) -> str:
+        '''Shortest Python float literal that stores the same word as value - PUSH_FLOAT(0.3), not
+        PUSH_FLOAT(0.2999999523162842). Always a float literal ('1.0', never '1', which would encode an
+        Integer). Non-finite values, which the game can't use, print as a float() call.'''
+        if math.isnan(value):
+            return "float('nan')"
+
+        if math.isinf(value):
+            return "float('inf')" if value > 0 else "-float('inf')"
+
+        try:
+            word = cls(value).to_word()
+
+        except OverflowError:
+            # A double past float32's range has no word to match
+            return repr(value)
+
+        # The word covers 1 << FLOAT_DROPPED_BITS float32 values; the decoded one is the lowest
+        half_range = 1 << (cls.FLOAT_DROPPED_BITS - 1)
+        midpoint = cls.float32_from_bits(((word & cls.PAYLOAD_MASK) << cls.FLOAT_DROPPED_BITS) | half_range)
+
+        for digits in range(1, cls.FLOAT32_MAX_SIGNIFICANT_DIGITS + 1):
+            # The value first: the midpoint's shortest form can be a different number (0.0 -> 2e-45)
+            for source in (value, midpoint):
+                candidate = float(f'{source:.{digits}g}')
+                try:
+                    if cls(candidate).to_word() == word:
+                        return repr(candidate)
+
+                except OverflowError:
+                    # Rounded past float32's largest value
+                    pass
+
+        return repr(value)
 
     def __str__(self) -> str:
         # return f'ScpValue<{self.value!r}>'

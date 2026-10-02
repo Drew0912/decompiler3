@@ -97,6 +97,9 @@ ordering, and chain-flattening heuristics are expected to keep changing fastest 
 Converts HLIL into readable TypeScript-flavored pseudocode: typed signatures, `GLOBALS`/`REGS`
 arrays, per-syscall wrapper functions, and its own print-time peephole simplification.
 
+Game-specific output, unlike `ir/`: it reads only HLIL, and nothing in `ir/` depends on it, so it may follow
+the game's conventions (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary").
+
 ## Recompilation Pipeline — Core mechanism implemented, extensions planned
 
 **Location:** `falcom/ed9/writer/` (`scp_writer.py`, `scp_writer_opcode_handler.py`,

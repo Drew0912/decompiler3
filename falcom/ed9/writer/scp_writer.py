@@ -1,6 +1,7 @@
 """Writer runtime for reassembling ED9 VM bytecode from decompiled Python script output"""
 
 import inspect
+import math
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -350,6 +351,10 @@ class ScpWriter:
             if isinstance(arg, bool):
                 raise TypeError(f'{ED9Opcode(opcode).name} takes no bool operand: {arg!r}')
 
+        # The value's Python type picks its encoding, so PUSH_FLOAT(1) would push an Integer
+        if opcode == ED9Opcode.PUSH_FLOAT:
+            args = (float(args[0]),)
+
         self.calls.append((opcode, args))
 
         # PUSH and its pseudo-ops all collapse to the on-disk PUSH opcode + size byte + ScpValue
@@ -407,6 +412,9 @@ class ScpWriter:
         """Write a ScpValue's on-disk bytes, deferring String-typed values through the string pool"""
         if value.type == ScpValue.Type.String:
             return self._write_string_ref(value.value, section)
+
+        if value.type == ScpValue.Type.Float and not math.isfinite(value.value):
+            raise ValueError(f"non-finite float {value.value}: the game can't use it")
 
         self.fs.Write(value.to_bytes())
         return None

@@ -94,5 +94,46 @@ class TestReferencedEntryBlockGetsLabel(unittest.TestCase):
         self.assertEqual([lines[index + 1] for index in label_indices], ['', ''])
 
 
+class TestOperandText(unittest.TestCase):
+    def test_push_float_prints_the_shortest_literal(self):
+        bytecode = bytes([
+            0x00, 0x04, 0x66, 0x66, 0xA6, 0x8F,  # 0x00: PUSH_FLOAT(0.3), stored as 0.2999999523162842
+            0x00, 0x04, 0x00, 0x00, 0xE0, 0x8F,  # 0x06: PUSH_FLOAT(1.0)
+            0x00, 0x04, 0x00, 0x00, 0x00, 0xA0,  # 0x0C: PUSH_FLOAT(-0.0)
+            0x0D,                                # 0x12: RETURN()
+        ])
+
+        lines = [line.strip() for line in disasm_to_dsl('test_floats', bytecode)]
+
+        # A float literal even when integral: PUSH_FLOAT(1) / PUSH_FLOAT(-0) would compile differently
+        self.assertEqual([line for line in lines if line.startswith('PUSH_FLOAT')],
+                         ['PUSH_FLOAT(0.3)', 'PUSH_FLOAT(1.0)', 'PUSH_FLOAT(-0.0)'])
+
+    def test_call_script_names_print_as_plain_strings(self):
+        bytecode = bytes([
+            0x22,                                # 0x00: CALL_SCRIPT(
+            0x0B, 0x00, 0x00, 0xC0,              #           string at 0x0B,
+            0x10, 0x00, 0x00, 0xC0,              #           string at 0x10,
+            0x00,                                #           0)
+            0x0D,                                # 0x0A: RETURN()
+        ]) + b'this\0GetCoolClone\0'             # 0x0B, 0x10
+
+        lines = [line.strip() for line in disasm_to_dsl('test_call_script', bytecode)]
+
+        self.assertIn('CALL_SCRIPT("this", "GetCoolClone", 0)', lines)
+
+    def test_float_defaults_print_the_shortest_literal(self):
+        nullable = ScpParamFlags(typ = Nullable32)
+
+        def param_text(default) -> str:
+            return Formatter.format_param(0, FunctionParam(nullable, ScpValue(default)))
+
+        self.assertEqual(param_text(0.19999998807907104), 'arg1: Nullable32 = 0.2')
+
+        # Integer and integral float defaults keep their own form: they encode differently
+        self.assertEqual(param_text(0), 'arg1: Nullable32 = 0')
+        self.assertEqual(param_text(1.0), 'arg1: Nullable32 = 1.0')
+
+
 if __name__ == '__main__':
     unittest.main()

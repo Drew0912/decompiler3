@@ -2,6 +2,7 @@
 '''DSL argument checks (bool operands, CALL's function argument) and the helper module's non-opcode statements
 (label, GLOBAL_VAR).'''
 
+import math
 from pathlib import Path
 import sys
 import unittest
@@ -9,6 +10,10 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
+from ml import fileio
+
+from common.config import default_encoding
+from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.types_scp import ScpValue
 from falcom.ed9.writer import scp_writer_helper
 from falcom.ed9.writer.metadata import SCP_WRITER_HELPER_IMPORT
@@ -64,6 +69,40 @@ class TestHelperStatements(unittest.TestCase):
         for name in ('label', 'GLOBAL_VAR', 'genLabel'):
             with self.subTest(name = name):
                 self.assertEqual(namespace[name].__module__, scp_writer_helper.__name__)
+
+
+class TestPushFloat(unittest.TestCase):
+    def setUp(self):
+        self.writer = fresh_writer()
+        self.writer.fs = fileio.FileStream(encoding = default_encoding()).OpenMemory()
+
+    def written(self) -> bytes:
+        size = self.writer.fs.Position
+        self.writer.fs.Position = 0
+        return self.writer.fs.Read(size)
+
+    def test_int_is_pushed_as_a_float(self):
+        # The value's Python type picks the encoding: unconverted, PUSH_FLOAT(1) wrote Integer 1 (00 04 01 00 00 40)
+        PUSH_FLOAT(1)
+
+        self.assertEqual(self.written(), bytes.fromhex('00 04 00 00 E0 8F'))
+        self.assertEqual(self.writer.calls[-1], (ED9Opcode.PUSH_FLOAT, (1.0,)))
+        self.assertIs(type(self.writer.calls[-1][1][0]), float)
+
+    def test_bool_is_still_rejected(self):
+        with self.assertRaisesRegex(TypeError, 'PUSH_FLOAT takes no bool operand: True'):
+            PUSH_FLOAT(True)
+
+    def test_non_finite_float_does_not_compile(self):
+        for value in (math.inf, -math.inf, math.nan):
+            with self.subTest(value = value):
+                with self.assertRaisesRegex(ValueError, f"non-finite float {value}: the game can't use it"):
+                    PUSH_FLOAT(value)
+
+    def test_non_finite_default_does_not_compile(self):
+        # Parameter defaults are written through the same method as pushed values
+        with self.assertRaisesRegex(ValueError, "non-finite float nan: the game can't use it"):
+            self.writer._write_scp_value(ScpValue(math.nan))
 
 
 if __name__ == '__main__':

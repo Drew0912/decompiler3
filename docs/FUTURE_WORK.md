@@ -84,7 +84,7 @@ HLIL → HLIL DSL (.py) → exec() → lower → LLIL DSL (.py, exists today) �
 - **No renderer shared with the TypeScript generator.** Different syntax, and a different contract:
   `codegen/typescript.py` is readable pseudocode (it rounds floats via `common.format_float`, folds
   constant comparisons and rewrites boolean comparisons); this output must be exact. Its natural
-  sibling is the LLIL `.py` formatter (`falcom/ed9/disasm/`): exact `str(value)` floats,
+  sibling is the LLIL `.py` formatter (`falcom/ed9/disasm/`): exact float literals (`ScpValue.float_literal`),
   `Formatter.format_param` signatures, decorators, common-function library conventions. With TS it
   shares only HLIL-level structure helpers and language-neutral operator tables. Once it exists,
   retire `HLILFormatter` / `.hlil.ts` (an unused debug dump) — this output is the faithful HLIL view.
@@ -531,3 +531,35 @@ events; loops are approximate. With arguments and guards compared it is a strong
 both live bugs found by the 2026-09-23 review (a deleted global restore; an always-run call folded
 under a short-circuiting `&&`) would have been flagged. Useful for the decompiler today (within one
 decompilation), and the correctness gate for the HLIL DSL (Recompilation Pipeline §1).
+
+## Generic/Falcom Boundary (`docs/ARCHITECTURE.md`)
+
+`ir/` and `common/` are meant to be generic, with game code under `falcom/`, and nothing generic imports
+`falcom/`. `codegen/` is game output (user, 2026-10-02): it reads only HLIL and nothing in `ir/` depends on it, so
+game knowledge there can't spread back into the IR. An audit (2026-10-02, Fable and Codex, read-only) found ED9
+knowledge in generic code anyway. None of it is a bug, and with one VM it costs nothing today. Decided with the user:
+
+- **Removed by the IR rewrite:** the Falcom type names in the SSA type pass
+  (`ir/mlil/passes/pass_ssa_type_inference.py:307`), the parameter-slot mapping in
+  `ir/mlil/llil_to_mlil.py:101`, `MLILCallScript`, and the generic `RegStore`/`RegLoad`/`Syscall` translation
+  that only the Falcom translator has. The rules for the new translator are in
+  `notes/rewrite/08_decision_and_checklist.md` (Checklist, "Boundary rules").
+- **Small moves that change no output (for the opcode-table plan):**
+  - `LLIL_PUSH_CALLER_FRAME`/`LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` leave the generic enum
+    (`ir/llil/llil.py:74-77`) for `LowLevelILFalcomOperation`, numbered after `LLIL_DEBUG_LOG` like the global ops.
+  - `LLILFormatter`'s ED9 shapes (`REG[n] = STACK[--sp]`, `if (STACK[--sp] ...)`, `ir/llil/llil_builder.py:786-805`)
+    move to `FalcomLLILFormatter`.
+  - "Parameters are on the stack at entry" (`_seed_entry_state`, `ir/llil/llil_builder.py:117-123`) becomes a
+    `FalcomVMBuilder` override; the generic default starts with an empty stack.
+- **Game-specific by design:** all of `codegen/` - the TypeScript header (`generate_typescript_header`: `GLOBALS`,
+  `REGS`, `debug.log`, `extern_call`, `syscall`), the syscall and extern-call rendering, and its use of the signature
+  database; no change planned. If a second game ever needs different output, that is the time to move or split it.
+- **Noted as game-specific, no fix scheduled:** the `(subsystem, cmd)` syscall pair that runs through LLIL, MLIL
+  and HLIL (`ir/llil/llil.py:558`, `ir/mlil/mlil.py:561`, `ir/hlil/hlil.py:383`) and the signature lookup by that
+  pair (`ir/mlil/mlil_types.py:153`).
+- **Left as is:** `is_raw` on constants, 4-byte slots (`WORD_SIZE`), 32-bit ints, the call-clobber model, and
+  comments that say "ED9"/"SCP" (reword when touched). `is_common_func` on the generic function containers is read
+  only by a `codegen/` path that never runs (nothing calls `set_signature_db`); decide when the signature database
+  is wired in.
+- **Floats:** generic code prints floats without knowing their width - the Falcom lifter attaches the display text
+  (LLIL DSL neatening plan, Step 4).

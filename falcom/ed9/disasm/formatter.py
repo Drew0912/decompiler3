@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from .instruction import SYNTHETIC_INSTRUCTION_SIZE
 from .instruction_table import OperandType
 from .ed9_optable import ED9OperandType
+from ..parser.types_scp import ScpValue
 
 if TYPE_CHECKING:
     from .basic_block import BasicBlock
@@ -173,7 +174,8 @@ class Formatter:
         when this rendering would differ."""
         text = f'arg{index + 1}: {param.type.get_python_type()}'
         if param.default_value is not None:
-            text += f' = {param.default_value.value!r}'
+            default = param.default_value.value
+            text += f' = {ScpValue.float_literal(default) if isinstance(default, float) else repr(default)}'
 
         return text
 

@@ -50,7 +50,14 @@ class ED9OperandDescriptor(OperandDescriptor):
                 return f'func_{operand.value}'
 
             case ED9OperandType.Value:
+                # The writer wraps a bare str itself: CALL_SCRIPT("this", "GetCoolClone", 0)
+                if operand.value.type == ScpValue.Type.String:
+                    return quote_string(operand.value.value)
+
                 return str(operand.value)
+
+            case OperandType.Float32:
+                return ScpValue.float_literal(operand.value)
 
             case ED9OperandType.GlobalVar:
                 # Try to get the global var's real name from context
@@ -73,6 +80,7 @@ def _ed9_oprdesc(opr_type: OperandType | ED9OperandType, is_hex: bool = False):
 # Extend format table with ED9-specific types
 ED9_FORMAT_TABLE = OperandDescriptor.format_table.copy()
 ED9_FORMAT_TABLE.update({
+    'f' : _ed9_oprdesc(OperandType.Float32),
     'F' : _ed9_oprdesc(ED9OperandType.Func),
     'V' : _ed9_oprdesc(ED9OperandType.Value),
     'S' : _ed9_oprdesc(OperandType.String),

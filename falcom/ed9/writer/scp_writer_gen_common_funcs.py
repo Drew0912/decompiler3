@@ -353,6 +353,13 @@ def render_module(module_key: str, names: list[str], canon: dict[str, CanonicalF
     lines.extend(f'import {COMMON_LIBRARY_PACKAGE}.{other} as {module_alias(other)}' for other in imported_modules)
     lines.append('')
 
+    # Only this module's own functions are re-exported, not the helper's star-imported names - a second
+    # star import of those (common_all) turns aliases like Value32 into variables for type checkers
+    lines.append('__all__ = (')
+    lines.extend(f'    {name!r},' for name in sorted(names))
+    lines.append(')')
+    lines.append('')
+
     for name in sorted(names):
         lines.extend(render_function(canon[name], name_to_module, module_key))
         lines.append('')
@@ -391,14 +398,14 @@ def render_all(module_keys: list[str]) -> str:
         '',
         GENERATED_HEADER_COMMENT,
         '',
-        'from common.logging import log',
+        'from common.logging import log as _log',
         '',
         'try:',
     ]
     lines.extend(f'    from {COMMON_LIBRARY_PACKAGE}.{module_key} import *' for module_key in module_keys)
     lines.append('    COMMON_LIBRARY_GENERATED = True')
     lines.append('except ModuleNotFoundError:')
-    lines.append("    log.info('Shared common-function library not generated - run falcom/ed9/writer/scp_writer_gen_common_funcs.py <corpus_root> to build it')")
+    lines.append("    _log.info('Shared common-function library not generated - run falcom/ed9/writer/scp_writer_gen_common_funcs.py <corpus_root> to build it')")
     lines.append('    COMMON_LIBRARY_GENERATED = False')
     return '\n'.join(lines) + '\n'
 
