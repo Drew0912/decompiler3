@@ -175,7 +175,8 @@ class Formatter:
         text = f'arg{index + 1}: {param.type.get_python_type()}'
         if param.default_value is not None:
             default = param.default_value.value
-            text += f' = {ScpValue.float_literal(default) if isinstance(default, float) else repr(default)}'
+            default_text = ScpValue.float_literal(default) if isinstance(default, float) else repr(default)
+            text += f' = {default_text}'
 
         return text
 

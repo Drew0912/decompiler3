@@ -413,8 +413,13 @@ class ScpWriter:
         if value.type == ScpValue.Type.String:
             return self._write_string_ref(value.value, section)
 
-        if value.type == ScpValue.Type.Float and not math.isfinite(value.value):
-            raise ValueError(f"non-finite float {value.value}: the game can't use it")
+        # Checked here, not in ScpValue, which must still decode and re-encode any word
+        if value.type == ScpValue.Type.Float:
+            if not math.isfinite(value.value):
+                raise ValueError(f"non-finite float {value.value}: the game can't use it")
+
+            if ScpValue.float_word(value.value) is None:
+                raise ValueError(f"float {value.value} is outside float32's range: the game can't use it")
 
         self.fs.Write(value.to_bytes())
         return None

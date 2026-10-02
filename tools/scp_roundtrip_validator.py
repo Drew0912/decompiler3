@@ -463,14 +463,14 @@ def compare_record(ctx: ScriptContext, call: TrackedCall, record: ScpFunctionCal
             return f'arg {i}: type {raw_type} != {arg_type}'
 
         if arg_type != ArgType.Constant:
-            matches = raw_value == int.from_bytes(ScpValue(NON_CONSTANT_ARG_VALUE).to_bytes(), default_endian())
+            matches = raw_value == ScpValue(NON_CONSTANT_ARG_VALUE).to_word()
 
         elif isinstance(payload, str):
             offset = string_offset(raw_value)
             matches = offset is not None and ctx.read_text(offset) == payload
 
         else:
-            matches = raw_value == int.from_bytes(ScpValue(payload).to_bytes(), default_endian())
+            matches = raw_value == ScpValue(payload).to_word()
 
         if not matches:
             return f'arg {i}: value 0x{raw_value:08X} != {ascii(payload)}'

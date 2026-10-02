@@ -21,7 +21,7 @@ size = value * WORD_SIZE
 ```
 
 **Common Constants:**
-- `WORD_SIZE = 4` (defined in `ir/llil.py`)
+- `WORD_SIZE = 4` (defined in `ir/llil/llil.py`)
   - Use for all byte/word conversions
   - Use for all stack offset calculations
   - Use for all size multiplications

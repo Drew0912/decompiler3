@@ -355,12 +355,13 @@ def render_module(module_key: str, names: list[str], canon: dict[str, CanonicalF
 
     # Only this module's own functions are re-exported, not the helper's star-imported names - a second
     # star import of those (common_all) turns aliases like Value32 into variables for type checkers
+    ordered = sorted(names)
     lines.append('__all__ = (')
-    lines.extend(f'    {name!r},' for name in sorted(names))
+    lines.extend(f'    {name!r},' for name in ordered)
     lines.append(')')
     lines.append('')
 
-    for name in sorted(names):
+    for name in ordered:
         lines.extend(render_function(canon[name], name_to_module, module_key))
         lines.append('')
         lines.append('')

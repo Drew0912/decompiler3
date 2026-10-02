@@ -140,7 +140,7 @@ class ScpValue:
 
     def from_value(self, value: int, *, fs: fileio.FileStream = None):
         word = value
-        typ = value >> 30
+        typ = value >> self.TYPE_SHIFT
 
         match typ:
             case ScpValue.Type.Raw:
@@ -152,13 +152,13 @@ class ScpValue:
                 value = int.from_bytes((sign | (value >> 2)).to_bytes(4, 'little'), 'little', signed = True)
 
             case ScpValue.Type.Float:
-                value = self.float32_from_bits((value << self.FLOAT_DROPPED_BITS) & UINT32_MASK)
+                value = self.float32_from_bits(self.word_float32_bits(word))
                 if not math.isfinite(value):
                     log.warning(f"non-finite float {value} (word 0x{word:08X}): the game can't use it, so compiling the .py will fail")
 
             case ScpValue.Type.String:
                 with fs.PositionSaver:
-                    fs.Position = value & 0x3FFFFFFF
+                    fs.Position = value & self.PAYLOAD_MASK
                     value = fs.ReadMultiByte()
 
         self.value = value
@@ -174,11 +174,11 @@ class ScpValue:
             case ScpValue.Type.Integer:
                 assert self.value <= 0x3FFFFFFFF if self.value >= 0 else self.value >= -(0x1FFFFFFF + 1)
 
-                v = (self.value & 0x3FFFFFFF) | (ScpValue.Type.Integer << 30)
+                v = (self.value & self.PAYLOAD_MASK) | (ScpValue.Type.Integer << self.TYPE_SHIFT)
                 v = int(v).to_bytes(4, default_endian(), signed = False)
 
             case ScpValue.Type.Float:
-                v = (self.float32_bits(self.value) >> self.FLOAT_DROPPED_BITS) | (ScpValue.Type.Float << 30)
+                v = (self.float32_bits(self.value) >> self.FLOAT_DROPPED_BITS) | (ScpValue.Type.Float << self.TYPE_SHIFT)
                 v = v.to_bytes(4, default_endian())
 
             case _:
@@ -199,6 +199,20 @@ class ScpValue:
         return struct.unpack('<f', struct.pack('<I', bits))[0]
 
     @classmethod
+    def word_float32_bits(cls, word: int) -> int:
+        '''The float32 bits a Float word stores, with the dropped bits zero'''
+        return (word << cls.FLOAT_DROPPED_BITS) & UINT32_MASK
+
+    @classmethod
+    def float_word(cls, value: float) -> int | None:
+        '''The word value is stored as, or None past float32's range'''
+        try:
+            return cls(value).to_word()
+
+        except OverflowError:
+            return None
+
+    @classmethod
     def float_literal(cls, value: float) -> str:
         '''Shortest Python float literal that stores the same word as value - PUSH_FLOAT(0.3), not
         PUSH_FLOAT(0.2999999523162842). Always a float literal ('1.0', never '1', which would encode an
@@ -209,28 +223,23 @@ class ScpValue:
         if math.isinf(value):
             return "float('inf')" if value > 0 else "-float('inf')"
 
-        try:
-            word = cls(value).to_word()
-
-        except OverflowError:
+        word = cls.float_word(value)
+        if word is None:
             # A double past float32's range has no word to match
             return repr(value)
 
-        # The word covers 1 << FLOAT_DROPPED_BITS float32 values; the decoded one is the lowest
+        # The word covers 1 << FLOAT_DROPPED_BITS float32 values: search from the lowest (the one it decodes to) and
+        # the middle one, so the text depends only on the word
+        bits = cls.word_float32_bits(word)
         half_range = 1 << (cls.FLOAT_DROPPED_BITS - 1)
-        midpoint = cls.float32_from_bits(((word & cls.PAYLOAD_MASK) << cls.FLOAT_DROPPED_BITS) | half_range)
+        sources = (cls.float32_from_bits(bits), cls.float32_from_bits(bits | half_range))
 
         for digits in range(1, cls.FLOAT32_MAX_SIGNIFICANT_DIGITS + 1):
-            # The value first: the midpoint's shortest form can be a different number (0.0 -> 2e-45)
-            for source in (value, midpoint):
+            # The decoded value first: the midpoint's shortest form can be a different number (0.0 -> 2e-45)
+            for source in sources:
                 candidate = float(f'{source:.{digits}g}')
-                try:
-                    if cls(candidate).to_word() == word:
-                        return repr(candidate)
-
-                except OverflowError:
-                    # Rounded past float32's largest value
-                    pass
+                if cls.float_word(candidate) == word:
+                    return repr(candidate)
 
         return repr(value)
 

@@ -51,14 +51,17 @@ def edge_words() -> list[int]:
 
 class TestShortestText(unittest.TestCase):
     def test_stored_value_prints_short(self):
-        self.assertEqual(ScpValue.float_literal(0.2999999523162842), '0.3')
-        self.assertEqual(ScpValue.float_literal(0.19999998807907104), '0.2')
-        self.assertEqual(ScpValue.float_literal(-63.102996826171875), '-63.103')
-
-        for text in ('0.3', '27.2', '0.705', '0.0333'):
+        # stored('0.3') is 0.2999999523162842
+        for text in ('0.3', '0.2', '-63.103', '27.2', '0.705', '0.0333'):
             with self.subTest(text = text):
                 self.assertNotEqual(repr(stored(text)), text)
                 self.assertEqual(ScpValue.float_literal(stored(text)), text)
+
+    def test_depends_only_on_the_word(self):
+        # Values the decoder never produces: dropped bits set, or a double below float32's range
+        for value, text in ((ScpValue.float32_from_bits(1), '0.0'), (ScpValue.float32_from_bits(F32_SIGN | 1), '-0.0'), (1e-50, '0.0')):
+            with self.subTest(value = value):
+                self.assertEqual(ScpValue.float_literal(value), text)
 
     def test_always_a_float_literal(self):
         # '1' would encode an Integer and '-0' would lose its sign
@@ -79,11 +82,12 @@ class TestShortestText(unittest.TestCase):
     def test_every_word_round_trips(self):
         rng = random.Random(SEED)
         words = edge_words()
-        while len(words) < len(edge_words()) + RANDOM_WORDS:
-            payload = rng.getrandbits(ScpValue.TYPE_SHIFT)
-            # Skip inf/NaN by their bits: decoding one would log a warning
-            if ((payload << ScpValue.FLOAT_DROPPED_BITS) >> F32_EXP_SHIFT) & F32_EXP_MAX != F32_EXP_MAX:
-                words.append(FLOAT_TAG | payload)
+        target = len(words) + RANDOM_WORDS
+        while len(words) < target:
+            word = FLOAT_TAG | rng.getrandbits(ScpValue.TYPE_SHIFT)
+            # Skip inf/NaN: decoding one would log a warning
+            if math.isfinite(ScpValue.float32_from_bits(ScpValue.word_float32_bits(word))):
+                words.append(word)
 
         for word in words:
             text = ScpValue.float_literal(decode(word))

@@ -30,7 +30,7 @@ Required: logic round trip — decompile (`round_trip=False`) → recompile → 
 
 ### 1. NO HARDCODED MAGIC NUMBERS
 Use named constants: `offset // WORD_SIZE` not `offset // 4`
-Common: `WORD_SIZE = 4` (in `ir/llil.py`)
+Common: `WORD_SIZE = 4` (in `ir/llil/llil.py`)
 
 ### 2. Import at Module Top Level
 Import at file top, not inside functions (except circular dependency with comment).

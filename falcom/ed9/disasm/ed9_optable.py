@@ -80,7 +80,7 @@ def _ed9_oprdesc(opr_type: OperandType | ED9OperandType, is_hex: bool = False):
 # Extend format table with ED9-specific types
 ED9_FORMAT_TABLE = OperandDescriptor.format_table.copy()
 ED9_FORMAT_TABLE.update({
-    'f' : _ed9_oprdesc(OperandType.Float32),
+    'f' : _ed9_oprdesc(OperandType.Float32),    # PUSH_FLOAT only: its value comes from a stored word, so float_literal's text is exact
     'F' : _ed9_oprdesc(ED9OperandType.Func),
     'V' : _ed9_oprdesc(ED9OperandType.Value),
     'S' : _ed9_oprdesc(OperandType.String),

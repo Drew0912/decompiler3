@@ -5,6 +5,7 @@
 import math
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -76,16 +77,11 @@ class TestPushFloat(unittest.TestCase):
         self.writer = fresh_writer()
         self.writer.fs = fileio.FileStream(encoding = default_encoding()).OpenMemory()
 
-    def written(self) -> bytes:
-        size = self.writer.fs.Position
-        self.writer.fs.Position = 0
-        return self.writer.fs.Read(size)
-
     def test_int_is_pushed_as_a_float(self):
         # The value's Python type picks the encoding: unconverted, PUSH_FLOAT(1) wrote Integer 1 (00 04 01 00 00 40)
         PUSH_FLOAT(1)
 
-        self.assertEqual(self.written(), bytes.fromhex('00 04 00 00 E0 8F'))
+        self.assertEqual(self.writer.fs.ReadAll(), bytes.fromhex('00 04 00 00 E0 8F'))
         self.assertEqual(self.writer.calls[-1], (ED9Opcode.PUSH_FLOAT, (1.0,)))
         self.assertIs(type(self.writer.calls[-1][1][0]), float)
 
@@ -99,10 +95,24 @@ class TestPushFloat(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, f"non-finite float {value}: the game can't use it"):
                     PUSH_FLOAT(value)
 
+    def test_float_past_float32_range_does_not_compile(self):
+        with self.assertRaisesRegex(ValueError, r"float 3\.5e\+38 is outside float32's range: the game can't use it"):
+            PUSH_FLOAT(3.5e38)
+
     def test_non_finite_default_does_not_compile(self):
-        # Parameter defaults are written through the same method as pushed values
-        with self.assertRaisesRegex(ValueError, "non-finite float nan: the game can't use it"):
-            self.writer._write_scp_value(ScpValue(math.nan))
+        # A real compile: defaults are written with the function table, apart from the bodies
+        with tempfile.TemporaryDirectory() as tmp:
+            writer = create_scp_writer(str(Path(tmp) / 'nan_default.dat'))
+
+            @writer.LLILCode()
+            def NanDefault(arg1: Nullable32 = math.nan):
+                RETURN()
+
+            with self.assertRaisesRegex(ValueError, "non-finite float nan: the game can't use it"):
+                writer.run({'NanDefault': NanDefault})
+
+            # A failed run leaves its output file open
+            writer.fs.Close()
 
 
 if __name__ == '__main__':
