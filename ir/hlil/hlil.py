@@ -671,10 +671,10 @@ def negate_condition(cond: HLILExpression) -> HLILExpression:
 
 
 def constant_truth(cond: HLILExpression) -> Optional[bool]:
-    '''The value a condition always has - a numeric constant, a comparison of two, or !, && and ||
-    over such conditions - or None when it depends on anything else'''
+    '''The value a condition always has - an int constant, a comparison of two int constants, or !, &&
+    and || over such conditions - or None otherwise. Float truth and comparisons are unverified in the VM.'''
     if isinstance(cond, HLILConst):
-        return bool(cond.value) if isinstance(cond.value, (int, float)) else None
+        return bool(cond.value) if isinstance(cond.value, int) else None
 
     if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT:
         inner = constant_truth(cond.operand)
@@ -685,7 +685,7 @@ def constant_truth(cond: HLILExpression) -> Optional[bool]:
 
     if cond.op in COMPARISON_FUNCTIONS:
         operands = (cond.lhs, cond.rhs)
-        if all(isinstance(o, HLILConst) and isinstance(o.value, (int, float)) for o in operands):
+        if all(isinstance(o, HLILConst) and isinstance(o.value, int) for o in operands):
             return COMPARISON_FUNCTIONS[cond.op](cond.lhs.value, cond.rhs.value)
 
         return None

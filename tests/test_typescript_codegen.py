@@ -109,5 +109,22 @@ class TestNumberCodegen(unittest.TestCase):
         self.assertIn('x = int(', ts)
 
 
+class TestConstantComparisonCodegen(unittest.TestCase):
+    '''A comparison of two constants prints its value only for ints: a float comparison in the VM is unverified.
+    Seen live: mon5265 printed if (2.0 > 0) as if (true).'''
+
+    def render(self, op: BinaryOp, lhs, rhs) -> str:
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(HLILExprStmt(HLILCall('f', [HLILBinaryOp(op, HLILConst(lhs), HLILConst(rhs))])))
+        return generate_typescript(func)
+
+    def test_float_comparison_is_printed(self):
+        self.assertIn('f(2.0 > 0);', self.render(BinaryOp.GT, 2.0, 0))
+        self.assertIn('f(0 < 0.5);', self.render(BinaryOp.LT, 0, 0.5))
+
+    def test_int_comparison_still_prints_its_value(self):
+        self.assertIn('f(true);', self.render(BinaryOp.GT, 2, 0))
+
+
 if __name__ == '__main__':
     unittest.main()

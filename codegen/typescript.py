@@ -188,32 +188,13 @@ class TypeScriptGenerator:
                 return str(expr.value)
 
         elif isinstance(expr, HLILBinaryOp):
-            # Constant folding for comparison operators only - an arithmetic/bitwise/logical op
-            # with two constant operands (e.g. a compile-time 5 / 2) falls through to the plain
-            # BINARY_OP_STR rendering below instead of hitting the comparison-only match below.
-            if isinstance(expr.lhs, HLILConst) and isinstance(expr.rhs, HLILConst) and expr.op in COMPARISON_OPS:
-                lhs_val, rhs_val = expr.lhs.value, expr.rhs.value
-
-                match expr.op:
-                    case BinaryOp.EQ:
-                        result = lhs_val == rhs_val
-
-                    case BinaryOp.NE:
-                        result = lhs_val != rhs_val
-
-                    case BinaryOp.LT:
-                        result = lhs_val < rhs_val
-
-                    case BinaryOp.LE:
-                        result = lhs_val <= rhs_val
-
-                    case BinaryOp.GT:
-                        result = lhs_val > rhs_val
-
-                    case BinaryOp.GE:
-                        result = lhs_val >= rhs_val
-
-                return 'true' if result else 'false'
+            # A comparison of two int constants prints its value, by the rule HLIL decides constant
+            # conditions with (constant_truth: floats decide nothing). Any other op with two constant
+            # operands (e.g. a compile-time 5 / 2) falls through to the plain BINARY_OP_STR rendering below.
+            if expr.op in COMPARISON_OPS:
+                truth = constant_truth(expr)
+                if truth is not None:
+                    return 'true' if truth else 'false'
 
             # Simplify boolean comparisons with 0
             # (bool_expr) != 0 -> bool_expr

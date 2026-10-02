@@ -27,8 +27,9 @@ byte.
   Falcom lifter attaches it to each float it puts in the IR, which keeps the exact value, and generic
   code prints that text (`.ts`, `.hlil.ts` and `.mlil.asm` round to `float_precision_decimals` (3) today,
   which is neither exact nor short: `0.033299997448921204` prints in full, `-2738.1494140625` as
-  `-2738.149`, which encodes to a different word). The `.llil.asm` is under Listings. Before that,
-  Step 3b stops SCCP from folding floats, whose VM arithmetic is unverified.
+  `-2738.149`, which encodes to a different word). The `.llil.asm` is under Listings. Step 3b (done)
+  stopped SCCP folding floats and the algebraic identities firing on float constants, since the VM's
+  float arithmetic is unverified (`docs/MLIL_DESIGN.md`, Optimization Passes).
 - **Float bits comment, opt-in** (item 2; Step 8a). `PUSH_FLOAT(0.3)  # f32 0x3E999998, raw 0x8FA66666`:
   the float32 the VM computes with and the stored word a hex editor shows. Off by default, a
   `ScenaDecompileConfig` flag (`falcom/ed9/scena2py_config.py`).

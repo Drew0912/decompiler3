@@ -193,16 +193,19 @@ the next call in ~1,800 places across the corpus). Dead-code elimination refuses
 output that is a global (it raises): call results only ever land in the result register, and
 dropping a global output would silently lose a global write.
 
-SCCP folds constant `+ - * & | ^ << >>`, `&&`/`||`, and comparisons, but deliberately never
-evaluates `MLIL_DIV`/`MLIL_MOD` to a lattice constant (`pass_ssa_sccp.py`'s `_eval_binary_op`) -
-Python's arithmetic doesn't match the VM's actual number format (`ScpValue`'s 30-bit-int/float32
-shape describes the constant *encoding*, not the runtime arithmetic width), and the real semantics
-(float rounding, int truncation, overflow, MOD's sign) can't be verified without running the game.
-Folding with an unverified formula risks silently replacing one wrong constant with another. Note
-this is narrower than "DIV/MOD always print unfolded" - a separate pass
-(`ExpressionSimplificationPass`'s `x / 1 → x` identity) can still simplify a DIV whose divisor is
-literally 1, including a fully-constant one like `10 / 1 → 10`, since that identity holds
-regardless of numeric semantics. See `docs/FUTURE_WORK.md` for what a verified SCCP fix would need.
+SCCP folds constant `+ - * & | ^ << >>`, unary `- ! ~`, `&&`/`||`, and comparisons on ints, but
+deliberately never evaluates `MLIL_DIV`/`MLIL_MOD`, or any op with a float operand, to a lattice
+constant (`pass_ssa_sccp.py`'s `_eval_binary_op`/`_eval_unary_op`), and a float constant decides no
+branch (`_visit_branch`) - Python's arithmetic doesn't match the VM's actual number format
+(`ScpValue`'s 30-bit-int/float32 shape describes the constant *encoding*, not the runtime arithmetic
+width), and the real semantics (float32 rounding, int/float mixing, a float's truth, int truncation,
+overflow, MOD's sign) can't be verified without running the game. Folding with an unverified formula
+risks silently replacing one wrong constant with another: `0.4 * 0.8` used to print as `0.32`. The
+same holds downstream: HLIL's `constant_truth` and loop recovery decide nothing from a float, and the
+TypeScript printer folds a comparison of two constants only for ints. `ExpressionSimplificationPass`'s
+identities likewise fire only on int constants (`0.0 * x` used to become the int `0`), but they still
+simplify an int DIV by 1, even a constant one (`10 / 1 → 10`), since that identity holds regardless of
+numeric semantics. See `docs/FUTURE_WORK.md` for what a verified SCCP fix would need.
 
 A phi of constants folds to a constant only when `constant_values_equal` (`ir/core/il_base.py`)
 says they are equal: `1` and `1.0` differ, and NaN equals NaN.

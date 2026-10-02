@@ -125,7 +125,8 @@ per-syscall wrapper functions from a signature database. TypeScript has no `*ptr
 call and a store through one (`HLILAssign` whose `dest` is `HLILDeref`) becomes a `deref_set(ptr,
 value)` call instead of an assignment - matching the existing `addr_of(x)` convention for `&x`. It
 also does its own peephole simplification at print time (constant-folds
-constant-vs-constant comparisons, `(bool) != 0` → `bool`, double-negation elimination) — some
+comparisons of two int constants via `constant_truth` - never floats, whose VM comparisons are
+unverified - `(bool) != 0` → `bool`, double-negation elimination) — some
 optimization happens here, not only in `ir/hlil/passes/`.
 
 **Address-taken locals fold back to a plain variable, not a `deref` call.** MLIL SSA construction

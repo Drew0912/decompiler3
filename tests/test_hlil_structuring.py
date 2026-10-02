@@ -345,6 +345,12 @@ class TestConstantTruth(unittest.TestCase):
         self.assertIsNone(constant_truth(var('c')))
         self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.EQ, var('c'), HLILConst(1))))
 
+    def test_floats_decide_nothing(self):
+        # A float's truth and comparisons in the VM are unverified
+        self.assertIsNone(constant_truth(HLILConst(0.5)))
+        self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.LT, HLILConst(0.5), HLILConst(1))))
+        self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.LT, HLILConst(1), HLILConst(0.5))))
+
 
 class TestReachableStatements(unittest.TestCase):
 

@@ -294,7 +294,8 @@ class SCCP:
 
         cond_value = self._evaluate_expr(inst.condition)
 
-        if cond_value.is_constant():
+        # A float decides nothing: its truth in the VM (-0.0, a test of the raw word) is unverified
+        if cond_value.is_constant() and not isinstance(cond_value.value, float):
             # Condition is constant, only one branch is reachable
             if cond_value.value:
                 self._mark_edge_reachable(block, inst.true_target)
@@ -362,6 +363,10 @@ class SCCP:
 
     def _eval_binary_op(self, op_type, lhs, rhs) -> LatticeValue:
         '''Evaluate binary operation on constants'''
+        # Floats never fold: VM float32 rounding and int/float mixing are unverified (like DIV/MOD below)
+        if isinstance(lhs, float) or isinstance(rhs, float):
+            return LatticeValue.bottom()
+
         try:
             if op_type == MLILAdd:
                 return LatticeValue.constant(lhs + rhs)
@@ -426,6 +431,10 @@ class SCCP:
 
     def _eval_unary_op(self, op_type, operand) -> LatticeValue:
         '''Evaluate unary operation on constant'''
+        # Not folded, see _eval_binary_op
+        if isinstance(operand, float):
+            return LatticeValue.bottom()
+
         try:
             if op_type == MLILNeg:
                 return LatticeValue.constant(-operand)

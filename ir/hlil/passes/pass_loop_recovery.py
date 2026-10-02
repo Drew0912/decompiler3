@@ -28,6 +28,7 @@ from ..hlil import (
     HLILComment,
     HLILUnstructured,
     BinaryOp,
+    COMPARISON_FUNCTIONS,
     contains_escaping_exit,
     iter_tree,
     negate_condition,
@@ -231,20 +232,22 @@ class LoopRecoveryPass(Pass):
                 body.statements.pop()
 
     def _fold_constant_condition(self, condition: HLILExpression) -> HLILExpression:
-        '''Reduce a comparison between two constants to a single constant'''
-        if not isinstance(condition, HLILBinaryOp):
+        '''Reduce an == or != between two constants to a single constant'''
+        if not isinstance(condition, HLILBinaryOp) or condition.op not in (BinaryOp.EQ, BinaryOp.NE):
             return condition
 
         if not isinstance(condition.lhs, HLILConst) or not isinstance(condition.rhs, HLILConst):
             return condition
 
-        if condition.op == BinaryOp.NE:
-            return HLILConst(1 if condition.lhs.value != condition.rhs.value else 0)
+        # Float comparisons are unverified in the VM
+        if isinstance(condition.lhs.value, float) or isinstance(condition.rhs.value, float):
+            return condition
 
-        if condition.op == BinaryOp.EQ:
-            return HLILConst(1 if condition.lhs.value == condition.rhs.value else 0)
-
-        return condition
+        return HLILConst(int(COMPARISON_FUNCTIONS[condition.op](condition.lhs.value, condition.rhs.value)))
 
     def _is_always_true(self, condition: HLILExpression) -> bool:
-        return isinstance(condition, HLILConst) and condition.value not in (0, False)
+        # Float truth is unverified in the VM
+        if not isinstance(condition, HLILConst) or isinstance(condition.value, float):
+            return False
+
+        return condition.value not in (0, False)

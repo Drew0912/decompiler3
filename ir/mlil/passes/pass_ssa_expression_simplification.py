@@ -7,6 +7,8 @@ Apply algebraic simplifications:
 - x & 0 → 0
 - x | 0 → x
 etc.
+
+Identities fire only on int constants.
 '''
 
 from typing import Optional
@@ -100,6 +102,11 @@ class ExpressionSimplificationPass(Pass):
 
     def _apply_algebraic_identity(self, op_type, lhs, rhs) -> Optional[MediumLevelILInstruction]:
         '''Apply algebraic identity rules'''
+        # Int constants only: x * 0.0 isn't int 0, and the VM's int/float mixing is unverified
+        # (SCCP doesn't fold floats either)
+        if any(isinstance(operand, MLILConst) and isinstance(operand.value, float) for operand in (lhs, rhs)):
+            return None
+
         if op_type == MLILAdd:
             if isinstance(rhs, MLILConst) and rhs.value == 0:
                 return lhs

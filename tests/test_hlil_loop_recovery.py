@@ -160,6 +160,29 @@ class TestLoopRecoveryBreakGuard(unittest.TestCase):
         self.assertEqual(recovered.condition.op, BinaryOp.LE)
 
 
+class TestLoopRecoveryFloatConditions(unittest.TestCase):
+    '''A float condition is never folded or taken as always true: its truth in the VM is unverified'''
+
+    def test_float_condition_is_left_alone(self):
+        for condition in (HLILConst(1.0), HLILBinaryOp(BinaryOp.EQ, HLILConst(0.5), HLILConst(0.5))):
+            with self.subTest(condition = str(condition)):
+                loop = HLILWhile(condition, HLILBlock([make_guard(HLILBreak()), make_body_statement()]))
+
+                recovered = run_pass(loop).body.statements[0]
+
+                self.assertIs(recovered.condition, condition)
+                self.assertEqual(len(recovered.body.statements), 2)
+
+    def test_int_comparison_still_folds_and_rotates(self):
+        condition = HLILBinaryOp(BinaryOp.EQ, HLILConst(1), HLILConst(1))
+        loop = HLILWhile(condition, HLILBlock([make_guard(HLILBreak()), make_body_statement()]))
+
+        recovered = run_pass(loop).body.statements[0]
+
+        self.assertEqual(recovered.condition.op, BinaryOp.GT)
+        self.assertEqual(len(recovered.body.statements), 1)
+
+
 class TestLoopRecoveryDoWhileRotation(unittest.TestCase):
     '''while (1) { body; if (c) break; } -> do { body } while (!c) - the one recovery shape
     with no existing test coverage before this step (do-whiles are latent in the real corpus).'''
