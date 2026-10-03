@@ -1,5 +1,6 @@
 from .types_scp import *
 from .crc32 import hash_func_Name
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -64,6 +65,26 @@ class FunctionParam:
 
     __repr__ = __str__
 
+
+@dataclass(frozen = True)
+class SlotRef:
+    """The stack slot an offset opcode addresses, counted from the stack bottom, and what may be in it at that point.
+    An empty one is outside the live stack: below it when slot < 0, else at or above sp"""
+    slot            : int
+    params          : tuple[int, ...] = ()  # parameter numbers; arg1 is the highest parameter slot
+    local           : bool = False          # a value this function put there
+    caller_frame    : bool = False          # a slot of a PUSH_CALLER_FRAME
+    call_setup      : bool = False          # a local call's function ID or return address
+
+
+@dataclass
+class StackLayout:
+    """The parser's simulated stack of a disassembled function, kept for comments; keyed by instruction offset"""
+    sp_before       : dict[int, int] = field(default_factory = dict)        # slots on the stack before each instruction
+    slot_refs       : dict[int, SlotRef] = field(default_factory = dict)    # the slot each offset opcode addresses
+    local_slots     : dict[int, int] = field(default_factory = dict)        # an addressed local's instruction -> slot
+
+
 class Function:
     name            : str
     offset          : int
@@ -73,6 +94,7 @@ class Function:
     call_debug_argc : dict[str, int]    # CALL return label -> args passed explicitly, when fewer than the callee's params
     entry_block     : BasicBlock | None
     unreachable_blocks : list[BasicBlock]   # code no branch reaches, linearly decoded (not linked into the CFG)
+    stack_layout    : StackLayout | None    # set by the parser; a hand-built function has none
 
     def __init__(self):
         self.params     = []
@@ -80,6 +102,7 @@ class Function:
         self.call_debug_argc = {}
         self.entry_block = None
         self.unreachable_blocks = []
+        self.stack_layout = None
 
     def name_hash(self) -> int:
         return hash_func_Name(self.name)

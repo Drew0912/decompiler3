@@ -54,6 +54,17 @@ into the string pool. The pool's start is known only from references (function n
 strings the decoded code references), so a string referenced only by undecoded dead code does not
 bound it. See `tests/test_scp_stack_simulation.py`.
 
+Each disassembled function keeps the simulated stack as `Function.stack_layout` (`StackLayout`, for
+the `.py` comments): the depth before every reachable real instruction (not the synthetic
+fall-through jumps), and for each of the 5 opcodes that address a slot by offset (`LOAD_STACK`,
+`LOAD_STACK_DEREF`, `PUSH_STACK_OFFSET`, `POP_TO`, `POP_TO_DEREF`) the absolute slot and what may
+be in it - parameter `argN`, a local, a caller-frame slot or a call setup, or nothing (outside the
+live stack). What a slot may hold is solved per block start over every recorded edge,
+not from the join groups, which span the whole function: a value that reaches a slot only at a
+later join doesn't count for an earlier read. A `POP_TO` stands for the value it overwrote, so a
+reassigned parameter is still the parameter. `STACK_OFFSET_OPS` holds the one slot rule the
+simulation and the layout share: the byte offset counts from sp after the opcode's pops.
+
 ## Layer 3: Lifter — Done
 
 **Location:** `falcom/ed9/ir/llil/` (`ED9VMLifter` and related classes), building on `ir/llil/`

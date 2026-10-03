@@ -3,7 +3,7 @@
 block must carry the same stack height; entries that meet at one position on a join form one group, and a call checks
 and rewrites every push of the groups it consumes. Calls declare their own return edges. A push an ordinary consumer
 uses or overwrites cannot also be a call setup, no instruction may overlap another (in any function), and code must end
-before the string pool.'''
+before the string pool. Each function keeps the simulated stack's layout for comments.'''
 
 from pathlib import Path
 from typing import NamedTuple
@@ -20,7 +20,7 @@ from falcom.ed9.disasm import (
 )
 from falcom.ed9.disasm.ed9_optable import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, ed9_create_fallthrough_jump
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblerContext, ScpParser
-from falcom.ed9.parser.types_parser import Function, FunctionParam
+from falcom.ed9.parser.types_parser import Function, FunctionParam, SlotRef, StackLayout
 from falcom.ed9.parser.types_scp import ScpFunctionEntry, ScpParamFlags, ScpValue, Value32
 from falcom.ed9.ir.llil import ED9VMLifter
 from ir.llil.llil import WORD_SIZE
@@ -49,8 +49,14 @@ OFFSET_OPS = {
 BYTE_OPERAND_OPS = {'pop': ED9Opcode.POP, 'get_reg': ED9Opcode.GET_REG, 'set_reg': ED9Opcode.SET_REG}
 NO_OPERAND_OPS = {'add': ED9Opcode.ADD, 'lt': ED9Opcode.LT, 'ret': ED9Opcode.RETURN}
 SCRIPT_CALL_OPS = {'call_script': ED9Opcode.CALL_SCRIPT, 'call_script_no_return': ED9Opcode.CALL_SCRIPT_NO_RETURN}
-OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_str', 'pop_to', 'set_global', 'call')
-MNEMONICS = (*OFFSET_OPS, *BYTE_OPERAND_OPS, *NO_OPERAND_OPS, *SCRIPT_CALL_OPS, *OTHER_OPS)
+STACK_SLOT_OPS = {
+    'load_stack': ED9Opcode.LOAD_STACK, 'load_stack_deref': ED9Opcode.LOAD_STACK_DEREF,
+    'push_stack_offset': ED9Opcode.PUSH_STACK_OFFSET,
+    'pop_to': ED9Opcode.POP_TO, 'pop_to_deref': ED9Opcode.POP_TO_DEREF,
+}
+OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_str', 'set_global', 'call')
+MNEMONICS = (*OFFSET_OPS, *BYTE_OPERAND_OPS, *NO_OPERAND_OPS, *SCRIPT_CALL_OPS, *STACK_SLOT_OPS, *OTHER_OPS)
+PARAM_COUNT = 3
 
 
 def word(value: int) -> bytes:
@@ -111,8 +117,8 @@ class Asm:
             case 'push_str':
                 return bytes([ED9Opcode.PUSH, WORD_SIZE]) + scp_value(ScpValue.Type.String, string_offset(args[0]))
 
-            case 'pop_to':
-                return bytes([ED9Opcode.POP_TO]) + struct.pack('<i', args[0])
+            case _ if name in STACK_SLOT_OPS:
+                return bytes([STACK_SLOT_OPS[name]]) + struct.pack('<i', args[0])
 
             case 'set_global':
                 return bytes([ED9Opcode.SET_GLOBAL]) + word(args[0])
@@ -328,7 +334,7 @@ class TestEdgeStates(unittest.TestCase):
         ScpParser.require_recorded_edges(func, context)
 
         branch = next(key for key in context.recorded_edges if key[2] == BranchKind.FALSE)
-        context.recorded_edges[branch] -= 1                      # as if the false edge had bypassed the hook
+        context.recorded_edges.remove(branch)                    # as if the false edge had bypassed the hook
         with self.assertRaises(ValueError):
             ScpParser.require_recorded_edges(func, context)
 
@@ -686,6 +692,222 @@ class TestBlockSplits(unittest.TestCase):
 
             for pred in block.preds:
                 self.assertIn(block, pred.succs)
+
+
+class TestStackLayout(unittest.TestCase):
+    '''The layout the parser keeps on each function: the depth before every instruction, and the slot each offset
+    opcode addresses with what may stand there at that point'''
+
+    @classmethod
+    def layout_of(cls, asm: Asm, argc: int = 0, *others: Func) -> tuple[Program, StackLayout]:
+        '''The layout of the function asm assembles, with argc parameters, laid out before the others'''
+        program = Program(Func(FUNC_NAME, argc, asm), *others)
+        _, functions = program.disassemble()
+        return program, functions[0].stack_layout
+
+    def test_offset_opcodes_number_parameters_from_the_highest_slot(self):
+        asm = Asm()
+        asm.label('read'); asm.load_stack(-WORD_SIZE)                  # sp 3: slot 2
+        asm.push_int(LEFT_VALUE)
+        asm.label('address'); asm.push_stack_offset(-4 * WORD_SIZE)    # sp 5: slot 1
+        asm.label('deref'); asm.load_stack_deref(-6 * WORD_SIZE)       # sp 6: slot 0
+        asm.pop((PARAM_COUNT + 4) * WORD_SIZE); asm.ret()              # the parameters and the 4 values pushed
+        program, layout = self.layout_of(asm, PARAM_COUNT)
+
+        refs = {name: layout.slot_refs[program.label(name)] for name in ('read', 'address', 'deref')}
+        self.assertEqual(refs, {
+            'read': SlotRef(2, params = (1,)), 'address': SlotRef(1, params = (2,)), 'deref': SlotRef(0, params = (3,)),
+        })
+
+    def test_pop_to_counts_from_sp_after_its_pop(self):
+        asm = Asm()
+        asm.label('open'); asm.push_raw(0)
+        asm.push_int(LEFT_VALUE)
+        asm.label('write'); asm.pop_to(-WORD_SIZE)                     # sp 2, 1 after its pop: slot 0
+        asm.pop(WORD_SIZE); asm.ret()
+        program, layout = self.layout_of(asm)
+
+        self.assertEqual(layout.slot_refs[program.label('write')], SlotRef(0, local = True))
+        self.assertEqual(layout.local_slots, {program.label('open'): 0})     # not the PUSH_INT it popped
+
+    def test_parameter_reassigned_by_pop_to_stays_the_parameter_in_either_decode_order(self):
+        '''Decoded first, the writing arm leaves its POP_TO in the read's state; decoded second, its POP_TO reaches the
+        read through the join's solved block start'''
+        for write_arm_first in (True, False):
+            with self.subTest(write_arm_first = write_arm_first):
+                asm = Asm()
+                asm.get_reg(REG_INDEX); asm.jz('second')
+                arms = [lambda: (asm.push_int(LEFT_VALUE), asm.pop_to(-WORD_SIZE)), lambda: ()]
+                if not write_arm_first:
+                    arms.reverse()
+
+                arms[0](); asm.jmp('join')
+                asm.label('second'); arms[1](); asm.jmp('join')
+                asm.label('join'); asm.load_stack(-WORD_SIZE)
+                asm.pop(2 * WORD_SIZE); asm.ret()
+                program, layout = self.layout_of(asm, 1)
+
+                self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, params = (1,)))
+                self.assertEqual(layout.local_slots, {})
+
+    def test_parameter_slot_popped_and_pushed_again_is_a_local(self):
+        asm = Asm()
+        asm.pop(WORD_SIZE)
+        asm.label('open'); asm.push_int(LEFT_VALUE)
+        asm.label('read'); asm.load_stack(-WORD_SIZE)
+        asm.pop(2 * WORD_SIZE); asm.ret()
+        program, layout = self.layout_of(asm, 1)
+
+        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local = True))
+        self.assertEqual(layout.local_slots, {program.label('open'): 0})
+
+    def test_writes_on_both_arms_resolve_to_the_one_opening_push(self):
+        asm = Asm()
+        asm.label('open'); asm.push_raw(0)
+        asm.get_reg(REG_INDEX); asm.jz('right')
+        asm.push_int(LEFT_VALUE); asm.pop_to(-WORD_SIZE); asm.jmp('join')
+        asm.label('right'); asm.push_int(RIGHT_VALUE); asm.pop_to(-WORD_SIZE); asm.jmp('join')
+        asm.label('join'); asm.load_stack(-WORD_SIZE)
+        asm.pop(2 * WORD_SIZE); asm.ret()
+        program, layout = self.layout_of(asm)
+
+        self.assertEqual(set(layout.slot_refs.values()), {SlotRef(0, local = True)})
+        self.assertEqual(layout.local_slots, {program.label('open'): 0})
+
+    def test_join_of_two_pushes_keeps_both_openers(self):
+        asm = Asm()
+        asm.get_reg(REG_INDEX); asm.jz('right')
+        asm.label('left'); asm.push_int(LEFT_VALUE); asm.jmp('join')
+        asm.label('right'); asm.push_int(RIGHT_VALUE); asm.jmp('join')
+        asm.label('join'); asm.load_stack(-WORD_SIZE)
+        asm.pop(2 * WORD_SIZE); asm.ret()
+        program, layout = self.layout_of(asm)
+
+        self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, local = True))
+        self.assertEqual(layout.local_slots, {program.label('left'): 0, program.label('right'): 0})
+
+    def test_back_edge_into_a_split_block_brings_its_value(self):
+        '''The back edge is recorded before the split it causes, so the loop head's first recorded state is the back
+        edge's, while the head's instructions were simulated with the fall-through's'''
+        asm = Asm()
+        asm.label('open'); asm.push_int(LEFT_VALUE)
+        asm.label('head'); asm.load_stack(-WORD_SIZE); asm.pop(WORD_SIZE)
+        asm.get_reg(REG_INDEX); asm.jz('end')
+        asm.pop(WORD_SIZE); asm.label('new'); asm.push_int(RIGHT_VALUE); asm.jmp('head')
+        asm.label('end'); asm.pop(WORD_SIZE); asm.ret()
+        program, layout = self.layout_of(asm)
+
+        self.assertEqual(layout.slot_refs[program.label('head')], SlotRef(0, local = True))
+        self.assertEqual(layout.local_slots, {program.label('open'): 0, program.label('new'): 0})
+
+    def test_value_meeting_a_slot_at_a_later_join_does_not_count_for_an_earlier_read(self):
+        '''The parser's join groups span the whole function; what a read may see is solved per program point'''
+        asm = Asm()
+        asm.label('open'); asm.push_int(LEFT_VALUE)
+        asm.label('read'); asm.load_stack(-WORD_SIZE); asm.pop(WORD_SIZE)
+        asm.get_reg(REG_INDEX); asm.jz('replace'); asm.jmp('join')
+        asm.label('replace'); asm.pop(WORD_SIZE); asm.push_int(RIGHT_VALUE); asm.jmp('join')    # never addressed
+        asm.label('join'); asm.pop(WORD_SIZE); asm.ret()
+        program, layout = self.layout_of(asm)
+
+        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local = True))
+        self.assertEqual(layout.local_slots, {program.label('open'): 0})
+
+    def test_pop_to_in_a_loop_resolves_to_the_opening_push(self):
+        def while_loop(asm: Asm):
+            asm.label('head'); asm.load_stack(-WORD_SIZE); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('end')
+            asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.pop_to(-WORD_SIZE); asm.jmp('head')
+            asm.label('end')
+
+        def do_while_loop(asm: Asm):
+            asm.label('body'); asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.pop_to(-WORD_SIZE)
+            asm.load_stack(-WORD_SIZE); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jnz('body')    # splits the entry block
+
+        for loop in (while_loop, do_while_loop):
+            with self.subTest(loop = loop.__name__):
+                asm = Asm()
+                asm.label('open'); asm.push_raw(0)
+                loop(asm)
+                asm.load_stack(-WORD_SIZE); asm.pop(2 * WORD_SIZE); asm.ret()
+                program, layout = self.layout_of(asm)
+
+                self.assertEqual(set(layout.slot_refs.values()), {SlotRef(0, local = True)})
+                self.assertEqual(layout.local_slots, {program.label('open'): 0})
+
+    def test_pop_to_deref_counts_from_sp_after_its_pop_and_keeps_the_slot(self):
+        asm = Asm()
+        asm.push_int(LEFT_VALUE)
+        asm.label('store'); asm.pop_to_deref(-WORD_SIZE)               # sp 2, 1 after its pop: slot 0
+        asm.label('read'); asm.load_stack(-WORD_SIZE)                  # it stored through the pointer, not into slot 0
+        asm.pop(2 * WORD_SIZE); asm.ret()
+        program, layout = self.layout_of(asm, 1)
+
+        refs = [layout.slot_refs[program.label(name)] for name in ('store', 'read')]
+        self.assertEqual(refs, [SlotRef(0, params = (1,))] * 2)
+
+    def test_local_put_by_an_instruction_that_is_not_a_push(self):
+        asm = Asm()
+        asm.label('open'); asm.get_reg(REG_INDEX)
+        asm.label('read'); asm.load_stack(-WORD_SIZE)
+        asm.pop(2 * WORD_SIZE); asm.ret()
+        program, layout = self.layout_of(asm)
+
+        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local = True))
+        self.assertEqual(layout.local_slots, {program.label('open'): 0})
+
+    def test_slot_opened_twice_keeps_both_openers(self):
+        asm = Asm()
+        asm.label('first'); asm.push_int(LEFT_VALUE); asm.load_stack(-WORD_SIZE); asm.pop(2 * WORD_SIZE)
+        asm.label('second'); asm.push_int(RIGHT_VALUE); asm.load_stack(-WORD_SIZE); asm.pop(2 * WORD_SIZE)
+        asm.ret()
+        program, layout = self.layout_of(asm)
+
+        self.assertEqual(layout.local_slots, {program.label('first'): 0, program.label('second'): 0})
+
+    def test_slots_outside_the_live_stack_are_empty(self):
+        asm = Asm()
+        asm.label('below'); asm.load_stack(-WORD_SIZE)                 # sp 0: slot -1
+        asm.label('at_sp'); asm.load_stack(0)                          # sp 1: slot 1
+        asm.label('dead_store'); asm.pop_to(0)                         # sp 2, 1 after its pop: slot 1
+        asm.pop(WORD_SIZE); asm.ret()
+        program, layout = self.layout_of(asm)
+
+        refs = {name: layout.slot_refs[program.label(name)] for name in ('below', 'at_sp', 'dead_store')}
+        self.assertEqual(refs, {'below': SlotRef(-1), 'at_sp': SlotRef(1), 'dead_store': SlotRef(1)})
+        self.assertEqual(layout.local_slots, {})
+
+    def test_call_setup_and_caller_frame_slots(self):
+        setup = Asm()
+        setup.push_raw(CALLER_ID); setup.push_raw('return')
+        setup.label('read_id'); setup.load_stack(-2 * WORD_SIZE); setup.pop(WORD_SIZE)      # the function ID
+        setup.label('read_return'); setup.load_stack(-WORD_SIZE); setup.pop(WORD_SIZE)      # the return address
+        setup.call(CALLEE_ID); setup.label('return'); setup.ret()
+        program, layout = self.layout_of(setup, 0, returning_callee())
+        refs = [layout.slot_refs[program.label(name)] for name in ('read_id', 'read_return')]
+        self.assertEqual(refs, [SlotRef(0, call_setup = True), SlotRef(1, call_setup = True)])
+
+        frame = Asm()
+        frame.frame('return')
+        frame.label('read'); frame.load_stack(-WORD_SIZE); frame.pop(WORD_SIZE)      # the frame's top slot
+        frame.call_script(0); frame.label('return'); frame.ret()
+        program, layout = self.layout_of(frame)
+        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(CALLER_FRAME_SLOTS - 1, caller_frame = True))
+
+    def test_depth_before_every_instruction(self):
+        '''A label's depth too. The fall-through into 'next' gets a synthetic JMP one byte before the ADD, inside the
+        PUSH_INT, with no recorded state: it gets no entry'''
+        asm = Asm()
+        asm.label('push'); asm.push_int(LEFT_VALUE)
+        asm.label('reg'); asm.get_reg(REG_INDEX)
+        asm.label('branch'); asm.jz('next')
+        asm.label('push_right'); asm.push_int(RIGHT_VALUE)
+        asm.label('add'); asm.add()
+        asm.label('next'); asm.set_reg(REG_INDEX)
+        asm.label('ret'); asm.ret()
+        program, layout = self.layout_of(asm)
+
+        depths = {'push': 0, 'reg': 1, 'branch': 2, 'push_right': 1, 'add': 2, 'next': 1, 'ret': 0}
+        self.assertEqual(layout.sp_before, {program.label(name): depth for name, depth in depths.items()})
 
 
 if __name__ == '__main__':

@@ -98,6 +98,15 @@ BINARY_OPERAND_COUNT    = 2
 UNARY_OPERAND_COUNT     = 1
 POPPED_VALUE_COUNT      = 1     # POP_VALUE_OPS / CONDITIONAL_JUMPS
 
+# Opcodes that address a stack slot by a byte offset from sp -> the entries they pop before sp is taken
+STACK_OFFSET_OPS = {
+    ED9Opcode.LOAD_STACK        : 0,
+    ED9Opcode.LOAD_STACK_DEREF  : 0,
+    ED9Opcode.PUSH_STACK_OFFSET : 0,
+    ED9Opcode.POP_TO            : POPPED_VALUE_COUNT,
+    ED9Opcode.POP_TO_DEREF      : POPPED_VALUE_COUNT,
+}
+
 
 @dataclass
 class TrackedValue:
@@ -311,6 +320,11 @@ def encoded_return(entry) -> int | None:
     return None
 
 
+def addressed_slot(inst: Instruction, sp_before: int) -> int:
+    """The absolute slot an offset opcode addresses: its byte offset counts from sp after the opcode's pops"""
+    return sp_before - STACK_OFFSET_OPS[inst.opcode] + inst.operands[0].value // WORD_SIZE
+
+
 def frame_return(entry) -> int | None:
     """The return offset of the caller frame a frame slot belongs to"""
     return entry.frame.operands[0].value if isinstance(entry, FrameSlot) else None
@@ -374,7 +388,7 @@ class ScpDisassemblerContext(DisassemblerContext):
     current_inst     : Instruction | None = None    # Instruction being simulated
     stack_simulation : list = field(default_factory = list)                 # Simulated stack of the block being decoded
     edge_states      : dict[int, tuple] = field(default_factory = dict)     # block start -> state; later edges match its height
-    recorded_edges   : Counter = field(default_factory = Counter)           # (source offset, target, kind) -> count
+    recorded_edges   : list = field(default_factory = list)                 # (source offset, target, kind, state) of every edge
     inst_states      : dict[int, tuple] = field(default_factory = dict)     # instruction offset -> the stack before it
     groups           : StackEntryGroups = field(default_factory = StackEntryGroups)
     plain_uses       : dict[int, object] = field(default_factory = dict)    # id -> entry an ordinary consumer used
@@ -387,7 +401,7 @@ class ScpDisassemblerContext(DisassemblerContext):
     def record_edge(self, source: int, target: int, state: tuple, kind: BranchKind):
         """The first edge into a block records its state. Every later edge - also one arriving after the block was
         decoded - must match its height; entries that differ become one group."""
-        self.recorded_edges[(source, target, kind)] += 1
+        self.recorded_edges.append((source, target, kind, state))
         recorded = self.edge_states.get(target)
         if recorded is None:
             self.edge_states[target] = state
@@ -503,17 +517,87 @@ class ScpDisassemblerContext(DisassemblerContext):
         del stack[len(stack) - count:]
         return popped
 
-    def write_slot(self, offset: int):
+    def write_slot(self, position: int):
         """POP_TO's in-place write: the written position now holds the current instruction's value and its old value is
         discarded (at or above sp: a dead store)"""
         stack = self.stack_simulation
-        position = len(stack) + offset // WORD_SIZE
         if position < 0:
             self.fail('writes below the stack', self.current_inst)
 
         if position < len(stack):
             self.use_plainly(stack[position])
             stack[position] = self.current_inst
+
+    def stack_layout(self, entry_block: BasicBlock) -> StackLayout:
+        """What the stack holds at each point of the disassembled function. What may stand in each slot at a block start
+        is solved over every recorded edge, so a value reaching a slot only through a later join doesn't count for an
+        earlier read; a POP_TO stands for the value it overwrote, so a reassigned parameter stays the parameter. Raises
+        only on a broken parser invariant: every reachable instruction has a recorded state."""
+        blocks = {
+            block.offset: [inst for inst in block.instructions if inst.size != SYNTHETIC_INSTRUCTION_SIZE]
+            for block in Formatter.collect_blocks(entry_block)
+        }
+        starts = {start: self.inst_states[insts[0].offset] for start, insts in blocks.items()}
+        # A recorded edge leaves from its block's last real instruction (require_recorded_edges checked it)
+        source_blocks = {insts[-1].offset: start for start, insts in blocks.items()}
+
+        # Block start -> slot -> the entries that may stand there, by id (Instruction is unhashable)
+        held = {start: [{} for _ in state] for start, state in starts.items()}
+        held[entry_block.offset] = [{id(entry): entry} for entry in starts[entry_block.offset]]
+
+        def held_at(block: int, state: tuple, slot: int) -> dict:
+            """The entries that may stand in slot where block's stack is state"""
+            while True:
+                entry = state[slot]
+                if slot < len(starts[block]) and entry is starts[block][slot]:
+                    return held[block][slot]
+
+                if not (isinstance(entry, Instruction) and entry.opcode == ED9Opcode.POP_TO):
+                    return {id(entry): entry}
+
+                state = self.inst_states[entry.offset]
+
+        changed = True
+        while changed:
+            changed = False
+            for source, target, _, state in self.recorded_edges:
+                for slot, target_entries in enumerate(held[target]):
+                    count = len(target_entries)
+                    target_entries.update(held_at(source_blocks[source], state, slot))
+                    changed = changed or len(target_entries) != count
+
+        layout = StackLayout()
+        for start, insts in blocks.items():
+            for inst in insts:
+                state = self.inst_states[inst.offset]
+                layout.sp_before[inst.offset] = len(state)
+                if inst.opcode in STACK_OFFSET_OPS:
+                    slot = addressed_slot(inst, len(state))
+                    live = 0 <= slot < len(state) - STACK_OFFSET_OPS[inst.opcode]
+                    entries = held_at(start, state, slot) if live else {}
+                    layout.slot_refs[inst.offset] = self.slot_ref(slot, entries, layout.local_slots)
+
+        return layout
+
+    def slot_ref(self, slot: int, entries: dict, local_slots: dict[int, int]) -> SlotRef:
+        """What slot may hold, from the entries that may stand there (by id); each local's instruction goes into
+        local_slots"""
+        params, local, caller_frame, call_setup = [], False, False, False
+        for entry in entries.values():
+            if isinstance(entry, ParamEntry):
+                params.append(len(self.current_func.params) - entry.index)
+
+            elif isinstance(entry, FrameSlot):
+                caller_frame = True
+
+            elif entry.opcode in (ED9Opcode.PUSH_CURRENT_FUNC_ID, ED9Opcode.PUSH_RET_ADDR):
+                call_setup = True
+
+            else:
+                local = True
+                local_slots[entry.offset] = slot
+
+        return SlotRef(slot, tuple(sorted(params)), local, caller_frame, call_setup)
 
 
 class ScpParser(StrictBase):
@@ -740,8 +824,9 @@ class ScpParser(StrictBase):
             context.pop_entries(inst.operands[0].value)
 
         elif opcode == ED9Opcode.POP_TO:
+            slot = addressed_slot(inst, len(stack))
             context.pop_entries(POPPED_VALUE_COUNT)
-            context.write_slot(inst.operands[0].value)
+            context.write_slot(slot)
 
         elif opcode in POP_VALUE_OPS or opcode in CONDITIONAL_JUMPS:
             context.pop_entries(POPPED_VALUE_COUNT)
@@ -808,13 +893,10 @@ class ScpParser(StrictBase):
                 for kind in kinds or [BranchKind.UNCONDITIONAL]:
                     cfg_edges[(edge_source(block), succ.offset, kind)] += 1
 
-        if cfg_edges != context.recorded_edges:
-            missing = sorted(
-                (hex(src), hex(target), kind.name) for src, target, kind in cfg_edges - context.recorded_edges
-            )
-            extra = sorted(
-                (hex(src), hex(target), kind.name) for src, target, kind in context.recorded_edges - cfg_edges
-            )
+        recorded = Counter((source, target, kind) for source, target, kind, _ in context.recorded_edges)
+        if cfg_edges != recorded:
+            missing = sorted((hex(src), hex(target), kind.name) for src, target, kind in cfg_edges - recorded)
+            extra = sorted((hex(src), hex(target), kind.name) for src, target, kind in recorded - cfg_edges)
             context.fail(f'CFG edges without a recorded stack state {missing}, recorded edges not in the CFG {extra}')
 
     def require_code_before_strings(self, functions: list[Function]):
@@ -893,6 +975,7 @@ class ScpParser(StrictBase):
             try:
                 func.entry_block = disasm.disasm_function(self.fs, offset = func.offset, name = func.name)
                 self.require_recorded_edges(func, context)
+                func.stack_layout = context.stack_layout(func.entry_block)
                 disassembled_functions.append(func)
             except Exception as e:
                 log.error(f'Error disassembling {func.name} @ 0x{func.offset:08X}: {e}')
