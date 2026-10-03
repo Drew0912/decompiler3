@@ -1,9 +1,10 @@
 """ED9 VM bytecode → Falcom LLIL lifter"""
 
+import math
 from typing import Dict, TYPE_CHECKING
 
 from ir.llil.llil import *
-from ir.core import IRParameter
+from ir.core import IRParameter, SourceFloat
 
 from ...disasm import *
 from .llil_builder import *
@@ -59,9 +60,18 @@ class ED9VMLifter:
         for i, param in enumerate(params):
             name = f'arg{i + 1}'
             type_name = param.type.get_python_type()
-            default_value = param.default_value.value if param.default_value else None
+            default_value = self._source_value(param.default_value.value) if param.default_value else None
             result.append(IRParameter(name, type_name, default_value))
         return result
+
+    @classmethod
+    def _source_value(cls, value):
+        '''A decoded value as the IR keeps it: a finite float carries the .py's spelling, so every output prints
+        it the same way'''
+        if isinstance(value, float) and math.isfinite(value):
+            return SourceFloat(value, ScpValue.float_literal(value))
+
+        return value
 
     def _collect_blocks(self, entry: BasicBlock) -> list[BasicBlock]:
         '''All blocks reachable from entry. Kept separate from lift_function's own traversal for
@@ -109,7 +119,7 @@ class ED9VMLifter:
                 builder.push_int(int(inst.operands[0].value))
 
             case ED9Opcode.PUSH_FLOAT:
-                builder.push(builder.const_float(inst.operands[0].value))
+                builder.push(builder.const_float(self._source_value(inst.operands[0].value)))
 
             case ED9Opcode.PUSH_STR:
                 builder.push_str(str(inst.operands[0].value))

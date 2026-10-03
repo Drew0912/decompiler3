@@ -16,7 +16,6 @@ class Config:
     _defaults = {
         'endian': 'little',
         'encoding': 'UTF8',
-        'float_precision_decimals': 10,
     }
 
     def __new__(cls):
@@ -115,11 +114,6 @@ class Config:
         '''Get encoding configuration'''
         return self.get('encoding')
 
-    @property
-    def float_precision_decimals(self) -> int:
-        '''Get default float precision for decimal rounding'''
-        return int(self.get('float_precision_decimals'))
-
 
 # Global config instance
 _config = Config()
@@ -139,10 +133,6 @@ def default_encoding() -> str:
     '''Get default encoding (UTF8/UTF16)'''
     return _config.encoding
 
-
-def default_float_precision_decimals() -> int:
-    '''Get default decimal places for float rounding'''
-    return _config.float_precision_decimals
 
 def default_indent() -> str:
     '''Get default indent'''

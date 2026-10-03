@@ -1,7 +1,9 @@
 '''TypeScript Code Generator - HLIL to production TypeScript'''
 
+import math
 from common import *
 from typing import List
+from ir.core import is_int_zero
 from ir.hlil import *
 
 
@@ -29,6 +31,17 @@ class TypeScriptGenerator:
         return type_map.get(type_hint, 'any')
 
     @classmethod
+    def _format_float(cls, value: float) -> str:
+        '''A float as a TypeScript number: a non-finite value has no literal'''
+        if math.isnan(value):
+            return 'NaN'
+
+        if math.isinf(value):
+            return 'Infinity' if value > 0 else '-Infinity'
+
+        return str(value)
+
+    @classmethod
     def _format_default_value(cls, value) -> str:
         '''Format default value as TypeScript literal'''
         if isinstance(value, str):
@@ -36,7 +49,7 @@ class TypeScriptGenerator:
             return f'"{escaped}"'
 
         elif isinstance(value, float):
-            return format_float(value)
+            return cls._format_float(value)
 
         elif isinstance(value, int):
             return str(value)
@@ -179,7 +192,7 @@ class TypeScriptGenerator:
                 return 'true' if expr.value else 'false'
 
             elif isinstance(expr.value, float):
-                return format_float(expr.value)
+                return cls._format_float(expr.value)
 
             elif isinstance(expr.value, int) and expr.is_hex:
                 return format_uint32_hex(expr.value)
@@ -200,7 +213,7 @@ class TypeScriptGenerator:
             # (bool_expr) != 0 -> bool_expr
             # (bool_expr) == 0 -> !bool_expr
             # (!x) == 0 -> x (double negation elimination)
-            if isinstance(expr.rhs, HLILConst) and expr.rhs.value == 0:
+            if isinstance(expr.rhs, HLILConst) and is_int_zero(expr.rhs.value):
                 if is_boolean_expr(expr.lhs):
                     if expr.op == BinaryOp.NE:
                         # (bool) != 0 -> bool
@@ -234,7 +247,7 @@ class TypeScriptGenerator:
             # Simplify !(x == 0) -> x and !(x != 0) -> !x
             if expr.op == UnaryOp.NOT and isinstance(expr.operand, HLILBinaryOp):
                 inner = expr.operand
-                if isinstance(inner.rhs, HLILConst) and inner.rhs.value == 0:
+                if isinstance(inner.rhs, HLILConst) and is_int_zero(inner.rhs.value):
                     if inner.op == BinaryOp.EQ:
                         # !(x == 0) -> x
                         return cls._format_expr(inner.lhs)

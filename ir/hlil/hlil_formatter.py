@@ -22,9 +22,6 @@ class HLILFormatter:
             elif isinstance(expr.value, bool):
                 return 'true' if expr.value else 'false'
 
-            elif isinstance(expr.value, float):
-                return format_float(expr.value)
-
             else:
                 return str(expr.value)
 
@@ -69,7 +66,6 @@ class HLILFormatter:
             return f'{expr.func_name}({args})'
 
         elif isinstance(expr, HLILSyscall):
-            args = ', '.join(cls._format_expr(arg) for arg in expr.args)
             args = [
                 f'{expr.subsystem}',
                 f'{expr.cmd}',

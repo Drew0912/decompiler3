@@ -3,8 +3,10 @@
 from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import List, NamedTuple, Optional, Tuple, Union
+from ir.core import SourceFloat
 from ir.llil import *
 from falcom.ed9.disasm.ed9_optable import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
+from falcom.ed9.parser.types_scp import ScpValue
 from .constants import *
 from .llil_ext import *
 
@@ -412,3 +414,14 @@ class FalcomLLILFormatter(LLILFormatter):
             return cls._format_global_store_expanded(inst)
 
         return super().format_instruction_expanded(inst)
+
+    @classmethod
+    def _format_simplified(cls, inst: LowLevelILInstruction) -> List[str]:
+        lines = super()._format_simplified(inst)
+
+        # A float from the bytecode also shows its exact bits; a plain float has none to show
+        if isinstance(inst, LowLevelILStackStore) and isinstance(inst.value, LowLevelILConst):
+            if isinstance(inst.value.value, SourceFloat):
+                lines[-1] = f'{lines[-1]} {ScpValue.float_bits_text(inst.value.value)}'
+
+        return lines

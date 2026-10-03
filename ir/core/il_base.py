@@ -1,6 +1,5 @@
 '''Base IL traits for LLIL, MLIL, HLIL'''
 
-import math
 from abc import ABC
 
 
@@ -52,16 +51,3 @@ class IRParameter:
             return f'IRParameter({self.name!r}, {self.type_name!r})'
         else:
             return f'IRParameter({self.name!r})'
-
-
-def constant_values_equal(a, b) -> bool:
-    '''Whether two IL constant values are the same constant: int and float stay distinct at equal
-    numeric value, and NaN equals itself (ED9 floats decode straight from binary data, so NaN is a
-    real, reachable constant).'''
-    if type(a) != type(b):
-        return False
-
-    if isinstance(a, float):
-        return a == b or (math.isnan(a) and math.isnan(b))
-
-    return a == b

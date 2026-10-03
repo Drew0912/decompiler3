@@ -3,10 +3,12 @@
 Simplify conditionals:
 - (expr == 0) → !expr
 - (expr != 0) → expr
+  (int 0 only: a float's truth in the VM is unverified)
 - !comparison → inverted comparison
 '''
 
 from typing import Optional
+from ir.core import is_int_zero
 from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
@@ -42,7 +44,7 @@ class ConditionSimplificationPass(Pass):
                         new_condition = inverted
 
                 elif isinstance(condition, MLILEq):
-                    if isinstance(condition.rhs, MLILConst) and condition.rhs.value == 0:
+                    if isinstance(condition.rhs, MLILConst) and is_int_zero(condition.rhs.value):
                         inverted = self._invert_comparison(condition.lhs)
                         if inverted is not None:
                             new_condition = inverted
@@ -51,7 +53,7 @@ class ConditionSimplificationPass(Pass):
                             new_condition = MLILLogicalNot(condition.lhs)
 
                 elif isinstance(condition, MLILNe):
-                    if isinstance(condition.rhs, MLILConst) and condition.rhs.value == 0:
+                    if isinstance(condition.rhs, MLILConst) and is_int_zero(condition.rhs.value):
                         if isinstance(condition.lhs, (MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
                             new_condition = condition.lhs
 

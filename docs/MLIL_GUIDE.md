@@ -63,7 +63,9 @@ Two representations coexist rather than one replacing the other:
 
 ## Instruction Categories
 
-**Constants:** integer/float/string literals.
+**Constants:** integer/float/string literals. A float from the bytecode is a `SourceFloat`
+(`ir/core/il_literals.py`): the exact decoded value, printed as the `.py` spells it (`0.3`, not
+`0.2999999523162842`); the same text appears in `.hlil.ts` and `.ts`.
 
 **Variable operations:** load a variable's value; store a value to a variable (SSA and non-SSA
 variants of each).

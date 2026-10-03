@@ -9,9 +9,6 @@ from common import *
 from ir.core import *
 
 
-FLOAT_ROUND_REL_TOL = 1e-6
-FLOAT_ROUND_ABS_TOL = 1e-9
-
 UNASSIGNED_SLOT_INDEX = -1
 
 if TYPE_CHECKING:
@@ -207,18 +204,12 @@ class MLILConst(MediumLevelILExpr, Constant):
         self.is_hex = is_hex
 
     def __str__(self) -> str:
-        if isinstance(self.value, int):
-            if self.is_hex:
-                return format_uint32_hex(self.value)
+        if isinstance(self.value, int) and self.is_hex:
+            return format_uint32_hex(self.value)
 
-            return str(self.value)
-
-        elif isinstance(self.value, float):
-            return format_float(self.value)
-
-        elif isinstance(self.value, str):
-
+        if isinstance(self.value, str):
             return quote_string(self.value)
+
         return str(self.value)
 
 

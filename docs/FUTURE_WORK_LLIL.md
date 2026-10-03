@@ -17,17 +17,17 @@ opcode per line, arguments in push order, byte offsets, floats that encode to th
 The changes below add comments or change how an operand is spelled; none of them changes a compiled
 byte.
 
-- **Shortest floats** (item 1; Step 3 done for the `.py`, Step 4 for the rest). The VM stores a float as
+- **Shortest floats** (item 1; done: Step 3 for the `.py`, Step 4 for the rest). The VM stores a float as
   a float32 with its 2 lowest mantissa bits dropped (`ScpValue.FLOAT_DROPPED_BITS`,
   `falcom/ed9/parser/types_scp.py`), so each stored word stands for 4 float32 values, and the `.py`
   printed the one with those bits zero, in full: `PUSH_FLOAT(0.2999999523162842)`. It now prints the
   shortest decimal that encodes to the same word, always as a float literal: `PUSH_FLOAT(0.3)`,
   `PUSH_FLOAT(1.0)`, `PUSH_FLOAT(-0.0)`, in `PUSH_FLOAT` operands and float parameter defaults
-  (`ScpValue.float_literal`, `docs/LLIL_DSL.md` §1). Step 4 gives the other outputs the same text: the
-  Falcom lifter attaches it to each float it puts in the IR, which keeps the exact value, and generic
-  code prints that text (`.ts`, `.hlil.ts` and `.mlil.asm` round to `float_precision_decimals` (3) today,
-  which is neither exact nor short: `0.033299997448921204` prints in full, `-2738.1494140625` as
-  `-2738.149`, which encodes to a different word). The `.llil.asm` is under Listings. Step 3b (done)
+  (`ScpValue.float_literal`, `docs/LLIL_DSL.md` §1). Step 4 gave the other outputs the same text: the
+  Falcom lifter keeps the exact value in the IR as a `SourceFloat` (`ir/core/il_literals.py`) carrying that
+  spelling, which every printer gets from `str()`. Before, `.ts`, `.hlil.ts` and `.mlil.asm` rounded to 3
+  decimals, neither exact nor short: `0.033299997448921204` printed in full, `-2738.1494140625` as
+  `-2738.149`, which encodes to a different word. The `.llil.asm` is under Listings. Step 3b (done)
   stopped SCCP folding floats and the algebraic identities firing on float constants, since the VM's
   float arithmetic is unverified (`docs/MLIL_DESIGN.md`, Optimization Passes).
 - **Float bits comment, opt-in** (item 2; Step 8a). `PUSH_FLOAT(0.3)  # f32 0x3E999998, raw 0x8FA66666`:
@@ -170,13 +170,13 @@ byte.
 
 ## Listings and Docstrings
 
-- **`.llil.asm` floats** (item 20; Step 4): the shortest value, spelled as in the `.py` and `.ts` so one
-  search finds a value in all three, plus an always-on comment with the bits:
+- **`.llil.asm` floats** (item 20; Step 4, done): the shortest value, spelled as in the `.py` and `.ts` so
+  one search finds a value in all three, plus an always-on comment with the bits:
   ```
     STACK[sp] = 27.2 ; [5] f32 0x41D99998, raw 0x90766666
   ```
-  Today the value prints with 6 fixed decimals (`ir/llil/llil.py`): `27.199997`, and any float below
-  0.0000005 as `0`, which looks like an integer.
+  The value used to print with 6 fixed decimals: `27.199997`, and any float below 0.0000005 as `0`, which
+  looked like an integer.
 - **`.llil.asm` strings** (item 12; Step 2b, done) were printed in single quotes without escaping
   (`'Thunder God's Descent'`, raw backslashes, a raw newline splitting the line). They now go through
   `quote_string(value, "'")`.

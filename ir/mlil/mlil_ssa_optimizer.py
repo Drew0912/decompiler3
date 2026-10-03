@@ -70,8 +70,8 @@ class SSAOptimizer:
         repr(inst) is just "<ClassName OP>" - no MLIL class overrides __repr__ - so an
         operand-only rewrite (a constant folded, a variable substituted) looked identical to
         the previous snapshot and could stop the loop one iteration early. str(inst) is not
-        exact either: MLILConst prints floats through format_float (rounded) and hex ints
-        masked to 32 bits, so distinct constants can render the same text. This walks each
+        exact either: MLILConst prints a SourceFloat as its source text and hex ints masked to
+        32 bits, so distinct constants can render the same text. This walks each
         instruction's actual attributes instead.
         '''
         blocks_key = []
@@ -98,7 +98,8 @@ class SSAOptimizer:
             return (MediumLevelILBasicBlock, value.index)
 
         if isinstance(value, float):
-            return (float, value.hex())
+            # type and str(): a SourceFloat losing or changing its text is a change
+            return (type(value), value.hex(), str(value))
 
         if isinstance(value, Enum):
             return (type(value), value.name)

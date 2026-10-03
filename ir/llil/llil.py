@@ -512,33 +512,11 @@ class LowLevelILConst(LowLevelILExpr, Constant):
         if isinstance(self.value, str):
             return quote_string(self.value, "'")
 
-        elif isinstance(self.value, float):
-            # Format float with up to 6 decimal places, strip trailing zeros
-            formatted = f'{self.value:.6f}'
-            # Remove trailing zeros and decimal point if not needed
-            formatted = formatted.rstrip('0').rstrip('.')
-            return formatted
+        # Raw values always print in hex
+        if isinstance(self.value, int) and (self.is_raw or self.is_hex):
+            return f'-0x{-self.value:X}' if self.value < 0 else f'0x{self.value:X}'
 
-        elif isinstance(self.value, int):
-            # Raw values are always displayed in hex
-            if self.is_raw:
-                if self.value < 0:
-                    return f'-0x{-self.value:X}'
-                else:
-                    return f'0x{self.value:X}'
-            elif self.is_hex:
-                # Hex display
-                if self.value < 0:
-                    # Negative hex: -0xAB
-                    return f'-0x{-self.value:X}'
-                else:
-                    return f'0x{self.value:X}'
-            else:
-                # Decimal display
-                return str(self.value)
-
-        else:
-            return str(self.value)
+        return str(self.value)
 
 
 class LowLevelILDebug(LowLevelILStatement):

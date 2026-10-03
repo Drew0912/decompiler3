@@ -243,6 +243,13 @@ class ScpValue:
 
         return repr(value)
 
+    @classmethod
+    def float_bits_text(cls, value: float) -> str:
+        '''The float32 bits the VM computes with and the stored word: 'f32 0x41D99998, raw 0x90766666'.'''
+        # float(): ScpValue takes an exact float, not a subclass such as the IR's SourceFloat
+        word = cls(float(value)).to_word()
+        return f'f32 {format_uint32_hex(cls.word_float32_bits(word))}, raw {format_uint32_hex(word)}'
+
     def __str__(self) -> str:
         # return f'ScpValue<{self.value!r}>'
         return f'ScpValue({self.value!r})'

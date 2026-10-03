@@ -2,6 +2,7 @@
 
 from .il_base import *
 from .il_options import *
+from .il_literals import *
 
 __all__ = [
     'ILInstruction',
@@ -12,6 +13,8 @@ __all__ = [
     'UnaryOperation',
     'IRParameter',
     'constant_values_equal',
+    'is_int_zero',
+    'SourceFloat',
     'UNASSIGNED_INST_INDEX',
     'ILOptions',
 ]

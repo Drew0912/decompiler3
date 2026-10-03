@@ -6,7 +6,6 @@
   // Values: "little" or "big"
   "endian": "little",
   "encoding": "UTF8",
-  "float_precision_decimals": 3,
 
   // Add more configuration options here as needed
 }

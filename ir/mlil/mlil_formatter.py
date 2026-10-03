@@ -1,10 +1,19 @@
 '''MLIL Formatter - Format MLIL for display'''
 
-from common import *
 from typing import List
 
 from .mlil import *
 from .mlil_ssa import MLILVarSSA, MLILSetVarSSA, MLILPhi
+
+
+# Instructions the listing prints as their own str()
+STR_FORMATTED_INSTRUCTIONS = (
+    MLILVar, MLILSetVar, MLILVarSSA, MLILSetVarSSA, MLILPhi,
+    MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod, MLILAnd, MLILOr, MLILXor, MLILLogicalAnd, MLILLogicalOr,
+    MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe, MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero,
+    MLILAddressOf, MLILGoto, MLILIf, MLILRet, MLILCall, MLILSyscall, MLILLoadGlobal, MLILStoreGlobal,
+    MLILLoadReg, MLILStoreReg, MLILDeref, MLILStoreDeref, MLILNop,
+)
 
 
 class MLILFormatter:
@@ -18,9 +27,6 @@ class MLILFormatter:
 
         elif isinstance(const.value, bool):
             return 'true' if const.value else 'false'
-
-        elif isinstance(const.value, float):
-            return format_float(const.value)
 
         else:
             return str(const.value)
@@ -37,7 +43,7 @@ class MLILFormatter:
         if func.parameters:
             result.append(';')
             result.append('; Parameters:')
-            for i, param in enumerate(func.parameters):
+            for param in func.parameters:
                 if param:
                     result.append(f';   {param.name}')
 
@@ -87,110 +93,20 @@ class MLILFormatter:
 
     @classmethod
     def format_instruction(cls, inst: MediumLevelILInstruction) -> str:
-        '''Format a single instruction'''
-        # Constants and Variables
+        '''Format a single instruction: its own str(), except a constant, a script call and a debug record'''
         if isinstance(inst, MLILConst):
             return cls._format_const(inst)
 
-        elif isinstance(inst, MLILVar):
-            return str(inst)
-
-        elif isinstance(inst, MLILSetVar):
-            return f'{inst.var} = {inst.value}'
-
-        # SSA variable operations
-        elif isinstance(inst, MLILVarSSA):
-            return str(inst)
-
-        elif isinstance(inst, MLILSetVarSSA):
-            return f'{inst.var} = {inst.value}'
-
-        elif isinstance(inst, MLILPhi):
-            return str(inst)
-
-        # Binary operations - Arithmetic
-        elif isinstance(inst, (MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod)):
-            return str(inst)
-
-        # Binary operations - Bitwise
-        elif isinstance(inst, (MLILAnd, MLILOr, MLILXor)):
-            return str(inst)
-
-        # Binary operations - Logical
-        elif isinstance(inst, (MLILLogicalAnd, MLILLogicalOr)):
-            return str(inst)
-
-        # Binary operations - Comparison
-        elif isinstance(inst, (MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
-            return str(inst)
-
-        # Unary operations
-        elif isinstance(inst, (MLILNeg, MLILLogicalNot, MLILBitwiseNot)):
-            return str(inst)
-
-        elif isinstance(inst, MLILTestZero):
-            return str(inst)
-
-        elif isinstance(inst, MLILAddressOf):
-            return str(inst)
-
-        # Control flow
-        elif isinstance(inst, MLILGoto):
-            return f'goto {inst.target.label}'
-
-        elif isinstance(inst, MLILIf):
-            return f'if ({inst.condition}) goto {inst.true_target.label} else {inst.false_target.label}'
-
-        elif isinstance(inst, MLILRet):
-            if inst.value is not None:
-                return f'return {inst.value}'
-            else:
-                return 'return'
-
-        # Function calls
-        elif isinstance(inst, MLILCall):
-            args_str = ', '.join(str(arg) for arg in inst.args)
-            return inst.format_with_output(f'{inst.target}({args_str})')
-
-        elif isinstance(inst, MLILSyscall):
-            args = [
-                f'{inst.subsystem}',
-                f'{inst.cmd}',
-                *[str(arg) for arg in inst.args],
-            ]
-            return inst.format_with_output(f'syscall({', '.join(args)})')
-
         elif isinstance(inst, MLILCallScript):
-            args_str = ', '.join(str(arg) for arg in inst.args)
-            return inst.format_with_output(f'{inst.module}.{inst.func}({args_str})') + '  ; MLILCallScript'
-
-        # Globals
-        elif isinstance(inst, MLILLoadGlobal):
-            return str(inst)
-
-        elif isinstance(inst, MLILStoreGlobal):
-            return f'GLOBAL[{inst.index}] = {inst.value}'
-
-        # Registers
-        elif isinstance(inst, MLILLoadReg):
-            return str(inst)
-
-        elif isinstance(inst, MLILStoreReg):
-            return f'REG[{inst.index}] = {inst.value}'
-
-        # Pointer dereference
-        elif isinstance(inst, (MLILDeref, MLILStoreDeref)):
-            return str(inst)
-
-        # Debug
-        elif isinstance(inst, MLILNop):
-            return str(inst)
+            return f'{inst}  ; MLILCallScript'
 
         elif isinstance(inst, MLILDebug):
-            return f'; debug.{inst.debug_type}({inst.value})'
+            return f'; {inst}'
 
-        else:
-            raise NotImplementedError(f'Unhandled MLIL instruction type: {type(inst).__name__}')
+        elif isinstance(inst, STR_FORMATTED_INSTRUCTIONS):
+            return str(inst)
+
+        raise NotImplementedError(f'Unhandled MLIL instruction type: {type(inst).__name__}')
 
     @classmethod
     def to_dot(cls, func: MediumLevelILFunction) -> str:

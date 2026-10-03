@@ -175,8 +175,12 @@ Each block also keeps `sp_in` / `sp_out`, the `sp` at its start and end.
 one header per block (`block_N(0xADDR), label, [sp = N]`, plus `fp` on the entry) and each
 instruction in an expanded pseudo-code form (`STACK[sp] = ...`, `STACK[--sp]`). String constants
 print single-quoted with Python escapes (`quote_string`), so a quote or line break stays inside
-its token. `hidden_for_formatter` drops the `SpAdd` lines that form already spells out. `to_dot()` draws a
-function's CFG (`.llil.dot`).
+its token. A float prints through `str()`: a `SourceFloat` (`ir/core/il_literals.py`; the Falcom lifter
+keeps the exact decoded value and attaches the `.py`'s spelling, `ScpValue.float_literal`) prints that
+text, a plain float its exact `repr`. A pushed `SourceFloat` also gets its bits from
+`FalcomLLILFormatter`: `STACK[sp] = 27.2 ; [5] f32 0x41D99998, raw 0x90766666` (`f32` is what the VM
+computes with, `raw` the stored word). `hidden_for_formatter` drops the `SpAdd` lines that form
+already spells out. `to_dot()` draws a function's CFG (`.llil.dot`).
 
 ## Testing
 

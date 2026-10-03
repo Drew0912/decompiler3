@@ -95,9 +95,9 @@ HLIL → HLIL DSL (.py) → exec() → lower → LLIL DSL (.py, exists today) �
   passes the logic round trip on the full corpus (`docs/LLIL_DSL.md` §2). No intermediate MLIL DSL; an
   MLIL-level DSL stays a separate idea, only worth building if MLIL output is wanted for its own sake.
 - **No renderer shared with the TypeScript generator.** Different syntax, and a different contract:
-  `codegen/typescript.py` is readable pseudocode (it rounds floats via `common.format_float`, folds
-  constant comparisons and rewrites boolean comparisons); this output must be exact. Its natural
-  sibling is the LLIL `.py` formatter (`falcom/ed9/disasm/`): exact float literals (`ScpValue.float_literal`),
+  `codegen/typescript.py` is readable pseudocode (it folds constant comparisons and rewrites boolean
+  comparisons); this output must be exact. Its natural sibling is the LLIL `.py` formatter
+  (`falcom/ed9/disasm/`): exact float literals (`ScpValue.float_literal`),
   `Formatter.format_param` signatures, decorators, common-function library conventions. With TS it
   shares only HLIL-level structure helpers and language-neutral operator tables. Once it exists,
   retire `HLILFormatter` / `.hlil.ts` (an unused debug dump) — this output is the faithful HLIL view.
@@ -575,4 +575,4 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
   only by a `codegen/` path that never runs (nothing calls `set_signature_db`); decide when the signature database
   is wired in.
 - **Floats:** generic code prints floats without knowing their width - the Falcom lifter attaches the display text
-  (LLIL DSL neatening plan, Step 4).
+  as a `SourceFloat` (`ir/core/il_literals.py`; LLIL DSL neatening plan, Step 4, done).

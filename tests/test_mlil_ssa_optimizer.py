@@ -68,7 +68,7 @@ class TestIdempotence(unittest.TestCase):
         func, _ = make_double_negation_func('idempotent')
 
         # _snapshot(), not str(inst) - str() is exactly the imprecise comparison this step
-        # replaces (MLILConst rounds floats and masks hex ints), so it could pass here even if
+        # replaces (MLILConst prints a SourceFloat's source text and masks hex ints), so it could pass here even if
         # a real, structurally-visible change happened on the second optimize() call.
         SSAOptimizer(func).optimize()
         once = SSAOptimizer(func)._snapshot()

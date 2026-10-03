@@ -2,7 +2,7 @@
 
 from enum import Enum, auto
 from typing import List, NamedTuple, Optional, Tuple
-from ir.core import constant_values_equal
+from ir.core import constant_values_equal, is_int_zero
 from ir.pipeline import Pass
 from ..hlil import (
     HighLevelILFunction,
@@ -173,7 +173,7 @@ class ControlFlowOptimizationPass(Pass):
         if cond.op not in (BinaryOp.EQ, BinaryOp.NE):
             return None
 
-        if not isinstance(cond.rhs, HLILConst) or cond.rhs.value != 0:
+        if not isinstance(cond.rhs, HLILConst) or not is_int_zero(cond.rhs.value):
             return None
 
         if not isinstance(cond.lhs, HLILVar):
