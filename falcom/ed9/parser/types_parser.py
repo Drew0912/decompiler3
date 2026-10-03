@@ -76,6 +76,25 @@ class SlotRef:
     caller_frame    : bool = False          # a slot of a PUSH_CALLER_FRAME
     call_setup      : bool = False          # a local call's function ID or return address
 
+    @property
+    def unusual(self) -> bool:
+        """Anything but exactly one parameter or a local: outside the live stack, a caller-frame or call-setup slot, or
+        more than one kind of value"""
+        return len(self.params) + self.local != 1 or self.caller_frame or self.call_setup
+
+    def __str__(self) -> str:
+        """'slot 2 = arg1', 'slot 3' (a local), 'slot 2 = arg1 or local', 'slot -1 (below the stack)'"""
+        kinds = [f'arg{number}' for number in self.params]
+        kinds += [kind for kind, held in (('local', self.local), ('caller frame', self.caller_frame),
+                                          ('call setup', self.call_setup)) if held]
+        if kinds == ['local']:
+            return f'slot {self.slot}'
+
+        if kinds:
+            return f'slot {self.slot} = {" or ".join(kinds)}'
+
+        return f'slot {self.slot} (below the stack)' if self.slot < 0 else f'slot {self.slot} (above the stack)'
+
 
 @dataclass
 class StackLayout:

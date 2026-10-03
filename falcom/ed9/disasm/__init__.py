@@ -5,6 +5,7 @@ from .basic_block import *
 from .instruction_table import *
 from .disassembler import *
 from .ed9_optable import *
+from .llil_dsl_comments import *
 from .formatter import *
 
 __all__ = [
@@ -22,6 +23,7 @@ __all__ = [
     'ED9Opcode',
     'ED9InstructionTable',
     'ED9_INSTRUCTION_TABLE',
+    'CommentOptions',
     'Formatter',
     'FormatterContext',
 ]

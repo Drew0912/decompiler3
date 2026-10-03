@@ -3,7 +3,7 @@ from .types_parser import *
 from ml import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
-from ..disasm.formatter import GLOBAL_VAR_INDEX_COMMENT
+from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
 from ..writer.metadata import COMMON_LIBRARY_ALL_IMPORT, SCP_WRITER_HELPER_IMPORT
 from ..writer.metadata.common_index import COMMON_FUNCTIONS
 from ..writer.metadata.signature import function_fingerprint, fingerprint_digest
@@ -531,8 +531,9 @@ class ScpDisassemblerContext(DisassemblerContext):
     def stack_layout(self, entry_block: BasicBlock) -> StackLayout:
         """What the stack holds at each point of the disassembled function. What may stand in each slot at a block start
         is solved over every recorded edge, so a value reaching a slot only through a later join doesn't count for an
-        earlier read; a POP_TO stands for the value it overwrote, so a reassigned parameter stays the parameter. Raises
-        only on a broken parser invariant: every reachable instruction has a recorded state."""
+        earlier read; a POP_TO stands for the value it overwrote, so a reassigned parameter stays the parameter. An
+        unusual slot (SlotRef.unusual) is logged as a warning. Raises only on a broken parser invariant: every reachable
+        instruction has a recorded state."""
         blocks = {
             block.offset: [inst for inst in block.instructions if inst.size != SYNTHETIC_INSTRUCTION_SIZE]
             for block in Formatter.collect_blocks(entry_block)
@@ -575,7 +576,11 @@ class ScpDisassemblerContext(DisassemblerContext):
                     slot = addressed_slot(inst, len(state))
                     live = 0 <= slot < len(state) - STACK_OFFSET_OPS[inst.opcode]
                     entries = held_at(start, state, slot) if live else {}
-                    layout.slot_refs[inst.offset] = self.slot_ref(slot, entries, layout.local_slots)
+                    ref = self.slot_ref(slot, entries, layout.local_slots)
+                    if ref.unusual:
+                        log.warning(f'{self.current_func.name}: {inst.mnemonic} at 0x{inst.offset:X} addresses {ref}')
+
+                    layout.slot_refs[inst.offset] = ref
 
         return layout
 
@@ -1126,16 +1131,17 @@ class ScpParser(StrictBase):
 
             blocks = [block for block in blocks if id(block) not in dropped_ids]
 
-    def format_function(self, func: Function) -> list[str]:
+    def format_function(self, func: Function, comments: CommentOptions = CommentOptions()) -> list[str]:
         """Format a disassembled function"""
         formatter_context = FormatterContext(
             get_func_name_from_func_id  = self.get_func_name_from_func_id,
             get_global_name_from_index  = self.get_global_name_from_index,
+            comments                    = comments,
         )
         formatter = Formatter(formatter_context)
         return formatter.format_function(func)
 
-    def gen_python_script(self, functions: list[Function], *, preamble: list[str] = ()) -> str:
+    def gen_python_script(self, functions: list[Function], *, preamble: list[str] = (), comments: CommentOptions = CommentOptions()) -> str:
         """Full generated .py text: header (incl. shared-library imports/manifest), an optional
         preamble (e.g. scena2py.py's common-functions-omitted warning), every function this script
         must still define itself, then the footer. match_library_functions runs exactly once here
@@ -1148,7 +1154,7 @@ class ScpParser(StrictBase):
         lines.extend(preamble)
 
         for func in self.get_inline_functions(functions, matched = matched):
-            lines.extend(self.format_function(func))
+            lines.extend(self.format_function(func, comments))
             lines.append('')
 
         lines.extend(self.gen_python_footer())
@@ -1187,7 +1193,8 @@ scena = create_scp_writer('{self.name}')
             lines.append('@scena.GlobalVars()')
             lines.append('def globalvars():')
             for var in self.global_vars:
-                lines.append(f'{indent}GLOBAL_VAR({quote_string(var.name)}, {var.type}){GLOBAL_VAR_INDEX_COMMENT} {var.index}')
+                declaration = f'GLOBAL_VAR({quote_string(var.name)}, {var.type})'
+                lines.append(indent + append_comment(declaration, [f'{GLOBAL_VAR_INDEX_COMMENT} {var.index}']))
             lines.append('')
 
         if functions is not None:

@@ -16,6 +16,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
 
 from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.parser.types_parser import GlobalVar
+from falcom.ed9.parser.types_scp import ScpGlobalVar
 from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer import scp_writer_gen_common_funcs as gen
@@ -28,7 +30,7 @@ from scp_roundtrip_validator import compile_and_decompile_round, decompile_to_py
 SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
 TEST_FILE = SORA2_DIR / 'ai' / 'ai_chr5122_e00.dat'
 SMALL_FILE = SORA2_DIR / 'scena' / 'e0000.dat'
-LABEL_LINE = re.compile(r"^ *label\('[^']*'\)$")
+LABEL_LINE = re.compile(r"^ *label\('[^']*'\)( +# .*)?$")     # with its depth comment, if any
 
 
 def require(path: Path):
@@ -55,6 +57,16 @@ class TestHeader(unittest.TestCase):
         '''Guard: no provenance comment above the imports (decided against, 2026-10-02)'''
         header = named_parser('ai_chr5122_e00.dat').gen_python_header()
         self.assertEqual(header[:2], [SCP_WRITER_HELPER_IMPORT, 'try:'])
+
+    def test_global_var_comments_share_the_comment_column(self):
+        parser = named_parser('ai_chr5122_e00.dat')
+        integer = int(ScpGlobalVar.Type.Integer)                       # the parser keeps the raw type
+        parser.global_vars = [GlobalVar(0, 'x', integer), GlobalVar(1, 'reaches_the_comment_column', integer)]
+        header = parser.gen_python_header()
+        self.assertEqual(header[header.index('def globalvars():') + 1:][:2], [
+            '    GLOBAL_VAR("x", 0)              # global var 0',
+            '    GLOBAL_VAR("reaches_the_comment_column", 0)  # global var 1',
+        ])
 
     def test_hook_import_reraises_unless_the_hook_is_missing(self):
         self.assertEqual(hook_block('ai_chr5122_e00.dat'), [

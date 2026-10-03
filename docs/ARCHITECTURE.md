@@ -63,7 +63,8 @@ live stack). What a slot may hold is solved per block start over every recorded 
 not from the join groups, which span the whole function: a value that reaches a slot only at a
 later join doesn't count for an earlier read. A `POP_TO` stands for the value it overwrote, so a
 reassigned parameter is still the parameter. `STACK_OFFSET_OPS` holds the one slot rule the
-simulation and the layout share: the byte offset counts from sp after the opcode's pops.
+simulation and the layout share: the byte offset counts from sp after the opcode's pops. A slot that
+holds anything but one parameter or a local (`SlotRef.unusual`) is logged as a warning.
 
 ## Layer 3: Lifter — Done
 

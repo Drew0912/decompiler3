@@ -15,6 +15,9 @@ class ScenaDecompileConfig:
     write_py: bool = True   # round-trippable VM-bytecode Python DSL (.py)
     write_ts: bool = True   # final TypeScript (.ts)
 
+    # .py comments: the slot each LOAD_STACK/POP_TO/... addresses and what it holds, sp at labels, POP's slot count
+    stack_slot_comments: bool = True
+
     # Debug/inspection outputs
     write_llil_asm: bool = False    # .llil.asm text dump
     write_llil_dot: bool = False    # one .llil.<func>.dot CFG per function. Use Graphviz Online

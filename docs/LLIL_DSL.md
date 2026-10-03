@@ -59,6 +59,36 @@ strings, `CALL_SCRIPT("this", "GetCoolClone", 0)` - the writer wraps a bare `str
 fit the 30-bit Integer payload (`ScpValue.INTEGER_MIN..INTEGER_MAX`, -0x20000000..0x1FFFFFFF) and a
 `RawInt` `0..0x3FFFFFFF`; past that, compiling raises instead of storing a different number or type.
 
+**Comments.** Every trailing comment starts at display column 32 after the indent (a CJK character
+takes two columns; a longer line gets 2 spaces), several on one line joined by `, `. Besides
+`# global var N` on `LOAD_GLOBAL`/`SET_GLOBAL` and the header's `GLOBAL_VAR` lines, the `.py` shows the
+stack the way the `.llil.asm` does, read from the parser's simulated stack (`Function.stack_layout`,
+`docs/ARCHITECTURE.md` Layer 2). Each of the 5 offset opcodes gets the absolute slot it addresses and
+what it holds, `*` marking a dereference and `&` an address (`POP_TO` and `POP_TO_DEREF` count their
+offset from sp after their pop); the instruction that opened a local the code addresses gets
+`(local)`; `POP(n)` gets its slot count; each label gets the depth there:
+```python
+    LOAD_STACK(-16)                 # slot 1 = arg2
+    POP(12)                         # 3 slots
+
+    def _loc_3444(): pass
+    label('loc_3444')               # sp = 3
+
+    PUSH_RAW(RawInt(0x00000000))    # slot 3 (local)
+    PUSH_INT(65535)
+    POP_TO(-4)                      # slot 3
+```
+In `ani/btlcom`, `PUSH_STACK_OFFSET(-12)  # &slot 7` passes a local's address, and
+`POP_TO_DEREF(-20)  # *slot 3 = arg5` stores through a pointer parameter. Parameters are numbered as
+in every other output (`arg1` is the highest parameter slot); a parameter slot that is popped and
+pushed again holds a local from then on. A label that only unreachable code
+jumps to adds `jumped to by unreachable code`; unreachable code itself (fidelity mode) has no simulated
+stack and gets no stack comments. A slot that holds anything but one parameter or a local prints
+everything it may hold (`slot 2 = arg1 or local`, `slot 1 = caller frame`, `slot 0 = call setup`,
+`slot -1 (below the stack)`, `slot 5 (above the stack)`), and the parser logs a warning; none occur in
+the `sora2_1.0` scripts. `ScenaDecompileConfig.stack_slot_comments` (on by default) turns the stack
+comments off. Comments don't change the compiled bytes.
+
 **Compiling.** A generated script's `main()` calls `scena.run(globals())`. `ScpWriter.build()` compiles
 in memory - the function table, every body in source order, debug records, globals and the string pool -
 and returns the bytes; `run()` writes the `.dat` only after `build()` succeeds, so a failed compile writes
@@ -113,7 +143,10 @@ category as the pre-library baseline).
 
 **Generation** (bytecode → `.py`): `Formatter.format_function`/`format_block`
 (`falcom/ed9/disasm/formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
-`scena2py.write_python_dsl` (`falcom/ed9/scena2py.py`). A generated script imports the helper, an
+`scena2py.write_python_dsl` (`falcom/ed9/scena2py.py`). `ScpParser.gen_python_script(functions,
+comments = CommentOptions(...))` picks the optional comments (`falcom/ed9/disasm/llil_dsl_comments.py`;
+`scena2py` builds them from its config); the validator keeps the defaults, so the logic round trip
+checks that the stack comments reach the fixed point too. A generated script imports the helper, an
 optional `<stem>_hook` module for patches kept outside the generated file (only a missing hook is
 ignored; an import error inside the hook stops the compile), and the library (§3). Its footer calls
 `main()`, which compiles the script when it is run directly. Every generated text file is written

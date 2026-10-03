@@ -15,6 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from common.logging import log
+from falcom.ed9.disasm import CommentOptions
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function
 from falcom.ed9.parser.types_scp import ScpFunctionEntry
@@ -56,9 +57,9 @@ COMMON_FUNCTIONS_OMITTED_COMMENT = (
     '# common function definitions that are not present in this file.'
 )
 
-def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *, common_functions_omitted: bool = False) -> None:
+def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *, comments: CommentOptions = CommentOptions(), common_functions_omitted: bool = False) -> None:
     preamble = [*COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines(), ''] if common_functions_omitted else []
-    out_path.write_text(parser.gen_python_script(functions, preamble = preamble), encoding = 'utf-8', newline = '\n')
+    out_path.write_text(parser.gen_python_script(functions, preamble = preamble, comments = comments), encoding = 'utf-8', newline = '\n')
 
 def write_debug_info(parser: ScpParser, functions: list[Function], out_path: Path) -> None:
     """Dump the parsed header, each function's raw ScpFunctionEntry, and its per-call debug info"""
@@ -97,7 +98,8 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     output_dir.mkdir(parents = True, exist_ok = True)
 
     if config.write_py:
-        write_python_dsl(parser, functions, out.with_suffix('.py'), common_functions_omitted = common_functions_omitted)
+        comments = CommentOptions(stack_slots = config.stack_slot_comments)
+        write_python_dsl(parser, functions, out.with_suffix('.py'), comments = comments, common_functions_omitted = common_functions_omitted)
 
     if config.write_debug_info:
         write_debug_info(parser, functions, out.with_suffix('.debug.txt'))

@@ -37,12 +37,14 @@ byte.
   offset as the stack moves: `LOAD_STACK(-16)` is `arg2` at `CheckAlgoUse`'s source line 162 and `arg3`
   at line 168. Step 6a (done) keeps the parser's simulated stack on `Function` as `stack_layout`
   (`docs/ARCHITECTURE.md`, Layer 2): the depth before every reachable instruction, and each offset
-  opcode's slot with what may be in it at that point. Steps 6b and 7 comment the `.py` from it the way
-  the `.llil.asm` shows the stack:
-  - the 5 offset opcodes with the absolute slot and what it holds (`POP_TO`'s offset counts from sp
-    after its pop);
+  opcode's slot with what may be in it at that point. Step 6b (done) comments the script `.py` from it
+  and Step 7 the library modules, the way the `.llil.asm` shows the stack (`docs/LLIL_DSL.md` §1,
+  Comments):
+  - the 5 offset opcodes with the absolute slot and what it holds (`POP_TO` and `POP_TO_DEREF` count
+    their offset from sp after their pop);
   - `# sp = N` at each label, and the slot count on `POP(n)`;
-  - a push as `(local)` only when the code later addresses its slot by offset.
+  - `(local)` on the instruction that put a local there, only when the code later addresses its slot
+    by offset.
 
   Parameters are numbered as in every other output (`arg1` is the highest parameter slot); a parameter
   slot that is popped and pushed again (the tail-call idiom) is a local from then on. Unreachable code

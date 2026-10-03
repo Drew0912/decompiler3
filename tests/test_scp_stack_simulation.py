@@ -3,7 +3,7 @@
 block must carry the same stack height; entries that meet at one position on a join form one group, and a call checks
 and rewrites every push of the groups it consumes. Calls declare their own return edges. A push an ordinary consumer
 uses or overwrites cannot also be a call setup, no instruction may overlap another (in any function), and code must end
-before the string pool. Each function keeps the simulated stack's layout for comments.'''
+before the string pool. Each function keeps the simulated stack's layout for comments; an unusual slot is logged.'''
 
 from pathlib import Path
 from typing import NamedTuple
@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ml import fileio
 from common.config import default_encoding
+from common.logging import log
 from falcom.ed9.disasm import (
     BranchKind, Disassembler, DisassemblerContext, ED9_INSTRUCTION_TABLE, ED9Opcode, Formatter, FormatterContext,
 )
@@ -54,7 +55,7 @@ STACK_SLOT_OPS = {
     'push_stack_offset': ED9Opcode.PUSH_STACK_OFFSET,
     'pop_to': ED9Opcode.POP_TO, 'pop_to_deref': ED9Opcode.POP_TO_DEREF,
 }
-OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_str', 'set_global', 'call')
+OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_str', 'load_global', 'set_global', 'call')
 MNEMONICS = (*OFFSET_OPS, *BYTE_OPERAND_OPS, *NO_OPERAND_OPS, *SCRIPT_CALL_OPS, *STACK_SLOT_OPS, *OTHER_OPS)
 PARAM_COUNT = 3
 
@@ -119,6 +120,9 @@ class Asm:
 
             case _ if name in STACK_SLOT_OPS:
                 return bytes([STACK_SLOT_OPS[name]]) + struct.pack('<i', args[0])
+
+            case 'load_global':
+                return bytes([ED9Opcode.LOAD_GLOBAL]) + word(args[0])
 
             case 'set_global':
                 return bytes([ED9Opcode.SET_GLOBAL]) + word(args[0])
@@ -705,6 +709,16 @@ class TestStackLayout(unittest.TestCase):
         _, functions = program.disassemble()
         return program, functions[0].stack_layout
 
+    def layout_warning(self, expected: tuple[tuple[str, str, str], ...], asm: Asm, argc: int = 0, *others: Func) -> tuple[Program, StackLayout]:
+        '''layout_of, which must log exactly the expected warnings: (label, mnemonic, slot text) each'''
+        with self.assertLogs(log, 'WARNING') as logs:
+            program, layout = self.layout_of(asm, argc, *others)
+
+        self.assertCountEqual([record.getMessage() for record in logs.records], [
+            f'{FUNC_NAME}: {mnemonic} at 0x{program.label(name):X} addresses {text}' for name, mnemonic, text in expected
+        ])
+        return program, layout
+
     def test_offset_opcodes_number_parameters_from_the_highest_slot(self):
         asm = Asm()
         asm.label('read'); asm.load_stack(-WORD_SIZE)                  # sp 3: slot 2
@@ -712,7 +726,8 @@ class TestStackLayout(unittest.TestCase):
         asm.label('address'); asm.push_stack_offset(-4 * WORD_SIZE)    # sp 5: slot 1
         asm.label('deref'); asm.load_stack_deref(-6 * WORD_SIZE)       # sp 6: slot 0
         asm.pop((PARAM_COUNT + 4) * WORD_SIZE); asm.ret()              # the parameters and the 4 values pushed
-        program, layout = self.layout_of(asm, PARAM_COUNT)
+        with self.assertNoLogs(log, 'WARNING'):
+            program, layout = self.layout_of(asm, PARAM_COUNT)
 
         refs = {name: layout.slot_refs[program.label(name)] for name in ('read', 'address', 'deref')}
         self.assertEqual(refs, {
@@ -870,7 +885,10 @@ class TestStackLayout(unittest.TestCase):
         asm.label('at_sp'); asm.load_stack(0)                          # sp 1: slot 1
         asm.label('dead_store'); asm.pop_to(0)                         # sp 2, 1 after its pop: slot 1
         asm.pop(WORD_SIZE); asm.ret()
-        program, layout = self.layout_of(asm)
+        program, layout = self.layout_warning((
+            ('below', 'LOAD_STACK', 'slot -1 (below the stack)'), ('at_sp', 'LOAD_STACK', 'slot 1 (above the stack)'),
+            ('dead_store', 'POP_TO', 'slot 1 (above the stack)'),
+        ), asm)
 
         refs = {name: layout.slot_refs[program.label(name)] for name in ('below', 'at_sp', 'dead_store')}
         self.assertEqual(refs, {'below': SlotRef(-1), 'at_sp': SlotRef(1), 'dead_store': SlotRef(1)})
@@ -882,7 +900,9 @@ class TestStackLayout(unittest.TestCase):
         setup.label('read_id'); setup.load_stack(-2 * WORD_SIZE); setup.pop(WORD_SIZE)      # the function ID
         setup.label('read_return'); setup.load_stack(-WORD_SIZE); setup.pop(WORD_SIZE)      # the return address
         setup.call(CALLEE_ID); setup.label('return'); setup.ret()
-        program, layout = self.layout_of(setup, 0, returning_callee())
+        program, layout = self.layout_warning((
+            ('read_id', 'LOAD_STACK', 'slot 0 = call setup'), ('read_return', 'LOAD_STACK', 'slot 1 = call setup'),
+        ), setup, 0, returning_callee())
         refs = [layout.slot_refs[program.label(name)] for name in ('read_id', 'read_return')]
         self.assertEqual(refs, [SlotRef(0, call_setup = True), SlotRef(1, call_setup = True)])
 
@@ -890,8 +910,17 @@ class TestStackLayout(unittest.TestCase):
         frame.frame('return')
         frame.label('read'); frame.load_stack(-WORD_SIZE); frame.pop(WORD_SIZE)      # the frame's top slot
         frame.call_script(0); frame.label('return'); frame.ret()
-        program, layout = self.layout_of(frame)
+        program, layout = self.layout_warning((('read', 'LOAD_STACK', f'slot {CALLER_FRAME_SLOTS - 1} = caller frame'),), frame)
         self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(CALLER_FRAME_SLOTS - 1, caller_frame = True))
+
+    def test_slot_that_may_hold_a_parameter_or_a_local(self):
+        asm = Asm()
+        asm.get_reg(REG_INDEX); asm.jz('join')
+        asm.pop(WORD_SIZE); asm.push_int(LEFT_VALUE)                   # this arm replaces the parameter
+        asm.label('join'); asm.load_stack(-WORD_SIZE)
+        asm.pop(2 * WORD_SIZE); asm.ret()
+        program, layout = self.layout_warning((('join', 'LOAD_STACK', 'slot 0 = arg1 or local'),), asm, 1)
+        self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, params = (1,), local = True))
 
     def test_depth_before_every_instruction(self):
         '''A label's depth too. The fall-through into 'next' gets a synthetic JMP one byte before the ADD, inside the

@@ -7,12 +7,16 @@ from dataclasses import dataclass
 from .instruction import SYNTHETIC_INSTRUCTION_SIZE
 from .instruction_table import OperandType
 from .ed9_optable import ED9OperandType
+from .llil_dsl_comments import (
+    GLOBAL_VAR_INDEX_COMMENT, UNREACHABLE_TARGET_COMMENT, CommentOptions, append_comment, instruction_comments,
+    label_comments,
+)
 from ..parser.types_scp import ScpValue
 
 if TYPE_CHECKING:
     from .basic_block import BasicBlock
     from .instruction import Instruction
-    from ..parser.types_parser import Function, FunctionParam
+    from ..parser.types_parser import Function, FunctionParam, StackLayout
 
 __all__ = (
     'Formatter',
@@ -21,8 +25,6 @@ __all__ = (
 
 UNREACHABLE_CODE_BEGIN      = '# --- unreachable code ---'
 UNREACHABLE_CODE_END        = '# --- end unreachable code ---'
-UNREACHABLE_TARGET_COMMENT  = '  # jumped to by unreachable code'
-GLOBAL_VAR_INDEX_COMMENT    = '  # global var'
 
 
 @dataclass
@@ -30,6 +32,7 @@ class FormatterContext:
     """Context for formatter with callbacks"""
     get_func_name_from_func_id: Callable[[int], str | None] | None = None  # func_id -> func_name
     get_global_name_from_index: Callable[[int], str | None] | None = None  # global var index -> name
+    comments: CommentOptions = CommentOptions()                             # which optional comments the .py gets
 
 
 class Formatter:
@@ -42,13 +45,16 @@ class Formatter:
         self.formatted_labels: set[str] = set()
         self.unreachable_targets: set[int] = set()   # offsets unreachable code branches to - each needs a label
         self.referenced_offsets: set[int] = set()    # offsets real reachable-code operands point at - each needs a label
+        self.layout: StackLayout | None = None       # the stack comments' source, when the options ask for them
 
-    def format_entry_block(self, entry_block: 'BasicBlock', unreachable_blocks: 'list[BasicBlock]' = ()) -> list[str]:
-        """Format blocks starting from entry block (without function header), plus unreachable blocks in offset order"""
+    def format_entry_block(self, entry_block: 'BasicBlock', unreachable_blocks: 'list[BasicBlock]' = (), layout: 'StackLayout | None' = None) -> list[str]:
+        """Format blocks starting from entry block (without function header), plus unreachable blocks in offset order;
+        layout gives the stack comments"""
         # Reset formatted tracking
         self.formatted_offsets.clear()
         self.formatted_labels.clear()
         self.unreachable_targets = {target for block in unreachable_blocks for target in self.branch_targets(block)}
+        self.layout = layout
 
         # Collect reachable blocks and every offset a real instruction's Offset operand points at -
         # only those offsets earn a label, so a JMP/POP_JMP_*/PUSH_RET_ADDR/PUSH_CALLER_FRAME target
@@ -108,8 +114,8 @@ class Formatter:
 
         lines.append(f'def {func.name}({param_str}):')
 
-        block_lines = self.format_entry_block(func.entry_block, func.unreachable_blocks)
-        lines.extend(block_lines)
+        layout = func.stack_layout if self.context.comments.stack_slots else None
+        lines.extend(self.format_entry_block(func.entry_block, func.unreachable_blocks, layout))
 
         return lines
 
@@ -124,7 +130,7 @@ class Formatter:
         label_name = f'loc_{block.offset:X}'
         if not unreachable and block.offset in self.referenced_offsets and label_name not in self.formatted_labels:
             self.formatted_labels.add(label_name)
-            lines.extend(self._format_label(label_name))
+            lines.extend(self._format_label(block.offset))
             lines.append('')
 
         # Format instructions
@@ -142,8 +148,7 @@ class Formatter:
             target_label = f'loc_{inst.offset:X}'
             if inst.offset in self.unreachable_targets and target_label not in self.formatted_labels:
                 self.formatted_labels.add(target_label)
-                comment = '' if unreachable else UNREACHABLE_TARGET_COMMENT
-                lines.extend(self._format_label(target_label, comment))
+                lines.extend(self._format_label(inst.offset, () if unreachable else (UNREACHABLE_TARGET_COMMENT,)))
                 lines.append('')
 
             # Fallback for the (census-verified, never-observed) case where a referenced offset
@@ -153,16 +158,17 @@ class Formatter:
             # this must still fire there too for the "never go undefined" guarantee to hold.
             if inst.offset in self.referenced_offsets and target_label not in self.formatted_labels:
                 self.formatted_labels.add(target_label)
-                lines.extend(self._format_label(target_label))
+                lines.extend(self._format_label(inst.offset))
                 lines.append('')
 
             # Format instruction with context
             formatted = inst.descriptor.format_instruction(inst, self.context)
+            comments = instruction_comments(self.layout, inst)
 
             if inst.operands and inst.operands[0].descriptor.type == ED9OperandType.GlobalVar:
-                formatted += f'{GLOBAL_VAR_INDEX_COMMENT} {inst.operands[0].value}'
+                comments.insert(0, f'{GLOBAL_VAR_INDEX_COMMENT} {inst.operands[0].value}')
 
-            lines.append(formatted)
+            lines.append(append_comment(formatted, comments))
 
         return lines
 
@@ -235,9 +241,10 @@ class Formatter:
             if operand.descriptor.type == OperandType.Offset
         ]
 
-    def _format_label(self, name: str, comment: str = '') -> list[str]:
-        """Format a label"""
+    def _format_label(self, offset: int, notes: tuple[str, ...] = ()) -> list[str]:
+        """A label with the depth there, then any notes"""
+        name = f'loc_{offset:X}'
         return [
             f'def _{name}(): pass',
-            f"label('{name}'){comment}",
+            append_comment(f"label('{name}')", [*label_comments(self.layout, offset), *notes]),
         ]
