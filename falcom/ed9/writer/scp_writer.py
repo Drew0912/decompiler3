@@ -7,7 +7,7 @@ from typing import Callable
 
 from ml import fileio
 
-from common.config import default_encoding, default_endian
+from common.config import default_encoding
 from common.enum import IntEnum2
 from common.logging import *
 from ir.llil import WORD_SIZE
@@ -49,10 +49,12 @@ class StringPoolSection(IntEnum2):
 
 
 @dataclass
-class XRef:
-    """Deferred label reference, patched once the label is placed"""
+class LabelSite:
+    """A placed label, or an operand referring to one: the label's name, the position in the code buffer and the
+    function it is in"""
     name: str
     offset: int
+    function: str
 
 
 @dataclass
@@ -91,7 +93,7 @@ class ScpFunction:
 
 
 class ScpWriter:
-    """Records opcode calls made by an executed decompiled script"""
+    """Compiles the opcode calls of an executed DSL script into a .dat"""
 
     # Byte-exact round trip with the original compiler: a never-deduplicated string pool in section order and
     # call-site debug-info records. Neither is believed to change behavior in-game.
@@ -99,16 +101,15 @@ class ScpWriter:
 
     def __init__(self):
         self.name = None
-        self.labels = {}
         self.functions = []                             # type: list[ScpFunction]
         self.functions_by_name = {}                     # type: dict[str, ScpFunction]
         self.function_table = []                        # type: list[ScpFunction]
         self.global_vars = []                           # type: list[ScpGlobalVar]
         self.global_var_indices = {}                    # type: dict[str, int]
-        self.calls = []
         self.fs = None                                  # type: fileio.FileStream
         self.instruction_table = ED9_INSTRUCTION_TABLE  # shared singleton - never construct a new ED9InstructionTable()
-        self.xrefs = []                                 # type: list[XRef]
+        self.labels = {}                                # type: dict[str, LabelSite]
+        self.label_refs = []                            # type: list[LabelSite]
         self.strings = []                               # type: list[PooledString]
         self.strings_by_text = {}                       # type: dict[str, PooledString]
         self.code_string_xrefs = []                     # type: list[tuple[PooledString, int]]
@@ -120,24 +121,17 @@ class ScpWriter:
         self.global_vars = []
         self.global_var_indices = {}
 
-        # if self.fs is not None:
-        #     self.fs.Close()
-
-        # self.fs = fileio.FileStream().OpenFile(name, 'wb+', endian = default_endian())
-
     def run(self, g: dict):
+        """Compile the script and write the .dat - only once compiling succeeded, so a failure leaves an older .dat as it was"""
+        data = self.build(g)
+
+        with open(self.name, 'wb') as f:
+            f.write(data)
+
+    def build(self, g: dict) -> bytes:
+        """Compile every registered function into the script's bytes, in memory"""
         # for cb in self.runCallbacks:
         #     cb(g)
-
-        try:
-            self.run2(g)
-        except KeyError as e:
-            if isinstance(e.args[0], int):
-                e.args = (f'0x{e.args[0]:X} ({e.args[0]})',)
-            raise
-
-    def run2(self, g: dict):
-        self.globals = g
 
         hdr = ScpHeader()
         hdr.function_count = len(self.functions)
@@ -147,22 +141,19 @@ class ScpWriter:
         code = self.compileFunctions()
         self.buildDebugRecords()
 
-        fs = fileio.FileStream(encoding = default_encoding()).OpenFile(self.name, 'wb+')
+        fs = fileio.FileStream(encoding = default_encoding()).OpenMemory()
 
         self.fs = fs
 
         fs.Write(hdr.to_bytes())  # rewritten once global_var_offset is known
 
         self.writeFuncInfo(fs)
-
-        code_offset = fs.Position + self.getDebugSymbolsSize() + self.getGlobalVarsSize()
-        self.relocateCode(code_offset)
         self.writeDebugSymbols(fs)
 
         hdr.global_var_offset = fs.Position  # end of debug args, start of the global var table
         self.writeGlobalVars(fs)
-        assert fs.Position == code_offset
 
+        self.relocateCode(code, fs.Position)  # the code follows the global var table
         fs.Write(code)
 
         with fs.PositionSaver:
@@ -170,19 +161,10 @@ class ScpWriter:
 
         self.writeStringPool(fs)
 
-        with fs.PositionSaver:
-            for x in self.xrefs:
-                offset = self.labels[x.name]
-                fs.Position = x.offset
-                fs.WriteULong(offset)
-
-            self.xrefs.clear()
-
         fs.Position = 0
         fs.Write(hdr.to_bytes())
 
-        fs.Flush()
-        fs.Close()
+        return fs.ReadAll()
 
     def buildFunctionTable(self):
         """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this index"""
@@ -199,35 +181,44 @@ class ScpWriter:
         code = fileio.FileStream(encoding = default_encoding()).OpenMemory()
         self.fs = code
 
-        for f in self.functions:
-            self.current_function = f
-            self.call_tracker = CallDebugInfoTracker(get_param_count = self._get_param_count) if self.round_trip else None
-            f.entry.offset = code.Position
-            log.debug(f'{f.name} @ code+0x{f.entry.offset:08X}')
-            f.obj(*[None] * f.entry.param_count)
+        try:
+            for f in self.functions:
+                self.current_function = f
+                self.call_tracker = CallDebugInfoTracker(get_param_count = self._get_param_count) if self.round_trip else None
+                f.entry.offset = code.Position
+                log.debug(f'{f.name} @ code+0x{f.entry.offset:08X}')
+                f.obj(*[None] * f.entry.param_count)
 
-            if self.call_tracker is not None:
-                f.calls = self.call_tracker.ordered_calls()
+                if self.call_tracker is not None:
+                    f.calls = self.call_tracker.ordered_calls()
 
-        self.call_tracker = None
+        finally:
+            # Also after a failed body: no statement compiles outside one
+            self.current_function = None
+            self.call_tracker = None
 
         return code
 
-    def relocateCode(self, code_offset: int):
-        """Move every position recorded while compiling into the code buffer to its final file offset"""
+    def relocateCode(self, code: fileio.FileStream, code_offset: int):
+        """Move every position recorded while compiling into the code buffer to its final file offset, and patch each
+        label operand with its label's file offset"""
         for f in self.functions:
             f.entry.offset += code_offset
 
-        for name in self.labels:
-            self.labels[name] += code_offset
+        with code.PositionSaver:
+            for ref in self.label_refs:
+                label = self.labels.get(ref.name)
+                if label is None:
+                    raise ValueError(f'{ref.function}: undefined label {ref.name!r}')
 
-        for xref in self.xrefs:
-            xref.offset += code_offset
+                if label.function != ref.function:
+                    log.warning(f'{ref.function}: jumps to label {ref.name!r} in {label.function} (another function)')
+
+                code.Position = ref.offset
+                code.WriteULong(label.offset + code_offset)
 
         for string, offset in self.code_string_xrefs:
             string.xref_offsets.append(offset + code_offset)
-
-        self.code_string_xrefs.clear()
 
     def flushFuncEntries(self, fs: fileio.FileStream):
         fs.Position = ScpHeader.SIZE
@@ -248,7 +239,14 @@ class ScpWriter:
                     continue
 
                 entry.default_params_count += 1
-                self._write_scp_value(ScpValue(param.default), StringPoolSection.Default)
+
+                # Defaults are written apart from the bodies, so the traceback has no .py line
+                try:
+                    self._write_scp_value(ScpValue(param.default), StringPoolSection.Default)
+
+                except (TypeError, ValueError) as e:
+                    e.add_note(f'{f.name}: default of {param.name}')
+                    raise
 
         for f in self.function_table:
             entry = f.entry
@@ -286,11 +284,6 @@ class ScpWriter:
 
                 f.debug_records.append(DebugRecord(call_type = call.call_type, func_id = func_id, args = args))
 
-    def getDebugSymbolsSize(self) -> int:
-        records = [record for f in self.function_table for record in f.debug_records]
-        arg_count = sum(len(record.args) for record in records)
-        return len(records) * ScpFunctionCallDebugInfo.SIZE + arg_count * ScpFunctionCallDebugInfoArg.SIZE
-
     def writeDebugSymbols(self, fs: fileio.FileStream):
         records = [record for f in self.function_table for record in f.debug_records]
         info_offset = fs.Position + len(records) * ScpFunctionCallDebugInfo.SIZE
@@ -320,9 +313,6 @@ class ScpWriter:
 
                 fs.WriteULong(arg.type)
 
-    def getGlobalVarsSize(self) -> int:
-        return len(self.global_vars) * ScpGlobalVar.SIZE
-
     def writeGlobalVars(self, fs: fileio.FileStream):
         for var in self.global_vars:
             self._write_string_ref(var.name, StringPoolSection.Global)
@@ -340,11 +330,9 @@ class ScpWriter:
                     fs.Position = xref_offset
                     fs.WriteULong(offset | STRING_OFFSET_TAG)
 
-        self.strings.clear()
-        self.strings_by_text.clear()
-
     def handle_opcode(self, opcode: int, *args):
-        # log.debug(f'handle opcode 0x{opcode:X} @ 0x{self.fs.Position:X}')
+        if self.current_function is None:
+            raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
         # bool is an int subclass, so the opcode functions' isinstance asserts accept True/False
         for arg in args:
@@ -354,8 +342,6 @@ class ScpWriter:
         # The value's Python type picks its encoding, so PUSH_FLOAT(1) would push an Integer
         if opcode == ED9Opcode.PUSH_FLOAT:
             args = (float(args[0]),)
-
-        self.calls.append((opcode, args))
 
         # PUSH and its pseudo-ops all collapse to the on-disk PUSH opcode + size byte + ScpValue
         if opcode in PUSH_CONSTANT_OPS:
@@ -465,28 +451,21 @@ class ScpWriter:
         return DebugArg(value.type, ScpValue(NON_CONSTANT_ARG_VALUE))
 
     def add_label(self, name: str):
-        if name in self.labels:
-            raise ValueError(f'label already exists: {name} (at 0x{self.labels[name]:X})')
+        """Labels are file-wide: a name is defined once in the script"""
+        f = self.current_function
+        if f is None:
+            raise ValueError(f'label({name!r}) is outside a function body')
 
-        self.labels[name] = self.fs.Position
+        placed = self.labels.get(name)
+        if placed is not None:
+            raise ValueError(f'{f.name}: label {name!r} is already defined in {placed.function}')
+
+        self.labels[name] = LabelSite(name = name, offset = self.fs.Position, function = f.name)
 
     def _write_label_ref(self, name: str):
-        """Record a deferred xref at the current position, then write a placeholder to patch later"""
-        self.xrefs.append(XRef(name = name, offset = self.fs.Position))
+        """Record the operand, then write a placeholder that relocateCode() patches"""
+        self.label_refs.append(LabelSite(name = name, offset = self.fs.Position, function = self.current_function.name))
         self.fs.WriteULong(UNRESOLVED_LABEL_OFFSET)
-
-    def resolve_labels(self):
-        """Patch every deferred label reference now that all labels have been placed.
-
-        Call manually after running the decompiled script's top-level opcode calls -
-        no automatic multi-function compile driver exists yet.
-        """
-        with self.fs.PositionSaver:
-            for xref in self.xrefs:
-                self.fs.Position = xref.offset
-                self.fs.WriteULong(self.labels[xref.name])
-
-        self.xrefs.clear()
 
     def _add_string(self, text: str, section: StringPoolSection) -> PooledString:
         """String-pool entry for text - the original compiler never deduplicates, so entries are only shared without round_trip"""
@@ -581,6 +560,11 @@ class ScpWriter:
         return wrapper
 
     def add_global_var(self, name: str, type: int):
+        # The header counts the globals before any body compiles
+        if self.current_function is not None:
+            raise ValueError(f'{self.current_function.name}: GLOBAL_VAR({name!r}) is inside a function body; '
+                             'declare it in @scena.GlobalVars()')
+
         if name in self.global_var_indices:
             raise ValueError(f'global var already declared: {name!r}')
 

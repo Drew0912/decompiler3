@@ -122,15 +122,19 @@ byte.
 
 ## Writer (`falcom/ed9/writer/`)
 
-- **In-memory compile, written only on success** (item 9; Step 5). `run2` opens the output file before
-  it patches label references, so a failed compile leaves a broken `.dat`. Split it into
-  `build(g) -> bytes` and the write, so a failed compile writes nothing.
-- **Per-function labels and error context** (item 10; Step 5). Labels are one file-wide namespace
-  (`add_label`). Generated names are unique (addresses or `genLabel()` uuids), but hand-written names
-  collide across functions. Scope labels to their function and resolve each function's references when
-  its body finishes: an undefined label then fails naming the function (a bare `KeyError` today), a
-  duplicate names its function, and a reference into another function is an error. Compiled bytes
-  don't change; `debug_argc`'s return-label keys still resolve per function.
+- **In-memory compile, written only on success** (item 9; Step 5, done). `run2` opened the output file
+  before it patched label references, so a failed compile left a broken `.dat` (66 bytes for an
+  undefined label, over an older `.dat`). Now `build(g) -> bytes` compiles in memory and `run(g)` writes
+  the file only after it succeeds.
+- **Label error context** (item 10; Step 5, done). An undefined label was a bare `KeyError`, a
+  duplicate gave only an offset, and a jump into another function compiled silently. Labels stay one
+  file-wide namespace (user, 2026-10-03: function scope was tried and dropped - an advanced user may jump
+  to another function on purpose, and names reused across functions add rules for no gain); errors now
+  name the functions (`Foo: undefined label 'nowhere'`, `B: label 'ret' is already defined in A`) and a
+  reference to another function's label compiles with a warning. Done in the same step: opcodes and
+  `label()` outside a body and `GLOBAL_VAR` inside one raise (they failed with an `AttributeError`, or
+  compiled a header that left the global out), and `ScpValue.to_bytes` rejects an Integer or `RawInt`
+  past its 30-bit payload (`PUSH_INT(600000000)` compiled as `-473741824`). Compiled bytes don't change.
 - **Catch stack mistakes by re-parsing and re-lifting** (item 11; Step 9). Compiling a `.py` checks
   operand counts, types and labels, but nothing tracks the stack: a wrong `POP(n)`, a missing push or
   an extra argument compiles into a `.dat`, and only decompiling it again notices. After `build()`,
@@ -146,7 +150,7 @@ byte.
   with the HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Mixing LLIL and HLIL).
 - **Hook callbacks** (item 19; Step 10, the plan's last step), moved here from the HLIL DSL work. Every
   generated script imports `<stem>_hook`, but the writer has nothing for a hook to register with (only a
-  commented-out loop remains in `ScpWriter.run`), so a hook can add a function but not replace one: the
+  commented-out loop remains in `ScpWriter.build`), so a hook can add a function but not replace one: the
   script's own definition then hits `functionDecorator`'s duplicate-name `ValueError`. Restore
   decompiler2's raw callbacks: `registerFuncCallback` (replace a function by name, library functions
   included), `registerRunCallback` (add functions before compiling) and `registerOpCodeCallback`
@@ -167,6 +171,15 @@ byte.
 - **`GLOBAL_VAR` and `label()` moved into `scp_writer_helper.py`** (item 13; Step 2b, done), next to
   `genLabel()`: they are DSL statements that emit no instruction. `GLOBAL_VAR` was the only non-opcode in
   the opcode handler, and `label()` sat at the end of `scp_writer.py`. No output change.
+- **Validate `debug_argc` keys** (found in Step 5's review, not planned). A key that names no return
+  label of the function's calls is silently ignored, so the call's debug record keeps all its arguments:
+  renaming a return label by hand quietly changes the debug-record bytes (not the game logic).
+  `buildDebugRecords` could check that every key is the return label of one of the function's calls.
+- **Simpler Integer decode** (found in Step 5's review, not planned). `ScpValue.from_value` sign-extends
+  an Integer by shifting through `0xC0000000`/`0x80000000` and a bytes round trip; with Step 5's
+  `INTEGER_MAX` it is `value &= PAYLOAD_MASK`, then `value -= 1 << TYPE_SHIFT` past `INTEGER_MAX` (same
+  value on 316,385 words checked, including every boundary). It changes the parser's decode path, so it
+  needs a decompile dump to land.
 
 ## Listings and Docstrings
 

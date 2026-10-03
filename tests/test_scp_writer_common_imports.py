@@ -128,7 +128,7 @@ class TestGenLabel(unittest.TestCase):
                 label(target)
                 RETURN()
 
-        # write.run() would raise KeyError if the label never resolved
+        # writer.run() raises an undefined-label error if the label never resolved
         writer = compile_dsl(build)
         self.assertIn('WithForwardJump', writer.functions_by_name)
 

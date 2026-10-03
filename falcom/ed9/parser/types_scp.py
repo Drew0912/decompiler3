@@ -99,6 +99,8 @@ Pointer     = object
 class ScpValue:
     TYPE_SHIFT      = 30                        # type tag is the top 2 bits
     PAYLOAD_MASK    = (1 << TYPE_SHIFT) - 1     # value, or string pool offset for String
+    INTEGER_MIN     = -(1 << (TYPE_SHIFT - 1))  # an Integer payload is a signed 30-bit value
+    INTEGER_MAX     = (1 << (TYPE_SHIFT - 1)) - 1
 
     FLOAT32_BITS                    = 32
     FLOAT_DROPPED_BITS              = FLOAT32_BITS - TYPE_SHIFT     # a Float payload is float32 bits >> FLOAT_DROPPED_BITS
@@ -168,11 +170,16 @@ class ScpValue:
 
     def to_bytes(self) -> bytes:
         match self.type:
+            # A decoded value is always in range, so only a hand-written one can fail these checks
             case ScpValue.Type.Raw:
+                if not 0 <= self.value <= self.PAYLOAD_MASK:
+                    raise ValueError(f'RawInt {self.value:#x} is outside 0..{self.PAYLOAD_MASK:#x}: its top 2 bits would be read as the type')
+
                 v = self.value.to_bytes(4, default_endian())
 
             case ScpValue.Type.Integer:
-                assert self.value <= 0x3FFFFFFFF if self.value >= 0 else self.value >= -(0x1FFFFFFF + 1)
+                if not self.INTEGER_MIN <= self.value <= self.INTEGER_MAX:
+                    raise ValueError(f'Integer {self.value} is outside {self.INTEGER_MIN}..{self.INTEGER_MAX}: the game stores a signed 30-bit value')
 
                 v = (self.value & self.PAYLOAD_MASK) | (ScpValue.Type.Integer << self.TYPE_SHIFT)
                 v = int(v).to_bytes(4, default_endian(), signed = False)

@@ -169,8 +169,8 @@ def verify_canonical_function(parser: ScpParser, func: Function, path: Path, exp
     referenced_offsets = Formatter.find_referenced_offsets(func.entry_block)
 
     # Every branch target must land on a real instruction, or render_function would emit a jump to
-    # a label that's never placed - the writer would only catch that later, as an opaque KeyError
-    # on a UUID label name while patching xrefs. Mirrors formatter.py's own invariant
+    # a label that's never placed - the writer would only catch that later, as an undefined-label
+    # error naming a UUID label at compile time. Mirrors formatter.py's own invariant
     # (referenced_offsets <= block_start_offsets) instead of relying on that check running elsewhere.
     unresolved = referenced_offsets - {inst.offset for inst in instructions}
     if unresolved:

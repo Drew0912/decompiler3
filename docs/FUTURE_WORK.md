@@ -137,13 +137,14 @@ exhaustive switch (met 2026-09-24 - see `docs/HLIL_GUIDE.md`, Passes).
 
 ### 2. Mixed-IR-Level Compilation, Per Function
 
-The idea: because jump opcodes don't cross function boundaries (an assumption this leans on —
-worth confirming explicitly, not just assuming), a single output `.py` file could hold some
-functions written at the LLIL DSL level and others at HLIL DSL level (or MLIL DSL level, if one is
-ever built), each lowered independently down to LLIL DSL / bytecode.
+The idea: because jump opcodes don't cross function boundaries (confirmed 2026-10-03: no generated
+script has such a jump in either mode; since LLIL DSL Step 5 the writer warns on a hand-written
+one), a single output `.py` file could hold some functions written at the LLIL DSL level and others
+at HLIL DSL level (or MLIL DSL level, if one is ever built), each lowered independently down to LLIL
+DSL / bytecode.
 
-**This needs more than independent per-function lowering to actually work**, though — even once
-the jump-boundary assumption is confirmed, functions still participate in several script-wide
+**This needs more than independent per-function lowering to actually work**, though — even with
+every jump inside its own function, functions still participate in several script-wide
 concerns that a per-function compile can't resolve alone: `CALL` operands and
 `PUSH_CURRENT_FUNC_ID` depend on the final function table; common-function source order affects
 byte layout; function offsets are assigned during whole-script compilation; labels/xrefs and
@@ -259,8 +260,7 @@ The output was correct in every function traced; what it costs is readability.
   assignments, calls, labels and jumps. The bottom layer can compile the rewrite's MLIL directly: a
   round-trip test that isolates translator bugs from structuring bugs.
 - **Small blockers:** `CALL` resolves functions by their Python `__name__`; `debug_argc` cannot be
-  rebuilt from HLIL (it only affects debug records); `HLILSyscall.subsystem`/`cmd` are annotated `str`;
-  `ScpWriter.run2` always writes to disk, while exactness checks want an in-memory compile.
+  rebuilt from HLIL (it only affects debug records); `HLILSyscall.subsystem`/`cmd` are annotated `str`.
 
 ### HLIL DSL: Form
 
@@ -361,12 +361,12 @@ One `.py` can hold functions at both levels: `@scena.HLILCode()` and `@scena.HLI
 today's `@scena.LLILCode()` and `@scena.LLILCommonCode()`. The decompiler prints HLIL and keeps a
 function at LLIL level only when it has to.
 
-- **One writer run, no link phase.** `ScpWriter.run2` builds the function table from every registered
+- **One writer run, no link phase.** `ScpWriter.build` builds the function table from every registered
   function before it runs any body, then runs the bodies in file order into one code buffer; labels,
   strings and globals are writer-wide. An HLIL function lowers in place, at its turn, so `CALL` and
   `PUSH_CURRENT_FUNC_ID` resolve across levels without the link phase Recompilation Pipeline §2
-  expected. HLIL labels are per function (Form), so the lowering prefixes them unless the writer gets
-  per-function label namespaces (`docs/FUTURE_WORK_LLIL.md`, Writer).
+  expected. HLIL labels are per function (Form), so the lowering prefixes them (the writer's labels stay
+  file-wide by decision, `docs/FUTURE_WORK_LLIL.md`, Writer).
 - **HLIL functions** register like LLIL ones (parameters, flags and defaults from the signature). At
   its turn the body runs with parameter nodes to build the tree, which is validated, passed to the tree
   hooks and lowered onto the writer. Both kinds of decorator return stubs, so the levels call each

@@ -14,6 +14,7 @@ def genLabel() -> str:
 
 def label(name: str):
     """Marks the current position in the function body as a jump target (emits no instruction)"""
+    assert isinstance(name, str)
     get_scp_writer().add_label(name)
 
 

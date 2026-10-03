@@ -55,7 +55,23 @@ always a float literal (`1.0`, `-0.0`), because the writer picks the encoding fr
 `PUSH_FLOAT` itself converts an `int` with `float()`, so a hand-written `PUSH_FLOAT(1)` still pushes a
 float. Non-finite floats, which the game can't use, print as `float('inf')`/`float('nan')`: decoding one
 logs a warning and compiling it raises. `CALL_SCRIPT`/`CALL_SCRIPT_NO_RETURN` names print as plain
-strings, `CALL_SCRIPT("this", "GetCoolClone", 0)` - the writer wraps a bare `str` itself.
+strings, `CALL_SCRIPT("this", "GetCoolClone", 0)` - the writer wraps a bare `str` itself. An `int` must
+fit the 30-bit Integer payload (`ScpValue.INTEGER_MIN..INTEGER_MAX`, -0x20000000..0x1FFFFFFF) and a
+`RawInt` `0..0x3FFFFFFF`; past that, compiling raises instead of storing a different number or type.
+
+**Compiling.** A generated script's `main()` calls `scena.run(globals())`. `ScpWriter.build()` compiles
+in memory - the function table, every body in source order, debug records, globals and the string pool -
+and returns the bytes; `run()` writes the `.dat` only after `build()` succeeds, so a failed compile writes
+nothing and leaves an older `.dat` as it was. Labels are file-wide: a name is defined once in the script
+(`B: label 'ret' is already defined in A`), and once every body has compiled each jump operand or return
+address resolves against all of them (`Foo: undefined label 'nowhere'`). A reference to a label in
+another function compiles, for a deliberate jump between functions, with a warning
+(`B: jumps to label 'done' in A (another function)`); generated scripts never have one. DSL statements
+must be in their place: an opcode or `label()` outside a function body raises `PUSH_INT is outside a
+function body`, and `GLOBAL_VAR` inside a body raises (the header counts the globals before the bodies
+run). Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the unknown name.
+Errors raised while a body runs carry the `.py` line in their traceback; label references, resolved
+after all bodies, name only the functions.
 
 ## 2. Round-Trip Policy
 

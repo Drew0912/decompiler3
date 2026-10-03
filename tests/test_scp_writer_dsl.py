@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-'''DSL argument checks (bool operands, CALL's function argument) and the helper module's non-opcode statements
-(label, GLOBAL_VAR).'''
+'''DSL argument checks (bool operands, CALL's function argument, value ranges) and the helper module's non-opcode
+statements (label, GLOBAL_VAR).'''
 
 import math
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -11,22 +12,18 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from ml import fileio
-
-from common.config import default_encoding
-from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.types_scp import ScpValue
 from falcom.ed9.writer import scp_writer_helper
 from falcom.ed9.writer.metadata import SCP_WRITER_HELPER_IMPORT
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import fresh_writer
+from scp_writer_test_utils import body_writer, fresh_writer
 
 
 class TestBoolRejected(unittest.TestCase):
     '''bool is an int subclass, so isinstance checks alone let True/False through as 1/0'''
 
     def setUp(self):
-        fresh_writer()
+        body_writer()
 
     def test_scp_value_rejects_bool(self):
         with self.assertRaises(TypeError) as ctx:
@@ -74,16 +71,13 @@ class TestHelperStatements(unittest.TestCase):
 
 class TestPushFloat(unittest.TestCase):
     def setUp(self):
-        self.writer = fresh_writer()
-        self.writer.fs = fileio.FileStream(encoding = default_encoding()).OpenMemory()
+        self.writer = body_writer()
 
     def test_int_is_pushed_as_a_float(self):
         # The value's Python type picks the encoding: unconverted, PUSH_FLOAT(1) wrote Integer 1 (00 04 01 00 00 40)
         PUSH_FLOAT(1)
 
         self.assertEqual(self.writer.fs.ReadAll(), bytes.fromhex('00 04 00 00 E0 8F'))
-        self.assertEqual(self.writer.calls[-1], (ED9Opcode.PUSH_FLOAT, (1.0,)))
-        self.assertIs(type(self.writer.calls[-1][1][0]), float)
 
     def test_bool_is_still_rejected(self):
         with self.assertRaisesRegex(TypeError, 'PUSH_FLOAT takes no bool operand: True'):
@@ -102,17 +96,69 @@ class TestPushFloat(unittest.TestCase):
     def test_non_finite_default_does_not_compile(self):
         # A real compile: defaults are written with the function table, apart from the bodies
         with tempfile.TemporaryDirectory() as tmp:
-            writer = create_scp_writer(str(Path(tmp) / 'nan_default.dat'))
+            dat = Path(tmp) / 'nan_default.dat'
+            fresh_writer()
+            writer = create_scp_writer(str(dat))
 
             @writer.LLILCode()
             def NanDefault(arg1: Nullable32 = math.nan):
                 RETURN()
 
-            with self.assertRaisesRegex(ValueError, "non-finite float nan: the game can't use it"):
+            with self.assertRaisesRegex(ValueError, "non-finite float nan: the game can't use it") as ctx:
                 writer.run({'NanDefault': NanDefault})
 
-            # A failed run leaves its output file open
-            writer.fs.Close()
+            self.assertEqual(ctx.exception.__notes__, ['NanDefault: default of arg1'])
+            self.assertFalse(dat.exists())
+
+
+class TestValueRanges(unittest.TestCase):
+    '''The payload under the 2-bit type tag is 30 bits: a value outside it would compile as a different value or type'''
+
+    def test_integer_bounds(self):
+        for value in (ScpValue.INTEGER_MIN, ScpValue.INTEGER_MAX):
+            with self.subTest(value = value):
+                self.assertEqual(ScpValue().from_value(ScpValue(value).to_word()).value, value)
+
+        for value in (ScpValue.INTEGER_MIN - 1, ScpValue.INTEGER_MAX + 1):
+            with self.subTest(value = value):
+                with self.assertRaisesRegex(ValueError, '^' + re.escape(f'Integer {value} is outside -536870912..536870911')):
+                    ScpValue(value).to_bytes()
+
+    def test_raw_bounds(self):
+        for value in (0, ScpValue.PAYLOAD_MASK):
+            with self.subTest(value = value):
+                decoded = ScpValue().from_value(ScpValue(RawInt(value)).to_word())
+                self.assertEqual((decoded.type, decoded.value), (ScpValue.Type.Raw, value))
+
+        for value, text in ((-1, '-0x1'), (ScpValue.PAYLOAD_MASK + 1, '0x40000000')):
+            with self.subTest(value = value):
+                with self.assertRaisesRegex(ValueError, '^' + re.escape(f'RawInt {text} is outside 0..0x3fffffff')):
+                    ScpValue(RawInt(value)).to_bytes()
+
+    def test_default_past_the_range_does_not_compile(self):
+        fresh_writer()
+        writer = create_scp_writer('unused.dat')
+
+        @writer.LLILCode()
+        def BigDefault(arg1: Value32, arg2: Value32 = 600000000):
+            RETURN()
+
+        with self.assertRaisesRegex(ValueError, '^Integer 600000000 is outside') as ctx:
+            writer.build({})
+
+        self.assertEqual(ctx.exception.__notes__, ['BigDefault: default of arg2'])
+
+    def test_push_past_the_range_does_not_compile(self):
+        body_writer()
+
+        # Before the check these compiled as -473741824 and as Integer 1
+        for message, push in (
+            ('Integer 600000000 is outside', lambda: PUSH_INT(600000000)),
+            ('RawInt 0x40000001 is outside', lambda: PUSH_RAW(RawInt(0x40000001))),
+        ):
+            with self.subTest(message = message):
+                with self.assertRaisesRegex(ValueError, f'^{message}'):
+                    push()
 
 
 if __name__ == '__main__':
