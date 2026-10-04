@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 '''Unit tests for the common-function library generator (scp_writer_gen_common_funcs.py) and the library it
-generates. Generator: the facts that decide a function's inclusion and module, and a function rendered from
-hand-built bytecode. Library: compiling a label-heavy generated function twice in one process, each time on a fresh
-writer against the same cached module, must fingerprint identically to the corpus canonical both times - proving
-genLabel() names are allocated per execution, not baked in once at module import time.'''
+generates. Generator: the facts that decide a function's inclusion and module, a function rendered from hand-built
+bytecode with the scripts' stack comments, and a module's imports. Library: compiling a label-heavy generated
+function twice in one process, each time on a fresh writer against the same cached module, must fingerprint
+identically to the corpus canonical both times - proving genLabel() names are allocated per execution, not baked in
+once at module import time.'''
 
 import importlib
 import inspect
@@ -75,51 +76,75 @@ def compile_and_fingerprint(name: str) -> str:
 
 class TestGenerator(unittest.TestCase):
     def test_facts_from_the_instructions(self):
-        asm = Asm()
-        asm.syscall(SUBSYSTEM, SYSCALL_FUNC, SYSCALL_ARGC); asm.syscall(SUBSYSTEM + 1, SYSCALL_FUNC, SYSCALL_ARGC)
-        asm.load_global(GLOBAL_INDEX); asm.pop(WORD_SIZE)
-        asm.push_raw(CALLER_ID); asm.push_raw('return'); asm.call(CALLEE_ID); asm.label('return'); asm.ret()
-        parser, functions = disassemble(asm)
+        global_uses = {
+            'load_global'   : lambda asm: (asm.load_global(GLOBAL_INDEX), asm.pop(WORD_SIZE)),
+            'set_global'    : lambda asm: (asm.push_int(LEFT_VALUE), asm.set_global(GLOBAL_INDEX)),
+        }
+        for use, emit in global_uses.items():
+            with self.subTest(use = use):
+                asm = Asm()
+                asm.syscall(SUBSYSTEM, SYSCALL_FUNC, SYSCALL_ARGC)
+                asm.syscall(SUBSYSTEM + 1, SYSCALL_FUNC, SYSCALL_ARGC)
+                emit(asm)
+                asm.push_raw(CALLER_ID); asm.push_raw('return'); asm.call(CALLEE_ID); asm.label('return'); asm.ret()
+                parser, functions = disassemble(asm)
 
-        facts = {name: gen.function_facts(parser, parser.get_instructions(func)) for name, func in functions.items()}
-        self.assertEqual(facts, {
-            FUNC_NAME   : gen.FunctionFacts(touches_global = True, call_targets = {CALLEE_NAME}, subsystem = SUBSYSTEM),
-            CALLEE_NAME : gen.FunctionFacts(touches_global = False, call_targets = set(), subsystem = None),
-        })
+                facts = {name: gen.function_facts(parser, func) for name, func in functions.items()}
+                self.assertEqual(facts, {
+                    FUNC_NAME   : gen.FunctionFacts(touches_global = True, call_targets = {CALLEE_NAME},
+                                                    subsystem = SUBSYSTEM),
+                    CALLEE_NAME : gen.FunctionFacts(touches_global = False, call_targets = set(), subsystem = None),
+                })
 
     def render(self, callee_module: str) -> list[str]:
         asm = Asm()
-        asm.load_stack(-WORD_SIZE); asm.jz('skip')
+        asm.load_stack(-WORD_SIZE); asm.jz('skip')                                     # sp 1: slot 0
         asm.push_raw(CALLER_ID); asm.push_raw('return'); asm.call(CALLEE_ID); asm.label('return')
-        asm.push_int(LEFT_VALUE); asm.pop(WORD_SIZE)
+        asm.push_raw(0)                                                                 # opens slot 1
+        asm.push_int(LEFT_VALUE); asm.pop_to(-WORD_SIZE); asm.pop(WORD_SIZE)            # sp 2 after its pop: slot 1
         asm.label('skip'); asm.pop(WORD_SIZE); asm.ret()
         parser, functions = disassemble(asm, argc = 1)
 
         func = functions[FUNC_NAME]
         digest = fingerprint_digest(function_fingerprint(parser, func))
-        return gen.render_function(parser, func, Path('test.dat'), digest, {FUNC_NAME: OWN_MODULE, CALLEE_NAME: callee_module})
+        name_to_module = {FUNC_NAME: OWN_MODULE, CALLEE_NAME: callee_module}
+        return gen.render_function(parser, func, Path('test.dat'), digest, name_to_module)
 
-    def test_function_rendered_from_its_instructions(self):
+    def test_function_rendered_from_its_instructions_with_stack_comments(self):
         self.assertEqual(self.render(callee_module = OWN_MODULE), [
             f'def {FUNC_NAME}(arg1: Value32):',
             '    L0 = genLabel()',
             '    L1 = genLabel()',
-            '    LOAD_STACK(-4)',
+            '    LOAD_STACK(-4)                  # slot 0 = arg1',
             '    POP_JMP_ZERO(L1)',
             '    PUSH_CURRENT_FUNC_ID()',
             '    PUSH_RET_ADDR(L0)',
             f'    CALL({CALLEE_NAME})',
-            '    label(L0)',
+            '    label(L0)                       # sp = 1',
+            '    PUSH_RAW(RawInt(0x00000000))    # slot 1 (local)',
             f'    PUSH_INT({LEFT_VALUE})',
-            '    POP(4)',
-            '    label(L1)',
-            '    POP(4)',
+            '    POP_TO(-4)                      # slot 1',
+            '    POP(4)                          # 1 slot',
+            '    label(L1)                       # sp = 1',
+            '    POP(4)                          # 1 slot',
             '    RETURN()',
         ])
 
     def test_callee_in_another_module_is_qualified(self):
         lines = self.render(callee_module = gen.NO_SYSCALL_MODULE)
         self.assertIn(f'    CALL({gen.module_alias(gen.NO_SYSCALL_MODULE)}.{CALLEE_NAME})', lines)
+
+    def test_module_imports_only_the_other_modules_it_calls(self):
+        facts = {FUNC_NAME: gen.FunctionFacts(touches_global = False, call_targets = {CALLEE_NAME},
+                                              subsystem = SUBSYSTEM)}
+        rendered = {FUNC_NAME: [f'def {FUNC_NAME}():', '    pass']}
+        other_module = gen.NO_SYSCALL_MODULE
+        other_import = f'import {COMMON_LIBRARY_PACKAGE}.{other_module} as {gen.module_alias(other_module)}'
+        for callee_module, imports in ((OWN_MODULE, []), (other_module, [other_import])):
+            with self.subTest(callee_module = callee_module):
+                name_to_module = {FUNC_NAME: OWN_MODULE, CALLEE_NAME: callee_module}
+                text = gen.render_module(OWN_MODULE, [FUNC_NAME], rendered, facts, name_to_module)
+                self.assertEqual([line for line in text.split('\n') if line.startswith('import ')], imports)
 
 
 class TestGeneratedLibraryFingerprintStable(unittest.TestCase):

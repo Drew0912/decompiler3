@@ -87,7 +87,8 @@ stack and gets no stack comments. A slot that holds anything but one parameter o
 everything it may hold (`slot 2 = arg1 or local`, `slot 1 = caller frame`, `slot 0 = call setup`,
 `slot -1 (below the stack)`, `slot 5 (above the stack)`), and the parser logs a warning; none occur in
 the `sora2_1.0` scripts. `ScenaDecompileConfig.stack_slot_comments` (on by default) turns the stack
-comments off. Comments don't change the compiled bytes.
+comments off in scripts; the common-function library (§3) always has them, labels named `L0`, `L1`, ...
+(`label(L0)  # sp = 3`). Comments don't change the compiled bytes.
 
 **Compiling.** A generated script's `main()` calls `scena.run(globals())`. `ScpWriter.build()` compiles
 in memory - the function table, every body in source order, debug records, globals and the string pool -
@@ -236,7 +237,7 @@ calls and its first syscall), picks the majority fingerprint per name as canonic
 occurrence in sorted order), excludes any function touching `LOAD_GLOBAL`/`SET_GLOBAL` plus the
 closure of anything calling an excluded function (asserting the closure holds) and assigns modules.
 Only then does it re-parse the files holding an included function's canonical copy, rendering each
-function's final text while that parse is in hand. Every run is a full rewrite of the output
+function's final text, stack comments included (§1). Every run is a full rewrite of the output
 directory — hand edits to generated files don't survive regeneration.
 
 **`falcom/ed9/writer/metadata/common/` is gitignored, not checked in** — like the `sora2_1.0/`

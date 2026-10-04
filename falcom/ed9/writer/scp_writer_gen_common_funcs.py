@@ -20,10 +20,11 @@ Algorithm:
     4. Included functions are grouped by first-syscall subsystem into one module per subsystem
        (no-syscall functions share one module).
     5. Pass 2 re-parses just the files holding an included function's canonical copy and renders
-       each from its instruction stream - operand-level substitution, never text rewriting - while
-       the parse is in hand, then writes the modules. A common_all.py module re-exporting every
-       generated module is also written, so a script can bring the whole library into scope with
-       one import regardless of which functions its own source used.
+       each from its instruction stream, with the scripts' stack comments - operand-level
+       substitution, never text rewriting - while the parse is in hand, then writes the modules.
+       A common_all.py module re-exporting every generated module is also written, so a script
+       can bring the whole library into scope with one import regardless of which functions its
+       own source used.
 """
 
 import argparse
@@ -41,6 +42,7 @@ from falcom.ed9.disasm.ed9_optable import ED9Opcode, ED9OperandType
 from falcom.ed9.disasm.formatter import Formatter, FormatterContext
 from falcom.ed9.disasm.instruction import Instruction
 from falcom.ed9.disasm.instruction_table import OperandType
+from falcom.ed9.disasm.llil_dsl_comments import append_comment, instruction_comments, label_comments
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function
 from falcom.ed9.writer import scp_writer_helper
@@ -79,7 +81,8 @@ def collect_paths(corpus_root: Path) -> list[Path]:
     return sorted(corpus_root.rglob(DAT_PATTERN))
 
 
-def function_facts(parser: ScpParser, instructions: list[Instruction]) -> FunctionFacts:
+def function_facts(parser: ScpParser, func: Function) -> FunctionFacts:
+    instructions = parser.get_instructions(func)
     return FunctionFacts(
         touches_global  = any(inst.opcode in (ED9Opcode.LOAD_GLOBAL, ED9Opcode.SET_GLOBAL) for inst in instructions),
         call_targets    = {parser.get_func_name_from_func_id(op.value) for inst in instructions for op in inst.operands
@@ -92,7 +95,7 @@ def collect_occurrences(paths: list[Path]) -> tuple[dict[str, list[tuple[str, in
     """Pass 1: fingerprint every is_common_func occurrence. name -> [(digest, file_idx), ...], and digest -> facts
     (from its first occurrence)"""
     occurrences: dict[str, list[tuple[str, int]]] = {}
-    facts: dict[str, FunctionFacts] = {}
+    facts_by_digest: dict[str, FunctionFacts] = {}
 
     for file_idx, path in enumerate(paths):
         parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
@@ -103,10 +106,10 @@ def collect_occurrences(paths: list[Path]) -> tuple[dict[str, list[tuple[str, in
 
             digest = fingerprint_digest(function_fingerprint(parser, func))
             occurrences.setdefault(func.name, []).append((digest, file_idx))
-            if digest not in facts:
-                facts[digest] = function_facts(parser, parser.get_instructions(func))
+            if digest not in facts_by_digest:
+                facts_by_digest[digest] = function_facts(parser, func)
 
-    return occurrences, facts
+    return occurrences, facts_by_digest
 
 
 def select_canonical(occurrences: dict[str, list[tuple[str, int]]]) -> dict[str, tuple[str, int]]:
@@ -207,7 +210,7 @@ def validate_names(included: set[str], name_to_module: dict[str, str]):
 
 def render_function(parser: ScpParser, func: Function, path: Path, expected_digest: str, name_to_module: dict[str, str]) -> list[str]:
     """The function's final lines: branch targets become genLabel() locals, CALL targets a bare name or common_N.name,
-    every other operand its formatted text"""
+    every other operand its formatted text; the stack comments the scripts get (llil_dsl_comments), always on"""
     instructions, referenced_offsets = verify_canonical_function(parser, func, path, expected_digest)
     formatter_context = FormatterContext(
         get_func_name_from_func_id = parser.get_func_name_from_func_id,
@@ -226,14 +229,11 @@ def render_function(parser: ScpParser, func: Function, path: Path, expected_dige
 
     for inst in instructions:
         if inst.offset in offset_to_local:
-            lines.append(f"{indent}label({offset_to_local[inst.offset]})")
+            lines.append(indent + append_comment(f'label({offset_to_local[inst.offset]})', label_comments(func.stack_layout, inst.offset)))
 
         args = []
         for op in inst.operands:
             if op.descriptor.type == OperandType.Offset:
-                if op.value not in offset_to_local:
-                    raise RuntimeError(f'{func.name}: branch target 0x{op.value:X} has no label')
-
                 args.append(offset_to_local[op.value])
 
             elif op.descriptor.type == ED9OperandType.Func:
@@ -244,7 +244,7 @@ def render_function(parser: ScpParser, func: Function, path: Path, expected_dige
             else:
                 args.append(op.descriptor.format_operand(op, formatter_context))
 
-        lines.append(f'{indent}{inst.descriptor.mnemonic}({", ".join(args)})')
+        lines.append(indent + append_comment(f'{inst.descriptor.mnemonic}({", ".join(args)})', instruction_comments(func.stack_layout, inst)))
 
     if not instructions:
         lines.append(f'{indent}pass')
@@ -313,7 +313,7 @@ def render_module(module_key: str, names: list[str], rendered: dict[str, list[st
     return '\n'.join(lines).rstrip() + '\n'
 
 
-def render_index(canonical: dict[str, tuple[str, int]], included: set[str], name_to_module: dict[str, str]) -> str:
+def render_index(canonical: dict[str, tuple[str, int]], name_to_module: dict[str, str]) -> str:
     lines = [
         '"""Index of the common-function library: name -> (module, fingerprint digest)"""',
         '',
@@ -321,7 +321,7 @@ def render_index(canonical: dict[str, tuple[str, int]], included: set[str], name
         '',
         'COMMON_FUNCTIONS = {',
     ]
-    for name in sorted(included):
+    for name in sorted(name_to_module):
         lines.append(f"    {name!r}: ({name_to_module[name]!r}, {canonical[name][0]!r}),")
 
     lines.append('}')
@@ -370,11 +370,11 @@ def write_output(canonical: dict[str, tuple[str, int]], facts: dict[str, Functio
         text = render_module(module_key, names, rendered, facts, name_to_module)
         (OUTPUT_DIR / f'{module_key}.py').write_text(text, encoding = 'utf-8', newline = '\n')
 
-    INDEX_PATH.write_text(render_index(canonical, set(rendered), name_to_module), encoding = 'utf-8', newline = '\n')
+    INDEX_PATH.write_text(render_index(canonical, name_to_module), encoding = 'utf-8', newline = '\n')
     ALL_PATH.write_text(render_all(sorted(names_by_module)), encoding = 'utf-8', newline = '\n')
 
 
-def generate(corpus_root: Path) -> dict[str, list[str]]:
+def generate(corpus_root: Path):
     paths = collect_paths(corpus_root)
     occurrences, facts_by_digest = collect_occurrences(paths)
     canonical = select_canonical(occurrences)
@@ -395,8 +395,6 @@ def generate(corpus_root: Path) -> dict[str, list[str]]:
 
     print(f'{len(canonical)} candidate common functions, {len(excluded)} excluded (globals/closure), {len(included)} generated')
     print(f'{len(set(name_to_module.values()))} modules under {OUTPUT_DIR}')
-
-    return rendered
 
 
 def main():

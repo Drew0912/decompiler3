@@ -38,8 +38,8 @@ byte.
   at line 168. Step 6a (done) keeps the parser's simulated stack on `Function` as `stack_layout`
   (`docs/ARCHITECTURE.md`, Layer 2): the depth before every reachable instruction, and each offset
   opcode's slot with what may be in it at that point. Step 6b (done) comments the script `.py` from it
-  and Step 7 the library modules, the way the `.llil.asm` shows the stack (`docs/LLIL_DSL.md` §1,
-  Comments):
+  and Step 7 (done) the library modules (always on), the way the `.llil.asm` shows the stack
+  (`docs/LLIL_DSL.md` §1, Comments):
   - the 5 offset opcodes with the absolute slot and what it holds (`POP_TO` and `POP_TO_DEREF` count
     their offset from sp after their pop);
   - `# sp = N` at each label, and the slot count on `POP(n)`;
@@ -49,9 +49,8 @@ byte.
   Parameters are numbered as in every other output (`arg1` is the highest parameter slot); a parameter
   slot that is popped and pushed again (the tail-call idiom) is a local from then on. Unreachable code
   (fidelity mode) has no simulated stack, so it gets no comments. A `ScenaDecompileConfig` flag turns
-  them off; the validator keeps the default, so the logic round trip checks that the comments reach the
-  fixed point too. The common library's modules get them as well, always on (Step 7), from the same
-  helper.
+  them off in scripts; the validator keeps the default, so the logic round trip checks that the comments
+  reach the fixed point too.
   ```python
   def CheckAlgoUse(arg1: Value32, arg2: Value32, arg3: Value32):
       DEBUG_SET_LINENO(161)
