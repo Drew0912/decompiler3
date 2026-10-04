@@ -98,7 +98,12 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     output_dir.mkdir(parents = True, exist_ok = True)
 
     if config.write_py:
-        comments = CommentOptions(stack_slots = config.stack_slot_comments)
+        comments = CommentOptions(
+            stack_slots     = config.stack_slot_comments,
+            float_bits      = config.float_bits_comments,
+            function_ids    = config.function_id_comments,
+            call_args       = config.call_arg_comments,
+        )
         write_python_dsl(parser, functions, out.with_suffix('.py'), comments = comments, common_functions_omitted = common_functions_omitted)
 
     if config.write_debug_info:

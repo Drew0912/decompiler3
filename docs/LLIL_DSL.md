@@ -90,6 +90,27 @@ the `sora2_1.0` scripts. `ScenaDecompileConfig.stack_slot_comments` (on by defau
 comments off in scripts; the common-function library (§3) always has them, labels named `L0`, `L1`, ...
 (`label(L0)  # sp = 3`). Comments don't change the compiled bytes.
 
+Three more kinds are opt-in, script `.py` only (`ScenaDecompileConfig`, all off by default):
+`call_arg_comments` numbers each push by the argument it becomes (`arg1` is the last push), for `CALL`,
+`CALL_SCRIPT`, `CALL_SCRIPT_NO_RETURN` and `SYSCALL` - after an offset opcode's slot reference it reads
+`passed as`; `float_bits_comments` adds `PUSH_FLOAT`'s float32 bits and stored word;
+`function_id_comments` puts the table index and code offset above each function. All three on
+(`AniCatWait`, `scena/npc_setting`):
+```python
+# id: 0x001C offset: 0x21FF7
+@scena.LLILCode()
+def AniCatWait():
+    DEBUG_SET_LINENO(171)
+    PUSH_FLOAT(0.0)                 # arg4, f32 0x00000000, raw 0x80000000
+    PUSH_STR("AniEvWait1")          # arg3
+    PUSH_INT(2)                     # arg2
+    PUSH_INT(65534)                 # arg1
+    SYSCALL(1, 0x2F, 0x04)
+    POP(16)                         # 4 slots
+```
+The function id's offset changes after the first recompile, like `loc_` labels; the fixed point holds
+from round 2.
+
 **Compiling.** A generated script's `main()` calls `scena.run(globals())`. `ScpWriter.build()` compiles
 in memory - the function table, every body in source order, debug records, globals and the string pool -
 and returns the bytes; `run()` writes the `.dat` only after `build()` succeeds, so a failed compile writes

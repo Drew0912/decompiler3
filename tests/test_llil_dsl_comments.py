@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for the LLIL DSL's stack comments: the slot each offset opcode addresses and what it holds, the depth at
-labels and POP's slot count, read from the parser's StackLayout and aligned in one column with the other trailing
-comments.'''
+'''Unit tests for the LLIL DSL's comments: the slot each offset opcode addresses and what it holds, the depth at labels
+and POP's slot count, read from the parser's StackLayout and aligned in one column with the other trailing comments;
+and the opt-in kinds - the argument each push becomes, PUSH_FLOAT's bits, each function's table index and offset.'''
 
 from pathlib import Path
 import sys
@@ -16,21 +16,36 @@ from falcom.ed9.disasm import CommentOptions, Formatter, FormatterContext
 from falcom.ed9.disasm.llil_dsl_comments import COMMENT_COLUMN, MIN_COMMENT_GAP, append_comment
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import SlotRef
+from falcom.ed9.parser.types_scp import ScpValue
 from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
+from falcom.ed9.writer.scp_writer_helper import RETURN, create_scp_writer
 from ir.llil.llil import WORD_SIZE
+from scp_writer_test_utils import fresh_writer
 from test_scp_stack_simulation import (
-    Asm, Func, Program, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, PARAM_COUNT, REG_INDEX, RIGHT_VALUE,
+    Asm, Func, Program, CALLEE_ID, CALLER_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, PARAM_COUNT,
+    REG_INDEX, RIGHT_VALUE, main_function, returning_callee,
 )
 
 SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
 CHECK_ALGO_USE_FILE = SORA2_DIR / 'ai' / 'ai_chr5122_e00.dat'
+SYSCALL_SUBSYSTEM = 1
+SYSCALL_FUNC = 0x2F
+FLOAT_BITS = 'f32 0x3E999998, raw 0x8FA66666'      # FLOAT_VALUE's float32 bits and stored word
+ARGUMENTS_ONLY = CommentOptions(stack_slots = False, call_args = True)
+ALL_COMMENTS = CommentOptions(float_bits = True, function_ids = True, call_args = True)
 
 
 def function_lines(asm: Asm, argc: int = 0, comments: CommentOptions = CommentOptions()) -> list[str]:
     '''The .py body of the one function asm assembles, without its indent'''
     parser, functions = Program(Func(FUNC_NAME, argc, asm)).disassemble()
     return [line.strip() for line in parser.format_function(functions[0], comments)[2:]]
+
+
+def commented_lines(program: Program, comments: CommentOptions) -> list[str]:
+    '''The lines of the program's first function that carry a comment, without their indent'''
+    parser, functions = program.disassemble()
+    return [line.strip() for line in parser.format_function(functions[0], comments) if '#' in line]
 
 
 class TestAppendComment(unittest.TestCase):
@@ -164,6 +179,142 @@ class TestFunctionComments(unittest.TestCase):
                          ['LOAD_STACK(-4)', 'POP(8)', 'RETURN()'])
 
 
+class TestCallArguments(unittest.TestCase):
+    def test_local_call_numbers_its_arguments_from_the_last_push(self):
+        '''After a slot comment the number reads "passed as"; without stack comments it stands alone'''
+        asm = Asm()
+        asm.push_raw(0)                                                 # opens slot 1
+        asm.push_raw(CALLER_ID); asm.push_raw('return')
+        asm.load_stack(-4 * WORD_SIZE)                                  # sp 4: slot 0
+        asm.load_stack(-4 * WORD_SIZE)                                  # sp 5: slot 1
+        asm.push_int(LEFT_VALUE)
+        asm.call(CALLEE_ID); asm.label('return')
+        asm.pop(2 * WORD_SIZE); asm.ret()
+        program = Program(Func(FUNC_NAME, 1, asm), returning_callee(3))
+        label = f"label('loc_{program.label('return'):X}')"
+        self.assertEqual(commented_lines(program, CommentOptions(call_args = True)), [
+            'PUSH_RAW(RawInt(0x00000000))    # slot 1 (local)',
+            'LOAD_STACK(-16)                 # slot 0 = arg1, passed as arg3',
+            'LOAD_STACK(-16)                 # slot 1, passed as arg2',
+            append_comment(f'PUSH_INT({LEFT_VALUE})', ['arg1']),
+            append_comment(label, ['sp = 2']),
+            'POP(8)                          # 2 slots',
+        ])
+        self.assertEqual(commented_lines(program, ARGUMENTS_ONLY), [
+            'LOAD_STACK(-16)                 # arg3',
+            'LOAD_STACK(-16)                 # arg2',
+            append_comment(f'PUSH_INT({LEFT_VALUE})', ['arg1']),
+        ])
+
+    def test_zero_argument_call_numbers_nothing_below_it(self):
+        asm = Asm()
+        asm.push_int(LEFT_VALUE)                                        # stays below the call
+        asm.push_raw(CALLER_ID); asm.push_raw('return'); asm.call(CALLEE_ID); asm.label('return')
+        asm.pop(WORD_SIZE); asm.ret()
+        self.assertEqual(commented_lines(Program(main_function(asm), returning_callee()), ARGUMENTS_ONLY), [])
+
+    def test_syscall_leaves_its_arguments_for_the_next_one(self):
+        '''SYSCALL doesn't pop: a push a later SYSCALL reads again gets both numbers, in call order'''
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2)
+        asm.pop(WORD_SIZE); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 1)
+        asm.pop(WORD_SIZE); asm.ret()
+        self.assertEqual(commented_lines(Program(main_function(asm)), ARGUMENTS_ONLY), [
+            append_comment(f'PUSH_INT({LEFT_VALUE})', ['arg2', 'arg1']),
+            append_comment(f'PUSH_INT({RIGHT_VALUE})', ['arg1']),
+        ])
+
+    def test_script_call_arguments(self):
+        asm = Asm()
+        asm.frame('return'); asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE)
+        asm.call_script(2); asm.label('return')
+        asm.push_int(LEFT_VALUE); asm.call_script_no_return(1)
+        self.assertEqual(commented_lines(Program(main_function(asm)), ARGUMENTS_ONLY), [
+            append_comment(f'PUSH_INT({LEFT_VALUE})', ['arg2']),
+            append_comment(f'PUSH_INT({RIGHT_VALUE})', ['arg1']),
+            append_comment(f'PUSH_INT({LEFT_VALUE})', ['arg1']),
+        ])
+
+    def test_argument_joined_from_two_branches_numbers_both_pushes(self):
+        asm = Asm()
+        asm.push_raw(CALLER_ID); asm.push_raw('return')
+        asm.get_reg(REG_INDEX); asm.jz('right')
+        asm.push_int(LEFT_VALUE); asm.jmp('call')
+        asm.label('right'); asm.push_int(RIGHT_VALUE)
+        asm.label('call'); asm.call(CALLEE_ID); asm.label('return'); asm.ret()
+        self.assertEqual(commented_lines(Program(main_function(asm), returning_callee(1)), ARGUMENTS_ONLY), [
+            append_comment(f'PUSH_INT({LEFT_VALUE})', ['arg1']),
+            append_comment(f'PUSH_INT({RIGHT_VALUE})', ['arg1']),
+        ])
+
+
+class TestFloatBitsAndFunctionIds(unittest.TestCase):
+    def test_push_float_gets_its_bits_after_its_argument_and_a_float_default_none(self):
+        asm = Asm()
+        asm.push_float(FLOAT_VALUE); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 1); asm.pop(2 * WORD_SIZE); asm.ret()
+        program = Program(Func(FUNC_NAME, 1, asm))
+        program.entries[0].params[0].default_value = ScpValue(FLOAT_VALUE)
+        parser, functions = program.disassemble()
+        comments = CommentOptions(stack_slots = False, float_bits = True, call_args = True)
+        lines = parser.format_function(functions[0], comments)
+        self.assertNotIn('#', lines[1])
+        self.assertEqual(lines[2].strip(), append_comment(f'PUSH_FLOAT({FLOAT_VALUE})', ['arg1', FLOAT_BITS]))
+
+    def test_unreachable_code_keeps_the_global_var_and_float_bits(self):
+        '''Neither needs the simulated stack, which unreachable code doesn't have'''
+        asm = Asm()
+        asm.ret()
+        asm.label('dead'); asm.push_float(FLOAT_VALUE); asm.set_global(GLOBAL_INDEX); asm.jmp('dead')
+        parser, functions = Program(main_function(asm), pool = ()).disassemble(keep_unreachable_code = True)
+        for comments in (CommentOptions(), CommentOptions(stack_slots = False), ALL_COMMENTS):
+            with self.subTest(comments = comments):
+                lines = [line.strip() for line in parser.format_function(functions[0], comments)]
+                bits = [FLOAT_BITS] if comments.float_bits else []
+                self.assertIn(append_comment(f'PUSH_FLOAT({FLOAT_VALUE})', bits), lines)
+                self.assertIn(append_comment(f'SET_GLOBAL({GLOBAL_INDEX})', [f'global var {GLOBAL_INDEX}']), lines)
+
+    def test_function_id_line_above_the_decorator(self):
+        asm = Asm()
+        asm.ret()
+        parser, functions = Program(main_function(asm), returning_callee()).disassemble()
+        callee = functions[1]
+        self.assertEqual(parser.format_function(callee, CommentOptions(function_ids = True))[:2],
+                         [f'# id: 0x0001 offset: 0x{callee.offset:X}', '@scena.LLILCode()'])
+        self.assertEqual(parser.format_function(callee)[0], '@scena.LLILCode()')
+
+        callee.index = None                                             # a hand-built function has no table index
+        self.assertEqual(parser.format_function(callee, CommentOptions(function_ids = True))[0], '@scena.LLILCode()')
+
+    def test_index_is_the_table_position_not_the_code_order(self):
+        '''The writer sorts the table by name and lays code out in source order, so Second comes first in the code'''
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dat = Path(tmp_dir) / 'test.dat'
+            fresh_writer()
+            writer = create_scp_writer(str(dat))
+
+            @writer.LLILCode()
+            def Second():
+                RETURN()
+
+            @writer.LLILCode()
+            def First():
+                RETURN()
+
+            writer.run({})
+            parser, functions = ScpParser.load(dat, round_trip = False, keep_unreachable_code = False)
+
+        self.assertEqual([(func.name, func.index) for func in functions], [('Second', 1), ('First', 0)])
+        self.assertEqual(parser.format_function(functions[0], CommentOptions(function_ids = True))[0],
+                         f'# id: 0x0001 offset: 0x{functions[0].offset:X}')
+
+    def test_opt_in_comments_are_off_by_default(self):
+        config = ScenaDecompileConfig()
+        self.assertEqual(CommentOptions(), CommentOptions(stack_slots = True, float_bits = False, function_ids = False,
+                                                          call_args = False))
+        self.assertEqual((config.stack_slot_comments, config.float_bits_comments, config.function_id_comments,
+                          config.call_arg_comments), (True, False, False, False))
+
+
 @unittest.skipUnless(CHECK_ALGO_USE_FILE.exists(), 'needs the sora2_1.0 corpus')
 class TestRealScript(unittest.TestCase):
     def test_check_algo_use(self):
@@ -210,16 +361,39 @@ class TestRealScript(unittest.TestCase):
         ]
         self.assertEqual(lines[start + 1:start + 1 + len(expected)], expected)
 
-    def test_scena2py_flag(self):
-        for stack_slots in (True, False):
-            with self.subTest(stack_slots = stack_slots), tempfile.TemporaryDirectory() as tmp_dir:
+    def test_check_algo_use_with_every_opt_in_comment(self):
+        '''First in the table, which is sorted by name, but not in the code; its local call passes two parameters'''
+        parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip = False, keep_unreachable_code = False)
+        self.assertEqual([func.index for func in parser.functions], list(range(len(parser.functions))))
+        lines = parser.format_function(parser.get_func_by_name('CheckAlgoUse'), ALL_COMMENTS)
+        self.assertEqual(lines[:3], [
+            '# id: 0x0000 offset: 0x33FF',
+            '@scena.LLILCode()',
+            'def CheckAlgoUse(arg1: Value32, arg2: Value32, arg3: Value32):',
+        ])
+        self.assertIn('    LOAD_STACK(-16)                 # slot 1 = arg2, passed as arg2', lines)
+        self.assertIn('    LOAD_STACK(-24)                 # slot 0 = arg3, passed as arg1', lines)
+
+    def test_scena2py_flags(self):
+        '''The defaults, then each flag the other way on its own'''
+        markers = {
+            'stack_slot_comments'   : '# slot 2 = arg1',
+            'float_bits_comments'   : 'f32 0x',
+            'function_id_comments'  : '# id: 0x0000 offset: 0x33FF',
+            'call_arg_comments'     : '# arg1',
+        }
+        for flipped in (None, *markers):
+            with self.subTest(flipped = flipped), tempfile.TemporaryDirectory() as tmp_dir:
                 config = ScenaDecompileConfig()
                 config.output_dir = Path(tmp_dir)
                 config.write_ts = config.write_mlil_asm = False
-                config.stack_slot_comments = stack_slots
+                if flipped is not None:
+                    setattr(config, flipped, not getattr(config, flipped))
+
                 process_file(CHECK_ALGO_USE_FILE, config)
                 text = (Path(tmp_dir) / CHECK_ALGO_USE_FILE.stem / f'{CHECK_ALGO_USE_FILE.stem}.py').read_text(encoding = 'utf-8')
-                self.assertEqual('# slot 2 = arg1' in text and '# sp = 3' in text, stack_slots)
+                self.assertEqual({flag: marker in text for flag, marker in markers.items()},
+                                 {flag: getattr(config, flag) for flag in markers})
 
 
 if __name__ == '__main__':

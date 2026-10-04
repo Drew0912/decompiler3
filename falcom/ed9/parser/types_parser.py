@@ -102,10 +102,12 @@ class StackLayout:
     sp_before       : dict[int, int] = field(default_factory = dict)        # slots on the stack before each instruction
     slot_refs       : dict[int, SlotRef] = field(default_factory = dict)    # the slot each offset opcode addresses
     local_slots     : dict[int, int] = field(default_factory = dict)        # an addressed local's instruction -> slot
+    arg_numbers     : dict[int, tuple[int, ...]] = field(default_factory = dict)   # an argument's push -> argN per call
 
 
 class Function:
     name            : str
+    index           : int | None        # position in the function table, what PUSH_CURRENT_FUNC_ID pushes
     offset          : int
     params          : list[FunctionParam]
     is_common_func  : bool
@@ -116,6 +118,7 @@ class Function:
     stack_layout    : StackLayout | None    # set by the parser; a hand-built function has none
 
     def __init__(self):
+        self.index      = None
         self.params     = []
         self.debug_info = []
         self.call_debug_argc = {}

@@ -26,7 +26,8 @@ from falcom.ed9.writer.metadata.signature import function_fingerprint, fingerpri
 from ir.llil.llil import WORD_SIZE
 from scp_writer_test_utils import fresh_writer
 from test_scp_stack_simulation import (
-    Asm, Func, Program, CALLEE_ID, CALLEE_NAME, CALLER_ID, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, returning_callee,
+    Asm, Func, Program, CALLEE_ID, CALLEE_NAME, CALLER_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE,
+    returning_callee,
 )
 
 CHECK_SBREAK = 'CheckSBreak'  # forward and backward branches
@@ -98,6 +99,7 @@ class TestGenerator(unittest.TestCase):
 
     def render(self, callee_module: str) -> list[str]:
         asm = Asm()
+        asm.push_float(FLOAT_VALUE); asm.syscall(SUBSYSTEM, SYSCALL_FUNC, 1); asm.pop(WORD_SIZE)  # no opt-in comments
         asm.load_stack(-WORD_SIZE); asm.jz('skip')                                     # sp 1: slot 0
         asm.push_raw(CALLER_ID); asm.push_raw('return'); asm.call(CALLEE_ID); asm.label('return')
         asm.push_raw(0)                                                                 # opens slot 1
@@ -111,10 +113,14 @@ class TestGenerator(unittest.TestCase):
         return gen.render_function(parser, func, Path('test.dat'), digest, name_to_module)
 
     def test_function_rendered_from_its_instructions_with_stack_comments(self):
+        '''The stack comments only: a float SYSCALL argument gets neither the float bits nor its argument number'''
         self.assertEqual(self.render(callee_module = OWN_MODULE), [
             f'def {FUNC_NAME}(arg1: Value32):',
             '    L0 = genLabel()',
             '    L1 = genLabel()',
+            f'    PUSH_FLOAT({FLOAT_VALUE})',
+            f'    SYSCALL({SUBSYSTEM}, 0x{SYSCALL_FUNC:02X}, 0x01)',
+            '    POP(4)                          # 1 slot',
             '    LOAD_STACK(-4)                  # slot 0 = arg1',
             '    POP_JMP_ZERO(L1)',
             '    PUSH_CURRENT_FUNC_ID()',

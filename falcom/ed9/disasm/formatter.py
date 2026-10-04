@@ -6,10 +6,8 @@ from dataclasses import dataclass
 
 from .instruction import SYNTHETIC_INSTRUCTION_SIZE
 from .instruction_table import OperandType
-from .ed9_optable import ED9OperandType
 from .llil_dsl_comments import (
-    GLOBAL_VAR_INDEX_COMMENT, UNREACHABLE_TARGET_COMMENT, CommentOptions, append_comment, instruction_comments,
-    label_comments,
+    UNREACHABLE_TARGET_COMMENT, CommentOptions, append_comment, function_comments, instruction_comments, label_comments,
 )
 from ..parser.types_scp import ScpValue
 
@@ -45,11 +43,11 @@ class Formatter:
         self.formatted_labels: set[str] = set()
         self.unreachable_targets: set[int] = set()   # offsets unreachable code branches to - each needs a label
         self.referenced_offsets: set[int] = set()    # offsets real reachable-code operands point at - each needs a label
-        self.layout: StackLayout | None = None       # the stack comments' source, when the options ask for them
+        self.layout: StackLayout | None = None       # the stack and argument comments' source
 
     def format_entry_block(self, entry_block: 'BasicBlock', unreachable_blocks: 'list[BasicBlock]' = (), layout: 'StackLayout | None' = None) -> list[str]:
         """Format blocks starting from entry block (without function header), plus unreachable blocks in offset order;
-        layout gives the stack comments"""
+        layout gives the stack and argument comments"""
         # Reset formatted tracking
         self.formatted_offsets.clear()
         self.formatted_labels.clear()
@@ -100,7 +98,7 @@ class Formatter:
 
     def format_function(self, func: 'Function') -> list[str]:
         """Format a complete function with header"""
-        lines = []
+        lines = function_comments(func, self.context.comments)
         param_str = ', '.join(self.format_param(i, param) for i, param in enumerate(func.params))
         decorator = 'LLILCommonCode' if func.is_common_func else 'LLILCode'
 
@@ -113,9 +111,7 @@ class Formatter:
             lines.append(f'@scena.{decorator}()')
 
         lines.append(f'def {func.name}({param_str}):')
-
-        layout = func.stack_layout if self.context.comments.stack_slots else None
-        lines.extend(self.format_entry_block(func.entry_block, func.unreachable_blocks, layout))
+        lines.extend(self.format_entry_block(func.entry_block, func.unreachable_blocks, func.stack_layout))
 
         return lines
 
@@ -163,12 +159,7 @@ class Formatter:
 
             # Format instruction with context
             formatted = inst.descriptor.format_instruction(inst, self.context)
-            comments = instruction_comments(self.layout, inst)
-
-            if inst.operands and inst.operands[0].descriptor.type == ED9OperandType.GlobalVar:
-                comments.insert(0, f'{GLOBAL_VAR_INDEX_COMMENT} {inst.operands[0].value}')
-
-            lines.append(append_comment(formatted, comments))
+            lines.append(append_comment(formatted, instruction_comments(self.layout, inst, self.context.comments)))
 
         return lines
 
@@ -246,5 +237,5 @@ class Formatter:
         name = f'loc_{offset:X}'
         return [
             f'def _{name}(): pass',
-            append_comment(f"label('{name}')", [*label_comments(self.layout, offset), *notes]),
+            append_comment(f"label('{name}')", [*label_comments(self.layout, offset, self.context.comments), *notes]),
         ]

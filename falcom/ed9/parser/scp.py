@@ -107,6 +107,10 @@ STACK_OFFSET_OPS = {
     ED9Opcode.POP_TO_DEREF      : POPPED_VALUE_COUNT,
 }
 
+# Calls that take arguments from the stack; SYSCALL leaves them there for a later POP
+ARGUMENT_CALLS  = (ED9Opcode.CALL, ED9Opcode.CALL_SCRIPT, ED9Opcode.CALL_SCRIPT_NO_RETURN, ED9Opcode.SYSCALL)
+ARGC_OPERAND    = 2     # the argument count of every argument call but CALL, whose count is its callee's parameters
+
 
 @dataclass
 class TrackedValue:
@@ -383,7 +387,6 @@ class StackEntryGroups:
 class ScpDisassemblerContext(DisassemblerContext):
     """ED9/SCP disassembler context: the simulated stack and the state recorded for every edge"""
     current_func     : 'Function | None' = None     # Function being disassembled
-    current_func_id  : int | None = None            # Its index in the function table - what PUSH_CURRENT_FUNC_ID pushes
     code_end         : int | None = None            # Where the next function's code starts (None: last function)
     current_inst     : Instruction | None = None    # Instruction being simulated
     stack_simulation : list = field(default_factory = list)                 # Simulated stack of the block being decoded
@@ -443,7 +446,7 @@ class ScpDisassemblerContext(DisassemblerContext):
 
         elif role.kind == RoleKind.FUNC_ID:
             fits = is_push(member, ED9Opcode.PUSH_CURRENT_FUNC_ID) or (
-                is_push(member, ED9Opcode.PUSH_RAW) and member.operands[0].value == self.current_func_id
+                is_push(member, ED9Opcode.PUSH_RAW) and member.operands[0].value == self.current_func.index
             )
 
         else:
@@ -507,6 +510,13 @@ class ScpDisassemblerContext(DisassemblerContext):
 
         self.plain_uses[id(entry)] = entry
 
+    def call_argc(self, inst: Instruction) -> int:
+        """How many arguments a call takes from the stack"""
+        if inst.opcode == ED9Opcode.CALL:
+            return self.get_func_argc(inst.operands[0].value)
+
+        return inst.operands[ARGC_OPERAND].value
+
     def pop_call_setup(self, count: int) -> list:
         """Pop count entries, bottom first, for the call that consumes them as its setup or caller frame"""
         stack = self.stack_simulation
@@ -531,8 +541,9 @@ class ScpDisassemblerContext(DisassemblerContext):
     def stack_layout(self, entry_block: BasicBlock) -> StackLayout:
         """What the stack holds at each point of the disassembled function. What may stand in each slot at a block start
         is solved over every recorded edge, so a value reaching a slot only through a later join doesn't count for an
-        earlier read; a POP_TO stands for the value it overwrote, so a reassigned parameter stays the parameter. An
-        unusual slot (SlotRef.unusual) is logged as a warning. Raises only on a broken parser invariant: every reachable
+        earlier read; a POP_TO stands for the value it overwrote, so a reassigned parameter stays the parameter. Each
+        call numbers the pushes that may stand in its argument slots, the same way (arg1 = the last push). An unusual
+        slot (SlotRef.unusual) is logged as a warning. Raises only on a broken parser invariant: every reachable
         instruction has a recorded state."""
         blocks = {
             block.offset: [inst for inst in block.instructions if inst.size != SYNTHETIC_INSTRUCTION_SIZE]
@@ -568,6 +579,7 @@ class ScpDisassemblerContext(DisassemblerContext):
                     changed = changed or len(target_entries) != count
 
         layout = StackLayout()
+        arguments = {}      # push offset -> (call offset, argN) of each call it may be an argument of
         for start, insts in blocks.items():
             for inst in insts:
                 state = self.inst_states[inst.offset]
@@ -582,6 +594,14 @@ class ScpDisassemblerContext(DisassemblerContext):
 
                     layout.slot_refs[inst.offset] = ref
 
+                if inst.opcode in ARGUMENT_CALLS:
+                    for slot in range(max(len(state) - self.call_argc(inst), 0), len(state)):
+                        for entry in held_at(start, state, slot).values():
+                            # A parameter or caller-frame entry has no line of its own
+                            if isinstance(entry, Instruction):
+                                arguments.setdefault(entry.offset, []).append((inst.offset, len(state) - slot))
+
+        layout.arg_numbers = {offset: tuple(number for _, number in sorted(calls)) for offset, calls in arguments.items()}
         return layout
 
     def slot_ref(self, slot: int, entries: dict, local_slots: dict[int, int]) -> SlotRef:
@@ -690,9 +710,10 @@ class ScpParser(StrictBase):
 
         # load function
 
-        for i, entry in enumerate(func_entries):
+        for index, entry in enumerate(func_entries):
             func = Function()
 
+            func.index = index
             func.is_common_func = entry.is_common_func == 1
             func.offset = entry.offset
 
@@ -861,7 +882,7 @@ class ScpParser(StrictBase):
     def simulate_call(self, context: ScpDisassemblerContext, inst: Instruction) -> list[BranchTarget]:
         """PUSH(func_id) PUSH(ret_addr) args... CALL: the callee pops the args and both setup pushes and returns to
         the pushed return address. The setup pushes become PUSH_CURRENT_FUNC_ID / PUSH_RET_ADDR."""
-        context.pop_entries(context.get_func_argc(inst.operands[0].value))
+        context.pop_entries(context.call_argc(inst))
         func_id, ret_addr = context.pop_call_setup(LOCAL_SETUP_SLOTS)
         target = context.return_target(ret_addr, encoded_return(ret_addr))
         context.consume(func_id, Role(RoleKind.FUNC_ID))
@@ -871,7 +892,7 @@ class ScpParser(StrictBase):
     def simulate_call_script(self, context: ScpDisassemblerContext, inst: Instruction) -> list[BranchTarget]:
         """PUSH_CALLER_FRAME(ret) args... CALL_SCRIPT: the callee pops the args and the caller frame, and returns to
         the frame's return address"""
-        context.pop_entries(inst.operands[2].value)
+        context.pop_entries(context.call_argc(inst))
         frame = context.pop_call_setup(CALLER_FRAME_SLOTS)
         target = context.return_target(frame[0], frame_return(frame[0]))
         for slot, entry in enumerate(frame):
@@ -881,7 +902,7 @@ class ScpParser(StrictBase):
 
     def simulate_tail_call(self, context: ScpDisassemblerContext, inst: Instruction):
         """CALL_SCRIPT_NO_RETURN: the callee takes over the args, which must be all that is left on the stack"""
-        context.pop_entries(inst.operands[2].value)
+        context.pop_entries(context.call_argc(inst))
         if context.stack_simulation:
             context.fail(f'leaves {format_stack(context.stack_simulation)} below its args', inst)
 
@@ -945,8 +966,8 @@ class ScpParser(StrictBase):
                     f'{func.name} starts at 0x{func.offset:X}, inside the instruction at 0x{offsets[index]:X}'
                 )
 
-    def disasm_context(self, func_id: int, code_end: int | None) -> ScpDisassemblerContext:
-        """A fresh context for disassembling the function at func_id, whose code ends at code_end"""
+    def disasm_context(self, func: Function, code_end: int | None) -> ScpDisassemblerContext:
+        """A fresh context for disassembling func, whose code ends at code_end"""
         return ScpDisassemblerContext(
             get_func_argc           = self.get_func_argc,
             on_disasm_function      = self.on_disasm_function,
@@ -955,8 +976,7 @@ class ScpParser(StrictBase):
             on_pre_add_branch       = self.on_pre_add_branch,
             on_block_split          = self.on_block_split,
             create_fallthrough_jump = ed9_create_fallthrough_jump,
-            current_func            = self.functions[func_id],
-            current_func_id         = func_id,
+            current_func            = func,
             code_end                = code_end,
         )
 
@@ -965,7 +985,7 @@ class ScpParser(StrictBase):
         disassembled_functions = []
         starts = sorted({func.offset for func in self.functions})
 
-        for func_id, func in enumerate(self.functions):
+        for func in self.functions:
             # Apply filter if provided
             if filter_func and not filter_func(func):
                 continue
@@ -974,7 +994,7 @@ class ScpParser(StrictBase):
 
             # Create new context for each function; its code ends where the next function starts
             next_start = bisect.bisect_right(starts, func.offset)
-            context = self.disasm_context(func_id, starts[next_start] if next_start < len(starts) else None)
+            context = self.disasm_context(func, starts[next_start] if next_start < len(starts) else None)
 
             disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
             try:

@@ -15,8 +15,11 @@ class ScenaDecompileConfig:
     write_py: bool = True   # round-trippable VM-bytecode Python DSL (.py)
     write_ts: bool = True   # final TypeScript (.ts)
 
-    # .py comments: the slot each LOAD_STACK/POP_TO/... addresses and what it holds, sp at labels, POP's slot count
-    stack_slot_comments: bool = True
+    # .py comments (scripts only; the common library always has the stack comments and never the others)
+    stack_slot_comments: bool = True       # the slot each LOAD_STACK/POP_TO/... addresses, sp at labels, POP's slots
+    float_bits_comments: bool = False      # PUSH_FLOAT's float32 bits and stored word: f32 0x3E999998, raw 0x8FA66666
+    function_id_comments: bool = False     # above each function: # id: 0x001C offset: 0x21FF7 (table index, offset)
+    call_arg_comments: bool = False        # the argument each push becomes: # arg1, or # slot 1 = arg2, passed as arg2
 
     # Debug/inspection outputs
     write_llil_asm: bool = False    # .llil.asm text dump

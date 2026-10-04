@@ -33,6 +33,7 @@ GLOBAL_INDEX = 0
 REG_INDEX = 0
 LEFT_VALUE = 7
 RIGHT_VALUE = 8
+FLOAT_VALUE = 0.3
 LOOP_LIMIT = 10
 OUTSIDE_OFFSET = 0x1000
 FUNC_NAME = 'f'
@@ -55,7 +56,7 @@ STACK_SLOT_OPS = {
     'push_stack_offset': ED9Opcode.PUSH_STACK_OFFSET,
     'pop_to': ED9Opcode.POP_TO, 'pop_to_deref': ED9Opcode.POP_TO_DEREF,
 }
-OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_str', 'load_global', 'set_global', 'call', 'syscall')
+OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_float', 'push_str', 'load_global', 'set_global', 'call', 'syscall')
 MNEMONICS = (*OFFSET_OPS, *BYTE_OPERAND_OPS, *NO_OPERAND_OPS, *SCRIPT_CALL_OPS, *STACK_SLOT_OPS, *OTHER_OPS)
 PARAM_COUNT = 3
 
@@ -114,6 +115,9 @@ class Asm:
 
             case 'push_int':
                 return bytes([ED9Opcode.PUSH, WORD_SIZE]) + scp_value(ScpValue.Type.Integer, args[0])
+
+            case 'push_float':
+                return bytes([ED9Opcode.PUSH, WORD_SIZE]) + word(ScpValue(args[0]).to_word())
 
             case 'push_str':
                 return bytes([ED9Opcode.PUSH, WORD_SIZE]) + scp_value(ScpValue.Type.String, string_offset(args[0]))
@@ -175,31 +179,29 @@ class Program:
         self.labels = {}
         for func in functions:
             blob, self.labels[func.name] = func.asm.assemble(len(code), strings)
-            entry = Function()
-            entry.name = func.name
-            entry.offset = len(code)
-            entry.is_common_func = False
-            entry.params = [FunctionParam(ScpParamFlags(Value32)) for _ in range(func.argc)]
-            self.entries.append(entry)
-            table_entry = ScpFunctionEntry()
-            table_entry.name_offset = ScpValue.Type.String << ScpValue.TYPE_SHIFT | strings[func.name]
-            self.function_entries.append(table_entry)
+            self.add_entry(func.name, len(code), func.argc)
             code += blob
 
         for name, offset in aliases:
-            entry = Function()
-            entry.name = name
-            entry.offset = offset
-            entry.is_common_func = False
-            self.entries.append(entry)
-            table_entry = ScpFunctionEntry()
-            table_entry.name_offset = ScpValue.Type.String << ScpValue.TYPE_SHIFT | strings[name]
-            self.function_entries.append(table_entry)
+            self.add_entry(name, offset)
 
         for text in strings:
             code += text.encode() + STRING_TERMINATOR
 
         self.code = bytes(code + trailing)
+
+    def add_entry(self, name: str, offset: int, argc: int = 0):
+        '''A function-table entry, numbered in table order as ScpParser._read_functions numbers them'''
+        entry = Function()
+        entry.index = len(self.entries)
+        entry.name = name
+        entry.offset = offset
+        entry.is_common_func = False
+        entry.params = [FunctionParam(ScpParamFlags(Value32)) for _ in range(argc)]
+        self.entries.append(entry)
+        table_entry = ScpFunctionEntry()
+        table_entry.name_offset = ScpValue.Type.String << ScpValue.TYPE_SHIFT | self.strings[name]
+        self.function_entries.append(table_entry)
 
     def parser(self, keep_unreachable_code: bool = False) -> ScpParser:
         fs = fileio.FileStream(encoding = default_encoding())
@@ -316,7 +318,7 @@ class TestEdgeStates(unittest.TestCase):
         program = Program(main_function(asm))
         parser = program.parser()
         func = program.entries[0]
-        context = parser.disasm_context(CALLER_ID, code_end = None)
+        context = parser.disasm_context(func, code_end = None)
         disassembler = Disassembler(ED9_INSTRUCTION_TABLE, context)
         func.entry_block = disassembler.disasm_function(parser.fs, offset = func.offset, name = func.name)
         return program, func, context

@@ -30,9 +30,10 @@ byte.
   `-2738.149`, which encodes to a different word. The `.llil.asm` is under Listings. Step 3b (done)
   stopped SCCP folding floats and the algebraic identities firing on float constants, since the VM's
   float arithmetic is unverified (`docs/MLIL_DESIGN.md`, Optimization Passes).
-- **Float bits comment, opt-in** (item 2; Step 8a). `PUSH_FLOAT(0.3)  # f32 0x3E999998, raw 0x8FA66666`:
-  the float32 the VM computes with and the stored word a hex editor shows. Off by default, a
-  `ScenaDecompileConfig` flag (`falcom/ed9/scena2py_config.py`).
+- **Float bits comment, opt-in** (item 2; Step 8a, done). `PUSH_FLOAT(0.3)  # f32 0x3E999998, raw 0x8FA66666`:
+  the float32 the VM computes with and the stored word a hex editor shows, in unreachable code too; not on
+  float defaults in `def` lines (a line with several would get long). Off by default:
+  `ScenaDecompileConfig.float_bits_comments` (`falcom/ed9/scena2py_config.py`).
 - **Stack-slot comments, on by default** (item 8; Steps 6a, 6b, 7). The same variable gets a different
   offset as the stack moves: `LOAD_STACK(-16)` is `arg2` at `CheckAlgoUse`'s source line 162 and `arg3`
   at line 168. Step 6a (done) keeps the parser's simulated stack on `Function` as `stack_layout`
@@ -48,7 +49,7 @@ byte.
 
   Parameters are numbered as in every other output (`arg1` is the highest parameter slot); a parameter
   slot that is popped and pushed again (the tail-call idiom) is a local from then on. Unreachable code
-  (fidelity mode) has no simulated stack, so it gets no comments. A `ScenaDecompileConfig` flag turns
+  (fidelity mode) has no simulated stack, so it gets no stack comments. A `ScenaDecompileConfig` flag turns
   them off in scripts; the validator keeps the default, so the logic round trip checks that the comments
   reach the fixed point too.
   ```python
@@ -73,21 +74,24 @@ byte.
       DEBUG_SET_LINENO(168)
       LOAD_STACK(-16)                 # slot 0 = arg3
   ```
-- **Call-argument comments, opt-in** (item 16; Step 8a). Each argument's last push gets the callee's
-  parameter name, numbered like the callee (`arg1` is the last push): `PUSH_INT(1000)  # arg1`. Where a
-  stack-slot comment is already on the line, the caller's and the callee's names meet as "passed as":
+- **Call-argument comments, opt-in** (item 16; Step 8a, done). Each argument's push gets the callee's
+  parameter name, numbered like the callee (`arg1` is the last push, the order the `.ts` lists them):
+  `PUSH_INT(1000)  # arg1`. Where the line already names the slot an offset opcode addresses, the
+  caller's and the callee's names meet as "passed as":
   ```python
       LOAD_STACK(-16)                 # slot 1 = arg2, passed as arg2
       LOAD_STACK(-24)                 # slot 0 = arg3, passed as arg1
       CALL(CheckSBreak)
   ```
-  Off by default; when on, every call gets them. Which call kinds besides `CALL` get them (`CALL_SCRIPT`,
-  and `SYSCALL`, which doesn't pop its arguments) is decided in Step 8a. Script `.py` only, not the
-  library.
-- **Per-function comment, opt-in** (item 3; Step 8a), with the function's table index and code offset,
-  as decompiler2's output had: `# id: 0x0000 offset: 0x12FC`. The offset changes after the first
-  recompile (library functions are registered first), like `loc_` labels; the fixed point still holds
-  from round 2.
+  Every call kind that takes arguments gets them: `CALL`, `CALL_SCRIPT`, `CALL_SCRIPT_NO_RETURN` and
+  `SYSCALL`, which leaves its arguments on the stack (a push two calls read gets both numbers). When two
+  branches push an argument, both pushes get its number. Off by default:
+  `ScenaDecompileConfig.call_arg_comments`. Script `.py` only, not the library.
+- **Per-function comment, opt-in** (item 3; Step 8a, done), with the function's table index (what
+  `PUSH_CURRENT_FUNC_ID` pushes; the table is sorted by name) and code offset, as decompiler2's output
+  had: `# id: 0x0000 offset: 0x33FF` above the decorator. The offset changes after the first recompile
+  (library functions are registered first), like `loc_` labels; the fixed point still holds from round 2.
+  Off by default: `ScenaDecompileConfig.function_id_comments`.
 - **The hook import re-raises real errors** (item 6; Step 2a, done). The generated
   `except ModuleNotFoundError: pass` also swallowed a failed import inside the hook: the registrations
   before the failing line ran, the rest were skipped, and the script exited 0. The block
