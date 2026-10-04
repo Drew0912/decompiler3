@@ -36,7 +36,6 @@ UNRESOLVED_FUNC_INDEX = -1  # placeholder until buildFunctionTable() sorts the f
 
 STRING_OFFSET_TAG = ScpValue.Type.String << 30  # 0xC0000000 - top 2 bits of a resolved string-pool offset
 NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - WORD_SIZE  # name_offset is the last field of a function entry
-NON_CONSTANT_ARG_VALUE = RawInt(0)  # debug-arg value of non-constant args (always wrap in ScpValue)
 
 
 class StringPoolSection(IntEnum2):
@@ -448,7 +447,7 @@ class ScpWriter:
             scp_value, string = value.payload
             return DebugArg(value.type, scp_value, string)
 
-        return DebugArg(value.type, ScpValue(NON_CONSTANT_ARG_VALUE))
+        return DebugArg(value.type, ScpValue(ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE))
 
     def add_label(self, name: str):
         """Labels are file-wide: a name is defined once in the script"""

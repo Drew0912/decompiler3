@@ -33,7 +33,11 @@ Parses the SCP file format; extracts functions, global variables, strings, and o
 provides access to raw bytecode. Key components: `ScpParser` (main parser), `ScpHeader` (file
 header), `Function` (function metadata), `GlobalVar` (global variables). `string_pool.py` groups the
 pool's strings by what references them, in pool order (code, function names, parameter defaults,
-debug-only, global var names); the round-trip validator checks the pool with it.
+debug-only, global var names); the round-trip validator checks the pool with it. `call_records.py` compares a
+call-site debug record with the record its call gets (content only: call type, callee, arguments), the calls coming
+from `CallDebugInfoTracker.replay` in record order with their instruction offsets; `code_layout.py` gives the code
+order, each function's byte range and the ranges no instruction covers. The validator's code, debug-record,
+source-precondition and reachability checks use them.
 
 ## Layer 2: Disassembler — Done
 

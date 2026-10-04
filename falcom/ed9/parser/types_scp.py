@@ -381,7 +381,8 @@ class ScpFunctionEntry(StrictBase):
 
 
 class ScpFunctionCallDebugInfoArg(StrictBase):
-    SIZE = 0x08
+    SIZE                = 0x08
+    NON_CONSTANT_VALUE  = RawInt(0)     # value of every arg but a Constant (wrap in ScpValue)
 
     class Type(IntEnum2):
         Constant    = 0     # value is the pushed constant
@@ -435,6 +436,11 @@ class ScpFunctionCallDebugInfo(StrictBase):
             utils.int_to_bytes(self.arg_count, 2) +
             utils.int_to_bytes(self.info_offset, 4)
         )
+
+    def arg_offsets(self) -> range:
+        """File offset of each ScpFunctionCallDebugInfoArg of this record"""
+        size = ScpFunctionCallDebugInfoArg.SIZE
+        return range(self.info_offset, self.info_offset + self.arg_count * size, size)
 
     def __str__(self) -> str:
         return '\n'.join([

@@ -4,10 +4,12 @@ the global var names reference, in the order the original compiler pooled them (
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from common.config import default_endian
+from common.config import default_encoding, default_endian
 from ir.llil import WORD_SIZE
 from .scp import ScpParser
-from .types_scp import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpGlobalVar
+from .types_scp import ScpFunctionCallDebugInfo, ScpGlobalVar
+
+NUL = b'\0'     # ends every pool string
 
 
 @dataclass
@@ -27,6 +29,10 @@ class StringRefs:
 
 def read_u32(data: bytes, offset: int) -> int:
     return int.from_bytes(data[offset:offset + WORD_SIZE], default_endian())
+
+
+def read_text(data: bytes, offset: int) -> str:
+    return data[offset:data.find(NUL, offset)].decode(default_encoding(), errors = 'replace')
 
 
 def string_offsets(data: bytes, positions: Iterable[int]) -> list[int]:
@@ -52,9 +58,8 @@ def collect_string_refs(data: bytes, parser: ScpParser, records: list[list[ScpFu
                                      for entry in entries for i in range(entry.default_params_count)))
 
     code_set = set(code)
-    record_strings = string_offsets(data, (record.info_offset + i * ScpFunctionCallDebugInfoArg.SIZE
-                                           for function_records in records for record in function_records
-                                           for i in range(record.arg_count)))
+    record_strings = string_offsets(data, (offset for function_records in records for record in function_records
+                                           for offset in record.arg_offsets()))
     debug = [offset for offset in record_strings if offset not in code_set]
 
     header = parser.header

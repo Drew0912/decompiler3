@@ -17,14 +17,13 @@ from ml import fileio
 from common.config import default_encoding
 from ir.llil import WORD_SIZE
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.string_pool import StringRefs, collect_string_refs
+from falcom.ed9.parser.string_pool import NUL, StringRefs, collect_string_refs, read_text
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_writer_test_utils import fresh_writer
 from scp_roundtrip_validator import Status, load_script, validate_file
 
 SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
 PERSONAL_TEMPLATE_FILE = SORA2_DIR / 'scena' / 'personalTemplate.dat'
-NUL = b'\0'
 SECTIONS = ('code', 'names', 'defaults', 'debug', 'global_names')
 
 # compile_script's strings by section, in pool order
@@ -87,10 +86,6 @@ def load_string_refs(path: Path) -> tuple[bytes, StringRefs]:
     fs = fileio.FileStream(encoding = default_encoding()).OpenMemory(data)
     records = [parser.read_debug_info(fs, entry) for entry in parser.function_entries]
     return data, collect_string_refs(data, parser, records)
-
-
-def read_text(data: bytes, offset: int) -> str:
-    return data[offset:data.find(NUL, offset)].decode(default_encoding())
 
 
 def pool_strings(data: bytes, start: int) -> list[int]:

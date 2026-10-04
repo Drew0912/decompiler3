@@ -223,6 +223,19 @@ class CallDebugInfoTracker:
         """Calls in debug-info record order"""
         return sorted(self.calls, key = lambda call: call.key)
 
+    @classmethod
+    def replay(cls, instructions: list[Instruction], get_param_count: Callable[[Any], int]) -> list[tuple[TrackedCall, int]]:
+        """Feed decoded instructions in address order; each call in record order, with the offset of its call instruction"""
+        tracker = cls(get_param_count)
+        call_offsets = {}
+        for inst in instructions:
+            payload = inst.operands[0].value if inst.opcode in PUSH_CONSTANT_OPS else None
+            tracker.on_opcode(inst.opcode, [operand.value for operand in inst.operands], payload)
+            if len(tracker.calls) > len(call_offsets):
+                call_offsets[id(tracker.calls[-1])] = inst.offset
+
+        return [(call, call_offsets[id(call)]) for call in tracker.ordered_calls()]
+
     def next_key(self) -> tuple:
         key = (self.counter, 0)
         self.counter += 1

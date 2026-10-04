@@ -71,9 +71,11 @@ from ml import fileio
 from common.config import default_encoding
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
+from falcom.ed9.parser.call_records import record_mismatch
+from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.parser.crc32 import hash_func_Name
-from falcom.ed9.parser.scp import ScpParser, CallDebugInfoTracker, TrackedCall, PUSH_CONSTANT_OPS
-from falcom.ed9.parser.string_pool import StringRefs, collect_string_refs, read_u32
+from falcom.ed9.parser.scp import ScpParser, CallDebugInfoTracker, TrackedCall
+from falcom.ed9.parser.string_pool import NUL, StringRefs, collect_string_refs, read_text, read_u32
 from falcom.ed9.parser.types_parser import Function
 from falcom.ed9.parser.types_scp import (
     ScpFunctionCallDebugInfo,
@@ -81,9 +83,8 @@ from falcom.ed9.parser.types_scp import (
     ScpFunctionEntry,
     ScpGlobalVar,
     ScpHeader,
-    ScpValue,
 )
-from falcom.ed9.writer.scp_writer import NON_CONSTANT_ARG_VALUE, PUSH_SIZE_BYTE
+from falcom.ed9.writer.scp_writer import PUSH_SIZE_BYTE
 from falcom.ed9.writer.metadata.signature import function_fingerprint
 
 
@@ -92,7 +93,6 @@ UINT8_SIZE              = 1
 OPCODE_SIZE             = UINT8_SIZE
 PUSH_SIZE_OFFSET        = OPCODE_SIZE                       # PUSH opcode, u8 size, ScpValue
 PUSH_VALUE_OFFSET       = PUSH_SIZE_OFFSET + UINT8_SIZE
-NUL                     = b'\0'
 MAX_DETAILS             = 10
 DETAIL_INDENT           = ' ' * 10
 
@@ -153,8 +153,7 @@ class ScriptContext:
         return read_u32(self.data, offset)
 
     def read_text(self, offset: int) -> str:
-        end = self.data.find(NUL, offset)
-        return self.data[offset:end].decode(default_encoding(), errors = 'replace')
+        return read_text(self.data, offset)
 
     def func_name(self, index: int) -> str:
         return self.parser.functions[index].name
@@ -180,7 +179,7 @@ def load_script(path: Path) -> ScriptContext:
             entries         = entries,
             records         = [parser.read_debug_info(fs, entry) for entry in entries],
             instructions    = [parser.get_instructions(func) for func in parser.functions],
-            code_order      = sorted(range(len(entries)), key = lambda index: entries[index].offset),
+            code_order      = code_order(entries),
         )
 
     except BaseException:
@@ -299,19 +298,15 @@ def check_function_order(ctx: ScriptContext) -> CheckResult:
 def check_code(ctx: ScriptContext, pool_start: int) -> CheckResult:
     failures = []
     warnings = []
-    starts = [ctx.entries[index].offset for index in ctx.code_order]
+    extents = function_extents(ctx.entries, pool_start)
 
-    for position, index in enumerate(ctx.code_order):
+    for index in ctx.code_order:
         name = ctx.func_name(index)
-        end = starts[position + 1] if position + 1 < len(starts) else pool_start
-        cursor = ctx.entries[index].offset
+        insts = ctx.instructions[index]
+        for start, end, _ in dropped_ranges(insts, *extents[index]):
+            warnings.append(f'{name}: unreachable 0x{start:X}..0x{end:X}: {describe_range(ctx, start, end)}')
 
-        for inst in ctx.instructions[index]:
-            if inst.offset > cursor:
-                warnings.append(f'{name}: unreachable 0x{cursor:X}..0x{inst.offset:X}: {describe_range(ctx, cursor, inst.offset)}')
-
-            cursor = max(cursor, inst.offset + inst.size)
-
+        for inst in insts:
             if ctx.data[inst.offset] == ED9Opcode.PUSH and ctx.data[inst.offset + PUSH_SIZE_OFFSET] != PUSH_SIZE_BYTE:
                 failures.append(f'{name} @0x{inst.offset:X}: PUSH size byte {ctx.data[inst.offset + PUSH_SIZE_OFFSET]} != {PUSH_SIZE_BYTE}')
 
@@ -319,9 +314,6 @@ def check_code(ctx: ScriptContext, pool_start: int) -> CheckResult:
                 func_id = ctx.read_u32(inst.offset + PUSH_VALUE_OFFSET)
                 if func_id != index:
                     failures.append(f'{name} @0x{inst.offset:X}: PUSH_CURRENT_FUNC_ID pushes {func_id}, table index is {index}')
-
-        if cursor < end:
-            warnings.append(f'{name}: unreachable 0x{cursor:X}..0x{end:X}: {describe_range(ctx, cursor, end)}')
 
     summary = f'{len(warnings)} unreachable ranges'
     return CheckResult.build('code', summary, failures, warnings)
@@ -354,54 +346,11 @@ def check_string_pool(ctx: ScriptContext, refs: StringRefs) -> CheckResult:
 
 
 def compare_record(ctx: ScriptContext, call: TrackedCall, record: ScpFunctionCallDebugInfo) -> str | None:
-    CallType = ScpFunctionCallDebugInfo.CallType
-    ArgType = ScpFunctionCallDebugInfoArg.Type
-    constant_args = []
-    call_args = call.args
+    # The writer keys a local call's dropped default args by its return label (debug_argc): without one it can't round-trip
+    if call.call_type == ScpFunctionCallDebugInfo.CallType.Local and call.ret_label is None:
+        return 'local CALL without a PUSH_RET_ADDR label'
 
-    if call.call_type == CallType.Local:
-        expected_func_id = call.target
-        call_args = call.args[:record.arg_count]
-
-        if call.ret_label is None:
-            return 'local CALL without a PUSH_RET_ADDR label'
-
-    elif call.call_type == CallType.Syscall:
-        expected_func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID
-        constant_args = list(call.target)
-
-    else:
-        expected_func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID
-        module, func = call.target
-        constant_args = [f'{module.value}.{func.value}']
-
-    expected = [(ArgType.Constant, value) for value in constant_args] + [(arg.type, arg.payload) for arg in call_args]
-
-    if record.call_type != call.call_type or record.func_id != expected_func_id or record.arg_count != len(expected):
-        return f'record ({record.call_type.name}, func_id 0x{record.func_id:X}, {record.arg_count} args) != call ({call.call_type.name}, func_id 0x{expected_func_id:X}, {len(expected)} args)'
-
-    for i, (arg_type, payload) in enumerate(expected):
-        arg_offset = record.info_offset + i * ScpFunctionCallDebugInfoArg.SIZE
-        raw_value = ctx.read_u32(arg_offset)
-        raw_type = ctx.read_u32(arg_offset + WORD_SIZE)
-
-        if raw_type != arg_type:
-            return f'arg {i}: type {raw_type} != {arg_type}'
-
-        if arg_type != ArgType.Constant:
-            matches = raw_value == ScpValue(NON_CONSTANT_ARG_VALUE).to_word()
-
-        elif isinstance(payload, str):
-            offset = ScpParser.get_string_offset(raw_value)
-            matches = offset is not None and ctx.read_text(offset) == payload
-
-        else:
-            matches = raw_value == ScpValue(payload).to_word()
-
-        if not matches:
-            return f'arg {i}: value 0x{raw_value:08X} != {ascii(payload)}'
-
-    return None
+    return record_mismatch(ctx.data, call, record)
 
 
 def check_debug_records(ctx: ScriptContext) -> CheckResult:
@@ -410,12 +359,7 @@ def check_debug_records(ctx: ScriptContext) -> CheckResult:
     dropped = 0
 
     for index, func in enumerate(ctx.parser.functions):
-        tracker = CallDebugInfoTracker(get_param_count = ctx.parser.get_func_argc)
-        for inst in ctx.instructions[index]:
-            payload = inst.operands[0].value if inst.opcode in PUSH_CONSTANT_OPS else None
-            tracker.on_opcode(inst.opcode, [operand.value for operand in inst.operands], payload)
-
-        calls = tracker.ordered_calls()
+        calls = [call for call, _ in CallDebugInfoTracker.replay(ctx.instructions[index], ctx.parser.get_func_argc)]
         records = ctx.records[index]
         if len(calls) != len(records):
             failures.append(f'{func.name}: {len(calls)} call sites with line info, {len(records)} debug records')
@@ -433,32 +377,6 @@ def check_debug_records(ctx: ScriptContext) -> CheckResult:
 
     summary = f'{rebuilt} records rebuilt ({dropped} with dropped default args)'
     return CheckResult.build('debug records', summary, failures)
-
-
-def function_extents(ctx: ScriptContext, pool_start: int) -> dict[int, tuple[int, int]]:
-    """table index -> (start, end) physical byte range in code order"""
-    starts = [ctx.entries[index].offset for index in ctx.code_order]
-    ends = starts[1:] + [pool_start]
-    return dict(zip(ctx.code_order, zip(starts, ends)))
-
-
-def dropped_ranges(insts: list[Instruction], start: int, end: int) -> list[tuple[int, int, Instruction | None]]:
-    """[start, end) not covered by insts, each paired with the instruction right before it (if any)"""
-    ranges = []
-    cursor = start
-    prev = None
-
-    for inst in insts:
-        if inst.offset > cursor:
-            ranges.append((cursor, inst.offset, prev))
-
-        cursor = max(cursor, inst.offset + inst.size)
-        prev = inst
-
-    if cursor < end:
-        ranges.append((cursor, end, prev))
-
-    return ranges
 
 
 def check_instruction_ranges(insts: list[Instruction], start: int, end: int) -> list[str]:
@@ -510,7 +428,7 @@ def check_source_preconditions(ctx: ScriptContext, pool_start: int) -> CheckResu
         if entry.name_hash != expected:
             failures.append(f'{func.name}: name_hash 0x{entry.name_hash:X} != hash_func_Name 0x{expected:X}')
 
-    extents = function_extents(ctx, pool_start)
+    extents = function_extents(ctx.entries, pool_start)
     for index in ctx.code_order:
         func = ctx.parser.functions[index]
         insts = ctx.instructions[index]
@@ -548,7 +466,7 @@ def check_reachability(ctx: ScriptContext, pool_start: int) -> CheckResult:
     because it happens to fail to disassemble as instructions."""
     failures = []
     dropped_bytes = 0
-    extents = function_extents(ctx, pool_start)
+    extents = function_extents(ctx.entries, pool_start)
 
     for index in ctx.code_order:
         func = ctx.parser.functions[index]
