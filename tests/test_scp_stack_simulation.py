@@ -55,7 +55,7 @@ STACK_SLOT_OPS = {
     'push_stack_offset': ED9Opcode.PUSH_STACK_OFFSET,
     'pop_to': ED9Opcode.POP_TO, 'pop_to_deref': ED9Opcode.POP_TO_DEREF,
 }
-OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_str', 'load_global', 'set_global', 'call')
+OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_str', 'load_global', 'set_global', 'call', 'syscall')
 MNEMONICS = (*OFFSET_OPS, *BYTE_OPERAND_OPS, *NO_OPERAND_OPS, *SCRIPT_CALL_OPS, *STACK_SLOT_OPS, *OTHER_OPS)
 PARAM_COUNT = 3
 
@@ -129,6 +129,9 @@ class Asm:
 
             case 'call':
                 return bytes([ED9Opcode.CALL]) + struct.pack('<H', args[0])
+
+            case 'syscall':
+                return bytes([ED9Opcode.SYSCALL, *args])            # subsystem, function, argument count
 
             case _ if name in OFFSET_OPS:
                 return bytes([OFFSET_OPS[name]]) + word(resolve(args[0]))

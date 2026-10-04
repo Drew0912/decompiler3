@@ -231,11 +231,13 @@ generated, matching returns `{}` and every function falls back to fully inline, 
 
 **Regenerating the library:** `python falcom/ed9/writer/scp_writer_gen_common_funcs.py
 sora2_1.0` walks the corpus (round_trip=False, keep_unreachable_code=False), fingerprints every
-`is_common_func` occurrence, picks the majority fingerprint per name as canonical (ties → first
+`is_common_func` occurrence (noting, once per fingerprint, whether it touches a global, what it
+calls and its first syscall), picks the majority fingerprint per name as canonical (ties → first
 occurrence in sorted order), excludes any function touching `LOAD_GLOBAL`/`SET_GLOBAL` plus the
-closure of anything calling an excluded function (asserting the closure holds), and does a full
-rewrite of the output directory every run — hand edits to generated files don't survive
-regeneration.
+closure of anything calling an excluded function (asserting the closure holds) and assigns modules.
+Only then does it re-parse the files holding an included function's canonical copy, rendering each
+function's final text while that parse is in hand. Every run is a full rewrite of the output
+directory — hand edits to generated files don't survive regeneration.
 
 **`falcom/ed9/writer/metadata/common/` is gitignored, not checked in** — like the `sora2_1.0/`
 scripts it is generated from, its generated modules are a substantive translation of the game's own

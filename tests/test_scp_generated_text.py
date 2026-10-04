@@ -205,7 +205,7 @@ class TestLineEndings(unittest.TestCase):
                  mock.patch.object(gen, 'render_all', return_value = text):
                 # write_output deletes every .py in OUTPUT_DIR: never let it reach the real library
                 self.assertEqual(gen.OUTPUT_DIR, out / 'common')
-                gen.write_output({}, {'f'}, {'f': 'scp_writer_common_0'})
+                gen.write_output({}, {}, {'f': []}, {'f': 'scp_writer_common_0'})
 
             paths = sorted(out.rglob('*.py'))
             self.assertEqual({path.name for path in paths}, {'__init__.py', 'scp_writer_common_0.py', 'common_index.py', 'common_all.py'})
@@ -230,13 +230,11 @@ class TestLibraryExports(unittest.TestCase):
         return {name for name in namespace if not name.startswith('_')}
 
     def test_module_exports_only_its_own_functions(self):
-        canon = {
-            name: gen.CanonicalFunction(name = name, params = [], instructions = [], referenced_offsets = set(), touches_global = False,
-                                        call_targets = set(), subsystem = None, digest = '')
-            for name in ('Zeta', 'Alpha')
-        }
+        names = ['Zeta', 'Alpha']
+        rendered = {name: [f'def {name}():', '    pass'] for name in names}
+        facts = {name: gen.FunctionFacts(touches_global = False, call_targets = set(), subsystem = None) for name in names}
         namespace = {}
-        exec(gen.render_module(f'{gen.MODULE_PREFIX}0', list(canon), canon, {}), namespace)
+        exec(gen.render_module(f'{gen.MODULE_PREFIX}0', names, rendered, facts, {}), namespace)
 
         self.assertEqual(namespace['__all__'], ('Alpha', 'Zeta'))
 
