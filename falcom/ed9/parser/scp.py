@@ -1085,6 +1085,19 @@ class ScpParser(StrictBase):
 
     def get_string_refs(self, instructions: list[Instruction]) -> list[int]:
         """String pool offsets referenced by PUSH_STR and CALL_SCRIPT operands"""
+        refs = []
+        with self.fs.PositionSaver:
+            for position in self.string_operand_positions(instructions):
+                self.fs.Position = position
+                offset = self.get_string_offset(self.fs.ReadULong())
+                if offset is not None:
+                    refs.append(offset)
+
+        return refs
+
+    @classmethod
+    def string_operand_positions(cls, instructions: list[Instruction]) -> list[int]:
+        """File positions of the operand words that may reference a string: PUSH_STR's value, CALL_SCRIPT's module and func"""
         positions = []
         for inst in instructions:
             if inst.opcode == ED9Opcode.PUSH_STR:
@@ -1094,15 +1107,7 @@ class ScpParser(StrictBase):
                 positions.append(inst.offset + OPCODE_SIZE)             # module
                 positions.append(inst.offset + OPCODE_SIZE + WORD_SIZE) # func
 
-        refs = []
-        with self.fs.PositionSaver:
-            for position in positions:
-                self.fs.Position = position
-                offset = self.get_string_offset(self.fs.ReadULong())
-                if offset is not None:
-                    refs.append(offset)
-
-        return refs
+        return positions
 
     @classmethod
     def get_string_offset(cls, raw_value: int) -> int | None:

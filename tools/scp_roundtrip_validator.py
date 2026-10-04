@@ -19,8 +19,9 @@ Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler l
                     numbers), then strictly increasing DEBUG_SET_LINENO
     code            PUSH size byte; PUSH_CURRENT_FUNC_ID value == caller table index;
                     WARN: unreachable code (kept in the .py unless ScpParser.keep_unreachable_code is off)
-    string pool     never deduplicated: code refs (code order), names, default strings, debug-only
-                    strings, global var names (index order, always last)
+    string pool     never deduplicated: code refs (code order, unreachable code included), names, default
+                    strings, debug-only strings, global var names (index order, always last);
+                    falcom/ed9/parser/string_pool.py
     debug records   every record rebuilt from its call site with CallDebugInfoTracker
     round trip      (--round-trip) decompile into a work dir, delete the copy, run the generated .py,
                     byte-compare with the original
@@ -67,11 +68,12 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from ml import fileio
-from common.config import default_encoding, default_endian
+from common.config import default_encoding
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
 from falcom.ed9.parser.crc32 import hash_func_Name
 from falcom.ed9.parser.scp import ScpParser, CallDebugInfoTracker, TrackedCall, PUSH_CONSTANT_OPS
+from falcom.ed9.parser.string_pool import StringRefs, collect_string_refs, read_u32
 from falcom.ed9.parser.types_parser import Function
 from falcom.ed9.parser.types_scp import (
     ScpFunctionCallDebugInfo,
@@ -90,14 +92,9 @@ UINT8_SIZE              = 1
 OPCODE_SIZE             = UINT8_SIZE
 PUSH_SIZE_OFFSET        = OPCODE_SIZE                       # PUSH opcode, u8 size, ScpValue
 PUSH_VALUE_OFFSET       = PUSH_SIZE_OFFSET + UINT8_SIZE
-SCRIPT_MODULE_OFFSET    = OPCODE_SIZE                       # CALL_SCRIPT opcode, module, func, argc
-SCRIPT_FUNC_OFFSET      = SCRIPT_MODULE_OFFSET + WORD_SIZE
-SCP_VALUE_TYPE_SHIFT    = 30
-SCP_VALUE_PAYLOAD_MASK  = (1 << SCP_VALUE_TYPE_SHIFT) - 1
 NUL                     = b'\0'
 MAX_DETAILS             = 10
 DETAIL_INDENT           = ' ' * 10
-SCRIPT_CALL_OPS         = (ED9Opcode.CALL_SCRIPT, ED9Opcode.CALL_SCRIPT_NO_RETURN)
 
 # Reachability audit (--logic-round-trip): a dropped byte range is provably dead only when the
 # reachable instruction right before it can't fall through - RETURN/JMP/CALL_SCRIPT_NO_RETURN never
@@ -153,7 +150,7 @@ class ScriptContext:
     code_order      : list[int]                             # table indices sorted by code offset
 
     def read_u32(self, offset: int) -> int:
-        return int.from_bytes(self.data[offset:offset + WORD_SIZE], default_endian())
+        return read_u32(self.data, offset)
 
     def read_text(self, offset: int) -> str:
         end = self.data.find(NUL, offset)
@@ -163,103 +160,32 @@ class ScriptContext:
         return self.parser.functions[index].name
 
 
-@dataclass
-class StringRefs:
-    """Pool offsets of every string reference, grouped in the original compiler's pool order"""
-    code         : list[int]
-    names        : list[int]
-    defaults     : list[int]
-    debug        : list[int]
-    global_names : list[int]
-    pool_start   : int
-
-    @property
-    def expected_pool(self) -> list[int]:
-        return self.code + self.names + self.defaults + self.debug + self.global_names
-
-
-def string_offset(value: int) -> int | None:
-    """Pool offset of a String-typed raw ScpValue"""
-    if value >> SCP_VALUE_TYPE_SHIFT != ScpValue.Type.String:
-        return None
-
-    return value & SCP_VALUE_PAYLOAD_MASK
-
-
 def load_script(path: Path) -> ScriptContext:
+    """Parse and disassemble path; the caller closes ctx.fs, or this closes it when the file fails to load"""
     fs = fileio.FileStream(str(path), encoding = default_encoding())
-    parser = ScpParser(fs, path.name)
 
-    with contextlib.redirect_stdout(io.StringIO()):
-        parser.parse()
-        parser.disasm_all_functions()
+    try:
+        parser = ScpParser(fs, path.name)
 
-    fs.Position = parser.header.function_entry_offset
-    entries = [ScpFunctionEntry(fs = fs) for _ in range(parser.header.function_count)]
+        with contextlib.redirect_stdout(io.StringIO()):
+            parser.parse()
+            parser.disasm_all_functions()
 
-    records = []
-    for entry in entries:
-        fs.Position = entry.debug_info_offset
-        records.append([ScpFunctionCallDebugInfo(fs = fs) for _ in range(entry.debug_info_count)])
+        entries = parser.function_entries
+        return ScriptContext(
+            path            = path,
+            data            = path.read_bytes(),
+            fs              = fs,
+            parser          = parser,
+            entries         = entries,
+            records         = [parser.read_debug_info(fs, entry) for entry in entries],
+            instructions    = [parser.get_instructions(func) for func in parser.functions],
+            code_order      = sorted(range(len(entries)), key = lambda index: entries[index].offset),
+        )
 
-    return ScriptContext(
-        path            = path,
-        data            = path.read_bytes(),
-        fs              = fs,
-        parser          = parser,
-        entries         = entries,
-        records         = records,
-        instructions    = [parser.get_instructions(func) for func in parser.functions],
-        code_order      = sorted(range(len(entries)), key = lambda index: entries[index].offset),
-    )
-
-
-def collect_string_refs(ctx: ScriptContext) -> StringRefs:
-    code = []
-    for index in ctx.code_order:
-        for inst in ctx.instructions[index]:
-            if inst.opcode == ED9Opcode.PUSH_STR:
-                operand_offsets = (PUSH_VALUE_OFFSET,)
-
-            elif inst.opcode in SCRIPT_CALL_OPS:
-                operand_offsets = (SCRIPT_MODULE_OFFSET, SCRIPT_FUNC_OFFSET)
-
-            else:
-                continue
-
-            for operand_offset in operand_offsets:
-                offset = string_offset(ctx.read_u32(inst.offset + operand_offset))
-                if offset is not None:
-                    code.append(offset)
-
-    names = [string_offset(entry.name_offset) for entry in ctx.entries]
-    names = [offset for offset in names if offset is not None]
-
-    defaults = []
-    for entry in ctx.entries:
-        for i in range(entry.default_params_count):
-            offset = string_offset(ctx.read_u32(entry.default_params_offset + i * WORD_SIZE))
-            if offset is not None:
-                defaults.append(offset)
-
-    code_set = set(code)
-    debug = []
-    for records in ctx.records:
-        for record in records:
-            for i in range(record.arg_count):
-                offset = string_offset(ctx.read_u32(record.info_offset + i * ScpFunctionCallDebugInfoArg.SIZE))
-                if offset is not None and offset not in code_set:
-                    debug.append(offset)
-
-    header = ctx.parser.header
-    global_names = []
-    for i in range(header.global_var_count):
-        offset = string_offset(ctx.read_u32(header.global_var_offset + i * ScpGlobalVar.SIZE))
-        if offset is not None:
-            global_names.append(offset)
-
-    pool_start = min(code + names + defaults + debug + global_names, default = len(ctx.data))
-    return StringRefs(code = code, names = names, defaults = defaults, debug = debug, global_names = global_names, pool_start = pool_start)
+    except BaseException:
+        fs.Close()
+        raise
 
 
 def describe_range(ctx: ScriptContext, start: int, end: int) -> str:
@@ -466,7 +392,7 @@ def compare_record(ctx: ScriptContext, call: TrackedCall, record: ScpFunctionCal
             matches = raw_value == ScpValue(NON_CONSTANT_ARG_VALUE).to_word()
 
         elif isinstance(payload, str):
-            offset = string_offset(raw_value)
+            offset = ScpParser.get_string_offset(raw_value)
             matches = offset is not None and ctx.read_text(offset) == payload
 
         else:
@@ -828,7 +754,7 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
 
     ctx = load_script(path)
     try:
-        pool_start = collect_string_refs(ctx).pool_start
+        pool_start = collect_string_refs(ctx.data, ctx.parser, ctx.records).pool_start
         results.append(check_source_preconditions(ctx, pool_start))
         results.append(check_reachability(ctx, pool_start))
         results.append(check_string_fidelity(ctx, pool_start))
@@ -885,7 +811,7 @@ def validate_file(path: Path) -> tuple[list[CheckResult], list[str]]:
     ctx = load_script(path)
 
     try:
-        refs = collect_string_refs(ctx)
+        refs = collect_string_refs(ctx.data, ctx.parser, ctx.records)
         results = [
             check_layout(ctx),
             check_function_order(ctx),

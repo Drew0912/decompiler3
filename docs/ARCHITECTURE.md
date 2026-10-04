@@ -31,7 +31,9 @@ Compilation (the actual recompilation direction — needs only a DSL file, not a
 
 Parses the SCP file format; extracts functions, global variables, strings, and other metadata;
 provides access to raw bytecode. Key components: `ScpParser` (main parser), `ScpHeader` (file
-header), `Function` (function metadata), `GlobalVar` (global variables).
+header), `Function` (function metadata), `GlobalVar` (global variables). `string_pool.py` groups the
+pool's strings by what references them, in pool order (code, function names, parameter defaults,
+debug-only, global var names); the round-trip validator checks the pool with it.
 
 ## Layer 2: Disassembler — Done
 

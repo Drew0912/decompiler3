@@ -222,8 +222,10 @@ byte.
   ```
   A call's debug record is printed under it only where a per-pair content check confirms the pairing
   (`notes/debug_records_handoff.md`); otherwise the function notes `records not paired`. The string pool
-  lists each string's section (code, names, defaults, debug-only, global names); the section split moves
-  from the round-trip validator into `falcom/` first (Step 8b).
+  lists each string's section (code, names, defaults, debug-only, global names). Step 8b (done) moved the
+  section split from the round-trip validator into `falcom/ed9/parser/string_pool.py`, with one rule for where
+  code strings sit (`ScpParser.string_operand_positions`), and counts the strings only unreachable code uses as
+  code strings: the validator had missed them and failed the pool check of `ani/chr5000` and others.
 
 ## Not Doing
 
