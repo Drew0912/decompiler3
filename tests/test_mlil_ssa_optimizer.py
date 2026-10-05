@@ -4,14 +4,17 @@ not repr() (which no MLIL class overrides), or an operand-only rewrite can look 
 the loop one iteration early.'''
 
 from pathlib import Path
+import io
+import itertools
 import sys
 import unittest
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.mlil.mlil import MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILLogicalNot, MLILNe
 from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILIf, MLILRet
-from ir.mlil.mlil_ssa_optimizer import SSAOptimizer
+from ir.mlil.mlil_ssa_optimizer import SSA_OPTIMIZER_MAX_ITERATIONS, SSAOptimizer
 
 
 def make_func(name: str) -> MediumLevelILFunction:
@@ -77,6 +80,33 @@ class TestIdempotence(unittest.TestCase):
         twice = SSAOptimizer(func)._snapshot()
 
         self.assertEqual(once, twice)
+
+
+class TestSnapshotSchedule(unittest.TestCase):
+    '''A round's after-snapshot is reused as the next round's before-snapshot, so k rounds take k + 1 snapshots,
+    not 2k. _snapshot is faked so the counts don't depend on how many rounds the passes need.'''
+
+    def test_after_snapshot_is_reused(self):
+        func, _ = make_double_negation_func('reuse')
+        rounds = 2      # the first changes A -> B, the second confirms B
+
+        with mock.patch.object(SSAOptimizer, '_snapshot', side_effect = itertools.chain(['A'], itertools.repeat('B'))) as snapshot:
+            SSAOptimizer(func).optimize()
+
+        self.assertEqual(snapshot.call_count, rounds + 1)
+
+    def test_iteration_cap_keeps_warning(self):
+        func, _ = make_double_negation_func('never_settles')
+
+        with (
+            mock.patch.object(SSAOptimizer, '_snapshot', side_effect = itertools.count()) as snapshot,
+            mock.patch.object(sys, 'stderr', io.StringIO()) as stderr,
+        ):
+            SSAOptimizer(func).optimize()
+
+        self.assertEqual(snapshot.call_count, SSA_OPTIMIZER_MAX_ITERATIONS + 1)
+        self.assertEqual(stderr.getvalue(),
+                         f'[optimizer] never_settles did not converge after {SSA_OPTIMIZER_MAX_ITERATIONS} iterations\n')
 
 
 class TestStructuralKeyExactness(unittest.TestCase):
