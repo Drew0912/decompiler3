@@ -175,9 +175,10 @@ class ScpWriter:
     def check_decompilable(self, data: bytes, code_end: int):
         """The compiled bytes disassemble and lift again; a failure names the script line that emitted the failing
         opcode, or the failing function's def. A function that runs on into the next function's code (no RETURN) is a
-        warning while the bytes still decompile, and a note on the failure when they don't."""
+        warning while the bytes still decompile, and a note on the failure when they don't; the parser's warnings for
+        unusual slots get their script line too."""
         try:
-            runs_on = {func.name: func.runs_on for func in require_decompilable(data, self.name, code_end)}
+            parser, functions = require_decompilable(data, self.name, code_end)
 
         except ScpFunctionError as e:
             note = self._run_on(e.function, e.runs_on)
@@ -187,10 +188,18 @@ class ScpWriter:
         except Exception as e:
             raise CompileCheckError(f'{self.name}: {e}') from e
 
+        runs_on = {func.name: func.runs_on for func in functions}
         for f in self.functions:
             note = self._run_on(f.name, runs_on.get(f.name))
             if note:
                 log.warning(note)
+
+        for func in functions:
+            for inst in parser.get_instructions(func):
+                ref = func.stack_layout.slot_refs.get(inst.offset)
+                if ref is not None and ref.unusual:
+                    log.warning(self._failure_location(func.name, inst.offset)
+                                + ScpFunctionError.describe(func.name, f'addresses {ref}', inst))
 
     def _run_on(self, function: str | None, inst: Instruction | None) -> str | None:
         """How function runs on into the next function's code, located: it has no code at all, or inst runs past its

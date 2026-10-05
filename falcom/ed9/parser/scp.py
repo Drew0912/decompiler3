@@ -441,6 +441,7 @@ class ScpDisassemblerContext(DisassemblerContext):
     code_end         : int | None = None            # Where the next function's code starts (None: last function)
     known_code_end   : int | None = None            # Where the code ends, when known: nothing may run or jump past it
     reject_outside_stack : bool = False             # fail on a slot outside the live stack instead of only warning
+    quiet            : bool = False                 # no unusual-slot warnings: the caller reports them itself
     runs_on          : Instruction | None = None    # the first instruction that runs on past code_end
     current_inst     : Instruction | None = None    # Instruction being simulated
     stack_simulation : list = field(default_factory = list)                 # Simulated stack of the block being decoded
@@ -667,7 +668,7 @@ class ScpDisassemblerContext(DisassemblerContext):
                     if not live and self.reject_outside_stack:
                         self.fail(f'addresses {ref}', inst)
 
-                    if ref.unusual:
+                    if ref.unusual and not self.quiet:
                         log.warning(f'{self.current_func.name}: {inst.mnemonic} at 0x{inst.offset:X} addresses {ref}')
 
                     layout.slot_refs[inst.offset] = ref
@@ -758,7 +759,8 @@ class ScpParser(StrictBase):
         reject_outside_stack: bool = False,
         known_code_end: int | None = None,
     ) -> tuple['ScpParser', list[Function]]:
-        """load() for a script already in memory, named name; quiet drops the per-function progress and error lines.
+        """load() for a script already in memory, named name; quiet drops the per-function progress and error lines
+        and the unusual-slot warnings, for a caller that reports them itself (the compile check).
         reject_outside_stack and known_code_end are the compile check's (see the class attributes)."""
         with fileio.FileStream(data, encoding = default_encoding()) as fs:
             parser = cls(fs, name)
@@ -1081,7 +1083,7 @@ class ScpParser(StrictBase):
                     func.name, offsets[index]
                 )
 
-    def disasm_context(self, func: Function, code_end: int | None) -> ScpDisassemblerContext:
+    def disasm_context(self, func: Function, code_end: int | None, quiet: bool = False) -> ScpDisassemblerContext:
         """A fresh context for disassembling func, whose code ends at code_end"""
         return ScpDisassemblerContext(
             get_func_argc           = self.get_func_argc,
@@ -1095,11 +1097,12 @@ class ScpParser(StrictBase):
             code_end                = code_end,
             known_code_end          = self.known_code_end,
             reject_outside_stack    = self.reject_outside_stack,
+            quiet                   = quiet,
         )
 
     def disasm_all_functions(self, filter_func = None, quiet: bool = False) -> list[Function]:
-        """Disassemble all functions in the SCP file; quiet drops the per-function progress and error lines. A
-        function's failure is raised as a ScpDisassemblyError naming it."""
+        """Disassemble all functions in the SCP file; quiet drops the per-function progress and error lines and the
+        unusual-slot warnings. A function's failure is raised as a ScpDisassemblyError naming it."""
         disassembled_functions = []
         starts = sorted({func.offset for func in self.functions})
 
@@ -1114,7 +1117,8 @@ class ScpParser(StrictBase):
             # Create new context for each function; its code ends where the next function starts, the last one's
             # where the code ends when that is known
             next_start = bisect.bisect_right(starts, func.offset)
-            context = self.disasm_context(func, starts[next_start] if next_start < len(starts) else self.known_code_end)
+            context = self.disasm_context(func, starts[next_start] if next_start < len(starts) else self.known_code_end,
+                                          quiet)
 
             disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
             try:

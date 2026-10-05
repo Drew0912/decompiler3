@@ -417,6 +417,28 @@ class TestRunOn(CheckTestCase):
 
 
 class TestLocations(CheckTestCase):
+    def test_unusual_slot_warning_has_its_line(self):
+        '''A valid script reading a caller-frame slot compiles; the parser's warning gets the line, once'''
+        @self.writer.LLILCode()
+        def Inner():
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Frame():
+            PUSH_CALLER_FRAME('back')
+            LOAD_STACK(-WORD_SIZE)                  # line: caller-frame slot
+            POP(WORD_SIZE)
+            CALL_SCRIPT('this', 'Inner', 0)
+            label('back')
+            RETURN()
+
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.writer.run({})
+
+        [warning] = [record.getMessage() for record in logs.records]
+        self.assertRegex(warning, rf"^{at('caller-frame slot')}Frame: LOAD_STACK at {HEX}: addresses slot \d+ = caller frame$")
+        self.assertTrue(self.dat.exists())
+
     def test_library_body_points_at_its_own_file(self):
         library = self.tmp / 'step9_library.py'
         library.write_text(LIBRARY_SOURCE, encoding = 'utf-8')

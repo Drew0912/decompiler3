@@ -20,10 +20,10 @@ class CompileCheckError(ValueError):
     """Compiled bytes that don't decompile again"""
 
 
-def require_decompilable(data: bytes, name: str, code_end: int) -> list[Function]:
+def require_decompilable(data: bytes, name: str, code_end: int) -> tuple[ScpParser, list[Function]]:
     """Raise the parser's or the lifter's error when data, whose code ends at code_end, doesn't decompile again; return
-    the functions that run on past their end into the next function's code (that decompiles). Unreachable code is not
-    checked, and a stack that balances but reads the wrong slot passes."""
+    the quiet parse, whose warnings (run-ons, unusual slots) the caller reports. Unreachable code is not checked, and a
+    stack that balances but reads the wrong slot passes."""
     parser, functions = ScpParser.load_bytes(data, name, round_trip = False, keep_unreachable_code = False, quiet = True,
                                              reject_outside_stack = True, known_code_end = code_end)
     for func in functions:
@@ -34,7 +34,7 @@ def require_decompilable(data: bytes, name: str, code_end: int) -> list[Function
             e.runs_on = func.runs_on
             raise
 
-    return [func for func in functions if func.runs_on is not None]
+    return parser, functions
 
 
 def source_location(site: SourceSite) -> str:

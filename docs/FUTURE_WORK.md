@@ -247,7 +247,11 @@ The output was correct in every function traced; what it costs is readability.
   opcodes (the per-function fingerprint, ignoring line markers); the static game-logic comparator
   (Static Game-Logic Check, below) covers the rest. Measure the exact-match rate.
 - **Stack checks.** The lowering tracks the stack pointer itself; re-lifting the compiled output with
-  the LLIL lifter checks stack discipline (`docs/FUTURE_WORK_LLIL.md`, Writer).
+  the LLIL lifter checks stack discipline - the writer's compile check does this at the end of every
+  `build()` (`ScpWriter.check_compiled`, `docs/LLIL_DSL.md` §1), so lowered functions get it too. Its
+  `.py` lines come from walking up to the frame running the body, which only works while the body
+  emits opcodes: an HLIL body has returned before its tree is lowered, so the lowering must set the
+  writer's source site from each node's recorded file and line, or every error falls back to the `def`.
 - **What HLIL must keep for exact recompiles:** raw vs typed constants (`is_raw` exists only in LLIL
   today); which jump opcode was used (a "true arm is the fall-through" bit); block-scoped locals,
   including never-read ones and unused stores; stack temporaries rather than named locals; `reg0` as a
@@ -344,7 +348,11 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   - keep `1` and `1.0` distinct, and emit `# fmt: off` so formatters don't reflow the lists;
   - warn when a function's last statement is not a return or a jump (a bare Python `return` stopped
     the build early); `return Return()` stays a deliberate early exit.
-- **Line numbers:** none in the DSL; re-emitting them from per-statement data is future work.
+- **Line numbers:** none in the DSL, and none planned (user, 2026-10-05): hand edits wouldn't carry
+  `DEBUG_SET_LINENO`, so an HLIL function compiles without it. A call gets a call-site debug record only
+  after its function's first `DEBUG_SET_LINENO` (`CallDebugInfoTracker`), so such a function also loses
+  its debug records - accepted: they only matter for a byte-exact rebuild, and the bytecode is assumed to
+  run without them. Line-Anchored Patches (below) then need an anchor that doesn't use line numbers.
 - **Printer:** one statement per line, a trailing comma on every list item, comments allowed inside
   brackets; named pseudo-IDs, hex bit flags, the shortest float that encodes identically.
 - **Python limits:** nesting stops at 99 levels (200 nested brackets; `with`/`if` hit the same limit
@@ -487,7 +495,8 @@ small, and only the logic round trip is needed, not byte-exact output.
 - **Errors in the hook file** point at its own lines: the writer's source map, plus the `tokenize`-based
   finder of a function's `def` line past its decorators that the compile check uses.
 - **Also consider anchors that don't need `DEBUG_SET_LINENO`:** older scripts don't carry source line
-  numbers, and decompiler3 may be extended to support them. Candidates: content anchors like the tree
+  numbers, decompiler3 may be extended to support them, and an HLIL DSL script has none at all (HLIL
+  DSL: Form, Line numbers) - so for HLIL-level scripts this is the main anchor, not a fallback. Candidates: content anchors like the tree
   hooks above (the nth call to a function within `F`, a string it pushes), a statement's position in the
   HLIL DSL tree, or a fingerprint of the opcode sequence alone; line numbers would then be an optional
   shortcut where they exist.
