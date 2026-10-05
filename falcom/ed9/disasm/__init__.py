@@ -8,7 +8,7 @@ from .ed9_optable import *
 from .llil_dsl_comments import *
 from .formatter import *
 
-__all__ = [
+__all__ = (
     'Instruction',
     'Operand',
     'OperandType',
@@ -26,4 +26,4 @@ __all__ = [
     'CommentOptions',
     'Formatter',
     'FormatterContext',
-]
+)

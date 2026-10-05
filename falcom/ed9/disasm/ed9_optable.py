@@ -1,8 +1,7 @@
 """ED9 (Kuro no Kiseki) Instruction Table"""
 
 from common import *
-from ml import fileio
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .instruction_table import *
 from .instruction import *

@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
-from ml import *
+from common import fileio
 from falcom.ed9.disasm import *
 from falcom.ed9.parser import *
 from pathlib import Path
@@ -62,7 +62,7 @@ def main():
     elif input_path.is_dir():
         # Directory
 
-        files = [Path(f) for f in fileio.getDirectoryFiles(str(input_path), '*.dat', subdir = False)]
+        files = [f for f in sorted(input_path.glob('*.dat')) if f.is_file()]
 
     else:
         print(f'Error: {input_path} is neither a file nor a directory')

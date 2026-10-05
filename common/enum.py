@@ -1,4 +1,9 @@
-from enum import IntEnum, IntFlag, auto
+from enum import IntEnum, IntFlag
+
+__all__ = (
+    'IntEnum2',
+    'IntFlag2',
+)
 
 class IntEnum2(IntEnum):
     def __str__(self):

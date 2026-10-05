@@ -93,8 +93,9 @@ Keep comments brief and meaningful. Avoid redundant explanations.
 ## Environment
 
 ### Python
-- Use the project venv, not a system install: `D:\Dev\decompiler3\.venv\Scripts\python.exe` (Python 3.14.6)
-- Activate with `.venv/Scripts/activate` (Git Bash) or `activateVenv.bat` (cmd) — also sets `PYTHONPATH` to the repo root
+- Python 3.14+, standard library only: no third-party packages and no venv (`python` on PATH is 3.14.6)
+- Run tests from the repo root: `python -m unittest discover -s tests` (always pass `-s tests`; bare `python -m unittest` walks every package and hits the unused `falcom.ed9.signatures` package's missing `yaml` import)
+- Tests and tools insert the repo root into `sys.path` themselves; set `PYTHONPATH` to the repo root (`setPythonPath.bat` in cmd) only to run a generated script `.py` from elsewhere
 - Environment: Git Bash (MINGW64) on Windows
 
 ## Active Technologies

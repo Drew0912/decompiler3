@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 '''Shared test helpers for compiling DSL scripts against a throwaway ScpWriter'''
 
-from ml import fileio
+from common import fileio
 
 from common.config import default_encoding
 from falcom.ed9.writer import scp_writer

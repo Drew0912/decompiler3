@@ -2,7 +2,7 @@
 
 from common import *
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from .instruction_table import InstructionDescriptor, OperandDescriptor

@@ -1,6 +1,6 @@
 from .types_scp import *
 from .types_parser import *
-from ml import fileio
+from common import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment

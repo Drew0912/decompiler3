@@ -4,11 +4,10 @@ from common import *
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from .basic_block import BranchKind
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from .instruction import Instruction
 
 if TYPE_CHECKING:
-    from ml import fileio
     from .instruction import Operand
     from .formatter import FormatterContext
 

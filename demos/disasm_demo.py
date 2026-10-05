@@ -6,7 +6,6 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 import difflib
-from ml import *
 from falcom.ed9.disasm import *
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.parser import *

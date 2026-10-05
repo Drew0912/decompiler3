@@ -1,5 +1,9 @@
 '''Strict base class that prevents dynamic attribute assignment'''
 
+__all__ = (
+    'StrictBase',
+)
+
 
 class StrictBase:
     '''Base class that only allows annotated attributes'''

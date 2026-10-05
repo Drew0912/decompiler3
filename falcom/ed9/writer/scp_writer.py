@@ -5,10 +5,10 @@ import math
 from dataclasses import dataclass, field
 from typing import Callable
 
-from ml import fileio
+from common import fileio
 
 from common.config import default_encoding
-from common.logging import *
+from common.logging import log
 from ir.llil import WORD_SIZE
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, ED9_FORMAT_TABLE, OperandDescriptor, OperandType
 from ..parser.crc32 import hash_func_Name

@@ -1,5 +1,12 @@
 import unicodedata
 
+__all__ = (
+    'UINT32_MASK',
+    'quote_string',
+    'format_uint32_hex',
+    'display_width',
+)
+
 STRING_ESCAPES          = {'\\': '\\\\', '\r': '\\r', '\n': '\\n', '\t': '\\t'}
 MIN_PRINTABLE_CODEPOINT = 0x20
 DELETE_CODEPOINT        = 0x7F

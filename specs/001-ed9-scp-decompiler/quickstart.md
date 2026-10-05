@@ -11,7 +11,7 @@
 
 ```python
 from falcom.ed9.parser import ScpParser
-from ml import fileio
+from common import fileio
 
 # Open file
 fs = fileio.FileStream()
@@ -106,7 +106,7 @@ typescript_code = generate_typescript(hlil_func)
 """Decompile a single SCP file to TypeScript."""
 
 from pathlib import Path
-from ml import fileio
+from common import fileio
 from falcom.ed9.parser import ScpParser
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil

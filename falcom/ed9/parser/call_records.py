@@ -2,7 +2,7 @@
 raw arguments, and whether a record holds what its call would get (content only - the writer's own rules stay with the
 round-trip validator)"""
 
-from ml import fileio
+from common import fileio
 
 from common.config import default_encoding
 from ir.llil import WORD_SIZE

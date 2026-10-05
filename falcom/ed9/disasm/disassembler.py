@@ -1,7 +1,6 @@
 """Generic recursive descent disassembler"""
 
 from common import *
-from ml import fileio
 from typing import Callable
 
 from .instruction_table import *
