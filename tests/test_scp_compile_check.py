@@ -20,9 +20,8 @@ from falcom.ed9.scena2py import main
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_compile_check import CompileCheckError, definition_line
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import WriterTestCase, load_module
+from scp_writer_test_utils import WriterTestCase, at, load_module, marked_line
 
-SOURCE_LINES = Path(__file__).read_text(encoding = 'utf-8').splitlines()
 HEX = '0x[0-9A-F]+'
 
 LIBRARY_SOURCE = '''from falcom.ed9.writer.scp_writer_helper import *
@@ -32,17 +31,6 @@ def lib_unbalanced(arg1: Value32):
     RETURN()
 '''
 LIBRARY_RETURN_LINE = 5
-
-
-def marked_line(marker: str) -> int:
-    '''The line of this file that ends with the comment # line: <marker>'''
-    [number] = [number for number, text in enumerate(SOURCE_LINES, 1) if text.rstrip().endswith(f'# line: {marker}')]
-    return number
-
-
-def at(marker: str) -> str:
-    '''A message prefix 'this file:line: ' for a marked line, as a regex'''
-    return re.escape(f'{__file__}:{marked_line(marker)}: ')
 
 
 def decorate(**kwargs):
@@ -118,12 +106,12 @@ class CheckTestCase(WriterTestCase):
 class TestStackMistakes(CheckTestCase):
     def test_wrong_pop(self):
         define_wrong_pop(self.writer)
-        self.assertCheckFails(rf"{at('wrong pop')}WrongPop: RETURN at {HEX}: the stack is not empty: \[param_0\]$")
+        self.assertCheckFails(rf"{at(__file__, 'wrong pop')}WrongPop: RETURN at {HEX}: the stack is not empty: \[param_0\]$")
 
     def test_build_runs_the_check(self):
         '''Every caller of build() gets the check, not only run()'''
         define_wrong_pop(self.writer)
-        with self.assertRaisesRegex(CompileCheckError, rf"^{at('wrong pop')}WrongPop: "):
+        with self.assertRaisesRegex(CompileCheckError, rf"^{at(__file__, 'wrong pop')}WrongPop: "):
             self.writer.build({})
 
     def test_failure_leaves_an_older_dat_as_it_was(self):
@@ -159,11 +147,11 @@ class TestStackMistakes(CheckTestCase):
             label('ret')
             RETURN()
 
-        self.assertCheckFails(rf"{at('extra argument')}Caller: CALL at {HEX}: expects a return address")
+        self.assertCheckFails(rf"{at(__file__, 'extra argument')}Caller: CALL at {HEX}: expects a return address")
 
     def test_read_above_the_stack(self):
         define_read_above(self.writer)
-        self.assertCheckFails(rf"{at('above the stack')}Above: LOAD_STACK at {HEX}: addresses slot 0 \(above the stack\)$")
+        self.assertCheckFails(rf"{at(__file__, 'above the stack')}Above: LOAD_STACK at {HEX}: addresses slot 0 \(above the stack\)$")
 
     def test_read_below_the_stack(self):
         '''The parser fails right there, without first logging the warning decompiling gives'''
@@ -174,7 +162,7 @@ class TestStackMistakes(CheckTestCase):
             RETURN()
 
         with self.assertNoLogs(log, 'WARNING'):
-            self.assertCheckFails(rf"{at('below the stack')}Below: LOAD_STACK at {HEX}: addresses slot -2 \(below the stack\)$")
+            self.assertCheckFails(rf"{at(__file__, 'below the stack')}Below: LOAD_STACK at {HEX}: addresses slot -2 \(below the stack\)$")
 
     def test_dead_store_is_rejected(self):
         '''Decompiling keeps it as a dead store; the check treats it as the mistake it almost always is'''
@@ -187,7 +175,7 @@ class TestStackMistakes(CheckTestCase):
             POP(WORD_SIZE)
             RETURN()
 
-        self.assertCheckFails(rf"{at('dead store')}SetArg: POP_TO at {HEX}: addresses slot 1 \(above the stack\)$")
+        self.assertCheckFails(rf"{at(__file__, 'dead store')}SetArg: POP_TO at {HEX}: addresses slot 1 \(above the stack\)$")
 
     def test_unreachable_code_is_not_checked(self):
         @self.writer.LLILCode()
@@ -207,7 +195,7 @@ class TestStackMistakes(CheckTestCase):
             POP(WORD_SIZE)                          # line: reachable pop
             RETURN()
 
-        self.assertCheckFails(rf"{at('reachable pop')}Live: POP at {HEX}: pops 1 entries, the stack has 0")
+        self.assertCheckFails(rf"{at(__file__, 'reachable pop')}Live: POP at {HEX}: pops 1 entries, the stack has 0")
 
 
 class TestRunOn(CheckTestCase):
@@ -236,7 +224,7 @@ class TestRunOn(CheckTestCase):
         def B():
             RETURN()
 
-        self.assertCompilesWithWarning(rf"{at('runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN")
+        self.assertCompilesWithWarning(rf"{at(__file__, 'runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN")
 
     def test_conditional_jump_falls_through_into_the_next_function(self):
         @self.writer.LLILCode()
@@ -249,7 +237,7 @@ class TestRunOn(CheckTestCase):
         def B():
             RETURN()
 
-        self.assertCompilesWithWarning(rf"{at('falls through')}A: POP_JMP_ZERO at {HEX}: runs past its end into B without RETURN")
+        self.assertCompilesWithWarning(rf"{at(__file__, 'falls through')}A: POP_JMP_ZERO at {HEX}: runs past its end into B without RETURN")
 
     def test_empty_function_warns_at_its_def(self):
         @self.writer.LLILCode()
@@ -260,7 +248,7 @@ class TestRunOn(CheckTestCase):
         def B():
             RETURN()
 
-        self.assertCompilesWithWarning(rf"{at('empty function')}AEmpty: has no code, so it runs on into B without RETURN")
+        self.assertCompilesWithWarning(rf"{at(__file__, 'empty function')}AEmpty: has no code, so it runs on into B without RETURN")
 
     def test_empty_function_sharing_a_start_with_a_run_on_gets_its_own_wording(self):
         @self.writer.LLILCode()
@@ -281,8 +269,8 @@ class TestRunOn(CheckTestCase):
 
         warnings = [record.getMessage() for record in logs.records]
         self.assertEqual(len(warnings), 2, warnings)
-        self.assertRegex(warnings[0], rf"^{at('empty before a run-on')}E: has no code, so it runs on into R without RETURN$")
-        self.assertRegex(warnings[1], rf"^{at('shared start runs on')}R: SET_REG at {HEX}: runs past its end into C without RETURN$")
+        self.assertRegex(warnings[0], rf"^{at(__file__, 'empty before a run-on')}E: has no code, so it runs on into R without RETURN$")
+        self.assertRegex(warnings[1], rf"^{at(__file__, 'shared start runs on')}R: SET_REG at {HEX}: runs past its end into C without RETURN$")
 
     def test_failure_gets_the_run_on_as_a_note(self):
         self.define_runs_on(self.writer)
@@ -292,8 +280,8 @@ class TestRunOn(CheckTestCase):
             POP(WORD_SIZE)                          # line: pop in B
             RETURN()
 
-        self.assertCheckFails(rf"{at('pop in B')}A: POP at {HEX}: pops 1 entries, the stack has 0: \[\]; "
-                              rf"{at('runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN$")
+        self.assertCheckFails(rf"{at(__file__, 'pop in B')}A: POP at {HEX}: pops 1 entries, the stack has 0: \[\]; "
+                              rf"{at(__file__, 'runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN$")
 
     def test_lift_failure_gets_the_run_on_as_a_note(self):
         self.define_runs_on(self.writer)
@@ -305,8 +293,8 @@ class TestRunOn(CheckTestCase):
             POP(2 * WORD_SIZE)
             RETURN()
 
-        self.assertCheckFails(rf"{at('deref in B')}A: LOAD_STACK_DEREF at {HEX}: .*; "
-                              rf"{at('runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN$")
+        self.assertCheckFails(rf"{at(__file__, 'deref in B')}A: LOAD_STACK_DEREF at {HEX}: .*; "
+                              rf"{at(__file__, 'runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN$")
 
     def test_last_function_fails_at_its_last_instruction(self):
         @self.writer.LLILCode()
@@ -314,7 +302,7 @@ class TestRunOn(CheckTestCase):
             PUSH_INT(1)
             SET_REG(0)                              # line: last runs on
 
-        self.assertCheckFails(rf"{at('last runs on')}Last: SET_REG at {HEX}: runs past the end of the code without RETURN$")
+        self.assertCheckFails(rf"{at(__file__, 'last runs on')}Last: SET_REG at {HEX}: runs past the end of the code without RETURN$")
 
     def test_last_function_jumping_past_the_end_fails_at_the_jump(self):
         @self.writer.LLILCode()
@@ -322,7 +310,7 @@ class TestRunOn(CheckTestCase):
             JMP('end')                              # line: jumps past the end
             label('end')
 
-        self.assertCheckFails(rf"{at('jumps past the end')}Trailing: JMP at {HEX}: jumps to {HEX}, past the end of the "
+        self.assertCheckFails(rf"{at(__file__, 'jumps past the end')}Trailing: JMP at {HEX}: jumps to {HEX}, past the end of the "
                               r"code \(no RETURN after its label\)$")
 
     def test_running_into_the_last_function_fails_where_the_code_ends(self):
@@ -334,8 +322,8 @@ class TestRunOn(CheckTestCase):
             PUSH_INT(2)
             SET_REG(0)                              # line: code ends
 
-        self.assertCheckFails(rf"{at('code ends')}A: SET_REG at {HEX}: runs past the end of the code without RETURN; "
-                              rf"{at('runs on')}A: SET_REG at {HEX}: runs past its end into ZLast without RETURN$")
+        self.assertCheckFails(rf"{at(__file__, 'code ends')}A: SET_REG at {HEX}: runs past the end of the code without RETURN; "
+                              rf"{at(__file__, 'runs on')}A: SET_REG at {HEX}: runs past its end into ZLast without RETURN$")
 
     def test_jumping_into_the_last_function_fails_where_the_code_ends(self):
         @self.writer.LLILCode()
@@ -349,7 +337,7 @@ class TestRunOn(CheckTestCase):
             SET_REG(0)                              # line: jumped-to code ends
 
         with self.assertLogs(log, 'WARNING'):       # the cross-function jump
-            self.assertCheckFails(rf"{at('jumped-to code ends')}A: SET_REG at {HEX}: runs past the end of the code "
+            self.assertCheckFails(rf"{at(__file__, 'jumped-to code ends')}A: SET_REG at {HEX}: runs past the end of the code "
                                   r"without RETURN$")
 
     def test_return_label_at_the_end_fails_with_its_own_wording(self):
@@ -390,7 +378,7 @@ class TestRunOn(CheckTestCase):
                         def After():
                             RETURN()
 
-                    message = rf'^{at(marker)}Caller: {mnemonic} at {HEX}: returns to {HEX}, past its end \(no RETURN'
+                    message = rf'^{at(__file__, marker)}Caller: {mnemonic} at {HEX}: returns to {HEX}, past its end \(no RETURN'
                     with self.assertRaisesRegex(CompileCheckError, message):
                         writer.build({})
 
@@ -401,7 +389,7 @@ class TestRunOn(CheckTestCase):
         def Last():                                 # line: last def
             pass
 
-        self.assertCheckFails(rf"{at('last def')}Last: has no code before the end of the code \(no RETURN\)$")
+        self.assertCheckFails(rf"{at(__file__, 'last def')}Last: has no code before the end of the code \(no RETURN\)$")
 
     def test_decompiling_records_it_without_a_failure(self):
         def define(writer):
@@ -435,7 +423,7 @@ class TestLocations(CheckTestCase):
             self.writer.run({})
 
         [warning] = [record.getMessage() for record in logs.records]
-        self.assertRegex(warning, rf"^{at('caller-frame slot')}Frame: LOAD_STACK at {HEX}: addresses slot \d+ = caller frame$")
+        self.assertRegex(warning, rf"^{at(__file__, 'caller-frame slot')}Frame: LOAD_STACK at {HEX}: addresses slot \d+ = caller frame$")
         self.assertTrue(self.dat.exists())
 
     def test_library_body_points_at_its_own_file(self):
@@ -459,7 +447,7 @@ class TestLocations(CheckTestCase):
             pop_twice()                             # line: helper call
             RETURN()
 
-        self.assertCheckFails(rf"{at('helper call')}Caller: POP at {HEX}: pops 1 entries, the stack has 0")
+        self.assertCheckFails(rf"{at(__file__, 'helper call')}Caller: POP at {HEX}: pops 1 entries, the stack has 0")
 
     def test_failure_reached_through_a_cross_function_jump_points_into_the_other_function(self):
         @self.writer.LLILCode()
@@ -473,7 +461,7 @@ class TestLocations(CheckTestCase):
             RETURN()
 
         with self.assertLogs(log, 'WARNING'):
-            self.assertCheckFails(rf"{at('shared pop')}A: POP at {HEX}: pops 1 entries, the stack has 0")
+            self.assertCheckFails(rf"{at(__file__, 'shared pop')}A: POP at {HEX}: pops 1 entries, the stack has 0")
 
     def test_valid_cross_function_jump_passes_and_its_warning_has_a_line(self):
         @self.writer.LLILCode()
@@ -488,7 +476,7 @@ class TestLocations(CheckTestCase):
         with self.assertLogs(log, 'WARNING') as logs:
             self.writer.run({})
 
-        self.assertRegex(logs.records[0].getMessage(), rf"^{at('cross-function jump')}A: jumps to label 'in_b' in B")
+        self.assertRegex(logs.records[0].getMessage(), rf"^{at(__file__, 'cross-function jump')}A: jumps to label 'in_b' in B")
         self.assertTrue(self.dat.exists())
 
     def test_equal_starts(self):
@@ -501,7 +489,7 @@ class TestLocations(CheckTestCase):
         def ZBody(arg1: Value32):
             RETURN()                                # line: equal starts
 
-        self.assertCheckFails(rf"{at('equal starts')}ZBody: RETURN at {HEX}: the stack is not empty")
+        self.assertCheckFails(rf"{at(__file__, 'equal starts')}ZBody: RETURN at {HEX}: the stack is not empty")
 
     def test_undefined_label_points_at_its_line(self):
         def define_jump(writer):
@@ -535,7 +523,7 @@ class TestLocations(CheckTestCase):
                 writer = self.fresh_writer()
                 function, name, marker = define(writer)
 
-                with self.assertRaisesRegex(ValueError, rf"^{at(marker)}{function}: undefined label '{name}'$"):
+                with self.assertRaisesRegex(ValueError, rf"^{at(__file__, marker)}{function}: undefined label '{name}'$"):
                     writer.build({})
 
 
@@ -549,7 +537,7 @@ class TestDefinitionLine(unittest.TestCase):
             (undecorated, 'undecorated'),
         ):
             with self.subTest(function = func.__name__):
-                self.assertEqual(definition_line(func.__code__), marked_line(marker))
+                self.assertEqual(definition_line(func.__code__), marked_line(__file__, marker))
 
     def test_nested(self):
         @decorate(table = {
@@ -558,7 +546,7 @@ class TestDefinitionLine(unittest.TestCase):
         def nested():                               # line: nested
             pass
 
-        self.assertEqual(definition_line(nested.__code__), marked_line('nested'))
+        self.assertEqual(definition_line(nested.__code__), marked_line(__file__, 'nested'))
 
     def test_first_line_when_there_is_no_def(self):
         namespace = {}

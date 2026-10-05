@@ -6,7 +6,6 @@ import math
 from pathlib import Path
 import re
 import sys
-import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -16,7 +15,7 @@ from falcom.ed9.parser.types_scp import ScpValue
 from falcom.ed9.writer import scp_writer_helper
 from falcom.ed9.writer.metadata import SCP_WRITER_HELPER_IMPORT
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import body_writer, fresh_writer
+from scp_writer_test_utils import at, body_writer, fresh_writer
 
 
 class TestBoolRejected(unittest.TestCase):
@@ -94,21 +93,13 @@ class TestPushFloat(unittest.TestCase):
             PUSH_FLOAT(3.5e38)
 
     def test_non_finite_default_does_not_compile(self):
-        # A real compile: defaults are written with the function table, apart from the bodies
-        with tempfile.TemporaryDirectory() as tmp:
-            dat = Path(tmp) / 'nan_default.dat'
-            fresh_writer()
-            writer = create_scp_writer(str(dat))
-
+        '''Rejected at its def, with the line: defaults are written apart from the bodies'''
+        writer = fresh_writer()
+        with self.assertRaisesRegex(TypeError, rf"^{at(__file__, 'nan default')}parameter arg1 of NanDefault: "
+                                               "non-finite float nan: the game can't use it$"):
             @writer.LLILCode()
-            def NanDefault(arg1: Nullable32 = math.nan):
+            def NanDefault(arg1: Nullable32 = math.nan):    # line: nan default
                 RETURN()
-
-            with self.assertRaisesRegex(ValueError, "non-finite float nan: the game can't use it") as ctx:
-                writer.run({'NanDefault': NanDefault})
-
-            self.assertEqual(ctx.exception.__notes__, ['NanDefault: default of arg1'])
-            self.assertFalse(dat.exists())
 
 
 class TestValueRanges(unittest.TestCase):
@@ -136,17 +127,12 @@ class TestValueRanges(unittest.TestCase):
                     ScpValue(RawInt(value)).to_bytes()
 
     def test_default_past_the_range_does_not_compile(self):
-        fresh_writer()
-        writer = create_scp_writer('unused.dat')
-
-        @writer.LLILCode()
-        def BigDefault(arg1: Value32, arg2: Value32 = 600000000):
-            RETURN()
-
-        with self.assertRaisesRegex(ValueError, '^Integer 600000000 is outside') as ctx:
-            writer.build({})
-
-        self.assertEqual(ctx.exception.__notes__, ['BigDefault: default of arg2'])
+        writer = fresh_writer()
+        with self.assertRaisesRegex(TypeError, rf"^{at(__file__, 'big default')}parameter arg2 of BigDefault: "
+                                               'Integer 600000000 is outside'):
+            @writer.LLILCode()
+            def BigDefault(arg1: Value32, arg2: Value32 = 600000000):   # line: big default
+                RETURN()
 
     def test_push_past_the_range_does_not_compile(self):
         body_writer()

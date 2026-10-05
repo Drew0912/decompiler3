@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 '''Hook files (Step 10a): function callbacks and replace_function swap a function's body in place - position, table
 index and common flag kept, the signature merged with the original's - and every error or compile-check failure in a
-hook points at the hook's own line. Also the parameter-type check on every new function.'''
+hook points at the hook's own line. Also the parameter checks on every new function.'''
 
 from pathlib import Path
 import functools
-import re
 import runpy
 import sys
 import textwrap
@@ -19,21 +18,18 @@ from ir.llil import WORD_SIZE
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer.scp_compile_check import CompileCheckError
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import WriterTestCase, load_module
+from scp_writer_test_utils import WriterTestCase, at, load_module, marked_line
 
 HEX = '0x[0-9A-F]+'
-SOURCE_LINES = Path(__file__).read_text(encoding = 'utf-8').splitlines()
+PUSH_POP_RETURN = ['PUSH_INT', 'POP', 'RETURN']
 
-
-def line_of(lines: list[str], marker: str) -> int:
-    '''The line ending with the comment # line: <marker>'''
-    [number] = [number for number, text in enumerate(lines, 1) if text.rstrip().endswith(f'# line: {marker}')]
-    return number
-
-
-def here(marker: str) -> str:
-    '''A message prefix 'this file:line: ' for a marked line of this file, as a regex'''
-    return re.escape(f'{__file__}:{line_of(SOURCE_LINES, marker)}: ')
+REPLACE_TARGET = '''
+    @replace_function('Target')
+    def Target(arg1):
+        PUSH_INT(7)
+        POP(2 * WORD_SIZE)
+        RETURN()
+'''
 
 
 class HookTestCase(WriterTestCase):
@@ -50,15 +46,6 @@ class HookTestCase(WriterTestCase):
         path.write_text(header + textwrap.dedent(source), encoding = 'utf-8')
         return load_module(path)
 
-    def site(self, module, marker: str) -> str:
-        ''''hook file:line' of a marked line of a hook'''
-        path = Path(module.__file__)
-        return f'{path}:{line_of(path.read_text(encoding = "utf-8").splitlines(), marker)}'
-
-    def at(self, module, marker: str) -> str:
-        '''A message prefix 'hook file:line: ' for a marked line of a hook, as a regex'''
-        return re.escape(f'{self.site(module, marker)}: ')
-
     def parsed(self) -> dict:
         '''The script compiled and parsed again: name -> Function (self.parser holds the parse)'''
         self.parser, functions = ScpParser.load_bytes(self.writer.build({}), 'test.dat', round_trip = False,
@@ -71,55 +58,39 @@ class HookTestCase(WriterTestCase):
     def signature(self, func) -> str:
         return str(func).splitlines()[0]
 
-    def define_caller_and_callee(self):
-        @self.writer.LLILCode()
-        def Callee(arg1: Value32):
-            POP(WORD_SIZE)
-            RETURN()
-
-        @self.writer.LLILCode()
-        def Caller():
-            PUSH_CURRENT_FUNC_ID()
-            PUSH_RET_ADDR('ret')
-            PUSH_INT(1)
-            CALL(Callee)
-            label('ret')
-            RETURN()
-
     def define_target(self):
         @self.writer.LLILCode()
         def Target(arg1: Value32):
             POP(WORD_SIZE)
             RETURN()
 
+        return Target
 
-PUSH_POP_RETURN = ['PUSH_INT', 'POP', 'RETURN']
+    def define_caller_and_target(self):
+        target = self.define_target()
 
-REPLACE_CALLEE = '''
-    @replace_function('Callee')
-    def Callee(arg1):
-        PUSH_INT(7)
-        POP(2 * WORD_SIZE)
-        RETURN()
-'''
+        @self.writer.LLILCode()
+        def Caller():
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('ret')
+            PUSH_INT(1)
+            CALL(target)
+            label('ret')
+            RETURN()
 
 
 class TestReplace(HookTestCase):
     def test_body_swapped_in_place(self):
-        self.define_caller_and_callee()
-        before = self.parsed()
+        self.define_caller_and_target()
+        self.hook(REPLACE_TARGET)
+        functions = self.parsed()
 
-        self.writer = self.fresh_writer()
-        self.define_caller_and_callee()
-        self.hook(REPLACE_CALLEE)
-        after = self.parsed()
-
-        self.assertEqual(self.mnemonics(after['Callee']), PUSH_POP_RETURN)
-        self.assertEqual({name: (func.index, func.is_common_func) for name, func in after.items()},
-                         {name: (func.index, func.is_common_func) for name, func in before.items()})
-        self.assertEqual(sorted(after, key = lambda name: after[name].offset), ['Callee', 'Caller'])
-        [call] = [inst for inst in self.parser.get_instructions(after['Caller']) if inst.mnemonic == 'CALL']
-        self.assertEqual(call.operands[0].value, after['Callee'].index)
+        self.assertEqual(self.mnemonics(functions['Target']), PUSH_POP_RETURN)
+        self.assertEqual({name: (func.index, func.is_common_func) for name, func in functions.items()},
+                         {'Caller': (0, False), 'Target': (1, False)})
+        self.assertEqual(sorted(functions, key = lambda name: functions[name].offset), ['Target', 'Caller'])
+        [call] = [inst for inst in self.parser.get_instructions(functions['Caller']) if inst.mnemonic == 'CALL']
+        self.assertEqual(call.operands[0].value, functions['Target'].index)
 
     def test_common_function(self):
         def lib_common(arg1: Value32):
@@ -130,7 +101,7 @@ class TestReplace(HookTestCase):
         def commonImports():
             return [lib_common]
 
-        self.hook(REPLACE_CALLEE.replace('Callee', 'lib_common'))
+        self.hook(REPLACE_TARGET.replace('Target', 'lib_common'))
         func = self.parsed()['lib_common']
 
         self.assertTrue(func.is_common_func)
@@ -176,37 +147,47 @@ class TestReplace(HookTestCase):
         self.assertEqual({name: self.mnemonics(func) for name, func in functions.items()},
                          {'AniA': PUSH_POP_RETURN, 'AniB': PUSH_POP_RETURN, 'Other': ['RETURN']})
 
+    def test_hook_functions_are_the_hooks_own(self):
+        '''What 10b injects script names into: the registered functions, never the writer's own chain entries'''
+        def raw(name, func):
+            return None
+
+        registerFuncCallback(raw)
+        body = replace_function('Target')(lambda arg1: None)
+
+        self.assertEqual(self.writer.hook_functions, [raw, body])
+
     def test_replaced_twice_warns_and_the_last_wins(self):
-        self.define_caller_and_callee()
+        self.define_target()
         with self.assertLogs(log, 'WARNING') as logs:
             hook = self.hook('''
-                @replace_function('Callee')
-                def Callee(arg1):                           # line: first
+                @replace_function('Target')
+                def Target(arg1):                           # line: first
                     POP(WORD_SIZE)
                     RETURN()
 
-                @replace_function('Callee')
-                def Callee(arg1):                           # line: second
+                @replace_function('Target')
+                def Target(arg1):                           # line: second
                     PUSH_INT(7)
                     POP(2 * WORD_SIZE)
                     RETURN()
             ''')
 
         [warning] = [record.getMessage() for record in logs.records]
-        self.assertEqual(warning, f"{self.site(hook, 'second')}: replace_function('Callee') again, overriding the one at "
-                                  f"{self.site(hook, 'first')}")
-        self.assertEqual(self.mnemonics(self.parsed()['Callee']), PUSH_POP_RETURN)
+        first, second = (f'{hook.__file__}:{marked_line(hook.__file__, marker)}' for marker in ('first', 'second'))
+        self.assertEqual(warning, f"{second}: replace_function('Target') again, overriding the one at {first}")
+        self.assertEqual(self.mnemonics(self.parsed()['Target']), PUSH_POP_RETURN)
 
     def test_unknown_name_points_at_the_hook(self):
-        self.define_caller_and_callee()
+        self.define_target()
         hook = self.hook('''
-            @replace_function('Calee')
-            def Calee(arg1):                                # line: misspelled
+            @replace_function('Targt')
+            def Targt(arg1):                                # line: misspelled
                 RETURN()
         ''')
 
-        with self.assertRaisesRegex(ValueError, rf"^{self.at(hook, 'misspelled')}replace_function\('Calee'\): the script has "
-                                                rf"no function 'Calee'$"):
+        with self.assertRaisesRegex(ValueError, rf"^{at(hook.__file__, 'misspelled')}replace_function\('Targt'\): the "
+                                                rf"script has no function 'Targt'$"):
             self.writer.run({})
 
         self.assertFalse(self.dat.exists())
@@ -254,14 +235,14 @@ class TestReplace(HookTestCase):
             scena = create_scp_writer({str(self.dat)!r})
 
             @scena.LLILCode()
-            def Callee(arg1: Value32):
+            def Target(arg1: Value32):
                 POP(WORD_SIZE)
                 RETURN()
 
             scena.run(globals())
         '''), encoding = 'utf-8')
         (self.tmp / 'e2e_hook.py').write_text('from falcom.ed9.writer.scp_writer_helper import *\n'
-                                              + textwrap.dedent(REPLACE_CALLEE), encoding = 'utf-8')
+                                              + textwrap.dedent(REPLACE_TARGET), encoding = 'utf-8')
         sys.path.insert(0, str(self.tmp))
         self.addCleanup(sys.path.remove, str(self.tmp))
         self.addCleanup(sys.modules.pop, 'e2e_hook', None)
@@ -283,6 +264,13 @@ class TestRejected(HookTestCase):
         with self.assertRaisesRegex(TypeError, r"^replace_function\('Target'\): expected a plain function"):
             replace_function('Target')(functools.partial(body))
 
+    def test_replace_function_without_the_name(self):
+        with self.assertRaisesRegex(TypeError, r"^replace_function takes the function's name - "
+                                               r"@replace_function\('Name'\) - not <function "):
+            @replace_function
+            def Target(arg1):
+                RETURN()
+
     def test_callback_returning_a_non_function_points_at_the_callback(self):
         self.define_target()
         hook = self.hook('''
@@ -297,33 +285,51 @@ class TestRejected(HookTestCase):
             registerFuncCallback(to_partial)
         ''')
 
-        with self.assertRaisesRegex(TypeError, rf"^{self.at(hook, 'partial')}to_partial for Target: expected a plain "
-                                               "function"):
+        with self.assertRaisesRegex(TypeError, rf"^{at(hook.__file__, 'partial')}to_partial for Target: expected a "
+                                               "plain function"):
             self.writer.build({})
 
-    def test_callback_registering_a_function(self):
-        self.define_target()
-        hook = self.hook('''
-            def adds(name, func):                           # line: adds
-                def Extra():
-                    RETURN()
-
-                get_scp_writer().LLILCode()(Extra)
-
-            registerFuncCallback(adds)
-        ''')
-
-        with self.assertRaisesRegex(ValueError, rf"^{self.at(hook, 'adds')}a function callback can't register functions$"):
-            self.writer.build({})
-
-    def test_parameter_count_and_kinds(self):
-        cases = {
-            'count': ('def Target(arg1, arg2):', 'Target takes 1 parameters, its replacement 2$'),
-            'args': ('def Target(*args):', r"Target's replacement can't take \*args, keyword-only or \*\*kwargs "
-                                           r'parameters \(args\); a wrapper keeps the replaced signature with functools.wraps$'),
-            'keyword-only': ('def Target(arg1, *, flag):', r"Target's replacement can't take .* \(flag\);"),
+    def test_callback_registering_a_function_or_callback(self):
+        registrations = {
+            'function': 'get_scp_writer().LLILCode()(Extra)',
+            'callback': 'registerFuncCallback(lambda name, func: None)',
+            'replacement': "replace_function('Nmae')(Extra)",
         }
-        for case, (definition, message) in cases.items():
+        for case, registration in registrations.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+                self.define_target()
+                hook = self.hook(f'''
+                    def Extra():
+                        RETURN()
+
+                    def adds(name, func):                   # line: adds
+                        {registration}
+
+                    registerFuncCallback(adds)
+                ''')
+
+                with self.assertRaisesRegex(ValueError, rf"^{at(hook.__file__, 'adds')}a function callback can't register "
+                                                        "functions or callbacks$"):
+                    self.writer.build({})
+
+    def test_replacement_signatures(self):
+        cases = {
+            'count': ('def Target(arg1, arg2):', 'Target takes 1 parameters, its replacement 2$', False),
+            'args': ('def Target(*args):', r"Target's replacement can't take \*args, keyword-only or \*\*kwargs "
+                                           r'parameters \(args\); a wrapper keeps the replaced signature with functools.wraps$',
+                     False),
+            'keyword-only': ('def Target(arg1, *, flag):', r"Target's replacement can't take .* \(flag\);", False),
+            'type': ('def Target(arg1: int):', r"parameter arg1 of Target: unsupported type: <class 'int'>$", False),
+            'default': ('def Target(arg1 = None):', 'parameter arg1 of Target: a default is an int, float or str, not None$',
+                        False),
+            'misspelled type': ('def Target(arg1: Valu32):', "Target: name 'Valu32' is not defined", True),
+            'missing attribute type': ('def Target(arg1: ScpValue.Valu32):', "Target: type object 'ScpValue' has no "
+                                                                         "attribute 'Valu32'", False),
+            'out-of-range default': ('def Target(arg1 = 0x80000000):', 'parameter arg1 of Target: Integer 2147483648 '
+                                                                     'is outside', False),
+        }
+        for case, (definition, message, future) in cases.items():
             with self.subTest(case):
                 self.writer = self.fresh_writer()
                 self.define_target()
@@ -331,17 +337,48 @@ class TestRejected(HookTestCase):
                     @replace_function('Target')
                     {definition}                                # line: def
                         RETURN()
-                ''')
+                ''', future = future)
 
-                with self.assertRaisesRegex(TypeError, f"^{self.at(hook, 'def')}{message}"):
+                with self.assertRaisesRegex(TypeError, f"^{at(hook.__file__, 'def')}{message}"):
                     self.writer.build({})
 
-    def test_parameter_without_a_type(self):
-        with self.assertRaisesRegex(TypeError, rf"^{here('no type')}parameter arg2 of NoType needs a type: Value32, "
-                                               'Nullable32, str, NullableStr or Pointer$'):
-            @self.writer.LLILCode()
-            def NoType(arg1: Value32, arg2):                # line: no type
-                RETURN()
+    def test_new_function_parameters(self):
+        '''Every new function's parameters are checked where it is defined, not later while writing the .dat'''
+        cases = {
+            'no type': 'needs a type: Value32, Nullable32, str, NullableStr or Pointer$',
+            'wrong type': r"unsupported type: <class 'int'>$",
+            'None default': 'a default is an int, float or str, not None$',
+            'None type': 'needs a type: Value32, Nullable32, str, NullableStr or Pointer$',
+            'non-finite default': "non-finite float nan: the game can't use it$",
+        }
+        for case, message in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+                with self.assertRaisesRegex(TypeError, rf"^{at(__file__, case)}parameter arg2 of New: {message}"):
+                    if case == 'no type':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2):                   # line: no type
+                            RETURN()
+
+                    elif case == 'wrong type':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: int):              # line: wrong type
+                            RETURN()
+
+                    elif case == 'None default':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: Value32 = None):   # line: None default
+                            RETURN()
+
+                    elif case == 'None type':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: None):             # line: None type
+                            RETURN()
+
+                    else:
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: Value32 = float('nan')):   # line: non-finite default
+                            RETURN()
 
 
 class TestSignatures(HookTestCase):
@@ -404,7 +441,7 @@ class TestLocations(HookTestCase):
                 RETURN()
         ''')
 
-        with self.assertRaisesRegex(CompileCheckError, rf"^{self.at(hook, 'bad pop')}Target: POP at {HEX}: "):
+        with self.assertRaisesRegex(CompileCheckError, rf"^{at(hook.__file__, 'bad pop')}Target: POP at {HEX}: "):
             self.writer.build({})
 
     def test_wrapper_halves_point_at_their_own_lines(self):
@@ -413,9 +450,8 @@ class TestLocations(HookTestCase):
         for case, (wrapper_pop, original_pop) in cases.items():
             with self.subTest(case):
                 self.writer = self.fresh_writer()
-                writer = self.writer
 
-                @writer.LLILCode()
+                @self.writer.LLILCode()
                 def Target(arg1: Value32):
                     PUSH_INT(1)
                     POP(original_pop)                       # line: original pop
@@ -435,7 +471,7 @@ class TestLocations(HookTestCase):
 
                     registerFuncCallback(wrap)
                 ''')
-                expected = self.at(hook, 'wrapper pop') if case == 'wrapper' else here('original pop')
+                expected = at(hook.__file__, 'wrapper pop') if case == 'wrapper' else at(__file__, 'original pop')
 
                 with self.assertRaisesRegex(CompileCheckError, rf'^{expected}Target: POP at {HEX}: '):
                     self.writer.build({})
@@ -455,7 +491,7 @@ class TestLocations(HookTestCase):
             POP(2 * WORD_SIZE)                      # line: decorated body
             RETURN()
 
-        with self.assertRaisesRegex(CompileCheckError, rf"^{here('decorated body')}Decorated: POP at {HEX}: "):
+        with self.assertRaisesRegex(CompileCheckError, rf"^{at(__file__, 'decorated body')}Decorated: POP at {HEX}: "):
             self.writer.build({})
 
     def test_middle_of_a_chain_points_at_its_own_line(self):
@@ -479,7 +515,7 @@ class TestLocations(HookTestCase):
             registerFuncCallback(local)
         ''')
 
-        with self.assertRaisesRegex(CompileCheckError, rf"^{self.at(hook, 'middle')}Target: "):
+        with self.assertRaisesRegex(CompileCheckError, rf"^{at(hook.__file__, 'middle')}Target: "):
             self.writer.build({})
 
 

@@ -85,7 +85,7 @@ class ScpFunction:
     calls: list[TrackedCall] = field(default_factory = list)
     debug_records: list[DebugRecord] = field(default_factory = list)
     original_obj: Callable | None = None                        # the body before any hook replaced it
-    bodies: list[Callable] = field(default_factory = list)      # every replacement a hook accepted, in chain order
+    bodies: list[Callable] = field(default_factory = list)      # every body a hook callback returned, in chain order (may repeat, may include the original)
 
 
 class ScpWriter:
@@ -117,9 +117,11 @@ class ScpWriter:
         self.source_map = {}                            # type: dict[int, SourceSite]  # code position -> where it was emitted
         self.current_source = None                      # type: SourceSite | None
         self.code_offset = None                         # type: int  # file offset of the code buffer
-        self.body_code_ids = set()                      # type: set[int]  # id() of every body's code, for the source map
+        # id(), not the code: code objects hash their constants on every lookup and compare equal across files
+        self.body_code_ids = set()                      # type: set[int]  # every body's code, for the source map
         self.func_callbacks = []                        # type: list[Callable]  # hooks: cb(name, func) -> None or a new body
         self.replaced = {}                              # type: dict[str, Callable]  # replace_function name -> its body
+        self.hook_functions = []                        # type: list[Callable]  # the hooks' own functions, never the writer's
 
     def init(self, name: str):
         self.name = name
@@ -277,12 +279,12 @@ class ScpWriter:
         for f in self.functions:
             body = f.obj
             for cb in self.func_callbacks:
-                count = len(self.functions)
+                counts = (len(self.functions), len(self.func_callbacks))
                 replacement = cb(f.name, body)
-                if len(self.functions) != count:
-                    raise ValueError(f"{def_site(cb)}: a function callback can't register functions")
+                if (len(self.functions), len(self.func_callbacks)) != counts:
+                    raise ValueError(f"{def_site(cb)}: a function callback can't register functions or callbacks")
 
-                if replacement is None or replacement is body:
+                if replacement is None:
                     continue
 
                 self._require_function(replacement, f'{def_site(cb)}: {cb.__name__} for {f.name}')
@@ -322,7 +324,7 @@ class ScpWriter:
         try:
             return inspect.signature(func, eval_str = True)
 
-        except NameError as e:
+        except (NameError, AttributeError, SyntaxError) as e:
             raise TypeError(f'{def_site(func)}: {name}: {e}') from e
 
     @classmethod
@@ -331,7 +333,7 @@ class ScpWriter:
         without a location from writeFuncInfo)"""
         for param in sig.parameters.values():
             try:
-                if param.annotation is param.empty:
+                if param.annotation is param.empty or param.annotation is None:
                     raise TypeError('needs a type: Value32, Nullable32, str, NullableStr or Pointer')
 
                 ScpParamFlags(typ = param.annotation)
@@ -339,9 +341,11 @@ class ScpWriter:
                     raise TypeError('a default is an int, float or str, not None')
 
                 if param.default is not param.empty:
-                    ScpValue(param.default)
+                    value = ScpValue(param.default)
+                    if value.type != ScpValue.Type.String:
+                        cls._value_bytes(value)
 
-            except (NotImplementedError, TypeError) as e:
+            except (NotImplementedError, TypeError, ValueError) as e:
                 raise TypeError(f'{def_site(func)}: parameter {param.name} of {name}: {e}') from e
 
     @classmethod
@@ -391,8 +395,9 @@ class ScpWriter:
 
     @classmethod
     def _body_codes(cls, f: ScpFunction):
-        """The code of every body that can run for f: its own, the original, each replacement and what they wrap"""
-        for body in (f.obj, f.original_obj, *f.bodies):
+        """The code of every body that can run for f: the original, each replacement (f.obj is one of them) and what
+        they wrap"""
+        for body in (f.original_obj, *f.bodies):
             seen = set()
             while body is not None and id(body) not in seen:
                 seen.add(id(body))
@@ -443,14 +448,7 @@ class ScpWriter:
                     continue
 
                 entry.default_params_count += 1
-
-                # Defaults are written apart from the bodies, so the traceback has no .py line
-                try:
-                    self._write_scp_value(ScpValue(param.default), StringPoolSection.Default)
-
-                except (TypeError, ValueError) as e:
-                    e.add_note(f'{f.name}: default of {param.name}')
-                    raise
+                self._write_scp_value(ScpValue(param.default), StringPoolSection.Default)  # checked at the def
 
         for f in self.function_table:
             entry = f.entry
@@ -617,7 +615,13 @@ class ScpWriter:
         if value.type == ScpValue.Type.String:
             return self._write_string_ref(value.value, section)
 
-        # Checked here, not in ScpValue, which must still decode and re-encode any word
+        self.fs.Write(self._value_bytes(value))
+        return None
+
+    @classmethod
+    def _value_bytes(cls, value: ScpValue) -> bytes:
+        """A non-string value's on-disk word; ValueError for one the game can't use (checked here, not in ScpValue,
+        which must still decode and re-encode any word)"""
         if value.type == ScpValue.Type.Float:
             if not math.isfinite(value.value):
                 raise ValueError(f"non-finite float {value.value}: the game can't use it")
@@ -625,8 +629,7 @@ class ScpWriter:
             if ScpValue.float_word(value.value) is None:
                 raise ValueError(f"float {value.value} is outside float32's range: the game can't use it")
 
-        self.fs.Write(value.to_bytes())
-        return None
+        return value.to_bytes()
 
     def _write_operand(self, op_desc: OperandDescriptor, value):
         writers = {
@@ -715,12 +718,8 @@ class ScpWriter:
             if name in self.functions_by_name:
                 raise ValueError(f'duplicate function name: {name!r}')
 
-            # eval_str: under `from __future__ import annotations` the annotations are strings
-            sig = inspect.signature(func, eval_str = True)
-            for param in sig.parameters.values():
-                if param.annotation is param.empty:
-                    raise TypeError(f'{def_site(func)}: parameter {param.name} of {name} needs a type: Value32, '
-                                    'Nullable32, str, NullableStr or Pointer')
+            sig = self._signature(func, name)
+            self._check_parameters(func, name, sig)
 
             entry = ScpFunctionEntry()
             entry.offset                = UNRESOLVED_FUNC_OFFSET
