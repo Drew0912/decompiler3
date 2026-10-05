@@ -221,7 +221,7 @@ class TestRunOn(CheckTestCase):
             PUSH_INT(1)
             SET_REG(0)                              # line: runs on
 
-    def assertWarns(self, message: str):
+    def assertCompilesWithWarning(self, message: str):
         '''run() writes the .dat and logs exactly one warning, matching message'''
         with self.assertLogs(log, 'WARNING') as logs:
             self.writer.run({})
@@ -237,7 +237,7 @@ class TestRunOn(CheckTestCase):
         def B():
             RETURN()
 
-        self.assertWarns(rf"{at('runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN")
+        self.assertCompilesWithWarning(rf"{at('runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN")
 
     def test_conditional_jump_falls_through_into_the_next_function(self):
         @self.writer.LLILCode()
@@ -250,7 +250,7 @@ class TestRunOn(CheckTestCase):
         def B():
             RETURN()
 
-        self.assertWarns(rf"{at('falls through')}A: POP_JMP_ZERO at {HEX}: runs past its end into B without RETURN")
+        self.assertCompilesWithWarning(rf"{at('falls through')}A: POP_JMP_ZERO at {HEX}: runs past its end into B without RETURN")
 
     def test_empty_function_warns_at_its_def(self):
         @self.writer.LLILCode()
@@ -261,7 +261,29 @@ class TestRunOn(CheckTestCase):
         def B():
             RETURN()
 
-        self.assertWarns(rf"{at('empty function')}AEmpty: has no code, so it runs on into B without RETURN")
+        self.assertCompilesWithWarning(rf"{at('empty function')}AEmpty: has no code, so it runs on into B without RETURN")
+
+    def test_empty_function_sharing_a_start_with_a_run_on_gets_its_own_wording(self):
+        @self.writer.LLILCode()
+        def E():                                    # line: empty before a run-on
+            pass
+
+        @self.writer.LLILCode()
+        def R():
+            PUSH_INT(1)
+            SET_REG(0)                              # line: shared start runs on
+
+        @self.writer.LLILCode()
+        def C():
+            RETURN()
+
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.writer.run({})
+
+        warnings = [record.getMessage() for record in logs.records]
+        self.assertEqual(len(warnings), 2, warnings)
+        self.assertRegex(warnings[0], rf"^{at('empty before a run-on')}E: has no code, so it runs on into R without RETURN$")
+        self.assertRegex(warnings[1], rf"^{at('shared start runs on')}R: SET_REG at {HEX}: runs past its end into C without RETURN$")
 
     def test_failure_gets_the_run_on_as_a_note(self):
         self.define_runs_on(self.writer)
@@ -304,6 +326,75 @@ class TestRunOn(CheckTestCase):
         self.assertCheckFails(rf"{at('jumps past the end')}Trailing: JMP at {HEX}: jumps to {HEX}, past the end of the "
                               r"code \(no RETURN after its label\)$")
 
+    def test_running_into_the_last_function_fails_where_the_code_ends(self):
+        '''No function's code may run past the end, not only the last function's own'''
+        self.define_runs_on(self.writer)
+
+        @self.writer.LLILCode()
+        def ZLast():
+            PUSH_INT(2)
+            SET_REG(0)                              # line: code ends
+
+        self.assertCheckFails(rf"{at('code ends')}A: SET_REG at {HEX}: runs past the end of the code without RETURN; "
+                              rf"{at('runs on')}A: SET_REG at {HEX}: runs past its end into ZLast without RETURN$")
+
+    def test_jumping_into_the_last_function_fails_where_the_code_ends(self):
+        @self.writer.LLILCode()
+        def A():
+            JMP('in_last')
+
+        @self.writer.LLILCode()
+        def ZLast():
+            label('in_last')
+            PUSH_INT(2)
+            SET_REG(0)                              # line: jumped-to code ends
+
+        with self.assertLogs(log, 'WARNING'):       # the cross-function jump
+            self.assertCheckFails(rf"{at('jumped-to code ends')}A: SET_REG at {HEX}: runs past the end of the code "
+                                  r"without RETURN$")
+
+    def test_return_label_at_the_end_fails_with_its_own_wording(self):
+        def define_call(writer):
+            @writer.LLILCode()
+            def Callee():
+                RETURN()
+
+            @writer.LLILCode()
+            def Caller():
+                PUSH_CURRENT_FUNC_ID()
+                PUSH_RET_ADDR('back')
+                CALL(Callee)                        # line: call returns past the end
+                label('back')
+
+            return 'CALL', 'call returns past the end'
+
+        def define_call_script(writer):
+            @writer.LLILCode()
+            def Inner():
+                RETURN()
+
+            @writer.LLILCode()
+            def Caller():
+                PUSH_CALLER_FRAME('back')
+                CALL_SCRIPT('this', 'Inner', 0)     # line: script call returns past the end
+                label('back')
+
+            return 'CALL_SCRIPT', 'script call returns past the end'
+
+        for define in (define_call, define_call_script):
+            for last in (True, False):
+                with self.subTest(call = define.__name__, last = last):
+                    writer = self.fresh_writer()
+                    mnemonic, marker = define(writer)
+                    if not last:
+                        @writer.LLILCode()
+                        def After():
+                            RETURN()
+
+                    message = rf'^{at(marker)}Caller: {mnemonic} at {HEX}: returns to {HEX}, past its end \(no RETURN'
+                    with self.assertRaisesRegex(CompileCheckError, message):
+                        writer.build({})
+
     def test_empty_last_function_points_at_its_def(self):
         @self.writer.LLILCode(debug_argc = {
             'unused': 1,
@@ -326,7 +417,6 @@ class TestRunOn(CheckTestCase):
 
 
 class TestLocations(CheckTestCase):
-
     def test_library_body_points_at_its_own_file(self):
         library = self.tmp / 'step9_library.py'
         library.write_text(LIBRARY_SOURCE, encoding = 'utf-8')

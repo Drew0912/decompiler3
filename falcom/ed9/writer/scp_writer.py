@@ -193,22 +193,22 @@ class ScpWriter:
                 log.warning(note)
 
     def _run_on(self, function: str | None, inst: Instruction | None) -> str | None:
-        """How function runs on into the next function's code, located: inst runs past its end (the parser found it),
-        or the function has no code at all. None when it doesn't"""
+        """How function runs on into the next function's code, located: it has no code at all, or inst runs past its
+        end (the parser found it; for an empty function that is the next one's). None when it doesn't"""
         f = self.functions_by_name.get(function)
         if f is None:
             return None
 
         following = self.functions[self.functions.index(f) + 1:]
+        if following and following[0].entry.offset == f.entry.offset:
+            return (f'{self._failure_location(function, None)}{function}: has no code, so it runs on into '
+                    f'{following[0].name} without RETURN')
+
         if inst is not None:
             end = inst.offset + inst.size
             into = next(g.name for g in following if g.entry.offset == end)
             return f'{self._failure_location(function, inst.offset)}' + ScpFunctionError.describe(
                 function, f'runs past its end into {into} without RETURN', inst)
-
-        if following and following[0].entry.offset == f.entry.offset:
-            return (f'{self._failure_location(function, None)}{function}: has no code, so it runs on into '
-                    f'{following[0].name} without RETURN')
 
         return None
 

@@ -439,7 +439,7 @@ class ScpDisassemblerContext(DisassemblerContext):
     """ED9/SCP disassembler context: the simulated stack and the state recorded for every edge"""
     current_func     : 'Function | None' = None     # Function being disassembled
     code_end         : int | None = None            # Where the next function's code starts (None: last function)
-    ends_code        : bool = False                 # code_end is where the code ends: nothing may run or jump past it
+    known_code_end   : int | None = None            # Where the code ends, when known: nothing may run or jump past it
     reject_outside_stack : bool = False             # fail on a slot outside the live stack instead of only warning
     runs_on          : Instruction | None = None    # the first instruction that runs on past code_end
     current_inst     : Instruction | None = None    # Instruction being simulated
@@ -456,12 +456,12 @@ class ScpDisassemblerContext(DisassemblerContext):
 
     def note_run_on(self, inst: Instruction):
         """An instruction that ends at code_end and may continue with the next one runs on into the next function's
-        code - a missing RETURN. Past the end of the code that fails."""
+        code - a missing RETURN. Past the end of the code that fails, whichever function's code it is in."""
         end = inst.offset + inst.size
-        if end != self.code_end or not self.falls_through(inst, end):
+        if end not in (self.code_end, self.known_code_end) or not self.falls_through(inst, end):
             return
 
-        if self.ends_code:
+        if end == self.known_code_end:
             self.fail('runs past the end of the code without RETURN', inst)
 
         if self.runs_on is None:
@@ -547,6 +547,9 @@ class ScpDisassemblerContext(DisassemblerContext):
         """The return offset entry encodes, which must lie in this function's code"""
         if target is None:
             self.fail(f'expects a return address, found {format_stack_entry(entry)}', self.current_inst)
+
+        if target == self.code_end:
+            self.fail(f'returns to 0x{target:X}, past its end (no RETURN after its return label)', self.current_inst)
 
         if target < self.current_func.offset or (self.code_end is not None and target >= self.code_end):
             self.fail(f'return offset 0x{target:X} is outside the function', self.current_inst)
@@ -710,7 +713,7 @@ class ScpParser(StrictBase):
     keep_unreachable_code : bool = True
 
     # The compile check's stricter reading of bytes it just compiled: a slot outside the live stack fails instead of
-    # only warning, and the last function may not run or jump past the known end of the code
+    # only warning, and no code may run or jump past the known end of the code
     reject_outside_stack : bool = False
     known_code_end  : int | None = None
 
@@ -911,7 +914,7 @@ class ScpParser(StrictBase):
 
     def on_disasm_function(self, context: ScpDisassemblerContext, offset: int, name: str):
         """The entry block starts with the caller's parameters"""
-        if context.ends_code and offset >= context.code_end:
+        if context.known_code_end is not None and offset >= context.known_code_end:
             context.fail('has no code before the end of the code (no RETURN)')
 
         context.edge_states[offset] = tuple(ParamEntry(index) for index in range(len(context.current_func.params)))
@@ -922,7 +925,7 @@ class ScpParser(StrictBase):
 
     def on_pre_add_branch(self, context: ScpDisassemblerContext, target: BranchTarget):
         """Record the state the edge carries into its target (a branch or a fall-through)"""
-        if context.ends_code and target.offset >= context.code_end:
+        if context.known_code_end is not None and target.offset >= context.known_code_end:
             context.fail(f'jumps to 0x{target.offset:X}, past the end of the code (no RETURN after its label)',
                          context.current_inst)
 
@@ -1078,9 +1081,8 @@ class ScpParser(StrictBase):
                     func.name, offsets[index]
                 )
 
-    def disasm_context(self, func: Function, code_end: int | None, ends_code: bool = False) -> ScpDisassemblerContext:
-        """A fresh context for disassembling func, whose code ends at code_end - where the next function starts, or
-        with ends_code where the code ends"""
+    def disasm_context(self, func: Function, code_end: int | None) -> ScpDisassemblerContext:
+        """A fresh context for disassembling func, whose code ends at code_end"""
         return ScpDisassemblerContext(
             get_func_argc           = self.get_func_argc,
             on_disasm_function      = self.on_disasm_function,
@@ -1091,7 +1093,7 @@ class ScpParser(StrictBase):
             create_fallthrough_jump = ed9_create_fallthrough_jump,
             current_func            = func,
             code_end                = code_end,
-            ends_code               = ends_code,
+            known_code_end          = self.known_code_end,
             reject_outside_stack    = self.reject_outside_stack,
         )
 
@@ -1112,11 +1114,7 @@ class ScpParser(StrictBase):
             # Create new context for each function; its code ends where the next function starts, the last one's
             # where the code ends when that is known
             next_start = bisect.bisect_right(starts, func.offset)
-            if next_start < len(starts):
-                context = self.disasm_context(func, starts[next_start])
-
-            else:
-                context = self.disasm_context(func, self.known_code_end, ends_code = self.known_code_end is not None)
+            context = self.disasm_context(func, starts[next_start] if next_start < len(starts) else self.known_code_end)
 
             disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
             try:
