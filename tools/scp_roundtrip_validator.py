@@ -71,11 +71,11 @@ from ml import fileio
 from common.config import default_encoding
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
-from falcom.ed9.parser.call_records import record_mismatch
+from falcom.ed9.parser.call_records import read_debug_records, record_mismatch
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.parser.crc32 import hash_func_Name
 from falcom.ed9.parser.scp import ScpParser, CallDebugInfoTracker, TrackedCall
-from falcom.ed9.parser.string_pool import NUL, StringRefs, collect_string_refs, read_text, read_u32
+from falcom.ed9.parser.string_pool import NUL, StringRefs, collect_string_refs, pool_strings, read_text, read_u32
 from falcom.ed9.parser.types_parser import Function
 from falcom.ed9.parser.types_scp import (
     ScpFunctionCallDebugInfo,
@@ -171,13 +171,14 @@ def load_script(path: Path) -> ScriptContext:
             parser.disasm_all_functions()
 
         entries = parser.function_entries
+        data = path.read_bytes()
         return ScriptContext(
             path            = path,
-            data            = path.read_bytes(),
+            data            = data,
             fs              = fs,
             parser          = parser,
             entries         = entries,
-            records         = [parser.read_debug_info(fs, entry) for entry in entries],
+            records         = read_debug_records(parser, data),
             instructions    = [parser.get_instructions(func) for func in parser.functions],
             code_order      = code_order(entries),
         )
@@ -498,24 +499,16 @@ def check_string_fidelity(ctx: ScriptContext, pool_start: int) -> CheckResult:
     catches that.
     """
     failures = []
-    count = 0
-    position = pool_start
     encoding = default_encoding()
+    positions = pool_strings(ctx.data, pool_start)  # an unterminated tail is left out: check_string_pool reports it
 
-    while position < len(ctx.data):
-        end = ctx.data.find(NUL, position)
-        if end < 0:
-            break  # unterminated string - already reported by check_string_pool
-
-        raw = ctx.data[position:end]
+    for position in positions:
+        raw = ctx.data[position:ctx.data.index(NUL, position)]
         text = raw.decode(encoding, errors = 'ignore')
         if text.encode(encoding) != raw:
             failures.append(f'string at 0x{position:X}: {ascii(text)} does not re-encode to its raw bytes')
 
-        count += 1
-        position = end + 1
-
-    summary = f'{count} strings checked'
+    summary = f'{len(positions)} strings checked'
     return CheckResult.build('string fidelity', summary, failures)
 
 

@@ -1,7 +1,12 @@
 """Where each function's code lies in the file, and the ranges of it no instruction covers"""
 
 from ..disasm import Instruction
-from .types_scp import ScpFunctionEntry
+from .types_scp import ScpFunctionEntry, ScpGlobalVar, ScpHeader
+
+
+def code_start(header: ScpHeader) -> int:
+    """Where the code starts: right after the global var table, the last table before it"""
+    return header.global_var_offset + header.global_var_count * ScpGlobalVar.SIZE
 
 
 def code_order(entries: list[ScpFunctionEntry]) -> list[int]:
@@ -10,11 +15,12 @@ def code_order(entries: list[ScpFunctionEntry]) -> list[int]:
 
 
 def function_extents(entries: list[ScpFunctionEntry], code_end: int) -> dict[int, tuple[int, int]]:
-    """table index -> (start, end) physical byte range in code order; the last function ends at code_end"""
-    order = code_order(entries)
-    starts = [entries[index].offset for index in order]
-    ends = starts[1:] + [code_end]
-    return dict(zip(order, zip(starts, ends)))
+    """table index -> (start, end) physical byte range, in code order: up to the next function's start or code_end.
+    Functions that start at the same offset (an empty one before another) share the range, so a per-function check
+    sees it once per function."""
+    starts = sorted({entry.offset for entry in entries})
+    ends = dict(zip(starts, starts[1:] + [code_end]))
+    return {index: (entries[index].offset, ends[entries[index].offset]) for index in code_order(entries)}
 
 
 def dropped_ranges(insts: list[Instruction], start: int, end: int) -> list[tuple[int, int, Instruction | None]]:

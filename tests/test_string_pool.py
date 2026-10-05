@@ -12,27 +12,24 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from ml import fileio
-
-from common.config import default_encoding
 from ir.llil import WORD_SIZE
+from falcom.ed9.parser.call_records import read_debug_records
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.string_pool import NUL, StringRefs, collect_string_refs, read_text
+from falcom.ed9.parser.string_pool import StringPoolSection, StringRefs, collect_string_refs, pool_strings, read_text
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_writer_test_utils import fresh_writer
 from scp_roundtrip_validator import Status, load_script, validate_file
 
 SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
 PERSONAL_TEMPLATE_FILE = SORA2_DIR / 'scena' / 'personalTemplate.dat'
-SECTIONS = ('code', 'names', 'defaults', 'debug', 'global_names')
 
 # compile_script's strings by section, in pool order
 SCRIPT_SECTIONS = {
-    'code'          : ['zeta', 'dead', 'hello', 'arg', 'this', 'Zeta', 'mod', 'Tail'],
-    'names'         : ['Alpha', 'Mid', 'Zeta'],
-    'defaults'      : ['fallback'],
-    'debug'         : ['this.Zeta'],
-    'global_names'  : ['flag'],
+    StringPoolSection.Code      : ['zeta', 'dead', 'hello', 'arg', 'this', 'Zeta', 'mod', 'Tail'],
+    StringPoolSection.Name      : ['Alpha', 'Mid', 'Zeta'],
+    StringPoolSection.Default   : ['fallback'],
+    StringPoolSection.Debug     : ['this.Zeta'],
+    StringPoolSection.Global    : ['flag'],
 }
 
 
@@ -79,24 +76,29 @@ def compile_script(dat: Path):
     writer.run({})
 
 
+def compile_shared_string(dat: Path):
+    '''AEmpty has no code, so it starts where ZBody does: both decode ZBody's PUSH_STR'''
+    fresh_writer()
+    writer = create_scp_writer(str(dat))
+
+    @writer.LLILCode()
+    def AEmpty():
+        pass
+
+    @writer.LLILCode()
+    def ZBody():
+        PUSH_STR('shared')
+        POP(WORD_SIZE)
+        RETURN()
+
+    writer.run({})
+
+
 def load_string_refs(path: Path) -> tuple[bytes, StringRefs]:
     '''The file's bytes and string refs, unreachable code decoded; the raw debug records are read from the bytes'''
     parser, _ = ScpParser.load(path, round_trip = True, keep_unreachable_code = True)
     data = path.read_bytes()
-    fs = fileio.FileStream(encoding = default_encoding()).OpenMemory(data)
-    records = [parser.read_debug_info(fs, entry) for entry in parser.function_entries]
-    return data, collect_string_refs(data, parser, records)
-
-
-def pool_strings(data: bytes, start: int) -> list[int]:
-    '''Offset of every string from start to the end of the file'''
-    offsets = []
-    position = start
-    while position < len(data):
-        offsets.append(position)
-        position = data.index(NUL, position) + 1
-
-    return offsets
+    return data, collect_string_refs(data, parser, read_debug_records(parser, data))
 
 
 class TestCollectStringRefs(unittest.TestCase):
@@ -108,12 +110,24 @@ class TestCollectStringRefs(unittest.TestCase):
             cls.data, cls.refs = load_string_refs(dat)
 
     def test_every_section_in_pool_order(self):
-        sections = {name: [read_text(self.data, offset) for offset in getattr(self.refs, name)] for name in SECTIONS}
+        sections = {section: [read_text(self.data, offset) for offset in offsets] for section, offsets in self.refs.sections()}
         self.assertEqual(sections, SCRIPT_SECTIONS)
 
     def test_sections_hold_every_pool_string_in_order(self):
         self.assertEqual(self.refs.pool_start, self.refs.code[0])
         self.assertEqual(self.refs.expected_pool, pool_strings(self.data, self.refs.pool_start))
+
+    def test_shared_code_strings_counted_once(self):
+        '''Two functions decode ZBody's PUSH_STR; the pool holds its string once, and so do the code strings'''
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dat = Path(tmp_dir) / 'shared.dat'
+            compile_shared_string(dat)
+            data, refs = load_string_refs(dat)
+            results, _ = validate_file(dat)
+
+        self.assertEqual([read_text(data, offset) for offset in refs.code], ['shared'])
+        [string_pool] = [result for result in results if result.name == 'string pool']
+        self.assertEqual(string_pool.status, Status.PASS, string_pool.details)
 
 
 class TestValidator(unittest.TestCase):
@@ -151,7 +165,7 @@ class TestRealScript(unittest.TestCase):
     def test_personal_template_sections(self):
         data, refs = load_string_refs(PERSONAL_TEMPLATE_FILE)
 
-        self.assertEqual([len(getattr(refs, name)) for name in SECTIONS], [19, 18, 4, 1, 1])
+        self.assertEqual([len(offsets) for _, offsets in refs.sections()], [19, 18, 4, 1, 1])
         self.assertEqual(refs.expected_pool, pool_strings(data, refs.pool_start))
         self.assertEqual([read_text(data, offset) for offset in refs.code[:2]], ['system', 'OnTalkBegin'])
         self.assertEqual(read_text(data, refs.names[0]), 'Init')

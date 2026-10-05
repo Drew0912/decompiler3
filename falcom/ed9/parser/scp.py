@@ -92,6 +92,13 @@ SCRIPT_CALL_OPS = (
     ED9Opcode.CALL_SCRIPT_NO_RETURN,
 )
 
+# Every pseudo-op encoded as the real PUSH: one ScpValue word after the size byte
+PUSH_ENCODED_OPS = (
+    *PUSH_CONSTANT_OPS,
+    ED9Opcode.PUSH_CURRENT_FUNC_ID,
+    ED9Opcode.PUSH_RET_ADDR,
+)
+
 OPCODE_SIZE             = 1     # every opcode is one byte, followed by its operands
 TRACKED_FRAME_SLOTS     = 1     # the debug-info tracker models PUSH_CALLER_FRAME as one slot, popped by CALL_SCRIPT
 BINARY_OPERAND_COUNT    = 2
@@ -944,7 +951,7 @@ class ScpParser(StrictBase):
         keep_unreachable_code decoded them; undecoded or filtered-out code does not tighten the bound."""
         code_end = self.get_code_end(functions)
         if self.keep_unreachable_code:
-            unreachable = [inst for func in functions for block in func.unreachable_blocks for inst in block.instructions]
+            unreachable = [inst for func in functions for inst in self.unreachable_instructions(func)]
             code_end = min([code_end, *self.get_string_refs(unreachable)])
 
         for func in functions:
@@ -1038,6 +1045,15 @@ class ScpParser(StrictBase):
         """Reachable instructions of a disassembled function in offset order"""
         return Formatter.reachable_instructions(func.entry_block)
 
+    def code_instructions(self, func: Function) -> list[Instruction]:
+        """Reachable instructions and the decoded unreachable code (keep_unreachable_code), in offset order"""
+        return sorted(self.get_instructions(func) + self.unreachable_instructions(func), key = lambda inst: inst.offset)
+
+    @classmethod
+    def unreachable_instructions(cls, func: Function) -> list[Instruction]:
+        """The decoded unreachable code (keep_unreachable_code), block by block"""
+        return [inst for block in func.unreachable_blocks for inst in block.instructions]
+
     def pair_call_debug_info(self, func: Function):
         """Recover each local CALL's explicit arg count - its debug record drops trailing default args"""
         tracker = CallDebugInfoTracker(get_param_count = self.get_func_argc)
@@ -1111,16 +1127,19 @@ class ScpParser(StrictBase):
     @classmethod
     def string_operand_positions(cls, instructions: list[Instruction]) -> list[int]:
         """File positions of the operand words that may reference a string: PUSH_STR's value, CALL_SCRIPT's module and func"""
-        positions = []
-        for inst in instructions:
-            if inst.opcode == ED9Opcode.PUSH_STR:
-                positions.append(inst.offset + inst.size - WORD_SIZE)  # PUSH ends with its ScpValue
+        return [position for inst in instructions if inst.opcode == ED9Opcode.PUSH_STR or inst.opcode in SCRIPT_CALL_OPS
+                for position in cls.value_positions(inst)]
 
-            elif inst.opcode in SCRIPT_CALL_OPS:
-                positions.append(inst.offset + OPCODE_SIZE)             # module
-                positions.append(inst.offset + OPCODE_SIZE + WORD_SIZE) # func
+    @classmethod
+    def value_positions(cls, inst: Instruction) -> list[int]:
+        """File positions of an instruction's ScpValue words: a push's value, CALL_SCRIPT's module and func"""
+        if inst.opcode in PUSH_ENCODED_OPS:
+            return [inst.offset + inst.size - WORD_SIZE]                            # PUSH ends with its ScpValue
 
-        return positions
+        if inst.opcode in SCRIPT_CALL_OPS:
+            return [inst.offset + OPCODE_SIZE, inst.offset + OPCODE_SIZE + WORD_SIZE]  # module, func
+
+        return []
 
     @classmethod
     def get_string_offset(cls, raw_value: int) -> int | None:

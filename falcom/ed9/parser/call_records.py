@@ -1,10 +1,20 @@
-"""Call-site debug records against the calls CallDebugInfoTracker rebuilds: each record's raw arguments, and whether a
-record holds what its call would get (content only - the writer's own rules stay with the round-trip validator)"""
+"""Call-site debug records against the calls CallDebugInfoTracker rebuilds: each function's raw records, each record's
+raw arguments, and whether a record holds what its call would get (content only - the writer's own rules stay with the
+round-trip validator)"""
 
+from ml import fileio
+
+from common.config import default_encoding
 from ir.llil import WORD_SIZE
 from .scp import ScpParser, TrackedCall
 from .string_pool import read_text, read_u32
 from .types_scp import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
+
+
+def read_debug_records(parser: ScpParser, data: bytes) -> list[list[ScpFunctionCallDebugInfo]]:
+    """Each function's raw records in table order, read from the file's bytes (the parser keeps converted ones only)"""
+    fs = fileio.FileStream(encoding = default_encoding()).OpenMemory(data)
+    return [parser.read_debug_info(fs, entry) for entry in parser.function_entries]
 
 
 def record_args(data: bytes, record: ScpFunctionCallDebugInfo) -> list[tuple[int, int]]:

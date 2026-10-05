@@ -8,12 +8,12 @@ from typing import Callable
 from ml import fileio
 
 from common.config import default_encoding
-from common.enum import IntEnum2
 from common.logging import *
 from ir.llil import WORD_SIZE
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, ED9_FORMAT_TABLE, OperandDescriptor, OperandType
 from ..parser.crc32 import hash_func_Name
 from ..parser.scp import CallDebugInfoTracker, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
+from ..parser.string_pool import StringPoolSection
 from ..parser.types_scp import (
     ScpValue,
     RawInt,
@@ -36,15 +36,6 @@ UNRESOLVED_FUNC_INDEX = -1  # placeholder until buildFunctionTable() sorts the f
 
 STRING_OFFSET_TAG = ScpValue.Type.String << 30  # 0xC0000000 - top 2 bits of a resolved string-pool offset
 NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - WORD_SIZE  # name_offset is the last field of a function entry
-
-
-class StringPoolSection(IntEnum2):
-    """Order of the original compiler's string pool"""
-    Code    = 0
-    Name    = 1
-    Default = 2
-    Debug   = 3
-    Global  = 4
 
 
 @dataclass

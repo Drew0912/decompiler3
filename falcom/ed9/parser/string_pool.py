@@ -1,15 +1,25 @@
 """The string pool's sections: the strings the code, the function names, the parameter defaults, the debug records and
 the global var names reference, in the order the original compiler pooled them (it never deduplicates)"""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
 from common.config import default_encoding, default_endian
+from common.enum import IntEnum2
 from ir.llil import WORD_SIZE
 from .scp import ScpParser
 from .types_scp import ScpFunctionCallDebugInfo, ScpGlobalVar
 
 NUL = b'\0'     # ends every pool string
+
+
+class StringPoolSection(IntEnum2):
+    """Order of the original compiler's string pool"""
+    Code    = 0
+    Name    = 1
+    Default = 2
+    Debug   = 3
+    Global  = 4
 
 
 @dataclass
@@ -22,9 +32,12 @@ class StringRefs:
     global_names : list[int]
     pool_start   : int
 
+    def sections(self) -> Iterator[tuple[StringPoolSection, list[int]]]:
+        return zip(StringPoolSection, (self.code, self.names, self.defaults, self.debug, self.global_names))
+
     @property
     def expected_pool(self) -> list[int]:
-        return self.code + self.names + self.defaults + self.debug + self.global_names
+        return [offset for _, offsets in self.sections() for offset in offsets]
 
 
 def read_u32(data: bytes, offset: int) -> int:
@@ -35,6 +48,17 @@ def read_text(data: bytes, offset: int) -> str:
     return data[offset:data.find(NUL, offset)].decode(default_encoding(), errors = 'replace')
 
 
+def pool_strings(data: bytes, start: int) -> list[int]:
+    """Offset of every NUL-terminated string from start to the end of the file (an unterminated tail is left out)"""
+    offsets = []
+    position = start
+    while (end := data.find(NUL, position)) >= 0:
+        offsets.append(position)
+        position = end + 1
+
+    return offsets
+
+
 def string_offsets(data: bytes, positions: Iterable[int]) -> list[int]:
     """Pool offsets of the String-typed words at positions, in order"""
     offsets = (ScpParser.get_string_offset(read_u32(data, position)) for position in positions)
@@ -43,13 +67,12 @@ def string_offsets(data: bytes, positions: Iterable[int]) -> list[int]:
 
 def collect_string_refs(data: bytes, parser: ScpParser, records: list[list[ScpFunctionCallDebugInfo]]) -> StringRefs:
     """Every string reference of a parsed and disassembled file (data = its bytes), records = each function's raw debug
-    records in table order. Code strings come in code order and include unreachable code when the parser decoded it
+    records in table order. Code strings come in file order and include unreachable code when the parser decoded it
     (keep_unreachable_code); a debug record string that is also a code string is pooled once, with the code."""
-    code = []
-    for func in sorted(parser.functions, key = lambda func: func.offset):
-        unreachable = [inst for block in func.unreachable_blocks for inst in block.instructions]
-        instructions = sorted(parser.get_instructions(func) + unreachable, key = lambda inst: inst.offset)
-        code += string_offsets(data, ScpParser.string_operand_positions(instructions))
+    # Each operand once: functions that share code (one starting where another does, a jump into another) decode it twice
+    positions = {position for func in parser.functions
+                 for position in ScpParser.string_operand_positions(parser.code_instructions(func))}
+    code = string_offsets(data, sorted(positions))
 
     entries = parser.function_entries
     names = [ScpParser.get_string_offset(entry.name_offset) for entry in entries]

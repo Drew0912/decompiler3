@@ -17,8 +17,8 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from common.logging import log
 from falcom.ed9.disasm import CommentOptions
 from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.parser.scp_listing import write_listing
 from falcom.ed9.parser.types_parser import Function
-from falcom.ed9.parser.types_scp import ScpFunctionEntry
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
@@ -61,32 +61,11 @@ def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Pat
     preamble = [*COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines(), ''] if common_functions_omitted else []
     out_path.write_text(parser.gen_python_script(functions, preamble = preamble, comments = comments), encoding = 'utf-8', newline = '\n')
 
-def write_debug_info(parser: ScpParser, functions: list[Function], out_path: Path) -> None:
-    """Dump the parsed header, each function's raw ScpFunctionEntry, and its per-call debug info"""
-    entry_by_name: dict[str, ScpFunctionEntry] = dict(zip((f.name for f in parser.functions), parser.function_entries))
-
-    lines = ['=== Header ===', str(parser.header), '']
-
-    for func in functions:
-        lines.append(f'=== {func.name} ===')
-        lines.append('--- function_entry ---')
-        lines.append(str(entry_by_name[func.name]))
-        lines.append('')
-        lines.append(f'--- debug_info ({len(func.debug_info)} calls) ---')
-
-        for dbg in func.debug_info:
-            lines.append(str(dbg))
-
-        lines.append('')
-
-    out_path.write_text('\n'.join(lines) + '\n', encoding = 'utf-8', newline = '\n')
-
 def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
 
     output_dir = config.output_dir / path.stem
     out = output_dir / path.name
-    out_no_suffix = out.with_suffix('')
 
     parser, functions = ScpParser.load(path, round_trip = config.round_trip, keep_unreachable_code = config.keep_unreachable_code, filter_func = config.filter_func)
 
@@ -106,8 +85,15 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
         )
         write_python_dsl(parser, functions, out.with_suffix('.py'), comments = comments, common_functions_omitted = common_functions_omitted)
 
+    write_ir_outputs(path, parser, functions, config, out)
+
+    # Last: the listing loads the file again, so its failure can't cost the other outputs
     if config.write_debug_info:
-        write_debug_info(parser, functions, out.with_suffix('.debug.txt'))
+        write_listing(path, out.with_suffix('.debug.txt'), config.debug_sections, {func.index for func in functions})
+
+def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScenaDecompileConfig, out: Path) -> None:
+    """The .llil.asm, .mlil.asm, .hlil.ts, .ts and .dot outputs the config asks for"""
+    output_dir = out.parent
 
     need_llil = config.write_llil_asm or config.write_llil_dot or config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
     if not need_llil:
@@ -126,7 +112,7 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
                 llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
 
             if config.write_llil_dot:
-                (output_dir / f'{out_no_suffix.name}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8', newline = '\n')
+                (output_dir / f'{out.stem}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8', newline = '\n')
 
             need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
             if not need_mlil:
@@ -138,7 +124,7 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
 
             if config.write_mlil_dot:
-                (output_dir / f'{out_no_suffix.name}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8', newline = '\n')
+                (output_dir / f'{out.stem}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8', newline = '\n')
 
             if not (config.write_hlil_ts or config.write_ts):
                 continue

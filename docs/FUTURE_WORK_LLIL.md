@@ -206,11 +206,11 @@ byte.
   `REG[0]` with `SET_REG(0)`); `LOAD_STACK_DEREF`, `SYSCALL` (reads its arguments without popping) and
   `JMP` were vague. `tools/ir_semantic_validator.py`'s example variable name `"arg0"` is now `"arg1"`,
   since parameters are numbered from `arg1`.
-- **A readable `.dat` listing** (item 15; Steps 8b, 8c). Today's `.debug.txt` prints the header, each
-  function's table entry and its debug records, with no code, so a record can't be matched to its call.
-  Extend it into a read-only listing of the whole file as the VM sees it, with one opt-in
-  `ScenaDecompileConfig` flag per section, replacing `write_debug_info`: header, global variables,
-  function entries, code, call records and string pool. The code section shows each instruction's
+- **A readable `.dat` listing** (item 15; Steps 8b, 8c-a, 8c-b, done; `docs/LLIL_DSL.md` §2). The old
+  `.debug.txt` printed the header, each function's table entry and its debug records, with no code, so a
+  record couldn't be matched to its call. It is now a read-only listing of the whole file as the VM sees it:
+  `write_debug_info` turns it on and `debug_sections = ListingSections(...)` picks the sections (header,
+  global variables, function entries, code, call records, string pool). The code section shows each instruction's
   offset, raw bytes, real opcode and operands as encoded, with the symbolic meaning as a comment; every
   push pseudo-op (`PUSH_INT`, `PUSH_RET_ADDR`, ...) prints as the real `PUSH`:
   ```
@@ -228,7 +228,9 @@ byte.
   code strings: the validator had missed them and failed the pool check of `ani/chr5000` and others. Step 8c-a
   (done) moved the validator's record check into `falcom/ed9/parser/call_records.py` (content only; the validator
   keeps its return-label rule on top) and the tracker replay into `CallDebugInfoTracker.replay`, which gives each call's
-  instruction offset, so the listing can print a record under its call.
+  instruction offset, so the listing can print a record under its call. Step 8c-b counts each code string operand once
+  by its file position: functions that share code (an empty one starting where the next does, a jump into another)
+  had made the validator count it twice and fail the pool of such a writer-built file.
 
 ## Not Doing
 

@@ -174,6 +174,23 @@ ignored; an import error inside the hook stops the compile), and the library (§
 `main()`, which compiles the script when it is run directly. Every generated text file is written
 with `\n` line endings.
 
+**The `.dat` listing** (`.debug.txt`, `ScenaDecompileConfig.write_debug_info`, off by default): the
+byte-level companion of the `.py`, read-only and never compiled - the whole file as the VM sees it
+(`falcom/ed9/parser/scp_listing.py`). Sections, each switched in `debug_sections = ListingSections(...)`:
+the header, the global vars, each function's table entry (parameters as the `.py` declares them), its
+code and its call-site debug records, and the string pool with each string's section. A code line has
+the offset, the raw bytes, the real opcode with its operands as encoded (every push pseudo-op is the real
+`PUSH`: `PUSH 4, Int(1120)`, `Raw(0x342F)`, `Float(0.3)`, `Str(0x3A68)`) and the meaning as a comment
+(labels, callees, return addresses, string text, float bits and the `.py`'s slot and argument comments);
+labels get their own line with the depth. The listing loads the file itself, unreachable code decoded
+(marked `unreachable`), so every byte from the end of the global var table to the string pool is listed
+once: under the function whose range holds it (functions starting at the same offset share one range),
+or as raw bytes where no instruction covers it (`mp0090`'s 21 bytes before its first function). A call's
+debug record is printed under it when every record of the function holds what its call gets
+(`call_records.record_mismatch`, content only); otherwise the function notes `records not paired: ...`,
+as for the `chr0000`-style files and calls without a record. `filter_func` and `include_common_functions`
+pick the functions listed; the listing is written after every other output.
+
 **Compilation** (`.py` → bytecode): the `.py` file is executed (`python e0000.py`, or the
 validator's `runpy.run_path(...)['main']()`) against a `ScpWriter`, which emits bytecode via the same
 per-opcode calls.

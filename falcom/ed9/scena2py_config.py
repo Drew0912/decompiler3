@@ -3,6 +3,7 @@
 from pathlib import Path
 from typing import Callable, Optional
 
+from .parser.scp_listing import ListingSections
 from .parser.types_parser import Function
 
 TOOL_DIR = Path(__file__).resolve().parent
@@ -28,10 +29,11 @@ class ScenaDecompileConfig:
     write_mlil_dot: bool = False    # one .mlil.<func>.dot CFG per function. Use Graphviz Online
     write_hlil_ts: bool = False     # .hlil.ts text dump (HLILFormatter text, not recompilable code)
 
-    # Parsed header, per-function ScpFunctionEntry, per-call debug info. Populated during
-    # parsing regardless of round_trip, except zero-arg-count debug records are dropped when
-    # round_trip=False (ScpParser._read_functions)
-    write_debug_info: bool = False    # .debug.txt
+    # .debug.txt: a listing of the whole .dat as the VM sees it (header, global vars, each function's table entry, code
+    # and call-site debug records, the string pool), loaded on its own with the unreachable code decoded. Written last;
+    # filter_func / include_common_functions pick the functions listed
+    write_debug_info: bool = False
+    debug_sections: ListingSections = ListingSections()     # what it prints: every section; e.g. ListingSections(code = False)
 
     # ScpParser flags
     round_trip: bool = False

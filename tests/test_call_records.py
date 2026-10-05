@@ -19,7 +19,7 @@ from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.call_records import record_args, record_mismatch
 from falcom.ed9.parser.code_layout import function_extents
 from falcom.ed9.parser.scp import CallDebugInfoTracker
-from falcom.ed9.parser.types_scp import RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
+from falcom.ed9.parser.types_scp import RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_writer_test_utils import fresh_writer
 from scp_roundtrip_validator import compare_record, load_script
@@ -31,6 +31,8 @@ SYSCALL_SUBSYSTEM = 1
 SYSCALL_FUNC = 0x02
 SYSCALL_CONSTANT = 7
 CODE_END = 0x1000
+SHARED_START = 0x58
+NEXT_START = 0x60
 
 
 def compile_script(dat: Path):
@@ -207,6 +209,16 @@ class TestFunctionExtents(CompiledScript):
             indices['Main']     : (offsets['Main'], offsets['Tail']),
             indices['Tail']     : (offsets['Tail'], CODE_END),
         })
+
+    def test_equal_starts_share_a_range(self):
+        '''An empty function starts where the next one does: both get the range up to the next different start'''
+        entries = [ScpFunctionEntry() for _ in range(3)]
+        for entry, offset in zip(entries, (NEXT_START, SHARED_START, SHARED_START)):
+            entry.offset = offset
+
+        extents = function_extents(entries, CODE_END)
+        self.assertEqual(list(extents.items()), [(1, (SHARED_START, NEXT_START)), (2, (SHARED_START, NEXT_START)),
+                                                 (0, (NEXT_START, CODE_END))])
 
 
 if __name__ == '__main__':
