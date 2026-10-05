@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-'''Hook files (Step 10a): function callbacks and replace_function swap a function's body in place - position, table
-index and common flag kept, the signature merged with the original's - and every error or compile-check failure in a
-hook points at the hook's own line. Also the parameter checks on every new function.'''
+'''Hook files (Steps 10a, 10b): function callbacks and replace_function swap a function's body in place - position,
+table index and common flag kept, the signature merged with the original's; run callbacks get the script's globals;
+add_function adds functions after the script's own; hook modules get the script's names; and every error or
+compile-check failure in a hook points at the hook's own line. Also the parameter checks on every new function.'''
 
 from pathlib import Path
 import functools
+import re
 import runpy
 import sys
 import textwrap
@@ -16,12 +18,24 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.writer import scp_writer, scp_writer_helper, scp_writer_hooks
 from falcom.ed9.writer.scp_compile_check import CompileCheckError
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_writer_test_utils import WriterTestCase, at, load_module, marked_line
 
 HEX = '0x[0-9A-F]+'
 PUSH_POP_RETURN = ['PUSH_INT', 'POP', 'RETURN']
+
+# A body taking Target's one parameter that calls Helper by its plain name (a script function, never defined in a hook)
+CALLS_HELPER = '''
+def {name}(arg1: Value32 = 0):
+    PUSH_CURRENT_FUNC_ID()
+    PUSH_RET_ADDR('{name}_ret')
+    CALL(Helper)
+    label('{name}_ret')
+    POP(WORD_SIZE)
+    RETURN()
+'''
 
 REPLACE_TARGET = '''
     @replace_function('Target')
@@ -46,9 +60,9 @@ class HookTestCase(WriterTestCase):
         path.write_text(header + textwrap.dedent(source), encoding = 'utf-8')
         return load_module(path)
 
-    def parsed(self) -> dict:
-        '''The script compiled and parsed again: name -> Function (self.parser holds the parse)'''
-        self.parser, functions = ScpParser.load_bytes(self.writer.build({}), 'test.dat', round_trip = False,
+    def parsed(self, g: dict | None = None) -> dict:
+        '''The script compiled with globals g and parsed again: name -> Function (self.parser holds the parse)'''
+        self.parser, functions = ScpParser.load_bytes(self.writer.build({} if g is None else g), 'test.dat', round_trip = False,
                                                       keep_unreachable_code = False, quiet = True)
         return {func.name: func for func in functions}
 
@@ -60,11 +74,27 @@ class HookTestCase(WriterTestCase):
 
     def define_target(self):
         @self.writer.LLILCode()
-        def Target(arg1: Value32):
+        def Target(arg1: Value32):                  # line: target def
             POP(WORD_SIZE)
             RETURN()
 
         return Target
+
+    def define_helper(self):
+        '''A script function only the script's globals name: hooks reach it by name injection'''
+        @self.writer.LLILCode()
+        def Helper():
+            RETURN()
+
+        return Helper
+
+    def code_order(self, functions: dict) -> list[str]:
+        return sorted(functions, key = lambda name: functions[name].offset)
+
+    def called(self, func) -> int:
+        '''The function index of func's one CALL'''
+        [call] = [inst for inst in self.parser.get_instructions(func) if inst.mnemonic == 'CALL']
+        return call.operands[0].value
 
     def define_caller_and_target(self):
         target = self.define_target()
@@ -88,9 +118,8 @@ class TestReplace(HookTestCase):
         self.assertEqual(self.mnemonics(functions['Target']), PUSH_POP_RETURN)
         self.assertEqual({name: (func.index, func.is_common_func) for name, func in functions.items()},
                          {'Caller': (0, False), 'Target': (1, False)})
-        self.assertEqual(sorted(functions, key = lambda name: functions[name].offset), ['Target', 'Caller'])
-        [call] = [inst for inst in self.parser.get_instructions(functions['Caller']) if inst.mnemonic == 'CALL']
-        self.assertEqual(call.operands[0].value, functions['Target'].index)
+        self.assertEqual(self.code_order(functions), ['Target', 'Caller'])
+        self.assertEqual(self.called(functions['Caller']), functions['Target'].index)
 
     def test_common_function(self):
         def lib_common(arg1: Value32):
@@ -152,10 +181,14 @@ class TestReplace(HookTestCase):
         def raw(name, func):
             return None
 
-        registerFuncCallback(raw)
+        def run(g):
+            pass
+
+        self.assertIs(registerFuncCallback(raw), raw)               # usable as decorators too
+        self.assertIs(registerRunCallback(run), run)
         body = replace_function('Target')(lambda arg1: None)
 
-        self.assertEqual(self.writer.hook_functions, [raw, body])
+        self.assertEqual(self.writer.hook_functions, [raw, run, body])
 
     def test_replaced_twice_warns_and_the_last_wins(self):
         self.define_target()
@@ -264,6 +297,20 @@ class TestRejected(HookTestCase):
         with self.assertRaisesRegex(TypeError, r"^replace_function\('Target'\): expected a plain function"):
             replace_function('Target')(functools.partial(body))
 
+        with self.assertRaisesRegex(TypeError, '^registerRunCallback: expected a plain function'):
+            registerRunCallback(functools.partial(body))
+
+        with self.assertRaisesRegex(TypeError, r'^add_function \(used bare: @add_function\): expected a plain function'):
+            add_function('New')
+
+    def test_duplicate_function_name_points_at_the_second(self):
+        '''E.g. a run callback registering a script name through LLILCode()'''
+        self.define_target()
+        with self.assertRaisesRegex(ValueError, rf"^{at(__file__, 'duplicate target')}duplicate function name: 'Target'$"):
+            @self.writer.LLILCode()
+            def Target(arg1: Value32):              # line: duplicate target
+                RETURN()
+
     def test_replace_function_without_the_name(self):
         with self.assertRaisesRegex(TypeError, r"^replace_function takes the function's name - "
                                                r"@replace_function\('Name'\) - not <function "):
@@ -294,6 +341,7 @@ class TestRejected(HookTestCase):
             'function': 'get_scp_writer().LLILCode()(Extra)',
             'callback': 'registerFuncCallback(lambda name, func: None)',
             'replacement': "replace_function('Nmae')(Extra)",
+            'run callback': 'registerRunCallback(lambda g: None)',
         }
         for case, registration in registrations.items():
             with self.subTest(case):
@@ -381,6 +429,33 @@ class TestRejected(HookTestCase):
                             RETURN()
 
 
+class TestRegisteredWhileCompiling(HookTestCase):
+    def test_rejected_at_the_registered_line(self):
+        '''A function or hook registered from a body would miss the header count and the function table'''
+        def Late():                                 # line: late def
+            RETURN()
+
+        registrations = {
+            'add_function': lambda: add_function(Late),
+            'LLILCode': lambda: get_scp_writer().LLILCode()(Late),
+            'run callback': lambda: registerRunCallback(Late),
+        }
+        for case, register in registrations.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Target(arg1: Value32):
+                    register()
+                    POP(WORD_SIZE)
+                    RETURN()
+
+                with self.assertRaisesRegex(ValueError, f"^{at(__file__, 'late def')}Late is registered while the "
+                                                        'script compiles; register functions and hooks at hook import '
+                                                        'time or in a run callback$'):
+                    self.writer.build({})
+
+
 class TestSignatures(HookTestCase):
     def test_merged_with_the_original(self):
         '''Per parameter, the replacement's type or default wins where it gives one, else the original's: arg1 keeps
@@ -420,7 +495,7 @@ class TestSignatures(HookTestCase):
                 POP(WORD_SIZE)
                 RETURN()
 
-            @get_scp_writer().LLILCode()
+            @add_function
             def New(arg1: NullableStr):
                 POP(WORD_SIZE)
                 RETURN()
@@ -517,6 +592,217 @@ class TestLocations(HookTestCase):
 
         with self.assertRaisesRegex(CompileCheckError, rf"^{at(hook.__file__, 'middle')}Target: "):
             self.writer.build({})
+
+
+class TestRunCallbacks(HookTestCase):
+    def test_receives_g_and_adds_a_replaceable_function(self):
+        self.define_target()
+        received = []
+
+        def add_extra(g):
+            received.append(g)
+
+            @get_scp_writer().LLILCode()
+            def Extra(arg1: Value32):
+                POP(WORD_SIZE)
+                RETURN()
+
+        def replace_extra(name, func):
+            if name != 'Extra':
+                return None
+
+            def NewExtra(arg1):
+                PUSH_INT(7)
+                POP(2 * WORD_SIZE)
+                RETURN()
+
+            return NewExtra
+
+        registerRunCallback(add_extra)
+        registerFuncCallback(replace_extra)
+        g = {}                                  # empty: these callbacks' module is this test file
+        functions = self.parsed(g)
+
+        [received_g] = received
+        self.assertIs(received_g, g)
+        self.assertEqual(self.mnemonics(functions['Extra']), PUSH_POP_RETURN)
+        self.assertEqual(self.code_order(functions), ['Target', 'Extra'])
+
+    def test_runs_after_injection_and_queued_additions(self):
+        helper = self.define_helper()
+        self.hook('''
+            @add_function
+            def HookExtra():
+                RETURN()
+        ''')
+        runner = self.hook('''
+            seen = []
+            registerRunCallback(lambda g: seen.append((Helper, 'HookExtra' in get_scp_writer().functions_by_name)))
+        ''')
+        self.parsed({'Helper': helper})
+
+        self.assertEqual(runner.seen, [(helper, True)])
+
+    def test_global_var_it_adds_is_counted(self):
+        @self.writer.GlobalVars()
+        def globalVars():
+            GLOBAL_VAR('first', ScpGlobalVar.Type.Integer)
+
+        self.define_target()
+        registerRunCallback(lambda g: GLOBAL_VAR('added', ScpGlobalVar.Type.Integer))
+        self.parsed()
+
+        self.assertEqual([var.name for var in self.parser.global_vars], ['first', 'added'])
+
+
+class TestAddFunction(HookTestCase):
+    def test_appended_after_the_script_functions(self):
+        '''Existing functions keep their code order and their offsets from the code start; AAA sorts first, so table
+        indices shift and the CALL operand follows'''
+        self.define_caller_and_target()
+        before = self.parsed()
+
+        self.writer = self.fresh_writer()
+        self.define_caller_and_target()
+        self.hook('''
+            @add_function
+            def AAA(arg1: Value32):
+                POP(WORD_SIZE)
+                RETURN()
+        ''')
+        after = self.parsed()
+
+        def from_code_start(functions: dict) -> dict:
+            start = min(func.offset for func in functions.values())
+            return {name: func.offset - start for name, func in functions.items() if name != 'AAA'}
+
+        self.assertEqual(self.code_order(after), ['Target', 'Caller', 'AAA'])
+        self.assertEqual(from_code_start(after), from_code_start(before))
+        self.assertEqual({name: (func.index, func.is_common_func) for name, func in after.items()},
+                         {'AAA': (0, False), 'Caller': (1, False), 'Target': (2, False)})
+        self.assertEqual(self.called(after['Caller']), after['Target'].index)
+
+    def test_from_a_run_callback(self):
+        '''Registered at once, since the compile has started - and its module, which registered nothing itself, gets
+        the script's names then'''
+        helper = self.define_helper()
+        self.define_target()
+        late = self.hook(CALLS_HELPER.format(name = 'Late'))
+        runner = self.hook('registerRunCallback(lambda g: add_function(LATE))')
+        runner.LATE = late.Late
+        functions = self.parsed({'Helper': helper})
+
+        self.assertEqual(self.code_order(functions), ['Helper', 'Target', 'Late'])
+        self.assertEqual(self.called(functions['Late']), functions['Helper'].index)
+
+    def test_existing_name_points_at_both_definitions(self):
+        '''A script function, or one another hook already added: the error names where that one is defined'''
+        target_site = re.escape(f'{__file__}:{marked_line(__file__, "target def")}')
+        cases = {'script function': ('Target', target_site), 'added by another hook': ('Extra', None)}
+        for case, (name, existing_site) in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+                self.define_target()
+                first = self.hook(f'''
+                    @add_function
+                    def Extra():                                # line: first extra
+                        RETURN()
+                ''')
+                second = self.hook(f'''
+                    @add_function
+                    def {name}(arg1: Value32 = 0):              # line: def
+                        RETURN()
+                ''')
+                existing_site = existing_site or re.escape(f'{first.__file__}:{marked_line(first.__file__, "first extra")}')
+
+                with self.assertRaisesRegex(ValueError, f"^{at(second.__file__, 'def')}add_function: '{name}' is already "
+                                                        f"defined at {existing_site}; replace_function replaces a function$"):
+                    self.writer.build({})
+
+
+class TestInjection(HookTestCase):
+    def test_script_names_reach_hook_bodies(self):
+        '''A replacement calls Helper by its plain name, though only the script defines it'''
+        helper = self.define_helper()
+        self.define_target()
+        self.hook("@replace_function('Target')\n" + CALLS_HELPER.format(name = 'Target'))
+        functions = self.parsed({'Helper': helper})
+
+        self.assertEqual(self.called(functions['Target']), functions['Helper'].index)
+
+    def test_added_function_reaches_script_names(self):
+        helper = self.define_helper()
+        self.hook('@add_function\n' + CALLS_HELPER.format(name = 'Added'))
+        functions = self.parsed({'Helper': helper})
+
+        self.assertEqual(self.called(functions['Added']), functions['Helper'].index)
+
+    def test_returned_replacement_from_another_module(self):
+        '''A raw callback's replacement from a module that registered nothing still gets the script's names'''
+        helper = self.define_helper()
+        self.define_target()
+        replacements = self.hook(CALLS_HELPER.format(name = 'Target'))
+        callback = self.hook("registerFuncCallback(lambda name, func: TARGET if name == 'Target' else None)")
+        callback.TARGET = replacements.Target
+        functions = self.parsed({'Helper': helper})
+
+        self.assertEqual(self.called(functions['Target']), functions['Helper'].index)
+
+    def test_body_wrapped_by_another_modules_decorator(self):
+        '''The registered function is the decorator's wrapper (its module); the body it wraps gets the names too'''
+        helper = self.define_helper()
+        self.define_target()
+        decorators = self.hook('''
+            import functools
+
+            def traced(body):
+                @functools.wraps(body)
+                def wrapper(*args):
+                    body(*args)
+
+                return wrapper
+        ''')
+        bodies = self.hook(CALLS_HELPER.format(name = 'Target'))
+        replace_function('Target')(decorators.traced(bodies.Target))
+        functions = self.parsed({'Helper': helper})
+
+        self.assertEqual(self.called(functions['Target']), functions['Helper'].index)
+
+    def test_kept_library_body_gets_no_names(self):
+        '''A callback returning the body it was given keeps it: a library function's module isn't a hook's'''
+        library = self.hook('''
+            def lib_common(arg1: Value32):
+                POP(WORD_SIZE)
+                RETURN()
+        ''')
+
+        @self.writer.CommonImports()
+        def commonImports():
+            return [library.lib_common]
+
+        keeper = self.hook('registerFuncCallback(lambda name, func: func)')
+        self.parsed({'OnlyScript': 'script'})
+
+        self.assertIn('OnlyScript', vars(keeper))
+        self.assertNotIn('OnlyScript', vars(library))
+
+    def test_hook_names_win_and_the_writer_modules_stay_clean(self):
+        self.define_target()
+        hook = self.hook('''
+            Shared = 'hook'
+
+            @replace_function('Target')
+            def Target(arg1):
+                POP(WORD_SIZE)
+                RETURN()
+        ''')
+        self.parsed({'Shared': 'script', 'OnlyScript': 'script', '__only_script__': 'script'})
+
+        self.assertEqual((hook.Shared, hook.OnlyScript), ('hook', 'script'))
+        self.assertNotIn('__only_script__', vars(hook))
+
+        for module in (scp_writer, scp_writer_helper, scp_writer_hooks):
+            self.assertNotIn('OnlyScript', vars(module))
 
 
 if __name__ == '__main__':

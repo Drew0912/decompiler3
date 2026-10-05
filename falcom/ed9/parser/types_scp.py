@@ -1,5 +1,6 @@
 import math
 import struct
+from typing import TypeAlias
 
 from common import *
 from common.logging import log
@@ -89,10 +90,12 @@ class RawInt(int):
     def __repr__(self) -> str:
         return f'RawInt(0x{self:08X})'
 
-Value32     = int | float
-Nullable32  = Value32 | None
-NullableStr = str | None
-Pointer     = object
+# Explicit aliases: Pylance takes a bare assignment star-imported along many paths (a hook's `from <script> import *`)
+# for a variable, and rejects it in an annotation
+Value32: TypeAlias     = int | float
+Nullable32: TypeAlias  = Value32 | None
+NullableStr: TypeAlias = str | None
+Pointer: TypeAlias     = object
 
 
 class ScpValue:
