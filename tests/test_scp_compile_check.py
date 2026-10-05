@@ -4,7 +4,6 @@ names the script line that emitted the failing opcode - or the failing function'
 (ScpDisassemblyError, ED9LiftError), the def-line finder, and ScpParser.load_bytes / quiet.'''
 
 from pathlib import Path
-import importlib.util
 import re
 import sys
 import unittest
@@ -21,7 +20,7 @@ from falcom.ed9.scena2py import main
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_compile_check import CompileCheckError, definition_line
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import WriterTestCase
+from scp_writer_test_utils import WriterTestCase, load_module
 
 SOURCE_LINES = Path(__file__).read_text(encoding = 'utf-8').splitlines()
 HEX = '0x[0-9A-F]+'
@@ -442,9 +441,7 @@ class TestLocations(CheckTestCase):
     def test_library_body_points_at_its_own_file(self):
         library = self.tmp / 'step9_library.py'
         library.write_text(LIBRARY_SOURCE, encoding = 'utf-8')
-        spec = importlib.util.spec_from_file_location('step9_library', library)
-        module = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(module)
+        module = load_module(library)
 
         @self.writer.CommonImports()
         def commonImports():

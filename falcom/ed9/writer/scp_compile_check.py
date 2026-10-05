@@ -6,6 +6,7 @@ import functools
 import linecache
 import tokenize
 from types import CodeType
+from typing import Callable
 
 from ..ir.llil import ED9LiftError, ED9VMLifter
 from ..parser.scp import ScpParser
@@ -42,6 +43,12 @@ def source_location(site: SourceSite) -> str:
     code, lasti = site
     line = next((line for start, end, line in code.co_lines() if start <= lasti < end and line is not None), None)
     return f'{code.co_filename}:{line or definition_line(code)}'
+
+
+def def_site(func: Callable) -> str:
+    """'file:line' of a function's own def (not of a function it wraps)"""
+    code = func.__code__
+    return f'{code.co_filename}:{definition_line(code)}'
 
 
 def definition_line(code: CodeType) -> int:

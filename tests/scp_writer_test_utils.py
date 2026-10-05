@@ -2,6 +2,8 @@
 '''Shared test helpers for compiling DSL scripts against a throwaway ScpWriter'''
 
 from pathlib import Path
+from types import ModuleType
+import importlib.util
 import tempfile
 import unittest
 
@@ -17,6 +19,15 @@ def fresh_writer() -> scp_writer.ScpWriter:
     so tests isolate this way instead.'''
     scp_writer._gScp = scp_writer.ScpWriter()
     return scp_writer._gScp
+
+
+def load_module(path: Path) -> ModuleType:
+    '''Run a .py file as a fresh module, kept out of sys.modules: a hook or library file whose globals no other test
+    sees. Run it after fresh_writer(): what it registers goes to the writer of that moment'''
+    spec = importlib.util.spec_from_file_location(path.stem, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def body_writer() -> scp_writer.ScpWriter:

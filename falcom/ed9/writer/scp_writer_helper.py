@@ -1,8 +1,10 @@
-"""DSL statements that emit no instruction (label, GLOBAL_VAR) and genLabel(), layered over the per-opcode primitives"""
+"""DSL statements that emit no instruction (label, GLOBAL_VAR) and genLabel(), layered over the per-opcode primitives;
+also re-exports the hook-file API (scp_writer_hooks)"""
 
 import uuid
 
 from .scp_writer_opcode_handler import *
+from .scp_writer_hooks import *
 
 
 def genLabel() -> str:

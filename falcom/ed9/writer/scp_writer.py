@@ -4,6 +4,7 @@ import inspect
 import math
 import sys
 from dataclasses import dataclass, field
+from types import FunctionType
 from typing import Callable
 
 from common import fileio
@@ -26,7 +27,7 @@ from ..parser.types_scp import (
     ScpFunctionCallDebugInfoArg,
 )
 from ..parser.utils import str_to_bytes
-from .scp_compile_check import CompileCheckError, SourceSite, definition_line, require_decompilable, source_location
+from .scp_compile_check import CompileCheckError, SourceSite, def_site, require_decompilable, source_location
 
 # PUSH's leading byte - 4 in every sample script (checked by tools/scp_roundtrip_validator.py)
 PUSH_SIZE_BYTE = 4
@@ -83,6 +84,8 @@ class ScpFunction:
     debug_argc: dict[str, int] = field(default_factory = dict)  # CALL return label -> args passed explicitly
     calls: list[TrackedCall] = field(default_factory = list)
     debug_records: list[DebugRecord] = field(default_factory = list)
+    original_obj: Callable | None = None                        # the body before any hook replaced it
+    bodies: list[Callable] = field(default_factory = list)      # every replacement a hook accepted, in chain order
 
 
 class ScpWriter:
@@ -114,6 +117,9 @@ class ScpWriter:
         self.source_map = {}                            # type: dict[int, SourceSite]  # code position -> where it was emitted
         self.current_source = None                      # type: SourceSite | None
         self.code_offset = None                         # type: int  # file offset of the code buffer
+        self.body_code_ids = set()                      # type: set[int]  # id() of every body's code, for the source map
+        self.func_callbacks = []                        # type: list[Callable]  # hooks: cb(name, func) -> None or a new body
+        self.replaced = {}                              # type: dict[str, Callable]  # replace_function name -> its body
 
     def init(self, name: str):
         self.name = name
@@ -130,8 +136,7 @@ class ScpWriter:
     def build(self, g: dict) -> bytes:
         """Compile every registered function into the script's bytes, in memory; with check_compiled, the bytes must
         decompile again. A failure ends the compile like any other: one compile per writer"""
-        # for cb in self.runCallbacks:
-        #     cb(g)
+        self.applyFunctionCallbacks()
 
         hdr = ScpHeader()
         hdr.function_count = len(self.functions)
@@ -231,13 +236,86 @@ class ScpWriter:
         if f is None:
             return ''
 
-        code = f.obj.__code__
-        return f'{code.co_filename}:{definition_line(code)}: '
+        return f'{def_site(f.obj)}: '
 
     @classmethod
     def _site_prefix(cls, site: SourceSite | None) -> str:
         """'file:line: ' of a source site, '' without one (the source map is off)"""
         return f'{source_location(site)}: ' if site is not None else ''
+
+    def registerFuncCallback(self, cb: Callable):
+        """Hook: cb(name, func) for every function when the compile starts - None keeps it, a function replaces its body.
+        Callbacks chain in registration order: a later one receives the earlier one's replacement"""
+        self._require_function(cb, 'registerFuncCallback')
+        self.func_callbacks.append(cb)
+
+    def replace_function(self, name: str):
+        """Hook decorator: the decorated function replaces the body of the script's function name"""
+        assert isinstance(name, str)
+
+        def wrapper(body):
+            self._require_function(body, f'replace_function({name!r})')
+            earlier = self.replaced.get(name)
+            if earlier is not None:
+                log.warning(f'{def_site(body)}: replace_function({name!r}) again, overriding the one at {def_site(earlier)}')
+
+            self.replaced[name] = body
+            self.func_callbacks.append(lambda func_name, func: body if func_name == name else None)
+            return body
+
+        return wrapper
+
+    def applyFunctionCallbacks(self):
+        """Run the hook function callbacks over every function and give each replaced one its new body. Its position,
+        table index, common flag and name hash stay; only its signature merges with the replacement's"""
+        for name, body in self.replaced.items():
+            if name not in self.functions_by_name:
+                raise ValueError(f'{def_site(body)}: replace_function({name!r}): the script has no function {name!r}')
+
+        for f in list(self.functions):
+            body = f.obj
+            for cb in self.func_callbacks:
+                count = len(self.functions)
+                replacement = cb(f.name, body)
+                if len(self.functions) != count:
+                    raise ValueError(f"{def_site(cb)}: a function callback can't register functions")
+
+                if replacement is None or replacement is body:
+                    continue
+
+                self._require_function(replacement, f'{def_site(cb)}: {cb.__name__} for {f.name}')
+                body = replacement
+                f.bodies.append(body)
+
+            if body is not f.obj:
+                f.sig = self._replaced_signature(f, body)
+                f.obj = body
+                f.debug_argc = {}  # keyed by the original's return labels, which a replacement may reuse for other calls
+
+    @classmethod
+    def _replaced_signature(cls, f: ScpFunction, body: Callable) -> inspect.Signature:
+        """The replacement's signature, with the original's annotation or default wherever it gives none: a default can
+        change but never go (the engine may call the function by name without that argument)"""
+        sig = inspect.signature(body, eval_str = True)
+        params = list(sig.parameters.values())
+        others = [param.name for param in params if param.kind not in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD)]
+        if others:
+            raise TypeError(f"{def_site(body)}: {f.name}'s replacement can't take *args, keyword-only or **kwargs "
+                            f"parameters ({', '.join(others)}); a wrapper keeps the replaced signature with functools.wraps")
+
+        if len(params) != f.entry.param_count:
+            raise TypeError(f'{def_site(body)}: {f.name} takes {f.entry.param_count} parameters, its replacement {len(params)}')
+
+        merged = [param.replace(annotation = original.annotation if param.annotation is param.empty else param.annotation,
+                                default = original.default if param.default is param.empty else param.default)
+                  for param, original in zip(params, f.sig.parameters.values())]
+        return sig.replace(parameters = merged)
+
+    @classmethod
+    def _require_function(cls, obj, what: str):
+        """Hooks are plain functions: the source map and the error locations need their code"""
+        if not isinstance(obj, FunctionType):
+            raise TypeError(f'{what}: expected a plain function (def), not {obj!r}')
 
     def buildFunctionTable(self):
         """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this index"""
@@ -253,6 +331,7 @@ class ScpWriter:
         """Compile every function in script (source) order into a memory buffer; offsets are relative until relocateCode()"""
         code = fileio.FileStream(encoding = default_encoding()).OpenMemory()
         self.fs = code
+        self.body_code_ids = {id(body_code) for f in self.functions for body_code in self._body_codes(f)}
 
         try:
             for f in self.functions:
@@ -260,7 +339,7 @@ class ScpWriter:
                 self.call_tracker = CallDebugInfoTracker(get_param_count = self._get_param_count) if self.round_trip else None
                 f.entry.offset = code.Position
                 log.debug(f'{f.name} @ code+0x{f.entry.offset:08X}')
-                f.obj(*[None] * f.entry.param_count)
+                self._run_body(f, f.obj)
 
                 if self.call_tracker is not None:
                     f.calls = self.call_tracker.ordered_calls()
@@ -271,6 +350,24 @@ class ScpWriter:
             self.call_tracker = None
 
         return code
+
+    @classmethod
+    def _run_body(cls, f: ScpFunction, body: Callable):
+        """Emit a body's opcodes; an LLIL body reads its arguments from the VM stack, not from its parameters"""
+        body(*[None] * f.entry.param_count)
+
+    @classmethod
+    def _body_codes(cls, f: ScpFunction):
+        """The code of every body that can run for f: its own, the original, each replacement and what they wrap"""
+        for body in (f.obj, f.original_obj, *f.bodies):
+            seen = set()
+            while body is not None and id(body) not in seen:
+                seen.add(id(body))
+                body_code = getattr(body, '__code__', None)
+                if body_code is not None:
+                    yield body_code
+
+                body = getattr(body, '__wrapped__', None)
 
     def relocateCode(self, code: fileio.FileStream, code_offset: int):
         """Move every position recorded while compiling into the code buffer to its final file offset, and patch each
@@ -460,14 +557,14 @@ class ScpWriter:
         self._track(opcode, args)
 
     def _opcode_source(self) -> SourceSite | None:
-        """Where the current function's body emitted the opcode being compiled (a helper the body called counts as the
-        body's call). f_lasti, not f_lineno: f_lineno scans the line table, which grows with the body"""
-        code = self.current_function.obj.__code__
+        """Where a body emitted the opcode being compiled: the innermost frame running any body - the function's own, a
+        hook's replacement or wrapper, an inlined original (a helper the body called counts as the body's call). f_lasti,
+        not f_lineno: f_lineno scans the line table, which grows with the body"""
         frame = sys._getframe(1)
-        while frame is not None and frame.f_code is not code:
+        while frame is not None and id(frame.f_code) not in self.body_code_ids:
             frame = frame.f_back
 
-        return (code, frame.f_lasti) if frame is not None else None
+        return (frame.f_code, frame.f_lasti) if frame is not None else None
 
     def _track(self, opcode: int, args: tuple, payload = None):
         if self.call_tracker is not None:
@@ -585,7 +682,12 @@ class ScpWriter:
             if name in self.functions_by_name:
                 raise ValueError(f'duplicate function name: {name!r}')
 
-            sig = inspect.signature(func)
+            # eval_str: under `from __future__ import annotations` the annotations are strings
+            sig = inspect.signature(func, eval_str = True)
+            for param in sig.parameters.values():
+                if param.annotation is param.empty:
+                    raise TypeError(f'{def_site(func)}: parameter {param.name} of {name} needs a type: Value32, '
+                                    'Nullable32, str, NullableStr or Pointer')
 
             entry = ScpFunctionEntry()
             entry.offset                = UNRESOLVED_FUNC_OFFSET
@@ -600,7 +702,8 @@ class ScpWriter:
             entry.name_hash             = hash_func_Name(name)
             entry.name_offset           = 0  # unused in memory - real value patched directly into the function table by writeStringPool
 
-            f = ScpFunction(index = UNRESOLVED_FUNC_INDEX, name = name, obj = func, sig = sig, entry = entry, debug_argc = debug_argc or {})
+            f = ScpFunction(index = UNRESOLVED_FUNC_INDEX, name = name, obj = func, sig = sig, entry = entry,
+                            debug_argc = debug_argc or {}, original_obj = func)
             self.functions.append(f)
             self.functions_by_name[name] = f
 
