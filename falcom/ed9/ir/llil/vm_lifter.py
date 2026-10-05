@@ -9,21 +9,14 @@ from ir.core import IRParameter, SourceFloat
 from ...disasm import *
 from .llil_builder import *
 from ...parser import *
+from ...parser.scp import ScpFunctionError
 
 if TYPE_CHECKING:
     from ...parser.scp import *
 
 
-class ED9LiftError(ValueError):
-    """A function that doesn't lift: the function's name and, when one instruction is to blame, its offset and
-    mnemonic"""
-
-    def __init__(self, function: str, cause: Exception, inst: Instruction | None = None):
-        where = f' {inst.mnemonic} at 0x{inst.offset:X}:' if inst is not None else ''
-        super().__init__(f'{function}:{where} {cause}')
-        self.function = function
-        self.offset = inst.offset if inst is not None else None
-        self.mnemonic = inst.mnemonic if inst is not None else None
+class ED9LiftError(ScpFunctionError):
+    """A function that doesn't lift"""
 
 
 class ED9VMLifter:
@@ -50,7 +43,7 @@ class ED9VMLifter:
             raise
 
         except Exception as e:
-            raise ED9LiftError(func.name, e) from e
+            raise ED9LiftError.at(func.name, e) from e
 
     def _lift(self, func: Function) -> LowLevelILFunction:
         """lift_function's body; a failing instruction raises an ED9LiftError naming it"""
@@ -76,7 +69,7 @@ class ED9VMLifter:
                     self._translate_instruction(builder, inst, block, block_map, llil_blocks)
 
                 except Exception as e:
-                    raise ED9LiftError(func.name, e, inst) from e
+                    raise ED9LiftError.at(func.name, e, inst) from e
 
         return builder.finalize()
 

@@ -11,10 +11,9 @@ from common import fileio
 from common.config import default_encoding
 from common.logging import log
 from ir.llil import WORD_SIZE
-from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, ED9_FORMAT_TABLE, OperandDescriptor, OperandType
-from ..ir.llil import ED9LiftError
+from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, ED9_FORMAT_TABLE, Instruction, OperandDescriptor, OperandType
 from ..parser.crc32 import hash_func_Name
-from ..parser.scp import CallDebugInfoTracker, ScpDisassemblyError, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
+from ..parser.scp import CallDebugInfoTracker, ScpFunctionError, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
 from ..parser.string_pool import StringPoolSection
 from ..parser.types_scp import (
     ScpValue,
@@ -27,7 +26,7 @@ from ..parser.types_scp import (
     ScpFunctionCallDebugInfoArg,
 )
 from ..parser.utils import str_to_bytes
-from .scp_compile_check import CompileCheckError, SourceSite, definition_location, require_decompilable, source_location
+from .scp_compile_check import CompileCheckError, SourceSite, definition_line, require_decompilable, source_location
 
 # PUSH's leading byte - 4 in every sample script (checked by tools/scp_roundtrip_validator.py)
 PUSH_SIZE_BYTE = 4
@@ -157,6 +156,7 @@ class ScpWriter:
         self.code_offset = fs.Position  # the code follows the global var table
         self.relocateCode(code, self.code_offset)
         fs.Write(code)
+        code_end = fs.Position
 
         with fs.PositionSaver:
             self.flushFuncEntries(fs)
@@ -168,34 +168,67 @@ class ScpWriter:
 
         data = fs.ReadAll()
         if self.check_compiled:
-            self.check_decompilable(data)
+            self.check_decompilable(data, code_end)
 
         return data
 
-    def check_decompilable(self, data: bytes):
+    def check_decompilable(self, data: bytes, code_end: int):
         """The compiled bytes disassemble and lift again; a failure names the script line that emitted the failing
-        opcode, or the failing function's def"""
+        opcode, or the failing function's def. A function that runs on into the next function's code (no RETURN) is a
+        warning while the bytes still decompile, and a note on the failure when they don't."""
         try:
-            require_decompilable(data, self.name)
+            runs_on = {func.name: func.runs_on for func in require_decompilable(data, self.name, code_end)}
 
-        except (ScpDisassemblyError, ED9LiftError) as e:
-            raise CompileCheckError(f'{self._failure_location(e.function, e.offset)}{e}') from e
+        except ScpFunctionError as e:
+            note = self._run_on(e.function, e.runs_on)
+            message = f'{self._failure_location(e.function, e.offset)}{e}' + (f'; {note}' if note else '')
+            raise CompileCheckError(message) from e
 
         except Exception as e:
             raise CompileCheckError(f'{self.name}: {e}') from e
+
+        for f in self.functions:
+            note = self._run_on(f.name, runs_on.get(f.name))
+            if note:
+                log.warning(note)
+
+    def _run_on(self, function: str | None, inst: Instruction | None) -> str | None:
+        """How function runs on into the next function's code, located: inst runs past its end (the parser found it),
+        or the function has no code at all. None when it doesn't"""
+        f = self.functions_by_name.get(function)
+        if f is None:
+            return None
+
+        following = self.functions[self.functions.index(f) + 1:]
+        if inst is not None:
+            end = inst.offset + inst.size
+            into = next(g.name for g in following if g.entry.offset == end)
+            return f'{self._failure_location(function, inst.offset)}' + ScpFunctionError.describe(
+                function, f'runs past its end into {into} without RETURN', inst)
+
+        if following and following[0].entry.offset == f.entry.offset:
+            return (f'{self._failure_location(function, None)}{function}: has no code, so it runs on into '
+                    f'{following[0].name} without RETURN')
+
+        return None
 
     def _failure_location(self, function: str | None, offset: int | None) -> str:
         """'file:line: ' of the opcode compiled at a file offset, else of the function's def; '' when neither is known"""
         source = self.source_map.get(offset - self.code_offset) if offset is not None else None
         if source is not None:
-            return f'{source_location(source)}: '
+            return self._site_prefix(source)
 
         f = self.functions_by_name.get(function)
-        return f'{definition_location(f.obj.__code__)}: ' if f is not None else ''
+        if f is None:
+            return ''
 
-    def _label_location(self, ref: LabelSite) -> str:
-        """'file:line: ' of a label operand's opcode, '' without the source map"""
-        return f'{source_location(ref.source)}: ' if ref.source is not None else ''
+        code = f.obj.__code__
+        return f'{code.co_filename}:{definition_line(code)}: '
+
+    @classmethod
+    def _site_prefix(cls, site: SourceSite | None) -> str:
+        """'file:line: ' of a source site, '' without one (the source map is off)"""
+        return f'{source_location(site)}: ' if site is not None else ''
 
     def buildFunctionTable(self):
         """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this index"""
@@ -240,10 +273,10 @@ class ScpWriter:
             for ref in self.label_refs:
                 label = self.labels.get(ref.name)
                 if label is None:
-                    raise ValueError(f'{self._label_location(ref)}{ref.function}: undefined label {ref.name!r}')
+                    raise ValueError(f'{self._site_prefix(ref.source)}{ref.function}: undefined label {ref.name!r}')
 
                 if label.function != ref.function:
-                    log.warning(f'{self._label_location(ref)}{ref.function}: jumps to label {ref.name!r} in '
+                    log.warning(f'{self._site_prefix(ref.source)}{ref.function}: jumps to label {ref.name!r} in '
                                 f'{label.function} (another function)')
 
                 code.Position = ref.offset

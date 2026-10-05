@@ -403,13 +403,35 @@ class StackEntryGroups:
         return self.roles.pop(root, None), self.roles.pop(other_root, None)
 
 
-class ScpDisassemblyError(ValueError):
-    """A function that doesn't disassemble: the function's name and, when one instruction is to blame, its offset"""
+class ScpFunctionError(ValueError):
+    """A function that doesn't decompile: the function's name and, when one instruction is to blame, its offset and
+    mnemonic"""
 
-    def __init__(self, message: str, function: str | None = None, offset: int | None = None):
+    def __init__(self, message: str, function: str | None = None, offset: int | None = None,
+                 mnemonic: str | None = None):
         super().__init__(message)
         self.function = function
         self.offset = offset
+        self.mnemonic = mnemonic
+        self.runs_on = None         # the function's instruction that ran on into the next function's code first
+
+    @classmethod
+    def describe(cls, function: str, message, inst: Instruction | None = None) -> str:
+        """'function: MNEMONIC at 0x..: message', or 'function: message' with no instruction to blame"""
+        where = f' {inst.mnemonic} at 0x{inst.offset:X}:' if inst is not None else ''
+        return f'{function}:{where} {message}'
+
+    @classmethod
+    def at(cls, function: str, message, inst: Instruction | None = None):
+        """The error describe() words"""
+        if inst is None:
+            return cls(cls.describe(function, message), function)
+
+        return cls(cls.describe(function, message, inst), function, inst.offset, inst.mnemonic)
+
+
+class ScpDisassemblyError(ScpFunctionError):
+    """A function that doesn't disassemble"""
 
 
 @dataclass
@@ -417,6 +439,9 @@ class ScpDisassemblerContext(DisassemblerContext):
     """ED9/SCP disassembler context: the simulated stack and the state recorded for every edge"""
     current_func     : 'Function | None' = None     # Function being disassembled
     code_end         : int | None = None            # Where the next function's code starts (None: last function)
+    ends_code        : bool = False                 # code_end is where the code ends: nothing may run or jump past it
+    reject_outside_stack : bool = False             # fail on a slot outside the live stack instead of only warning
+    runs_on          : Instruction | None = None    # the first instruction that runs on past code_end
     current_inst     : Instruction | None = None    # Instruction being simulated
     stack_simulation : list = field(default_factory = list)                 # Simulated stack of the block being decoded
     edge_states      : dict[int, tuple] = field(default_factory = dict)     # block start -> state; later edges match its height
@@ -427,9 +452,26 @@ class ScpDisassemblerContext(DisassemblerContext):
     declares_call_returns : bool = True             # CALL and CALL_SCRIPT return their own return edges
 
     def fail(self, message: str, inst: Instruction | None = None):
-        where = f' {inst.mnemonic} at 0x{inst.offset:X}:' if inst is not None else ''
-        offset = inst.offset if inst is not None else None
-        raise ScpDisassemblyError(f'{self.current_func.name}:{where} {message}', self.current_func.name, offset)
+        raise ScpDisassemblyError.at(self.current_func.name, message, inst)
+
+    def note_run_on(self, inst: Instruction):
+        """An instruction that ends at code_end and may continue with the next one runs on into the next function's
+        code - a missing RETURN. Past the end of the code that fails."""
+        end = inst.offset + inst.size
+        if end != self.code_end or not self.falls_through(inst, end):
+            return
+
+        if self.ends_code:
+            self.fail('runs past the end of the code without RETURN', inst)
+
+        if self.runs_on is None:
+            self.runs_on = inst
+
+    @classmethod
+    def falls_through(cls, inst: Instruction, end: int) -> bool:
+        """inst may continue at end: it doesn't end its block, or one of its branches is the fall-through"""
+        desc = inst.descriptor
+        return not desc.is_end_block() or any(target.kind == BranchKind.FALSE for target in desc.get_branch_targets(inst, end))
 
     def record_edge(self, source: int, target: int, state: tuple, kind: BranchKind):
         """The first edge into a block records its state. Every later edge - also one arriving after the block was
@@ -619,6 +661,9 @@ class ScpDisassemblerContext(DisassemblerContext):
                     live = 0 <= slot < len(state) - STACK_OFFSET_OPS[inst.opcode]
                     entries = held_at(start, state, slot) if live else {}
                     ref = self.slot_ref(slot, entries, layout.local_slots)
+                    if not live and self.reject_outside_stack:
+                        self.fail(f'addresses {ref}', inst)
+
                     if ref.unusual:
                         log.warning(f'{self.current_func.name}: {inst.mnemonic} at 0x{inst.offset:X} addresses {ref}')
 
@@ -664,6 +709,11 @@ class ScpParser(StrictBase):
     # Decode code no branch reaches (e.g. a JMP right after RETURN) so the .py keeps it for a byte-exact round trip
     keep_unreachable_code : bool = True
 
+    # The compile check's stricter reading of bytes it just compiled: a slot outside the live stack fails instead of
+    # only warning, and the last function may not run or jump past the known end of the code
+    reject_outside_stack : bool = False
+    known_code_end  : int | None = None
+
     fs              : fileio.FileStream
     name            : str
     header          : ScpHeader
@@ -702,12 +752,17 @@ class ScpParser(StrictBase):
         keep_unreachable_code: bool,
         filter_func: Callable[[Function], bool] | None = None,
         quiet: bool = False,
+        reject_outside_stack: bool = False,
+        known_code_end: int | None = None,
     ) -> tuple['ScpParser', list[Function]]:
-        """load() for a script already in memory, named name; quiet drops the per-function progress and error lines"""
+        """load() for a script already in memory, named name; quiet drops the per-function progress and error lines.
+        reject_outside_stack and known_code_end are the compile check's (see the class attributes)."""
         with fileio.FileStream(data, encoding = default_encoding()) as fs:
             parser = cls(fs, name)
             parser.round_trip = round_trip
             parser.keep_unreachable_code = keep_unreachable_code
+            parser.reject_outside_stack = reject_outside_stack
+            parser.known_code_end = known_code_end
             parser.parse()
             functions = parser.disasm_all_functions(filter_func = filter_func, quiet = quiet)
 
@@ -856,6 +911,9 @@ class ScpParser(StrictBase):
 
     def on_disasm_function(self, context: ScpDisassemblerContext, offset: int, name: str):
         """The entry block starts with the caller's parameters"""
+        if context.ends_code and offset >= context.code_end:
+            context.fail('has no code before the end of the code (no RETURN)')
+
         context.edge_states[offset] = tuple(ParamEntry(index) for index in range(len(context.current_func.params)))
 
     def on_block_start(self, context: ScpDisassemblerContext, offset: int):
@@ -864,6 +922,10 @@ class ScpParser(StrictBase):
 
     def on_pre_add_branch(self, context: ScpDisassemblerContext, target: BranchTarget):
         """Record the state the edge carries into its target (a branch or a fall-through)"""
+        if context.ends_code and target.offset >= context.code_end:
+            context.fail(f'jumps to 0x{target.offset:X}, past the end of the code (no RETURN after its label)',
+                         context.current_inst)
+
         context.record_edge(context.current_inst.offset, target.offset, tuple(context.stack_simulation), target.kind)
 
     def on_block_split(self, context: ScpDisassemblerContext, source_offset: int, split_offset: int):
@@ -875,6 +937,7 @@ class ScpParser(StrictBase):
         stack = context.stack_simulation
         context.current_inst = inst
         context.inst_states[inst.offset] = tuple(stack)
+        context.note_run_on(inst)
         opcode = inst.opcode
 
         if opcode == ED9Opcode.RETURN:
@@ -1015,8 +1078,9 @@ class ScpParser(StrictBase):
                     func.name, offsets[index]
                 )
 
-    def disasm_context(self, func: Function, code_end: int | None) -> ScpDisassemblerContext:
-        """A fresh context for disassembling func, whose code ends at code_end"""
+    def disasm_context(self, func: Function, code_end: int | None, ends_code: bool = False) -> ScpDisassemblerContext:
+        """A fresh context for disassembling func, whose code ends at code_end - where the next function starts, or
+        with ends_code where the code ends"""
         return ScpDisassemblerContext(
             get_func_argc           = self.get_func_argc,
             on_disasm_function      = self.on_disasm_function,
@@ -1027,6 +1091,8 @@ class ScpParser(StrictBase):
             create_fallthrough_jump = ed9_create_fallthrough_jump,
             current_func            = func,
             code_end                = code_end,
+            ends_code               = ends_code,
+            reject_outside_stack    = self.reject_outside_stack,
         )
 
     def disasm_all_functions(self, filter_func = None, quiet: bool = False) -> list[Function]:
@@ -1043,24 +1109,32 @@ class ScpParser(StrictBase):
             if not quiet:
                 log.info(f'Disassembling {func.name} @ 0x{func.offset:08X}')
 
-            # Create new context for each function; its code ends where the next function starts
+            # Create new context for each function; its code ends where the next function starts, the last one's
+            # where the code ends when that is known
             next_start = bisect.bisect_right(starts, func.offset)
-            context = self.disasm_context(func, starts[next_start] if next_start < len(starts) else None)
+            if next_start < len(starts):
+                context = self.disasm_context(func, starts[next_start])
+
+            else:
+                context = self.disasm_context(func, self.known_code_end, ends_code = self.known_code_end is not None)
 
             disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
             try:
                 func.entry_block = disasm.disasm_function(self.fs, offset = func.offset, name = func.name)
                 self.require_recorded_edges(func, context)
                 func.stack_layout = context.stack_layout(func.entry_block)
+                func.runs_on = context.runs_on
                 disassembled_functions.append(func)
             except Exception as e:
                 if not quiet:
                     log.error(f'Error disassembling {func.name} @ 0x{func.offset:08X}: {e}')
 
-                if isinstance(e, ScpDisassemblyError):
+                error = e if isinstance(e, ScpDisassemblyError) else ScpDisassemblyError.at(func.name, e)
+                error.runs_on = context.runs_on
+                if error is e:
                     raise
 
-                raise ScpDisassemblyError(f'{func.name}: {e}', func.name) from e
+                raise error from e
 
             if self.round_trip:
                 self.pair_call_debug_info(func)

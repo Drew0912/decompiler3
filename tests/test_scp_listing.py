@@ -113,7 +113,7 @@ def compile_main(dat: Path):
 
 
 def compile_shared(dat: Path):
-    '''ZEmpty has no code, so it starts where ABody does; Jumper jumps into ABody (compiles with a warning)'''
+    '''ZEmpty has no code, so it starts where ABody does; Jumper jumps into ABody (compiles with a warning for each)'''
     fresh_writer()
     writer = create_scp_writer(str(dat))
 

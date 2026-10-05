@@ -77,7 +77,7 @@ def compile_script(dat: Path):
 
 
 def compile_shared_string(dat: Path):
-    '''AEmpty has no code, so it starts where ZBody does: both decode ZBody's PUSH_STR'''
+    '''AEmpty has no code, so it starts where ZBody does: both decode ZBody's PUSH_STR (compiles with a warning)'''
     fresh_writer()
     writer = create_scp_writer(str(dat))
 

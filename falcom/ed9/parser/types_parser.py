@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..disasm import BasicBlock
+    from ..disasm import BasicBlock, Instruction
 
 class GlobalVar:
     index       : int
@@ -82,11 +82,6 @@ class SlotRef:
         more than one kind of value"""
         return len(self.params) + self.local != 1 or self.caller_frame or self.call_setup
 
-    @property
-    def outside_stack(self) -> bool:
-        """Below the stack or at/above sp: nothing of this function's stands there"""
-        return not (self.params or self.local or self.caller_frame or self.call_setup)
-
     def __str__(self) -> str:
         """'slot 2 = arg1', 'slot 3' (a local), 'slot 2 = arg1 or local', 'slot -1 (below the stack)'"""
         kinds = [f'arg{number}' for number in self.params]
@@ -121,6 +116,7 @@ class Function:
     entry_block     : BasicBlock | None
     unreachable_blocks : list[BasicBlock]   # code no branch reaches, linearly decoded (not linked into the CFG)
     stack_layout    : StackLayout | None    # set by the parser; a hand-built function has none
+    runs_on         : Instruction | None    # the instruction that runs on past its end into the next function's code
 
     def __init__(self):
         self.index      = None
@@ -130,6 +126,7 @@ class Function:
         self.entry_block = None
         self.unreachable_blocks = []
         self.stack_layout = None
+        self.runs_on = None
 
     def name_hash(self) -> int:
         return hash_func_Name(self.name)

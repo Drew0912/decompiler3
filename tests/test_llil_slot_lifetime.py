@@ -189,7 +189,7 @@ class TestAccessAtOrAboveSp(unittest.TestCase):
 
 
 class TestAccessBelowTheStack(unittest.TestCase):
-    '''A slot below the frame base is the caller's: reads, addresses, dereferences and stores raise'''
+    '''A slot below the frame base is the caller's: reads, addresses and stores raise'''
 
     BELOW_ONE_PARAMETER = -3 * WORD_SIZE    # with 1 parameter and 1 push (sp 2): slot -1
 
@@ -208,8 +208,9 @@ class TestAccessBelowTheStack(unittest.TestCase):
                 with self.assertRaisesRegex(NotImplementedError, rf'^{access} of slot -1 below the stack'):
                     emit(self.builder())
 
-    def test_dereference_raises(self):
-        with self.assertRaises(NotImplementedError):
+    def test_dereference_raises_as_not_a_parameter(self):
+        # Guard: a dereference needs a parameter slot, a rule older than the below-stack one
+        with self.assertRaisesRegex(NotImplementedError, 'requires a slot still holding a caller parameter, got slot -1'):
             self.builder().load_stack_deref(self.BELOW_ONE_PARAMETER)
 
     def test_lowest_slot_is_still_in_the_frame(self):

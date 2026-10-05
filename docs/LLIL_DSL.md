@@ -134,13 +134,21 @@ of reaching the game:
 CompileCheckError: test.py:12: Caller: CALL at 0x77: expects a return address, found PUSH_INT@0x6B
 ```
 The line is the one whose call emitted the failing opcode (a helper called from a body maps to the
-body's call); an error with no instruction to blame (a last function without `RETURN` decodes into the
-string pool) points at the function's `def`, past its decorators. Undefined labels and jumps into another
-function get the same `file:line:` prefix. A failed check is a failed compile: no `.dat` is written, an
-older one stays, and the writer is spent like after any failed compile. Not checked: unreachable code
-(the parser never simulates it) and a stack that balances but reads the wrong slot. The check costs
-about twice the compile itself (`mp0000_ev`, the largest script: about 4 s on top of 1.7 s); while it is
-on, each opcode also records where it was emitted.
+body's call); an error with no instruction to blame (an empty last function) points at the function's
+`def`, past its decorators. Undefined labels and jumps into another function get the same `file:line:`
+prefix. A function without `RETURN` runs on into the next function's code - a `.dat` has no
+end-of-function marker, so the VM keeps going - which compiles with a warning while the bytes still
+decompile, and adds a note to the error when they don't:
+```
+WARNING   test.py:38: A: SET_REG at 0x5E: runs past its end into B without RETURN
+WARNING   test.py:41: AEmpty: has no code, so it runs on into B without RETURN
+```
+The last function has nothing after it, so running or jumping past its end fails. A failed check is a
+failed compile: no `.dat` is written, an older one stays, and the writer is spent like after any failed
+compile. Not checked: unreachable code (the parser never simulates it) and a stack that balances but
+reads the wrong slot. A read or write outside the live stack fails at once; decompiling a game `.dat`
+only warns about it. The check costs about twice the compile itself (`mp0000_ev`, the largest script:
+about 4 s on top of 1.7 s); while it is on, each opcode also records where it was emitted.
 
 ## 2. Round-Trip Policy
 

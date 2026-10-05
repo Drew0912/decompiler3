@@ -6,7 +6,6 @@ from pathlib import Path
 import re
 import struct
 import sys
-import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -17,7 +16,7 @@ from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import fresh_writer
+from scp_writer_test_utils import WriterTestCase
 
 OPCODE_SIZE = 1  # a jump's label operand follows its 1-byte opcode
 
@@ -26,18 +25,7 @@ def read_uint32(data: bytes, offset: int) -> int:
     return struct.unpack_from('<I', data, offset)[0]
 
 
-class CompileTestCase(unittest.TestCase):
-    '''A fresh writer that compiles into a temp dir'''
-
-    def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.dat = Path(tmp.name) / 'test.dat'
-        fresh_writer()
-        self.writer = create_scp_writer(str(self.dat))
-
-
-class TestWrittenOnlyOnSuccess(CompileTestCase):
+class TestWrittenOnlyOnSuccess(WriterTestCase):
     def define_undefined_label(self):
         # The bad reference sits between two other functions: the message must name the one that holds it
         @self.writer.LLILCode()
@@ -88,15 +76,14 @@ class TestWrittenOnlyOnSuccess(CompileTestCase):
         written = self.dat.read_bytes()
         self.dat.unlink()
 
-        fresh_writer()
-        writer = create_scp_writer(str(self.dat))
+        writer = self.fresh_writer()
         define(writer)
 
         self.assertEqual(writer.build({}), written)
         self.assertFalse(self.dat.exists())
 
 
-class TestLabels(CompileTestCase):
+class TestLabels(WriterTestCase):
     def test_label_at_the_end_of_a_function_is_where_the_next_starts(self):
         @self.writer.LLILCode()
         def A():
@@ -193,7 +180,7 @@ class TestLabels(CompileTestCase):
         self.assertEqual(instructions[frame].operands[0].value, instructions[frame + 2].offset)
 
 
-class TestDebugArgc(CompileTestCase):
+class TestDebugArgc(WriterTestCase):
     def test_debug_argc_trims_the_recorded_args(self):
         @self.writer.LLILCode()
         def Callee(arg1: Value32, arg2: Value32, arg3: Nullable32 = 0):
@@ -229,7 +216,7 @@ class TestDebugArgc(CompileTestCase):
                 self.assertEqual(len(record.args), argc)
 
 
-class TestStatementsInTheWrongPlace(CompileTestCase):
+class TestStatementsInTheWrongPlace(WriterTestCase):
     def test_outside_a_function_body(self):
         for statement, emit in (
             ('PUSH_INT', lambda: PUSH_INT(1)),
