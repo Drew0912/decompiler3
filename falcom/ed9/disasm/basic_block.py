@@ -80,7 +80,7 @@ class BasicBlock:
         return target
 
     def __str__(self) -> str:
-        indent = default_endian()
+        indent = default_indent()
         lines = [f'BasicBlock {self.name} @ 0x{self.start_offset:X}']
         for inst in self.instructions:
             lines.append(f'{indent}{inst.offset:08X}: {inst}')
