@@ -95,7 +95,7 @@ Keep comments brief and meaningful. Avoid redundant explanations.
 ### Python
 - Python 3.14+, standard library only: no third-party packages and no venv (`python` on PATH is 3.14.6)
 - Run tests from the repo root: `python -m unittest discover -s tests` (always pass `-s tests`; bare `python -m unittest` walks every package and hits the unused `falcom.ed9.signatures` package's missing `yaml` import)
-- Tests and tools insert the repo root into `sys.path` themselves; set `PYTHONPATH` to the repo root (`setPythonPath.bat` in cmd) only to run a generated script `.py` from elsewhere
+- Tests and tools insert the repo root into `sys.path` themselves; a generated script `.py` inserts the repo root into `sys.path` itself (the path of the checkout that generated it), so no `PYTHONPATH` is needed to run it
 - Environment: Git Bash (MINGW64) on Windows
 
 ## Active Technologies

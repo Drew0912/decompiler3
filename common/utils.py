@@ -1,11 +1,15 @@
 import unicodedata
+from pathlib import Path
 
 __all__ = (
+    'PROJECT_ROOT',
     'UINT32_MASK',
     'quote_string',
     'format_uint32_hex',
     'display_width',
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent   # common/ sits directly under the repo root
 
 STRING_ESCAPES          = {'\\': '\\\\', '\r': '\\r', '\n': '\\n', '\t': '\\t'}
 MIN_PRINTABLE_CODEPOINT = 0x20

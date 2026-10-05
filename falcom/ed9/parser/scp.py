@@ -9,6 +9,7 @@ from ..writer.metadata.common_index import COMMON_FUNCTIONS
 from ..writer.metadata.signature import function_fingerprint, fingerprint_digest
 from common.config import default_encoding
 from common.logging import log
+from common.utils import PROJECT_ROOT
 from ir.llil import WORD_SIZE
 from collections import Counter
 from enum import Enum, auto
@@ -17,6 +18,9 @@ import bisect
 import keyword
 import pathlib
 import struct
+
+# First lines of every generated script: the generating checkout's root, so it runs without PYTHONPATH
+SYS_PATH_SETUP_LINES = ['import sys', f'sys.path.insert(0, {str(PROJECT_ROOT)!r})']
 
 # Stack simulation instruction groups
 PUSH_VARIANTS = (
@@ -1347,7 +1351,8 @@ class ScpParser(StrictBase):
         catches that itself and logs a hint to run the generator, so importing common_all here
         always succeeds even when the library behind it doesn't exist yet.
         """
-        lines = f'''\
+        lines = [*SYS_PATH_SETUP_LINES]
+        lines += f'''\
 {SCP_WRITER_HELPER_IMPORT}
 {self.gen_hook_import()}
 

@@ -196,7 +196,10 @@ category as the pre-library baseline).
 `scena2py.write_python_dsl` (`falcom/ed9/scena2py.py`). `ScpParser.gen_python_script(functions,
 comments = CommentOptions(...))` picks the optional comments (`falcom/ed9/disasm/llil_dsl_comments.py`;
 `scena2py` builds them from its config); the validator keeps the defaults, so the logic round trip
-checks that the stack comments reach the fixed point too. A generated script imports the helper, an
+checks that the stack comments reach the fixed point too. A generated script first puts the repo root on `sys.path` (`import sys` and
+`sys.path.insert(0, '<root>')`, the root of the checkout that generated it - `SYS_PATH_SETUP_LINES` in
+`falcom/ed9/parser/scp.py`, from `common.utils.PROJECT_ROOT`), so it runs from any folder without `PYTHONPATH`; moving the
+checkout means regenerating the script or editing that line. It then imports the helper, an
 optional `<stem>_hook` module for patches kept outside the generated file (only a missing hook is
 ignored; an import error inside the hook stops the compile), and the library (§3). Its footer calls
 `main()`, which compiles the script when it is run directly. Every generated text file is written

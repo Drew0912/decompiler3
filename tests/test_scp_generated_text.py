@@ -15,7 +15,8 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
 
-from falcom.ed9.parser.scp import ScpParser
+from common.utils import PROJECT_ROOT
+from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
 from falcom.ed9.parser.types_parser import GlobalVar
 from falcom.ed9.parser.types_scp import ScpGlobalVar
 from falcom.ed9.scena2py import process_file
@@ -53,10 +54,15 @@ def hook_block(name: str) -> list[str]:
 
 
 class TestHeader(unittest.TestCase):
-    def test_header_starts_with_the_helper_import(self):
+    def test_header_starts_with_the_sys_path_setup_then_the_helper_import(self):
         '''Guard: no provenance comment above the imports (decided against, 2026-10-02)'''
         header = named_parser('ai_chr5122_e00.dat').gen_python_header()
-        self.assertEqual(header[:2], [SCP_WRITER_HELPER_IMPORT, 'try:'])
+        self.assertEqual(header[:len(SYS_PATH_SETUP_LINES) + 2], [*SYS_PATH_SETUP_LINES, SCP_WRITER_HELPER_IMPORT, 'try:'])
+
+    def test_sys_path_setup_names_the_repo_root(self):
+        '''The baked-in path is what lets a generated script run without PYTHONPATH'''
+        self.assertTrue((PROJECT_ROOT / 'falcom' / 'ed9' / 'writer' / 'scp_writer_helper.py').is_file())
+        self.assertEqual(SYS_PATH_SETUP_LINES[1], f'sys.path.insert(0, {str(PROJECT_ROOT)!r})')
 
     def test_global_var_comments_share_the_comment_column(self):
         parser = named_parser('ai_chr5122_e00.dat')

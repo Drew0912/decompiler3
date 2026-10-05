@@ -34,8 +34,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
-sys.path.insert(0, str(PROJECT_ROOT))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from common.config import default_indent
 from falcom.ed9.disasm.ed9_optable import ED9Opcode, ED9OperandType

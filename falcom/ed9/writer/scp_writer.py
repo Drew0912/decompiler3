@@ -244,14 +244,15 @@ class ScpWriter:
         return f'{source_location(site)}: ' if site is not None else ''
 
     def registerFuncCallback(self, cb: Callable):
-        """Hook: cb(name, func) for every function when the compile starts - None keeps it, a function replaces its body.
-        Callbacks chain in registration order: a later one receives the earlier one's replacement"""
+        """See scp_writer_hooks.registerFuncCallback"""
         self._require_function(cb, 'registerFuncCallback')
         self.func_callbacks.append(cb)
+        self.hook_functions.append(cb)
 
     def replace_function(self, name: str):
-        """Hook decorator: the decorated function replaces the body of the script's function name"""
-        assert isinstance(name, str)
+        """See scp_writer_hooks.replace_function"""
+        if not isinstance(name, str):
+            raise TypeError(f"replace_function takes the function's name - @replace_function('Name') - not {name!r}")
 
         def wrapper(body):
             self._require_function(body, f'replace_function({name!r})')
@@ -261,18 +262,19 @@ class ScpWriter:
 
             self.replaced[name] = body
             self.func_callbacks.append(lambda func_name, func: body if func_name == name else None)
+            self.hook_functions.append(body)
             return body
 
         return wrapper
 
     def applyFunctionCallbacks(self):
         """Run the hook function callbacks over every function and give each replaced one its new body. Its position,
-        table index, common flag and name hash stay; only its signature merges with the replacement's"""
+        table index, common flag and name hash stay; its signature merges with the replacement's"""
         for name, body in self.replaced.items():
             if name not in self.functions_by_name:
                 raise ValueError(f'{def_site(body)}: replace_function({name!r}): the script has no function {name!r}')
 
-        for f in list(self.functions):
+        for f in self.functions:
             body = f.obj
             for cb in self.func_callbacks:
                 count = len(self.functions)
@@ -296,7 +298,7 @@ class ScpWriter:
     def _replaced_signature(cls, f: ScpFunction, body: Callable) -> inspect.Signature:
         """The replacement's signature, with the original's annotation or default wherever it gives none: a default can
         change but never go (the engine may call the function by name without that argument)"""
-        sig = inspect.signature(body, eval_str = True)
+        sig = cls._signature(body, f.name)
         params = list(sig.parameters.values())
         others = [param.name for param in params if param.kind not in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD)]
         if others:
@@ -309,7 +311,38 @@ class ScpWriter:
         merged = [param.replace(annotation = original.annotation if param.annotation is param.empty else param.annotation,
                                 default = original.default if param.default is param.empty else param.default)
                   for param, original in zip(params, f.sig.parameters.values())]
-        return sig.replace(parameters = merged)
+        merged_sig = sig.replace(parameters = merged)
+        cls._check_parameters(body, f.name, merged_sig)
+        return merged_sig
+
+    @classmethod
+    def _signature(cls, func: Callable, name: str) -> inspect.Signature:
+        """func's signature with its annotations evaluated (under `from __future__ import annotations` they are
+        strings); a misspelled type is an error at its def"""
+        try:
+            return inspect.signature(func, eval_str = True)
+
+        except NameError as e:
+            raise TypeError(f'{def_site(func)}: {name}: {e}') from e
+
+    @classmethod
+    def _check_parameters(cls, func: Callable, name: str, sig: inspect.Signature):
+        """Every parameter has a type and a default the .dat can store, else a TypeError at func's def (instead of one
+        without a location from writeFuncInfo)"""
+        for param in sig.parameters.values():
+            try:
+                if param.annotation is param.empty:
+                    raise TypeError('needs a type: Value32, Nullable32, str, NullableStr or Pointer')
+
+                ScpParamFlags(typ = param.annotation)
+                if param.default is None:
+                    raise TypeError('a default is an int, float or str, not None')
+
+                if param.default is not param.empty:
+                    ScpValue(param.default)
+
+            except (NotImplementedError, TypeError) as e:
+                raise TypeError(f'{def_site(func)}: parameter {param.name} of {name}: {e}') from e
 
     @classmethod
     def _require_function(cls, obj, what: str):
