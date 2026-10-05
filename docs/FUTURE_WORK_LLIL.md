@@ -141,19 +141,22 @@ byte.
   `label()` outside a body and `GLOBAL_VAR` inside one raise (they failed with an `AttributeError`, or
   compiled a header that left the global out), and `ScpValue.to_bytes` rejects an Integer or `RawInt`
   past its 30-bit payload (`PUSH_INT(600000000)` compiled as `-473741824`). Compiled bytes don't change.
-- **Catch stack mistakes by re-parsing and re-lifting** (item 11; Step 9). Compiling a `.py` checks
-  operand counts, types and labels, but nothing tracks the stack: a wrong `POP(n)`, a missing push or
-  an extra argument compiles into a `.dat`, and only decompiling it again notices. After `build()`,
-  parse and lift the bytes in memory with the decompiler's own `ScpParser` and `ED9VMLifter`, and map an
-  error back to the `.py` line that emitted the opcode (`file:line: function: detail`). A separate check
-  module keeps `ScpWriter` an encoder and adds no import cycle. The check lands off, is measured on the
-  corpus (every generated `.py` should pass, since the parser accepted the same bytecode), and is turned
-  on only after that. This replaces the earlier design of a writer-side walker over an effect table, a
-  second stack model next to the parser's; moving the parser's per-opcode stack effects into the opcode
-  table is a separate plan (`notes/opcode_table_handoff.md`). Limits: neither the parser nor the lifter
-  catches a read below the stack bottom today, and an offset inside the stack but on the wrong variable
-  stays invisible at LLIL level. Checking an HLIL DSL `EmitLLIL` list before anything is written stays
-  with the HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Mixing LLIL and HLIL).
+- **Catch stack mistakes by re-parsing and re-lifting** (item 11; Step 9, done). Compiling a `.py`
+  checked operand counts, types and labels, but nothing tracked the stack: a wrong `POP(n)`, a missing
+  push or an extra argument compiled into a `.dat`, and only decompiling it again noticed. Now
+  `ScpWriter.check_compiled` (on by default) parses and lifts the bytes in memory at the end of
+  `build()` with the decompiler's own `ScpParser` and `ED9VMLifter` (`scp_compile_check.py`, which keeps
+  `ScpWriter` an encoder) and maps an error back to the `.py` line that emitted the opcode
+  (`file:line: function: detail`; a function-level error points at its `def`, found with `tokenize`
+  past multi-line decorators). It also fails on a read or write outside the live stack, from the
+  parser's stack layout; the lifter rejects a slot below the stack bottom too (it lifted one silently
+  before). Measured before it was turned on: all 1,082 `sora2_1.0` scripts pass in both decompile modes,
+  and byte-exact rebuilds are unchanged. This replaces the earlier design of a writer-side walker over
+  an effect table, a second stack model next to the parser's; moving the parser's per-opcode stack
+  effects into the opcode table is a separate plan (`notes/opcode_table_handoff.md`). Limits:
+  unreachable code is not checked, and an offset inside the stack but on the wrong variable stays
+  invisible at LLIL level. Checking an HLIL DSL `EmitLLIL` list before anything is written stays with the
+  HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Mixing LLIL and HLIL).
 - **Hook callbacks** (item 19; Step 10, the plan's last step), moved here from the HLIL DSL work. Every
   generated script imports `<stem>_hook`, but the writer has nothing for a hook to register with (only a
   commented-out loop remains in `ScpWriter.build`), so a hook can add a function but not replace one: the

@@ -122,8 +122,25 @@ another function compiles, for a deliberate jump between functions, with a warni
 must be in their place: an opcode or `label()` outside a function body raises `PUSH_INT is outside a
 function body`, and `GLOBAL_VAR` inside a body raises (the header counts the globals before the bodies
 run). Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the unknown name.
-Errors raised while a body runs carry the `.py` line in their traceback; label references, resolved
-after all bodies, name only the functions.
+Errors raised while a body runs carry the `.py` line in their traceback.
+
+**The compile check** (`ScpWriter.check_compiled`, on by default; a script turns it off with
+`scena.check_compiled = False`). At the end of `build()` the bytes are parsed and lifted again in memory
+by the decompiler's own `ScpParser` and `ED9VMLifter` (`falcom/ed9/writer/scp_compile_check.py`), so a
+stack mistake that compiles - a wrong `POP(n)`, a call with an extra or missing argument, branches that
+reach a label with different stacks, a read or write outside the live stack - fails the compile instead
+of reaching the game:
+```
+CompileCheckError: test.py:12: Caller: CALL at 0x77: expects a return address, found PUSH_INT@0x6B
+```
+The line is the one whose call emitted the failing opcode (a helper called from a body maps to the
+body's call); an error with no instruction to blame (a last function without `RETURN` decodes into the
+string pool) points at the function's `def`, past its decorators. Undefined labels and jumps into another
+function get the same `file:line:` prefix. A failed check is a failed compile: no `.dat` is written, an
+older one stays, and the writer is spent like after any failed compile. Not checked: unreachable code
+(the parser never simulates it) and a stack that balances but reads the wrong slot. The check costs
+about twice the compile itself (`mp0000_ev`, the largest script: about 4 s on top of 1.7 s); while it is
+on, each opcode also records where it was emitted.
 
 ## 2. Round-Trip Policy
 

@@ -33,6 +33,8 @@ class TestCommonImportsRegistrationOrder(unittest.TestCase):
     def test_manifest_then_fallback_then_source(self):
         def imported_common(arg1: Value32):
             LOAD_STACK(-4)
+            SET_REG(0)
+            POP(4)
             RETURN()
 
         def build(scena):
@@ -59,6 +61,8 @@ class TestCommonImportsRegistrationOrder(unittest.TestCase):
     def test_commonImports_can_list_more_than_one_function(self):
         def imported_a(arg1: Value32):
             LOAD_STACK(-4)
+            SET_REG(0)
+            POP(4)
             RETURN()
 
         def imported_b():

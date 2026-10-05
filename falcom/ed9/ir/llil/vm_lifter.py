@@ -14,6 +14,18 @@ if TYPE_CHECKING:
     from ...parser.scp import *
 
 
+class ED9LiftError(ValueError):
+    """A function that doesn't lift: the function's name and, when one instruction is to blame, its offset and
+    mnemonic"""
+
+    def __init__(self, function: str, cause: Exception, inst: Instruction | None = None):
+        where = f' {inst.mnemonic} at 0x{inst.offset:X}:' if inst is not None else ''
+        super().__init__(f'{function}:{where} {cause}')
+        self.function = function
+        self.offset = inst.offset if inst is not None else None
+        self.mnemonic = inst.mnemonic if inst is not None else None
+
+
 class ED9VMLifter:
     """Lift ED9 VM bytecode (disassembled) into Falcom LLIL."""
 
@@ -31,6 +43,17 @@ class ED9VMLifter:
         if func.entry_block is None:
             raise ValueError(f'Function {func.name} has no entry block')
 
+        try:
+            return self._lift(func)
+
+        except ED9LiftError:
+            raise
+
+        except Exception as e:
+            raise ED9LiftError(func.name, e) from e
+
+    def _lift(self, func: Function) -> LowLevelILFunction:
+        """lift_function's body; a failing instruction raises an ED9LiftError naming it"""
         builder = FalcomVMBuilder()
         ir_params = self._convert_params(func.params)
         builder.create_function(func.name, func.offset, ir_params, is_common_func = func.is_common_func)
@@ -49,7 +72,11 @@ class ED9VMLifter:
             for inst in block.instructions:
                 # Set current SCP instruction address for LLIL address tracking
                 builder.set_current_address(inst.offset)
-                self._translate_instruction(builder, inst, block, block_map, llil_blocks)
+                try:
+                    self._translate_instruction(builder, inst, block, block_map, llil_blocks)
+
+                except Exception as e:
+                    raise ED9LiftError(func.name, e, inst) from e
 
         return builder.finalize()
 

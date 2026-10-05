@@ -442,7 +442,7 @@ patch folder. The writer callbacks the hooks register with are an LLIL-level cha
   ordinary unified diff made against a decompiled script also applies to a recompiled one. Record the
   decompiler version a patch was made against. Anchoring patches to original bytecode addresses was
   rejected: it ties a patch to one `.dat`. Original source line numbers could later serve as anchors
-  that survive decompiler changes.
+  that survive decompiler changes (Line-Anchored Patches, below).
 
 ```python
 # chr0000_hook.py
@@ -465,6 +465,32 @@ def funcCallBack(name, func):
 
 get_scena().registerFuncCallback(funcCallBack)
 ```
+
+### Line-Anchored Patches
+
+**Not started; after the HLIL DSL writer** (idea 2026-10-05). A hook file says where each patch goes; the
+patcher decompiles the original `.dat`, the generated `.py` imports the hook, and compiling applies the
+patches and runs the writer's compile check. The original `.dat` stays the only input, a hook file stays
+small, and only the logic round trip is needed, not byte-exact output.
+
+- **Anchor on the game's source lines, not the decompiled `.py`'s.** Line numbers in the generated `.py`
+  move whenever the decompiler's output changes. The `DEBUG_SET_LINENO(n)` values compiled into the `.dat`
+  don't: an anchor is (function, source line `n`, occurrence), and the writer applies "before / after /
+  replace line `n` of `F`" while it runs the function body (an extension of the opcode callbacks), with
+  no text edits to the `.py`. In the 500-file `sora2_1.0` sample (stored decompiler output, 2026-10-05):
+  11,848 of 13,021 functions carry line numbers (the others are patched by function name), 58 have code
+  before their first one, and 606 (4.7%) use a line number more than once - a loop compiles its
+  condition at the head and again at the bottom (`ai_mon5220` `SkillTable`, line 50) - hence the
+  occurrence.
+- **Fingerprint:** each patch records the code it anchors to (the opcodes under the line, or the call
+  there), so a game update that moves lines fails loudly instead of patching the wrong place.
+- **Errors in the hook file** point at its own lines: the writer's source map, plus the `tokenize`-based
+  finder of a function's `def` line past its decorators that the compile check uses.
+- **Also consider anchors that don't need `DEBUG_SET_LINENO`:** older scripts don't carry source line
+  numbers, and decompiler3 may be extended to support them. Candidates: content anchors like the tree
+  hooks above (the nth call to a function within `F`, a string it pushes), a statement's position in the
+  HLIL DSL tree, or a fingerprint of the opcode sequence alone; line numbers would then be an optional
+  shortcut where they exist.
 
 ### Open Questions
 

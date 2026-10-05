@@ -82,6 +82,11 @@ class SlotRef:
         more than one kind of value"""
         return len(self.params) + self.local != 1 or self.caller_frame or self.call_setup
 
+    @property
+    def outside_stack(self) -> bool:
+        """Below the stack or at/above sp: nothing of this function's stands there"""
+        return not (self.params or self.local or self.caller_frame or self.call_setup)
+
     def __str__(self) -> str:
         """'slot 2 = arg1', 'slot 3' (a local), 'slot 2 = arg1 or local', 'slot -1 (below the stack)'"""
         kinds = [f'arg{number}' for number in self.params]

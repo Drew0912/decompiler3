@@ -56,7 +56,8 @@ class TestWrittenOnlyOnSuccess(CompileTestCase):
     def test_failed_compile_writes_no_file(self):
         self.define_undefined_label()
 
-        with self.assertRaisesRegex(ValueError, r"^Foo: undefined label 'nowhere'$"):
+        # The check's source map puts the reference's line first
+        with self.assertRaisesRegex(ValueError, rf"^{re.escape(__file__)}:\d+: Foo: undefined label 'nowhere'$"):
             self.writer.run({})
 
         self.assertFalse(self.dat.exists())
@@ -79,6 +80,7 @@ class TestWrittenOnlyOnSuccess(CompileTestCase):
                 POP(WORD_SIZE)
                 JMP('end')
                 label('end')
+                POP(WORD_SIZE)
                 RETURN()
 
         define(self.writer)
@@ -131,10 +133,12 @@ class TestLabels(CompileTestCase):
         with self.assertLogs(log, 'WARNING') as logs:
             data = self.writer.build({})
 
-        self.assertEqual([record.getMessage() for record in logs.records], [
+        location = rf'^{re.escape(__file__)}:\d+: '
+        for record, message in zip(logs.records, (
             "A: jumps to label 'in_b' in B (another function)",
             "B: jumps to label 'in_a' in A (another function)",
-        ])
+        ), strict = True):
+            self.assertRegex(record.getMessage(), location + re.escape(message) + '$')
 
         a, b = self.writer.functions
         self.assertEqual(read_uint32(data, a.entry.offset + OPCODE_SIZE), b.entry.offset)
@@ -193,6 +197,7 @@ class TestDebugArgc(CompileTestCase):
     def test_debug_argc_trims_the_recorded_args(self):
         @self.writer.LLILCode()
         def Callee(arg1: Value32, arg2: Value32, arg3: Nullable32 = 0):
+            POP(3 * WORD_SIZE)
             RETURN()
 
         def call_callee(ret: str):

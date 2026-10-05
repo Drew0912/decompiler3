@@ -457,8 +457,18 @@ class LowLevelILBuilder:
         '''Byte offset of slot_index from the frame base'''
         return (slot_index - self.frame_base_sp) * WORD_SIZE
 
+    def _require_slot_in_frame(self, slot_index: int, access: str):
+        '''A slot below the frame base is the caller's, so no access to it is modelled'''
+        if slot_index < self.frame_base_sp:
+            raise NotImplementedError(
+                f'{access} of slot {slot_index} below the stack (frame base {self.frame_base_sp}) is not supported - '
+                f'the slot belongs to the caller'
+            )
+
     def _require_live_slot(self, slot_index: int, access: str):
-        '''A slot at or above sp holds no live value, so reading it or taking its address is not modelled'''
+        '''Only a slot from the frame base up to sp holds a live value, so reading any other slot or taking its address
+        is not modelled'''
+        self._require_slot_in_frame(slot_index, access)
         if slot_index >= self.sp_get():
             raise NotImplementedError(
                 f'{access} of slot {slot_index} at or above sp={self.sp_get()} is not supported - '
@@ -483,6 +493,7 @@ class LowLevelILBuilder:
 
     def _store_slot(self, value: LowLevelILExpr, slot_index: int, offset: int):
         '''In-place store (offset: the slot's byte offset from sp); a slot at or above sp is a dead stack slot'''
+        self._require_slot_in_frame(slot_index, 'Store')
         if self._holds_parameter(slot_index):
             self.frame_store(value, self._frame_offset(slot_index))
 

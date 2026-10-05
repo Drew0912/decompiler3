@@ -403,6 +403,15 @@ class StackEntryGroups:
         return self.roles.pop(root, None), self.roles.pop(other_root, None)
 
 
+class ScpDisassemblyError(ValueError):
+    """A function that doesn't disassemble: the function's name and, when one instruction is to blame, its offset"""
+
+    def __init__(self, message: str, function: str | None = None, offset: int | None = None):
+        super().__init__(message)
+        self.function = function
+        self.offset = offset
+
+
 @dataclass
 class ScpDisassemblerContext(DisassemblerContext):
     """ED9/SCP disassembler context: the simulated stack and the state recorded for every edge"""
@@ -419,7 +428,8 @@ class ScpDisassemblerContext(DisassemblerContext):
 
     def fail(self, message: str, inst: Instruction | None = None):
         where = f' {inst.mnemonic} at 0x{inst.offset:X}:' if inst is not None else ''
-        raise ValueError(f'{self.current_func.name}:{where} {message}')
+        offset = inst.offset if inst is not None else None
+        raise ScpDisassemblyError(f'{self.current_func.name}:{where} {message}', self.current_func.name, offset)
 
     def record_edge(self, source: int, target: int, state: tuple, kind: BranchKind):
         """The first edge into a block records its state. Every later edge - also one arriving after the block was
@@ -675,16 +685,31 @@ class ScpParser(StrictBase):
         keep_unreachable_code: bool,
         filter_func: Callable[[Function], bool] | None = None,
     ) -> tuple['ScpParser', list[Function]]:
-        """Open path, parse, and disassemble every function - the setup every caller (scena2py.py,
+        """Read path, parse, and disassemble every function - the setup every caller (scena2py.py,
         the common-function generator, the round-trip validator, tests) otherwise repeats by hand.
-        The file handle is closed before returning; the parser stays fully usable afterward
-        (get_instructions, get_func_name_from_func_id, etc. are all in-memory)."""
-        with fileio.FileStream(str(path), encoding = default_encoding()) as fs:
-            parser = cls(fs, path.name)
+        The parser stays fully usable afterward (get_instructions, get_func_name_from_func_id, etc.
+        are all in-memory)."""
+        return cls.load_bytes(path.read_bytes(), path.name, round_trip = round_trip,
+                              keep_unreachable_code = keep_unreachable_code, filter_func = filter_func)
+
+    @classmethod
+    def load_bytes(
+        cls,
+        data: bytes,
+        name: str,
+        *,
+        round_trip: bool,
+        keep_unreachable_code: bool,
+        filter_func: Callable[[Function], bool] | None = None,
+        quiet: bool = False,
+    ) -> tuple['ScpParser', list[Function]]:
+        """load() for a script already in memory, named name; quiet drops the per-function progress and error lines"""
+        with fileio.FileStream(data, encoding = default_encoding()) as fs:
+            parser = cls(fs, name)
             parser.round_trip = round_trip
             parser.keep_unreachable_code = keep_unreachable_code
             parser.parse()
-            functions = parser.disasm_all_functions(filter_func = filter_func)
+            functions = parser.disasm_all_functions(filter_func = filter_func, quiet = quiet)
 
         return parser, functions
 
@@ -957,9 +982,9 @@ class ScpParser(StrictBase):
         for func in functions:
             for inst in self.get_instructions(func):
                 if inst.offset + inst.size > code_end:
-                    raise ValueError(
+                    raise ScpDisassemblyError(
                         f'{func.name}: {inst.mnemonic} at 0x{inst.offset:X} runs past the end of the code '
-                        f'(0x{code_end:X})'
+                        f'(0x{code_end:X})', func.name, inst.offset
                     )
 
     def require_disjoint_instructions(self, functions: list[Function]):
@@ -970,20 +995,24 @@ class ScpParser(StrictBase):
             for inst in self.get_instructions(func):
                 size = sizes.setdefault(inst.offset, inst.size)
                 if size != inst.size:
-                    raise ValueError(
-                        f'{func.name}: {inst.mnemonic} at 0x{inst.offset:X} decodes differently in another function'
+                    raise ScpDisassemblyError(
+                        f'{func.name}: {inst.mnemonic} at 0x{inst.offset:X} decodes differently in another function',
+                        func.name, inst.offset
                     )
 
         offsets = sorted(sizes)
         for offset, next_offset in zip(offsets, offsets[1:]):
             if offset + sizes[offset] > next_offset:
-                raise ValueError(f'The instruction at 0x{offset:X} overlaps the instruction at 0x{next_offset:X}')
+                raise ScpDisassemblyError(
+                    f'The instruction at 0x{offset:X} overlaps the instruction at 0x{next_offset:X}', offset = next_offset
+                )
 
         for func in self.functions:
             index = bisect.bisect_right(offsets, func.offset) - 1
             if index >= 0 and offsets[index] < func.offset < offsets[index] + sizes[offsets[index]]:
-                raise ValueError(
-                    f'{func.name} starts at 0x{func.offset:X}, inside the instruction at 0x{offsets[index]:X}'
+                raise ScpDisassemblyError(
+                    f'{func.name} starts at 0x{func.offset:X}, inside the instruction at 0x{offsets[index]:X}',
+                    func.name, offsets[index]
                 )
 
     def disasm_context(self, func: Function, code_end: int | None) -> ScpDisassemblerContext:
@@ -1000,8 +1029,9 @@ class ScpParser(StrictBase):
             code_end                = code_end,
         )
 
-    def disasm_all_functions(self, filter_func = None) -> list[Function]:
-        """Disassemble all functions in the SCP file"""
+    def disasm_all_functions(self, filter_func = None, quiet: bool = False) -> list[Function]:
+        """Disassemble all functions in the SCP file; quiet drops the per-function progress and error lines. A
+        function's failure is raised as a ScpDisassemblyError naming it."""
         disassembled_functions = []
         starts = sorted({func.offset for func in self.functions})
 
@@ -1010,7 +1040,8 @@ class ScpParser(StrictBase):
             if filter_func and not filter_func(func):
                 continue
 
-            log.info(f'Disassembling {func.name} @ 0x{func.offset:08X}')
+            if not quiet:
+                log.info(f'Disassembling {func.name} @ 0x{func.offset:08X}')
 
             # Create new context for each function; its code ends where the next function starts
             next_start = bisect.bisect_right(starts, func.offset)
@@ -1023,8 +1054,13 @@ class ScpParser(StrictBase):
                 func.stack_layout = context.stack_layout(func.entry_block)
                 disassembled_functions.append(func)
             except Exception as e:
-                log.error(f'Error disassembling {func.name} @ 0x{func.offset:08X}: {e}')
-                raise
+                if not quiet:
+                    log.error(f'Error disassembling {func.name} @ 0x{func.offset:08X}: {e}')
+
+                if isinstance(e, ScpDisassemblyError):
+                    raise
+
+                raise ScpDisassemblyError(f'{func.name}: {e}', func.name) from e
 
             if self.round_trip:
                 self.pair_call_debug_info(func)

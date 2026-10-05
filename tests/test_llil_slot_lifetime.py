@@ -188,6 +188,37 @@ class TestAccessAtOrAboveSp(unittest.TestCase):
         self.assertEqual(store.slot_index, 0)
 
 
+class TestAccessBelowTheStack(unittest.TestCase):
+    '''A slot below the frame base is the caller's: reads, addresses, dereferences and stores raise'''
+
+    BELOW_ONE_PARAMETER = -3 * WORD_SIZE    # with 1 parameter and 1 push (sp 2): slot -1
+
+    def builder(self) -> FalcomVMBuilder:
+        builder = make_builder(num_params = 1)
+        builder.push_int(PUSHED_VALUE)
+        return builder
+
+    def test_every_access_raises(self):
+        for access, emit in (
+            ('Read', lambda builder: builder.load_stack(self.BELOW_ONE_PARAMETER)),
+            ('Address', lambda builder: builder.push_stack_addr(self.BELOW_ONE_PARAMETER)),
+            ('Store', lambda builder: builder.pop_to(self.BELOW_ONE_PARAMETER + WORD_SIZE)),  # after its pop, sp 1
+        ):
+            with self.subTest(access = access):
+                with self.assertRaisesRegex(NotImplementedError, rf'^{access} of slot -1 below the stack'):
+                    emit(self.builder())
+
+    def test_dereference_raises(self):
+        with self.assertRaises(NotImplementedError):
+            self.builder().load_stack_deref(self.BELOW_ONE_PARAMETER)
+
+    def test_lowest_slot_is_still_in_the_frame(self):
+        builder = self.builder()
+        builder.load_stack(self.BELOW_ONE_PARAMETER + WORD_SIZE)    # slot 0, the parameter
+
+        self.assertIsInstance(last_pushed_value(builder), LowLevelILFrameLoad)
+
+
 class TestLiveParameterSlot(unittest.TestCase):
     '''Guards: while the function still holds a parameter, its slot stays frame-relative, and a push that starts a
     new lifetime keeps producing today's stack slots.'''

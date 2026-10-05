@@ -2,6 +2,7 @@
 
 import inspect
 import math
+import sys
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -11,8 +12,9 @@ from common.config import default_encoding
 from common.logging import log
 from ir.llil import WORD_SIZE
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, ED9_FORMAT_TABLE, OperandDescriptor, OperandType
+from ..ir.llil import ED9LiftError
 from ..parser.crc32 import hash_func_Name
-from ..parser.scp import CallDebugInfoTracker, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
+from ..parser.scp import CallDebugInfoTracker, ScpDisassemblyError, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
 from ..parser.string_pool import StringPoolSection
 from ..parser.types_scp import (
     ScpValue,
@@ -25,6 +27,7 @@ from ..parser.types_scp import (
     ScpFunctionCallDebugInfoArg,
 )
 from ..parser.utils import str_to_bytes
+from .scp_compile_check import CompileCheckError, SourceSite, definition_location, require_decompilable, source_location
 
 # PUSH's leading byte - 4 in every sample script (checked by tools/scp_roundtrip_validator.py)
 PUSH_SIZE_BYTE = 4
@@ -40,11 +43,12 @@ NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - WORD_SIZE  # name_offset is t
 
 @dataclass
 class LabelSite:
-    """A placed label, or an operand referring to one: the label's name, the position in the code buffer and the
-    function it is in"""
+    """A placed label, or an operand referring to one: the label's name, the position in the code buffer, the
+    function it is in and, for an operand while check_compiled is on, where the body emitted its opcode"""
     name: str
     offset: int
     function: str
+    source: SourceSite | None = None
 
 
 @dataclass
@@ -89,6 +93,9 @@ class ScpWriter:
     # call-site debug-info records. Neither is believed to change behavior in-game.
     round_trip = True
 
+    # Check that the compiled bytes decompile again (disassemble and lift), with errors pointing at script lines
+    check_compiled = True
+
     def __init__(self):
         self.name = None
         self.functions = []                             # type: list[ScpFunction]
@@ -105,6 +112,9 @@ class ScpWriter:
         self.code_string_xrefs = []                     # type: list[tuple[PooledString, int]]
         self.current_function = None                    # type: ScpFunction
         self.call_tracker = None                        # type: CallDebugInfoTracker
+        self.source_map = {}                            # type: dict[int, SourceSite]  # code position -> where it was emitted
+        self.current_source = None                      # type: SourceSite | None
+        self.code_offset = None                         # type: int  # file offset of the code buffer
 
     def init(self, name: str):
         self.name = name
@@ -119,7 +129,8 @@ class ScpWriter:
             f.write(data)
 
     def build(self, g: dict) -> bytes:
-        """Compile every registered function into the script's bytes, in memory"""
+        """Compile every registered function into the script's bytes, in memory; with check_compiled, the bytes must
+        decompile again. A failure ends the compile like any other: one compile per writer"""
         # for cb in self.runCallbacks:
         #     cb(g)
 
@@ -143,7 +154,8 @@ class ScpWriter:
         hdr.global_var_offset = fs.Position  # end of debug args, start of the global var table
         self.writeGlobalVars(fs)
 
-        self.relocateCode(code, fs.Position)  # the code follows the global var table
+        self.code_offset = fs.Position  # the code follows the global var table
+        self.relocateCode(code, self.code_offset)
         fs.Write(code)
 
         with fs.PositionSaver:
@@ -154,7 +166,36 @@ class ScpWriter:
         fs.Position = 0
         fs.Write(hdr.to_bytes())
 
-        return fs.ReadAll()
+        data = fs.ReadAll()
+        if self.check_compiled:
+            self.check_decompilable(data)
+
+        return data
+
+    def check_decompilable(self, data: bytes):
+        """The compiled bytes disassemble and lift again; a failure names the script line that emitted the failing
+        opcode, or the failing function's def"""
+        try:
+            require_decompilable(data, self.name)
+
+        except (ScpDisassemblyError, ED9LiftError) as e:
+            raise CompileCheckError(f'{self._failure_location(e.function, e.offset)}{e}') from e
+
+        except Exception as e:
+            raise CompileCheckError(f'{self.name}: {e}') from e
+
+    def _failure_location(self, function: str | None, offset: int | None) -> str:
+        """'file:line: ' of the opcode compiled at a file offset, else of the function's def; '' when neither is known"""
+        source = self.source_map.get(offset - self.code_offset) if offset is not None else None
+        if source is not None:
+            return f'{source_location(source)}: '
+
+        f = self.functions_by_name.get(function)
+        return f'{definition_location(f.obj.__code__)}: ' if f is not None else ''
+
+    def _label_location(self, ref: LabelSite) -> str:
+        """'file:line: ' of a label operand's opcode, '' without the source map"""
+        return f'{source_location(ref.source)}: ' if ref.source is not None else ''
 
     def buildFunctionTable(self):
         """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this index"""
@@ -199,10 +240,11 @@ class ScpWriter:
             for ref in self.label_refs:
                 label = self.labels.get(ref.name)
                 if label is None:
-                    raise ValueError(f'{ref.function}: undefined label {ref.name!r}')
+                    raise ValueError(f'{self._label_location(ref)}{ref.function}: undefined label {ref.name!r}')
 
                 if label.function != ref.function:
-                    log.warning(f'{ref.function}: jumps to label {ref.name!r} in {label.function} (another function)')
+                    log.warning(f'{self._label_location(ref)}{ref.function}: jumps to label {ref.name!r} in '
+                                f'{label.function} (another function)')
 
                 code.Position = ref.offset
                 code.WriteULong(label.offset + code_offset)
@@ -324,6 +366,10 @@ class ScpWriter:
         if self.current_function is None:
             raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
+        if self.check_compiled:
+            self.current_source = self._opcode_source()
+            self.source_map[self.fs.Position] = self.current_source
+
         # bool is an int subclass, so the opcode functions' isinstance asserts accept True/False
         for arg in args:
             if isinstance(arg, bool):
@@ -370,6 +416,16 @@ class ScpWriter:
             self._write_operand(op_desc, value)
 
         self._track(opcode, args)
+
+    def _opcode_source(self) -> SourceSite | None:
+        """Where the current function's body emitted the opcode being compiled (a helper the body called counts as the
+        body's call). f_lasti, not f_lineno: f_lineno scans the line table, which grows with the body"""
+        code = self.current_function.obj.__code__
+        frame = sys._getframe(1)
+        while frame is not None and frame.f_code is not code:
+            frame = frame.f_back
+
+        return (code, frame.f_lasti) if frame is not None else None
 
     def _track(self, opcode: int, args: tuple, payload = None):
         if self.call_tracker is not None:
@@ -454,7 +510,8 @@ class ScpWriter:
 
     def _write_label_ref(self, name: str):
         """Record the operand, then write a placeholder that relocateCode() patches"""
-        self.label_refs.append(LabelSite(name = name, offset = self.fs.Position, function = self.current_function.name))
+        self.label_refs.append(LabelSite(name = name, offset = self.fs.Position, function = self.current_function.name,
+                                         source = self.current_source))
         self.fs.WriteULong(UNRESOLVED_LABEL_OFFSET)
 
     def _add_string(self, text: str, section: StringPoolSection) -> PooledString:
