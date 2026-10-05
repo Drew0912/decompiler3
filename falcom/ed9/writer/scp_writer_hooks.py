@@ -1,6 +1,7 @@
 """The hook-file API: bare-name registrations a <stem>_hook.py makes on the writer (star-imported by scp_writer_helper,
-so a hook needs only that one import). The hooks themselves run inside ScpWriter.build(), where the script's names
-(its functions, scena, ...) are also set in each hook module, so hook bodies can use them like the script does"""
+so a hook needs only that one import), and original / inline_original_func() for hook bodies. The hooks themselves run
+inside ScpWriter.build(), where the script's names (its functions, scena, ...) are also set in each hook module, so hook
+bodies can use them like the script does"""
 
 from typing import Callable
 
@@ -28,3 +29,22 @@ def add_function(func: Callable) -> Callable:
     """Hook decorator, used bare (@add_function): a new script function, compiled after the script's own; every
     parameter needs a type"""
     return get_scp_writer().add_function(func)
+
+
+class _Original:
+    """original.Name(...) in a hook body inlines the script's own Name - its body from before any hook - right there,
+    with arguments as for a normal call to it. CALL(original.Name) is CALL(Name). Available once the compile starts"""
+
+    def __getattr__(self, name: str) -> Callable:
+        if name.startswith('__'):
+            raise AttributeError(name)
+
+        return get_scp_writer().original_function(name)
+
+
+original = _Original()
+
+
+def inline_original_func():
+    """In a replaced function's body: inline the function's body from before any hook, right there"""
+    get_scp_writer().inline_original_func()

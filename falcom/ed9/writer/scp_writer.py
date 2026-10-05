@@ -4,6 +4,7 @@ import inspect
 import math
 import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import FunctionType
 from typing import Callable
 
@@ -86,6 +87,39 @@ class ScpFunction:
     debug_records: list[DebugRecord] = field(default_factory = list)
     original_obj: Callable | None = None                        # the body before any hook replaced it
     bodies: list[Callable] = field(default_factory = list)      # every body a hook callback returned, in chain order (may repeat, may include the original)
+
+
+class _OriginalFunction:
+    """What original.Name returns. Not a plain function, so it can't become a replacement or a callback (the script's
+    names would be set in this module)"""
+
+    def __init__(self, writer: 'ScpWriter', f: ScpFunction):
+        self.writer = writer
+        self.function = f
+        self.__name__ = f.name  # CALL(original.Name) finds the function by name, like CALL(Name)
+
+    @property
+    def __signature__(self) -> inspect.Signature:
+        """The original's, so a functools.wraps wrapper of original.Name keeps it"""
+        return self.writer._signature(self.function.original_obj, self.function.name)
+
+    def __call__(self, *args, **kwargs):
+        """Bound like a call to the original, never read (see _run_body)"""
+        f = self.function
+        if self.writer.current_function is None:
+            raise ValueError(f'original.{f.name}() is outside a function body')
+
+        sig = self.__signature__
+        try:
+            sig.bind(*args, **kwargs)
+
+        except TypeError as e:
+            raise TypeError(f'original.{f.name}(): {e}') from e
+
+        self.writer._run_body(f, f.original_obj)
+
+    def __repr__(self) -> str:
+        return f'original.{self.__name__}'
 
 
 class ScpWriter:
@@ -431,6 +465,28 @@ class ScpWriter:
         """Hooks are plain functions: the source map and the error locations need their code"""
         if not isinstance(obj, FunctionType):
             raise TypeError(f'{what}: expected a plain function (def), not {obj!r}')
+
+    def original_function(self, name: str) -> _OriginalFunction:
+        """See scp_writer_hooks.original"""
+        if self.globals is None:
+            raise ValueError(f'original.{name} is only available once the compile starts')
+
+        f = self.functions_by_name.get(name)
+        if f is None:
+            raise AttributeError(f'{Path(self.name).stem} has no function {name!r}')
+
+        return _OriginalFunction(self, f)
+
+    def inline_original_func(self):
+        """See scp_writer_hooks.inline_original_func"""
+        f = self.current_function
+        if f is None:
+            raise ValueError('inline_original_func() is outside a function body')
+
+        if f.obj is f.original_obj:
+            raise ValueError(f"{f.name} wasn't replaced; inline_original_func() inlines a replaced function's original body")
+
+        self._run_body(f, f.original_obj)
 
     def buildFunctionTable(self):
         """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this index"""

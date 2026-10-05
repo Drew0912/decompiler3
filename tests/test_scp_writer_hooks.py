@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-'''Hook files (Steps 10a, 10b): function callbacks and replace_function swap a function's body in place - position,
+'''Hook files (Steps 10a-10c): function callbacks and replace_function swap a function's body in place - position,
 table index and common flag kept, the signature merged with the original's; run callbacks get the script's globals;
-add_function adds functions after the script's own; hook modules get the script's names; and every error or
-compile-check failure in a hook points at the hook's own line. Also the parameter checks on every new function.'''
+add_function adds functions after the script's own; hook modules get the script's names; original.Name(...) and
+inline_original_func() inline a body from before any hook; and every error or compile-check failure in a hook points
+at the hook's own line. Also the parameter checks on every new function.'''
 
 from pathlib import Path
 import functools
@@ -336,6 +337,20 @@ class TestRejected(HookTestCase):
                                                "plain function"):
             self.writer.build({})
 
+    def test_original_returned_as_a_replacement(self):
+        '''original.Name isn't a plain function: as a body, the script's names would be set in a writer module'''
+        self.define_target()
+        hook = self.hook('''
+            def restore(name, func):                        # line: restore
+                return original.Target
+
+            registerFuncCallback(restore)
+        ''')
+
+        with self.assertRaisesRegex(TypeError, rf"^{at(hook.__file__, 'restore')}restore for Target: expected a plain "
+                                               r"function \(def\), not original.Target$"):
+            self.writer.build({})
+
     def test_callback_registering_a_function_or_callback(self):
         registrations = {
             'function': 'get_scp_writer().LLILCode()(Extra)',
@@ -593,6 +608,60 @@ class TestLocations(HookTestCase):
         with self.assertRaisesRegex(CompileCheckError, rf"^{at(hook.__file__, 'middle')}Target: "):
             self.writer.build({})
 
+    def test_inlined_original_points_at_the_script(self):
+        '''However a hook inlines the original - in a functools.wraps wrapper too - its mistake is the script's line'''
+        cases = {
+            'inline_original_func': '''
+                @replace_function('Target')
+                def Target(arg1):
+                    inline_original_func()
+            ''',
+            'original.Target': '''
+                @replace_function('Target')
+                def Target(arg1):
+                    original.Target(arg1)
+            ''',
+            'functools.wraps(func)': '''
+                import functools
+
+                def wrap(name, func):
+                    @functools.wraps(func)
+                    def wrapper(*args):
+                        inline_original_func()
+
+                    return wrapper
+
+                registerFuncCallback(wrap)
+            ''',
+            'functools.wraps(original.Target)': '''
+                import functools
+
+                def wrap(name, func):
+                    body = getattr(original, name)
+
+                    @functools.wraps(body)                  # keeps the original's signature, not (*args, **kwargs)
+                    def wrapper(*args):
+                        body(*args)
+
+                    return wrapper
+
+                registerFuncCallback(wrap)
+            ''',
+        }
+        for case, source in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Target(arg1: Value32):
+                    POP(2 * WORD_SIZE)                  # line: bad original pop
+                    RETURN()
+
+                self.hook(source)
+
+                with self.assertRaisesRegex(CompileCheckError, rf"^{at(__file__, 'bad original pop')}Target: POP at {HEX}: "):
+                    self.writer.build({})
+
 
 class TestRunCallbacks(HookTestCase):
     def test_receives_g_and_adds_a_replaceable_function(self):
@@ -803,6 +872,121 @@ class TestInjection(HookTestCase):
 
         for module in (scp_writer, scp_writer_helper, scp_writer_hooks):
             self.assertNotIn('OnlyScript', vars(module))
+
+
+class TestOriginal(HookTestCase):
+    def test_the_body_from_before_any_hook(self):
+        '''Target and the added Extra are both replaced: inline_original_func() after the hook's own opcodes, and
+        original.Name from any function - one with other parameters too - inline what they were before'''
+        self.define_target()
+        self.hook('''
+            @replace_function('Target')
+            def NewTarget(arg1):
+                PUSH_INT(7)
+                POP(WORD_SIZE)
+                inline_original_func()
+
+            @add_function
+            def Extra(arg1: Value32):
+                PUSH_INT(5)
+                POP(2 * WORD_SIZE)
+                RETURN()
+
+            @replace_function('Extra')
+            def NewExtra(arg1):
+                original.Target(arg1)
+
+            @add_function
+            def Inlines(arg1: Value32, arg2: Value32):
+                POP(WORD_SIZE)                          # the stack holds Extra's one parameter
+                original.Extra(arg1)
+        ''')
+        functions = self.parsed()
+
+        self.assertEqual({name: self.mnemonics(func) for name, func in functions.items()},
+                         {'Target': ['PUSH_INT', 'POP', 'POP', 'RETURN'], 'Extra': ['POP', 'RETURN'],
+                          'Inlines': ['POP'] + PUSH_POP_RETURN})
+
+    def test_call_is_the_call_by_name(self):
+        '''The CALL operand and its debug record name the function itself, and the record has the function's argument
+        count'''
+        self.define_target()
+        self.hook('''
+            @add_function
+            def Caller():
+                DEBUG_SET_LINENO(1)                     # call records start at a function's first line number
+                PUSH_CURRENT_FUNC_ID()
+                PUSH_RET_ADDR('ret')
+                PUSH_INT(1)
+                CALL(original.Target)
+                label('ret')
+                RETURN()
+        ''')
+        functions = self.parsed()
+
+        [record] = self.writer.functions_by_name['Caller'].debug_records
+        target = functions['Target'].index
+        self.assertEqual((self.called(functions['Caller']), record.func_id, len(record.args)), (target, target, 1))
+
+    def test_arguments_as_for_the_original(self):
+        '''Bound to the original's own signature - the replacement gave arg2 a default, the original's call still needs
+        it - and never read'''
+        cases = {
+            'default left out, any values': ("object(), 'text'", None),
+            'keyword': ('arg1, arg2 = arg2', None),
+            'missing': ('arg1', "missing a required argument: 'arg2'"),
+            'extra': ('arg1, arg2, arg3, 4', 'too many positional arguments'),
+            'unexpected keyword': ('arg1, arg2, flag = 1', "got an unexpected keyword argument 'flag'"),
+        }
+        for case, (arguments, message) in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Target(arg1: Value32, arg2: Value32, arg3: Value32 = 3):
+                    POP(3 * WORD_SIZE)
+                    RETURN()
+
+                self.hook(f'''
+                    @replace_function('Target')
+                    def Target(arg1, arg2 = 2, arg3 = 3):
+                        original.Target({arguments})
+                ''')
+
+                if message is None:
+                    self.assertEqual(self.mnemonics(self.parsed()['Target']), ['POP', 'RETURN'])
+
+                else:
+                    with self.assertRaisesRegex(TypeError, rf'^original\.Target\(\): {message}$'):
+                        self.writer.build({})
+
+    def test_errors(self):
+        self.define_target()
+        self.assertFalse(hasattr(original, '__wrapped__'))  # probes for dunders never reach the writer
+
+        with self.assertRaisesRegex(ValueError, r'^original\.Target is only available once the compile starts$'):
+            self.hook('original.Target')
+
+        cases = {
+            'unknown name': ('registerRunCallback(lambda g: original.Nmae)', AttributeError, "^test has no function 'Nmae'$"),
+            'original call in a run callback': ('registerRunCallback(lambda g: original.Target(0))',
+                                                ValueError, r'^original\.Target\(\) is outside a function body$'),
+            'inline in a run callback': ('registerRunCallback(lambda g: inline_original_func())',
+                                         ValueError, r'^inline_original_func\(\) is outside a function body$'),
+            # A callback keeping the body still leaves f.bodies non-empty: "replaced" is a new body, not a callback run
+            'inline in a function not replaced': ('@add_function\ndef Extra():\n    inline_original_func()\n'
+                                                  'registerFuncCallback(lambda name, func: func)',
+                                                  ValueError, r"^Extra wasn't replaced; inline_original_func\(\) inlines "
+                                                              r"a replaced function's original body$"),
+        }
+        for case, (source, error, message) in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+                self.define_target()
+                self.hook(source)
+
+                with self.assertRaisesRegex(error, message):
+                    self.writer.build({})
 
 
 if __name__ == '__main__':
