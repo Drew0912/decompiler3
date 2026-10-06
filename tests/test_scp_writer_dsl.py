@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
-'''DSL argument checks (bool operands, CALL's function argument, value ranges) and the helper module's non-opcode
-statements (label, GLOBAL_VAR).'''
+'''DSL argument checks (bool operands, CALL's function argument, value ranges, operand count), UNKNOWN_28's raw bytes
+and the helper module's non-opcode statements (label, GLOBAL_VAR).'''
 
 import math
 from pathlib import Path
 import re
 import sys
+from types import SimpleNamespace
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
+from ir.llil import WORD_SIZE
+from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.types_scp import ScpValue
 from falcom.ed9.writer import scp_writer_helper
 from falcom.ed9.writer.metadata import SCP_WRITER_HELPER_IMPORT
@@ -54,6 +57,35 @@ class TestCall(unittest.TestCase):
     def test_call_by_name_names_the_mistake(self):
         with self.assertRaisesRegex(AssertionError, r"CALL takes the function itself, not 'CheckSBreak'"):
             CALL('CheckSBreak')
+
+    def test_unregistered_function_is_named(self):
+        body_writer()
+
+        def Missing():
+            pass
+
+        with self.assertRaisesRegex(TypeError, r'^CALL has unknown function name: Missing$'):
+            CALL(Missing)
+
+
+class TestHandleOpcode(unittest.TestCase):
+    '''Paths no opcode function or corpus script reaches'''
+
+    def setUp(self):
+        self.writer = body_writer()
+
+    def test_operand_count_is_checked(self):
+        with self.assertRaisesRegex(AssertionError, r'^POP: expected 1 operands, got 2$'):
+            self.writer.handle_opcode(ED9Opcode.POP, WORD_SIZE, WORD_SIZE)
+
+    def test_unknown_28_writes_its_operand_bytes_as_given(self):
+        # No table row, so no operand format; tracked like any opcode (the real tracker ignores it, so a stub records)
+        calls = []
+        self.writer.call_tracker = SimpleNamespace(on_opcode = lambda *call: calls.append(call))
+        UNKNOWN_28(b'\x01\x02')
+
+        self.assertEqual(self.writer.fs.ReadAll(), bytes.fromhex('28 01 02'))
+        self.assertEqual(calls, [(ED9Opcode.UNKNOWN_28, (b'\x01\x02',), None)])
 
 
 class TestHelperStatements(unittest.TestCase):

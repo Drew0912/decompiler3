@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''The writer's compile: built in memory and written only on success, file-wide labels whose errors and warnings
-name their functions, and DSL statements in the wrong place rejected.'''
+name their functions, DSL statements in the wrong place rejected, and global var names checked.'''
 
 from pathlib import Path
 import re
@@ -260,6 +260,30 @@ class TestStatementsInTheWrongPlace(WriterTestCase):
 
         with self.assertRaisesRegex(ValueError, r"^Body: GLOBAL_VAR\('b'\) is inside a function body; declare it in @scena\.GlobalVars\(\)$"):
             self.writer.build({})
+
+
+class TestGlobalVarNames(WriterTestCase):
+    def test_duplicate_declaration(self):
+        with self.assertRaisesRegex(ValueError, r"^global var already declared: 'a'$"):
+            @self.writer.GlobalVars()
+            def globalvars():
+                GLOBAL_VAR('a', 1)
+                GLOBAL_VAR('a', 1)
+
+    def test_unknown_name_lists_the_declared_ones(self):
+        @self.writer.GlobalVars()
+        def globalvars():
+            GLOBAL_VAR('a', 1)
+
+        @self.writer.LLILCode()
+        def Body():
+            LOAD_GLOBAL('b')
+            RETURN()
+
+        with self.assertRaises(KeyError) as ctx:
+            self.writer.build({})
+
+        self.assertEqual(ctx.exception.args[0], "unknown global var 'b'; declared: ['a']")
 
 
 if __name__ == '__main__':
