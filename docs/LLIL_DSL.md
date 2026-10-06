@@ -201,8 +201,8 @@ checks that the stack comments reach the fixed point too. A generated script fir
 `falcom/ed9/parser/scp.py`, from `common.utils.PROJECT_ROOT`), so it runs from any folder without `PYTHONPATH`; moving the
 checkout means regenerating the script or editing that line. It then imports the helper, an
 optional `<stem>_hook` module for patches kept outside the generated file (only a missing hook is
-ignored; an import error inside the hook stops the compile), and the library (§3). Its footer calls
-`main()`, which compiles the script when it is run directly. Every generated text file is written
+ignored; an import error inside the hook stops the compile; §4, which also covers the opt-in hook template), and the
+library (§3). Its footer calls `main()`, which compiles the script when it is run directly. Every generated text file is written
 with `\n` line endings.
 
 **The `.dat` listing** (`.debug.txt`, `ScenaDecompileConfig.write_debug_info`, off by default): the
@@ -494,12 +494,38 @@ then name the decorator's wrapper `def`.
 
 **Pylance.** Hooks see the script's names only at runtime. The `TYPE_CHECKING` lines in the example show them to
 Pylance: `from <stem> import *` for plain names, and `import <stem> as original` for `original.Name(...)` with the real
-signatures. They work only when the stem is a valid module name (not `mon5078+`). `# pyright: basic` turns on Pylance's
+signatures. They work only when the stem is a valid module name (not `mon5078+`) that no other module takes: Pylance
+finds a stdlib module or one of the checkout's top-level packages first - `common.dat` gets the checkout's `common/`
+until that package is renamed `dc3/`, the planned root-cause fix. `# pyright: basic` turns on Pylance's
 basic type checking for the hook file, without which Pylance reports no wrong argument counts or unknown attributes
 (`original.Nmae`). The
 ignore on the star-import line lets a replacement keep its function's name: basic mode otherwise reports the script's
 imported `CheckAlgoUse` as clashing with the hook's own `def`. A hook that assigns its own `original` hides the
 helper's. Importing the script for real from its hook would run it a second time ("duplicate function name").
+
+**Hook template.** `ScenaDecompileConfig.write_hook_template` (off by default; only with `write_py`) writes a
+starting `<stem>_hook.py` next to `<stem>.py` (`ScpParser.gen_hook_template`), never over an existing file (a log
+line instead). It holds the Pylance lines above, then three hooks with their `register*` lines commented out: a
+`run_hook(g)` that adds each function in its list (decompiler2's way of adding functions) and no-op `func_hook` and
+`opcode_hook` callbacks. With the list empty, the template compiles to the same bytes as no hook, registered or not.
+Adding a function:
+
+```python
+# Functions to add
+def run_hook(g):
+    for func in [
+        HookExtra,                                  # read at compile time: defined anywhere in this file
+    ]:
+        add_function(func)
+
+registerRunCallback(run_hook)
+```
+
+When no import can name the `.py`'s stem - it isn't a module name (`mon5078+`) or another module takes the name
+(`common`, see Pylance above) - the `TYPE_CHECKING` block holds a hint instead of the imports: rename the `.py` to the
+suggested name (`mon5078_.py`, `common_.py`; it still compiles to the same `.dat`, and the hook keeps its name) and
+uncomment the two imports it lists. Until then, Pylance reports the script's names in that hook as undefined, though
+they work when it compiles. A stem with a dot gets no template, only a warning.
 
 **Limits.** One compile per process (the writer has no reset); hooks can't be unregistered; hooks on HLIL-level
 scripts are future work (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).

@@ -15,6 +15,7 @@ class ScenaDecompileConfig:
     # Primary outputs
     write_py: bool = True   # round-trippable VM-bytecode Python DSL (.py)
     write_ts: bool = True   # final TypeScript (.ts)
+    write_hook_template: bool = False   # a starting <stem>_hook.py next to the .py (with write_py); never over an existing file
 
     # .py comments (scripts only; the common library always has the stack comments and never the others)
     stack_slot_comments: bool = True       # the slot each LOAD_STACK/POP_TO/... addresses, sp at labels, POP's slots

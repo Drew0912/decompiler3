@@ -18,9 +18,35 @@ import bisect
 import keyword
 import pathlib
 import struct
+import sys
 
 # First lines of every generated script: the generating checkout's root, so it runs without PYTHONPATH
 SYS_PATH_SETUP_LINES = ['import sys', f'sys.path.insert(0, {str(PROJECT_ROOT)!r})']
+
+
+def is_module_name(name: str) -> bool:
+    """An import statement can name it: an identifier that isn't a keyword"""
+    return name.isidentifier() and not keyword.iskeyword(name)
+
+
+def shadows_another_module(name: str) -> bool:
+    """Pylance imports a stdlib module or one of this checkout's top-level packages of that name instead of a script
+    next to the hook (common.dat today). Renaming the checkout's common/ to dc3/ is the planned root-cause fix"""
+    return name in sys.stdlib_module_names or (PROJECT_ROOT / name).is_dir() or (PROJECT_ROOT / f'{name}.py').is_file()
+
+
+def suggested_module_name(stem: str) -> str:
+    """A module name close to stem that no other module takes, for the hook template's rename hint: mon5078+ ->
+    mon5078_, common -> common_"""
+    name = ''.join(char if f'_{char}'.isidentifier() else '_' for char in stem.strip())
+    if not name.isidentifier():
+        name = f'_{name}'       # a leading digit
+
+    if keyword.iskeyword(name) or shadows_another_module(name):
+        name = f'{name}_'
+
+    return name
+
 
 # Stack simulation instruction groups
 PUSH_VARIANTS = (
@@ -1454,13 +1480,17 @@ scena = create_scp_writer('{self.name}')
 
         return lines
 
+    def hook_module_name(self) -> str:
+        """The optional hook module the generated script imports"""
+        return f'{pathlib.Path(self.name).stem.strip()}_hook'
+
     def gen_hook_import(self) -> str:
         """The try/except block importing the optional <stem>_hook module - __import__ when the stem isn't a valid module
         path (e.g. mon5078+). Only a missing hook is ignored (for a dotted stem, also a missing parent package); a failed
         import inside the hook re-raises"""
-        module = f'{pathlib.Path(self.name).stem.strip()}_hook'
+        module = self.hook_module_name()
         parts = module.split('.')
-        if all(part.isidentifier() and not keyword.iskeyword(part) for part in parts):
+        if all(is_module_name(part) for part in parts):
             statement = f'import {module}'
 
         else:
@@ -1479,6 +1509,52 @@ try:
 except ModuleNotFoundError as e:
     if {check}:
         raise'''
+
+    def gen_hook_template(self) -> str:
+        """A starting <stem>_hook.py: every callback is a no-op even when registered, so it compiles to the same bytes as
+        no hook. Its TYPE_CHECKING block shows the script's names to Pylance; when no import can name the .py's stem,
+        a rename hint instead"""
+        stem = pathlib.Path(self.name).stem
+        if is_module_name(stem) and not shadows_another_module(stem):
+            type_checking = f'''\
+    from {stem} import *  # pyright: ignore[reportAssignmentType]
+    import {stem} as original'''
+
+        else:
+            reason = 'is also the name of another module' if is_module_name(stem) else "isn't a valid module name"
+            suggested = suggested_module_name(stem)
+            type_checking = f'''\
+    # {stem!r} {reason}, so Pylance can't import the script's names. To get them, rename
+    # {stem}.py to a valid name (it still compiles to {self.name}; keep this file's name) and uncomment:
+    # from {suggested} import *  # pyright: ignore[reportAssignmentType]
+    # import {suggested} as original
+    pass'''
+
+        return f'''\
+# pyright: basic
+from typing import TYPE_CHECKING
+{SCP_WRITER_HELPER_IMPORT}
+if TYPE_CHECKING:
+{type_checking}
+
+# Functions to add
+def run_hook(g):
+    for func in [
+    ]:
+        add_function(func)
+
+# registerRunCallback(run_hook)
+
+def func_hook(name, func):
+    return None
+
+# registerFuncCallback(func_hook)
+
+def opcode_hook(opcode, *args):
+    return None
+
+# registerOpcodeCallback(opcode_hook)
+'''
 
     def gen_python_footer(self) -> list[str]:
         """Generate Python footer lines for output script execution"""

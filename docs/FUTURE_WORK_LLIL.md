@@ -158,7 +158,8 @@ byte.
   (`original.Name(...)`, `inline_original_func()`); the writer's errors about a hook and compile-check
   failures in it point at the hook's own line. The bare names come from
   `falcom/ed9/writer/scp_writer_hooks.py`; hooks reach the writer through `get_scp_writer()`, no
-  `get_scena()`. Full description: `docs/LLIL_DSL.md` §4. Tree hooks stay with the HLIL DSL
+  `get_scena()`; `ScenaDecompileConfig.write_hook_template` writes a starting hook next to a decompiled
+  script. Full description: `docs/LLIL_DSL.md` §4. Tree hooks stay with the HLIL DSL
   (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).
 - **Clear errors for bad values** (item 12; Step 2b, done). `ScpValue(True)` failed with a bare
   `KeyError` (`bool` is not in its type map, `falcom/ed9/parser/types_scp.py`), and `POP(True)` compiled

@@ -60,6 +60,21 @@ def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Pat
     preamble = [*COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines(), ''] if common_functions_omitted else []
     out_path.write_text(parser.gen_python_script(functions, preamble = preamble, comments = comments), encoding = 'utf-8', newline = '\n')
 
+def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
+    """A starting <stem>_hook.py next to the .py, never over an existing file"""
+    module = parser.hook_module_name()
+    if '.' in module:
+        log.warning(f"{parser.name}: hook template not written - a stem with a dot ({Path(parser.name).stem!r}) isn't supported")
+        return
+
+    path = output_dir / f'{module}.py'
+    try:
+        with open(path, 'x', encoding = 'utf-8', newline = '\n') as f:
+            f.write(parser.gen_hook_template())
+
+    except FileExistsError:
+        log.info(f'{path} exists - not overwritten')
+
 def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
 
@@ -83,6 +98,8 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
             call_args       = config.call_arg_comments,
         )
         write_python_dsl(parser, functions, out.with_suffix('.py'), comments = comments, common_functions_omitted = common_functions_omitted)
+        if config.write_hook_template:
+            write_hook_template(parser, output_dir)
 
     write_ir_outputs(path, parser, functions, config, out)
 

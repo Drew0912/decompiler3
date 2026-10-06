@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-'''Text of the generated LLIL DSL .py (header, hook import, label spacers, footer) and LF line
-endings in every generated text file (scena2py.process_file, the common-library generator, the round-trip
+'''Text of the generated LLIL DSL .py (header, hook import, label spacers, footer), the opt-in hook template, and LF
+line endings in every generated text file (scena2py.process_file, the common-library generator, the round-trip
 validator's intermediate scripts).'''
 
 from pathlib import Path
 import importlib
 import re
+import runpy
 import sys
 import tempfile
 import unittest
@@ -14,7 +15,9 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
+sys.path.insert(0, str(Path(__file__).parent))
 
+from common.logging import log
 from common.utils import PROJECT_ROOT
 from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
 from falcom.ed9.parser.types_parser import GlobalVar
@@ -27,11 +30,69 @@ from falcom.ed9.writer.metadata import common_all
 from falcom.ed9.writer.metadata.common_index import COMMON_FUNCTIONS
 import scp_roundtrip_validator
 from scp_roundtrip_validator import compile_and_decompile_round, decompile_to_python
+from scp_writer_test_utils import fresh_writer
 
 SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
 TEST_FILE = SORA2_DIR / 'ai' / 'ai_chr5122_e00.dat'
 SMALL_FILE = SORA2_DIR / 'scena' / 'e0000.dat'
 LABEL_LINE = re.compile(r"^ *label\('[^']*'\)( +# .*)?$")     # with its depth comment, if any
+
+HOOK_TEMPLATE_IMPORTS = '''\
+    from ai_chr5122_e00 import *  # pyright: ignore[reportAssignmentType]
+    import ai_chr5122_e00 as original
+'''
+
+HOOK_TEMPLATE = f'''\
+# pyright: basic
+from typing import TYPE_CHECKING
+from falcom.ed9.writer.scp_writer_helper import *
+if TYPE_CHECKING:
+{HOOK_TEMPLATE_IMPORTS}
+# Functions to add
+def run_hook(g):
+    for func in [
+    ]:
+        add_function(func)
+
+# registerRunCallback(run_hook)
+
+def func_hook(name, func):
+    return None
+
+# registerFuncCallback(func_hook)
+
+def opcode_hook(opcode, *args):
+    return None
+
+# registerOpcodeCallback(opcode_hook)
+'''
+
+MON5078_RENAME_HINT = '''\
+    # 'mon5078+' isn't a valid module name, so Pylance can't import the script's names. To get them, rename
+    # mon5078+.py to a valid name (it still compiles to mon5078+.dat; keep this file's name) and uncomment:
+    # from mon5078_ import *  # pyright: ignore[reportAssignmentType]
+    # import mon5078_ as original
+    pass
+'''
+
+# The checkout's own common/ package takes the name until it is renamed dc3/ (the planned root-cause fix)
+COMMON_RENAME_HINT = '''\
+    # 'common' is also the name of another module, so Pylance can't import the script's names. To get them, rename
+    # common.py to a valid name (it still compiles to common.dat; keep this file's name) and uncomment:
+    # from common_ import *  # pyright: ignore[reportAssignmentType]
+    # import common_ as original
+    pass
+'''
+
+# A function for the template's run_hook list: calls e0000's Init by its plain name
+HOOK_EXTRA = '''
+def HookExtra():
+    PUSH_CURRENT_FUNC_ID()
+    PUSH_RET_ADDR('hook_extra_ret')
+    CALL(Init)
+    label('hook_extra_ret')
+    RETURN()
+'''
 
 
 def require(path: Path):
@@ -150,6 +211,149 @@ class TestHookImportRuns(unittest.TestCase):
         self.assertEqual(ctx.exception.name, missing)
 
 
+class TestHookTemplate(unittest.TestCase):
+    '''The starting <stem>_hook.py written with ScenaDecompileConfig.write_hook_template'''
+
+    def test_text(self):
+        self.assertEqual(named_parser('ai_chr5122_e00.dat').gen_hook_template(), HOOK_TEMPLATE)
+
+    def test_rename_hint_when_the_stem_is_not_a_module_name(self):
+        self.assertEqual(named_parser('mon5078+.dat').gen_hook_template(),
+                         HOOK_TEMPLATE.replace(HOOK_TEMPLATE_IMPORTS, MON5078_RENAME_HINT))
+
+    def test_rename_hint_when_another_module_has_the_name(self):
+        self.assertEqual(named_parser('common.dat').gen_hook_template(),
+                         HOOK_TEMPLATE.replace(HOOK_TEMPLATE_IMPORTS, COMMON_RENAME_HINT))
+
+    def test_rename_hint_decided_on_the_raw_stem(self):
+        '''A keyword, a leading digit or space, a stdlib module's name: the .py carries the raw stem, so no import names
+        the script; the suggestion is a free module name'''
+        for name, suggested in (('class.dat', 'class_'), ('0abc.dat', '_0abc'), (' ai.dat', 'ai'), ('types.dat', 'types_')):
+            with self.subTest(name = name):
+                self.assertIn(f'    # from {suggested} import *  # pyright: ignore[reportAssignmentType]\n'
+                              f'    # import {suggested} as original\n', named_parser(name).gen_hook_template())
+
+    def test_hint_imports_parse_uncommented(self):
+        '''An import under TYPE_CHECKING still has to parse: `from class import *` would break the whole hook'''
+        for name in ('mon5078+.dat', 'common.dat', 'class.dat', '0abc.dat', ' ai.dat', 'types.dat'):
+            with self.subTest(name = name):
+                text = named_parser(name).gen_hook_template()
+                compile(text.replace('    # from ', '    from ').replace('    # import ', '    import '), f'{name}_hook.py', 'exec')
+
+
+class TestHookTemplateWritten(unittest.TestCase):
+    '''process_file writes the template only when asked, next to the .py, and never over an existing file'''
+
+    def setUp(self):
+        require(SMALL_FILE)
+        self.out = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.config = ScenaDecompileConfig()
+        self.config.output_dir = self.out
+        self.config.write_ts = self.config.write_mlil_asm = False
+
+    def hooks(self) -> list[Path]:
+        return sorted(self.out.rglob('*_hook.py'))
+
+    def test_not_written_by_default(self):
+        process_file(SMALL_FILE, self.config)
+        self.assertTrue((self.out / 'e0000' / 'e0000.py').exists())
+        self.assertEqual(self.hooks(), [])
+
+    def test_named_like_the_import(self):
+        '''The module the script imports: a leading space in the stem is stripped from both'''
+        self.config.write_hook_template = True
+        dat = self.out / ' ai.dat'
+        dat.write_bytes(SMALL_FILE.read_bytes())
+        process_file(dat, self.config)
+        self.assertEqual(self.hooks(), [self.out / ' ai' / 'ai_hook.py'])
+        self.assertIn('    import ai_hook\n', (self.out / ' ai' / ' ai.py').read_text(encoding = 'utf-8'))
+
+    def test_only_with_write_py(self):
+        self.config.write_hook_template = True
+        self.config.write_py = False
+        process_file(SMALL_FILE, self.config)
+        self.assertEqual(self.hooks(), [])
+
+    def test_existing_hook_kept(self):
+        self.config.write_hook_template = True
+        hook = self.out / 'e0000' / 'e0000_hook.py'
+        hook.parent.mkdir()
+        hook.write_bytes(b'# mine\r\n')
+        with self.assertLogs(log, 'INFO') as logs:
+            process_file(SMALL_FILE, self.config)
+
+        self.assertEqual(hook.read_bytes(), b'# mine\r\n')
+        self.assertIn(f'{hook} exists - not overwritten', '\n'.join(logs.output))
+
+    def test_dotted_stem_skipped_with_a_warning(self):
+        self.config.write_hook_template = True
+        dat = self.out / 'X.original.dat'
+        dat.write_bytes(SMALL_FILE.read_bytes())
+        with self.assertLogs(log, 'WARNING') as logs:
+            process_file(dat, self.config)
+
+        self.assertTrue((self.out / 'X.original' / 'X.original.py').exists())
+        self.assertEqual(self.hooks(), [])
+        self.assertIn("X.original.dat: hook template not written - a stem with a dot ('X.original') isn't supported",
+                      '\n'.join(logs.output))
+
+
+class TestHookTemplateCompiles(unittest.TestCase):
+    '''The written template next to e0000.py compiles to the same bytes as no hook, as written and with its register
+    lines uncommented; a function put in its run_hook list is added and reaches the script's names'''
+
+    def setUp(self):
+        require(SMALL_FILE)
+        out = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        config = ScenaDecompileConfig()
+        config.output_dir = out
+        config.write_ts = config.write_mlil_asm = False
+        config.write_hook_template = True
+        process_file(SMALL_FILE, config)
+
+        self.script = out / 'e0000' / 'e0000.py'
+        self.hook = out / 'e0000' / 'e0000_hook.py'
+        self.template = self.hook.read_text(encoding = 'utf-8')
+        self.enterContext(mock.patch.object(sys, 'path', [str(self.script.parent), *sys.path]))
+        self.enterContext(mock.patch.object(sys, 'dont_write_bytecode', True))
+        self.addCleanup(sys.modules.pop, 'e0000_hook', None)
+
+    def compiled(self, hook_text: str | None) -> bytes:
+        '''e0000.py compiled in memory with hook_text as its hook (None: no hook file)'''
+        if hook_text is None:
+            self.hook.unlink(missing_ok = True)
+
+        else:
+            self.hook.write_text(hook_text, encoding = 'utf-8')
+
+        sys.modules.pop('e0000_hook', None)
+        importlib.invalidate_caches()
+        fresh_writer()
+        g = runpy.run_path(str(self.script), run_name = 'hook_template_check')
+        return g['scena'].build(g)
+
+    def test_written_text(self):
+        self.assertEqual(self.template, named_parser('e0000.dat').gen_hook_template())
+
+    def test_same_bytes_as_no_hook(self):
+        no_hook = self.compiled(None)
+        registered = self.template.replace('\n# register', '\nregister')
+        self.assertEqual(registered.count('\nregister'), 3)
+        self.assertEqual(self.compiled(self.template), no_hook)
+        self.assertEqual(self.compiled(registered), no_hook)
+
+    def test_listed_function_is_added(self):
+        '''Last in code order, and its CALL reaches the script's Init by its plain name'''
+        hook = self.template.replace('# registerRunCallback', 'registerRunCallback')
+        hook = hook.replace('    for func in [\n', '    for func in [\n        HookExtra,\n') + HOOK_EXTRA
+        parser, functions = ScpParser.load_bytes(self.compiled(hook), 'e0000.dat', round_trip = False,
+                                                 keep_unreachable_code = False, quiet = True)
+        by_name = {func.name: func for func in functions}
+        self.assertEqual(max(functions, key = lambda func: func.offset).name, 'HookExtra')
+        [call] = [inst for inst in parser.get_instructions(by_name['HookExtra']) if inst.mnemonic == 'CALL']
+        self.assertEqual(call.operands[0].value, by_name['Init'].index)
+
+
 class TestFooter(unittest.TestCase):
     def test_footer_calls_main_directly(self):
         self.assertEqual(named_parser('e0000.dat').gen_python_footer(), [
@@ -189,7 +393,7 @@ class TestLineEndings(unittest.TestCase):
         require(TEST_FILE)
         config = ScenaDecompileConfig()
         config.write_llil_asm = config.write_llil_dot = config.write_mlil_asm = config.write_mlil_dot = True
-        config.write_hlil_ts = config.write_debug_info = True
+        config.write_hlil_ts = config.write_debug_info = config.write_hook_template = True
 
         with tempfile.TemporaryDirectory() as tmp:
             config.output_dir = Path(tmp)
@@ -197,6 +401,7 @@ class TestLineEndings(unittest.TestCase):
             outputs = sorted(Path(tmp).rglob('*.*'))
             self.assertEqual({''.join(path.suffixes[-2:]) for path in outputs},
                              {'.py', '.ts', '.hlil.ts', '.llil.asm', '.mlil.asm', '.llil.dot', '.mlil.dot', '.debug.txt'})
+            self.assertIn(Path(tmp) / TEST_FILE.stem / f'{TEST_FILE.stem}_hook.py', outputs)
             self.assert_lf_only(outputs)
 
     def test_common_library_generator_writes_lf(self):
