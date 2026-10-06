@@ -430,16 +430,12 @@ If(btl_check_resist_condition(65507, 50, 0) == 0, [
 
 Hook files keep decompiler2's ED8.x layout: each script `<stem>.py` imports the `<stem>_hook.py` next
 to it, and a build script runs each `.py` (which compiles it) and moves the `.dat` into the game's
-patch folder. The writer callbacks the hooks register with are an LLIL-level change
-(`docs/FUTURE_WORK_LLIL.md`, Writer).
+patch folder. The hooks themselves already exist for LLIL DSL scripts (`docs/LLIL_DSL.md` §4): the raw
+callbacks, `@replace_function`, `@add_function`, `original.Name(...)` and `inline_original_func()`. An HLIL
+DSL writer keeps the same API.
 
-- **Two styles, mixable in one file:** decompiler2's raw callbacks (`registerFuncCallback`,
-  `registerRunCallback`, `registerOpCodeCallback`) and decorator shorthand over the same calls:
-  `@replace_function('Name')`, `@add_function`, and `Original()`, which inlines the replaced body (in
-  the executed list form, calling the original body inlines it; the replacement then shares its
-  locals). Raw callbacks remain for pattern-based logic, such as every function named `AniBtl*`. The
-  writer checks that every target a hook names exists and warns when two hooks replace the same
-  function.
+- **Inlining in the list form:** in an executed list-form replacement, `inline_original_func()` inlines
+  the original body, and the replacement then shares its locals.
 - **Tree hooks for HLIL functions:** `@edit_function('Name')` edits the built tree anchored by content
   (`f.find_call('btl_chr_list_init').insert_after(...)`), and `@on_call('set_flag')` rewrites a call
   across the script. Inside callbacks, nodes are inspected with plain accessors (`.name`, `.args`,
@@ -459,7 +455,7 @@ from ed9_hlil import *
 @replace_function('AniBtlCraft05Main')
 def AniBtlCraft05Main(arg1: Value32 = 0):
     effect_load(65534, 5040, "battle/cr0000_50_9", 1)
-    Original()
+    inline_original_func()
 
 @add_function
 def GiveAllItems():
@@ -471,7 +467,7 @@ def funcCallBack(name, func):
     if name.startswith('AniBtl'):
         ...
 
-get_scena().registerFuncCallback(funcCallBack)
+registerFuncCallback(funcCallBack)
 ```
 
 ### Line-Anchored Patches
@@ -512,7 +508,7 @@ small, and only the logic round trip is needed, not byte-exact output.
 - **Switch order:** whether the compiler ever lays case bodies out in a different order from its
   tests; if it does, `Switch` needs a way to record both (for example `tests = [...]`).
 - **Hooks across levels:** whether a replacement is written at the replaced function's level, and what
-  `Original()` does when the levels differ (an LLIL body can't go in an `EmitLLIL` list: it pops its
+  `inline_original_func()` does when the levels differ (an LLIL body can't go in an `EmitLLIL` list: it pops its
   own frame and returns).
 
 ## Structuring the Remaining Reducible Shapes (`docs/HLIL_DESIGN.md`)

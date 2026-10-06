@@ -25,6 +25,13 @@ def registerRunCallback(cb: Callable) -> Callable:
     return get_scp_writer().registerRunCallback(cb)
 
 
+def registerOpcodeCallback(cb: Callable) -> Callable:
+    """Hook: cb(opcode, *args) for each opcode a body emits, with its operands as the DSL function passed them, before
+    it is written - True drops it, None or False keeps it. The opcodes cb emits itself skip the callbacks. Returns cb,
+    so it also works as a decorator"""
+    return get_scp_writer().registerOpcodeCallback(cb)
+
+
 def add_function(func: Callable) -> Callable:
     """Hook decorator, used bare (@add_function): a new script function, compiled after the script's own; every
     parameter needs a type"""

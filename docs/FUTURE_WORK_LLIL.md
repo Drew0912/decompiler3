@@ -150,18 +150,16 @@ byte.
   parser's; moving the parser's per-opcode stack effects into the opcode table is a separate plan
   (`notes/opcode_table_handoff.md`). Checking an HLIL DSL `EmitLLIL` list before anything is written
   stays with the HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Mixing LLIL and HLIL).
-- **Hook callbacks** (item 19; Step 10, the plan's last step), moved here from the HLIL DSL work. Every
-  generated script imports `<stem>_hook`, but the writer has nothing for a hook to register with (only a
-  commented-out loop remains in `ScpWriter.build`), so a hook can add a function but not replace one: the
-  script's own definition then hits `functionDecorator`'s duplicate-name `ValueError`. Restore
-  decompiler2's raw callbacks: `registerFuncCallback` (replace a function by name, library functions
-  included), `registerRunCallback` (add functions before compiling) and `registerOpCodeCallback`
-  (intercept emitted opcodes). The lists are created in `ScpWriter.__init__`: the hook is imported
-  before the header's `create_scp_writer()`, whose `init()` resets only the name and the globals, so
-  registrations made at import survive. Hooks reach the writer through the existing `get_scp_writer()`;
-  no `get_scena()` is needed. Compiling checks that every function a hook names exists and warns when
-  two hooks replace the same one. The exact signatures are decided in Step 10. Decorator shorthand and
-  tree hooks stay with the HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).
+- **Hook callbacks** (item 19; Step 10, done), moved here from the HLIL DSL work. Every generated script
+  imports `<stem>_hook`, but the writer had nothing for a hook to register with. Now a hook can replace a
+  function's body (`@replace_function('Name')`, or decompiler2's raw `registerFuncCallback`), add functions
+  (`@add_function`, `registerRunCallback`), rewrite opcodes as they are compiled (`registerOpcodeCallback`),
+  call script functions by their plain names, and inline a function's body from before any hook
+  (`original.Name(...)`, `inline_original_func()`); the writer's errors about a hook and compile-check
+  failures in it point at the hook's own line. The bare names come from
+  `falcom/ed9/writer/scp_writer_hooks.py`; hooks reach the writer through `get_scp_writer()`, no
+  `get_scena()`. Full description: `docs/LLIL_DSL.md` §4. Tree hooks stay with the HLIL DSL
+  (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).
 - **Clear errors for bad values** (item 12; Step 2b, done). `ScpValue(True)` failed with a bare
   `KeyError` (`bool` is not in its type map, `falcom/ed9/parser/types_scp.py`), and `POP(True)` compiled
   silently as `POP(1)`, since `bool` passes every `int` check. `ScpValue` now rejects any type it can't

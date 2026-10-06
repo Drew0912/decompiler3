@@ -6,15 +6,19 @@ import functools
 import linecache
 import tokenize
 from types import CodeType
-from typing import Callable
+from typing import Callable, NamedTuple
 
 from ..ir.llil import ED9LiftError, ED9VMLifter
 from ..parser.scp import ScpParser
 from ..parser.types_parser import Function
 
 
-# Where a body emitted an opcode: the body's code and the bytecode offset of the call in it
-SourceSite = tuple[CodeType, int]
+class SourceSite(NamedTuple):
+    """Where a body emitted an opcode: the body's code and the bytecode offset of the call in it. An opcode an opcode
+    callback emitted is the callback's, with the site of the opcode that triggered it"""
+    code: CodeType
+    lasti: int
+    trigger: 'SourceSite | None' = None
 
 
 class CompileCheckError(ValueError):
@@ -40,7 +44,7 @@ def require_decompilable(data: bytes, name: str, code_end: int) -> tuple[ScpPars
 
 def source_location(site: SourceSite) -> str:
     """'file:line' of the call at a source site"""
-    code, lasti = site
+    code, lasti = site.code, site.lasti
     line = next((line for start, end, line in code.co_lines() if start <= lasti < end and line is not None), None)
     return f'{code.co_filename}:{line or definition_line(code)}'
 

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-'''Hook files (Steps 10a-10c): function callbacks and replace_function swap a function's body in place - position,
+'''Hook files (Steps 10a-10d): function callbacks and replace_function swap a function's body in place - position,
 table index and common flag kept, the signature merged with the original's; run callbacks get the script's globals;
 add_function adds functions after the script's own; hook modules get the script's names; original.Name(...) and
-inline_original_func() inline a body from before any hook; and every error or compile-check failure in a hook points
-at the hook's own line. Also the parameter checks on every new function.'''
+inline_original_func() inline a body from before any hook; opcode callbacks keep, drop or add opcodes as they are
+compiled; and the writer's errors about a hook and compile-check failures in it point at the hook's own line. Also the
+parameter checks on every new function.'''
 
 from pathlib import Path
 import functools
@@ -185,11 +186,39 @@ class TestReplace(HookTestCase):
         def run(g):
             pass
 
+        def opcode_cb(opcode, *args):
+            pass
+
         self.assertIs(registerFuncCallback(raw), raw)               # usable as decorators too
         self.assertIs(registerRunCallback(run), run)
+        self.assertIs(registerOpcodeCallback(opcode_cb), opcode_cb)
         body = replace_function('Target')(lambda arg1: None)
 
-        self.assertEqual(self.writer.hook_functions, [raw, run, body])
+        self.assertEqual(self.writer.hook_functions, [raw, run, opcode_cb, body])
+
+    def test_on_top_of_a_body_decorator(self):
+        '''The decorator's opcodes are compiled: placed below it, replace_function would take the undecorated body'''
+        self.define_target()
+        self.hook('''
+            import functools
+
+            def traced(body):
+                @functools.wraps(body)
+                def wrapper(*args):
+                    PUSH_INT(7)
+                    POP(WORD_SIZE)
+                    body(*args)
+
+                return wrapper
+
+            @replace_function('Target')
+            @traced
+            def Target(arg1):
+                POP(WORD_SIZE)
+                RETURN()
+        ''')
+
+        self.assertEqual(self.mnemonics(self.parsed()['Target']), ['PUSH_INT', 'POP', 'POP', 'RETURN'])
 
     def test_replaced_twice_warns_and_the_last_wins(self):
         self.define_target()
@@ -292,14 +321,12 @@ class TestRejected(HookTestCase):
         def body(arg1):
             RETURN()
 
-        with self.assertRaisesRegex(TypeError, '^registerFuncCallback: expected a plain function'):
-            registerFuncCallback(functools.partial(body))
+        for register in (registerFuncCallback, registerRunCallback, registerOpcodeCallback):
+            with self.assertRaisesRegex(TypeError, f'^{register.__name__}: expected a plain function'):
+                register(functools.partial(body))
 
         with self.assertRaisesRegex(TypeError, r"^replace_function\('Target'\): expected a plain function"):
             replace_function('Target')(functools.partial(body))
-
-        with self.assertRaisesRegex(TypeError, '^registerRunCallback: expected a plain function'):
-            registerRunCallback(functools.partial(body))
 
         with self.assertRaisesRegex(TypeError, r'^add_function \(used bare: @add_function\): expected a plain function'):
             add_function('New')
@@ -357,6 +384,7 @@ class TestRejected(HookTestCase):
             'callback': 'registerFuncCallback(lambda name, func: None)',
             'replacement': "replace_function('Nmae')(Extra)",
             'run callback': 'registerRunCallback(lambda g: None)',
+            'opcode callback': 'registerOpcodeCallback(lambda opcode, *args: None)',
         }
         for case, registration in registrations.items():
             with self.subTest(case):
@@ -454,6 +482,7 @@ class TestRegisteredWhileCompiling(HookTestCase):
             'add_function': lambda: add_function(Late),
             'LLILCode': lambda: get_scp_writer().LLILCode()(Late),
             'run callback': lambda: registerRunCallback(Late),
+            'opcode callback': lambda: registerOpcodeCallback(Late),
         }
         for case, register in registrations.items():
             with self.subTest(case):
@@ -986,6 +1015,199 @@ class TestOriginal(HookTestCase):
                 self.hook(source)
 
                 with self.assertRaisesRegex(error, message):
+                    self.writer.build({})
+
+
+class TestOpcodeCallbacks(HookTestCase):
+    def script_call(self):
+        '''A body calling the script function this.Old, not yet registered'''
+        def Target():
+            DEBUG_SET_LINENO(1)                     # call records start at a function's first line number
+            PUSH_CALLER_FRAME('ret')
+            CALL_SCRIPT('this', 'Old', 0)
+            label('ret')
+            RETURN()
+
+        return Target
+
+    def scripts_called(self, func) -> list[str]:
+        return [inst.operands[1].value.value for inst in self.parser.get_instructions(func) if inst.mnemonic == 'CALL_SCRIPT']
+
+    def test_return_values(self):
+        '''True drops the opcode - no bytes, no debug record - and the later callbacks don't see it; None and False keep
+        it. The CALL_SCRIPT a callback emits skips the callbacks'''
+        cases = {
+            'True': (True, True, 'New'),
+            'True, check off': (True, False, 'New'),
+            'None': (None, True, 'Old'),
+            'False': (False, True, 'Old'),
+        }
+        for case, (result, check, called) in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer(check)
+                self.writer.LLILCode()(self.script_call())
+                seen = []
+
+                def swap(opcode, *args):
+                    if opcode == ED9Opcode.CALL_SCRIPT:
+                        if result is True:
+                            CALL_SCRIPT('this', 'New', args[2])
+
+                        return result
+
+                def record(opcode, *args):
+                    if opcode == ED9Opcode.CALL_SCRIPT:
+                        seen.append(args)
+
+                registerOpcodeCallback(swap)
+                registerOpcodeCallback(record)
+                functions = self.parsed()
+
+                [debug_record] = self.writer.functions_by_name['Target'].debug_records
+                self.assertEqual((self.scripts_called(functions['Target']), debug_record.args[0].value.value),
+                                 ([called], f'this.{called}'))
+                self.assertEqual(seen, [] if result is True else [('this', 'Old', 0)])
+
+    def test_library_and_inlined_bodies(self):
+        '''The callbacks see every body that compiles: a library function's, and an original inline_original_func()
+        inlines'''
+        for case in ('library function', 'inlined original'):
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+                target = self.script_call()
+                if case == 'library function':
+                    @self.writer.CommonImports()
+                    def commonImports():
+                        return [target]
+
+                else:
+                    self.writer.LLILCode()(target)
+
+                    @replace_function('Target')
+                    def NewTarget():
+                        inline_original_func()
+
+                def swap(opcode, *args):
+                    if opcode == ED9Opcode.CALL_SCRIPT:
+                        CALL_SCRIPT('this', 'New', args[2])
+                        return True
+
+                registerOpcodeCallback(swap)
+
+                self.assertEqual(self.scripts_called(self.parsed()['Target']), ['New'])
+
+    def test_other_returns_raise(self):
+        '''1 and 0 are mistakes, located at the callback'''
+        for value in (1, 0):
+            with self.subTest(value):
+                self.writer = self.fresh_writer()
+                self.define_target()
+                hook = self.hook(f'''
+                    def counted(opcode, *args):             # line: counted
+                        return {value}
+
+                    registerOpcodeCallback(counted)
+                ''')
+
+                with self.assertRaisesRegex(TypeError, rf'^{at(hook.__file__, "counted")}opcode callback counted returned '
+                                                       f'{value}: True drops the opcode, None or False keeps it$'):
+                    self.writer.build({})
+
+    def test_raw_operands(self):
+        '''As the DSL function passed them: a global's index, a value as given (an int to PUSH_FLOAT, which converts it
+        later), the label name, the function itself; label() is no opcode'''
+        @self.writer.GlobalVars()
+        def globalVars():
+            GLOBAL_VAR('flag', ScpGlobalVar.Type.Integer)
+
+        helper = self.define_helper()
+
+        @self.writer.LLILCode()
+        def Target():
+            LOAD_GLOBAL('flag')
+            PUSH_FLOAT(1)
+            POP(2 * WORD_SIZE)
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('ret')
+            CALL(helper)
+            label('ret')
+            RETURN()
+
+        seen = []
+        registerOpcodeCallback(lambda opcode, *args: seen.append((opcode, args)))
+        self.parsed()
+
+        self.assertEqual(seen, [(ED9Opcode.RETURN, ()), (ED9Opcode.LOAD_GLOBAL, (0,)), (ED9Opcode.PUSH_FLOAT, (1,)),
+                                (ED9Opcode.POP, (2 * WORD_SIZE,)), (ED9Opcode.PUSH_CURRENT_FUNC_ID, ()),
+                                (ED9Opcode.PUSH_RET_ADDR, ('ret',)), (ED9Opcode.CALL, (helper,)), (ED9Opcode.RETURN, ())])
+        self.assertIs(type(seen[2][1][0]), int)
+
+    def test_source_sites(self):
+        '''An opcode a callback emits is the callback's line - a functools.wraps-decorated callback's own, not its
+        wrapper's - noting the opcode that triggered it; a kept triggering opcode stays its own line, after what the
+        callback emitted'''
+        bad_pop = '''
+            def bad_pop(opcode, *args):
+                if args == (2,):
+                    POP(3 * WORD_SIZE)                  # line: emit
+
+            registerOpcodeCallback(bad_pop)
+        '''
+        decorated = '''
+            import functools
+
+            def pushes_only(cb):
+                @functools.wraps(cb)
+                def wrapper(opcode, *args):
+                    if opcode == ED9Opcode.PUSH_INT:
+                        return cb(opcode, *args)
+
+                return wrapper
+
+            @registerOpcodeCallback
+            @pushes_only
+            def bad_pop(opcode, *args):
+                if args == (2,):
+                    POP(3 * WORD_SIZE)                  # line: emit
+        '''
+        bad_jump = '''
+            def bad_jump(opcode, *args):
+                if args == (2,):
+                    JMP('nowhere')                      # line: emit
+
+            registerOpcodeCallback(bad_jump)
+        '''
+        harmless = '''
+            def harmless(opcode, *args):
+                if args == (3 * WORD_SIZE,):
+                    PUSH_INT(9)
+                    POP(WORD_SIZE)
+
+            registerOpcodeCallback(harmless)
+        '''
+        trigger = re.escape(f'{__file__}:{marked_line(__file__, "second push")}')
+        cases = {
+            'emitted': (bad_pop, rf'\(opcode callback bad_pop, triggered at {trigger}\) Target: POP at {HEX}: '),
+            'decorated': (decorated, rf'\(opcode callback bad_pop, triggered at {trigger}\) Target: POP at {HEX}: '),
+            'undefined label': (bad_jump, rf"\(opcode callback bad_jump, triggered at {trigger}\) Target: undefined label "
+                                          "'nowhere'$"),
+            'kept': (harmless, None),
+        }
+        for case, (source, message) in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Target():
+                    PUSH_INT(1)
+                    PUSH_INT(2)                         # line: second push
+                    POP(3 * WORD_SIZE)                  # line: script pop
+                    RETURN()
+
+                hook = self.hook(source)
+                expected = at(hook.__file__, 'emit') + message if message else rf"{at(__file__, 'script pop')}Target: POP at {HEX}: "
+
+                with self.assertRaisesRegex(ValueError, f'^{expected}'):
                     self.writer.build({})
 
 

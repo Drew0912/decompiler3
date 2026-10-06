@@ -125,8 +125,8 @@ the game's conventions (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary").
 ## Recompilation Pipeline — Core mechanism implemented, extensions planned
 
 **Location:** `falcom/ed9/writer/` (`scp_writer.py`, `scp_writer_opcode_handler.py`,
-`scp_writer_helper.py`, `scp_compile_check.py`, `scp_writer_gen_common_funcs.py`, `metadata/`),
-driven by `falcom/ed9/scena2py.py`, validated by `tools/scp_roundtrip_validator.py`.
+`scp_writer_helper.py`, `scp_writer_hooks.py`, `scp_compile_check.py`, `scp_writer_gen_common_funcs.py`,
+`metadata/`), driven by `falcom/ed9/scena2py.py`, validated by `tools/scp_roundtrip_validator.py`.
 
 A `.py` source file — sequential calls to per-opcode functions, one per VM opcode — executed
 against a `ScpWriter` to emit bytecode. Compilation itself only needs that `.py` file. The Parser
@@ -137,8 +137,9 @@ An automated byte-exact round-trip check exists and works; fidelity settings are
 than default. A shared common-function library
 (`falcom/ed9/writer/metadata/common/`, generated from the corpus) is implemented and active by
 default, so generated `.py` files import shared game functions instead of embedding full copies of
-them. Compiling from MLIL/HLIL DSL forms instead of just LLIL DSL is still future work, loosely
-sketched rather than fully designed. Full detail in `docs/LLIL_DSL.md`; not-yet-started extensions
+them. A `<stem>_hook.py` next to a script can replace or add functions and rewrite opcodes when it
+compiles (`scp_writer_hooks.py`; `docs/LLIL_DSL.md` §4). Compiling from MLIL/HLIL DSL forms instead of
+just LLIL DSL is still future work, loosely sketched rather than fully designed. Full detail in `docs/LLIL_DSL.md`; not-yet-started extensions
 (MLIL/HLIL DSL, mixed-IR-level compilation, knowledge-driven typing for common functions) are in
 `docs/FUTURE_WORK.md`.
 

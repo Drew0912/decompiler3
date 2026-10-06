@@ -152,11 +152,14 @@ class ScpWriter:
         self.current_source = None                      # type: SourceSite | None
         self.code_offset = None                         # type: int  # file offset of the code buffer
         # id(), not the code: code objects hash their constants on every lookup and compare equal across files
-        self.body_code_ids = set()                      # type: set[int]  # every body's code, for the source map
+        self.body_code_ids = set()                      # type: set[int]  # every body's and opcode callback's code, for the source map
         self.func_callbacks = []                        # type: list[Callable]  # hooks: cb(name, func) -> None or a new body
         self.replaced = {}                              # type: dict[str, Callable]  # replace_function name -> its body
         self.hook_functions = []                        # type: list[Callable]  # the hooks' own functions, never the writer's
         self.run_callbacks = []                         # type: list[Callable]  # hooks: cb(g) when the compile starts
+        self.opcode_callbacks = []                      # type: list[Callable]  # hooks: cb(opcode, *args) -> True drops it
+        self.in_opcode_callback = False                 # type: bool  # opcodes a callback emits skip the callbacks
+        self.callback_trigger = None                    # type: SourceSite | None  # the triggering opcode's site while callbacks run
         self.added_functions = []                       # type: list[Callable]  # add_function, registered when the compile starts
         self.injected_modules = set()                   # type: set[int]  # id() of every hook module given the script's names
         self.globals = None                             # type: dict | None  # the script's globals, once the compile starts
@@ -293,13 +296,19 @@ class ScpWriter:
 
     @classmethod
     def _site_prefix(cls, site: SourceSite | None) -> str:
-        """'file:line: ' of a source site, '' without one (the source map is off)"""
-        return f'{source_location(site)}: ' if site is not None else ''
+        """'file:line: ' of a source site, '' without one (the source map is off); an opcode an opcode callback emitted
+        also names the callback and the triggering opcode's line"""
+        if site is None:
+            return ''
+
+        if site.trigger is None:
+            return f'{source_location(site)}: '
+
+        return f'{source_location(site)}: (opcode callback {site.code.co_name}, triggered at {source_location(site.trigger)}) '
 
     def registerFuncCallback(self, cb: Callable) -> Callable:
         """See scp_writer_hooks.registerFuncCallback"""
-        self._require_function(cb, 'registerFuncCallback')
-        self._add_hook_function(cb)
+        self._add_hook_function(cb, 'registerFuncCallback')
         self.func_callbacks.append(cb)
         return cb
 
@@ -309,8 +318,7 @@ class ScpWriter:
             raise TypeError(f"replace_function takes the function's name - @replace_function('Name') - not {name!r}")
 
         def wrapper(body):
-            self._require_function(body, f'replace_function({name!r})')
-            self._add_hook_function(body)
+            self._add_hook_function(body, f'replace_function({name!r})')
             earlier = self.replaced.get(name)
             if earlier is not None:
                 log.warning(f'{def_site(body)}: replace_function({name!r}) again, overriding the one at {def_site(earlier)}')
@@ -323,15 +331,19 @@ class ScpWriter:
 
     def registerRunCallback(self, cb: Callable) -> Callable:
         """See scp_writer_hooks.registerRunCallback"""
-        self._require_function(cb, 'registerRunCallback')
-        self._add_hook_function(cb)
+        self._add_hook_function(cb, 'registerRunCallback')
         self.run_callbacks.append(cb)
+        return cb
+
+    def registerOpcodeCallback(self, cb: Callable) -> Callable:
+        """See scp_writer_hooks.registerOpcodeCallback"""
+        self._add_hook_function(cb, 'registerOpcodeCallback')
+        self.opcode_callbacks.append(cb)
         return cb
 
     def add_function(self, func: Callable) -> Callable:
         """See scp_writer_hooks.add_function"""
-        self._require_function(func, 'add_function (used bare: @add_function)')
-        self._add_hook_function(func)
+        self._add_hook_function(func, 'add_function (used bare: @add_function)')
         if self.globals is None:
             self.added_functions.append(func)
 
@@ -349,8 +361,10 @@ class ScpWriter:
 
         self.LLILCode()(func)
 
-    def _add_hook_function(self, fn: Callable):
-        """A hook's own function: given the script's names now if the compile has started, else when it starts"""
+    def _add_hook_function(self, fn: Callable, what: str):
+        """A hook's own function, a plain one (what names it in the error): given the script's names now if the
+        compile has started, else when it starts"""
+        self._require_function(fn, what)
         self._require_open(fn)
         self.hook_functions.append(fn)
         self._inject(fn)
@@ -502,7 +516,7 @@ class ScpWriter:
         """Compile every function in script (source) order into a memory buffer; offsets are relative until relocateCode()"""
         code = fileio.FileStream(encoding = default_encoding()).OpenMemory()
         self.fs = code
-        self.body_code_ids = {id(body_code) for f in self.functions for body_code in self._body_codes(f)}
+        self.body_code_ids = {id(body_code) for body_code in self._body_codes()}
 
         try:
             for f in self.functions:
@@ -527,12 +541,12 @@ class ScpWriter:
         """Emit a body's opcodes; an LLIL body reads its arguments from the VM stack, not from its parameters"""
         body(*[None] * f.entry.param_count)
 
-    @classmethod
-    def _body_codes(cls, f: ScpFunction):
-        """The code of every body that can run for f: the original, each replacement (f.obj is one of them) and what
-        they wrap"""
-        for body in (f.original_obj, *f.bodies):
-            for func in cls._wrapped_chain(body):
+    def _body_codes(self):
+        """The code of every body that can emit opcodes - each function's original and replacements (f.obj is one of
+        them), each opcode callback - and of what they wrap"""
+        bodies = [body for f in self.functions for body in (f.original_obj, *f.bodies)] + self.opcode_callbacks
+        for body in bodies:
+            for func in self._wrapped_chain(body):
                 body_code = getattr(func, '__code__', None)
                 if body_code is not None:
                     yield body_code
@@ -675,9 +689,13 @@ class ScpWriter:
         if self.current_function is None:
             raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
+        site = self._opcode_source() if self.check_compiled else None
+        if self.opcode_callbacks and not self.in_opcode_callback and self._dropped_by_callbacks(opcode, args, site):
+            return
+
         if self.check_compiled:
-            self.current_source = self._opcode_source()
-            self.source_map[self.fs.Position] = self.current_source
+            self.current_source = site
+            self.source_map[self.fs.Position] = site
 
         # bool is an int subclass, so the opcode functions' isinstance asserts accept True/False
         for arg in args:
@@ -726,15 +744,36 @@ class ScpWriter:
 
         self._track(opcode, args)
 
+    def _dropped_by_callbacks(self, opcode: int, args: tuple, site: SourceSite | None) -> bool:
+        """Run the opcode callbacks, in registration order, on an opcode a body emits; True when one drops it, and the
+        rest don't run. The opcodes a callback emits skip the callbacks and carry site as their trigger"""
+        self.in_opcode_callback = True
+        self.callback_trigger = site
+        try:
+            for cb in self.opcode_callbacks:
+                result = cb(opcode, *args)
+                if result is True:
+                    return True
+
+                if result is not None and result is not False:
+                    raise TypeError(f'{def_site(cb)}: opcode callback {cb.__name__} returned {result!r}: True drops the '
+                                    'opcode, None or False keeps it')
+
+            return False
+
+        finally:
+            self.in_opcode_callback = False
+            self.callback_trigger = None
+
     def _opcode_source(self) -> SourceSite | None:
         """Where a body emitted the opcode being compiled: the innermost frame running any body - the function's own, a
-        hook's replacement or wrapper, an inlined original (a helper the body called counts as the body's call). f_lasti,
-        not f_lineno: f_lineno scans the line table, which grows with the body"""
+        hook's replacement or wrapper, an inlined original, an opcode callback (a helper the body called counts as the
+        body's call). f_lasti, not f_lineno: f_lineno scans the line table, which grows with the body"""
         frame = sys._getframe(1)
         while frame is not None and id(frame.f_code) not in self.body_code_ids:
             frame = frame.f_back
 
-        return (frame.f_code, frame.f_lasti) if frame is not None else None
+        return SourceSite(frame.f_code, frame.f_lasti, self.callback_trigger) if frame is not None else None
 
     def _track(self, opcode: int, args: tuple, payload = None):
         if self.call_tracker is not None:
