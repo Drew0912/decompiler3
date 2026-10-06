@@ -1138,7 +1138,7 @@ class TestOriginal(HookTestCase):
                                                 ValueError, r'^original\.Target\(\) is outside a function body$'),
             'inline in a run callback': ('registerRunCallback(lambda g: inline_original_func())',
                                          ValueError, r'^inline_original_func\(\) is outside a function body$'),
-            # A callback keeping the body still leaves f.bodies non-empty: "replaced" is a new body, not a callback run
+            # A callback keeping the body still leaves f.callback_bodies non-empty: "replaced" is a new body, not a callback run
             'inline in a function not replaced': ('@add_function\ndef Extra():\n    inline_original_func()\n'
                                                   'registerFuncCallback(lambda name, func: func)',
                                                   ValueError, r"^Extra wasn't replaced; inline_original_func\(\) inlines "
