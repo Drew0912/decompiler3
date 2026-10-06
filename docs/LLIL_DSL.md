@@ -124,8 +124,10 @@ another function compiles, for a deliberate jump between functions, with a warni
 (`B: jumps to label 'done' in A (another function)`); generated scripts never have one. DSL statements
 must be in their place: an opcode or `label()` outside a function body raises `PUSH_INT is outside a
 function body`, and `GLOBAL_VAR` inside a body raises (the header counts the globals before the bodies
-run). Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the unknown name.
-Errors raised while a body runs carry the `.py` line in their traceback.
+run). `GLOBAL_VAR` belongs in the script's one `@scena.GlobalVars()` block or a hook's run or function
+callback (§4): anywhere else it raises, and so do a second `@scena.GlobalVars()` and one before
+`create_scp_writer()`. Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the
+unknown name. Errors raised while a body runs carry the `.py` line in their traceback.
 
 **The compile check** (`ScpWriter.check_compiled`, on by default; a script turns it off with
 `scena.check_compiled = False`). At the end of `build()` the bytes are parsed and lifted again in memory
@@ -399,7 +401,8 @@ table index and reads `CheckAlgoUse(Value32, Value32, Value32 = 5)`; `HookExtra`
 unchanged.
 
 **The API.** Each `register*` call returns its argument, so it also works as a decorator. Hooks are plain functions
-(`def` or `lambda`): anything else (`functools.partial`, a callable object) is a `TypeError`. Functions and hooks
+(`def` or `lambda`), like every function `LLILCode()` / `LLILCommonCode()` register: anything else
+(`functools.partial`, a callable object, a bound method) is a `TypeError`. Functions and hooks
 register at hook import time or in a run callback; registering one from a function callback or from a body is an
 error.
 - `@replace_function('Name')`: the decorated function becomes `Name`'s body. `Name` may be a script function, a
@@ -407,10 +410,12 @@ error.
   of the same name warns and wins.
 - `registerFuncCallback(cb)`: `cb(name, func)` for every function, in registration order (`@replace_function`
   registers one too). Returning `None` (or `func` itself) keeps the body; returning a function replaces it, and a later
-  callback receives that replacement as `func`. For pattern rules (every function named `AniBtl*`).
+  callback receives that replacement as `func`. For pattern rules (every function named `AniBtl*`). It may add global
+  vars (`GLOBAL_VAR`), not functions or hooks.
 - `registerRunCallback(cb)`: `cb(g)` with the script's globals, before the function callbacks. It may add functions
-  (`add_function(f)`, or `get_scp_writer().LLILCode()(f)`) and global vars (`GLOBAL_VAR`); the function callbacks then
-  see the added functions too.
+  (`add_function(f)`, or `get_scp_writer().LLILCode()(f)`) and global vars (`GLOBAL_VAR`, appended after the script's,
+  so their indices stay; at a hook's top level `GLOBAL_VAR` is an error); the function callbacks then see the added
+  functions too.
 - `@add_function`: a new function, compiled after the script's own. Existing functions keep their code order and
   their offsets from the code start; the function table is sorted by name, so a new name can shift other functions'
   indices, and every `CALL` follows. Every parameter needs a type. A name the script already has is an error that names
@@ -441,7 +446,10 @@ parameter: the replacement's type or default where it gives one, else the origin
 and `*args`, keyword-only and `**kwargs` parameters are rejected (a wrapper keeps the replaced signature with
 `functools.wraps`). A default can change but never go: the engine can call a function by name with fewer arguments.
 Annotations are evaluated, so `from __future__ import annotations` works; a missing or wrong type on a new function, a
-`None` default or one the `.dat` can't store is an error at the `def`.
+`None` default, one the `.dat` can't store, or one of the wrong type (a string only on `str` / `NullableStr`, a number
+only on the others) is an error at the `def`, and so is an `*args`, keyword-only or `**kwargs` parameter on any
+function (the engine passes arguments by position). The merged signature is checked too: a replacement that changes a
+parameter's type gives it a default of the new type when the original has one.
 
 **Opcode callbacks.** `cb(opcode, *args)` runs for each opcode a body emits - library bodies included - before it is
 written, the callbacks in registration order. `True` drops the opcode, and the later callbacks don't see it; `None` or

@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.parser.types_scp import ScpParamFlags
 from falcom.ed9.writer import scp_writer, scp_writer_helper, scp_writer_hooks
 from falcom.ed9.writer.scp_compile_check import CompileCheckError
 from falcom.ed9.writer.scp_writer_helper import *
@@ -331,6 +332,15 @@ class TestRejected(HookTestCase):
         with self.assertRaisesRegex(TypeError, r'^add_function \(used bare: @add_function\): expected a plain function'):
             add_function('New')
 
+        for decorator in ('LLILCode', 'LLILCommonCode'):
+            for case, func in (('partial', functools.partial(body)), ('bound method', self.define_target)):
+                with self.subTest(decorator = decorator, case = case):
+                    with self.assertRaisesRegex(TypeError, f'^{decorator}: expected a plain function'):
+                        getattr(self.writer, decorator)()(func)
+
+        with self.assertRaisesRegex(TypeError, '^GlobalVars: expected a plain function'):
+            self.writer.GlobalVars()(functools.partial(body))
+
     def test_duplicate_function_name_points_at_the_second(self):
         '''E.g. a run callback registering a script name through LLILCode()'''
         self.define_target()
@@ -441,6 +451,14 @@ class TestRejected(HookTestCase):
             'None default': 'a default is an int, float or str, not None$',
             'None type': 'needs a type: Value32, Nullable32, str, NullableStr or Pointer$',
             'non-finite default': "non-finite float nan: the game can't use it$",
+            '*args': r'must be positional \(no \*args, keyword-only or \*\*kwargs\)$',
+            'keyword-only': r'must be positional \(no \*args, keyword-only or \*\*kwargs\)$',
+            '**kwargs': r'must be positional \(no \*args, keyword-only or \*\*kwargs\)$',
+            'string default': "a Value32 parameter can't default to 'text'$",
+            'number default': "a str parameter can't default to 1$",
+            'NullableStr number default': "a NullableStr parameter can't default to 1$",
+            'Nullable32 string default': "a Nullable32 parameter can't default to 'text'$",
+            'Pointer string default': "a Pointer parameter can't default to 'text'$",
         }
         for case, message in cases.items():
             with self.subTest(case):
@@ -466,10 +484,117 @@ class TestRejected(HookTestCase):
                         def New(arg1: Value32, arg2: None):             # line: None type
                             RETURN()
 
-                    else:
+                    elif case == 'non-finite default':
                         @self.writer.LLILCode()
                         def New(arg1: Value32, arg2: Value32 = float('nan')):   # line: non-finite default
                             RETURN()
+
+                    elif case == '*args':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, *arg2: Value32):         # line: *args
+                            RETURN()
+
+                    elif case == 'keyword-only':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, *, arg2: Value32 = 0):   # line: keyword-only
+                            RETURN()
+
+                    elif case == '**kwargs':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, **arg2: Value32):        # line: **kwargs
+                            RETURN()
+
+                    elif case == 'string default':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: Value32 = 'text'): # line: string default
+                            RETURN()
+
+                    elif case == 'number default':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: str = 1):          # line: number default
+                            RETURN()
+
+                    elif case == 'NullableStr number default':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: NullableStr = 1):  # line: NullableStr number default
+                            RETURN()
+
+                    elif case == 'Nullable32 string default':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: Nullable32 = 'text'):  # line: Nullable32 string default
+                            RETURN()
+
+                    else:
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: Pointer = 'text'): # line: Pointer string default
+                            RETURN()
+
+    def test_defaults_of_their_type_are_fine(self):
+        '''The type bits decide, not the Nullable / Pointer flags: the corpus's defaults are Nullable32 numbers and
+        NullableStr strings'''
+        @self.writer.LLILCode()
+        def New(arg1: Nullable32 = 1, arg2: NullableStr = 'text', arg3: Pointer = 0, arg4: str = 'name'):
+            POP(4 * WORD_SIZE)
+            RETURN()
+
+        self.assertEqual(self.signature(self.parsed()['New']), "New(Nullable32 = 1, NullableStr = 'text', Pointer = 0, "
+                                                               "str = 'name')")
+
+    def test_replacement_changing_the_type_needs_a_default_of_it(self):
+        '''The merged signature keeps the original's default, so a new type alone would store a number in a str'''
+        @self.writer.LLILCode()
+        def Target(arg1: Value32 = 0):
+            POP(WORD_SIZE)
+            RETURN()
+
+        hook = self.hook('''
+            @replace_function('Target')
+            def Target(arg1: str):                          # line: def
+                RETURN()
+        ''')
+
+        with self.assertRaisesRegex(TypeError, rf"^{at(hook.__file__, 'def')}parameter arg1 of Target: a str parameter "
+                                               "can't default to 0$"):
+            self.writer.build({})
+
+    def test_mismatched_default_in_a_dat_warns_when_decompiled(self):
+        '''A .dat whose parameter flags and default disagree decompiles to a .py the writer rejects: the decompile says so'''
+        @self.writer.LLILCode()
+        def Zeta(arg1: str = 'fallback'):
+            POP(WORD_SIZE)
+            RETURN()
+
+        data = bytearray(self.writer.build({}))
+        parser, _ = ScpParser.load_bytes(bytes(data), 'test.dat', round_trip = False, keep_unreachable_code = False,
+                                         quiet = True)
+        offset = parser.function_entries[parser.function_map['Zeta'].index].param_flags_offset
+        data[offset:offset + WORD_SIZE] = ScpParamFlags(typ = Value32).to_bytes()
+
+        with self.assertLogs(log, 'WARNING') as logs:
+            ScpParser.load_bytes(bytes(data), 'test.dat', round_trip = False, keep_unreachable_code = False, quiet = True)
+
+        self.assertIn("WARNING:decompiler3:Zeta: parameter 1 is Value32 but defaults to 'fallback': the writer rejects "
+                      "that, so compiling the .py will fail", logs.output)
+
+    def test_added_function_parameter_kinds(self):
+        '''add_function registers through LLILCode when the compile starts: rejected there, at the def'''
+        hook = self.hook('''
+            @add_function
+            def New(arg1: Value32, **flags: Value32):       # line: def
+                RETURN()
+        ''')
+
+        with self.assertRaisesRegex(TypeError, rf'^{at(hook.__file__, "def")}parameter flags of New: must be positional '
+                                               r'\(no \*args, keyword-only or \*\*kwargs\)$'):
+            self.writer.build({})
+
+    def test_positional_only_parameters_are_fine(self):
+        @self.writer.LLILCode()
+        def New(arg1: Value32, /, arg2: Value32 = 1):
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        self.assertEqual(self.signature(self.parsed()['New']), 'New(Value32, Value32 = 1)')
 
 
 class TestRegisteredWhileCompiling(HookTestCase):
@@ -748,6 +873,17 @@ class TestRunCallbacks(HookTestCase):
 
         self.define_target()
         registerRunCallback(lambda g: GLOBAL_VAR('added', ScpGlobalVar.Type.Integer))
+        self.parsed()
+
+        self.assertEqual([var.name for var in self.parser.global_vars], ['first', 'added'])
+
+    def test_function_callback_may_add_a_global_var(self):
+        @self.writer.GlobalVars()
+        def globalVars():
+            GLOBAL_VAR('first', ScpGlobalVar.Type.Integer)
+
+        self.define_target()
+        registerFuncCallback(lambda name, func: GLOBAL_VAR('added', ScpGlobalVar.Type.Integer))
         self.parsed()
 
         self.assertEqual([var.name for var in self.parser.global_vars], ['first', 'added'])

@@ -139,6 +139,8 @@ class ScpWriter:
         self.function_table = []                        # type: list[ScpFunction]
         self.global_vars = []                           # type: list[ScpGlobalVar]
         self.global_var_indices = {}                    # type: dict[str, int]
+        self.global_vars_block = None                   # type: Callable | None  # the @GlobalVars() function that declared the table
+        self.in_global_vars_body = False                # type: bool  # GLOBAL_VAR is allowed while that body runs
         self.fs = None                                  # type: fileio.FileStream
         self.instruction_table = ED9_INSTRUCTION_TABLE  # shared singleton - never construct a new ED9InstructionTable()
         self.labels = {}                                # type: dict[str, LabelSite]
@@ -167,13 +169,12 @@ class ScpWriter:
 
     def init(self, name: str):
         self.name = name
-        self.global_vars = []
-        self.global_var_indices = {}
 
     # Script registration: functions, common imports and global vars
 
     def functionDecorator(self, is_common_func: bool, debug_argc: dict[str, int] | None):
         def wrapper(func):
+            self._require_function(func, 'LLILCommonCode' if is_common_func else 'LLILCode')
             name = func.__name__
             self._require_open(func)
             if name in self.functions_by_name:
@@ -230,15 +231,29 @@ class ScpWriter:
         return wrapper
 
     def GlobalVars(self):
-        """Declares the script's global variable table, in table order (declaration order == on-disk index).
+        """Declares the script's global variable table, once, in table order (declaration order == on-disk index). A
+        hook adds globals with GLOBAL_VAR in a run callback, after the script's, so their indices stay.
 
         Unlike LLILCode/LLILCommonCode, the decorated body runs immediately - the table must exist before
         compileFunctions() runs, since LOAD_GLOBAL/SET_GLOBAL resolve names against it at compile time.
         """
         def wrapper(func):
-            self.global_vars = []
-            self.global_var_indices = {}
-            func()
+            self._require_function(func, 'GlobalVars')
+            if self.name is None:
+                raise ValueError(f'{def_site(func)}: @GlobalVars() runs before create_scp_writer(); a hook adds global '
+                                 'vars with GLOBAL_VAR in a run callback')
+
+            if self.global_vars_block is not None:
+                raise ValueError(f'{def_site(func)}: the global var table is already declared at '
+                                 f'{def_site(self.global_vars_block)}')
+
+            self.global_vars_block = func
+            self.in_global_vars_body = True
+            try:
+                func()
+
+            finally:
+                self.in_global_vars_body = False
 
             return func
 
@@ -250,6 +265,10 @@ class ScpWriter:
             raise ValueError(f'{self.current_function.name}: GLOBAL_VAR({name!r}) is inside a function body; '
                              'declare it in @scena.GlobalVars()')
 
+        # Once the compile has started (globals set), run and function callbacks may add globals
+        if not self.in_global_vars_body and self.globals is None:
+            raise ValueError(f"GLOBAL_VAR({name!r}) is outside @scena.GlobalVars() and a hook's run or function callback")
+
         if name in self.global_var_indices:
             raise ValueError(f'global var already declared: {name!r}')
 
@@ -259,7 +278,7 @@ class ScpWriter:
     def global_var_index(self, name: str) -> int:
         index = self.global_var_indices.get(name)
         if index is None:
-            raise KeyError(f'unknown global var {name!r}; declared: {sorted(self.global_var_indices)}')
+            raise ValueError(f'unknown global var {name!r}; declared: {sorted(self.global_var_indices)}')
 
         return index
 
@@ -282,20 +301,28 @@ class ScpWriter:
 
     @classmethod
     def _check_parameters(cls, func: Callable, name: str, sig: inspect.Signature):
-        """Every parameter has a type and a default the .dat can store, else a TypeError at func's def (instead of one
-        without a location from writeFuncInfo)"""
+        """Every parameter is positional, has a type and a default of that type the .dat can store, else a TypeError
+        at func's def (instead of one without a location while the body compiles or from writeFuncInfo)"""
         for param in sig.parameters.values():
             try:
+                # The engine passes arguments by position; param_count counts every parameter
+                if param.kind not in (param.POSITIONAL_ONLY, param.POSITIONAL_OR_KEYWORD):
+                    raise TypeError('must be positional (no *args, keyword-only or **kwargs)')
+
                 if param.annotation is param.empty or param.annotation is None:
                     raise TypeError('needs a type: Value32, Nullable32, str, NullableStr or Pointer')
 
-                ScpParamFlags(typ = param.annotation)
+                flags = ScpParamFlags(typ = param.annotation)
                 if param.default is None:
                     raise TypeError('a default is an int, float or str, not None')
 
                 if param.default is not param.empty:
                     value = ScpValue(param.default)
-                    if value.type != ScpValue.Type.String:
+                    is_string = value.type == ScpValue.Type.String
+                    if is_string != flags.takes_string():
+                        raise TypeError(f"a {flags.get_python_type()} parameter can't default to {param.default!r}")
+
+                    if not is_string:
                         cls._value_bytes(value)
 
             except (NotImplementedError, TypeError, ValueError) as e:

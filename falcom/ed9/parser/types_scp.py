@@ -80,6 +80,10 @@ class ScpParamFlags:
 
         raise NotImplementedError(str(self))
 
+    def takes_string(self) -> bool:
+        """str / NullableStr: the value, and so the default, is a string"""
+        return (self.flags & ScpParamType.Mask) == ScpParamType.Offset
+
     def __str__(self) -> str:
         return f'flags = 0x{self.flags:08X}'
 

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 '''The writer's compile: built in memory and written only on success, file-wide labels whose errors and warnings
-name their functions, DSL statements in the wrong place rejected, and global var names checked.'''
+name their functions, DSL statements in the wrong place rejected, and global vars declared once, in their block or a
+run callback, and named right.'''
 
 from pathlib import Path
 import re
@@ -16,7 +17,7 @@ from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import WriterTestCase
+from scp_writer_test_utils import WriterTestCase, at, fresh_writer, marked_line
 
 OPCODE_SIZE = 1  # a jump's label operand follows its 1-byte opcode
 
@@ -262,6 +263,9 @@ class TestStatementsInTheWrongPlace(WriterTestCase):
             self.writer.build({})
 
 
+OUTSIDE_THE_BLOCK = r"^GLOBAL_VAR\('x'\) is outside @scena\.GlobalVars\(\) and a hook's run or function callback$"
+
+
 class TestGlobalVarNames(WriterTestCase):
     def test_duplicate_declaration(self):
         with self.assertRaisesRegex(ValueError, r"^global var already declared: 'a'$"):
@@ -269,6 +273,10 @@ class TestGlobalVarNames(WriterTestCase):
             def globalvars():
                 GLOBAL_VAR('a', 1)
                 GLOBAL_VAR('a', 1)
+
+        # The block raised, so its body is over: GLOBAL_VAR is outside it again
+        with self.assertRaisesRegex(ValueError, OUTSIDE_THE_BLOCK):
+            GLOBAL_VAR('x', 1)
 
     def test_unknown_name_lists_the_declared_ones(self):
         @self.writer.GlobalVars()
@@ -280,10 +288,40 @@ class TestGlobalVarNames(WriterTestCase):
             LOAD_GLOBAL('b')
             RETURN()
 
-        with self.assertRaises(KeyError) as ctx:
+        with self.assertRaisesRegex(ValueError, r"^unknown global var 'b'; declared: \['a'\]$"):
             self.writer.build({})
 
-        self.assertEqual(ctx.exception.args[0], "unknown global var 'b'; declared: ['a']")
+    def test_outside_the_block(self):
+        '''A script's top level, and a hook's (it runs before create_scp_writer())'''
+        for case in ('script', 'before create_scp_writer'):
+            with self.subTest(case):
+                if case == 'before create_scp_writer':
+                    fresh_writer()
+
+                with self.assertRaisesRegex(ValueError, OUTSIDE_THE_BLOCK):
+                    GLOBAL_VAR('x', 1)
+
+    def test_block_before_create_scp_writer(self):
+        writer = fresh_writer()
+        with self.assertRaisesRegex(ValueError, rf"^{at(__file__, 'early block')}@GlobalVars\(\) runs before "
+                                                r"create_scp_writer\(\); a hook adds global vars with GLOBAL_VAR in a run "
+                                                r"callback$"):
+            @writer.GlobalVars()
+            def globalvars():                               # line: early block
+                GLOBAL_VAR('x', 1)
+
+    def test_second_block(self):
+        '''It replaced the first table before'''
+        @self.writer.GlobalVars()
+        def first():                                        # line: first block
+            GLOBAL_VAR('a', 1)
+
+        first_def = re.escape(f'{__file__}:{marked_line(__file__, "first block")}')
+        with self.assertRaisesRegex(ValueError, rf"^{at(__file__, 'second block')}the global var table is already "
+                                                rf"declared at {first_def}$"):
+            @self.writer.GlobalVars()
+            def second():                                   # line: second block
+                GLOBAL_VAR('b', 1)
 
 
 if __name__ == '__main__':

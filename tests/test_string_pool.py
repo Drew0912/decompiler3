@@ -45,7 +45,7 @@ def compile_script(dat: Path):
         GLOBAL_VAR('flag', 1)
 
     @writer.LLILCode()
-    def Zeta(arg1: Value32 = 'fallback'):
+    def Zeta(arg1: str = 'fallback'):
         PUSH_STR('zeta')
         POP(WORD_SIZE)
         POP(WORD_SIZE)

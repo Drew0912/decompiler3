@@ -868,6 +868,11 @@ class ScpParser(StrictBase):
 
             for i in range(entry.param_count):
                 param = FunctionParam(type = param_flags[i], default_value = default_params[i])
+                default = param.default_value
+                if default is not None and (default.type == ScpValue.Type.String) != param.type.takes_string():
+                    log.warning(f'{func.name}: parameter {i + 1} is {param.type.get_python_type()} but defaults to '
+                                f'{default.value!r}: the writer rejects that, so compiling the .py will fail')
+
                 func.params.append(param)
 
             # func.params.reverse()
