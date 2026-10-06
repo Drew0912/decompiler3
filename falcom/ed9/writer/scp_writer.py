@@ -137,39 +137,47 @@ class ScpWriter:
     check_compiled = True
 
     def __init__(self):
-        self.dat_name = None
-        self.functions = []                             # type: list[ScpFunction]
-        self.functions_by_name = {}                     # type: dict[str, ScpFunction]
-        self.function_table = []                        # type: list[ScpFunction]
-        self.global_vars = []                           # type: list[ScpGlobalVar]
-        self.global_var_indices = {}                    # type: dict[str, int]
-        self.global_vars_block = None                   # type: Callable | None  # the @GlobalVars() function that declared the table
-        self.in_global_vars_body = False                # type: bool  # GLOBAL_VAR is allowed while that body runs
-        # The code buffer while bodies compile, then the .dat being written (in memory)
-        self.fs = None                                  # type: fileio.FileStream
-        self.labels = {}                                # type: dict[str, LabelSite]
-        self.label_refs = []                            # type: list[LabelSite]
-        self.strings = []                               # type: list[PooledString]
-        self.strings_by_text = {}                       # type: dict[str, PooledString]
-        self.code_string_xrefs = []                     # type: list[tuple[PooledString, int]]
-        self.current_function = None                    # type: ScpFunction
-        self.call_tracker = None                        # type: CallDebugInfoTracker
-        self.source_map = {}                            # type: dict[int, SourceSite]  # code position -> where it was emitted
-        self.current_source = None                      # type: SourceSite | None
-        self.code_offset = None                         # type: int  # file offset of the code buffer
+        # The script and what it registers
+        self.dat_name: str = None                            # the .dat create_scp_writer() names; None before it
+        self.functions: list[ScpFunction] = []               # in registration order, which is code order
+        self.functions_by_name: dict[str, ScpFunction] = {}
+        self.global_vars: list[ScpGlobalVar] = []
+        self.global_var_indices: dict[str, int] = {}
+        self.global_vars_block: Callable | None = None       # the @GlobalVars() function that declared the table
+        self.in_global_vars_body: bool = False               # GLOBAL_VAR is allowed while that body runs
+
+        # The compile: build() sets these as it runs
+        self.globals: dict | None = None                     # the script's globals, once the compile starts
+        self.registration_closed: bool = False               # the header is counted: no function or hook may register
+        self.function_table: list[ScpFunction] = []          # sorted by name bytes, as on disk
+        self.fs: fileio.FileStream = None                    # the code buffer, then the .dat being written (in memory)
+        self.code_offset: int = None                         # file offset of the code buffer
+        self.current_function: ScpFunction = None            # the function compiling; None outside a body
+        self.call_tracker: CallDebugInfoTracker = None       # round_trip only: the body's calls for the debug records
+
+        # Labels and strings
+        self.labels: dict[str, LabelSite] = {}
+        self.label_refs: list[LabelSite] = []
+        self.strings: list[PooledString] = []
+        self.strings_by_text: dict[str, PooledString] = {}
+        self.code_string_xrefs: list[tuple[PooledString, int]] = []
+
+        # The compile check's source map
+        self.source_map: dict[int, SourceSite] = {}          # code position -> where it was emitted
+        self.current_source: SourceSite | None = None
         # id(), not the code: code objects hash their constants on every lookup and compare equal across files
-        self.body_code_ids = set()                      # type: set[int]  # every body's and opcode callback's code, for the source map
-        self.func_callbacks = []                        # type: list[Callable]  # hooks: cb(name, func) -> None or a new body
-        self.replaced = {}                              # type: dict[str, Callable]  # replace_function name -> its body
-        self.hook_functions = []                        # type: list[Callable]  # the hooks' own functions, never the writer's
-        self.run_callbacks = []                         # type: list[Callable]  # hooks: cb(g) when the compile starts
-        self.opcode_callbacks = []                      # type: list[Callable]  # hooks: cb(opcode, *args) -> True drops it
-        self.in_opcode_callback = False                 # type: bool  # opcodes a callback emits skip the callbacks
-        self.callback_trigger = None                    # type: SourceSite | None  # the triggering opcode's site while callbacks run
-        self.added_functions = []                       # type: list[Callable]  # add_function, registered when the compile starts
-        self.injected_modules = set()                   # type: set[int]  # id() of every hook module given the script's names
-        self.globals = None                             # type: dict | None  # the script's globals, once the compile starts
-        self.registration_closed = False                # type: bool  # the header is counted: no function or hook may register
+        self.body_code_ids: set[int] = set()                 # every body's and opcode callback's code
+
+        # Hooks
+        self.func_callbacks: list[Callable] = []             # cb(name, func) -> None or a new body
+        self.replaced: dict[str, Callable] = {}              # replace_function name -> its body
+        self.hook_functions: list[Callable] = []             # the hooks' own functions, never the writer's
+        self.run_callbacks: list[Callable] = []              # cb(g) when the compile starts
+        self.opcode_callbacks: list[Callable] = []           # cb(opcode, *args) -> True drops it
+        self.in_opcode_callback: bool = False                # opcodes a callback emits skip the callbacks
+        self.callback_trigger: SourceSite | None = None      # the triggering opcode's site while callbacks run
+        self.added_functions: list[Callable] = []            # add_function, registered when the compile starts
+        self.injected_modules: set[int] = set()              # id() of every hook module given the script's names
 
     def init(self, name: str):
         self.dat_name = name

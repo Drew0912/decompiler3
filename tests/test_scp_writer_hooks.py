@@ -1278,6 +1278,27 @@ class TestOpcodeCallbacks(HookTestCase):
                                 (ED9Opcode.PUSH_RET_ADDR, ('ret',)), (ED9Opcode.CALL, (helper,)), (ED9Opcode.RETURN, ())])
         self.assertIs(type(seen[2][1][0]), int)
 
+    def test_documented_writer_state(self):
+        '''docs/LLIL_DSL.md, Hooks: a run callback reads get_scp_writer().globals; an opcode callback acts in one
+        function by checking get_scp_writer().current_function.name'''
+        self.define_target()
+        self.define_helper()
+        writer_globals = []
+        target_opcodes = []
+
+        def only_target(opcode, *args):
+            if get_scp_writer().current_function.name == 'Target':
+                target_opcodes.append(opcode)
+
+        g = {}
+        registerRunCallback(lambda _: writer_globals.append(get_scp_writer().globals))
+        registerOpcodeCallback(only_target)
+        self.parsed(g)
+
+        [seen_globals] = writer_globals
+        self.assertIs(seen_globals, g)
+        self.assertEqual(target_opcodes, [ED9Opcode.POP, ED9Opcode.RETURN])
+
     def test_source_sites(self):
         '''An opcode a callback emits is the callback's line - a functools.wraps-decorated callback's own, not its
         wrapper's - noting the opcode that triggered it; a kept triggering opcode stays its own line, after what the
