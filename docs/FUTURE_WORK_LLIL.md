@@ -175,7 +175,7 @@ byte.
 - **Validate `debug_argc` keys** (found in Step 5's review, not planned). A key that names no return
   label of the function's calls is silently ignored, so the call's debug record keeps all its arguments:
   renaming a return label by hand quietly changes the debug-record bytes (not the game logic).
-  `buildDebugRecords` could check that every key is the return label of one of the function's calls.
+  `_build_debug_records` could check that every key is the return label of one of the function's calls.
 - **Simpler Integer decode** (found in Step 5's review, not planned). `ScpValue.from_value` sign-extends
   an Integer by shifting through `0xC0000000`/`0x80000000` and a bytes round trip; with Step 5's
   `INTEGER_MAX` it is `value &= PAYLOAD_MASK`, then `value -= 1 << TYPE_SHIFT` past `INTEGER_MAX` (same

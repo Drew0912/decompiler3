@@ -331,10 +331,10 @@ that don't exist on disk yet.
 
 - *Eager registration on decoration* — the shared-library modules define plain, undecorated
   `def`s. Registration only happens when an output script's own `@scena.CommonImports()` manifest
-  imports and returns a specific function, going through the same `functionDecorator` machinery
+  imports and returns a specific function, going through the same registration machinery
   `LLILCode`/`LLILCommonCode` use (as an ordinary `is_common_func=True` registration) — so
   importing the library module itself registers nothing.
-- *Name collisions* — `functionDecorator` now raises `ValueError` on a duplicate name instead of
+- *Name collisions* — registration now raises `ValueError` on a duplicate name instead of
   silently overwriting `functions_by_name` (`scp_writer.py`). The generator additionally rejects,
   at generation time, any candidate name that collides with a Python keyword, a star-imported
   helper/opcode name, a cross-module `common_N` alias, or a name every emitted script's own

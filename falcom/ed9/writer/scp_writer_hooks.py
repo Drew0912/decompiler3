@@ -1,7 +1,8 @@
 """The hook-file API: bare-name registrations a <stem>_hook.py makes on the writer (star-imported by scp_writer_helper,
 so a hook needs only that one import), and original / inline_original_func() for hook bodies. The hooks themselves run
 inside ScpWriter.build(), where the script's names (its functions, scena, ...) are also set in each hook module, so hook
-bodies can use them like the script does"""
+bodies can use them like the script does. registerFuncCallback, registerRunCallback and registerOpcodeCallback keep
+their decompiler2-style camelCase on purpose; the other hook names are snake_case"""
 
 from typing import Callable
 

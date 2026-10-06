@@ -33,10 +33,11 @@ from .scp_compile_check import CompileCheckError, SourceSite, def_site, require_
 # PUSH's leading byte - 4 in every sample script (checked by tools/scp_roundtrip_validator.py)
 PUSH_SIZE_BYTE = 4
 
-UNRESOLVED_LABEL_OFFSET = 0xFFFFFFFF  # deliberately-invalid sentinel so a forgotten patch is obvious in a hex dump
-UNRESOLVED_FUNC_OFFSET = 0xFFFFFFFF  # placeholder for entry.offset until compileFunctions() sets the real one
-UNRESOLVED_STRING_OFFSET = 0xFFFFFFFF  # placeholder for a string reference until writeStringPool() resolves it
-UNRESOLVED_FUNC_INDEX = -1  # placeholder until buildFunctionTable() sorts the function table
+# Placeholders until a build() step fills them in; 0xFFFFFFFF is invalid, so a forgotten patch is obvious in a hex dump
+UNRESOLVED_LABEL_OFFSET = 0xFFFFFFFF  # a label operand, until _relocate_code()
+UNRESOLVED_FUNC_OFFSET = 0xFFFFFFFF  # entry.offset, until _compile_functions() sets it (code-relative until _relocate_code())
+UNRESOLVED_STRING_OFFSET = 0xFFFFFFFF  # a string reference, until _write_string_pool()
+UNRESOLVED_FUNC_INDEX = -1  # ScpFunction.index, until _build_function_table() sorts the table
 
 STRING_OFFSET_TAG = ScpValue.Type.String << 30  # 0xC0000000 - top 2 bits of a resolved string-pool offset
 NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - WORD_SIZE  # name_offset is the last field of a function entry
@@ -57,7 +58,7 @@ class LabelSite:
 
 @dataclass
 class PooledString:
-    """String-pool entry; xref_offsets are final file offsets patched by writeStringPool()"""
+    """String-pool entry; xref_offsets are final file offsets patched by _write_string_pool()"""
     text: str
     section: StringPoolSection
     xref_offsets: list[int] = field(default_factory = list)
@@ -136,7 +137,7 @@ class ScpWriter:
     check_compiled = True
 
     def __init__(self):
-        self.name = None
+        self.dat_name = None
         self.functions = []                             # type: list[ScpFunction]
         self.functions_by_name = {}                     # type: dict[str, ScpFunction]
         self.function_table = []                        # type: list[ScpFunction]
@@ -146,7 +147,6 @@ class ScpWriter:
         self.in_global_vars_body = False                # type: bool  # GLOBAL_VAR is allowed while that body runs
         # The code buffer while bodies compile, then the .dat being written (in memory)
         self.fs = None                                  # type: fileio.FileStream
-        self.instruction_table = ED9_INSTRUCTION_TABLE  # shared singleton - never construct a new ED9InstructionTable()
         self.labels = {}                                # type: dict[str, LabelSite]
         self.label_refs = []                            # type: list[LabelSite]
         self.strings = []                               # type: list[PooledString]
@@ -172,11 +172,16 @@ class ScpWriter:
         self.registration_closed = False                # type: bool  # the header is counted: no function or hook may register
 
     def init(self, name: str):
-        self.name = name
+        self.dat_name = name
+
+    @property
+    def compile_started(self) -> bool:
+        """build() has begun: the script's globals are set"""
+        return self.globals is not None
 
     # Script registration: functions, common imports and global vars
 
-    def functionDecorator(self, is_common_func: bool, debug_argc: dict[str, int] | None):
+    def _function_decorator(self, is_common_func: bool, debug_argc: dict[str, int] | None):
         def wrapper(func):
             self._require_function(func, 'LLILCommonCode' if is_common_func else 'LLILCode')
             name = func.__name__
@@ -192,13 +197,13 @@ class ScpWriter:
             entry.param_count           = len(signature.parameters)
             entry.is_common_func        = int(is_common_func)
             entry.byte06                = 0  # unknown meaning, not worrying about it per user
-            entry.default_params_count  = 0  # placeholder - overwritten by writeFuncInfo()
-            entry.default_params_offset = 0  # placeholder - overwritten by writeFuncInfo()
-            entry.param_flags_offset    = 0  # placeholder - overwritten by writeFuncInfo()
-            entry.debug_info_count      = 0  # placeholder - overwritten by writeDebugSymbols()
-            entry.debug_info_offset     = 0  # placeholder - overwritten by writeDebugSymbols()
+            entry.default_params_count  = 0  # placeholder - overwritten by _write_default_params()
+            entry.default_params_offset = 0  # placeholder - overwritten by _write_default_params()
+            entry.param_flags_offset    = 0  # placeholder - overwritten by _write_param_flags()
+            entry.debug_info_count      = 0  # placeholder - overwritten by _write_debug_records()
+            entry.debug_info_offset     = 0  # placeholder - overwritten by _write_debug_records()
             entry.name_hash             = hash_func_Name(name)
-            entry.name_offset           = 0  # unused in memory - real value patched directly into the function table by writeStringPool
+            entry.name_offset           = 0  # stays 0 in memory: _write_string_pool() patches the file's table directly
 
             f = ScpFunction(index = UNRESOLVED_FUNC_INDEX, name = name, body = func, original_body = func,
                             signature = signature, entry = entry, debug_argc = debug_argc or {})
@@ -210,10 +215,10 @@ class ScpWriter:
         return wrapper
 
     def LLILCode(self, debug_argc: dict[str, int] | None = None):
-        return self.functionDecorator(is_common_func = False, debug_argc = debug_argc)
+        return self._function_decorator(is_common_func = False, debug_argc = debug_argc)
 
     def LLILCommonCode(self, debug_argc: dict[str, int] | None = None):
-        return self.functionDecorator(is_common_func = True, debug_argc = debug_argc)
+        return self._function_decorator(is_common_func = True, debug_argc = debug_argc)
 
     def CommonImports(self):
         """Declares which common functions this script bakes into its bytecode: some imported from
@@ -239,11 +244,11 @@ class ScpWriter:
         hook adds globals with GLOBAL_VAR in a run callback, after the script's, so their indices stay.
 
         Unlike LLILCode/LLILCommonCode, the decorated body runs immediately - the table must exist before
-        compileFunctions() runs, since LOAD_GLOBAL/SET_GLOBAL resolve names against it at compile time.
+        _compile_functions() runs, since LOAD_GLOBAL/SET_GLOBAL resolve names against it at compile time.
         """
         def wrapper(func):
             self._require_function(func, 'GlobalVars')
-            if self.name is None:
+            if self.dat_name is None:
                 raise ValueError(f'{def_site(func)}: @GlobalVars() runs before create_scp_writer(); a hook adds global '
                                  'vars with GLOBAL_VAR in a run callback')
 
@@ -269,8 +274,8 @@ class ScpWriter:
             raise ValueError(f'{self.current_function.name}: GLOBAL_VAR({name!r}) is inside a function body; '
                              'declare it in @scena.GlobalVars()')
 
-        # Once the compile has started (globals set), run and function callbacks may add globals
-        if not self.in_global_vars_body and self.globals is None:
+        # Once the compile has started, run and function callbacks may add globals
+        if not self.in_global_vars_body and not self.compile_started:
             raise ValueError(f"GLOBAL_VAR({name!r}) is outside @scena.GlobalVars() and a hook's run or function callback")
 
         if name in self.global_var_indices:
@@ -306,7 +311,8 @@ class ScpWriter:
     @classmethod
     def _check_parameters(cls, func: Callable, name: str, signature: inspect.Signature):
         """Every parameter is positional, has a type and a default of that type the .dat can store, else a TypeError
-        at func's def (instead of one without a location while the body compiles or from writeFuncInfo)"""
+        at func's def (instead of one without a location while the body compiles or from _write_default_params /
+        _write_param_flags)"""
         for param in signature.parameters.values():
             try:
                 if param.kind not in POSITIONAL_KINDS:
@@ -371,11 +377,11 @@ class ScpWriter:
     def add_function(self, func: Callable) -> Callable:
         """See scp_writer_hooks.add_function"""
         self._add_hook_function(func, 'add_function (used bare: @add_function)')
-        if self.globals is None:
-            self.added_functions.append(func)
+        if self.compile_started:
+            self._register_added(func)
 
         else:
-            self._register_added(func)
+            self.added_functions.append(func)
 
         return func
 
@@ -399,7 +405,7 @@ class ScpWriter:
     def _inject(self, func: Callable):
         """Hook bodies read like the script: each script name a hook module doesn't define is set in it, once per module
         - in the modules of the functions func wraps too (a decorator from another module wraps a hook's body)"""
-        if self.globals is None:
+        if not self.compile_started:
             return
 
         for layer in self._wrapped_chain(func):
@@ -421,7 +427,7 @@ class ScpWriter:
             yield func
             func = getattr(func, '__wrapped__', None)
 
-    def applyFunctionCallbacks(self):
+    def _apply_function_callbacks(self):
         """Run the hook function callbacks over every function and give each replaced one its new body. Its position,
         table index, common flag and name hash stay; its signature merges with the replacement's"""
         for name, body in self.replaced.items():
@@ -480,12 +486,12 @@ class ScpWriter:
 
     def original_function(self, name: str) -> _OriginalFunction:
         """See scp_writer_hooks.original"""
-        if self.globals is None:
+        if not self.compile_started:
             raise ValueError(f'original.{name} is only available once the compile starts')
 
         f = self.functions_by_name.get(name)
         if f is None:
-            raise AttributeError(f'{Path(self.name).stem} has no function {name!r}')
+            raise AttributeError(f'{Path(self.dat_name).stem} has no function {name!r}')
 
         return _OriginalFunction(self, f)
 
@@ -505,9 +511,7 @@ class ScpWriter:
     def run(self, g: dict):
         """Compile the script and write the .dat - only once compiling succeeded, so a failure leaves an older .dat as it was"""
         data = self.build(g)
-
-        with open(self.name, 'wb') as f:
-            f.write(data)
+        Path(self.dat_name).write_bytes(data)
 
     def build(self, g: dict) -> bytes:
         """Compile every registered function into the script's bytes, in memory; with check_compiled, the bytes must
@@ -522,7 +526,7 @@ class ScpWriter:
         for cb in self.run_callbacks:
             cb(g)
 
-        self.applyFunctionCallbacks()
+        self._apply_function_callbacks()
 
         # Counted after the hooks, which may add functions and globals; nothing registers from here on
         self.registration_closed = True
@@ -530,41 +534,43 @@ class ScpWriter:
         hdr.function_count = len(self.functions)
         hdr.global_var_count = len(self.global_vars)
 
-        self.buildFunctionTable()
-        code = self.compileFunctions()
-        self.buildDebugRecords()
+        self._build_function_table()
+        code = self._compile_functions()
+        self._build_debug_records()
 
         self.fs = fileio.FileStream(encoding = default_encoding()).OpenMemory()
         self.fs.Write(hdr.to_bytes())  # rewritten once global_var_offset is known
 
-        self.writeFuncInfo()
-        self.writeDebugSymbols()
+        self._write_function_table()  # reserves its space; rewritten below once every offset is known
+        self._write_default_params()
+        self._write_param_flags()
+        self._write_debug_records()
 
         hdr.global_var_offset = self.fs.Position  # end of debug args, start of the global var table
-        self.writeGlobalVars()
+        self._write_global_vars()
 
         self.code_offset = self.fs.Position  # the code follows the global var table
-        self.relocateCode(code, self.code_offset)
+        self._relocate_code(code, self.code_offset)
         self.fs.Write(code)
         code_end = self.fs.Position
 
         with self.fs.PositionSaver:
-            self.flushFuncEntries()
+            self._write_function_table()
 
-        self.writeStringPool()
+        self._write_string_pool()
 
         self.fs.Position = 0
         self.fs.Write(hdr.to_bytes())
 
         data = self.fs.ReadAll()
         if self.check_compiled:
-            self.check_decompilable(data, code_end)
+            self._check_decompilable(data, code_end)
 
         return data
 
     # build()'s steps and their helpers
 
-    def buildFunctionTable(self):
+    def _build_function_table(self):
         """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this index"""
         encoding = default_encoding()
         self.function_table = sorted(self.functions, key = lambda f: f.name.encode(encoding))
@@ -574,8 +580,8 @@ class ScpWriter:
             name = self._add_string(f.name, StringPoolSection.Name)
             name.xref_offsets.append(ScpHeader.SIZE + index * ScpFunctionEntry.SIZE + NAME_OFFSET_FIELD_OFFSET)
 
-    def compileFunctions(self) -> fileio.FileStream:
-        """Compile every function in script (source) order into a memory buffer; offsets are relative until relocateCode()"""
+    def _compile_functions(self) -> fileio.FileStream:
+        """Compile every function in script (source) order into a memory buffer; offsets are relative until _relocate_code()"""
         code = fileio.FileStream(encoding = default_encoding()).OpenMemory()
         self.fs = code
         self.body_code_ids = {id(body_code) for body_code in self._body_codes()}
@@ -616,7 +622,7 @@ class ScpWriter:
     def _get_param_count(self, func: Callable) -> int:
         return self._find_function(func).entry.param_count
 
-    def buildDebugRecords(self):
+    def _build_debug_records(self):
         """Turn tracked call sites into debug-info records, in table order like the original compiler"""
         if not self.round_trip:
             return
@@ -652,35 +658,30 @@ class ScpWriter:
 
         return DebugArg(value.type, ScpValue(ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE))
 
-    def writeFuncInfo(self):
-        self.flushFuncEntries()  # reserve the function-table region before writing default-params/param-flags
-
-        for f in self.function_table:
-            entry = f.entry
-            entry.default_params_offset = self.fs.Position
-            entry.default_params_count = 0
-
-            # Stored in parameter order for the trailing defaulted parameters
-            for param in f.signature.parameters.values():
-                if param.default is param.empty:
-                    continue
-
-                entry.default_params_count += 1
-                self._write_scp_value(ScpValue(param.default), StringPoolSection.Default)  # checked at the def
-
-        for f in self.function_table:
-            entry = f.entry
-            entry.param_flags_offset = self.fs.Position
-
-            for param in f.signature.parameters.values():
-                self.fs.Write(ScpParamFlags(typ = param.annotation).to_bytes())
-
-    def flushFuncEntries(self):
+    def _write_function_table(self):
+        """The function entries, right after the header (build() writes them twice: placeholders, then the real ones)"""
         self.fs.Position = ScpHeader.SIZE
         for f in self.function_table:
             self.fs.Write(f.entry.to_bytes())
 
-    def writeDebugSymbols(self):
+    def _write_default_params(self):
+        """Each function's defaults, in table order: its trailing defaulted parameters, in parameter order"""
+        for f in self.function_table:
+            defaults = [param.default for param in f.signature.parameters.values() if param.default is not param.empty]
+            f.entry.default_params_offset = self.fs.Position
+            f.entry.default_params_count = len(defaults)
+
+            for default in defaults:
+                self._write_scp_value(ScpValue(default), StringPoolSection.Default)  # checked at the def
+
+    def _write_param_flags(self):
+        for f in self.function_table:
+            f.entry.param_flags_offset = self.fs.Position
+
+            for param in f.signature.parameters.values():
+                self.fs.Write(ScpParamFlags(typ = param.annotation).to_bytes())
+
+    def _write_debug_records(self):
         records = [record for f in self.function_table for record in f.debug_records]
         info_offset = self.fs.Position + len(records) * ScpFunctionCallDebugInfo.SIZE
 
@@ -709,12 +710,12 @@ class ScpWriter:
 
                 self.fs.WriteULong(arg.type)
 
-    def writeGlobalVars(self):
+    def _write_global_vars(self):
         for var in self.global_vars:
             self._write_string_ref(var.name, StringPoolSection.Global)
             self.fs.WriteULong(var.type)
 
-    def relocateCode(self, code: fileio.FileStream, code_offset: int):
+    def _relocate_code(self, code: fileio.FileStream, code_offset: int):
         """Move every position recorded while compiling into the code buffer to its final file offset, and patch each
         label operand with its label's file offset"""
         for f in self.functions:
@@ -736,15 +737,15 @@ class ScpWriter:
         for string, offset in self.code_string_xrefs:
             string.xref_offsets.append(offset + code_offset)
 
-    def writeStringPool(self):
-        strings = sorted(self.strings, key = lambda s: s.section) if self.round_trip else self.strings
+    def _write_string_pool(self):
+        strings = sorted(self.strings, key = lambda string: string.section) if self.round_trip else self.strings
 
-        for s in strings:
+        for string in strings:
             offset = self.fs.Position
-            self.fs.Write(str_to_bytes(s.text))
+            self.fs.Write(str_to_bytes(string.text))
 
             with self.fs.PositionSaver:
-                for xref_offset in s.xref_offsets:
+                for xref_offset in string.xref_offsets:
                     self.fs.Position = xref_offset
                     self.fs.WriteULong(offset | STRING_OFFSET_TAG)
 
@@ -796,7 +797,7 @@ class ScpWriter:
             self._track(opcode, args)
             return
 
-        descriptor = self.instruction_table.get_descriptor(opcode)
+        descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
         operand_descriptors = OperandDescriptor.from_format_string(descriptor.operand_fmt, ED9_FORMAT_TABLE)
 
         assert len(operand_descriptors) == len(args), \
@@ -917,7 +918,7 @@ class ScpWriter:
         self.labels[name] = LabelSite(name = name, offset = self.fs.Position, function_name = f.name)
 
     def _write_label_ref(self, name: str):
-        """Record the operand, then write a placeholder that relocateCode() patches"""
+        """Record the operand, then write a placeholder that _relocate_code() patches"""
         self.label_refs.append(LabelSite(name = name, offset = self.fs.Position,
                                          function_name = self.current_function.name, source = self.current_source))
         self.fs.WriteULong(UNRESOLVED_LABEL_OFFSET)
@@ -937,7 +938,7 @@ class ScpWriter:
         string = self._add_string(text, section)
 
         if section == StringPoolSection.Code:
-            self.code_string_xrefs.append((string, self.fs.Position))  # code-relative until relocateCode()
+            self.code_string_xrefs.append((string, self.fs.Position))  # code-relative until _relocate_code()
 
         else:
             string.xref_offsets.append(self.fs.Position)
@@ -947,13 +948,13 @@ class ScpWriter:
 
     # The compile check: the bytes must decompile again
 
-    def check_decompilable(self, data: bytes, code_end: int):
+    def _check_decompilable(self, data: bytes, code_end: int):
         """The compiled bytes disassemble and lift again; a failure names the script line that emitted the failing
         opcode, or the failing function's def. A function that runs on into the next function's code (no RETURN) is a
         warning while the bytes still decompile, and a note on the failure when they don't; the parser's warnings for
         unusual slots get their script line too."""
         try:
-            parser, parsed_functions = require_decompilable(data, self.name, code_end)
+            parser, parsed_functions = require_decompilable(data, self.dat_name, code_end)
 
         except ScpFunctionError as e:
             note = self._run_on(e.function, e.runs_on)
@@ -961,7 +962,7 @@ class ScpWriter:
             raise CompileCheckError(message) from e
 
         except Exception as e:
-            raise CompileCheckError(f'{self.name}: {e}') from e
+            raise CompileCheckError(f'{self.dat_name}: {e}') from e
 
         runs_on = {parsed_function.name: parsed_function.runs_on for parsed_function in parsed_functions}
         for f in self.functions:
