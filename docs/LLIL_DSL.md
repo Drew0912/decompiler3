@@ -42,8 +42,11 @@ Compilation (the actual recompilation direction):
 pass the `int` checks and encode as 1). `falcom/ed9/writer/scp_writer_helper.py` layers the DSL
 statements that emit no instruction over that (`label()`, `GLOBAL_VAR`, and `genLabel()`, a fresh
 label name for a hand-written or generated function body) and re-exports the opcode primitives via
-`from .scp_writer_opcode_handler import *`, so every generated `.py` only ever needs to import
-the helper module. A "DSL file" is a `.py` file that calls these functions in sequence, at the
+`from .scp_writer_opcode_handler import *`, plus `create_scp_writer` and `WORD_SIZE`, so every
+generated `.py` only ever needs to import the helper module. The writer's own classes and
+constants stay out of that namespace (the opcode handler imports only `get_scp_writer` from
+`scp_writer`); a script or hook that needs one imports it from `falcom.ed9.writer.scp_writer`.
+A "DSL file" is a `.py` file that calls these functions in sequence, at the
 same granularity as the disassembly — one opcode, one call. It is opcode-level Python assembly,
 not the TypeScript/HLIL-level output a person would read to understand a script.
 

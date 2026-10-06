@@ -1,8 +1,11 @@
 """DSL statements that emit no instruction (label, GLOBAL_VAR) and genLabel(), layered over the per-opcode primitives;
-also re-exports the hook-file API (scp_writer_hooks)"""
+also re-exports the hook-file API (scp_writer_hooks), create_scp_writer (every script's first call) and WORD_SIZE (hook
+bodies)"""
 
 import uuid
 
+from ir.llil import WORD_SIZE
+from .scp_writer import create_scp_writer
 from .scp_writer_opcode_handler import *
 from .scp_writer_hooks import *
 

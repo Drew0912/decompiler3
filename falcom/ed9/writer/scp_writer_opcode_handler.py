@@ -2,7 +2,7 @@
 
 from typing import Callable
 
-from .scp_writer import *
+from .scp_writer import get_scp_writer
 from ..disasm import ED9Opcode
 from ..parser.types_scp import *
 
