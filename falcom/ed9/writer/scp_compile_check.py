@@ -49,7 +49,20 @@ def source_location(site: SourceSite) -> str:
     return f'{code.co_filename}:{line or definition_line(code)}'
 
 
-def def_site(func: Callable) -> str:
+def location_prefix(site: SourceSite | None) -> str:
+    """'file:line: ' of a source site, '' without one (the source map is off); an opcode an opcode callback emitted
+    also names the callback and the triggering opcode's line"""
+    if site is None:
+        return ''
+
+    prefix = f'{source_location(site)}: '
+    if site.trigger is None:
+        return prefix
+
+    return f'{prefix}(opcode callback {site.code.co_name}, triggered at {source_location(site.trigger)}) '
+
+
+def def_location(func: Callable) -> str:
     """'file:line' of a function's own def (not of a function it wraps)"""
     code = func.__code__
     return f'{code.co_filename}:{definition_line(code)}'

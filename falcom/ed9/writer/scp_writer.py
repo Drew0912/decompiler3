@@ -28,7 +28,7 @@ from ..parser.types_scp import (
     ScpFunctionCallDebugInfoArg,
 )
 from ..parser.utils import str_to_bytes
-from .scp_compile_check import CompileCheckError, SourceSite, def_site, require_decompilable, source_location
+from .scp_compile_check import CompileCheckError, SourceSite, def_location, location_prefix, require_decompilable
 
 # PUSH's leading byte - 4 in every sample script (checked by tools/scp_roundtrip_validator.py)
 PUSH_SIZE_BYTE = 4
@@ -49,11 +49,11 @@ POSITIONAL_KINDS = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIO
 @dataclass
 class LabelSite:
     """A placed label, or an operand referring to one: the label's name, the position in the code buffer, the
-    function it is in and, for an operand while check_compiled is on, where the body emitted its opcode"""
+    function it is in and, for an operand while check_compiled is on, where its opcode was emitted"""
     name: str
     offset: int
     function_name: str
-    source: SourceSite | None = None
+    source_site: SourceSite | None = None
 
 
 @dataclass
@@ -164,9 +164,9 @@ class ScpWriter:
 
         # The compile check's source map
         self.source_map: dict[int, SourceSite] = {}          # code position -> where it was emitted
-        self.current_source: SourceSite | None = None
+        self.current_site: SourceSite | None = None          # the compiling opcode's site, for its label operand
         # id(), not the code: code objects hash their constants on every lookup and compare equal across files
-        self.body_code_ids: set[int] = set()                 # every body's and opcode callback's code
+        self.opcode_emitter_code_ids: set[int] = set()       # code of every opcode emitter and of what it wraps
 
         # Hooks
         self.func_callbacks: list[Callable] = []             # cb(name, func) -> None or a new body
@@ -175,7 +175,7 @@ class ScpWriter:
         self.run_callbacks: list[Callable] = []              # cb(g) when the compile starts
         self.opcode_callbacks: list[Callable] = []           # cb(opcode, *args) -> True drops it
         self.in_opcode_callback: bool = False                # opcodes a callback emits skip the callbacks
-        self.callback_trigger: SourceSite | None = None      # the triggering opcode's site while callbacks run
+        self.trigger_site: SourceSite | None = None          # the triggering opcode's site while callbacks run
         self.added_functions: list[Callable] = []            # add_function, registered when the compile starts
         self.injected_modules: set[int] = set()              # id() of every hook module given the script's names
 
@@ -195,7 +195,7 @@ class ScpWriter:
             name = func.__name__
             self._require_open(func)
             if name in self.functions_by_name:
-                raise ValueError(f'{def_site(func)}: duplicate function name: {name!r}')
+                raise ValueError(f'{def_location(func)}: duplicate function name: {name!r}')
 
             signature = self._signature(func, name)
             self._check_parameters(func, name, signature)
@@ -257,12 +257,12 @@ class ScpWriter:
         def wrapper(func):
             self._require_function(func, 'GlobalVars')
             if self.dat_name is None:
-                raise ValueError(f'{def_site(func)}: @GlobalVars() runs before create_scp_writer(); a hook adds global '
-                                 'vars with GLOBAL_VAR in a run callback')
+                raise ValueError(f'{def_location(func)}: @GlobalVars() runs before create_scp_writer(); '
+                                 'a hook adds global vars with GLOBAL_VAR in a run callback')
 
             if self.global_vars_block is not None:
-                raise ValueError(f'{def_site(func)}: the global var table is already declared at '
-                                 f'{def_site(self.global_vars_block)}')
+                raise ValueError(f'{def_location(func)}: the global var table is already declared at '
+                                 f'{def_location(self.global_vars_block)}')
 
             self.global_vars_block = func
             self.in_global_vars_body = True
@@ -303,8 +303,8 @@ class ScpWriter:
         """Functions and hooks register before the header counts them: in the script, at hook import time or in a run
         callback - never from a body while it compiles"""
         if self.registration_closed:
-            raise ValueError(f'{def_site(func)}: {func.__name__} is registered while the script compiles; register '
-                             'functions and hooks at hook import time or in a run callback')
+            raise ValueError(f'{def_location(func)}: {func.__name__} is registered while the script compiles; '
+                             'register functions and hooks at hook import time or in a run callback')
 
     @classmethod
     def _signature(cls, func: Callable, name: str) -> inspect.Signature:
@@ -314,7 +314,7 @@ class ScpWriter:
             return inspect.signature(func, eval_str = True)
 
         except (NameError, AttributeError, SyntaxError) as e:
-            raise TypeError(f'{def_site(func)}: {name}: {e}') from e
+            raise TypeError(f'{def_location(func)}: {name}: {e}') from e
 
     @classmethod
     def _check_parameters(cls, func: Callable, name: str, signature: inspect.Signature):
@@ -343,7 +343,7 @@ class ScpWriter:
                         cls._value_bytes(value)
 
             except (NotImplementedError, TypeError, ValueError) as e:
-                raise TypeError(f'{def_site(func)}: parameter {param.name} of {name}: {e}') from e
+                raise TypeError(f'{def_location(func)}: parameter {param.name} of {name}: {e}') from e
 
     # Hooks: the hook-file API and how build() applies it
 
@@ -362,7 +362,8 @@ class ScpWriter:
             self._add_hook_function(body, f'replace_function({name!r})')
             earlier = self.replaced.get(name)
             if earlier is not None:
-                log.warning(f'{def_site(body)}: replace_function({name!r}) again, overriding the one at {def_site(earlier)}')
+                log.warning(f'{def_location(body)}: replace_function({name!r}) again, '
+                            f'overriding the one at {def_location(earlier)}')
 
             self.replaced[name] = body
             self.func_callbacks.append(lambda func_name, func: body if func_name == name else None)
@@ -397,8 +398,8 @@ class ScpWriter:
         """An added function joins the script's after its own functions, so their code stays where it was"""
         existing = self.functions_by_name.get(func.__name__)
         if existing is not None:
-            raise ValueError(f'{def_site(func)}: add_function: {func.__name__!r} is already defined at '
-                             f'{def_site(existing.original_body)}; replace_function replaces a function')
+            raise ValueError(f'{def_location(func)}: add_function: {func.__name__!r} is already defined at '
+                             f'{def_location(existing.original_body)}; replace_function replaces a function')
 
         self.LLILCode()(func)
 
@@ -440,7 +441,8 @@ class ScpWriter:
         table index, common flag and name hash stay; its signature merges with the replacement's"""
         for name, body in self.replaced.items():
             if name not in self.functions_by_name:
-                raise ValueError(f'{def_site(body)}: replace_function({name!r}): the script has no function {name!r}')
+                raise ValueError(f'{def_location(body)}: replace_function({name!r}): '
+                                 f'the script has no function {name!r}')
 
         for f in self.functions:
             body = f.body
@@ -448,12 +450,12 @@ class ScpWriter:
                 counts = (len(self.functions), len(self.hook_functions))  # every hook registration grows hook_functions
                 replacement = cb(f.name, body)
                 if (len(self.functions), len(self.hook_functions)) != counts:
-                    raise ValueError(f"{def_site(cb)}: a function callback can't register functions or callbacks")
+                    raise ValueError(f"{def_location(cb)}: a function callback can't register functions or callbacks")
 
                 if replacement is None:
                     continue
 
-                self._require_function(replacement, f'{def_site(cb)}: {cb.__name__} for {f.name}')
+                self._require_function(replacement, f'{def_location(cb)}: {cb.__name__} for {f.name}')
                 if replacement is not body:  # a body merely passed on may be the script's or a library's: no names for it
                     self._inject(replacement)
 
@@ -473,11 +475,12 @@ class ScpWriter:
         params = list(signature.parameters.values())
         others = [param.name for param in params if param.kind not in POSITIONAL_KINDS]
         if others:
-            raise TypeError(f"{def_site(body)}: {f.name}'s replacement can't take *args, keyword-only or **kwargs "
+            raise TypeError(f"{def_location(body)}: {f.name}'s replacement can't take *args, keyword-only or **kwargs "
                             f"parameters ({', '.join(others)}); a wrapper keeps the replaced signature with functools.wraps")
 
         if len(params) != f.entry.param_count:
-            raise TypeError(f'{def_site(body)}: {f.name} takes {f.entry.param_count} parameters, its replacement {len(params)}')
+            raise TypeError(f'{def_location(body)}: {f.name} takes {f.entry.param_count} parameters, '
+                            f'its replacement {len(params)}')
 
         merged = [param.replace(annotation = original.annotation if param.annotation is param.empty else param.annotation,
                                 default = original.default if param.default is param.empty else param.default)
@@ -592,7 +595,7 @@ class ScpWriter:
         """Compile every function in script (source) order into a memory buffer; offsets are relative until _relocate_code()"""
         code = fileio.FileStream(encoding = default_encoding()).OpenMemory()
         self.fs = code
-        self.body_code_ids = {id(body_code) for body_code in self._body_codes()}
+        self.opcode_emitter_code_ids = {id(emitter_code) for emitter_code in self._opcode_emitter_codes()}
 
         try:
             for f in self.functions:
@@ -617,15 +620,22 @@ class ScpWriter:
         """Emit a body's opcodes; an LLIL body reads its arguments from the VM stack, not from its parameters"""
         body(*[None] * f.entry.param_count)
 
-    def _body_codes(self):
-        """The code of every body that can emit opcodes - each function's original and replacements (f.body is one of
-        them), each opcode callback - and of what they wrap"""
-        bodies = [body for f in self.functions for body in (f.original_body, *f.callback_bodies)] + self.opcode_callbacks
-        for body in bodies:
-            for func in self._wrapped_chain(body):
-                body_code = getattr(func, '__code__', None)
-                if body_code is not None:
-                    yield body_code
+    def _opcode_emitters(self):
+        """The functions the compile runs to emit opcodes: each function's original body and every body its function
+        callbacks returned (f.body is one of them), and each opcode callback"""
+        for f in self.functions:
+            yield f.original_body
+            yield from f.callback_bodies
+
+        yield from self.opcode_callbacks
+
+    def _opcode_emitter_codes(self):
+        """The code of every opcode emitter and of the functions it wraps"""
+        for emitter in self._opcode_emitters():
+            for layer in self._wrapped_chain(emitter):
+                code = getattr(layer, '__code__', None)
+                if code is not None:
+                    yield code
 
     def _get_param_count(self, func: Callable) -> int:
         return self._find_function(func).entry.param_count
@@ -733,11 +743,12 @@ class ScpWriter:
             for ref in self.label_refs:
                 label = self.labels.get(ref.name)
                 if label is None:
-                    raise ValueError(f'{self._site_prefix(ref.source)}{ref.function_name}: undefined label {ref.name!r}')
+                    raise ValueError(f'{location_prefix(ref.source_site)}{ref.function_name}: '
+                                     f'undefined label {ref.name!r}')
 
                 if label.function_name != ref.function_name:
-                    log.warning(f'{self._site_prefix(ref.source)}{ref.function_name}: jumps to label {ref.name!r} in '
-                                f'{label.function_name} (another function)')
+                    log.warning(f'{location_prefix(ref.source_site)}{ref.function_name}: '
+                                f'jumps to label {ref.name!r} in {label.function_name} (another function)')
 
                 code.Position = ref.offset
                 code.WriteULong(label.offset + code_offset)
@@ -763,12 +774,13 @@ class ScpWriter:
         if self.current_function is None:
             raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
-        site = self._opcode_source() if self.check_compiled else None
-        if self.opcode_callbacks and not self.in_opcode_callback and self._dropped_by_callbacks(opcode, args, site):
+        site = self._opcode_site() if self.check_compiled else None
+        if (self.opcode_callbacks and not self.in_opcode_callback
+                and self._dropped_by_opcode_callbacks(opcode, args, site)):
             return
 
         if self.check_compiled:
-            self.current_source = site
+            self.current_site = site
             self.source_map[self.fs.Position] = site
 
         # bool is an int subclass, so the opcode functions' isinstance asserts accept True/False
@@ -818,11 +830,11 @@ class ScpWriter:
 
         self._track(opcode, args)
 
-    def _dropped_by_callbacks(self, opcode: int, args: tuple, site: SourceSite | None) -> bool:
+    def _dropped_by_opcode_callbacks(self, opcode: int, args: tuple, site: SourceSite | None) -> bool:
         """Run the opcode callbacks, in registration order, on an opcode a body emits; True when one drops it, and the
         rest don't run. The opcodes a callback emits skip the callbacks and carry site as their trigger"""
         self.in_opcode_callback = True
-        self.callback_trigger = site
+        self.trigger_site = site
         try:
             for cb in self.opcode_callbacks:
                 result = cb(opcode, *args)
@@ -830,24 +842,24 @@ class ScpWriter:
                     return True
 
                 if result is not None and result is not False:
-                    raise TypeError(f'{def_site(cb)}: opcode callback {cb.__name__} returned {result!r}: True drops the '
-                                    'opcode, None or False keeps it')
+                    raise TypeError(f'{def_location(cb)}: opcode callback {cb.__name__} returned {result!r}: '
+                                    'True drops the opcode, None or False keeps it')
 
             return False
 
         finally:
             self.in_opcode_callback = False
-            self.callback_trigger = None
+            self.trigger_site = None
 
-    def _opcode_source(self) -> SourceSite | None:
-        """Where a body emitted the opcode being compiled: the innermost frame running any body - the function's own, a
-        hook's replacement or wrapper, an inlined original, an opcode callback (a helper the body called counts as the
-        body's call). f_lasti, not f_lineno: f_lineno scans the line table, which grows with the body"""
+    def _opcode_site(self) -> SourceSite | None:
+        """Where the opcode being compiled was emitted: the innermost frame running an opcode emitter or a function it
+        wraps (a helper either called counts as its call). f_lasti, not f_lineno: f_lineno scans the line table,
+        which grows with the function"""
         frame = sys._getframe(1)
-        while frame is not None and id(frame.f_code) not in self.body_code_ids:
+        while frame is not None and id(frame.f_code) not in self.opcode_emitter_code_ids:
             frame = frame.f_back
 
-        return SourceSite(frame.f_code, frame.f_lasti, self.callback_trigger) if frame is not None else None
+        return SourceSite(frame.f_code, frame.f_lasti, self.trigger_site) if frame is not None else None
 
     def _track(self, opcode: int, args: tuple, payload = None):
         if self.call_tracker is not None:
@@ -928,7 +940,7 @@ class ScpWriter:
     def _write_label_ref(self, name: str):
         """Record the operand, then write a placeholder that _relocate_code() patches"""
         self.label_refs.append(LabelSite(name = name, offset = self.fs.Position,
-                                         function_name = self.current_function.name, source = self.current_source))
+                                         function_name = self.current_function.name, source_site = self.current_site))
         self.fs.WriteULong(UNRESOLVED_LABEL_OFFSET)
 
     def _add_string(self, text: str, section: StringPoolSection) -> PooledString:
@@ -965,8 +977,8 @@ class ScpWriter:
             parser, parsed_functions = require_decompilable(data, self.dat_name, code_end)
 
         except ScpFunctionError as e:
-            note = self._run_on(e.function, e.runs_on)
-            message = f'{self._failure_location(e.function, e.offset)}{e}' + (f'; {note}' if note else '')
+            note = self._run_on_note(e.function, e.runs_on)
+            message = f'{self._failure_prefix(e.function, e.offset)}{e}' + (f'; {note}' if note else '')
             raise CompileCheckError(message) from e
 
         except Exception as e:
@@ -974,7 +986,7 @@ class ScpWriter:
 
         runs_on = {parsed_function.name: parsed_function.runs_on for parsed_function in parsed_functions}
         for f in self.functions:
-            note = self._run_on(f.name, runs_on.get(f.name))
+            note = self._run_on_note(f.name, runs_on.get(f.name))
             if note:
                 log.warning(note)
 
@@ -982,52 +994,42 @@ class ScpWriter:
             for inst in parser.get_instructions(parsed_function):
                 ref = parsed_function.stack_layout.slot_refs.get(inst.offset)
                 if ref is not None and ref.unusual:
-                    log.warning(self._failure_location(parsed_function.name, inst.offset)
-                                + ScpFunctionError.describe(parsed_function.name, f'addresses {ref}', inst))
+                    log.warning(self._failure_text(parsed_function.name, f'addresses {ref}', inst))
 
-    def _run_on(self, function: str | None, inst: Instruction | None) -> str | None:
-        """How function runs on into the next function's code, located: it has no code at all, or inst runs past its
-        end (the parser found it; for an empty function that is the next one's). None when it doesn't"""
-        f = self.functions_by_name.get(function)
+    def _run_on_note(self, function_name: str | None, inst: Instruction | None) -> str | None:
+        """How the function runs on into the next function's code, located: it has no code at all, or inst runs past
+        its end (the parser found it; for an empty function that is the next one's). None when it doesn't"""
+        f = self.functions_by_name.get(function_name)
         if f is None:
             return None
 
         following = self.functions[self.functions.index(f) + 1:]
         if following and following[0].entry.offset == f.entry.offset:
-            return (f'{self._failure_location(function, None)}{function}: has no code, so it runs on into '
-                    f'{following[0].name} without RETURN')
+            return self._failure_text(f.name, f'has no code, so it runs on into {following[0].name} without RETURN')
 
         if inst is not None:
             end = inst.offset + inst.size
             into = next(other.name for other in following if other.entry.offset == end)
-            return f'{self._failure_location(function, inst.offset)}' + ScpFunctionError.describe(
-                function, f'runs past its end into {into} without RETURN', inst)
+            return self._failure_text(f.name, f'runs past its end into {into} without RETURN', inst)
 
         return None
 
-    def _failure_location(self, function: str | None, offset: int | None) -> str:
-        """'file:line: ' of the opcode compiled at a file offset, else of the function's def; '' when neither is known"""
-        source = self.source_map.get(offset - self.code_offset) if offset is not None else None
-        if source is not None:
-            return self._site_prefix(source)
+    def _failure_text(self, function_name: str, message: str, inst: Instruction | None = None) -> str:
+        """The failure prefix of inst, else of the function's def, then ScpFunctionError.describe()'s text"""
+        offset = inst.offset if inst is not None else None
+        return self._failure_prefix(function_name, offset) + ScpFunctionError.describe(function_name, message, inst)
 
-        f = self.functions_by_name.get(function)
+    def _failure_prefix(self, function_name: str | None, offset: int | None) -> str:
+        """'file:line: ' of the opcode compiled at a file offset, else of the function's def; '' when neither is known"""
+        site = self.source_map.get(offset - self.code_offset) if offset is not None else None
+        if site is not None:
+            return location_prefix(site)
+
+        f = self.functions_by_name.get(function_name)
         if f is None:
             return ''
 
-        return f'{def_site(f.body)}: '
-
-    @classmethod
-    def _site_prefix(cls, site: SourceSite | None) -> str:
-        """'file:line: ' of a source site, '' without one (the source map is off); an opcode an opcode callback emitted
-        also names the callback and the triggering opcode's line"""
-        if site is None:
-            return ''
-
-        if site.trigger is None:
-            return f'{source_location(site)}: '
-
-        return f'{source_location(site)}: (opcode callback {site.code.co_name}, triggered at {source_location(site.trigger)}) '
+        return f'{def_location(f.body)}: '
 
 
 _gScp = ScpWriter()

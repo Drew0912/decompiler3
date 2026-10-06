@@ -39,18 +39,19 @@ def add_function(func: Callable) -> Callable:
     return get_scp_writer().add_function(func)
 
 
-class _Original:
+class _OriginalNamespace:
     """original.Name(...) in a hook body inlines the script's own Name - its body from before any hook - right there,
     with arguments as for a normal call to it. CALL(original.Name) is CALL(Name). Available once the compile starts"""
 
     def __getattr__(self, name: str) -> Callable:
+        # Python's own dunder probes (inspect.unwrap, copy.deepcopy) are not function names and expect AttributeError
         if name.startswith('__'):
             raise AttributeError(name)
 
         return get_scp_writer().original_function(name)
 
 
-original = _Original()
+original = _OriginalNamespace()
 
 
 def inline_original_func():
