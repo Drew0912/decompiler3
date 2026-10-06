@@ -1,13 +1,13 @@
 # Future Work: LLIL
 
 > Ideas for the LLIL layer (the LLIL DSL `.py`, the writer and the `.llil.asm` listing) from a
-> 2026-09-30 review of the decompiled output. All of them were decided with the user on 2026-10-01 and
-> are planned, not started: the plan is `llil-dsl-neatening.md` (Steps 1-11; kept with Claude's active
-> plans while it runs, then archived to `notes/plans/archive/`), and the decisions, with the evidence
-> behind them, are in `notes/llil_dsl_neatening_handoff.md`. Both are local, gitignored notes. Each
-> entry names its handoff item and plan step and is marked done when the step lands. HLIL-level ideas
-> from the same review, including the HLIL DSL, are in `docs/FUTURE_WORK.md` (HLIL). As there, each
-> entry links back to the doc or code it extends.
+> 2026-09-30 review of the decompiled output, decided with the user on 2026-10-01: the plan
+> `llil-dsl-neatening.md` (Steps 1-11, closed 2026-10-06, archived in `notes/plans/archive/`) did every
+> one taken on, the rest are under Not Doing, and the decisions, with the evidence behind them, are in
+> `notes/llil_dsl_neatening_handoff.md`. Both are local, gitignored notes. Each entry names its handoff
+> item and the plan step that did it; two found in the plan's reviews are recorded but not planned.
+> HLIL-level ideas from the same review, including the HLIL DSL, are in `docs/FUTURE_WORK.md` (HLIL). As
+> there, each entry links back to the doc or code it extends.
 
 ## LLIL DSL (`docs/LLIL_DSL.md`)
 

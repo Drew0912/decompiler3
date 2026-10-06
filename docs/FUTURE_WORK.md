@@ -428,11 +428,11 @@ If(btl_check_resist_condition(65507, 50, 0) == 0, [
 
 ### HLIL DSL: Hooks and Patching
 
-Hook files keep decompiler2's ED8.x layout: each script `<stem>.py` imports the `<stem>_hook.py` next
-to it, and a build script runs each `.py` (which compiles it) and moves the `.dat` into the game's
-patch folder. The hooks themselves already exist for LLIL DSL scripts (`docs/LLIL_DSL.md` §4): the raw
-callbacks, `@replace_function`, `@add_function`, `original.Name(...)` and `inline_original_func()`. An HLIL
-DSL writer keeps the same API.
+**Not started; after the HLIL DSL writer** (user, 2026-10-06). Hook files keep decompiler2's ED8.x layout:
+each script `<stem>.py` imports the `<stem>_hook.py` next to it, and a build script runs each `.py` (which
+compiles it) and moves the `.dat` into the game's patch folder. The hooks themselves already exist for LLIL
+DSL scripts (`docs/LLIL_DSL.md` §4): the raw callbacks, `@replace_function`, `@add_function`,
+`original.Name(...)` and `inline_original_func()`. An HLIL DSL writer keeps the same API.
 
 - **Inlining in the list form:** in an executed list-form replacement, `inline_original_func()` inlines
   the original body, and the replacement then shares its locals.

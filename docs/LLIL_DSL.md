@@ -189,7 +189,10 @@ explicitly excluded from the "game logic" definition above (function order, debu
 string-pool layout). This is the expected, designed consequence of pulling matched functions out of
 their original source position into the shared-library import path, not a regression. 127 files'
 worst status was an informational WARN (mostly pre-existing "N unreachable ranges" notes, same
-category as the pre-library baseline).
+category as the pre-library baseline). **Re-run 2026-10-06** at `ebf2578`, with the compile check
+(§1) in every compile: again 0 logic round-trip failures and 0 errors, every file at the fixed point
+at round 2, and the same worst-status split (721 PASS, 127 WARN, 234 FAIL on the source's format
+checks only).
 
 **Generation** (bytecode → `.py`): `Formatter.format_function`/`format_block`
 (`falcom/ed9/disasm/formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
@@ -246,7 +249,7 @@ to `True`.
 baseline samples (`sora2_1.0/script_en/scena/e0000.dat`, `e2000.dat`, `mp0000_ev.dat`, `system.dat`,
 and `sora2_1.0/script_en/ai/ai_chr0100_e00.dat`), and `--logic-round-trip` converges at round 2 on
 all 5 (2026-10-01). On a 300-file quota sample of `sora2_1.0` that includes them (2026-10-01; list
-and results in the gitignored `notes/llil_dsl_neatening/validator300/`), 265 files are byte-identical
+and results in the gitignored `notes/validator300/`), 265 files are byte-identical
 and all 300 converge at round 2. The logic round trip is also measured corpus-wide (above), and so is
 the byte-exact one: 855 of 1,082 `sora2_1.0` files are byte-identical (2026-10-01,
 `notes/debug_records_handoff.md`). Nearly all of the others differ only in their rebuilt debug
