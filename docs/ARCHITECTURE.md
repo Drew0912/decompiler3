@@ -125,8 +125,9 @@ the game's conventions (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary").
 ## Recompilation Pipeline — Core mechanism implemented, extensions planned
 
 **Location:** `falcom/ed9/writer/` (`scp_writer.py`, `scp_writer_opcode_handler.py`,
-`scp_writer_helper.py`, `scp_writer_hooks.py`, `scp_compile_check.py`, `scp_writer_gen_common_funcs.py`,
-`metadata/`), driven by `falcom/ed9/scena2py.py`, validated by `tools/scp_roundtrip_validator.py`.
+`scp_writer_helper.py`, `scp_writer_hooks.py`, `scp_writer_hook_registry.py`, `scp_compile_check.py`,
+`scp_writer_gen_common_funcs.py`, `metadata/`), driven by `falcom/ed9/scena2py.py`, validated by
+`tools/scp_roundtrip_validator.py`.
 
 A `.py` source file — sequential calls to per-opcode functions, one per VM opcode — executed
 against a `ScpWriter` to emit bytecode. Compilation itself only needs that `.py` file. The Parser

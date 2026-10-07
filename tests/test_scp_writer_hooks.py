@@ -21,7 +21,7 @@ from common.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_scp import ScpParamFlags
-from falcom.ed9.writer import scp_writer, scp_writer_helper, scp_writer_hooks
+from falcom.ed9.writer import scp_writer, scp_writer_helper, scp_writer_hook_registry, scp_writer_hooks
 from falcom.ed9.writer.scp_compile_check import CompileCheckError
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_writer_test_utils import WriterTestCase, at, load_module, marked_line
@@ -195,7 +195,7 @@ class TestReplace(HookTestCase):
         self.assertIs(registerOpcodeCallback(opcode_cb), opcode_cb)
         body = replace_function('Target')(lambda arg1: None)
 
-        self.assertEqual(self.writer.hook_functions, [raw, run, opcode_cb, body])
+        self.assertEqual(self.writer.hooks.hook_functions, [raw, run, opcode_cb, body])
 
     def test_on_top_of_a_body_decorator(self):
         '''The decorator's opcodes are compiled: placed below it, replace_function would take the undecorated body'''
@@ -1096,7 +1096,7 @@ class TestInjection(HookTestCase):
         self.assertEqual((hook.Shared, hook.OnlyScript), ('hook', 'script'))
         self.assertNotIn('__only_script__', vars(hook))
 
-        for module in (scp_writer, scp_writer_helper, scp_writer_hooks):
+        for module in (scp_writer, scp_writer_helper, scp_writer_hook_registry, scp_writer_hooks):
             self.assertNotIn('OnlyScript', vars(module))
 
 

@@ -497,6 +497,37 @@ small, and only the logic round trip is needed, not byte-exact output.
   HLIL DSL tree, or a fingerprint of the opcode sequence alone; line numbers would then be an optional
   shortcut where they exist.
 
+### HLIL DSL: Script-Facing Modules
+
+**Not started; decide when the HLIL DSL plan is drafted** (idea 2026-10-07, from the writer neatening plan).
+What a `.py` and a hook file call by bare name sits in `falcom/ed9/writer/` beside the compiler: the opcode
+functions (`scp_writer_opcode_handler.py`), `label` / `GLOBAL_VAR` / `genLabel` (`scp_writer_helper.py`, the
+module every script and hook file imports) and the hook API (`scp_writer_hooks.py`). The HLIL DSL adds a larger
+surface (Form's nodes, `Locals`, `this` / `script`, library stubs, `@scena.HLILCode()`), and a mixed file needs
+both levels, so the script-facing modules could move into a package of their own while the compiler
+(`ScpWriter`, the hook registry, the compile check, the lowering) stays in `writer/`:
+
+```
+falcom/ed9/dsl/         # what scripts and hook files import
+    opcodes.py          # scp_writer_opcode_handler.py: the opcode functions, used by both levels
+    hooks.py            # scp_writer_hooks.py: the hook API, the same for both levels
+    llil.py             # scp_writer_helper.py: label, GLOBAL_VAR, genLabel and the re-exports
+    hlil.py             # the HLIL nodes, Locals, this / script, ...
+```
+
+- **The shape follows the open questions:** stubs or namespaces for calls (Open Questions), star imports or
+  explicit imports with `.pyi` stubs (Form, Tooling), and the import module's name (the hook example above uses
+  `ed9_hlil`).
+- **The hook API stays one level-neutral module** that both levels' import modules re-export; it was kept apart
+  from the LLIL helper for this reason (2026-10-07).
+- **Cost:** every generated script, library module and hook file imports `falcom.ed9.writer.scp_writer_helper`,
+  so the move needs a one-line forwarding module at the old path, or re-decompiling the scripts and regenerating
+  the library. The `metadata/` move (a follow-up of the writer neatening plan) changes the scripts'
+  `common_all` import line and asks the same question; doing both in one window means one regeneration.
+- **Collision check:** the library generator reserves the DSL namespace's names (`RESERVED_HELPER_NAMES`,
+  `scp_writer_gen_common_funcs.py`), so a package that adds names to it is checked against the corpus and the
+  library first.
+
 ### Open Questions
 
 - **Calls:** stubs (bare names, above) or namespaces (`lib.chr_info(...)`, `this.Foo(...)`). Leaning

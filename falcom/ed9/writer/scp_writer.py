@@ -5,11 +5,9 @@ import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from types import FunctionType
 from typing import Callable
 
 from common import fileio
-
 from common.config import default_encoding
 from common.logging import log
 from ir.llil import WORD_SIZE
@@ -29,6 +27,7 @@ from ..parser.types_scp import (
 )
 from ..parser.utils import str_to_bytes
 from .scp_compile_check import CheckedFunction, CompileCheck, SourceSite, def_location, location_prefix
+from .scp_writer_hook_registry import HookRegistry, require_function, wrapped_chain
 
 # PUSH's leading byte - 4 in every sample script (checked by tools/scp_roundtrip_validator.py)
 PUSH_SIZE_BYTE = 4
@@ -93,39 +92,6 @@ class ScpFunction:
     callback_bodies: list[Callable] = field(default_factory = list)  # from function callbacks, in chain order; may repeat or include the original
 
 
-class _OriginalFunction:
-    """What original.Name returns. Not a plain function, so it can't become a replacement or a callback (the script's
-    names would be set in this module)"""
-
-    def __init__(self, writer: 'ScpWriter', f: ScpFunction):
-        self.writer = writer
-        self.function = f
-        self.__name__ = f.name  # CALL(original.Name) finds the function by name, like CALL(Name)
-
-    @property
-    def __signature__(self) -> inspect.Signature:
-        """The original's, so a functools.wraps wrapper of original.Name keeps it"""
-        return self.writer._signature(self.function.original_body, self.function.name)
-
-    def __call__(self, *args, **kwargs):
-        """Bound like a call to the original, never read (see _run_body)"""
-        f = self.function
-        if self.writer.current_function is None:
-            raise ValueError(f'original.{f.name}() is outside a function body')
-
-        signature = self.__signature__
-        try:
-            signature.bind(*args, **kwargs)
-
-        except TypeError as e:
-            raise TypeError(f'original.{f.name}(): {e}') from e
-
-        self.writer._run_body(f, f.original_body)
-
-    def __repr__(self) -> str:
-        return f'original.{self.__name__}'
-
-
 class ScpWriter:
     """Compiles the opcode calls of an executed DSL script into a .dat"""
 
@@ -169,15 +135,7 @@ class ScpWriter:
         self.opcode_emitter_code_ids: set[int] = set()       # code of every opcode emitter and of what it wraps
 
         # Hooks
-        self.func_callbacks: list[Callable] = []             # cb(name, func) -> None or a new body
-        self.replaced: dict[str, Callable] = {}              # replace_function name -> its body
-        self.hook_functions: list[Callable] = []             # the hooks' own functions, never the writer's
-        self.run_callbacks: list[Callable] = []              # cb(g) when the compile starts
-        self.opcode_callbacks: list[Callable] = []           # cb(opcode, *args) -> True drops it
-        self.in_opcode_callback: bool = False                # opcodes a callback emits skip the callbacks
-        self.trigger_site: SourceSite | None = None          # the triggering opcode's site while callbacks run
-        self.added_functions: list[Callable] = []            # add_function, registered when the compile starts
-        self.injected_modules: set[int] = set()              # id() of every hook module given the script's names
+        self.hooks: HookRegistry = HookRegistry(self)
 
     def init(self, name: str):
         self.dat_name = name
@@ -187,7 +145,7 @@ class ScpWriter:
         """build() has begun: the script's globals are set"""
         return self.globals is not None
 
-    # Script registration: functions, common imports and global vars
+    # Script registration: functions, common imports, global vars and replaced bodies
 
     def LLILCode(self, debug_argc: dict[str, int] | None = None):
         def wrapper(func):
@@ -229,7 +187,7 @@ class ScpWriter:
         _compile_functions() runs, since LOAD_GLOBAL/SET_GLOBAL resolve names against it at compile time.
         """
         def wrapper(func):
-            self._require_function(func, 'GlobalVars')
+            require_function(func, 'GlobalVars')
             if self.dat_name is None:
                 raise ValueError(f'{def_location(func)}: @GlobalVars() runs before create_scp_writer(); '
                                  'a hook adds global vars with GLOBAL_VAR in a run callback')
@@ -276,7 +234,7 @@ class ScpWriter:
     def _register_function(self, func: Callable, is_common_func: bool = False,
                            debug_argc: dict[str, int] | None = None):
         """A script function: checked, then given its pending table entry (registration order is code order)"""
-        self._require_function(func, 'LLILCommonCode' if is_common_func else 'LLILCode')
+        require_function(func, 'LLILCommonCode' if is_common_func else 'LLILCode')
         self._require_open(func)
         name = func.__name__
         if name in self.functions_by_name:
@@ -353,149 +311,6 @@ class ScpWriter:
             except (NotImplementedError, TypeError, ValueError) as e:
                 raise TypeError(f'{def_location(func)}: parameter {param.name} of {name}: {e}') from e
 
-    # Hooks: the hook-file API and how build() applies it
-
-    def registerFuncCallback(self, cb: Callable) -> Callable:
-        """See scp_writer_hooks.registerFuncCallback"""
-        self._add_hook_function(cb, 'registerFuncCallback')
-        self.func_callbacks.append(cb)
-        return cb
-
-    def replace_function(self, name: str):
-        """See scp_writer_hooks.replace_function"""
-        if not isinstance(name, str):
-            raise TypeError(f"replace_function takes the function's name - @replace_function('Name') - not {name!r}")
-
-        def wrapper(body):
-            self._add_hook_function(body, f'replace_function({name!r})')
-            earlier = self.replaced.get(name)
-            if earlier is not None:
-                log.warning(f'{def_location(body)}: replace_function({name!r}) again, '
-                            f'overriding the one at {def_location(earlier)}')
-
-            self.replaced[name] = body
-            self.func_callbacks.append(lambda func_name, func: body if func_name == name else None)
-            return body
-
-        return wrapper
-
-    def registerRunCallback(self, cb: Callable) -> Callable:
-        """See scp_writer_hooks.registerRunCallback"""
-        self._add_hook_function(cb, 'registerRunCallback')
-        self.run_callbacks.append(cb)
-        return cb
-
-    def registerOpcodeCallback(self, cb: Callable) -> Callable:
-        """See scp_writer_hooks.registerOpcodeCallback"""
-        self._add_hook_function(cb, 'registerOpcodeCallback')
-        self.opcode_callbacks.append(cb)
-        return cb
-
-    def add_function(self, func: Callable) -> Callable:
-        """See scp_writer_hooks.add_function"""
-        self._add_hook_function(func, 'add_function (used bare: @add_function)')
-        if self.compile_started:
-            self._register_added(func)
-
-        else:
-            self.added_functions.append(func)
-
-        return func
-
-    def _register_added(self, func: Callable):
-        """An added function joins the script's after its own functions, so their code stays where it was"""
-        existing = self.functions_by_name.get(func.__name__)
-        if existing is not None:
-            raise ValueError(f'{def_location(func)}: add_function: {func.__name__!r} is already defined at '
-                             f'{def_location(existing.original_body)}; replace_function replaces a function')
-
-        self._register_function(func)
-
-    def _add_hook_function(self, func: Callable, what: str):
-        """A hook's own function, a plain one (what names it in the error): given the script's names now if the
-        compile has started, else when it starts"""
-        self._require_function(func, what)
-        self._require_open(func)
-        self.hook_functions.append(func)
-        self._inject(func)
-
-    def _inject(self, func: Callable):
-        """Hook bodies read like the script: each script name a hook module doesn't define is set in it, once per module
-        - in the modules of the functions func wraps too (a decorator from another module wraps a hook's body)"""
-        if not self.compile_started:
-            return
-
-        for layer in self._wrapped_chain(func):
-            module = getattr(layer, '__globals__', None)
-            if module is None or id(module) in self.injected_modules:
-                continue
-
-            self.injected_modules.add(id(module))
-            for name, value in self.globals.items():
-                if not name.startswith('__'):
-                    module.setdefault(name, value)
-
-    @classmethod
-    def _wrapped_chain(cls, func: Callable):
-        """func, then each function it wraps (functools.wraps sets __wrapped__); a cycle ends the chain"""
-        seen = set()
-        while func is not None and id(func) not in seen:
-            seen.add(id(func))
-            yield func
-            func = getattr(func, '__wrapped__', None)
-
-    def _start_hooks(self, g: dict):
-        """The compile starts: added functions register after the script's, each hook module gets the script's names,
-        the run callbacks run, then the function callbacks"""
-        self.globals = g  # compile_started: from here on add_function registers at once, GLOBAL_VAR and _inject work
-        for func in self.added_functions:
-            self._register_added(func)
-
-        for func in self.hook_functions:
-            self._inject(func)
-
-        for cb in self.run_callbacks:
-            cb(g)
-
-        self._apply_function_callbacks()
-
-    def _apply_function_callbacks(self):
-        """Run the hook function callbacks over every function and give each replaced one its new body"""
-        self._require_replaced_functions_exist()
-        for f in self.functions:
-            body = f.body
-            for cb in self.func_callbacks:
-                replacement = self._call_function_callback(cb, f, body)
-                if replacement is not None:
-                    body = replacement
-                    f.callback_bodies.append(body)
-
-            if body is not f.body:
-                self._replace_body(f, body)
-
-    def _require_replaced_functions_exist(self):
-        for name, body in self.replaced.items():
-            if name not in self.functions_by_name:
-                raise ValueError(f'{def_location(body)}: replace_function({name!r}): '
-                                 f'the script has no function {name!r}')
-
-    def _call_function_callback(self, cb: Callable, f: ScpFunction, body: Callable) -> Callable | None:
-        """What cb returns for f's body so far: None, or a plain function, given the script's names unless it is that
-        body passed on"""
-        counts = (len(self.functions), len(self.hook_functions))  # every hook registration grows hook_functions
-        replacement = cb(f.name, body)
-        if (len(self.functions), len(self.hook_functions)) != counts:
-            raise ValueError(f"{def_location(cb)}: a function callback can't register functions or callbacks")
-
-        if replacement is None:
-            return None
-
-        self._require_function(replacement, f'{def_location(cb)}: {cb.__name__} for {f.name}')
-        if replacement is not body:  # a body merely passed on may be the script's or a library's: no names for it
-            self._inject(replacement)
-
-        return replacement
-
     @classmethod
     def _replace_body(cls, f: ScpFunction, body: Callable):
         """f keeps its position, table index, common flag and name hash; its signature merges with the replacement's"""
@@ -525,34 +340,6 @@ class ScpWriter:
         cls._check_parameters(body, f.name, merged_signature)
         return merged_signature
 
-    @classmethod
-    def _require_function(cls, obj, what: str):
-        """Hooks are plain functions: the source map and the error locations need their code"""
-        if not isinstance(obj, FunctionType):
-            raise TypeError(f'{what}: expected a plain function (def), not {obj!r}')
-
-    def original_function(self, name: str) -> _OriginalFunction:
-        """See scp_writer_hooks.original"""
-        if not self.compile_started:
-            raise ValueError(f'original.{name} is only available once the compile starts')
-
-        f = self.functions_by_name.get(name)
-        if f is None:
-            raise AttributeError(f'{Path(self.dat_name).stem} has no function {name!r}')
-
-        return _OriginalFunction(self, f)
-
-    def inline_original_func(self):
-        """See scp_writer_hooks.inline_original_func"""
-        f = self.current_function
-        if f is None:
-            raise ValueError('inline_original_func() is outside a function body')
-
-        if f.body is f.original_body:
-            raise ValueError(f"{f.name} wasn't replaced; inline_original_func() inlines a replaced function's original body")
-
-        self._run_body(f, f.original_body)
-
     # The compile: run() and build()
 
     def run(self, g: dict):
@@ -563,7 +350,8 @@ class ScpWriter:
     def build(self, g: dict) -> bytes:
         """Compile every registered function into the script's bytes, in memory; with check_compiled, the bytes must
         decompile again. A failure ends the compile like any other: one compile per writer"""
-        self._start_hooks(g)
+        self.globals = g  # compile_started: from here on add_function registers at once, GLOBAL_VAR and _inject work
+        self.hooks._start(g)
 
         # Counted after the hooks, which may add functions and globals; nothing registers from here on
         self.registration_closed = True
@@ -630,12 +418,12 @@ class ScpWriter:
             yield f.original_body
             yield from f.callback_bodies
 
-        yield from self.opcode_callbacks
+        yield from self.hooks.opcode_callbacks
 
     def _opcode_emitter_codes(self):
         """The code of every opcode emitter and of the functions it wraps"""
         for emitter in self._opcode_emitters():
-            for layer in self._wrapped_chain(emitter):
+            for layer in wrapped_chain(emitter):
                 code = getattr(layer, '__code__', None)
                 if code is not None:
                     yield code
@@ -815,7 +603,7 @@ class ScpWriter:
             raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
         site = self._opcode_site() if self.check_compiled else None
-        if self._dropped_by_opcode_callbacks(opcode, args, site):
+        if self.hooks._dropped_by_opcode_callbacks(opcode, args, site):
             return
 
         # Before this opcode is written: source_map is keyed by its start offset; a label operand reads current_site
@@ -862,32 +650,7 @@ class ScpWriter:
         while frame is not None and id(frame.f_code) not in self.opcode_emitter_code_ids:
             frame = frame.f_back
 
-        return SourceSite(frame.f_code, frame.f_lasti, self.trigger_site) if frame is not None else None
-
-    def _dropped_by_opcode_callbacks(self, opcode: int, args: tuple, site: SourceSite | None) -> bool:
-        """Run the opcode callbacks, in registration order, on an opcode a body emits; True when one drops it, and the
-        rest don't run; False at once when none is registered. The opcodes a callback emits skip the callbacks and
-        carry site as their trigger"""
-        if not self.opcode_callbacks or self.in_opcode_callback:
-            return False
-
-        self.in_opcode_callback = True
-        self.trigger_site = site
-        try:
-            for cb in self.opcode_callbacks:
-                result = cb(opcode, *args)
-                if result is True:
-                    return True
-
-                if result is not None and result is not False:
-                    raise TypeError(f'{def_location(cb)}: opcode callback {cb.__name__} returned {result!r}: '
-                                    'True drops the opcode, None or False keeps it')
-
-            return False
-
-        finally:
-            self.in_opcode_callback = False
-            self.trigger_site = None
+        return SourceSite(frame.f_code, frame.f_lasti, self.hooks.trigger_site) if frame is not None else None
 
     def _emit_push_constant(self, operand: int | float | str | RawInt) -> tuple[ScpValue, PooledString | None]:
         """PUSH and its constant pseudo-ops (PUSH_CONSTANT_OPS) all collapse to the on-disk PUSH opcode + size byte +
