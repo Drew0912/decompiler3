@@ -13,9 +13,9 @@ from common import fileio
 from common.config import default_encoding
 from common.logging import log
 from ir.llil import WORD_SIZE
-from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, ED9_FORMAT_TABLE, Instruction, OperandDescriptor, OperandType
+from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, ED9_FORMAT_TABLE, OperandDescriptor, OperandType
 from ..parser.crc32 import hash_func_Name
-from ..parser.scp import CallDebugInfoTracker, ScpFunctionError, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
+from ..parser.scp import CallDebugInfoTracker, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
 from ..parser.string_pool import StringPoolSection
 from ..parser.types_scp import (
     ScpValue,
@@ -28,7 +28,7 @@ from ..parser.types_scp import (
     ScpFunctionCallDebugInfoArg,
 )
 from ..parser.utils import str_to_bytes
-from .scp_compile_check import CompileCheckError, SourceSite, def_location, location_prefix, require_decompilable
+from .scp_compile_check import CheckedFunction, CompileCheck, SourceSite, def_location, location_prefix
 
 # PUSH's leading byte - 4 in every sample script (checked by tools/scp_roundtrip_validator.py)
 PUSH_SIZE_BYTE = 4
@@ -163,7 +163,7 @@ class ScpWriter:
         self.code_string_xrefs: list[tuple[PooledString, int]] = []
 
         # The compile check's source map
-        self.source_map: dict[int, SourceSite] = {}          # code position -> where it was emitted
+        self.source_map: dict[int, SourceSite | None] = {}   # code position -> where it was emitted
         self.current_site: SourceSite | None = None          # the compiling opcode's site, for its label operand
         # id(), not the code: code objects hash their constants on every lookup and compare equal across files
         self.opcode_emitter_code_ids: set[int] = set()       # code of every opcode emitter and of what it wraps
@@ -577,7 +577,8 @@ class ScpWriter:
 
         data, code_end = self._write_file(hdr, code)
         if self.check_compiled:
-            self._check_decompilable(data, code_end)
+            functions = [CheckedFunction(f.name, f.entry.offset, f.body) for f in self.functions]
+            CompileCheck(self.dat_name, functions, self.source_map, self.code_offset).run(data, code_end)
 
         return data
 
@@ -1006,71 +1007,6 @@ class ScpWriter:
         self.strings.append(string)
         self.strings_by_text.setdefault(text, string)
         return string
-
-    # The compile check: the bytes must decompile again
-
-    def _check_decompilable(self, data: bytes, code_end: int):
-        """The compiled bytes disassemble and lift again; a failure names the script line that emitted the failing
-        opcode, or the failing function's def. A function that runs on into the next function's code (no RETURN) is a
-        warning while the bytes still decompile, and a note on the failure when they don't; the parser's warnings for
-        unusual slots get their script line too."""
-        try:
-            parser, parsed_functions = require_decompilable(data, self.dat_name, code_end)
-
-        except ScpFunctionError as e:
-            note = self._run_on_note(e.function, e.runs_on)
-            message = f'{self._failure_prefix(e.function, e.offset)}{e}' + (f'; {note}' if note else '')
-            raise CompileCheckError(message) from e
-
-        except Exception as e:
-            raise CompileCheckError(f'{self.dat_name}: {e}') from e
-
-        runs_on = {parsed_function.name: parsed_function.runs_on for parsed_function in parsed_functions}
-        for f in self.functions:
-            note = self._run_on_note(f.name, runs_on.get(f.name))
-            if note:
-                log.warning(note)
-
-        for parsed_function in parsed_functions:
-            for inst in parser.get_instructions(parsed_function):
-                ref = parsed_function.stack_layout.slot_refs.get(inst.offset)
-                if ref is not None and ref.unusual:
-                    log.warning(self._failure_text(parsed_function.name, f'addresses {ref}', inst))
-
-    def _run_on_note(self, function_name: str | None, inst: Instruction | None) -> str | None:
-        """How the function runs on into the next function's code, located: it has no code at all, or inst runs past
-        its end (the parser found it; for an empty function that is the next one's). None when it doesn't"""
-        f = self.functions_by_name.get(function_name)
-        if f is None:
-            return None
-
-        following = self.functions[self.functions.index(f) + 1:]
-        if following and following[0].entry.offset == f.entry.offset:
-            return self._failure_text(f.name, f'has no code, so it runs on into {following[0].name} without RETURN')
-
-        if inst is not None:
-            end = inst.offset + inst.size
-            into = next(other.name for other in following if other.entry.offset == end)
-            return self._failure_text(f.name, f'runs past its end into {into} without RETURN', inst)
-
-        return None
-
-    def _failure_text(self, function_name: str, message: str, inst: Instruction | None = None) -> str:
-        """The failure prefix of inst, else of the function's def, then ScpFunctionError.describe()'s text"""
-        offset = inst.offset if inst is not None else None
-        return self._failure_prefix(function_name, offset) + ScpFunctionError.describe(function_name, message, inst)
-
-    def _failure_prefix(self, function_name: str | None, offset: int | None) -> str:
-        """'file:line: ' of the opcode compiled at a file offset, else of the function's def; '' when neither is known"""
-        site = self.source_map.get(offset - self.code_offset) if offset is not None else None
-        if site is not None:
-            return location_prefix(site)
-
-        f = self.functions_by_name.get(function_name)
-        if f is None:
-            return ''
-
-        return f'{def_location(f.body)}: '
 
 
 _gScp = ScpWriter()
