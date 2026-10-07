@@ -155,7 +155,7 @@ that is legal but unusual (a caller-frame or call-setup slot) gets its line the 
 failed compile: no `.dat` is written, an older one stays, and the writer is spent like after any failed
 compile. Not checked: unreachable code (the parser never simulates it) and a stack that balances but
 reads the wrong slot. A read or write outside the live stack fails at once; decompiling a game `.dat`
-only warns about it. The check costs about twice the compile itself (`mp0000_ev`, the largest script:
+only warns about it. The check costs about twice the compile itself (`mp0000_ev`, a 1.6 MB script:
 about 4 s on top of 1.7 s); while it is on, each opcode also records where it was emitted.
 
 ## 2. Round-Trip Policy
