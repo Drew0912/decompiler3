@@ -809,14 +809,15 @@ class ScpWriter:
     # Opcode emission: operands, labels and strings
 
     def handle_opcode(self, opcode: int, *args):
+        """Write one opcode a DSL opcode function emitted, unless an opcode callback drops it"""
         if self.current_function is None:
             raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
         site = self._opcode_site() if self.check_compiled else None
-        if (self.opcode_callbacks and not self.in_opcode_callback
-                and self._dropped_by_opcode_callbacks(opcode, args, site)):
+        if self._dropped_by_opcode_callbacks(opcode, args, site):
             return
 
+        # Before this opcode is written: source_map is keyed by its start offset; a label operand reads current_site
         if self.check_compiled:
             self.current_site = site
             self.source_map[self.fs.Position] = site
@@ -830,47 +831,45 @@ class ScpWriter:
         if opcode == ED9Opcode.PUSH_FLOAT:
             args = (float(args[0]),)
 
-        # PUSH and its pseudo-ops all collapse to the on-disk PUSH opcode + size byte + ScpValue
+        payload = None
         if opcode in PUSH_CONSTANT_OPS:
-            value = ScpValue(args[0])
-            string = self._write_push_value(value)
-            self._track(opcode, args, (value, string))
-            return
+            payload = self._emit_push_constant(args[0])
 
-        if opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
+        elif opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
             self._write_push_value(ScpValue(RawInt(self.current_function.index)))
-            self._track(opcode, args)
-            return
 
-        if opcode == ED9Opcode.PUSH_RET_ADDR:
+        elif opcode == ED9Opcode.PUSH_RET_ADDR:
             self._write_push_header()
             self._write_label_ref(args[0])
-            self._track(opcode, args)
-            return
 
-        # No descriptor - the operand format is unknown, so the operand bytes are written as given
-        if opcode == ED9Opcode.UNKNOWN_28:
+        elif opcode == ED9Opcode.UNKNOWN_28:
+            # No descriptor - the operand format is unknown, so the operand bytes are written as given
             self.fs.WriteByte(opcode)
             self.fs.Write(args[0])
-            self._track(opcode, args)
-            return
 
-        descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
-        operand_descriptors = OperandDescriptor.from_format_string(descriptor.operand_fmt, ED9_FORMAT_TABLE)
+        else:
+            self._emit_described_opcode(opcode, args)
 
-        assert len(operand_descriptors) == len(args), \
-            f'{descriptor.mnemonic}: expected {len(operand_descriptors)} operands, got {len(args)}'
+        if self.call_tracker is not None:
+            self.call_tracker.on_opcode(opcode, args, payload)
 
-        self.fs.WriteByte(opcode)
+    def _opcode_site(self) -> SourceSite | None:
+        """Where the opcode being compiled was emitted: the innermost frame running an opcode emitter or a function it
+        wraps (a helper either called counts as its call). f_lasti, not f_lineno: f_lineno scans the line table,
+        which grows with the function"""
+        frame = sys._getframe(1)
+        while frame is not None and id(frame.f_code) not in self.opcode_emitter_code_ids:
+            frame = frame.f_back
 
-        for op_desc, value in zip(operand_descriptors, args):
-            self._write_operand(op_desc, value)
-
-        self._track(opcode, args)
+        return SourceSite(frame.f_code, frame.f_lasti, self.trigger_site) if frame is not None else None
 
     def _dropped_by_opcode_callbacks(self, opcode: int, args: tuple, site: SourceSite | None) -> bool:
         """Run the opcode callbacks, in registration order, on an opcode a body emits; True when one drops it, and the
-        rest don't run. The opcodes a callback emits skip the callbacks and carry site as their trigger"""
+        rest don't run; False at once when none is registered. The opcodes a callback emits skip the callbacks and
+        carry site as their trigger"""
+        if not self.opcode_callbacks or self.in_opcode_callback:
+            return False
+
         self.in_opcode_callback = True
         self.trigger_site = site
         try:
@@ -889,28 +888,32 @@ class ScpWriter:
             self.in_opcode_callback = False
             self.trigger_site = None
 
-    def _opcode_site(self) -> SourceSite | None:
-        """Where the opcode being compiled was emitted: the innermost frame running an opcode emitter or a function it
-        wraps (a helper either called counts as its call). f_lasti, not f_lineno: f_lineno scans the line table,
-        which grows with the function"""
-        frame = sys._getframe(1)
-        while frame is not None and id(frame.f_code) not in self.opcode_emitter_code_ids:
-            frame = frame.f_back
+    def _emit_push_constant(self, operand: int | float | str | RawInt) -> tuple[ScpValue, PooledString | None]:
+        """PUSH and its constant pseudo-ops (PUSH_CONSTANT_OPS) all collapse to the on-disk PUSH opcode + size byte +
+        ScpValue; returns the tracker's (value, string) payload"""
+        value = ScpValue(operand)
+        return value, self._write_push_value(value)
 
-        return SourceSite(frame.f_code, frame.f_lasti, self.trigger_site) if frame is not None else None
+    def _emit_described_opcode(self, opcode: int, args: tuple):
+        descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
+        operand_descriptors = OperandDescriptor.from_format_string(descriptor.operand_fmt, ED9_FORMAT_TABLE)
 
-    def _track(self, opcode: int, args: tuple, payload = None):
-        if self.call_tracker is not None:
-            self.call_tracker.on_opcode(opcode, args, payload)
+        assert len(operand_descriptors) == len(args), \
+            f'{descriptor.mnemonic}: expected {len(operand_descriptors)} operands, got {len(args)}'
+
+        self.fs.WriteByte(opcode)
+
+        for op_desc, value in zip(operand_descriptors, args):
+            self._write_operand(op_desc, value)
+
+    def _write_push_value(self, value: ScpValue) -> PooledString | None:
+        self._write_push_header()
+        return self._write_scp_value(value)
 
     def _write_push_header(self):
         """Real on-disk PUSH opcode + size/type byte, shared by every PUSH-family value"""
         self.fs.WriteByte(ED9Opcode.PUSH)
         self.fs.WriteByte(PUSH_SIZE_BYTE)
-
-    def _write_push_value(self, value: ScpValue) -> PooledString | None:
-        self._write_push_header()
-        return self._write_scp_value(value)
 
     def _write_scp_value(self, value: ScpValue, section: StringPoolSection = StringPoolSection.Code) -> PooledString | None:
         """Write a ScpValue's on-disk bytes, deferring String-typed values through the string pool"""
@@ -981,16 +984,6 @@ class ScpWriter:
                                          function_name = self.current_function.name, source_site = self.current_site))
         self.fs.WriteULong(UNRESOLVED_LABEL_OFFSET)
 
-    def _add_string(self, text: str, section: StringPoolSection) -> PooledString:
-        """String-pool entry for text - the original compiler never deduplicates, so entries are only shared without round_trip"""
-        if not self.round_trip and text in self.strings_by_text:
-            return self.strings_by_text[text]
-
-        string = PooledString(text = text, section = section)
-        self.strings.append(string)
-        self.strings_by_text.setdefault(text, string)
-        return string
-
     def _write_string_ref(self, text: str, section: StringPoolSection) -> PooledString:
         """Write a placeholder tagged string reference at the current position"""
         string = self._add_string(text, section)
@@ -1002,6 +995,16 @@ class ScpWriter:
             string.xref_offsets.append(self.fs.Position)
 
         self.fs.WriteULong(UNRESOLVED_STRING_OFFSET)
+        return string
+
+    def _add_string(self, text: str, section: StringPoolSection) -> PooledString:
+        """String-pool entry for text - the original compiler never deduplicates, so entries are only shared without round_trip"""
+        if not self.round_trip and text in self.strings_by_text:
+            return self.strings_by_text[text]
+
+        string = PooledString(text = text, section = section)
+        self.strings.append(string)
+        self.strings_by_text.setdefault(text, string)
         return string
 
     # The compile check: the bytes must decompile again

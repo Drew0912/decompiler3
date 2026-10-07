@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''DSL argument checks (bool operands, CALL's function argument, value ranges, operand count), UNKNOWN_28's raw bytes
-and the helper module's non-opcode statements (label, GLOBAL_VAR).'''
+'''DSL argument checks (bool operands, CALL's function argument, value ranges, operand count), UNKNOWN_28's raw bytes,
+what handle_opcode tracks and the helper module's non-opcode statements (label, GLOBAL_VAR).'''
 
 import math
 from pathlib import Path
@@ -69,7 +69,7 @@ class TestCall(unittest.TestCase):
 
 
 class TestHandleOpcode(unittest.TestCase):
-    '''Paths no opcode function or corpus script reaches'''
+    '''handle_opcode itself: paths no opcode function or corpus script reaches, and what it hands the tracker'''
 
     def setUp(self):
         self.writer = body_writer()
@@ -86,6 +86,34 @@ class TestHandleOpcode(unittest.TestCase):
 
         self.assertEqual(self.writer.fs.ReadAll(), bytes.fromhex('28 01 02'))
         self.assertEqual(calls, [(ED9Opcode.UNKNOWN_28, (b'\x01\x02',), None)])
+
+    def test_tracked_once_after_its_write(self):
+        '''Tracked once, after its write, with the normalized operands and a pushed constant's (value, string) payload;
+        an opcode whose write raises is not tracked. UNKNOWN_28's branch: the test above'''
+        calls = []
+        self.writer.call_tracker = SimpleNamespace(on_opcode = lambda *call: calls.append(call))
+        self.writer._build_function_table()             # PUSH_CURRENT_FUNC_ID writes the function's table index
+        PUSH_FLOAT(1)
+        PUSH_STR('text')
+        PUSH_CURRENT_FUNC_ID()
+        PUSH_RET_ADDR('ret')
+        POP(WORD_SIZE)
+
+        with self.assertRaises(ValueError):
+            PUSH_FLOAT(math.inf)                        # raises after the PUSH header is written
+
+        with self.assertRaises(AssertionError):
+            self.writer.handle_opcode(ED9Opcode.POP, WORD_SIZE, WORD_SIZE)
+
+        self.assertEqual([call[:2] for call in calls], [
+            (ED9Opcode.PUSH_FLOAT, (1.0,)), (ED9Opcode.PUSH_STR, ('text',)), (ED9Opcode.PUSH_CURRENT_FUNC_ID, ()),
+            (ED9Opcode.PUSH_RET_ADDR, ('ret',)), (ED9Opcode.POP, (WORD_SIZE,)),
+        ])
+        self.assertIs(type(calls[0][1][0]), float)
+        [(float_value, no_string), (str_value, string), *no_payloads] = [payload for _, _, payload in calls]
+        self.assertEqual((float_value.type, float_value.value, no_string), (ScpValue.Type.Float, 1.0, None))
+        self.assertEqual((str_value.value, string.text), ('text', 'text'))
+        self.assertEqual(no_payloads, [None, None, None])
 
 
 class TestHelperStatements(unittest.TestCase):

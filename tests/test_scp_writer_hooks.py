@@ -1428,6 +1428,34 @@ class TestOpcodeCallbacks(HookTestCase):
                 with self.assertRaisesRegex(ValueError, f'^{expected}'):
                     self.writer.build({})
 
+    def test_every_opcode_a_callback_emits_keeps_the_trigger(self):
+        '''Every opcode a callback emits skips the callbacks and notes the trigger, not only its first'''
+        hook = self.hook('''
+            seen = []
+
+            def two_opcodes(opcode, *args):
+                seen.append(opcode)
+                if args == (2,):
+                    PUSH_INT(9)
+                    POP(3 * WORD_SIZE)                  # line: emit
+
+            registerOpcodeCallback(two_opcodes)
+        ''')
+
+        @self.writer.LLILCode()
+        def Target():
+            PUSH_INT(1)
+            PUSH_INT(2)                                 # line: trigger push
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        trigger = re.escape(f'{__file__}:{marked_line(__file__, "trigger push")}')
+        with self.assertRaisesRegex(ValueError, rf'^{at(hook.__file__, "emit")}\(opcode callback two_opcodes, '
+                                                rf'triggered at {trigger}\) Target: POP at {HEX}: '):
+            self.writer.build({})
+
+        self.assertEqual(hook.seen, [ED9Opcode.PUSH_INT, ED9Opcode.PUSH_INT, ED9Opcode.POP, ED9Opcode.RETURN])
+
 
 if __name__ == '__main__':
     unittest.main()
