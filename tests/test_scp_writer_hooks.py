@@ -338,6 +338,9 @@ class TestRejected(HookTestCase):
                     with self.assertRaisesRegex(TypeError, f'^{decorator}: expected a plain function'):
                         getattr(self.writer, decorator)()(func)
 
+        with self.assertRaisesRegex(TypeError, '^LLILCommonCode: expected a plain function'):
+            self.writer.CommonImports()(lambda: [functools.partial(body)])
+
         with self.assertRaisesRegex(TypeError, '^GlobalVars: expected a plain function'):
             self.writer.GlobalVars()(functools.partial(body))
 
@@ -372,6 +375,18 @@ class TestRejected(HookTestCase):
 
         with self.assertRaisesRegex(TypeError, rf"^{at(hook.__file__, 'partial')}to_partial for Target: expected a "
                                                "plain function"):
+            self.writer.build({})
+
+    def test_callback_returning_false_points_at_the_callback(self):
+        '''Only None keeps the body; False is rejected like any other non-function'''
+        self.define_target()
+
+        def keep(name, func):                               # line: returns False
+            return False
+
+        registerFuncCallback(keep)
+        with self.assertRaisesRegex(TypeError, rf"^{at(__file__, 'returns False')}keep for Target: expected a plain "
+                                               r"function \(def\), not False$"):
             self.writer.build({})
 
     def test_original_returned_as_a_replacement(self):
@@ -577,7 +592,7 @@ class TestRejected(HookTestCase):
                       "that, so compiling the .py will fail", logs.output)
 
     def test_added_function_parameter_kinds(self):
-        '''add_function registers through LLILCode when the compile starts: rejected there, at the def'''
+        '''add_function registers like an LLILCode function when the compile starts: rejected there, at the def'''
         hook = self.hook('''
             @add_function
             def New(arg1: Value32, **flags: Value32):       # line: def
@@ -623,6 +638,32 @@ class TestRegisteredWhileCompiling(HookTestCase):
                                                         'script compiles; register functions and hooks at hook import '
                                                         'time or in a run callback$'):
                     self.writer.build({})
+
+    def test_a_non_function_is_rejected_as_one(self):
+        '''The plain-function check comes first: from a body, a partial is a TypeError, not a missing attribute'''
+        def Late():
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Target(arg1: Value32):
+            get_scp_writer().LLILCode()(functools.partial(Late))
+            POP(WORD_SIZE)
+            RETURN()
+
+        with self.assertRaisesRegex(TypeError, '^LLILCode: expected a plain function'):
+            self.writer.build({})
+
+    def test_a_script_name_is_a_late_registration_not_a_duplicate(self):
+        '''The compile-time check comes before the duplicate-name check'''
+        @self.writer.LLILCode()
+        def Target(arg1: Value32):                  # line: registers itself
+            get_scp_writer().LLILCode()(Target)
+            POP(WORD_SIZE)
+            RETURN()
+
+        with self.assertRaisesRegex(ValueError, f"^{at(__file__, 'registers itself')}Target is registered while the "
+                                                'script compiles'):
+            self.writer.build({})
 
 
 class TestSignatures(HookTestCase):
@@ -850,6 +891,26 @@ class TestRunCallbacks(HookTestCase):
         self.assertIs(received_g, g)
         self.assertEqual(self.mnemonics(functions['Extra']), PUSH_POP_RETURN)
         self.assertEqual(self.code_order(functions), ['Target', 'Extra'])
+
+    def test_adds_a_function_replace_function_can_name(self):
+        '''replace_function's name is checked after the run callbacks, so it may be a function one adds'''
+        self.define_target()
+
+        def add_extra(g):
+            @get_scp_writer().LLILCode()
+            def Extra(arg1: Value32):
+                POP(WORD_SIZE)
+                RETURN()
+
+        registerRunCallback(add_extra)
+
+        @replace_function('Extra')
+        def NewExtra(arg1):
+            PUSH_INT(7)
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        self.assertEqual(self.mnemonics(self.parsed()['Extra']), PUSH_POP_RETURN)
 
     def test_runs_after_injection_and_queued_additions(self):
         helper = self.define_helper()

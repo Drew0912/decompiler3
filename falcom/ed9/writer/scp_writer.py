@@ -80,7 +80,7 @@ class DebugRecord:
 
 @dataclass
 class ScpFunction:
-    """An LLILCode()-decorated function pending compilation, plus its pending table entry"""
+    """A registered script function pending compilation, plus its pending table entry"""
     index: int
     name: str
     body: Callable
@@ -189,44 +189,19 @@ class ScpWriter:
 
     # Script registration: functions, common imports and global vars
 
-    def _function_decorator(self, is_common_func: bool, debug_argc: dict[str, int] | None):
+    def LLILCode(self, debug_argc: dict[str, int] | None = None):
         def wrapper(func):
-            self._require_function(func, 'LLILCommonCode' if is_common_func else 'LLILCode')
-            name = func.__name__
-            self._require_open(func)
-            if name in self.functions_by_name:
-                raise ValueError(f'{def_location(func)}: duplicate function name: {name!r}')
-
-            signature = self._signature(func, name)
-            self._check_parameters(func, name, signature)
-
-            entry = ScpFunctionEntry()
-            entry.offset                = UNRESOLVED_FUNC_OFFSET
-            entry.param_count           = len(signature.parameters)
-            entry.is_common_func        = int(is_common_func)
-            entry.byte06                = 0  # unknown meaning, not worrying about it per user
-            entry.default_params_count  = 0  # placeholder - overwritten by _write_default_params()
-            entry.default_params_offset = 0  # placeholder - overwritten by _write_default_params()
-            entry.param_flags_offset    = 0  # placeholder - overwritten by _write_param_flags()
-            entry.debug_info_count      = 0  # placeholder - overwritten by _write_debug_records()
-            entry.debug_info_offset     = 0  # placeholder - overwritten by _write_debug_records()
-            entry.name_hash             = hash_func_Name(name)
-            entry.name_offset           = 0  # stays 0 in memory: _write_string_pool() patches the file's table directly
-
-            f = ScpFunction(index = UNRESOLVED_FUNC_INDEX, name = name, body = func, original_body = func,
-                            signature = signature, entry = entry, debug_argc = debug_argc or {})
-            self.functions.append(f)
-            self.functions_by_name[name] = f
-
+            self._register_function(func, debug_argc = debug_argc)
             return func
 
         return wrapper
 
-    def LLILCode(self, debug_argc: dict[str, int] | None = None):
-        return self._function_decorator(is_common_func = False, debug_argc = debug_argc)
-
     def LLILCommonCode(self, debug_argc: dict[str, int] | None = None):
-        return self._function_decorator(is_common_func = True, debug_argc = debug_argc)
+        def wrapper(func):
+            self._register_function(func, is_common_func = True, debug_argc = debug_argc)
+            return func
+
+        return wrapper
 
     def CommonImports(self):
         """Declares which common functions this script bakes into its bytecode: some imported from
@@ -239,9 +214,8 @@ class ScpWriter:
         conditions can't hold at once.
         """
         def wrapper(func):
-            register = self.LLILCommonCode()
             for common_func in func():
-                register(common_func)
+                self._register_function(common_func, is_common_func = True)
 
             return func
 
@@ -298,6 +272,40 @@ class ScpWriter:
             raise ValueError(f'unknown global var {name!r}; declared: {sorted(self.global_var_indices)}')
 
         return index
+
+    def _register_function(self, func: Callable, is_common_func: bool = False,
+                           debug_argc: dict[str, int] | None = None):
+        """A script function: checked, then given its pending table entry (registration order is code order)"""
+        self._require_function(func, 'LLILCommonCode' if is_common_func else 'LLILCode')
+        self._require_open(func)
+        name = func.__name__
+        if name in self.functions_by_name:
+            raise ValueError(f'{def_location(func)}: duplicate function name: {name!r}')
+
+        signature = self._signature(func, name)
+        self._check_parameters(func, name, signature)
+
+        entry = self._new_function_entry(name, len(signature.parameters), is_common_func)
+        f = ScpFunction(index = UNRESOLVED_FUNC_INDEX, name = name, body = func, original_body = func,
+                        signature = signature, entry = entry, debug_argc = debug_argc or {})
+        self.functions.append(f)
+        self.functions_by_name[name] = f
+
+    @classmethod
+    def _new_function_entry(cls, name: str, param_count: int, is_common_func: bool) -> ScpFunctionEntry:
+        entry = ScpFunctionEntry()
+        entry.offset                = UNRESOLVED_FUNC_OFFSET
+        entry.param_count           = param_count
+        entry.is_common_func        = int(is_common_func)
+        entry.byte06                = 0  # meaning unknown; the parser rejects any other value
+        entry.default_params_count  = 0  # placeholder - overwritten by _write_default_params()
+        entry.default_params_offset = 0  # placeholder - overwritten by _write_default_params()
+        entry.param_flags_offset    = 0  # placeholder - overwritten by _write_param_flags()
+        entry.debug_info_count      = 0  # placeholder - overwritten by _write_debug_records()
+        entry.debug_info_offset     = 0  # placeholder - overwritten by _write_debug_records()
+        entry.name_hash             = hash_func_Name(name)
+        entry.name_offset           = 0  # stays 0 in memory: _write_string_pool() patches the file's table directly
+        return entry
 
     def _require_open(self, func: Callable):
         """Functions and hooks register before the header counts them: in the script, at hook import time or in a run
@@ -401,7 +409,7 @@ class ScpWriter:
             raise ValueError(f'{def_location(func)}: add_function: {func.__name__!r} is already defined at '
                              f'{def_location(existing.original_body)}; replace_function replaces a function')
 
-        self.LLILCode()(func)
+        self._register_function(func)
 
     def _add_hook_function(self, func: Callable, what: str):
         """A hook's own function, a plain one (what names it in the error): given the script's names now if the
@@ -436,36 +444,64 @@ class ScpWriter:
             yield func
             func = getattr(func, '__wrapped__', None)
 
+    def _start_hooks(self, g: dict):
+        """The compile starts: added functions register after the script's, each hook module gets the script's names,
+        the run callbacks run, then the function callbacks"""
+        self.globals = g  # compile_started: from here on add_function registers at once, GLOBAL_VAR and _inject work
+        for func in self.added_functions:
+            self._register_added(func)
+
+        for func in self.hook_functions:
+            self._inject(func)
+
+        for cb in self.run_callbacks:
+            cb(g)
+
+        self._apply_function_callbacks()
+
     def _apply_function_callbacks(self):
-        """Run the hook function callbacks over every function and give each replaced one its new body. Its position,
-        table index, common flag and name hash stay; its signature merges with the replacement's"""
+        """Run the hook function callbacks over every function and give each replaced one its new body"""
+        self._require_replaced_functions_exist()
+        for f in self.functions:
+            body = f.body
+            for cb in self.func_callbacks:
+                replacement = self._call_function_callback(cb, f, body)
+                if replacement is not None:
+                    body = replacement
+                    f.callback_bodies.append(body)
+
+            if body is not f.body:
+                self._replace_body(f, body)
+
+    def _require_replaced_functions_exist(self):
         for name, body in self.replaced.items():
             if name not in self.functions_by_name:
                 raise ValueError(f'{def_location(body)}: replace_function({name!r}): '
                                  f'the script has no function {name!r}')
 
-        for f in self.functions:
-            body = f.body
-            for cb in self.func_callbacks:
-                counts = (len(self.functions), len(self.hook_functions))  # every hook registration grows hook_functions
-                replacement = cb(f.name, body)
-                if (len(self.functions), len(self.hook_functions)) != counts:
-                    raise ValueError(f"{def_location(cb)}: a function callback can't register functions or callbacks")
+    def _call_function_callback(self, cb: Callable, f: ScpFunction, body: Callable) -> Callable | None:
+        """What cb returns for f's body so far: None, or a plain function, given the script's names unless it is that
+        body passed on"""
+        counts = (len(self.functions), len(self.hook_functions))  # every hook registration grows hook_functions
+        replacement = cb(f.name, body)
+        if (len(self.functions), len(self.hook_functions)) != counts:
+            raise ValueError(f"{def_location(cb)}: a function callback can't register functions or callbacks")
 
-                if replacement is None:
-                    continue
+        if replacement is None:
+            return None
 
-                self._require_function(replacement, f'{def_location(cb)}: {cb.__name__} for {f.name}')
-                if replacement is not body:  # a body merely passed on may be the script's or a library's: no names for it
-                    self._inject(replacement)
+        self._require_function(replacement, f'{def_location(cb)}: {cb.__name__} for {f.name}')
+        if replacement is not body:  # a body merely passed on may be the script's or a library's: no names for it
+            self._inject(replacement)
 
-                body = replacement
-                f.callback_bodies.append(body)
+        return replacement
 
-            if body is not f.body:
-                f.signature = self._replaced_signature(f, body)
-                f.body = body
-                f.debug_argc = {}  # keyed by the original's return labels, which a replacement may reuse for other calls
+    @classmethod
+    def _replace_body(cls, f: ScpFunction, body: Callable):
+        """f keeps its position, table index, common flag and name hash; its signature merges with the replacement's"""
+        f.signature = cls._replaced_signature(f, body)
+        f.body = body
+        f.debug_argc = {}  # keyed by the original's return labels, which a replacement may reuse for other calls
 
     @classmethod
     def _replaced_signature(cls, f: ScpFunction, body: Callable) -> inspect.Signature:
@@ -527,17 +563,7 @@ class ScpWriter:
     def build(self, g: dict) -> bytes:
         """Compile every registered function into the script's bytes, in memory; with check_compiled, the bytes must
         decompile again. A failure ends the compile like any other: one compile per writer"""
-        self.globals = g
-        for func in self.added_functions:
-            self._register_added(func)
-
-        for func in self.hook_functions:
-            self._inject(func)
-
-        for cb in self.run_callbacks:
-            cb(g)
-
-        self._apply_function_callbacks()
+        self._start_hooks(g)
 
         # Counted after the hooks, which may add functions and globals; nothing registers from here on
         self.registration_closed = True
@@ -549,31 +575,7 @@ class ScpWriter:
         code = self._compile_functions()
         self._build_debug_records()
 
-        self.fs = fileio.FileStream(encoding = default_encoding()).OpenMemory()
-        self.fs.Write(hdr.to_bytes())  # rewritten once global_var_offset is known
-
-        self._write_function_table()  # reserves its space; rewritten below once every offset is known
-        self._write_default_params()
-        self._write_param_flags()
-        self._write_debug_records()
-
-        hdr.global_var_offset = self.fs.Position  # end of debug args, start of the global var table
-        self._write_global_vars()
-
-        self.code_offset = self.fs.Position  # the code follows the global var table
-        self._relocate_code(code, self.code_offset)
-        self.fs.Write(code)
-        code_end = self.fs.Position
-
-        with self.fs.PositionSaver:
-            self._write_function_table()
-
-        self._write_string_pool()
-
-        self.fs.Position = 0
-        self.fs.Write(hdr.to_bytes())
-
-        data = self.fs.ReadAll()
+        data, code_end = self._write_file(hdr, code)
         if self.check_compiled:
             self._check_decompilable(data, code_end)
 
@@ -645,29 +647,18 @@ class ScpWriter:
         if not self.round_trip:
             return
 
-        ArgType = ScpFunctionCallDebugInfoArg.Type
-        CallType = ScpFunctionCallDebugInfo.CallType
-
         for f in self.function_table:
-            for call in f.calls:
-                args = [self._debug_arg(value) for value in call.args]
+            f.debug_records = [self._debug_record(f, call) for call in f.calls]
 
-                if call.call_type == CallType.Local:
-                    func_id = self._find_function(call.target).index
-                    args = args[:f.debug_argc.get(call.ret_label, len(args))]
+    def _debug_record(self, f: ScpFunction, call: TrackedCall) -> DebugRecord:
+        args = [self._debug_arg(value) for value in call.args]
+        if call.call_type == ScpFunctionCallDebugInfo.CallType.Local:
+            return self._local_call_record(f, call, args)
 
-                elif call.call_type == CallType.Syscall:
-                    func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID
-                    subsystem, cmd = call.target
-                    args = [DebugArg(ArgType.Constant, ScpValue(subsystem)), DebugArg(ArgType.Constant, ScpValue(cmd))] + args
+        if call.call_type == ScpFunctionCallDebugInfo.CallType.Syscall:
+            return self._syscall_record(call, args)
 
-                else:
-                    func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID
-                    module, func = (value.value if isinstance(value, ScpValue) else value for value in call.target)
-                    name = self._add_string(f'{module}.{func}', StringPoolSection.Debug)
-                    args = [DebugArg(ArgType.Constant, ScpValue(name.text), name)] + args
-
-                f.debug_records.append(DebugRecord(call_type = call.call_type, func_id = func_id, args = args))
+        return self._script_call_record(call, args)  # Script and ScriptNoReturn
 
     def _debug_arg(self, value: TrackedValue) -> DebugArg:
         if value.type == ScpFunctionCallDebugInfoArg.Type.Constant:
@@ -676,8 +667,55 @@ class ScpWriter:
 
         return DebugArg(value.type, ScpValue(ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE))
 
+    def _local_call_record(self, f: ScpFunction, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
+        """The callee by table index; only the arguments passed explicitly (debug_argc, by the call's return label)"""
+        func_id = self._find_function(call.target).index
+        args = args[:f.debug_argc.get(call.ret_label, len(args))]
+        return DebugRecord(call_type = call.call_type, func_id = func_id, args = args)
+
+    @classmethod
+    def _syscall_record(cls, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
+        """No callee id; the subsystem and the command lead the arguments"""
+        args = [DebugArg(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(value)) for value in call.target] + args
+        return DebugRecord(call_type = call.call_type, func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID, args = args)
+
+    def _script_call_record(self, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
+        """No callee id; the pooled 'module.func' name leads the arguments"""
+        module, func = (value.value if isinstance(value, ScpValue) else value for value in call.target)
+        name = self._add_string(f'{module}.{func}', StringPoolSection.Debug)
+        args = [DebugArg(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(name.text), name)] + args
+        return DebugRecord(call_type = call.call_type, func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID, args = args)
+
+    def _write_file(self, hdr: ScpHeader, code: fileio.FileStream) -> tuple[bytes, int]:
+        """Lay the .dat out in memory around the compiled code - header, function table, default params, param flags,
+        debug records, global vars, code, string pool - and return its bytes and where its code ends"""
+        self.fs = fileio.FileStream(encoding = default_encoding()).OpenMemory()
+        self.fs.Write(hdr.to_bytes())  # rewritten once global_var_offset is known
+
+        self._write_function_table()  # reserves its space; rewritten below once every offset is known
+        self._write_default_params()
+        self._write_param_flags()
+        self._write_debug_records()
+
+        hdr.global_var_offset = self.fs.Position  # end of debug args, start of the global var table
+        self._write_global_vars()
+
+        self.code_offset = self.fs.Position  # the code follows the global var table
+        self._relocate_code(code, self.code_offset)
+        self.fs.Write(code)
+        code_end = self.fs.Position
+
+        with self.fs.PositionSaver:
+            self._write_function_table()
+
+        self._write_string_pool()
+
+        self.fs.Position = 0
+        self.fs.Write(hdr.to_bytes())
+        return self.fs.ReadAll(), code_end
+
     def _write_function_table(self):
-        """The function entries, right after the header (build() writes them twice: placeholders, then the real ones)"""
+        """The function entries, right after the header (written twice: placeholders, then the real ones)"""
         self.fs.Position = ScpHeader.SIZE
         for f in self.function_table:
             self.fs.Write(f.entry.to_bytes())
