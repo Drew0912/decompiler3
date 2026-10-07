@@ -1,11 +1,13 @@
 """ED9 (Kuro no Kiseki) Instruction Table"""
 
 from common import *
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from .instruction_table import *
 from .instruction import *
 from .basic_block import *
+from .stack_effects import STACK_EFFECTS, InstructionKind
 from ..parser.types_scp import *
 
 if TYPE_CHECKING:
@@ -99,81 +101,79 @@ class InstructionEntry:
     mnemonic: str
     operand_fmt: str = ''
     flags: InstructionFlags = InstructionFlags.NONE
-
-
-LOCAL_SETUP_SLOTS  = 2   # CALL: func_id, ret_addr
-CALLER_FRAME_SLOTS = 5   # PUSH_CALLER_FRAME: func_id, ret_addr, script pointer (2 slots), script_name
+    kind: InstructionKind = field(kw_only = True)     # what it does to the stack (STACK_EFFECTS)
 
 
 # ED9 Instruction Table
 ED9_OPCODE_TABLE = [
     # Stack operations
-    InstructionEntry(0x00, 'PUSH',                    'CV'),       # Special: decoded to PUSH_INT/PUSH_FLOAT/PUSH_STR
-    InstructionEntry(0x01, 'POP',                     'C'),
-    InstructionEntry(0x02, 'LOAD_STACK',              'i'),
-    InstructionEntry(0x03, 'LOAD_STACK_DEREF',        'i'),
-    InstructionEntry(0x04, 'PUSH_STACK_OFFSET',       'i'),
-    InstructionEntry(0x05, 'POP_TO',                  'i'),
-    InstructionEntry(0x06, 'POP_TO_DEREF',            'i'),
+    # Special: decoded to PUSH_INT/PUSH_FLOAT/PUSH_STR
+    InstructionEntry(0x00, 'PUSH',                    'CV',                                kind = InstructionKind.PUSH_CONST),
+    InstructionEntry(0x01, 'POP',                     'C',                                 kind = InstructionKind.POP),
+    InstructionEntry(0x02, 'LOAD_STACK',              'i',                                 kind = InstructionKind.LOAD_SLOT),
+    InstructionEntry(0x03, 'LOAD_STACK_DEREF',        'i',                                 kind = InstructionKind.LOAD_DEREF),
+    InstructionEntry(0x04, 'PUSH_STACK_OFFSET',       'i',                                 kind = InstructionKind.SLOT_ADDRESS),
+    InstructionEntry(0x05, 'POP_TO',                  'i',                                 kind = InstructionKind.STORE_SLOT),
+    InstructionEntry(0x06, 'POP_TO_DEREF',            'i',                                 kind = InstructionKind.STORE_DEREF),
 
     # Global variables
-    InstructionEntry(0x07, 'LOAD_GLOBAL',             'G'),
-    InstructionEntry(0x08, 'SET_GLOBAL',              'G'),
+    InstructionEntry(0x07, 'LOAD_GLOBAL',             'G',                                 kind = InstructionKind.LOAD_GLOBAL),
+    InstructionEntry(0x08, 'SET_GLOBAL',              'G',                                 kind = InstructionKind.STORE_GLOBAL),
 
     # Registers
-    InstructionEntry(0x09, 'GET_REG',                 'C'),
-    InstructionEntry(0x0A, 'SET_REG',                 'C'),
+    InstructionEntry(0x09, 'GET_REG',                 'C',                                 kind = InstructionKind.LOAD_REG),
+    InstructionEntry(0x0A, 'SET_REG',                 'C',                                 kind = InstructionKind.STORE_REG),
 
     # Control flow
-    InstructionEntry(0x0B, 'JMP',                     'O',   InstructionFlags.END_BLOCK),
-    InstructionEntry(0x0C, 'CALL',                    'F',   InstructionFlags.END_BLOCK),
-    InstructionEntry(0x0D, 'RETURN',                  '',    InstructionFlags.END_BLOCK),
-    InstructionEntry(0x0E, 'POP_JMP_NOT_ZERO',        'O',   InstructionFlags.END_BLOCK),
-    InstructionEntry(0x0F, 'POP_JMP_ZERO',            'O',   InstructionFlags.END_BLOCK),
+    InstructionEntry(0x0B, 'JMP',                     'O',   InstructionFlags.END_BLOCK,   kind = InstructionKind.JUMP),
+    InstructionEntry(0x0C, 'CALL',                    'F',   InstructionFlags.END_BLOCK,   kind = InstructionKind.CALL),
+    InstructionEntry(0x0D, 'RETURN',                  '',    InstructionFlags.END_BLOCK,   kind = InstructionKind.RETURN),
+    InstructionEntry(0x0E, 'POP_JMP_NOT_ZERO',        'O',   InstructionFlags.END_BLOCK,   kind = InstructionKind.CONDITIONAL_JUMP),
+    InstructionEntry(0x0F, 'POP_JMP_ZERO',            'O',   InstructionFlags.END_BLOCK,   kind = InstructionKind.CONDITIONAL_JUMP),
 
     # Arithmetic
-    InstructionEntry(0x10, 'ADD'),
-    InstructionEntry(0x11, 'SUB'),
-    InstructionEntry(0x12, 'MUL'),
-    InstructionEntry(0x13, 'DIV'),
-    InstructionEntry(0x14, 'MOD'),
+    InstructionEntry(0x10, 'ADD',                                                          kind = InstructionKind.BINARY),
+    InstructionEntry(0x11, 'SUB',                                                          kind = InstructionKind.BINARY),
+    InstructionEntry(0x12, 'MUL',                                                          kind = InstructionKind.BINARY),
+    InstructionEntry(0x13, 'DIV',                                                          kind = InstructionKind.BINARY),
+    InstructionEntry(0x14, 'MOD',                                                          kind = InstructionKind.BINARY),
 
     # Comparison
-    InstructionEntry(0x15, 'EQ'),
-    InstructionEntry(0x16, 'NE'),
-    InstructionEntry(0x17, 'GT'),
-    InstructionEntry(0x18, 'GE'),
-    InstructionEntry(0x19, 'LT'),
-    InstructionEntry(0x1A, 'LE'),
+    InstructionEntry(0x15, 'EQ',                                                           kind = InstructionKind.BINARY),
+    InstructionEntry(0x16, 'NE',                                                           kind = InstructionKind.BINARY),
+    InstructionEntry(0x17, 'GT',                                                           kind = InstructionKind.BINARY),
+    InstructionEntry(0x18, 'GE',                                                           kind = InstructionKind.BINARY),
+    InstructionEntry(0x19, 'LT',                                                           kind = InstructionKind.BINARY),
+    InstructionEntry(0x1A, 'LE',                                                           kind = InstructionKind.BINARY),
 
     # Bitwise & Logical
-    InstructionEntry(0x1B, 'BITWISE_AND'),
-    InstructionEntry(0x1C, 'BITWISE_OR'),
-    InstructionEntry(0x1D, 'LOGICAL_AND'),
-    InstructionEntry(0x1E, 'LOGICAL_OR'),
+    InstructionEntry(0x1B, 'BITWISE_AND',                                                  kind = InstructionKind.BINARY),
+    InstructionEntry(0x1C, 'BITWISE_OR',                                                   kind = InstructionKind.BINARY),
+    InstructionEntry(0x1D, 'LOGICAL_AND',                                                  kind = InstructionKind.BINARY),
+    InstructionEntry(0x1E, 'LOGICAL_OR',                                                   kind = InstructionKind.BINARY),
 
     # Unary
-    InstructionEntry(0x1F, 'NEG'),
-    InstructionEntry(0x20, 'EZ'),
-    InstructionEntry(0x21, 'NOT'),
+    InstructionEntry(0x1F, 'NEG',                                                          kind = InstructionKind.UNARY),
+    InstructionEntry(0x20, 'EZ',                                                           kind = InstructionKind.UNARY),
+    InstructionEntry(0x21, 'NOT',                                                          kind = InstructionKind.UNARY),
 
     # Script calls
-    InstructionEntry(0x22, 'CALL_SCRIPT',             'VVC', InstructionFlags.END_BLOCK),
-    InstructionEntry(0x23, 'CALL_SCRIPT_NO_RETURN',   'VVC', InstructionFlags.END_BLOCK),
+    InstructionEntry(0x22, 'CALL_SCRIPT',             'VVC', InstructionFlags.END_BLOCK,   kind = InstructionKind.CALL_SCRIPT),
+    InstructionEntry(0x23, 'CALL_SCRIPT_NO_RETURN',   'VVC', InstructionFlags.END_BLOCK,   kind = InstructionKind.TAIL_CALL),
 
     # System
-    InstructionEntry(0x24, 'SYSCALL',                 'CBB'),
-    InstructionEntry(0x25, 'PUSH_CALLER_FRAME',       'O',   InstructionFlags.START_BLOCK),
-    InstructionEntry(0x26, 'DEBUG_SET_LINENO',        'H'),
-    InstructionEntry(0x27, 'DEBUG_LOG',               'C'),
+    InstructionEntry(0x24, 'SYSCALL',                 'CBB',                               kind = InstructionKind.SYSCALL),
+    InstructionEntry(0x25, 'PUSH_CALLER_FRAME',       'O',   InstructionFlags.START_BLOCK, kind = InstructionKind.PUSH_CALLER_FRAME),
+    InstructionEntry(0x26, 'DEBUG_SET_LINENO',        'H',                                 kind = InstructionKind.DEBUG_LINE),
+    InstructionEntry(0x27, 'DEBUG_LOG',               'C',                                 kind = InstructionKind.DEBUG_LOG),
 
     # Pseudo-instructions (optimized from other instructions)
-    InstructionEntry(0x1000, 'PUSH_CURRENT_FUNC_ID',  ''),
-    InstructionEntry(0x1001, 'PUSH_RET_ADDR',         'O'),
-    InstructionEntry(0x1002, 'PUSH_RAW',              'I'),
-    InstructionEntry(0x1003, 'PUSH_INT',              'I'),
-    InstructionEntry(0x1004, 'PUSH_FLOAT',            'f'),
-    InstructionEntry(0x1005, 'PUSH_STR',              'S'),
+    InstructionEntry(0x1000, 'PUSH_CURRENT_FUNC_ID',  '',                                  kind = InstructionKind.PUSH_FUNC_ID),
+    InstructionEntry(0x1001, 'PUSH_RET_ADDR',         'O',                                 kind = InstructionKind.PUSH_RET_ADDR),
+    InstructionEntry(0x1002, 'PUSH_RAW',              'I',                                 kind = InstructionKind.PUSH_CONST),
+    InstructionEntry(0x1003, 'PUSH_INT',              'I',                                 kind = InstructionKind.PUSH_CONST),
+    InstructionEntry(0x1004, 'PUSH_FLOAT',            'f',                                 kind = InstructionKind.PUSH_CONST),
+    InstructionEntry(0x1005, 'PUSH_STR',              'S',                                 kind = InstructionKind.PUSH_CONST),
 ]
 
 # Helper to lookup opcode from table
@@ -257,8 +257,13 @@ class ED9Opcode(IntEnum2):
     PUSH_STR                = _opcode('PUSH_STR')
 
 
+def opcodes_of(*kinds: InstructionKind) -> tuple[ED9Opcode, ...]:
+    """The opcodes of these kinds, in table order"""
+    return tuple(ED9Opcode(entry.opcode) for entry in ED9_OPCODE_TABLE if entry.kind in kinds)
+
+
 class ED9InstructionDescriptor(InstructionDescriptor):
-    """ED9-specific instruction descriptor with operand format"""
+    """ED9-specific instruction descriptor with operand format and stack effect"""
     _allow_creation = True
 
     def __init__(
@@ -266,12 +271,16 @@ class ED9InstructionDescriptor(InstructionDescriptor):
         opcode: int,
         mnemonic: str,
         operand_fmt: str = '',
-        flags: InstructionFlags = InstructionFlags.NONE
+        flags: InstructionFlags = InstructionFlags.NONE,
+        *,
+        kind: InstructionKind,
     ):
         if not ED9InstructionDescriptor._allow_creation:
             raise RuntimeError('Cannot create ED9InstructionDescriptor after ED9InstructionTable initialization')
         super().__init__(opcode, mnemonic, flags)
         self.operand_fmt = operand_fmt
+        self.kind = kind
+        self.effect = STACK_EFFECTS[kind]
 
     def format_operands(self, operands: list[Operand], context: 'FormatterContext') -> list[str]:
         """Format operands for display (ED9-specific)"""
@@ -327,7 +336,8 @@ class ED9InstructionTable(InstructionTable):
                 opcode       = entry.opcode,
                 mnemonic     = entry.mnemonic,
                 operand_fmt  = entry.operand_fmt,
-                flags        = entry.flags
+                flags        = entry.flags,
+                kind         = entry.kind,
             )
             self.descriptors[entry.opcode] = desc
 

@@ -5,7 +5,7 @@ from enum import Enum, auto
 from typing import List, NamedTuple, Optional, Tuple, Union
 from ir.core import SourceFloat
 from ir.llil import *
-from falcom.ed9.disasm.ed9_optable import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
+from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from falcom.ed9.parser.types_scp import ScpValue
 from .constants import *
 from .llil_ext import *

@@ -11,7 +11,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.llil.llil import LowLevelILCall, WORD_SIZE
 from ir.llil.llil_builder import StackSnapshot
-from falcom.ed9.ir.llil.llil_builder import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, FalcomVMBuilder
+from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
+from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript
 
 

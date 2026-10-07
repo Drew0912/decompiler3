@@ -3,6 +3,7 @@ from .types_parser import *
 from common import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
+from ..disasm.stack_effects import ARGC_OPERAND, BINARY_OPERAND_COUNT, CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
 from ..writer.metadata import COMMON_LIBRARY_ALL_IMPORT, SCP_WRITER_HELPER_IMPORT
 from ..writer.metadata.common_index import COMMON_FUNCTIONS
@@ -100,14 +101,8 @@ CONDITIONAL_JUMPS = (
     ED9Opcode.POP_JMP_NOT_ZERO,
 )
 
-# Call-site debug-info rebuilding (shared by the parser, ScpWriter and tools/scp_roundtrip_validator.py)
-PUSH_CONSTANT_OPS = (
-    ED9Opcode.PUSH,
-    ED9Opcode.PUSH_RAW,
-    ED9Opcode.PUSH_INT,
-    ED9Opcode.PUSH_FLOAT,
-    ED9Opcode.PUSH_STR,
-)
+# Call-site debug-info rebuilding (shared by the parser, ScpWriter, the listing and tools/scp_roundtrip_validator.py)
+PUSH_CONSTANT_OPS = opcodes_of(InstructionKind.PUSH_CONST)
 
 # LOAD_STACK_DEREF / LOAD_GLOBAL are unverified - no sample script passes them as call args
 DEBUG_VARIABLE_OPS = (
@@ -117,21 +112,13 @@ DEBUG_VARIABLE_OPS = (
     ED9Opcode.LOAD_GLOBAL,
 )
 
-SCRIPT_CALL_OPS = (
-    ED9Opcode.CALL_SCRIPT,
-    ED9Opcode.CALL_SCRIPT_NO_RETURN,
-)
+SCRIPT_CALL_OPS = opcodes_of(InstructionKind.CALL_SCRIPT, InstructionKind.TAIL_CALL)
 
 # Every pseudo-op encoded as the real PUSH: one ScpValue word after the size byte
-PUSH_ENCODED_OPS = (
-    *PUSH_CONSTANT_OPS,
-    ED9Opcode.PUSH_CURRENT_FUNC_ID,
-    ED9Opcode.PUSH_RET_ADDR,
-)
+PUSH_ENCODED_OPS = (*PUSH_CONSTANT_OPS, *opcodes_of(InstructionKind.PUSH_FUNC_ID, InstructionKind.PUSH_RET_ADDR))
 
 OPCODE_SIZE             = 1     # every opcode is one byte, followed by its operands
 TRACKED_FRAME_SLOTS     = 1     # the debug-info tracker models PUSH_CALLER_FRAME as one slot, popped by CALL_SCRIPT
-BINARY_OPERAND_COUNT    = 2
 UNARY_OPERAND_COUNT     = 1
 POPPED_VALUE_COUNT      = 1     # POP_VALUE_OPS / CONDITIONAL_JUMPS
 
@@ -145,8 +132,7 @@ STACK_OFFSET_OPS = {
 }
 
 # Calls that take arguments from the stack; SYSCALL leaves them there for a later POP
-ARGUMENT_CALLS  = (ED9Opcode.CALL, ED9Opcode.CALL_SCRIPT, ED9Opcode.CALL_SCRIPT_NO_RETURN, ED9Opcode.SYSCALL)
-ARGC_OPERAND    = 2     # the argument count of every argument call but CALL, whose count is its callee's parameters
+ARGUMENT_CALLS = (ED9Opcode.CALL, ED9Opcode.CALL_SCRIPT, ED9Opcode.CALL_SCRIPT_NO_RETURN, ED9Opcode.SYSCALL)
 
 
 @dataclass

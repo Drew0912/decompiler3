@@ -19,7 +19,8 @@ from common.logging import log
 from falcom.ed9.disasm import (
     BranchKind, Disassembler, DisassemblerContext, ED9_INSTRUCTION_TABLE, ED9Opcode, Formatter, FormatterContext,
 )
-from falcom.ed9.disasm.ed9_optable import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, ed9_create_fallthrough_jump
+from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
+from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblerContext, ScpParser
 from falcom.ed9.parser.types_parser import Function, FunctionParam, SlotRef, StackLayout
 from falcom.ed9.parser.types_scp import ScpFunctionEntry, ScpParamFlags, ScpValue, Value32
