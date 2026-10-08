@@ -21,7 +21,7 @@ from falcom.ed9.disasm import (
 )
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
-from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblerContext, ScpParser
+from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblerContext, ScpDisassemblyError, ScpParser
 from falcom.ed9.parser.types_parser import Function, FunctionParam, SlotRef, StackLayout
 from falcom.ed9.parser.types_scp import ScpFunctionEntry, ScpParamFlags, ScpValue, Value32
 from falcom.ed9.ir.llil import ED9VMLifter
@@ -49,15 +49,27 @@ OFFSET_OPS = {
     'jmp': ED9Opcode.JMP, 'jz': ED9Opcode.POP_JMP_ZERO, 'jnz': ED9Opcode.POP_JMP_NOT_ZERO,
     'frame': ED9Opcode.PUSH_CALLER_FRAME,
 }
-BYTE_OPERAND_OPS = {'pop': ED9Opcode.POP, 'get_reg': ED9Opcode.GET_REG, 'set_reg': ED9Opcode.SET_REG}
-NO_OPERAND_OPS = {'add': ED9Opcode.ADD, 'lt': ED9Opcode.LT, 'ret': ED9Opcode.RETURN}
+BYTE_OPERAND_OPS = {
+    'pop': ED9Opcode.POP, 'get_reg': ED9Opcode.GET_REG, 'set_reg': ED9Opcode.SET_REG, 'debug_log': ED9Opcode.DEBUG_LOG,
+}
+NO_OPERAND_OPS = {
+    'add': ED9Opcode.ADD, 'sub': ED9Opcode.SUB, 'mul': ED9Opcode.MUL, 'div': ED9Opcode.DIV, 'mod': ED9Opcode.MOD,
+    'eq': ED9Opcode.EQ, 'ne': ED9Opcode.NE, 'gt': ED9Opcode.GT, 'ge': ED9Opcode.GE, 'lt': ED9Opcode.LT, 'le': ED9Opcode.LE,
+    'bitwise_and': ED9Opcode.BITWISE_AND, 'bitwise_or': ED9Opcode.BITWISE_OR,
+    'logical_and': ED9Opcode.LOGICAL_AND, 'logical_or': ED9Opcode.LOGICAL_OR,
+    'neg': ED9Opcode.NEG, 'ez': ED9Opcode.EZ, 'not_': ED9Opcode.NOT,       # not_: `not` is a keyword
+    'ret': ED9Opcode.RETURN,
+}
 SCRIPT_CALL_OPS = {'call_script': ED9Opcode.CALL_SCRIPT, 'call_script_no_return': ED9Opcode.CALL_SCRIPT_NO_RETURN}
 STACK_SLOT_OPS = {
     'load_stack': ED9Opcode.LOAD_STACK, 'load_stack_deref': ED9Opcode.LOAD_STACK_DEREF,
     'push_stack_offset': ED9Opcode.PUSH_STACK_OFFSET,
     'pop_to': ED9Opcode.POP_TO, 'pop_to_deref': ED9Opcode.POP_TO_DEREF,
 }
-OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_float', 'push_str', 'load_global', 'set_global', 'call', 'syscall')
+OTHER_OPS = (
+    'label', 'push_raw', 'push_int', 'push_float', 'push_str', 'load_global', 'set_global', 'call', 'syscall',
+    'debug_set_lineno',
+)
 MNEMONICS = (*OFFSET_OPS, *BYTE_OPERAND_OPS, *NO_OPERAND_OPS, *SCRIPT_CALL_OPS, *STACK_SLOT_OPS, *OTHER_OPS)
 PARAM_COUNT = 3
 
@@ -137,6 +149,9 @@ class Asm:
 
             case 'syscall':
                 return bytes([ED9Opcode.SYSCALL, *args])            # subsystem, function, argument count
+
+            case 'debug_set_lineno':
+                return bytes([ED9Opcode.DEBUG_SET_LINENO]) + struct.pack('<H', args[0])
 
             case _ if name in OFFSET_OPS:
                 return bytes([OFFSET_OPS[name]]) + word(resolve(args[0]))
@@ -242,6 +257,16 @@ def assert_rejected(test: unittest.TestCase, *functions: Func):
         Program(*functions).disassemble()
 
 
+def assert_fails_at(test: unittest.TestCase, program: Program, offset: int, mnemonic: str, text: str):
+    '''Disassembly fails in the main function at the instruction at offset, with exactly this text'''
+    with test.assertRaises(ScpDisassemblyError) as caught:
+        program.disassemble()
+
+    error = caught.exception
+    test.assertEqual(str(error), f'{FUNC_NAME}: {mnemonic} at 0x{offset:X}: {text}')
+    test.assertEqual((error.function, error.offset, error.mnemonic), (FUNC_NAME, offset, mnemonic))
+
+
 def blocks_by_offset_of(entry_block) -> dict:
     return {block.offset: block for block in Formatter.collect_blocks(entry_block)}
 
@@ -268,14 +293,16 @@ class TestEdgeStates(unittest.TestCase):
         asm.push_int(LEFT_VALUE); asm.jmp('join')
         asm.label('right'); asm.jmp('join')
         asm.label('join'); asm.pop(WORD_SIZE); asm.ret()
-        assert_rejected(self, main_function(asm))
+        assert_fails_at(self, Program(main_function(asm)), 0x12, 'JMP',
+                        'the stack on the edge 0x12 -> 0x17 is [], but an earlier edge into 0x17 recorded [PUSH_INT@0x7]')
 
     def test_fall_through_with_a_different_height_raises(self):
         asm = Asm()
         asm.get_reg(REG_INDEX); asm.jz('target')
         asm.push_int(LEFT_VALUE)                            # falls through into 'target' one entry higher
         asm.label('target'); asm.ret()
-        assert_rejected(self, main_function(asm))
+        assert_fails_at(self, Program(main_function(asm)), 0x7, 'PUSH_INT',
+                        'the stack on the edge 0x7 -> 0xD is [PUSH_INT@0x7], but an earlier edge into 0xD recorded []')
 
     def test_branch_into_a_decoded_block_with_a_different_height_raises(self):
         asm = Asm()
@@ -283,7 +310,9 @@ class TestEdgeStates(unittest.TestCase):
         asm.label('middle'); asm.set_reg(REG_INDEX); asm.get_reg(REG_INDEX); asm.jz('end')
         asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE); asm.jmp('middle')     # splits the entry block
         asm.label('end'); asm.ret()
-        assert_rejected(self, main_function(asm))
+        assert_fails_at(self, Program(main_function(asm)), 0x17, 'JMP',
+                        'the stack on the edge 0x0 -> 0x2 is [GET_REG@0x0], but an earlier edge into 0x2 recorded '
+                        '[PUSH_INT@0xB, PUSH_INT@0x11]')
 
     def test_value_carried_across_a_join_is_accepted(self):
         asm = Asm()
@@ -306,12 +335,22 @@ class TestEdgeStates(unittest.TestCase):
     def test_pop_below_the_stack_raises(self):
         asm = Asm()
         asm.pop(WORD_SIZE); asm.ret()
-        assert_rejected(self, main_function(asm))
+        assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP', 'pops 1 entries, the stack has 0: []')
 
     def test_pop_of_a_partial_slot_raises(self):
         asm = Asm()
         asm.push_int(LEFT_VALUE); asm.pop(WORD_SIZE // 2); asm.pop(WORD_SIZE // 2); asm.ret()
-        assert_rejected(self, main_function(asm))
+        assert_fails_at(self, Program(main_function(asm)), 0x6, 'POP', 'pops 2 bytes, not whole slots')
+
+    def test_return_with_a_value_left_raises(self):
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.ret()
+        assert_fails_at(self, Program(main_function(asm)), 0x6, 'RETURN', 'the stack is not empty: [PUSH_INT@0x0]')
+
+    def test_pop_to_below_the_stack_raises(self):
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.pop_to(-2 * WORD_SIZE); asm.ret()   # sp 1, 0 after its pop: slot -2
+        assert_fails_at(self, Program(main_function(asm)), 0x6, 'POP_TO', 'writes below the stack')
 
     @classmethod
     def disassemble_keeping_context(cls, asm: Asm) -> tuple[Program, Function, ScpDisassemblerContext]:
@@ -451,13 +490,22 @@ class TestPlainUses(unittest.TestCase):
 
                 arms[0]()
                 caller.label('second'); arms[1]()
-                assert_rejected(self, main_function(caller), returning_callee())
+                program = Program(main_function(caller), returning_callee())
+                if plain_arm_first:
+                    assert_fails_at(self, program, 0x19, 'CALL',
+                                    'expects the function ID, but PUSH_RAW@0x0 is also used as a plain value')
+
+                else:
+                    assert_fails_at(self, program, 0x17, 'SET_GLOBAL',
+                                    'uses PUSH_CURRENT_FUNC_ID@0x0 as a plain value, but a call consumes it as the '
+                                    'function ID')
 
     def test_discarded_caller_frame_raises(self):
         caller = Asm()
         caller.frame('return'); caller.pop(CALLER_FRAME_SLOTS * WORD_SIZE); caller.ret()
         caller.label('return'); caller.ret()
-        assert_rejected(self, main_function(caller))
+        assert_fails_at(self, Program(main_function(caller)), 0x5, 'POP',
+                        'discards caller frame slot 0 of 0x0 without its CALL_SCRIPT')
 
     def test_setup_overwritten_on_one_arm_raises(self):
         caller = Asm()
@@ -465,15 +513,16 @@ class TestPlainUses(unittest.TestCase):
         caller.get_reg(REG_INDEX); caller.jz('join')
         caller.push_int(LEFT_VALUE); caller.pop_to(-WORD_SIZE)       # overwrites the return address on this arm
         caller.label('join'); caller.call(CALLEE_ID); caller.label('return'); caller.ret()
-        assert_rejected(self, main_function(caller), returning_callee())
+        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0x1E, 'CALL',
+                        'expects the return address 0x21, but PUSH_RAW@0x6 is also used as a plain value')
 
     def test_overwritten_caller_frame_raises(self):
         caller = Asm()
         caller.frame('return'); caller.push_int(LEFT_VALUE); caller.pop_to(-WORD_SIZE)    # overwrites a frame slot
         caller.pop(CALLER_FRAME_SLOTS * WORD_SIZE); caller.ret()
         caller.label('return'); caller.ret()
-        with self.assertRaisesRegex(ValueError, 'discards caller frame slot'):
-            Program(main_function(caller)).disassemble()
+        assert_fails_at(self, Program(main_function(caller)), 0xB, 'POP_TO',
+                        'discards caller frame slot 4 of 0x0 without its CALL_SCRIPT')
 
     def test_setup_overwritten_on_the_branch_that_does_not_call_raises_in_either_decode_order(self):
         for overwrite_arm_first in (True, False):
@@ -492,7 +541,15 @@ class TestPlainUses(unittest.TestCase):
 
                 arms[0]()
                 caller.label('second'); arms[1]()
-                assert_rejected(self, main_function(caller), returning_callee())
+                program = Program(main_function(caller), returning_callee())
+                if overwrite_arm_first:
+                    assert_fails_at(self, program, 0x21, 'CALL',
+                                    'expects the function ID, but PUSH_RAW@0x0 is also used as a plain value')
+
+                else:
+                    assert_fails_at(self, program, 0x1D, 'POP_TO',
+                                    'uses PUSH_RET_ADDR@0x6 as a plain value, but a call consumes it as the return '
+                                    'address 0x16')
 
 
 class TestLocalCalls(unittest.TestCase):
@@ -518,28 +575,56 @@ class TestLocalCalls(unittest.TestCase):
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('return'); caller.call(CALLEE_ID)    # the callee takes one arg
         caller.label('return'); caller.ret()
-        assert_rejected(self, main_function(caller), returning_callee(argc = 1))
+        assert_fails_at(self, Program(main_function(caller), returning_callee(argc = 1)), 0xC, 'CALL',
+                        'pops 2 entries, the stack has 1: [PUSH_RAW@0x0]')
 
     def test_function_id_of_another_function_raises(self):
-        with self.assertRaises(ValueError):
-            self.call_program(lambda asm: (asm.push_raw(CALLEE_ID), asm.push_raw('return'))).disassemble()
+        program = self.call_program(lambda asm: (asm.push_raw(CALLEE_ID), asm.push_raw('return')))
+        assert_fails_at(self, program, 0xC, 'CALL', 'expects the function ID, found PUSH_RAW@0x0')
 
     def test_function_id_that_is_not_a_push_raises(self):
-        with self.assertRaises(ValueError):
-            self.call_program(lambda asm: (asm.get_reg(REG_INDEX), asm.push_raw('return'))).disassemble()
+        program = self.call_program(lambda asm: (asm.get_reg(REG_INDEX), asm.push_raw('return')))
+        assert_fails_at(self, program, 0x8, 'CALL', 'expects the function ID, found GET_REG@0x0')
 
     def test_typed_return_address_push_raises(self):
         '''Rewriting a PUSH_INT to PUSH_RET_ADDR would change its bytes on recompile'''
-        with self.assertRaises(ValueError):
-            self.call_program(lambda asm: (asm.push_raw(CALLER_ID), asm.push_int(0))).disassemble()
+        program = self.call_program(lambda asm: (asm.push_raw(CALLER_ID), asm.push_int(0)))
+        assert_fails_at(self, program, 0xC, 'CALL', 'expects a return address, found PUSH_INT@0x6')
 
     def test_overwritten_return_address_raises(self):
         def setup(asm):
             asm.push_raw(CALLER_ID); asm.push_raw('return'); asm.push_int(LEFT_VALUE)
             asm.pop_to(-WORD_SIZE)                          # overwrites the return address
 
-        with self.assertRaises(ValueError):
-            self.call_program(setup).disassemble()
+        assert_fails_at(self, self.call_program(setup), 0x17, 'CALL', 'expects a return address, found POP_TO@0x12')
+
+    def test_return_address_consumed_again_as_a_function_id_raises(self):
+        '''The fall-through arm's call consumes the push as its return address; the other arm's call, one slot higher,
+        as its function ID'''
+        caller = Asm()
+        caller.push_raw(CALLER_ID); caller.push_raw('first'); caller.get_reg(REG_INDEX); caller.jz('second')
+        caller.call(CALLEE_ID); caller.label('first'); caller.ret()
+        caller.label('second'); caller.push_raw('resume'); caller.call(CALLEE_ID)
+        caller.label('resume'); caller.pop(WORD_SIZE); caller.ret()
+        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0x1D, 'CALL',
+                        'PUSH_RET_ADDR@0x6 is consumed as the function ID and as the return address 0x16')
+
+    def test_return_addresses_meeting_at_a_join_must_match(self):
+        '''The join's call consumes the first arm's return address before the other arm's edge brings its own'''
+        caller = Asm()
+        caller.push_raw(CALLER_ID); caller.get_reg(REG_INDEX); caller.jz('right')
+        caller.push_raw('return'); caller.jmp('join')
+        caller.label('right'); caller.push_raw('right'); caller.jmp('join')
+        caller.label('join'); caller.call(CALLEE_ID); caller.label('return'); caller.ret()
+        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0x1E, 'JMP',
+                        'expects the return address 0x26, found PUSH_RAW@0x18')
+
+    def test_return_label_at_the_end_of_the_function_raises(self):
+        caller = Asm()
+        caller.push_raw(CALLER_ID); caller.push_raw('end'); caller.call(CALLEE_ID)
+        caller.label('end')                                 # the callee's code starts here
+        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0xC, 'CALL',
+                        'returns to 0xF, past its end (no RETURN after its return label)')
 
     def test_return_address_past_dead_code_is_the_return_edge(self):
         caller = Asm()
@@ -555,7 +640,8 @@ class TestLocalCalls(unittest.TestCase):
     def test_return_address_outside_the_function_raises(self):
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw(OUTSIDE_OFFSET); caller.call(CALLEE_ID); caller.ret()
-        assert_rejected(self, main_function(caller), returning_callee())
+        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0xC, 'CALL',
+                        f'return offset 0x{OUTSIDE_OFFSET:X} is outside the function')
 
     def test_equal_setups_on_both_branches_are_rewritten(self):
         caller = Asm()
@@ -589,7 +675,12 @@ class TestLocalCalls(unittest.TestCase):
                 arms[0](); caller.jmp('join')
                 caller.label('second'); arms[1](); caller.jmp('join')
                 caller.label('join'); caller.call(CALLEE_ID); caller.label('return'); caller.ret()
-                assert_rejected(self, main_function(caller), returning_callee())
+                program = Program(main_function(caller), returning_callee())
+                if setup_arm_first:
+                    assert_fails_at(self, program, 0x24, 'JMP', 'expects the function ID, found PUSH_INT@0x18')
+
+                else:
+                    assert_fails_at(self, program, 0x29, 'CALL', 'expects a return address, found PUSH_INT@0xD')
 
 
 class TestScriptCalls(unittest.TestCase):
@@ -627,7 +718,22 @@ class TestScriptCalls(unittest.TestCase):
             caller.push_int(LEFT_VALUE)                     # a frame's height, but no frame
 
         caller.push_int(RIGHT_VALUE); caller.call_script(1); caller.ret()
-        assert_rejected(self, main_function(caller))
+        assert_fails_at(self, Program(main_function(caller)), 0x24, 'CALL_SCRIPT',
+                        'expects a return address, found PUSH_INT@0x0')
+
+    def test_frames_meeting_other_values_at_a_join_raises(self):
+        '''The join's call consumes the first arm's frame before the other arm's edge brings plain values'''
+        caller = Asm()
+        caller.get_reg(REG_INDEX); caller.jz('right')
+        caller.frame('return'); caller.jmp('join')
+        caller.label('right')
+        for _ in range(CALLER_FRAME_SLOTS):
+            caller.push_int(LEFT_VALUE)
+
+        caller.jmp('join')
+        caller.label('join'); caller.call_script(0); caller.label('return'); caller.ret()
+        assert_fails_at(self, Program(main_function(caller)), 0x2F, 'JMP',
+                        'expects caller frame slot 0 returning to 0x3E, found PUSH_INT@0x11')
 
     def test_pop_reaching_into_the_frame_raises(self):
         caller = Asm()
@@ -635,12 +741,14 @@ class TestScriptCalls(unittest.TestCase):
         caller.pop(2 * WORD_SIZE)                           # the arg and one frame slot
         caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE); caller.call_script(1)
         caller.label('return'); caller.ret()
-        assert_rejected(self, main_function(caller))
+        assert_fails_at(self, Program(main_function(caller)), 0xB, 'POP',
+                        'discards caller frame slot 4 of 0x0 without its CALL_SCRIPT')
 
     def test_tail_call_leaving_entries_below_its_args_raises(self):
         caller = Asm()
         caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE); caller.call_script_no_return(1)
-        assert_rejected(self, main_function(caller))
+        assert_fails_at(self, Program(main_function(caller)), 0xC, 'CALL_SCRIPT_NO_RETURN',
+                        'leaves [PUSH_INT@0x0] below its args')
 
     def test_plain_disassembler_keeps_the_frame_edge(self):
         '''Without the parser nothing simulates calls, so PUSH_CALLER_FRAME still declares its return block'''
@@ -655,6 +763,46 @@ class TestScriptCalls(unittest.TestCase):
 
         self.assertIn(program.label('return'), blocks_by_offset(func))
         Formatter(FormatterContext()).format_function(func)
+
+
+class TestCheckOrder(unittest.TestCase):
+    '''An instruction that breaks two rules is reported by the check the parser makes first'''
+
+    def test_call_checks_the_return_address_before_the_function_id(self):
+        caller = Asm()
+        caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE); caller.call(CALLEE_ID); caller.ret()
+        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0xC, 'CALL',
+                        'expects a return address, found PUSH_INT@0x6')
+
+    def test_call_checks_its_arguments_before_its_setup(self):
+        caller = Asm()
+        caller.push_raw(CALLER_ID); caller.push_raw('return'); caller.call(CALLEE_ID)    # no args, the callee takes 3
+        caller.label('return'); caller.ret()
+        assert_fails_at(self, Program(main_function(caller), returning_callee(argc = PARAM_COUNT)), 0xC, 'CALL',
+                        'pops 3 entries, the stack has 2: [PUSH_RAW@0x0, PUSH_RAW@0x6]')
+
+    def test_call_script_checks_its_arguments_before_its_frame(self):
+        caller = Asm()
+        caller.push_int(LEFT_VALUE); caller.call_script(2); caller.ret()                 # no frame, one arg of 2
+        assert_fails_at(self, Program(main_function(caller)), 0x6, 'CALL_SCRIPT',
+                        'pops 2 entries, the stack has 1: [PUSH_INT@0x0]')
+
+    def test_tail_call_checks_its_arguments_before_what_lies_below_them(self):
+        caller = Asm()
+        caller.frame('return'); caller.call_script_no_return(1)                         # its arg is a frame slot
+        caller.label('return'); caller.ret()
+        assert_fails_at(self, Program(main_function(caller)), 0x5, 'CALL_SCRIPT_NO_RETURN',
+                        'discards caller frame slot 4 of 0x0 without its CALL_SCRIPT')
+
+    def test_pop_checks_whole_slots_before_the_stack(self):
+        asm = Asm()
+        asm.pop(WORD_SIZE + WORD_SIZE // 2); asm.ret()                                   # on an empty stack
+        assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP', 'pops 6 bytes, not whole slots')
+
+    def test_pop_to_pops_before_it_writes(self):
+        asm = Asm()
+        asm.pop_to(-2 * WORD_SIZE); asm.ret()                                            # nothing to pop, slot -2
+        assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP_TO', 'pops 1 entries, the stack has 0: []')
 
 
 class TestBlockSplits(unittest.TestCase):

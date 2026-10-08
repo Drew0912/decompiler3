@@ -18,7 +18,7 @@ from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.call_records import record_args, record_mismatch
 from falcom.ed9.parser.code_layout import function_extents
-from falcom.ed9.parser.scp import CallDebugInfoTracker
+from falcom.ed9.parser.scp import CallDebugInfoTracker, TrackedValue
 from falcom.ed9.parser.types_scp import RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_writer_test_utils import fresh_writer
@@ -88,6 +88,37 @@ def compile_script(dat: Path):
         CALL_SCRIPT_NO_RETURN('mod', 'Tail', 0)
 
     writer.run({})
+
+
+class TestWriterOnlyInputs(unittest.TestCase):
+    '''What only the writer feeds the tracker - its DSL arguments, which the parser would never decode: a raw PUSH, a
+    POP of a partial slot, UNKNOWN_28'''
+
+    @classmethod
+    def tracker_holding(cls, count: int) -> CallDebugInfoTracker:
+        '''A tracker fed no call, with count constants on its stack'''
+        tracker = CallDebugInfoTracker(get_param_count = lambda func: 0)
+        for _ in range(count):
+            tracker.on_opcode(ED9Opcode.PUSH_INT, [SYSCALL_CONSTANT], payload = SYSCALL_CONSTANT)
+
+        return tracker
+
+    def test_raw_push_pushes_one_constant_with_its_payload(self):
+        tracker = self.tracker_holding(0)
+        payload = (ScpValue(RawInt(SYSCALL_CONSTANT)), None)    # (value, string), as the writer's push gives it
+        tracker.on_opcode(ED9Opcode.PUSH, [RawInt(SYSCALL_CONSTANT)], payload)
+        self.assertEqual(tracker.stack, [TrackedValue(ArgType.Constant, payload = payload)])
+
+    def test_pop_of_a_partial_slot_pops_only_whole_slots(self):
+        tracker = self.tracker_holding(2)
+        tracker.on_opcode(ED9Opcode.POP, [WORD_SIZE + WORD_SIZE // 2])
+        self.assertEqual(len(tracker.stack), 1)
+
+    def test_unknown_28_changes_nothing(self):
+        tracker = self.tracker_holding(1)
+        before = (list(tracker.stack), tracker.counter)
+        tracker.on_opcode(ED9Opcode.UNKNOWN_28, [b'\0'])
+        self.assertEqual((tracker.stack, tracker.counter, tracker.frames, tracker.calls), (*before, [], []))
 
 
 class CompiledScript(unittest.TestCase):
