@@ -22,6 +22,7 @@ from ir.mlil.passes import (
 FUNC_START = 0x3000
 BLOCK_STRIDE = 0x10
 ARG_VALUE = 7
+ONE_ARG = 1
 
 EXPECTED_PASS_TYPES = [
     BlockMergePass, SSAConversionPass, SSAOptimizationPass, SSATypeInferencePass, SSADeconstructionPass,
@@ -38,7 +39,7 @@ def build_call_function() -> LowLevelILFunction:
     builder.push_func_id()
     builder.push_ret_addr(ret_block)
     builder.push_int(ARG_VALUE)
-    builder.call('f')
+    builder.call('f', ONE_ARG)
     builder.begin_block(ret_block)
     builder.ret()
     return builder.finalize()

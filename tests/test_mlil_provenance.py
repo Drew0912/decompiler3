@@ -22,6 +22,7 @@ from ir.mlil.passes import DeadPhiSourceEliminationPass, SSADeadCodeEliminationP
 FUNC_START = 0x3000
 BLOCK_STRIDE = 0x10
 ARG_VALUE = 7
+ONE_ARG = 1
 TEXT = 'note'
 
 ENTRY_BRANCH_ADDRESS = 0x3004
@@ -42,7 +43,7 @@ def build_call_function() -> LowLevelILFunction:
     builder.set_current_block(builder.create_basic_block(FUNC_START, 'entry'))
     ret_block = builder.create_basic_block(FUNC_START + BLOCK_STRIDE, 'ret')
     emits = (builder.push_func_id, lambda: builder.push_ret_addr(ret_block), lambda: builder.push_int(ARG_VALUE),
-             lambda: builder.call('f'))
+             lambda: builder.call('f', ONE_ARG))
     for offset, emit in enumerate(emits):
         builder.set_current_address(FUNC_START + offset)
         emit()

@@ -235,7 +235,9 @@ class ED9VMLifter:
 
             case ED9Opcode.CALL:
                 func_id = int(inst.operands[0].value)
-                builder.call(self._resolve_call_target(func_id))
+                target = self._resolve_call_target(func_id)
+                argc = self._pop_count(inst)
+                builder.call(target, argc)
 
             case ED9Opcode.CALL_SCRIPT:
                 module = self._must_str(inst.operands[0].value)
@@ -310,6 +312,11 @@ class ED9VMLifter:
 
     def _resolve_call_target(self, func_id: int) -> str:
         return self._parser.get_func_name_from_func_id(func_id)
+
+    def _pop_count(self, inst: Instruction) -> int:
+        '''How many entries inst pops, by its stack effect; a local CALL's are its callee's declared parameters'''
+        operand_values = [operand.value for operand in inst.operands]
+        return inst.descriptor.effect.pop_count(operand_values, self._parser.get_func_argc)
 
     def _must_str(self, value: ScpValue) -> str:
         if not isinstance(value, ScpValue):

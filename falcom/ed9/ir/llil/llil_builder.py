@@ -213,13 +213,18 @@ class FalcomVMBuilder(LowLevelILBuilder):
             CallSetupKind.SCRIPT, sp_before_call, frame_loads, return_target, push_frame_inst
         ))
 
-    def call(self, target):
-        '''Falcom VM call - automatically cleans up stack (callee cleanup convention)'''
+    def call(self, target: str, arg_count: int):
+        '''CALL operation - arg_count is the callee's declared parameter count; the callee pops them and the setup'''
         setup = self._require_setup(CallSetupKind.LOCAL)
-        call_slots = self.sp_get() - setup.sp_before_call   # func_id + ret_addr + args
 
-        arg_count = call_slots - LOCAL_SETUP_SLOTS
-        args = self.vstack_peek_many(arg_count) if arg_count > 0 else []
+        call_slots = LOCAL_SETUP_SLOTS + arg_count
+        if self.sp_get() != setup.sp_before_call + call_slots:
+            raise RuntimeError(
+                f'Stack mismatch in call: sp={self.sp_get()}, but the call setup and '
+                f'{arg_count} args end at sp={setup.sp_before_call + call_slots}'
+            )
+
+        args = self.vstack_peek_many(arg_count) if arg_count > 0 else []   # last pushed first
 
         call_inst = super().call(target, return_target = setup.return_block, args = args)
         self._consume_setup(setup, call_slots, call_inst)

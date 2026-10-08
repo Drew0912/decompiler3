@@ -24,6 +24,9 @@ REPLACEMENT_VALUE = 999
 STORED_VALUE = 5
 CONDITION_VALUE = 1
 LOCAL_PARAM_COUNT = 2
+NO_ARGS = 0
+ONE_ARG = 1
+TWO_ARGS = 2
 MODULE_NAME = 'module'
 FUNC_ID_SLOT = 0    # a local setup pushed on an empty stack
 RET_ADDR_SLOT = 1
@@ -54,7 +57,7 @@ class TestLocalCallSetup(unittest.TestCase):
         builder.push_int(ARG_VALUE)
         arg_load = builder.vstack_peek()
 
-        builder.call('f')
+        builder.call('f', ONE_ARG)
 
         self.assertIsInstance(last_instruction(builder), LowLevelILCall)
         self.assertEqual(last_instruction(builder).args, [arg_load])
@@ -65,8 +68,12 @@ class TestLocalCallSetup(unittest.TestCase):
         builder = make_builder()
         builder.push_func_id()
 
-        with self.assertRaises(RuntimeError):
-            builder.call('f')
+        # Setup checks come before the height, which the missing return address also leaves one slot short
+        with self.assertRaises(RuntimeError) as caught:
+            builder.call('f', NO_ARGS)
+
+        self.assertEqual(str(caught.exception),
+                         'LOCAL call, but the innermost pending call setup has no return address yet')
 
     def test_push_ret_addr_without_push_func_id_raises(self):
         builder = make_builder()
@@ -82,7 +89,7 @@ class TestLocalCallSetup(unittest.TestCase):
         builder.pop_n(1)
         builder.push_ret_addr(ret_block)
 
-        builder.call('f')
+        builder.call('f', NO_ARGS)
 
     def test_push_ret_addr_over_replaced_func_id_raises(self):
         builder = make_builder()
@@ -102,6 +109,32 @@ class TestLocalCallSetup(unittest.TestCase):
             builder.push_ret_addr(add_block(builder, 'ret'))
 
 
+class TestLocalCallArgumentCount(unittest.TestCase):
+    '''A local call takes its callee's declared argument count: the stack must hold exactly the setup and that many'''
+
+    def call_one_arg_callee_after_pushing(self, pushed_args: int) -> str:
+        builder = make_builder()
+        builder.push_func_id()
+        builder.push_ret_addr(add_block(builder, 'ret'))
+        for _ in range(pushed_args):
+            builder.push_int(ARG_VALUE)
+
+        with self.assertRaises(RuntimeError) as caught:
+            builder.call('f', ONE_ARG)
+
+        return str(caught.exception)
+
+    def test_one_argument_too_many_raises(self):
+        self.assertEqual(self.call_one_arg_callee_after_pushing(TWO_ARGS),
+                         f'Stack mismatch in call: sp={LOCAL_SETUP_SLOTS + TWO_ARGS}, but the call setup and '
+                         f'{ONE_ARG} args end at sp={LOCAL_SETUP_SLOTS + ONE_ARG}')
+
+    def test_one_argument_missing_raises(self):
+        self.assertEqual(self.call_one_arg_callee_after_pushing(NO_ARGS),
+                         f'Stack mismatch in call: sp={LOCAL_SETUP_SLOTS + NO_ARGS}, but the call setup and '
+                         f'{ONE_ARG} args end at sp={LOCAL_SETUP_SLOTS + ONE_ARG}')
+
+
 class TestCallSetupCorruption(unittest.TestCase):
     '''Anything that changes a setup slot between the setup and its call is caught at the call.'''
 
@@ -116,15 +149,19 @@ class TestCallSetupCorruption(unittest.TestCase):
         builder.push_int(REPLACEMENT_VALUE)
 
         with self.assertRaises(RuntimeError):
-            builder.call('f')
+            builder.call('f', NO_ARGS)
 
     def test_popped_ret_addr_raises(self):
         builder = make_builder()
         self.make_local_setup(builder)
         builder.pop_n(1)
 
-        with self.assertRaises(RuntimeError):
-            builder.call('f')
+        # Setup checks come before the height, which the pop also leaves one slot short
+        with self.assertRaises(RuntimeError) as caught:
+            builder.call('f', NO_ARGS)
+
+        self.assertEqual(str(caught.exception),
+                         f'LOCAL call setup slot {RET_ADDR_SLOT} was popped or overwritten before its call')
 
     def test_pop_to_over_ret_addr_raises(self):
         builder = make_builder()
@@ -134,7 +171,7 @@ class TestCallSetupCorruption(unittest.TestCase):
         builder.pop_to(-2 * WORD_SIZE)            # sp 4 -> 3, stores into slot 1
 
         with self.assertRaises(RuntimeError):
-            builder.call('f')
+            builder.call('f', ONE_ARG)
 
     def test_pop_to_over_first_script_pointer_slot_raises(self):
         builder = make_builder()
@@ -154,7 +191,7 @@ class TestCallSetupCorruption(unittest.TestCase):
         builder.pop_to(-2 * WORD_SIZE)            # slot 1 was re-pushed after the parameter was popped: a stack store
 
         with self.assertRaises(RuntimeError):
-            builder.call('f')
+            builder.call('f', ONE_ARG)
 
     def test_pop_to_over_script_setup_in_parameter_range_raises(self):
         builder = make_builder(CALLER_FRAME_SLOTS)
@@ -170,8 +207,11 @@ class TestCallSetupCorruption(unittest.TestCase):
         builder = make_builder()
         builder.push_caller_frame(add_block(builder, 'ret'))
 
-        with self.assertRaises(RuntimeError):
-            builder.call('f')
+        # Setup checks come before the height, which the caller frame's slots also overshoot
+        with self.assertRaises(RuntimeError) as caught:
+            builder.call('f', NO_ARGS)
+
+        self.assertEqual(str(caught.exception), 'LOCAL call, but the innermost pending call setup is SCRIPT')
 
     def test_script_call_on_local_setup_raises(self):
         builder = make_builder()
@@ -201,9 +241,9 @@ class TestCallSetupInSnapshots(unittest.TestCase):
         builder.pop_jmp_zero(left, right)
 
         builder.begin_block(left)
-        builder.call('f')
+        builder.call('f', NO_ARGS)
         builder.begin_block(right)
-        builder.call('g')
+        builder.call('g', NO_ARGS)
 
         self.assertEqual(last_instruction(builder).target, 'g')
 
@@ -215,8 +255,13 @@ class TestCallSetupInSnapshots(unittest.TestCase):
 
         builder.restore_stack_state(snapshot)
 
-        with self.assertRaises(RuntimeError):
-            builder.call('f')   # the restored setup is still waiting for its return address
+        # The restored setup is still waiting for its return address (a restore keeping the completed setup would
+        # raise at its popped return-address slot instead)
+        with self.assertRaises(RuntimeError) as caught:
+            builder.call('f', NO_ARGS)
+
+        self.assertEqual(str(caught.exception),
+                         'LOCAL call, but the innermost pending call setup has no return address yet')
 
     def test_restore_rejects_plain_stack_snapshot(self):
         builder = make_builder()
@@ -235,7 +280,7 @@ class TestCallSetupInSnapshots(unittest.TestCase):
         builder.pop_jmp_zero(mid, detour)
 
         builder.begin_block(mid)
-        builder.call('f')
+        builder.call('f', NO_ARGS)
         builder.begin_block(ret_block)
         builder.ret()
         builder.begin_block(detour)   # lifted last, ends with the setup still pending
@@ -274,7 +319,7 @@ class TestNestedCallSetups(unittest.TestCase):
         builder.push_caller_frame(outer_ret)
         builder.push_func_id()
         builder.push_ret_addr(inner_ret)
-        builder.call('f')
+        builder.call('f', NO_ARGS)
 
         builder.begin_block(inner_ret)
         builder.call_script(MODULE_NAME, 'outer', 0)
@@ -291,7 +336,7 @@ class TestNestedCallSetups(unittest.TestCase):
         builder.call_script(MODULE_NAME, 'inner', 0)
 
         builder.begin_block(inner_ret)
-        builder.call('f')
+        builder.call('f', NO_ARGS)
 
         self.assertIs(last_instruction(builder).return_target, outer_ret)
 
@@ -328,7 +373,7 @@ class TestStoresBelowAPendingSetup(unittest.TestCase):
         builder.push_int(STORED_VALUE)            # slot 3
         builder.pop_to(-3 * WORD_SIZE)            # sp 4 -> 3, stores into slot 0
 
-        builder.call('f')
+        builder.call('f', NO_ARGS)
 
     def test_store_to_a_parameter_below_the_setup_leaves_it_callable(self):
         builder = make_builder(LOCAL_PARAM_COUNT)
@@ -337,7 +382,7 @@ class TestStoresBelowAPendingSetup(unittest.TestCase):
         builder.push_int(STORED_VALUE)            # slot 4
         builder.pop_to(-4 * WORD_SIZE)            # sp 5 -> 4, stores into parameter slot 0
 
-        builder.call('f')
+        builder.call('f', NO_ARGS)
 
 
 class TestCallSetupsAtJoins(unittest.TestCase):
@@ -416,7 +461,7 @@ class TestCallSetupsAtJoins(unittest.TestCase):
             builder.jmp(join)
 
         builder.begin_block(join)
-        builder.call('f')
+        builder.call('f', NO_ARGS)
         builder.begin_block(ret_block)
         builder.ret()
 
@@ -431,7 +476,7 @@ class TestCallSetupsAtJoins(unittest.TestCase):
             builder.jmp(join)
 
         builder.begin_block(join)
-        builder.call('f')
+        builder.call('f', ONE_ARG)
 
         self.assertEqual(last_instruction(builder).args[0].slot_index, LOCAL_SETUP_SLOTS)
 

@@ -13,6 +13,7 @@ from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 
 FUNC_START = 0x1000
 SECOND_BLOCK_START = FUNC_START + 0x10
+ONE_ARG = 1
 
 
 def make_builder(num_params: int = 0, *, name: str = 'stack_sync_test') -> FalcomVMBuilder:
@@ -93,7 +94,7 @@ class TestPopKeepsVstackInSync(unittest.TestCase):
         builder.push_ret_addr(ret_block)
         builder.push(builder.const_int(42))
         arg_load = builder.vstack_peek()
-        builder.call('some_func')
+        builder.call('some_func', ONE_ARG)
 
         call_inst = builder.current_block.instructions[-1]
         self.assertIsInstance(call_inst, LowLevelILCall)

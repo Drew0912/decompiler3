@@ -113,8 +113,10 @@ caller's argument; any other pointer may point into the function's own frame, an
   call; `PUSH_RET_ADDR` must land directly above the function ID and completes the setup with its
   return block.
 - `CALL` needs the innermost pending setup to be a complete local one whose pushed slots are all
-  still in place (not popped, re-pushed or overwritten). It emits `LowLevelILCall` with the callee
-  name, the return block and the arguments (the top `sp - sp_before_call - LOCAL_SETUP_SLOTS`
+  still in place (not popped, re-pushed or overwritten), and `sp` to be exactly `sp_before_call +
+  LOCAL_SETUP_SLOTS + argc`, where `argc` (`call`'s `arg_count`) is the callee's declared parameter
+  count - the lifter resolves it through `CALL`'s stack effect with the parser's function table. It
+  emits `LowLevelILCall` with the callee name, the return block and the arguments (the top `argc`
   virtual stack entries, last pushed first), then drops the setup and the arguments, pops the
   setup record and records the return edge.
 

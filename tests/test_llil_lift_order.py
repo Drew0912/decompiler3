@@ -28,6 +28,7 @@ CONDITION_VALUE = 0
 LEFT_VALUE = 1
 RIGHT_VALUE = 2
 SEED_PARAM_COUNT = 2
+NO_ARGS = 0
 MODULE_NAME = 'module'
 
 
@@ -285,7 +286,7 @@ class TestRPOIntegration(unittest.TestCase):
         builder.begin_block(call_block)
         builder.push_func_id()
         builder.push_ret_addr(ret_target)
-        builder.call('some_func')   # records the edge into ret_target itself
+        builder.call('some_func', NO_ARGS)   # records the edge into ret_target itself
 
         builder.begin_block(other_branch)   # lifted before ret_target, leaves unrelated state
         builder.push_int(999)
@@ -422,7 +423,7 @@ class TestStrictEdgeState(unittest.TestCase):
         builder.push_ret_addr(ret_block)
 
         with self.assertRaises(RuntimeError):
-            builder.call('f')   # returns at sp 0
+            builder.call('f', NO_ARGS)   # returns at sp 0
 
     def test_script_call_return_into_a_lifted_block_with_a_different_sp_raises(self):
         builder, ret_block = self.enter_caller_after_return_block_lifted_at_sp_one()
