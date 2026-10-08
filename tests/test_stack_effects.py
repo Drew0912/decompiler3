@@ -2,7 +2,8 @@
 '''Unit tests for the ED9 stack effects: the table's invariants (what a call's setup pushes, the call pops; a
 slot-addressing opcode pops a fixed count); the agreement test - the parser's stack simulation, the lifter's builder and
 the debug-record tracker change the stack as the opcode table says, take a call's arguments as it says, and reject a
-value left on the stack exactly at the instructions it says exit; and the parser fed what decoding never gives it.'''
+value left on the stack exactly at the instructions it says exit; a local call's argument count through each walker's
+lookup; the parser fed what decoding never gives it; and the table's lookup of an opcode without a row.'''
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -17,12 +18,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction
 from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
 from falcom.ed9.disasm.instruction import SYNTHETIC_INSTRUCTION_SIZE
-from falcom.ed9.disasm.stack_effects import (
-    CALLEE_OPERAND, CALLER_FRAME_SLOTS, STACK_EFFECTS, CalleeParamCount, InstructionKind, StackEffect,
-)
+from falcom.ed9.disasm.stack_effects import STACK_EFFECTS, InstructionKind, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.vm_lifter import ED9LiftError
-from falcom.ed9.parser.scp import OPCODE_SIZE, TRACKED_FRAME_SLOTS, CallDebugInfoTracker, ScpDisassemblyError, ScpParser
+from falcom.ed9.parser.scp import OPCODE_SIZE, CallDebugInfoTracker, ScpDisassemblyError, ScpParser
 from falcom.ed9.parser.types_parser import Function, FunctionParam
 from falcom.ed9.parser.types_scp import ScpParamFlags, Value32
 from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
@@ -44,11 +43,6 @@ NEVER_SEEN = {
     'parser'    : {ED9Opcode.PUSH, ED9Opcode.PUSH_CURRENT_FUNC_ID, ED9Opcode.PUSH_RET_ADDR},    # decoded as PUSH_RAW etc.
     'lifter'    : {ED9Opcode.PUSH},
     'tracker'   : {ED9Opcode.PUSH},     # only the writer feeds a raw PUSH (test_call_records.TestWriterOnlyInputs)
-}
-# The tracker counts a caller frame as TRACKED_FRAME_SLOTS slots, the table as CALLER_FRAME_SLOTS
-TRACKER_FRAME_DIFFERENCE = {
-    ED9Opcode.PUSH_CALLER_FRAME : TRACKED_FRAME_SLOTS - CALLER_FRAME_SLOTS,
-    ED9Opcode.CALL_SCRIPT       : CALLER_FRAME_SLOTS - TRACKED_FRAME_SLOTS,
 }
 
 
@@ -258,23 +252,17 @@ def track(parser: ScpParser, decoded: list[Function]) -> list[Step]:
     return steps
 
 
-def callee_params(step: Step, parser: ScpParser) -> int | None:
-    '''A local call's argument count: its callee's declared parameters, from the function table every walker reads'''
-    if isinstance(effect_of(step.opcode).pops, CalleeParamCount):
-        return parser.get_func_argc(step.values[CALLEE_OPERAND])
-
-    return None
-
-
 def table_change(step: Step, parser: ScpParser) -> int:
+    '''The stack change the table gives for step; a local call's arguments are its callee's declared parameters, from
+    the function table every walker reads'''
     effect = effect_of(step.opcode)
-    return effect.pushes - effect.pop_count(step.values, callee_params(step, parser)) - effect.setup_pops
+    return effect.pushes - effect.pop_count(step.values, parser.get_func_argc) - effect.setup_pops
 
 
 def table_argc(step: Step, parser: ScpParser) -> int:
     '''A call's arguments, popped or read in place'''
     effect = effect_of(step.opcode)
-    return effect.pop_count(step.values, callee_params(step, parser)) + effect.read_count(step.values)
+    return effect.pop_count(step.values, parser.get_func_argc) + effect.read_count(step.values)
 
 
 class TableInvariantTests(unittest.TestCase):
@@ -293,6 +281,23 @@ class TableInvariantTests(unittest.TestCase):
         for kind, effect in addressing.items():
             with self.subTest(kind = kind.name):
                 self.assertIsInstance(effect.pops, int)
+
+
+class TestLocalCallArgumentCount(unittest.TestCase):
+    '''A local CALL pops its callee's declared parameters, which each walker looks up with its own function table'''
+    DECLARED_PARAMS = 3
+
+    def test_counted_with_the_walkers_lookup(self):
+        params = {CALLEE_ID: self.DECLARED_PARAMS}
+        self.assertEqual(STACK_EFFECTS[InstructionKind.CALL].pop_count([CALLEE_ID], params.__getitem__),
+                         self.DECLARED_PARAMS)
+
+    def test_without_a_lookup_it_raises(self):
+        with self.assertRaises(ValueError) as caught:
+            STACK_EFFECTS[InstructionKind.CALL].pop_count([CALLEE_ID])
+
+        self.assertEqual(str(caught.exception),
+                         "a local CALL pops its callee's parameter count, which needs the walker's lookup")
 
 
 class TestParserInputsDecodingNeverGives(unittest.TestCase):
@@ -325,6 +330,31 @@ class TestParserInputsDecodingNeverGives(unittest.TestCase):
         self.assertIs(self.context.stack_simulation[0], inst)
 
 
+class TestDescriptorLookup(unittest.TestCase):
+    '''An opcode without a row: UNKNOWN_28's operand format is unknown, any other opcode is unknown itself; neither
+    error is chained to anything'''
+
+    def assert_unchained(self, error: Exception):
+        self.assertIsNone(error.__cause__)
+        self.assertIsNone(error.__context__)
+
+    def test_unknown_28_is_not_implemented(self):
+        with self.assertRaises(NotImplementedError) as caught:
+            ED9_INSTRUCTION_TABLE.get_descriptor(ED9Opcode.UNKNOWN_28)
+
+        self.assertEqual(str(caught.exception), f'opcode 0x{ED9Opcode.UNKNOWN_28:02X} decoded - never seen in a sample '
+                                                'script, operand format unknown')
+        self.assert_unchained(caught.exception)
+
+    def test_an_opcode_without_a_row_is_unknown(self):
+        opcode = max(ED9_INSTRUCTION_TABLE.descriptors) + 1
+        with self.assertRaises(ValueError) as caught:
+            ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
+
+        self.assertEqual(str(caught.exception), f'Unknown opcode: 0x{opcode:02X}')
+        self.assert_unchained(caught.exception)
+
+
 class TestWalkersAgreeWithTheTable(unittest.TestCase):
     '''Every program through the parser, the lifter and the tracker, each instruction checked against its effect'''
 
@@ -351,7 +381,7 @@ class TestWalkersAgreeWithTheTable(unittest.TestCase):
                         if walker == 'tracker':
                             # It starts each function empty, without the caller's parameters: a POP reaching into
                             # them pops only what it holds
-                            expected = max(expected + TRACKER_FRAME_DIFFERENCE.get(step.opcode, 0), -step.before)
+                            expected = max(expected, -step.before)
 
                         self.assertEqual(step.after - step.before, expected)
 

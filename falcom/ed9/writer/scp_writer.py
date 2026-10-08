@@ -391,7 +391,8 @@ class ScpWriter:
         try:
             for f in self.functions:
                 self.current_function = f
-                self.call_tracker = CallDebugInfoTracker(get_param_count = self._get_param_count) if self.round_trip else None
+                self.call_tracker = CallDebugInfoTracker(get_param_count = self._get_param_count,
+                                                         warn = self._warn_at_opcode) if self.round_trip else None
                 f.entry.offset = code.Position
                 log.debug(f'{f.name} @ code+0x{f.entry.offset:08X}')
                 self._run_body(f, f.body)
@@ -430,6 +431,10 @@ class ScpWriter:
 
     def _get_param_count(self, func: Callable) -> int:
         return self._find_function(func).entry.param_count
+
+    def _warn_at_opcode(self, text: str):
+        """A warning about the opcode being compiled, at its .py line when the compile check keeps the source map"""
+        log.warning(f'{location_prefix(self.current_site)}{self.current_function.name}: {text}')
 
     def _build_debug_records(self):
         """Turn tracked call sites into debug-info records, in table order like the original compiler"""

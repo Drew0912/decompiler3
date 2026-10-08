@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Sequence
+from typing import Any, Callable, Sequence
 from ir.llil import WORD_SIZE
 
 __all__ = (
@@ -71,7 +71,8 @@ class OperandCount:
 
 @dataclass(frozen = True)
 class CalleeParamCount:
-    """A local CALL's argument count: its callee's declared parameters, looked up by each walker"""
+    """A local CALL's argument count: what its callee, the operand at index, declares - each walker looks it up"""
+    index   : int
 
 
 @dataclass(frozen = True)
@@ -84,13 +85,13 @@ class StackEffect:
     addresses_slot  : bool = False               # the offset operand counts from sp after the pops
     exits           : bool = False               # the stack must be empty afterwards
 
-    def pop_count(self, operand_values: Sequence[int], callee_param_count: int | None = None) -> int:
-        """Values popped above any call setup; a local CALL needs its callee's parameter count"""
+    def pop_count(self, operand_values: Sequence, get_param_count: Callable[[Any], int] | None = None) -> int:
+        """Values popped above any call setup; a local CALL's are its callee's parameters, from the walker's lookup"""
         if isinstance(self.pops, CalleeParamCount):
-            if callee_param_count is None:
-                raise ValueError("a local CALL pops its callee's parameter count, which wasn't given")
+            if get_param_count is None:
+                raise ValueError("a local CALL pops its callee's parameter count, which needs the walker's lookup")
 
-            return callee_param_count
+            return get_param_count(operand_values[self.pops.index])
 
         return self.resolve_count(self.pops, operand_values)
 
@@ -125,7 +126,8 @@ STACK_EFFECTS = {
     InstructionKind.PUSH_FUNC_ID        : StackEffect(pushes = ONE_VALUE),
     InstructionKind.PUSH_RET_ADDR       : StackEffect(pushes = ONE_VALUE),
     InstructionKind.PUSH_CALLER_FRAME   : StackEffect(pushes = CALLER_FRAME_SLOTS),
-    InstructionKind.CALL                : StackEffect(pops = CalleeParamCount(), setup_pops = LOCAL_SETUP_SLOTS),
+    InstructionKind.CALL                : StackEffect(pops = CalleeParamCount(CALLEE_OPERAND),
+                                                      setup_pops = LOCAL_SETUP_SLOTS),
     InstructionKind.CALL_SCRIPT         : StackEffect(pops = OperandCount(ARGC_OPERAND), setup_pops = CALLER_FRAME_SLOTS),
     InstructionKind.TAIL_CALL           : StackEffect(pops = OperandCount(ARGC_OPERAND), exits = True),
     InstructionKind.SYSCALL             : StackEffect(reads = OperandCount(ARGC_OPERAND)),     # a later POP removes them

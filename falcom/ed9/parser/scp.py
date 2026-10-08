@@ -3,9 +3,7 @@ from .types_parser import *
 from common import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
-from ..disasm.stack_effects import (
-    BINARY_OPERAND_COUNT, CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, CalleeParamCount,
-)
+from ..disasm.stack_effects import CALLEE_OPERAND, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
 from ..writer.metadata import COMMON_LIBRARY_ALL_IMPORT, SCP_WRITER_HELPER_IMPORT
 from ..writer.metadata.common_index import COMMON_FUNCTIONS
@@ -51,53 +49,8 @@ def suggested_module_name(stem: str) -> str:
     return name
 
 
-# The debug-info tracker's instruction groups
-POP_VALUE_OPS = (
-    ED9Opcode.SET_REG,
-    ED9Opcode.SET_GLOBAL,
-    ED9Opcode.POP_TO,
-    ED9Opcode.POP_TO_DEREF,
-)
-
-BINARY_OPS = (
-    ED9Opcode.ADD,
-    ED9Opcode.SUB,
-    ED9Opcode.MUL,
-    ED9Opcode.DIV,
-    ED9Opcode.MOD,
-    ED9Opcode.EQ,
-    ED9Opcode.NE,
-    ED9Opcode.GT,
-    ED9Opcode.GE,
-    ED9Opcode.LT,
-    ED9Opcode.LE,
-    ED9Opcode.BITWISE_AND,
-    ED9Opcode.BITWISE_OR,
-    ED9Opcode.LOGICAL_AND,
-    ED9Opcode.LOGICAL_OR,
-)
-
-UNARY_OPS = (
-    ED9Opcode.NEG,
-    ED9Opcode.EZ,
-    ED9Opcode.NOT,
-)
-
-CONDITIONAL_JUMPS = (
-    ED9Opcode.POP_JMP_ZERO,
-    ED9Opcode.POP_JMP_NOT_ZERO,
-)
-
 # Call-site debug-info rebuilding (shared by the parser, ScpWriter, the listing and tools/scp_roundtrip_validator.py)
 PUSH_CONSTANT_OPS = opcodes_of(InstructionKind.PUSH_CONST)
-
-# LOAD_STACK_DEREF / LOAD_GLOBAL are unverified - no sample script passes them as call args
-DEBUG_VARIABLE_OPS = (
-    ED9Opcode.LOAD_STACK,
-    ED9Opcode.PUSH_STACK_OFFSET,
-    ED9Opcode.LOAD_STACK_DEREF,
-    ED9Opcode.LOAD_GLOBAL,
-)
 
 SCRIPT_CALL_OPS = opcodes_of(InstructionKind.CALL_SCRIPT, InstructionKind.TAIL_CALL)
 
@@ -105,9 +58,6 @@ SCRIPT_CALL_OPS = opcodes_of(InstructionKind.CALL_SCRIPT, InstructionKind.TAIL_C
 PUSH_ENCODED_OPS = (*PUSH_CONSTANT_OPS, *opcodes_of(InstructionKind.PUSH_FUNC_ID, InstructionKind.PUSH_RET_ADDR))
 
 OPCODE_SIZE             = 1     # every opcode is one byte, followed by its operands
-TRACKED_FRAME_SLOTS     = 1     # the debug-info tracker models PUSH_CALLER_FRAME as one slot, popped by CALL_SCRIPT
-UNARY_OPERAND_COUNT     = 1
-POPPED_VALUE_COUNT      = 1     # POP_VALUE_OPS / CONDITIONAL_JUMPS
 
 # The kinds the simulation handles alike: what they pop is a plain use, and what they push is the instruction itself.
 # Kind groups on the simulation's path are tuples, most frequent first: a tuple compares identities in C, a frozenset
@@ -150,8 +100,9 @@ class CallDebugInfoTracker:
     so each call is keyed by where it starts (its frame push) rather than by its CALL instruction.
     """
 
-    def __init__(self, get_param_count: Callable[[Any], int]):
+    def __init__(self, get_param_count: Callable[[Any], int], warn: Callable[[str], None] = log.warning):
         self.get_param_count    = get_param_count
+        self.warn               = warn                              # the writer's warn adds the .py line
         self.stack              : list[TrackedValue | None] = []    # None is a call frame slot
         self.frames             : list[list] = []                   # [key, ret_label] of calls not made yet
         self.calls              : list[TrackedCall] = []
@@ -163,74 +114,84 @@ class CallDebugInfoTracker:
         ArgType = ScpFunctionCallDebugInfoArg.Type
         CallType = ScpFunctionCallDebugInfo.CallType
 
-        if opcode == ED9Opcode.DEBUG_SET_LINENO:
-            self.has_line_info = True
+        # No row (its operand format is unknown) and nothing to track; only a DSL feeds it
+        if opcode == ED9Opcode.UNKNOWN_28:
+            return
 
-        elif opcode in PUSH_CONSTANT_OPS:
-            self.stack.append(TrackedValue(ArgType.Constant, payload = payload))
+        descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
+        effect = descriptor.effect
 
-        elif opcode in (ED9Opcode.PUSH_CURRENT_FUNC_ID, ED9Opcode.PUSH_CALLER_FRAME):
-            self.frames.append([self.next_key(), None])
-            self.stack.append(None)
+        # Arms in measured frequency order: each case alternative tried before the matching one costs a compare
+        match descriptor.kind:
+            case InstructionKind.PUSH_CONST:
+                self.stack.append(TrackedValue(ArgType.Constant, payload = payload))
 
-        elif opcode == ED9Opcode.PUSH_RET_ADDR:
-            if self.frames:
-                self.frames[-1][1] = operands[0]
+            case InstructionKind.DEBUG_LINE:
+                self.has_line_info = True
 
-            self.stack.append(None)
+            # A call's setup pushes placeholders: its first push opens the call's frame, the return address labels it
+            case InstructionKind.PUSH_FUNC_ID | InstructionKind.PUSH_CALLER_FRAME:
+                self.frames.append([self.next_key(), None])
+                self.stack.extend([None] * effect.pushes)
 
-        elif opcode == ED9Opcode.GET_REG:
-            self.stack.append(TrackedValue(ArgType.CallResult, call_key = self.last_call_key))
+            case InstructionKind.PUSH_RET_ADDR:
+                if self.frames:
+                    self.frames[-1][1] = operands[0]
 
-        elif opcode in DEBUG_VARIABLE_OPS:
-            self.stack.append(TrackedValue(ArgType.Variable))
+                self.stack.extend([None] * effect.pushes)
 
-        elif opcode in BINARY_OPS:
-            self.push_expression(self.pop(BINARY_OPERAND_COUNT))
+            case InstructionKind.CALL:
+                args = self.pop(effect.pop_count(operands, self.get_param_count))
+                self.pop(effect.setup_pops)
+                key, ret_label = self.close_frame()
+                self.add_call(CallType.Local, operands[CALLEE_OPERAND], ret_label, args, key)
 
-        elif opcode in UNARY_OPS:
-            self.push_expression(self.pop(UNARY_OPERAND_COUNT))
+            case InstructionKind.SYSCALL:
+                # Args stay on the stack - the following POP removes them
+                subsystem, cmd, _ = operands
+                args = self.peek(effect.read_count(operands))
+                self.add_call(CallType.Syscall, (subsystem, cmd), None, args, self.key_before_nested(args))
 
-        elif opcode in POP_VALUE_OPS or opcode in CONDITIONAL_JUMPS:
-            self.pop(POPPED_VALUE_COUNT)
+            case (InstructionKind.POP | InstructionKind.STORE_REG | InstructionKind.CONDITIONAL_JUMP
+                  | InstructionKind.STORE_SLOT | InstructionKind.STORE_DEREF | InstructionKind.STORE_GLOBAL
+                  | InstructionKind.DEBUG_LOG):
+                self.pop(effect.pop_count(operands))
 
-        elif opcode == ED9Opcode.POP:
-            self.pop(operands[0] // WORD_SIZE)
+            # LOAD_DEREF / LOAD_GLOBAL are unverified - no sample script passes them as call args
+            case (InstructionKind.LOAD_SLOT | InstructionKind.SLOT_ADDRESS | InstructionKind.LOAD_DEREF
+                  | InstructionKind.LOAD_GLOBAL):
+                self.stack.append(TrackedValue(ArgType.Variable))
 
-        elif opcode == ED9Opcode.DEBUG_LOG:
-            self.pop(operands[0])
+            case InstructionKind.LOAD_REG:
+                self.stack.append(TrackedValue(ArgType.CallResult, call_key = self.last_call_key))
 
-        elif opcode == ED9Opcode.CALL:
-            args = self.pop(self.get_param_count(operands[0]))
-            self.pop(LOCAL_SETUP_SLOTS)
-            key, ret_label = self.close_frame()
-            self.add_call(CallType.Local, operands[0], ret_label, args, key)
+            case InstructionKind.BINARY | InstructionKind.UNARY:
+                self.push_expression(self.pop(effect.pops))
 
-        elif opcode == ED9Opcode.CALL_SCRIPT:
-            module, func, argc = operands
-            args = self.pop(argc)
-            self.pop(TRACKED_FRAME_SLOTS)
-            key, _ = self.close_frame()
-            self.add_call(CallType.Script, (module, func), None, args, key)
+            case InstructionKind.JUMP | InstructionKind.RETURN:
+                pass
 
-        elif opcode == ED9Opcode.CALL_SCRIPT_NO_RETURN:
-            # No PUSH_CALLER_FRAME precedes this opcode - only the arguments were pushed. Popping
-            # TRACKED_FRAME_SLOTS or closing a frame here would consume state belonging to an
-            # enclosing call and corrupt its debug-record ordering. Its own key must still sort
-            # before any call nested in its arguments (source pre-order) - same reasoning as SYSCALL.
-            module, func, argc = operands
-            args = self.pop(argc)
-            nested_keys = [arg.call_key for arg in args if arg.call_key is not None]
-            key = self.key_before(min(nested_keys)) if nested_keys else self.next_key()
-            self.add_call(CallType.ScriptNoReturn, (module, func), None, args, key)
+            case InstructionKind.CALL_SCRIPT:
+                module, func, _ = operands
+                args = self.pop(effect.pop_count(operands))
+                # Unreachable code (the compile check skips it) or a branch inside the arguments (the tracker reads
+                # straight through both arms): what the pop takes is a guess, and so is the record
+                if not self.holds_caller_frame(effect.setup_pops):
+                    self.warn(f'CALL_SCRIPT {module}.{func}: no caller frame below its arguments in address order - '
+                              'its debug record is a guess')
 
-        elif opcode == ED9Opcode.SYSCALL:
-            # Args stay on the stack - the following POP removes them
-            subsystem, cmd, argc = operands
-            args = self.peek(argc)
-            nested_keys = [arg.call_key for arg in args if arg.call_key is not None]
-            key = self.key_before(min(nested_keys)) if nested_keys else self.next_key()
-            self.add_call(CallType.Syscall, (subsystem, cmd), None, args, key)
+                self.pop(effect.setup_pops)
+                key, _ = self.close_frame()
+                self.add_call(CallType.Script, (module, func), None, args, key)
+
+            case InstructionKind.TAIL_CALL:
+                # No caller frame precedes it (the table pops no setup): closing one would take an enclosing call's
+                module, func, _ = operands
+                args = self.pop(effect.pop_count(operands))
+                self.add_call(CallType.ScriptNoReturn, (module, func), None, args, self.key_before_nested(args))
+
+            case kind:
+                raise NotImplementedError(f'the tracker never tracks {kind.name}')
 
     def ordered_calls(self) -> list[TrackedCall]:
         """Calls in debug-info record order"""
@@ -258,6 +219,16 @@ class CallDebugInfoTracker:
     def key_before(cls, key: tuple) -> tuple:
         """Sorts right before key and every call nested inside it"""
         return (key[0], key[1] - 1)
+
+    def key_before_nested(self, args: list[TrackedValue]) -> tuple:
+        """A call without a frame of its own: keyed before every call nested in its args (source pre-order), else new"""
+        nested_keys = [arg.call_key for arg in args if arg.call_key is not None]
+        return self.key_before(min(nested_keys)) if nested_keys else self.next_key()
+
+    def holds_caller_frame(self, slots: int) -> bool:
+        """The top slots entries are a caller frame's placeholders. Not a test for a local call's setup: in unreachable
+        code the parser doesn't rewrite its PUSH_RAWs, so a well-formed setup arrives as two constants"""
+        return self.stack[-slots:] == [None] * slots
 
     def close_frame(self) -> tuple:
         if self.frames:
@@ -598,9 +569,7 @@ class ScpDisassemblerContext(DisassemblerContext):
         if isinstance(effect.pops, int):            # most kinds: no operand list to build
             return effect.pops
 
-        values = [operand.value for operand in inst.operands]
-        callee_params = self.get_func_argc(values[CALLEE_OPERAND]) if isinstance(effect.pops, CalleeParamCount) else None
-        return effect.pop_count(values, callee_params)
+        return effect.pop_count([operand.value for operand in inst.operands], self.get_func_argc)
 
     def call_argc(self, inst: Instruction) -> int:
         """How many arguments a call takes from the stack; SYSCALL reads them in place"""

@@ -14,8 +14,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from common.config import default_endian
+from common.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
+from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS
 from falcom.ed9.parser.call_records import record_args, record_mismatch
 from falcom.ed9.parser.code_layout import function_extents
 from falcom.ed9.parser.scp import CallDebugInfoTracker, TrackedValue
@@ -33,6 +35,8 @@ SYSCALL_CONSTANT = 7
 CODE_END = 0x1000
 SHARED_START = 0x58
 NEXT_START = 0x60
+NO_CALLER_FRAME_WARNING = ('CALL_SCRIPT mod.Func: no caller frame below its arguments in address order - its debug '
+                           'record is a guess')
 
 
 def compile_script(dat: Path):
@@ -92,7 +96,8 @@ def compile_script(dat: Path):
 
 class TestWriterOnlyInputs(unittest.TestCase):
     '''What only the writer feeds the tracker - its DSL arguments, which the parser would never decode: a raw PUSH, a
-    POP of a partial slot, UNKNOWN_28'''
+    POP of a partial slot, UNKNOWN_28; and a CALL_SCRIPT with no caller frame below its arguments (unreachable code the
+    compile check skips, or a branch inside the arguments)'''
 
     @classmethod
     def tracker_holding(cls, count: int) -> CallDebugInfoTracker:
@@ -119,6 +124,37 @@ class TestWriterOnlyInputs(unittest.TestCase):
         before = (list(tracker.stack), tracker.counter)
         tracker.on_opcode(ED9Opcode.UNKNOWN_28, [b'\0'])
         self.assertEqual((tracker.stack, tracker.counter, tracker.frames, tracker.calls), (*before, [], []))
+
+    @classmethod
+    def call_script(cls, tracker: CallDebugInfoTracker, with_frame: bool):
+        '''A CALL_SCRIPT of one argument, after its caller frame or after constants only'''
+        if with_frame:
+            tracker.on_opcode(ED9Opcode.PUSH_CALLER_FRAME, ['back'])
+
+        else:
+            for _ in range(CALLER_FRAME_SLOTS):
+                tracker.on_opcode(ED9Opcode.PUSH_INT, [SYSCALL_CONSTANT], payload = SYSCALL_CONSTANT)
+
+        tracker.on_opcode(ED9Opcode.PUSH_INT, [SYSCALL_CONSTANT], payload = SYSCALL_CONSTANT)
+        tracker.on_opcode(ED9Opcode.CALL_SCRIPT, ['mod', 'Func', 1])
+
+    @classmethod
+    def script_call_warnings(cls, with_frame: bool) -> list[str]:
+        warnings = []
+        cls.call_script(CallDebugInfoTracker(get_param_count = lambda func: 0, warn = warnings.append), with_frame)
+        return warnings
+
+    def test_script_call_after_its_caller_frame_does_not_warn(self):
+        self.assertEqual(self.script_call_warnings(with_frame = True), [])
+
+    def test_script_call_without_a_caller_frame_warns(self):
+        self.assertEqual(self.script_call_warnings(with_frame = False), [NO_CALLER_FRAME_WARNING])
+
+    def test_a_tracker_logs_its_warnings_by_default(self):
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.call_script(CallDebugInfoTracker(get_param_count = lambda func: 0), with_frame = False)
+
+        self.assertEqual([record.getMessage() for record in logs.records], [NO_CALLER_FRAME_WARNING])
 
 
 class CompiledScript(unittest.TestCase):

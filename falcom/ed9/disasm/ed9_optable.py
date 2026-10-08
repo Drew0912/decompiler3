@@ -346,13 +346,17 @@ class ED9InstructionTable(InstructionTable):
         return fs.ReadByte()
 
     def get_descriptor(self, opcode: int) -> ED9InstructionDescriptor:
-        """Get instruction descriptor"""
+        """Get instruction descriptor; the row is looked up first, as every walker calls this per instruction"""
+        try:
+            return self.descriptors[opcode]
+
+        except KeyError:
+            pass        # no row: the errors are raised below, outside the handler, so they carry no KeyError context
+
         if opcode == ED9Opcode.UNKNOWN_28:
             raise NotImplementedError(f'opcode 0x{opcode:02X} decoded - never seen in a sample script, operand format unknown')
 
-        if opcode not in self.descriptors:
-            raise ValueError(f'Unknown opcode: 0x{opcode:02X}')
-        return self.descriptors[opcode]
+        raise ValueError(f'Unknown opcode: 0x{opcode:02X}')
 
     def read_operands(
         self,

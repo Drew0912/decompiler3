@@ -216,6 +216,47 @@ class TestDebugArgc(WriterTestCase):
                 self.assertEqual(record.func_id, callee.index)
                 self.assertEqual(len(record.args), argc)
 
+    def assert_warns_of_no_caller_frame(self, marker: str):
+        '''Main compiles, and the tracker warns once, at the CALL_SCRIPT, that its debug record is a guess'''
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.writer.build({})
+
+        [message] = [record.getMessage() for record in logs.records]
+        expected = ('CALL_SCRIPT this.Main: no caller frame below its arguments in address order - its debug record '
+                    'is a guess')
+        self.assertRegex(message, '^' + at(__file__, marker) + re.escape(f'Main: {expected}') + '$')
+
+    def test_script_call_in_unreachable_code_without_a_caller_frame_warns(self):
+        '''The compile check skips unreachable code'''
+        @self.writer.LLILCode()
+        def Main():
+            DEBUG_SET_LINENO(1)
+            RETURN()
+            PUSH_INT(0)
+            CALL_SCRIPT('this', 'Main', 1)  # line: unpaired
+            RETURN()
+
+        self.assert_warns_of_no_caller_frame('unpaired')
+
+    def test_branch_inside_a_script_calls_arguments_warns(self):
+        '''The tracker reads straight through both arms, so it holds an argument too many above the frame'''
+        @self.writer.LLILCode()
+        def Main():
+            DEBUG_SET_LINENO(1)
+            PUSH_CALLER_FRAME('back')
+            PUSH_INT(1)
+            POP_JMP_ZERO('else_')
+            PUSH_INT(2)
+            JMP('join')
+            label('else_')
+            PUSH_INT(3)
+            label('join')
+            CALL_SCRIPT('this', 'Main', 1)  # line: branched
+            label('back')
+            RETURN()
+
+        self.assert_warns_of_no_caller_frame('branched')
+
 
 class TestStatementsInTheWrongPlace(WriterTestCase):
     def test_outside_a_function_body(self):
