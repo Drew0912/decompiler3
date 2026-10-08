@@ -3,7 +3,8 @@
 slot-addressing opcode pops a fixed count); the agreement test - the parser's stack simulation, the lifter's builder and
 the debug-record tracker change the stack as the opcode table says, take a call's arguments as it says, and reject a
 value left on the stack exactly at the instructions it says exit; a local call's argument count through each walker's
-lookup; the parser fed what decoding never gives it; and the table's lookup of an opcode without a row.'''
+lookup; the lifter's binary map naming the table's binary opcodes; the parser fed what decoding never gives it; and the
+table's lookup of an opcode without a row.'''
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -16,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction
-from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
+from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE, opcodes_of
 from falcom.ed9.disasm.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from falcom.ed9.disasm.stack_effects import STACK_EFFECTS, InstructionKind, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
@@ -298,6 +299,12 @@ class TestLocalCallArgumentCount(unittest.TestCase):
 
         self.assertEqual(str(caught.exception),
                          "a local CALL pops its callee's parameter count, which needs the walker's lookup")
+
+
+class TestLifterBinaryMethods(unittest.TestCase):
+    def test_maps_exactly_the_tables_binary_opcodes(self):
+        '''The table picks the lifter's binary arm, the map its builder operation: both name the same opcodes'''
+        self.assertEqual(set(ED9VMLifter.BINARY_BUILDER_METHODS), set(opcodes_of(InstructionKind.BINARY)))
 
 
 class TestParserInputsDecodingNeverGives(unittest.TestCase):

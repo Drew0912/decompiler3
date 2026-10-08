@@ -22,6 +22,25 @@ class ED9LiftError(ScpFunctionError):
 class ED9VMLifter:
     """Lift ED9 VM bytecode (disassembled) into Falcom LLIL."""
 
+    # Which builder operation each binary opcode lifts to (the opcode table says which opcodes are binary)
+    BINARY_BUILDER_METHODS = {
+        ED9Opcode.ADD           : FalcomVMBuilder.add,
+        ED9Opcode.SUB           : FalcomVMBuilder.sub,
+        ED9Opcode.MUL           : FalcomVMBuilder.mul,
+        ED9Opcode.DIV           : FalcomVMBuilder.div,
+        ED9Opcode.MOD           : FalcomVMBuilder.mod,
+        ED9Opcode.EQ            : FalcomVMBuilder.eq,
+        ED9Opcode.NE            : FalcomVMBuilder.ne,
+        ED9Opcode.GT            : FalcomVMBuilder.gt,
+        ED9Opcode.GE            : FalcomVMBuilder.ge,
+        ED9Opcode.LT            : FalcomVMBuilder.lt,
+        ED9Opcode.LE            : FalcomVMBuilder.le,
+        ED9Opcode.BITWISE_AND   : FalcomVMBuilder.bitwise_and,
+        ED9Opcode.BITWISE_OR    : FalcomVMBuilder.bitwise_or,
+        ED9Opcode.LOGICAL_AND   : FalcomVMBuilder.logical_and,
+        ED9Opcode.LOGICAL_OR    : FalcomVMBuilder.logical_or,
+    }
+
     def __init__(
         self,
         *,
@@ -189,24 +208,8 @@ class ED9VMLifter:
             case ED9Opcode.SET_GLOBAL:
                 builder.set_global(int(inst.operands[0].value))
 
-            case (
-                ED9Opcode.ADD |
-                ED9Opcode.SUB |
-                ED9Opcode.MUL |
-                ED9Opcode.DIV |
-                ED9Opcode.MOD |
-                ED9Opcode.EQ |
-                ED9Opcode.NE |
-                ED9Opcode.GT |
-                ED9Opcode.GE |
-                ED9Opcode.LT |
-                ED9Opcode.LE |
-                ED9Opcode.BITWISE_AND |
-                ED9Opcode.BITWISE_OR |
-                ED9Opcode.LOGICAL_AND |
-                ED9Opcode.LOGICAL_OR
-            ):
-                self._emit_binary_op(builder, opcode)
+            case _ if inst.descriptor.kind == InstructionKind.BINARY:
+                self.BINARY_BUILDER_METHODS[opcode](builder)
 
             case ED9Opcode.NEG:
                 builder.neg()
@@ -268,26 +271,6 @@ class ED9VMLifter:
 
             case _:
                 raise NotImplementedError(f'Unhandled opcode: {opcode.name} (0x{opcode.value:02X})')
-
-    def _emit_binary_op(self, builder: FalcomVMBuilder, opcode: ED9Opcode) -> None:
-        mapping = {
-            ED9Opcode.ADD: builder.add,
-            ED9Opcode.SUB: builder.sub,
-            ED9Opcode.MUL: builder.mul,
-            ED9Opcode.DIV: builder.div,
-            ED9Opcode.MOD: builder.mod,
-            ED9Opcode.EQ: builder.eq,
-            ED9Opcode.NE: builder.ne,
-            ED9Opcode.GT: builder.gt,
-            ED9Opcode.GE: builder.ge,
-            ED9Opcode.LT: builder.lt,
-            ED9Opcode.LE: builder.le,
-            ED9Opcode.BITWISE_AND: builder.bitwise_and,
-            ED9Opcode.BITWISE_OR: builder.bitwise_or,
-            ED9Opcode.LOGICAL_AND: builder.logical_and,
-            ED9Opcode.LOGICAL_OR: builder.logical_or,
-        }
-        mapping[opcode]()
 
     def _require_block(
         self,
