@@ -68,13 +68,14 @@ be in it - parameter `argN`, a local, a caller-frame slot or a call setup, or no
 live stack). What a slot may hold is solved per block start over every recorded edge,
 not from the join groups, which span the whole function: a value that reaches a slot only at a
 later join doesn't count for an earlier read. A `POP_TO` stands for the value it overwrote, so a
-reassigned parameter is still the parameter. `STACK_OFFSET_OPS` holds the one slot rule the
-simulation and the layout share: the byte offset counts from sp after the opcode's pops. A slot that
+reassigned parameter is still the parameter. `addressed_slot` holds the one slot rule the
+simulation and the layout share: the byte offset counts from sp after the opcode's pops (its stack
+effect's `pops` in the opcode table, `falcom/ed9/disasm/stack_effects.py`). A slot that
 holds anything but one parameter or a local (`SlotRef.unusual`) is logged as a warning. The layout also
 numbers each call's arguments (`arg_numbers`, the opt-in call-argument comments): the pushes that may
 stand in the call's top `argc` slots, solved the same way, `arg1` being the last push; the simulation
-and the numbering take `argc` from one rule (`call_argc`: the callee's parameters for `CALL`, the count
-operand otherwise).
+and the numbering take `argc` from one rule (`call_argc`, from the call's stack effect: the callee's
+parameters for `CALL`, the count operand otherwise).
 
 ## Layer 3: Lifter — Done
 

@@ -3,7 +3,9 @@ from .types_parser import *
 from common import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
-from ..disasm.stack_effects import ARGC_OPERAND, BINARY_OPERAND_COUNT, CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
+from ..disasm.stack_effects import (
+    BINARY_OPERAND_COUNT, CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, CalleeParamCount,
+)
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
 from ..writer.metadata import COMMON_LIBRARY_ALL_IMPORT, SCP_WRITER_HELPER_IMPORT
 from ..writer.metadata.common_index import COMMON_FUNCTIONS
@@ -49,22 +51,7 @@ def suggested_module_name(stem: str) -> str:
     return name
 
 
-# Stack simulation instruction groups
-PUSH_VARIANTS = (
-    ED9Opcode.PUSH_RAW,
-    ED9Opcode.PUSH_INT,
-    ED9Opcode.PUSH_FLOAT,
-    ED9Opcode.PUSH_STR,
-    ED9Opcode.PUSH_STACK_OFFSET,
-)
-
-PUSH_VALUE_OPS = (
-    ED9Opcode.GET_REG,
-    ED9Opcode.LOAD_GLOBAL,
-    ED9Opcode.LOAD_STACK,
-    ED9Opcode.LOAD_STACK_DEREF,
-)
-
+# The debug-info tracker's instruction groups
 POP_VALUE_OPS = (
     ED9Opcode.SET_REG,
     ED9Opcode.SET_GLOBAL,
@@ -122,17 +109,20 @@ TRACKED_FRAME_SLOTS     = 1     # the debug-info tracker models PUSH_CALLER_FRAM
 UNARY_OPERAND_COUNT     = 1
 POPPED_VALUE_COUNT      = 1     # POP_VALUE_OPS / CONDITIONAL_JUMPS
 
-# Opcodes that address a stack slot by a byte offset from sp -> the entries they pop before sp is taken
-STACK_OFFSET_OPS = {
-    ED9Opcode.LOAD_STACK        : 0,
-    ED9Opcode.LOAD_STACK_DEREF  : 0,
-    ED9Opcode.PUSH_STACK_OFFSET : 0,
-    ED9Opcode.POP_TO            : POPPED_VALUE_COUNT,
-    ED9Opcode.POP_TO_DEREF      : POPPED_VALUE_COUNT,
-}
+# The kinds the simulation handles alike: what they pop is a plain use, and what they push is the instruction itself.
+# Kind groups on the simulation's path are tuples, most frequent first: a tuple compares identities in C, a frozenset
+# would call Enum's Python __hash__ for every instruction
+PLAIN_VALUE_KINDS = (
+    InstructionKind.PUSH_CONST, InstructionKind.DEBUG_LINE, InstructionKind.SYSCALL, InstructionKind.LOAD_SLOT,
+    InstructionKind.BINARY, InstructionKind.LOAD_REG, InstructionKind.CONDITIONAL_JUMP, InstructionKind.STORE_REG,
+    InstructionKind.JUMP, InstructionKind.UNARY, InstructionKind.DEBUG_LOG, InstructionKind.SLOT_ADDRESS,
+    InstructionKind.LOAD_DEREF, InstructionKind.STORE_DEREF, InstructionKind.LOAD_GLOBAL, InstructionKind.STORE_GLOBAL,
+)
 
 # Calls that take arguments from the stack; SYSCALL leaves them there for a later POP
-ARGUMENT_CALLS = (ED9Opcode.CALL, ED9Opcode.CALL_SCRIPT, ED9Opcode.CALL_SCRIPT_NO_RETURN, ED9Opcode.SYSCALL)
+ARGUMENT_CALL_KINDS = (
+    InstructionKind.CALL, InstructionKind.SYSCALL, InstructionKind.CALL_SCRIPT, InstructionKind.TAIL_CALL,
+)
 
 
 @dataclass
@@ -361,8 +351,8 @@ def encoded_return(entry) -> int | None:
 
 
 def addressed_slot(inst: Instruction, sp_before: int) -> int:
-    """The absolute slot an offset opcode addresses: its byte offset counts from sp after the opcode's pops"""
-    return sp_before - STACK_OFFSET_OPS[inst.opcode] + inst.operands[0].value // WORD_SIZE
+    """The absolute slot a slot-addressing opcode addresses: its byte offset counts from sp after its pops"""
+    return sp_before - inst.descriptor.effect.pops + inst.operands[SLOT_OFFSET_OPERAND].value // WORD_SIZE
 
 
 def frame_return(entry) -> int | None:
@@ -602,12 +592,23 @@ class ScpDisassemblerContext(DisassemblerContext):
 
         self.plain_uses[id(entry)] = entry
 
-    def call_argc(self, inst: Instruction) -> int:
-        """How many arguments a call takes from the stack"""
-        if inst.opcode == ED9Opcode.CALL:
-            return self.get_func_argc(inst.operands[0].value)
+    def pop_count(self, inst: Instruction) -> int:
+        """How many entries inst pops above a call's setup; a local CALL's are its callee's parameters"""
+        effect = inst.descriptor.effect
+        if isinstance(effect.pops, int):            # most kinds: no operand list to build
+            return effect.pops
 
-        return inst.operands[ARGC_OPERAND].value
+        values = [operand.value for operand in inst.operands]
+        callee_params = self.get_func_argc(values[CALLEE_OPERAND]) if isinstance(effect.pops, CalleeParamCount) else None
+        return effect.pop_count(values, callee_params)
+
+    def call_argc(self, inst: Instruction) -> int:
+        """How many arguments a call takes from the stack; SYSCALL reads them in place"""
+        effect = inst.descriptor.effect
+        if effect.reads:
+            return effect.read_count([operand.value for operand in inst.operands])
+
+        return self.pop_count(inst)
 
     def pop_call_setup(self, count: int) -> list:
         """Pop count entries, bottom first, for the call that consumes them as its setup or caller frame"""
@@ -676,9 +677,10 @@ class ScpDisassemblerContext(DisassemblerContext):
             for inst in insts:
                 state = self.inst_states[inst.offset]
                 layout.sp_before[inst.offset] = len(state)
-                if inst.opcode in STACK_OFFSET_OPS:
+                effect = inst.descriptor.effect
+                if effect.addresses_slot:
                     slot = addressed_slot(inst, len(state))
-                    live = 0 <= slot < len(state) - STACK_OFFSET_OPS[inst.opcode]
+                    live = 0 <= slot < len(state) - effect.pops
                     entries = held_at(start, state, slot) if live else {}
                     ref = self.slot_ref(slot, entries, layout.local_slots)
                     if not live and self.reject_outside_stack:
@@ -689,7 +691,7 @@ class ScpDisassemblerContext(DisassemblerContext):
 
                     layout.slot_refs[inst.offset] = ref
 
-                if inst.opcode in ARGUMENT_CALLS:
+                if inst.descriptor.kind in ARGUMENT_CALL_KINDS:
                     for slot in range(max(len(state) - self.call_argc(inst), 0), len(state)):
                         for entry in held_at(start, state, slot).values():
                             # A parameter or caller-frame entry has no line of its own
@@ -964,60 +966,56 @@ class ScpParser(StrictBase):
         context.current_inst = inst
         context.inst_states[inst.offset] = tuple(stack)
         context.note_run_on(inst)
-        opcode = inst.opcode
+        effect = inst.descriptor.effect
 
-        if opcode == ED9Opcode.RETURN:
-            if stack:
-                context.fail(f'the stack is not empty: {format_stack(stack)}', inst)
+        match inst.descriptor.kind:
+            case kind if kind in PLAIN_VALUE_KINDS:
+                if effect.pops:
+                    context.pop_entries(context.pop_count(inst))
 
-        elif opcode in PUSH_VARIANTS or opcode in PUSH_VALUE_OPS:
-            stack.append(inst)
+                if effect.pushes:
+                    stack.append(inst)
 
-        elif opcode == ED9Opcode.POP:
-            size = inst.operands[0].value
-            if size % WORD_SIZE:
-                context.fail(f'pops {size} bytes, not whole slots', inst)
+            case InstructionKind.RETURN:
+                if stack:
+                    context.fail(f'the stack is not empty: {format_stack(stack)}', inst)
 
-            context.pop_entries(size // WORD_SIZE)
+            case InstructionKind.POP:
+                size = inst.operands[POP_SIZE_OPERAND].value
+                if size % WORD_SIZE:
+                    context.fail(f'pops {size} bytes, not whole slots', inst)
 
-        elif opcode == ED9Opcode.DEBUG_LOG:
-            context.pop_entries(inst.operands[0].value)
+                context.pop_entries(context.pop_count(inst))
 
-        elif opcode == ED9Opcode.POP_TO:
-            slot = addressed_slot(inst, len(stack))
-            context.pop_entries(POPPED_VALUE_COUNT)
-            context.write_slot(slot)
+            case InstructionKind.STORE_SLOT:
+                slot = addressed_slot(inst, len(stack))
+                context.pop_entries(effect.pops)
+                context.write_slot(slot)
 
-        elif opcode in POP_VALUE_OPS or opcode in CONDITIONAL_JUMPS:
-            context.pop_entries(POPPED_VALUE_COUNT)
+            case InstructionKind.PUSH_CALLER_FRAME:
+                stack.extend(FrameSlot(inst, index) for index in range(effect.pushes))
 
-        elif opcode in BINARY_OPS:
-            context.pop_entries(BINARY_OPERAND_COUNT)
-            stack.append(inst)
+            case InstructionKind.CALL:
+                return self.simulate_call(context, inst)
 
-        elif opcode in UNARY_OPS:
-            context.pop_entries(UNARY_OPERAND_COUNT)
-            stack.append(inst)
+            case InstructionKind.CALL_SCRIPT:
+                return self.simulate_call_script(context, inst)
 
-        elif opcode == ED9Opcode.PUSH_CALLER_FRAME:
-            stack.extend(FrameSlot(inst, index) for index in range(CALLER_FRAME_SLOTS))
+            case InstructionKind.TAIL_CALL:
+                self.simulate_tail_call(context, inst)
 
-        elif opcode == ED9Opcode.CALL:
-            return self.simulate_call(context, inst)
-
-        elif opcode == ED9Opcode.CALL_SCRIPT:
-            return self.simulate_call_script(context, inst)
-
-        elif opcode == ED9Opcode.CALL_SCRIPT_NO_RETURN:
-            self.simulate_tail_call(context, inst)
+            # PUSH_FUNC_ID / PUSH_RET_ADDR: the parser makes them itself, from a setup's PUSH_RAW
+            case kind:
+                raise NotImplementedError(f'the parser never simulates {kind.name}')
 
         return []
 
     def simulate_call(self, context: ScpDisassemblerContext, inst: Instruction) -> list[BranchTarget]:
         """PUSH(func_id) PUSH(ret_addr) args... CALL: the callee pops the args and both setup pushes and returns to
-        the pushed return address. The setup pushes become PUSH_CURRENT_FUNC_ID / PUSH_RET_ADDR."""
+        the pushed return address. The setup pushes become PUSH_CURRENT_FUNC_ID / PUSH_RET_ADDR. Checked in order: the
+        args, the setup's height, the return offset, the function ID, then the return address's group."""
         context.pop_entries(context.call_argc(inst))
-        func_id, ret_addr = context.pop_call_setup(LOCAL_SETUP_SLOTS)
+        func_id, ret_addr = context.pop_call_setup(inst.descriptor.effect.setup_pops)
         target = context.return_target(ret_addr, encoded_return(ret_addr))
         context.consume(func_id, Role(RoleKind.FUNC_ID))
         context.consume(ret_addr, Role(RoleKind.RET_ADDR, target))
@@ -1025,9 +1023,9 @@ class ScpParser(StrictBase):
 
     def simulate_call_script(self, context: ScpDisassemblerContext, inst: Instruction) -> list[BranchTarget]:
         """PUSH_CALLER_FRAME(ret) args... CALL_SCRIPT: the callee pops the args and the caller frame, and returns to
-        the frame's return address"""
+        the frame's return address. Checked in order: the args, the frame's height, its return address, each slot."""
         context.pop_entries(context.call_argc(inst))
-        frame = context.pop_call_setup(CALLER_FRAME_SLOTS)
+        frame = context.pop_call_setup(inst.descriptor.effect.setup_pops)
         target = context.return_target(frame[0], frame_return(frame[0]))
         for slot, entry in enumerate(frame):
             context.consume(entry, Role(RoleKind.FRAME, target, slot))

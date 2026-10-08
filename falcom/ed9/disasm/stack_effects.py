@@ -18,6 +18,8 @@ __all__ = (
     'POP_SIZE_OPERAND',
     'DEBUG_LOG_ARGC_OPERAND',
     'ARGC_OPERAND',
+    'SLOT_OFFSET_OPERAND',
+    'CALLEE_OPERAND',
 )
 
 ONE_VALUE               = 1
@@ -27,6 +29,8 @@ CALLER_FRAME_SLOTS      = 5     # PUSH_CALLER_FRAME: func_id, ret_addr, script p
 POP_SIZE_OPERAND        = 0     # POP's byte count
 DEBUG_LOG_ARGC_OPERAND  = 0
 ARGC_OPERAND            = 2     # the argument count of every argument call but CALL, whose count is its callee's parameters
+SLOT_OFFSET_OPERAND     = 0     # the byte offset of a slot-addressing opcode
+CALLEE_OPERAND          = 0     # CALL's callee, whose parameters are its argument count
 
 
 class InstructionKind(Enum):

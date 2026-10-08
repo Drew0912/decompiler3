@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for the ED9 stack effects: what a call's setup pushes, the call pops; and the agreement test - the parser's
-stack simulation, the lifter's builder and the debug-record tracker change the stack as the opcode table says, take a
-call's arguments as it says, and reject a value left on the stack exactly at the instructions it says exit.'''
+'''Unit tests for the ED9 stack effects: the table's invariants (what a call's setup pushes, the call pops; a
+slot-addressing opcode pops a fixed count); the agreement test - the parser's stack simulation, the lifter's builder and
+the debug-record tracker change the stack as the opcode table says, take a call's arguments as it says, and reject a
+value left on the stack exactly at the instructions it says exit; and the parser fed what decoding never gives it.'''
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -13,26 +14,25 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
+from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction
 from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
 from falcom.ed9.disasm.instruction import SYNTHETIC_INSTRUCTION_SIZE
-from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, STACK_EFFECTS, CalleeParamCount, InstructionKind, StackEffect
+from falcom.ed9.disasm.stack_effects import (
+    CALLEE_OPERAND, CALLER_FRAME_SLOTS, STACK_EFFECTS, CalleeParamCount, InstructionKind, StackEffect,
+)
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.vm_lifter import ED9LiftError
-from falcom.ed9.parser.scp import TRACKED_FRAME_SLOTS, CallDebugInfoTracker, ScpDisassemblyError, ScpParser
+from falcom.ed9.parser.scp import OPCODE_SIZE, TRACKED_FRAME_SLOTS, CallDebugInfoTracker, ScpDisassemblyError, ScpParser
 from falcom.ed9.parser.types_parser import Function, FunctionParam
 from falcom.ed9.parser.types_scp import ScpParamFlags, Value32
 from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
 from test_scp_stack_simulation import (
     CALLER_ID, CALLEE_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, MODULE_NAME, REG_INDEX, RIGHT_VALUE,
-    Asm, Func, Program, main_function, returning_callee,
+    SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm, Func, Program, main_function, returning_callee,
 )
 
 
 LINE = 1
-SYSCALL_SUBSYSTEM = 1
-SYSCALL_FUNC = 2
-CALLEE_OPERAND = 0                  # CALL's operand: the callee's function ID
 BINARY_OPERATORS = (
     'add', 'sub', 'mul', 'div', 'mod', 'eq', 'ne', 'gt', 'ge', 'lt', 'le',
     'bitwise_and', 'bitwise_or', 'logical_and', 'logical_or',
@@ -277,7 +277,7 @@ def table_argc(step: Step, parser: ScpParser) -> int:
     return effect.pop_count(step.values, callee_params(step, parser)) + effect.read_count(step.values)
 
 
-class CallSetupInvariantTests(unittest.TestCase):
+class TableInvariantTests(unittest.TestCase):
     def test_local_call_pops_its_setup(self):
         setup_pushes = STACK_EFFECTS[InstructionKind.PUSH_FUNC_ID].pushes + STACK_EFFECTS[InstructionKind.PUSH_RET_ADDR].pushes
         self.assertEqual(STACK_EFFECTS[InstructionKind.CALL].setup_pops, setup_pushes)
@@ -285,6 +285,44 @@ class CallSetupInvariantTests(unittest.TestCase):
     def test_script_call_pops_the_caller_frame(self):
         self.assertEqual(STACK_EFFECTS[InstructionKind.CALL_SCRIPT].setup_pops,
                          STACK_EFFECTS[InstructionKind.PUSH_CALLER_FRAME].pushes)
+
+    def test_slot_addressing_kinds_pop_a_fixed_count(self):
+        '''The parser counts their offset from sp after a fixed number of pops (addressed_slot)'''
+        addressing = {kind: effect for kind, effect in STACK_EFFECTS.items() if effect.addresses_slot}
+        self.assertTrue(addressing, 'no kind addresses a slot')
+        for kind, effect in addressing.items():
+            with self.subTest(kind = kind.name):
+                self.assertIsInstance(effect.pops, int)
+
+
+class TestParserInputsDecodingNeverGives(unittest.TestCase):
+    '''The decoder hands the parser a typed push for every PUSH, and the setup pseudo-ops only come from the parser's own
+    rewrite of a PUSH_RAW: fed anyway, a setup pseudo-op raises and a raw PUSH pushes its value, as the table says'''
+
+    def setUp(self):
+        asm = Asm()
+        asm.ret()
+        self.parser = Program(main_function(asm)).parser()
+        self.context = self.parser.disasm_context(self.parser.functions[0], code_end = None)
+
+    def decode(self, opcode: ED9Opcode) -> Instruction:
+        inst = Instruction(offset = 0, opcode = opcode, descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode),
+                           size = OPCODE_SIZE)
+        self.parser.on_instruction_decoded(self.context, inst, None)
+        return inst
+
+    def test_setup_pseudo_ops_raise(self):
+        for opcode, kind in ((ED9Opcode.PUSH_CURRENT_FUNC_ID, 'PUSH_FUNC_ID'), (ED9Opcode.PUSH_RET_ADDR, 'PUSH_RET_ADDR')):
+            with self.subTest(opcode = opcode.name):
+                with self.assertRaises(NotImplementedError) as caught:
+                    self.decode(opcode)
+
+                self.assertEqual(str(caught.exception), f'the parser never simulates {kind}')
+
+    def test_raw_push_pushes_its_value(self):
+        inst = self.decode(ED9Opcode.PUSH)
+        self.assertEqual(len(self.context.stack_simulation), 1)
+        self.assertIs(self.context.stack_simulation[0], inst)
 
 
 class TestWalkersAgreeWithTheTable(unittest.TestCase):
