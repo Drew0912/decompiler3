@@ -3,13 +3,14 @@
 from pathlib import Path
 from typing import Callable, Optional
 
+from common import StrictBase
 from .parser.scp_listing import ListingSections
 from .parser.types_parser import Function
 
 TOOL_DIR = Path(__file__).resolve().parent
 
 
-class ScenaDecompileConfig:
+class ScenaDecompileConfig(StrictBase):
     """Output and parser flags for scena2py.py, read directly off this instance's attributes."""
 
     # Primary outputs

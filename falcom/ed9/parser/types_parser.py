@@ -105,7 +105,7 @@ class StackLayout:
     arg_numbers     : dict[int, tuple[int, ...]] = field(default_factory = dict)   # an argument's push -> argN per call
 
 
-class Function:
+class Function(StrictBase):
     name            : str
     index           : int | None        # position in the function table, what PUSH_CURRENT_FUNC_ID pushes
     offset          : int
