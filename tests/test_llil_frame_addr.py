@@ -9,15 +9,13 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.llil.llil import LowLevelILFrameAddr, LowLevelILStackAddr, WORD_SIZE
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder, FalcomLLILFormatter
+from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
 from ir.mlil.mlil import MLILSetVar, MLILAddressOf, MLILVar
+from tests.shared.llil_utils import make_builder
 
 
-FUNC_START = 0x1000
-
-
-def build_function_with_push_stack_addr(num_params: int, offset: int, *, name: str = 'push_addr_test'):
+def build_function_with_push_stack_addr(num_params: int, offset: int):
     '''Function with num_params parameters: push_stack_addr(offset), landing on the block's
     first instruction so its shape is inspectable on its own.
 
@@ -25,10 +23,8 @@ def build_function_with_push_stack_addr(num_params: int, offset: int, *, name: s
     must be negative to reach a parameter slot - mirrors test_llil_frame_store.py's own
     build_function_with_pop_to convention.
     '''
-    builder = FalcomVMBuilder()
-    builder.create_function(name, FUNC_START, num_params = num_params)
-    entry = builder.create_basic_block(FUNC_START, name)
-    builder.set_current_block(entry)
+    builder = make_builder(num_params)
+    entry = builder.current_block
 
     builder.push_stack_addr(offset)
 
@@ -52,10 +48,8 @@ class TestPushStackAddrParameterSlot(unittest.TestCase):
     def test_non_parameter_slot_still_emits_stack_addr(self):
         # 1 parameter (slot 0) and a pushed local (slot 1): offset -WORD_SIZE targets the local,
         # not the parameter - unaffected by this fix, must keep today's StackAddr behavior.
-        builder = FalcomVMBuilder()
-        builder.create_function('push_addr_test', FUNC_START, num_params = 1)
-        entry = builder.create_basic_block(FUNC_START, 'push_addr_test')
-        builder.set_current_block(entry)
+        builder = make_builder(num_params = 1)
+        entry = builder.current_block
         builder.push_int(0)                     # slot 1; sp 1->2
         builder.push_stack_addr(-WORD_SIZE)
 
@@ -86,10 +80,7 @@ class TestPushStackAddrParameterSlotMLIL(unittest.TestCase):
         # LowLevelILFrameAddr value (a later pop_to would only see a fresh StackLoad
         # placeholder reading it back, not the AddressOf expression itself) - so the
         # instruction to inspect is the very first one this call produces.
-        builder = FalcomVMBuilder()
-        builder.create_function('addr_ret_test', FUNC_START, num_params = 1)
-        entry = builder.create_basic_block(FUNC_START, 'addr_ret_test')
-        builder.set_current_block(entry)
+        builder = make_builder(num_params = 1)
 
         builder.push_stack_addr(-WORD_SIZE)  # var_s1 (slot 1) = &arg1; sp 1->2
         builder.pop_bytes(2 * WORD_SIZE)      # sp 2->0 (the pushed temp, then the param itself)

@@ -8,19 +8,10 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.llil.llil import WORD_SIZE
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
+from tests.shared.llil_utils import FUNC_START, make_builder
 
 
-FUNC_START = 0x1000
 SECOND_BLOCK_START = FUNC_START + 0x10
-
-
-def make_builder(num_params: int = 0, *, name: str = 'stack_sync_test') -> FalcomVMBuilder:
-    builder = FalcomVMBuilder()
-    builder.create_function(name, FUNC_START, num_params = num_params)
-    entry = builder.create_basic_block(FUNC_START, name)
-    builder.set_current_block(entry)
-    return builder
 
 
 class TestPopKeepsVstackInSync(unittest.TestCase):

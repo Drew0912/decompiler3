@@ -14,9 +14,9 @@ from ir.llil.llil import LowLevelILCall, WORD_SIZE
 from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript
+from tests.shared.llil_utils import FUNC_START, make_builder
 
 
-FUNC_START = 0x2000
 BLOCK_STRIDE = 0x10
 ARG_VALUE = 7
 FILLER_VALUE = 123
@@ -26,13 +26,6 @@ LOCAL_PARAM_COUNT = 2
 NO_ARGS = 0
 ONE_ARG = 1
 MODULE_NAME = 'module'
-
-
-def make_builder(num_params: int = 0) -> FalcomVMBuilder:
-    builder = FalcomVMBuilder()
-    builder.create_function('call_setup_test', FUNC_START, num_params = num_params)
-    builder.set_current_block(builder.create_basic_block(FUNC_START, 'entry'))
-    return builder
 
 
 def add_block(builder: FalcomVMBuilder, name: str):

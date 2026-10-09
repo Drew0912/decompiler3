@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.llil.llil import LowLevelILLoad, LowLevelILStore, LowLevelILFrameLoad, WORD_SIZE
-from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter, FalcomVMBuilder
+from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
 from ir.mlil.mlil import (
     MediumLevelILFunction, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILVariable,
@@ -27,20 +27,15 @@ from ir.hlil.hlil import (
     HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock,
 )
 from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
+from tests.shared.llil_utils import FUNC_START, make_builder
 
 
-FUNC_START = 0x1000
-
-
-def build_function_with_deref(num_params: int, offset: int, *, deref_write: bool,
-                               with_ret: bool = False, name: str = 'deref_test'):
+def build_function_with_deref(num_params: int, offset: int, *, deref_write: bool, with_ret: bool = False):
     '''1-param function: load_stack_deref(offset) if not deref_write, else push a marker then
     pop_to_deref(offset). Does not call finalize() unless with_ret - see
     test_llil_frame_store.py for why (MLIL finalize() requires a terminal instruction).'''
-    builder = FalcomVMBuilder()
-    builder.create_function(name, FUNC_START, num_params = num_params)
-    entry = builder.create_basic_block(FUNC_START, name)
-    builder.set_current_block(entry)
+    builder = make_builder(num_params)
+    entry = builder.current_block
 
     if deref_write:
         builder.push_int(99)

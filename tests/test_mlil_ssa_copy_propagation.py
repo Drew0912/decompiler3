@@ -19,8 +19,7 @@ from ir.mlil.passes.pass_ssa_copy_propagation import reaches_without_redefinitio
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
-
-SORA2_ANI_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en' / 'ani'
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
 
 
 def make_func(name: str) -> MediumLevelILFunction:
@@ -735,10 +734,7 @@ class TestDeadCodeGlobalCallOutput(unittest.TestCase):
 
 
 def optimized_corpus_mlil(dat_name: str, func_name: str) -> MediumLevelILFunction:
-    path = SORA2_ANI_DIR / dat_name
-    if not path.exists():
-        raise unittest.SkipTest(f'Test file not found: {path}')
-
+    path = require(corpus_file(SORA2_SCRIPTS, f'ani/{dat_name}'))
     parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
     func = next(f for f in functions if f.name == func_name)
     llil = ED9VMLifter(parser = parser).lift_function(func)

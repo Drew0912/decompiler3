@@ -14,9 +14,9 @@ from ir.llil.llil_builder import LowLevelILBuilder
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from ir.mlil.mlil import MLILCallScript, MLILConst, MLILStoreGlobal, MLILVar
+from tests.shared.llil_utils import FUNC_START, make_builder
 
 
-FUNC_START = 0x1000
 SECOND_BLOCK_START = FUNC_START + 0x10
 THIRD_BLOCK_START = FUNC_START + 0x20
 FOURTH_BLOCK_START = FUNC_START + 0x30
@@ -31,13 +31,6 @@ GLOBAL_INDEX = 0
 SECOND_GLOBAL_INDEX = 1
 MODULE_NAME = ''
 TAIL_FUNC_NAME = 'Tail'
-
-
-def make_builder(num_params: int) -> FalcomVMBuilder:
-    builder = FalcomVMBuilder()
-    builder.create_function('slot_lifetime_test', FUNC_START, num_params = num_params)
-    builder.set_current_block(builder.create_basic_block(FUNC_START, 'slot_lifetime_test'))
-    return builder
 
 
 def last_pushed_value(builder: LowLevelILBuilder):

@@ -15,9 +15,10 @@ from falcom.ed9.scena2py import RECURSION_LIMIT
 from ir.mlil.mlil import MediumLevelILFunction, MLILDebug, MLILGoto, MLILIf, MLILRet, MLILVar
 from ir.mlil.passes import BlockMergePass
 from ir_line_order_report import analyse_file, collect_mlil_lines
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
 
 
-SMALL_SCRIPT = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en' / 'minigame' / 'slot.dat'
+SMALL_SCRIPT = corpus_file(SORA2_SCRIPTS, 'minigame/slot.dat')
 PYTHON_DEFAULT_RECURSION_LIMIT = 1000
 
 ENTRY_START = 0x1000
@@ -70,9 +71,7 @@ class TestAnalyseFileMatchesScena2py(unittest.TestCase):
     scripts are not dropped'''
 
     def setUp(self):
-        if not SMALL_SCRIPT.exists():
-            self.skipTest(f'Test file not found: {SMALL_SCRIPT}')
-
+        require(SMALL_SCRIPT)
         self.addCleanup(sys.setrecursionlimit, sys.getrecursionlimit())
         sys.setrecursionlimit(PYTHON_DEFAULT_RECURSION_LIMIT)
 

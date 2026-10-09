@@ -19,9 +19,9 @@ from falcom.ed9.parser.string_pool import StringPoolSection, StringRefs, collect
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_writer_test_utils import fresh_writer
 from scp_roundtrip_validator import Status, load_script, validate_file
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
 
-SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
-PERSONAL_TEMPLATE_FILE = SORA2_DIR / 'scena' / 'personalTemplate.dat'
+PERSONAL_TEMPLATE_FILE = corpus_file(SORA2_SCRIPTS, 'scena/personalTemplate.dat')
 
 # compile_script's strings by section, in pool order
 SCRIPT_SECTIONS = {
@@ -158,12 +158,11 @@ class TestValidator(unittest.TestCase):
             self.assertTrue(streams[0].Stream.closed)
 
 
-@unittest.skipUnless(PERSONAL_TEMPLATE_FILE.exists(), 'needs the sora2_1.0 corpus')
 class TestRealScript(unittest.TestCase):
     '''Its table order is not its code order, and 5 of its 6 debug record strings repeat a code string'''
 
     def test_personal_template_sections(self):
-        data, refs = load_string_refs(PERSONAL_TEMPLATE_FILE)
+        data, refs = load_string_refs(require(PERSONAL_TEMPLATE_FILE))
 
         self.assertEqual([len(offsets) for _, offsets in refs.sections()], [19, 18, 4, 1, 1])
         self.assertEqual(refs.expected_pool, pool_strings(data, refs.pool_start))

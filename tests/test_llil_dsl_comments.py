@@ -26,9 +26,9 @@ from test_scp_stack_simulation import (
     Asm, Func, Program, CALLEE_ID, CALLER_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, PARAM_COUNT,
     REG_INDEX, RIGHT_VALUE, main_function, returning_callee,
 )
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
 
-SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
-CHECK_ALGO_USE_FILE = SORA2_DIR / 'ai' / 'ai_chr5122_e00.dat'
+CHECK_ALGO_USE_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5122_e00.dat')
 SYSCALL_SUBSYSTEM = 1
 SYSCALL_FUNC = 0x2F
 FLOAT_BITS = 'f32 0x3E999998, raw 0x8FA66666'      # FLOAT_VALUE's float32 bits and stored word
@@ -305,8 +305,10 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
                          f'# id: 0x0001 offset: 0x{functions[0].offset:X}')
 
 
-@unittest.skipUnless(CHECK_ALGO_USE_FILE.exists(), 'needs the sora2_1.0 corpus')
 class TestRealScript(unittest.TestCase):
+    def setUp(self):
+        require(CHECK_ALGO_USE_FILE)
+
     def test_check_algo_use(self):
         '''The listing docs/FUTURE_WORK_LLIL.md item 8 shows'''
         parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip = False, keep_unreachable_code = False)

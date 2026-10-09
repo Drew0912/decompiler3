@@ -10,25 +10,22 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.llil.llil import LowLevelILCall
 from ir.mlil.mlil import MLILCallScript, MLILRet, MLILVar
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn
 from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
 from falcom.ed9.parser.scp import CallDebugInfoTracker
 from falcom.ed9.parser.types_scp import ScpFunctionCallDebugInfo
+from tests.shared.llil_utils import make_builder
 
 
-FUNC_START = 0x1000
 MODULE_NAME = 'module'
 FUNC_NAME = 'func'
 
 
-def build_tail_call_function(arg_count: int, *, name: str = 'tail_call_test'):
+def build_tail_call_function(arg_count: int):
     '''Single-block function ending in CALL_SCRIPT_NO_RETURN, no preceding caller frame'''
-    builder = FalcomVMBuilder()
-    builder.create_function(name, FUNC_START, num_params = 0)
-    entry = builder.create_basic_block(FUNC_START, name)
-    builder.set_current_block(entry)
+    builder = make_builder()
+    entry = builder.current_block
 
     for i in range(arg_count):
         builder.push_int(i)

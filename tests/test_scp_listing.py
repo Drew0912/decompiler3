@@ -23,12 +23,12 @@ from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_writer_test_utils import fresh_writer
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
 
-SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
-CHECK_ALGO_USE_FILE = SORA2_DIR / 'ai' / 'ai_chr5122_e00.dat'
-DEAD_CODE_CALLS_FILE = SORA2_DIR / 'ani' / 'chr0109.dat'
-CODE_BEFORE_FUNCTIONS_FILE = SORA2_DIR / 'scena' / 'mp0090.dat'
-UNMARKED_CALL_FILE = SORA2_DIR / 'ai' / 'ai_chr5004p.dat'
+CHECK_ALGO_USE_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5122_e00.dat')
+DEAD_CODE_CALLS_FILE = corpus_file(SORA2_SCRIPTS, 'ani/chr0109.dat')
+CODE_BEFORE_FUNCTIONS_FILE = corpus_file(SORA2_SCRIPTS, 'scena/mp0090.dat')
+UNMARKED_CALL_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5004p.dat')
 
 SPECIAL_TEXT = 'a, "b" \\ c\r\nd'      # a comma, quotes, a backslash, CR and LF
 POOL_HEADING = '=== String pool'
@@ -396,22 +396,19 @@ class TestProcessFile(unittest.TestCase):
 
 
 class TestRealScripts(unittest.TestCase):
-    @unittest.skipUnless(CHECK_ALGO_USE_FILE.exists(), 'needs the sora2_1.0 corpus')
     def test_check_algo_use_records_all_tagged(self):
-        lines = group_lines(ScpListing(CHECK_ALGO_USE_FILE).lines(ListingSections()), 'CheckAlgoUse')
+        lines = group_lines(ScpListing(require(CHECK_ALGO_USE_FILE)).lines(ListingSections()), 'CheckAlgoUse')
         self.assertEqual(len([line for line in lines if line.startswith('[') and ' @ 0x' in line]), 22)
         self.assertEqual(len([line for line in lines if ';   record' in line]), 22)
 
-    @unittest.skipUnless(DEAD_CODE_CALLS_FILE.exists(), 'needs the sora2_1.0 corpus')
     def test_dead_code_calls_tagged(self):
-        listing = ScpListing(DEAD_CODE_CALLS_FILE)
+        listing = ScpListing(require(DEAD_CODE_CALLS_FILE))
         call_offsets, note = listing.pairing(listing.parser.get_func_by_name('AniBtlCraft01'))
         self.assertIsNone(note)
         self.assertTrue([offset for offset in call_offsets.values() if id(listing.decoded[offset][0][0]) in listing.unreachable])
 
-    @unittest.skipUnless(CODE_BEFORE_FUNCTIONS_FILE.exists(), 'needs the sora2_1.0 corpus')
     def test_code_before_the_first_function(self):
-        listing = ScpListing(CODE_BEFORE_FUNCTIONS_FILE)
+        listing = ScpListing(require(CODE_BEFORE_FUNCTIONS_FILE))
         lines = listing.lines(ListingSections(header = False, global_vars = False, function_entries = False,
                                               call_records = False, string_pool = False))
         block = lines.index('=== Outside every function: 0xA4..0xB9 ===')
@@ -419,9 +416,8 @@ class TestRealScripts(unittest.TestCase):
         self.assertEqual(code_area(listing, lines[block:first_function]), listing.data[0xA4:0xB9])
         self.assertEqual(code_area(listing, lines), whole_code_area(listing))
 
-    @unittest.skipUnless(UNMARKED_CALL_FILE.exists(), 'needs the sora2_1.0 corpus')
     def test_unmarked_call_is_not_paired(self):
-        lines = ScpListing(UNMARKED_CALL_FILE).lines(ListingSections(code = False))
+        lines = ScpListing(require(UNMARKED_CALL_FILE)).lines(ListingSections(code = False))
         self.assertTrue(any('records not paired:' in line and ' calls, ' in line for line in lines))
 
 

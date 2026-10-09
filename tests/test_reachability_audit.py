@@ -19,8 +19,7 @@ from scp_roundtrip_validator import (
     check_instruction_ranges,
     is_range_provably_dead,
 )
-
-SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
 
 
 def make_instruction(offset: int, opcode: int, size: int = 1, offset_target: int | None = None) -> Instruction:
@@ -101,10 +100,7 @@ class TestRealCallPairing(unittest.TestCase):
     a real file through ScpParser, not hand-coded bytes fed straight to Disassembler.'''
 
     def test_call_and_push_ret_addr_counts_match(self):
-        path = SORA2_DIR / 'battle' / 'btl_EV_00_14_00.dat'
-        if not path.exists():
-            self.skipTest(f'Test file not found: {path}')
-
+        path = require(corpus_file(SORA2_SCRIPTS, 'battle/btl_EV_00_14_00.dat'))
         parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
 
         self.assertTrue(functions)

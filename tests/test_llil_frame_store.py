@@ -9,15 +9,13 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.llil.llil import LowLevelILFrameStore, LowLevelILStackStore, LowLevelILConst, WORD_SIZE
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder, FalcomLLILFormatter
+from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
 from ir.mlil.mlil import MLILSetVar
+from tests.shared.llil_utils import make_builder
 
 
-FUNC_START = 0x1000
-
-
-def build_function_with_pop_to(num_params: int, offset: int, *, name: str = 'pop_to_test'):
+def build_function_with_pop_to(num_params: int, offset: int):
     '''Function with num_params parameters: pushes a marker value, then pop_to(offset)
 
     Returns the raw builder.function rather than calling finalize(): a real function
@@ -25,10 +23,8 @@ def build_function_with_pop_to(num_params: int, offset: int, *, name: str = 'pop
     that is irrelevant to the instruction-shape assertions here, so skip finalize()'s
     unrelated sp == 0 end-of-function check rather than pad the test with a fake pop.
     '''
-    builder = FalcomVMBuilder()
-    builder.create_function(name, FUNC_START, num_params = num_params)
-    entry = builder.create_basic_block(FUNC_START, name)
-    builder.set_current_block(entry)
+    builder = make_builder(num_params)
+    entry = builder.current_block
 
     builder.push_int(99)
     builder.pop_to(offset)
@@ -77,10 +73,7 @@ class TestPopToParameterSlotMLIL(unittest.TestCase):
     not a disconnected local - this is the actual bug fix (see btlsys.PlayStartVoice).'''
 
     def test_translates_to_parameter_set_var(self):
-        builder = FalcomVMBuilder()
-        builder.create_function('pop_to_ret_test', FUNC_START, num_params = 1)
-        entry = builder.create_basic_block(FUNC_START, 'pop_to_ret_test')
-        builder.set_current_block(entry)
+        builder = make_builder(num_params = 1)
 
         builder.push_int(99)
         builder.pop_to(-WORD_SIZE)

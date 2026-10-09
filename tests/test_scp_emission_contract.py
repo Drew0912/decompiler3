@@ -12,19 +12,16 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from falcom.ed9.parser.scp import ScpParser
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
 
-SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
-TEST_FILE = SORA2_DIR / 'ai' / 'ai_chr0100_e00.dat'
+TEST_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr0100_e00.dat')
 
 MATCHED_COMMON_FUNC = 'chr_info'   # canonical-matching common function - imported, not inlined
 SOURCE_FUNC = 'SkillTable'         # this script's own function - always inlined
 
 
 def load() -> tuple[ScpParser, list]:
-    if not TEST_FILE.exists():
-        raise unittest.SkipTest(f'Test file not found: {TEST_FILE}')
-
-    return ScpParser.load(TEST_FILE, round_trip = False, keep_unreachable_code = False)
+    return ScpParser.load(require(TEST_FILE), round_trip = False, keep_unreachable_code = False)
 
 
 class TestLibraryMatching(unittest.TestCase):

@@ -31,10 +31,10 @@ from falcom.ed9.writer.metadata.common_index import COMMON_FUNCTIONS
 import scp_roundtrip_validator
 from scp_roundtrip_validator import compile_and_decompile_round, decompile_to_python
 from scp_writer_test_utils import fresh_writer
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
 
-SORA2_DIR = Path(__file__).parent.parent / 'sora2_1.0' / 'script_en'
-TEST_FILE = SORA2_DIR / 'ai' / 'ai_chr5122_e00.dat'
-SMALL_FILE = SORA2_DIR / 'scena' / 'e0000.dat'
+TEST_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5122_e00.dat')
+SMALL_FILE = corpus_file(SORA2_SCRIPTS, 'scena/e0000.dat')
 LABEL_LINE = re.compile(r"^ *label\('[^']*'\)( +# .*)?$")     # with its depth comment, if any
 
 HOOK_TEMPLATE_IMPORTS = '''\
@@ -93,11 +93,6 @@ def HookExtra():
     label('hook_extra_ret')
     RETURN()
 '''
-
-
-def require(path: Path):
-    if not path.exists():
-        raise unittest.SkipTest(f'Test file not found: {path}')
 
 
 def named_parser(name: str) -> ScpParser:

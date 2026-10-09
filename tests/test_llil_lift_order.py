@@ -13,10 +13,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from ir.llil.llil import LowLevelILEq, WORD_SIZE
 from falcom.ed9.disasm.basic_block import BasicBlock
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
+from tests.shared.llil_utils import FUNC_START, make_builder
 
 
-FUNC_START = 0x1000
 SECOND_BLOCK_START = FUNC_START + 0x10
 THIRD_BLOCK_START = FUNC_START + 0x20
 FOURTH_BLOCK_START = FUNC_START + 0x30
@@ -32,14 +31,6 @@ def make_rpo_lifter() -> ED9VMLifter:
     '''_compute_rpo touches no lifter/parser state, so any non-None parser satisfies the
     constructor.'''
     return ED9VMLifter(parser = object())
-
-
-def make_builder(num_params: int = 0, *, name: str = 'lift_order_test') -> FalcomVMBuilder:
-    builder = FalcomVMBuilder()
-    builder.create_function(name, FUNC_START, num_params = num_params)
-    entry = builder.create_basic_block(FUNC_START, name)
-    builder.set_current_block(entry)
-    return builder
 
 
 class TestReindexInBlockOrder(unittest.TestCase):
