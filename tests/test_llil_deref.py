@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for dereference opcodes (LOAD_STACK_DEREF/POP_TO_DEREF) and the pointer reads and
-writes they become in MLIL and HLIL.'''
+'''Unit tests for dereference opcodes (LOAD_STACK_DEREF/POP_TO_DEREF), how POP_TO_DEREF prints in LLIL, and the
+pointer reads and writes they become in MLIL and HLIL.'''
 
 from pathlib import Path
 import sys
@@ -9,7 +9,7 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.llil.llil import LowLevelILLoad, LowLevelILStore, LowLevelILFrameLoad, WORD_SIZE
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
+from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter, FalcomVMBuilder
 from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
 from ir.mlil.mlil import (
     MediumLevelILFunction, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILVariable,
@@ -92,6 +92,17 @@ class TestDerefLift(unittest.TestCase):
         # 1 parameter (slot 0). offset=0 after the push -> slot_index 1, not a parameter slot.
         with self.assertRaises(NotImplementedError):
             build_function_with_deref(num_params = 1, offset = 0, deref_write = True)
+
+
+class TestDerefFormatting(unittest.TestCase):
+    '''FalcomLLILFormatter shows the pop POP_TO_DEREF hides, like POP_TO's'''
+
+    def test_simplified_format_shows_popped_value(self):
+        _, entry = build_function_with_deref(num_params = 1, offset = -WORD_SIZE, deref_write = True)
+
+        lines = FalcomLLILFormatter.format_instruction_sequence([entry.instructions[-1]], indent = '')
+
+        self.assertEqual(lines, ['*STACK[fp + 0] = STACK[--sp] ; STACK[sp<1>]'])
 
 
 class TestDerefMLILTranslation(unittest.TestCase):

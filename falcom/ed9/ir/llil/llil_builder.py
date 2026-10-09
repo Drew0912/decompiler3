@@ -422,7 +422,7 @@ class FalcomLLILFormatter(LLILFormatter):
 
     @classmethod
     def _format_simplified(cls, inst: LowLevelILInstruction) -> List[str]:
-        '''SET_REG, POP_JMP_* and POP_TO hide their pop (hidden_for_formatter): their line shows it'''
+        '''SET_REG, POP_JMP_*, POP_TO and POP_TO_DEREF hide their pop (hidden_for_formatter): their line shows it'''
         # SET_REG
         if isinstance(inst, LowLevelILRegStore):
             lines = [f'REG[{inst.reg_index}] = STACK[--sp]  ; {inst.value}']
@@ -444,6 +444,10 @@ class FalcomLLILFormatter(LLILFormatter):
             word_offset = inst.offset // WORD_SIZE
             location = f'fp + {word_offset}' if word_offset >= 0 else f'fp - {-word_offset}'
             lines = [f'STACK[{location}] = STACK[--sp] ; {inst.value}']
+
+        # POP_TO_DEREF
+        elif isinstance(inst, LowLevelILStore):
+            lines = [f'*{inst.dest} = STACK[--sp] ; {inst.value}']
 
         else:
             lines = super()._format_simplified(inst)
