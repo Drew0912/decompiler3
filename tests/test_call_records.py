@@ -11,7 +11,6 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from common.config import default_endian
 from common.logging import log
@@ -23,8 +22,8 @@ from falcom.ed9.parser.code_layout import function_extents
 from falcom.ed9.parser.scp import CallDebugInfoTracker, TrackedValue
 from falcom.ed9.parser.types_scp import RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import fresh_writer
 from scp_roundtrip_validator import compare_record, load_script
+from tests.shared.scp_writer_test_utils import fresh_writer
 
 CallType = ScpFunctionCallDebugInfo.CallType
 ArgType = ScpFunctionCallDebugInfoArg.Type

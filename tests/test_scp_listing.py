@@ -9,7 +9,6 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from common.config import default_endian
 from common.logging import log
@@ -22,8 +21,8 @@ from falcom.ed9.parser.types_scp import ScpFunctionCallDebugInfo
 from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import fresh_writer
 from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.scp_writer_test_utils import fresh_writer
 
 CHECK_ALGO_USE_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5122_e00.dat')
 DEAD_CODE_CALLS_FILE = corpus_file(SORA2_SCRIPTS, 'ani/chr0109.dat')

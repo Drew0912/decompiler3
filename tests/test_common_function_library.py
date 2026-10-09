@@ -14,7 +14,6 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function
@@ -24,11 +23,11 @@ from falcom.ed9.writer.metadata import COMMON_LIBRARY_PACKAGE
 from falcom.ed9.writer.metadata.common_index import COMMON_FUNCTIONS
 from falcom.ed9.writer.metadata.signature import function_fingerprint, fingerprint_digest
 from ir.llil.llil import WORD_SIZE
-from scp_writer_test_utils import fresh_writer
-from test_scp_stack_simulation import (
+from tests.shared.scp_asm import (
     Asm, Func, Program, CALLEE_ID, CALLEE_NAME, CALLER_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE,
     returning_callee,
 )
+from tests.shared.scp_writer_test_utils import fresh_writer
 
 CHECK_SBREAK = 'CheckSBreak'  # forward and backward branches
 SUBSYSTEM = 5

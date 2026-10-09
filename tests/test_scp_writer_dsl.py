@@ -10,13 +10,12 @@ from types import SimpleNamespace
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.types_scp import ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import at, body_writer, fresh_writer
+from tests.shared.scp_writer_test_utils import at, body_writer, fresh_writer
 
 
 class TestBoolRejected(unittest.TestCase):

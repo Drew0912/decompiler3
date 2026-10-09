@@ -10,16 +10,15 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from ir.llil import WORD_SIZE
 from falcom.ed9.parser.call_records import read_debug_records
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.string_pool import StringPoolSection, StringRefs, collect_string_refs, pool_strings, read_text
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import fresh_writer
 from scp_roundtrip_validator import Status, load_script, validate_file
 from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.scp_writer_test_utils import fresh_writer
 
 PERSONAL_TEMPLATE_FILE = corpus_file(SORA2_SCRIPTS, 'scena/personalTemplate.dat')
 

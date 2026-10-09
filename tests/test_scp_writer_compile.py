@@ -10,14 +10,13 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from common.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import WriterTestCase, at, fresh_writer, location
+from tests.shared.scp_writer_test_utils import WriterTestCase, at, fresh_writer, location
 
 
 def read_uint32(data: bytes, offset: int) -> int:

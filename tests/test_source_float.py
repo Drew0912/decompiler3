@@ -12,7 +12,6 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from codegen.typescript import TypeScriptGenerator
 from falcom.ed9.ir.llil import ED9VMLifter
@@ -27,7 +26,7 @@ from ir.hlil.hlil_formatter import HLILFormatter
 from ir.llil.llil import WORD_SIZE, LowLevelILConst, LowLevelILStackStore
 from ir.mlil.mlil import MLILConst
 from ir.mlil.mlil_ssa_optimizer import SSAOptimizer
-from scp_writer_test_utils import fresh_writer
+from tests.shared.scp_writer_test_utils import fresh_writer
 
 STORED_0_3 = 0.2999999523162842     # what 0.3 decodes to
 WORD_0_3   = 0x8FA66666

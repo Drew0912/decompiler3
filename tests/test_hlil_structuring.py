@@ -18,12 +18,9 @@ import sys
 import unittest
 from unittest import mock
 
-sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
 
-from hlil_cfg_utils import (EARLY_EXIT, SHARED_LOOP, SHARED_LOOP_COPY_STATEMENTS, build_function, to_hlil,
-                            structure, classify, hlil_run, parameters, unstructured_nodes, calls_emitted)
 from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLILDoWhile, HLILSwitch, HLILSwitchCase,
                           HLILBreak, HLILContinue, HLILReturn, HLILUnstructured, HLILAssign, HLILExprStmt, HLILCall,
                           HLILConst, HLILVar, HLILVariable, HLILBinaryOp, HLILUnaryOp, BinaryOp, UnaryOp,
@@ -35,6 +32,10 @@ from ir.hlil.passes.pass_dead_code_elimination import DeadCodeEliminationPass
 from ir.hlil.passes.pass_loop_recovery import LoopRecoveryPass
 from codegen.typescript import generate_typescript
 from ir_semantic_validator import compare_mlil_hlil
+from tests.shared.hlil_cfg_utils import (
+    EARLY_EXIT, SHARED_LOOP, SHARED_LOOP_COPY_STATEMENTS, build_function, to_hlil, structure, classify, hlil_run,
+    parameters, unstructured_nodes, calls_emitted,
+)
 
 TARGET = 'loc_1'
 REASON = 'region not repeatable'

@@ -14,7 +14,6 @@ import sys
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
@@ -24,7 +23,7 @@ from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.parser.scp import CallDebugInfoTracker, ScpDisassemblyError, ScpParser
 from falcom.ed9.parser.types_parser import Function
 from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
-from test_scp_stack_simulation import (
+from tests.shared.scp_asm import (
     CALLER_ID, CALLEE_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, MODULE_NAME, REG_INDEX, RIGHT_VALUE,
     SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm, Func, Program, main_function, returning_callee,
 )

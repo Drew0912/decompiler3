@@ -6,17 +6,16 @@ from pathlib import Path
 import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
 
-from hlil_cfg_utils import EARLY_EXIT, SHARED_LOOP, build_function, to_hlil, structure
 from ir.mlil.mlil import (MediumLevelILFunction, MLILIf, MLILGoto, MLILRet, MLILConst, MLILVar, MLILCall, MLILSetVar,
                           MLILEq, MLILNe)
 from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLILSwitch, HLILBreak, HLILContinue,
                           HLILReturn, HLILExprStmt, HLILCall, HLILConst, HLILVar, HLILVariable, HLILBinaryOp, BinaryOp,
                           iter_tree)
 from hlil_path_check import check_function, FALLOFF
+from tests.shared.hlil_cfg_utils import EARLY_EXIT, SHARED_LOOP, build_function, to_hlil, structure
 from tests.shared.ir_utils import connect
 
 

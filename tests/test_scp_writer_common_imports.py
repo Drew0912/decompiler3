@@ -7,11 +7,10 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from falcom.ed9.writer import scp_writer
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import fresh_writer
+from tests.shared.scp_writer_test_utils import fresh_writer
 
 
 def compile_dsl(build) -> scp_writer.ScpWriter:

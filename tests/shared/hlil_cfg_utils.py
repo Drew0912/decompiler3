@@ -9,11 +9,7 @@ Such a run is decided by its parameters alone, so it either ends within one visi
 loops forever: with FUEL well above that, both levels run out of fuel exactly when they loop.
 '''
 from itertools import product
-from pathlib import Path
-import sys
 from typing import Dict, List, Optional, Sequence, Tuple
-
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from ir.mlil.mlil import MediumLevelILFunction, MLILIf, MLILGoto, MLILRet, MLILConst, MLILVar, MLILCall, MLILEq
 from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLILDoWhile, HLILSwitch, HLILBreak,

@@ -19,12 +19,11 @@ import sys
 import unittest
 from typing import Dict, List, Set
 
-sys.path.insert(0, str(Path(__file__).parent))
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
 
-from hlil_cfg_utils import BlockSpec, build_function, to_hlil, classify, unstructured_nodes
 from hlil_path_check import check_function
+from tests.shared.hlil_cfg_utils import BlockSpec, build_function, to_hlil, classify, unstructured_nodes
 
 SEEDS = 1000
 MIN_BLOCKS = 4

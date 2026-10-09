@@ -9,7 +9,6 @@ import tempfile
 import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-sys.path.insert(0, str(Path(__file__).parent))
 
 from common.utils import display_width
 from falcom.ed9.disasm import CommentOptions, Formatter, FormatterContext
@@ -21,12 +20,12 @@ from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import RETURN, create_scp_writer
 from ir.llil.llil import WORD_SIZE
-from scp_writer_test_utils import fresh_writer
-from test_scp_stack_simulation import (
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.scp_asm import (
     Asm, Func, Program, CALLEE_ID, CALLER_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, PARAM_COUNT,
     REG_INDEX, RIGHT_VALUE, main_function, returning_callee,
 )
-from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.scp_writer_test_utils import fresh_writer
 
 CHECK_ALGO_USE_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5122_e00.dat')
 SYSCALL_SUBSYSTEM = 1
