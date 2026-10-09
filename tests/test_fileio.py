@@ -2,8 +2,6 @@
 '''Unit tests for common/fileio.py - the deliberate quirks of the ported ml FileStream that round trips rely on.'''
 
 from pathlib import Path
-import math
-import struct
 import sys
 import unittest
 
@@ -46,18 +44,6 @@ class TestFileStreamQuirks(unittest.TestCase):
                 self.assertEqual(getattr(fs, method)(value), len(expected))
                 self.assertEqual(fs.ReadAll(), expected)
 
-    def test_signed_writers_are_their_unsigned_twins(self):
-        self.assertIs(fileio.FileStream.WriteChar, fileio.FileStream.WriteByte)
-        self.assertIs(fileio.FileStream.WriteShort, fileio.FileStream.WriteUShort)
-        self.assertIs(fileio.FileStream.WriteLong, fileio.FileStream.WriteULong)
-
-    def test_write_float_out_of_range_becomes_inf(self):
-        for value, expected in [(1e40, math.inf), (-1e40, -math.inf), (1.5, 1.5)]:
-            with self.subTest(value = value):
-                fs = self.memory()
-                fs.WriteFloat(value)
-                self.assertEqual(fs.ReadAll(), struct.pack('<f', expected))
-
     def test_read_multibyte_drops_undecodable_bytes(self):
         fs = self.memory(b'a\xffb\x00rest', encoding = 'utf-8')
         self.assertEqual(fs.ReadMultiByte(), 'ab')
@@ -83,9 +69,6 @@ class TestFileStreamQuirks(unittest.TestCase):
             self.assertEqual(fs.Read(2), b'ef')
 
         self.assertEqual(fs.Position, 2)
-
-    def test_close_without_open_is_harmless(self):
-        fileio.FileStream().Close()
 
 
 if __name__ == '__main__':

@@ -7,13 +7,12 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ir.llil.llil import LowLevelILCall, WORD_SIZE
+from ir.llil.llil import WORD_SIZE
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 
 
 FUNC_START = 0x1000
 SECOND_BLOCK_START = FUNC_START + 0x10
-ONE_ARG = 1
 
 
 def make_builder(num_params: int = 0, *, name: str = 'stack_sync_test') -> FalcomVMBuilder:
@@ -82,24 +81,6 @@ class TestPopKeepsVstackInSync(unittest.TestCase):
         self.assertEqual(add_inst.lhs.slot_index, 0)
         self.assertEqual(add_inst.rhs.slot_index, 1)
 
-    def test_pop_then_call_args_are_not_stale(self):
-        builder = make_builder()
-        ret_block = builder.create_basic_block(SECOND_BLOCK_START, 'stack_sync_test_ret')
-
-        builder.push_int(999)
-        builder.push_int(888)
-        builder.pop_bytes(WORD_SIZE)   # unrelated discard, fully resolved before call setup
-
-        builder.push_func_id()
-        builder.push_ret_addr(ret_block)
-        builder.push(builder.const_int(42))
-        arg_load = builder.vstack_peek()
-        builder.call('some_func', ONE_ARG)
-
-        call_inst = builder.current_block.instructions[-1]
-        self.assertIsInstance(call_inst, LowLevelILCall)
-        self.assertEqual(call_inst.args, [arg_load])
-
     def test_pop_before_branch_preserves_trimmed_state(self):
         builder = make_builder()
         target = builder.create_basic_block(SECOND_BLOCK_START, 'stack_sync_test_target')
@@ -142,22 +123,7 @@ class TestPopKeepsVstackInSync(unittest.TestCase):
 
 
 class TestPopValidation(unittest.TestCase):
-    '''pop_bytes/pop_n reject a malformed or out-of-range discard instead of silently corrupting
-    sp or leaving an untracked hole in the vstack.'''
-
-    def test_pop_bytes_rejects_negative(self):
-        builder = make_builder()
-        builder.push_int(1)
-
-        with self.assertRaises(ValueError):
-            builder.pop_bytes(-WORD_SIZE)
-
-    def test_pop_bytes_rejects_oversized(self):
-        builder = make_builder()
-        builder.push_int(1)   # sp = 1
-
-        with self.assertRaises(ValueError):
-            builder.pop_bytes(2 * WORD_SIZE)   # would drive sp to -1
+    '''A POP of 0 bytes is a legal no-op; a malformed POP fails in the parser's stack simulation first.'''
 
     def test_pop_bytes_zero_is_still_a_legal_no_op(self):
         builder = make_builder()
@@ -167,31 +133,6 @@ class TestPopValidation(unittest.TestCase):
 
         self.assertEqual(builder.sp_get(), 1)
         self.assertEqual(builder.vstack_size(), 1)
-
-    def test_pop_bytes_rejects_non_word_aligned_size(self):
-        builder = make_builder()
-        builder.push_int(1)
-        builder.push_int(2)
-
-        with self.assertRaises(ValueError):
-            builder.pop_bytes(WORD_SIZE + 1)
-
-    def test_pop_n_rejects_zero_and_negative(self):
-        builder = make_builder()
-        builder.push_int(1)
-
-        with self.assertRaises(ValueError):
-            builder.pop_n(0)
-
-        with self.assertRaises(ValueError):
-            builder.pop_n(-1)
-
-    def test_pop_n_rejects_oversized(self):
-        builder = make_builder()
-        builder.push_int(1)   # sp = 1
-
-        with self.assertRaises(ValueError):
-            builder.pop_n(2)   # would drive sp to -1
 
 
 if __name__ == '__main__':

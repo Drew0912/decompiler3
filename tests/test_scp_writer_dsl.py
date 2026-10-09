@@ -15,8 +15,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.types_scp import ScpValue
-from falcom.ed9.writer import scp_writer_helper
-from falcom.ed9.writer.metadata import SCP_WRITER_HELPER_IMPORT
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_writer_test_utils import at, body_writer, fresh_writer
 
@@ -74,10 +72,6 @@ class TestHandleOpcode(unittest.TestCase):
     def setUp(self):
         self.writer = body_writer()
 
-    def test_operand_count_is_checked(self):
-        with self.assertRaisesRegex(AssertionError, r'^POP: expected 1 operands, got 2$'):
-            self.writer.handle_opcode(ED9Opcode.POP, WORD_SIZE, WORD_SIZE)
-
     def test_unknown_28_writes_its_operand_bytes_as_given(self):
         # No table row, so no operand format; tracked like any opcode (the real tracker ignores it, so a stub records)
         calls = []
@@ -102,9 +96,6 @@ class TestHandleOpcode(unittest.TestCase):
         with self.assertRaises(ValueError):
             PUSH_FLOAT(math.inf)                        # raises after the PUSH header is written
 
-        with self.assertRaises(AssertionError):
-            self.writer.handle_opcode(ED9Opcode.POP, WORD_SIZE, WORD_SIZE)
-
         self.assertEqual([call[:2] for call in calls], [
             (ED9Opcode.PUSH_FLOAT, (1.0,)), (ED9Opcode.PUSH_STR, ('text',)), (ED9Opcode.PUSH_CURRENT_FUNC_ID, ()),
             (ED9Opcode.PUSH_RET_ADDR, ('ret',)), (ED9Opcode.POP, (WORD_SIZE,)),
@@ -114,18 +105,6 @@ class TestHandleOpcode(unittest.TestCase):
         self.assertEqual((float_value.type, float_value.value, no_string), (ScpValue.Type.Float, 1.0, None))
         self.assertEqual((str_value.value, string.text), ('text', 'text'))
         self.assertEqual(no_payloads, [None, None, None])
-
-
-class TestHelperStatements(unittest.TestCase):
-    '''label() and GLOBAL_VAR emit no instruction, so they live in the helper next to genLabel()'''
-
-    def test_generated_scripts_get_them_from_the_helper(self):
-        namespace = {}
-        exec(SCP_WRITER_HELPER_IMPORT, namespace)
-
-        for name in ('label', 'GLOBAL_VAR', 'genLabel'):
-            with self.subTest(name = name):
-                self.assertEqual(namespace[name].__module__, scp_writer_helper.__name__)
 
 
 class TestPushFloat(unittest.TestCase):

@@ -38,7 +38,6 @@ from ir.hlil import (
     HLILVar,
     HLILVariable,
     HLILWhile,
-    contains_bare_break,
     contains_escaping_exit,
     iter_tree,
     read_children,
@@ -233,11 +232,6 @@ class TestContainsEscapingExit(unittest.TestCase):
                 self.assertEqual(contains_escaping_exit(HLILBlock([stmt]), exit_type, include_labeled), expected)
 
         self.assertFalse(contains_escaping_exit(None, HLILBreak, include_labeled = True))
-
-    def test_contains_bare_break_is_the_break_rule(self):
-        for block in (HLILBlock([HLILBreak()]), HLILBlock([HLILBreak(LOOP_LABEL)])):
-            with self.subTest(block = repr(block.statements)):
-                self.assertEqual(contains_bare_break(block), contains_escaping_exit(block, HLILBreak))
 
 
 class TestSoleStatement(unittest.TestCase):

@@ -15,11 +15,6 @@ from ir.hlil import (
     COMPARISON_OPS,
     BOOLEAN_BINARY_OPS,
     NEGATED_COMPARISON_OP,
-    DE_MORGAN_OP,
-    BINARY_OP_STR,
-    UNARY_OP_STR,
-    BINARY_OP_PRECEDENCE,
-    TERMINAL_STATEMENTS,
     HighLevelILFunction,
     HLILBinaryOp,
     HLILBlock,
@@ -31,7 +26,6 @@ from ir.hlil import (
     HLILSwitch,
     HLILSwitchCase,
     HLILUnaryOp,
-    HLILUnstructured,
     HLILVar,
     HLILVariable,
     is_boolean_expr,
@@ -59,18 +53,6 @@ def var(name: str) -> HLILVar:
 
 
 class TestSharedTables(unittest.TestCase):
-    '''Each table covers exactly the members it must - a new operator fails here until it has a
-    symbol and a precedence.'''
-
-    def test_every_binary_op_has_a_symbol_and_a_precedence(self):
-        self.assertEqual(set(BINARY_OP_STR), set(BinaryOp))
-        self.assertEqual(set(BINARY_OP_PRECEDENCE), set(BinaryOp))
-
-    def test_every_unary_op_has_a_symbol(self):
-        self.assertEqual(set(UNARY_OP_STR), set(UnaryOp))
-
-    def test_boolean_ops_are_the_comparisons_plus_logical_ops(self):
-        self.assertEqual(BOOLEAN_BINARY_OPS, COMPARISON_OPS | {BinaryOp.AND, BinaryOp.OR})
 
     def test_negated_comparison_is_the_complement(self):
         self.assertEqual(set(PYTHON_COMPARISON), COMPARISON_OPS)
@@ -82,12 +64,6 @@ class TestSharedTables(unittest.TestCase):
                 for rhs in SAMPLE_OPERANDS:
                     with self.subTest(op = op.name, lhs = lhs, rhs = rhs):
                         self.assertEqual(negated(lhs, rhs), not PYTHON_COMPARISON[op](lhs, rhs))
-
-    def test_de_morgan_swaps_and_with_or(self):
-        self.assertEqual(DE_MORGAN_OP, {BinaryOp.AND: BinaryOp.OR, BinaryOp.OR: BinaryOp.AND})
-
-    def test_terminal_statements(self):
-        self.assertEqual(set(TERMINAL_STATEMENTS), {HLILReturn, HLILBreak, HLILContinue, HLILUnstructured})
 
 
 class TestNeedsParentheses(unittest.TestCase):

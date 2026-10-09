@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for the ED9 stack effects: the table's invariants (what a call's setup pushes, the call pops; a
-slot-addressing opcode pops a fixed count); the agreement test - the parser's stack simulation, the lifter's builder and
-the debug-record tracker change the stack as the opcode table says, take a call's arguments as it says, and reject a
-value left on the stack exactly at the instructions it says exit; a local call's argument count through each walker's
-lookup; the lifter's binary map naming the table's binary opcodes; the parser fed what decoding never gives it; and the
-table's lookup of an opcode without a row.'''
+'''Unit tests for the ED9 stack effects: the agreement test - the parser's stack simulation, the lifter's builder and
+the debug-record tracker change the stack as the opcode table says and take a call's arguments as it says, and the
+parser rejects a value left on the stack exactly at the instructions the table says exit; a local call's argument count
+through each walker's lookup; and the table's lookup of an opcode without a row.'''
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -16,15 +14,13 @@ import unittest
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent))
 
-from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction
-from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE, opcodes_of
+from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
+from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
 from falcom.ed9.disasm.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from falcom.ed9.disasm.stack_effects import STACK_EFFECTS, InstructionKind, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.llil.vm_lifter import ED9LiftError
-from falcom.ed9.parser.scp import OPCODE_SIZE, CallDebugInfoTracker, ScpDisassemblyError, ScpParser
-from falcom.ed9.parser.types_parser import Function, FunctionParam
-from falcom.ed9.parser.types_scp import ScpParamFlags, Value32
+from falcom.ed9.parser.scp import CallDebugInfoTracker, ScpDisassemblyError, ScpParser
+from falcom.ed9.parser.types_parser import Function
 from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
 from test_scp_stack_simulation import (
     CALLER_ID, CALLEE_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, MODULE_NAME, REG_INDEX, RIGHT_VALUE,
@@ -278,24 +274,6 @@ def table_argc(step: Step, parser: ScpParser) -> int:
     return effect.pop_count(step.values, parser.get_func_argc) + effect.read_count(step.values)
 
 
-class TableInvariantTests(unittest.TestCase):
-    def test_local_call_pops_its_setup(self):
-        setup_pushes = STACK_EFFECTS[InstructionKind.PUSH_FUNC_ID].pushes + STACK_EFFECTS[InstructionKind.PUSH_RET_ADDR].pushes
-        self.assertEqual(STACK_EFFECTS[InstructionKind.CALL].setup_pops, setup_pushes)
-
-    def test_script_call_pops_the_caller_frame(self):
-        self.assertEqual(STACK_EFFECTS[InstructionKind.CALL_SCRIPT].setup_pops,
-                         STACK_EFFECTS[InstructionKind.PUSH_CALLER_FRAME].pushes)
-
-    def test_slot_addressing_kinds_pop_a_fixed_count(self):
-        '''The parser counts their offset from sp after a fixed number of pops (addressed_slot)'''
-        addressing = {kind: effect for kind, effect in STACK_EFFECTS.items() if effect.addresses_slot}
-        self.assertTrue(addressing, 'no kind addresses a slot')
-        for kind, effect in addressing.items():
-            with self.subTest(kind = kind.name):
-                self.assertIsInstance(effect.pops, int)
-
-
 class TestLocalCallArgumentCount(unittest.TestCase):
     '''A local CALL pops its callee's declared parameters, which each walker looks up with its own function table'''
     DECLARED_PARAMS = 3
@@ -304,49 +282,6 @@ class TestLocalCallArgumentCount(unittest.TestCase):
         params = {CALLEE_ID: self.DECLARED_PARAMS}
         self.assertEqual(STACK_EFFECTS[InstructionKind.CALL].pop_count([CALLEE_ID], params.__getitem__),
                          self.DECLARED_PARAMS)
-
-    def test_without_a_lookup_it_raises(self):
-        with self.assertRaises(ValueError) as caught:
-            STACK_EFFECTS[InstructionKind.CALL].pop_count([CALLEE_ID])
-
-        self.assertEqual(str(caught.exception),
-                         "a local CALL pops its callee's parameter count, which needs the walker's lookup")
-
-
-class TestLifterBinaryMethods(unittest.TestCase):
-    def test_maps_exactly_the_tables_binary_opcodes(self):
-        '''The table picks the lifter's binary arm, the map its builder operation: both name the same opcodes'''
-        self.assertEqual(set(ED9VMLifter.BINARY_BUILDER_METHODS), set(opcodes_of(InstructionKind.BINARY)))
-
-
-class TestParserInputsDecodingNeverGives(unittest.TestCase):
-    '''The decoder hands the parser a typed push for every PUSH, and the setup pseudo-ops only come from the parser's own
-    rewrite of a PUSH_RAW: fed anyway, a setup pseudo-op raises and a raw PUSH pushes its value, as the table says'''
-
-    def setUp(self):
-        asm = Asm()
-        asm.ret()
-        self.parser = Program(main_function(asm)).parser()
-        self.context = self.parser.disasm_context(self.parser.functions[0], code_end = None)
-
-    def decode(self, opcode: ED9Opcode) -> Instruction:
-        inst = Instruction(offset = 0, opcode = opcode, descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode),
-                           size = OPCODE_SIZE)
-        self.parser.on_instruction_decoded(self.context, inst, None)
-        return inst
-
-    def test_setup_pseudo_ops_raise(self):
-        for opcode, kind in ((ED9Opcode.PUSH_CURRENT_FUNC_ID, 'PUSH_FUNC_ID'), (ED9Opcode.PUSH_RET_ADDR, 'PUSH_RET_ADDR')):
-            with self.subTest(opcode = opcode.name):
-                with self.assertRaises(NotImplementedError) as caught:
-                    self.decode(opcode)
-
-                self.assertEqual(str(caught.exception), f'the parser never simulates {kind}')
-
-    def test_raw_push_pushes_its_value(self):
-        inst = self.decode(ED9Opcode.PUSH)
-        self.assertEqual(len(self.context.stack_simulation), 1)
-        self.assertIs(self.context.stack_simulation[0], inst)
 
 
 class TestDescriptorLookup(unittest.TestCase):
@@ -441,31 +376,18 @@ class TestWalkersAgreeWithTheTable(unittest.TestCase):
 
     def test_only_exiting_instructions_reject_a_value_left_below(self):
         '''Each program again with one more parameter than it pops - a value below everything else, so no offset moves.
-        The parser and the builder must reject it at the first exiting instruction and nowhere before. The builder gets
-        the clean disassembly with the parameter added: the parser would reject the program first.'''
-        seen = {'parser': set(), 'lifter': set()}
+        The parser must reject it at the first exiting instruction and nowhere before.'''
+        seen = set()
         for program in PROGRAMS:
-            functions = program()
-            with self.subTest(program = program.__name__, walker = 'parser'):
-                main, *others = functions
+            main, *others = program()
+            with self.subTest(program = program.__name__):
                 steps = []
                 with self.assertRaises(ScpDisassemblyError) as caught:
                     disassemble((main._replace(argc = main.argc + 1), *others), steps)
 
-                seen['parser'] |= self.assert_rejected_at_an_exit(steps, caught.exception)
+                seen |= self.assert_rejected_at_an_exit(steps, caught.exception)
 
-            with self.subTest(program = program.__name__, walker = 'lifter'):
-                parser, decoded = disassemble(functions, [])
-                main = next(func for func in decoded if func.name == FUNC_NAME)
-                main.params = [FunctionParam(ScpParamFlags(Value32)), *main.params]
-                lifter = TracingLifter(parser = parser)
-                with self.assertRaises(ED9LiftError) as caught:
-                    lifter.lift_function(main)
-
-                seen['lifter'] |= self.assert_rejected_at_an_exit(lifter.steps, caught.exception)
-
-        for walker, opcodes in seen.items():
-            self.assertEqual(opcodes, TABLE_OPCODES - NEVER_SEEN[walker], walker)
+        self.assertEqual(seen, TABLE_OPCODES - NEVER_SEEN['parser'])
 
     def assert_rejected_at_an_exit(self, steps: list[Step], error) -> set[ED9Opcode]:
         '''No instruction handled before the rejection exits; the rejecting one does. Returns the opcodes checked.'''

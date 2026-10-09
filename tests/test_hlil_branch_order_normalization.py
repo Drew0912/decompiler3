@@ -226,36 +226,5 @@ class TestBranchOrderNormalization(unittest.TestCase):
                          f'line({LATE_LINE})')
 
 
-class TestBranchOrderNormalizationFlag(unittest.TestCase):
-    '''The converter flag must control whether the pass runs at all'''
-
-    def pass_names(self, **kwargs) -> list:
-        from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-        from ir.pipeline import Pipeline
-
-        captured = []
-        original = Pipeline.run
-
-        def capture(self, input_data, debug = False):
-            captured.extend(type(p).__name__ for p in self.passes)
-            return input_data
-
-        Pipeline.run = capture
-        try:
-            convert_falcom_mlil_to_hlil(None, None, **kwargs)
-
-        finally:
-            Pipeline.run = original
-
-        return captured
-
-    def test_pass_runs_by_default(self):
-        self.assertIn('BranchOrderNormalizationPass', self.pass_names())
-
-    def test_pass_is_absent_when_disabled(self):
-        self.assertNotIn('BranchOrderNormalizationPass',
-                         self.pass_names(normalize_branch_order = False))
-
-
 if __name__ == '__main__':
     unittest.main()

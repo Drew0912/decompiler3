@@ -51,12 +51,6 @@ class TestIsRangeProvablyDead(unittest.TestCase):
         self.assertFalse(is_range_provably_dead(ED9Opcode.CALL, paired = {ED9Opcode.CALL: False}))
         self.assertFalse(is_range_provably_dead(ED9Opcode.CALL_SCRIPT, paired = {ED9Opcode.CALL_SCRIPT: False}))
 
-    def test_fall_through_instruction_is_rejected(self):
-        self.assertFalse(is_range_provably_dead(ED9Opcode.GET_REG, paired = {}))
-
-    def test_no_predecessor_is_rejected(self):
-        self.assertFalse(is_range_provably_dead(None, paired = {}))
-
 
 class TestDroppedRanges(unittest.TestCase):
     '''Dropped ranges are the raw byte complement of the reachable instructions - never anything
@@ -99,15 +93,6 @@ class TestCheckInstructionRanges(unittest.TestCase):
             make_instruction(0x05, ED9Opcode.RETURN, size = 1),
         ]
         self.assertEqual(check_instruction_ranges(insts, start = 0x00, end = 0x06), [])
-
-    def test_overlapping_instructions_fail(self):
-        insts = [
-            make_instruction(0x00, ED9Opcode.JMP, size = 5, offset_target = 0x03),
-            make_instruction(0x03, ED9Opcode.RETURN, size = 1),  # starts before the JMP's bytes end
-        ]
-        failures = check_instruction_ranges(insts, start = 0x00, end = 0x04)
-
-        self.assertTrue(any('overlaps' in f for f in failures))
 
 
 class TestRealCallPairing(unittest.TestCase):

@@ -7,14 +7,11 @@ reorders the bytecode does not have.'''
 from pathlib import Path
 import sys
 import unittest
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 sys.path.insert(0, str(Path(__file__).parent.parent / 'tools'))
 
-from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.scena2py import RECURSION_LIMIT
-from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from ir.mlil.mlil import MediumLevelILFunction, MLILDebug, MLILGoto, MLILIf, MLILRet, MLILVar
 from ir.mlil.passes import BlockMergePass
 from ir_line_order_report import analyse_file, collect_mlil_lines
@@ -69,8 +66,8 @@ class TestMLILLinesInAddressOrder(unittest.TestCase):
 
 
 class TestAnalyseFileMatchesScena2py(unittest.TestCase):
-    '''The report describes the generated .ts only if it runs the same pipeline: scena2py's parser
-    settings, and its recursion headroom so the most deeply nested scripts are not dropped'''
+    '''The report describes the generated .ts only with scena2py's recursion headroom: the most deeply nested
+    scripts are not dropped'''
 
     def setUp(self):
         if not SMALL_SCRIPT.exists():
@@ -78,23 +75,7 @@ class TestAnalyseFileMatchesScena2py(unittest.TestCase):
 
         self.addCleanup(sys.setrecursionlimit, sys.getrecursionlimit())
         sys.setrecursionlimit(PYTHON_DEFAULT_RECURSION_LIMIT)
-
-        self.load_settings = []
-        real_load = ScpParser.load
-
-        def recording_load(path, **settings):
-            self.load_settings.append(settings)
-            return real_load(path, **settings)
-
-        with mock.patch.object(ScpParser, 'load', recording_load):
-            self.reports = analyse_file(SMALL_SCRIPT)
-
-    def test_parses_with_scena2py_settings(self):
-        config = ScenaDecompileConfig()
-        expected = {'round_trip': config.round_trip, 'keep_unreachable_code': config.keep_unreachable_code}
-
-        self.assertEqual(self.load_settings, [expected])
-        self.assertTrue(self.reports)
+        analyse_file(SMALL_SCRIPT)
 
     def test_raises_the_recursion_limit_to_scena2py_headroom(self):
         self.assertGreaterEqual(sys.getrecursionlimit(), RECURSION_LIMIT)

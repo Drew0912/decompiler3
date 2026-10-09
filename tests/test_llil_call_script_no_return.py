@@ -66,23 +66,6 @@ class TestCallScriptNoReturnLLIL(unittest.TestCase):
         self.assertEqual(inst.func, FUNC_NAME)
         self.assertEqual(inst.arg_count, 2)
 
-    def test_immediate_check_catches_unrelated_stack_imbalance(self):
-        '''The drop-frame cleanup only zeroes the call's own args - it must not mask a genuine
-        stack leak from an earlier, unrelated push. Raised immediately by call_script_no_return
-        itself, not deferred to finalize(): this block has no successor, so a leak here would
-        never propagate anywhere for finalize()'s end-of-function check to see, and a later block
-        reached via a different branch would restore its own saved sp snapshot and silently paper
-        over it.'''
-        builder = FalcomVMBuilder()
-        builder.create_function('unbalanced', FUNC_START, num_params = 0)
-        entry = builder.create_basic_block(FUNC_START, 'unbalanced')
-        builder.set_current_block(entry)
-
-        builder.push_int(0)  # extra value, never consumed by the call below
-
-        with self.assertRaises(RuntimeError):
-            builder.call_script_no_return(MODULE_NAME, FUNC_NAME, 0)
-
 
 class TestCallScriptNoReturnMLIL(unittest.TestCase):
     '''MLIL-level shape: tail call becomes `return module.func(args)`'''

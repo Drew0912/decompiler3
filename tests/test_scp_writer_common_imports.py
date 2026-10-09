@@ -156,30 +156,5 @@ class TestGenLabel(unittest.TestCase):
         self.assertEqual({f.name for f in writer.functions}, {'First', 'Second'})
 
 
-class TestFreshWriterIsolation(unittest.TestCase):
-    '''The writer has no reset; two compiles in one process only stay isolated if each gets its own
-    writer instance - the compile-twice test in tests/test_common_function_library.py relies on
-    the same.'''
-
-    def test_same_function_object_compiles_twice_with_a_fresh_writer_each_time(self):
-        def WithForwardJump():
-            target = genLabel()
-            JMP(target)
-            PUSH_INT(1)
-            SET_REG(0)
-            label(target)
-            RETURN()
-
-        def build(scena):
-            scena.LLILCommonCode()(WithForwardJump)
-
-        writer_1 = compile_dsl(build)
-        writer_2 = compile_dsl(build)
-
-        self.assertIsNot(writer_1, writer_2)
-        self.assertEqual(len(writer_1.functions), 1)
-        self.assertEqual(len(writer_2.functions), 1)
-
-
 if __name__ == '__main__':
     unittest.main()

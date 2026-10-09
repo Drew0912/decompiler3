@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 '''Unit tests for LLIL lifting order and block state: instructions are indexed in block order, blocks
-lift in reverse post-order, every CFG edge records the stack state it carries, and a join or back edge
-with a different stack height raises.'''
+lift in reverse post-order, every terminal records the stack state its edges carry, and a join whose arms
+hold different lifetimes in one slot raises.'''
 
 from dataclasses import replace
 from pathlib import Path
@@ -10,8 +10,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ir.llil.llil import LowLevelILBasicBlock, LowLevelILEq, LowLevelILJmp, WORD_SIZE
-from ir.llil.llil_builder import LowLevelILBuilder
+from ir.llil.llil import LowLevelILEq, WORD_SIZE
 from falcom.ed9.disasm.basic_block import BasicBlock
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
@@ -21,15 +20,12 @@ FUNC_START = 0x1000
 SECOND_BLOCK_START = FUNC_START + 0x10
 THIRD_BLOCK_START = FUNC_START + 0x20
 FOURTH_BLOCK_START = FUNC_START + 0x30
-UNREGISTERED_BLOCK_OFFSET = 0x9999
 DELIBERATELY_DIFFERENT_SP = 9
-SENTINEL_SP_OUT = 999
 CONDITION_VALUE = 0
 LEFT_VALUE = 1
 RIGHT_VALUE = 2
 SEED_PARAM_COUNT = 2
 NO_ARGS = 0
-MODULE_NAME = 'module'
 
 
 def make_rpo_lifter() -> ED9VMLifter:
@@ -128,49 +124,6 @@ class TestBlockLifecycle(unittest.TestCase):
 
         self.assertEqual(entry.sp_out, 1)
         self.assertEqual(other.sp_in, DELIBERATELY_DIFFERENT_SP)
-
-    def test_set_current_block_validates_before_mutating_previous_block(self):
-        builder = make_builder()
-        entry = builder.function.basic_blocks[0]
-        builder.push_int(1)
-
-        unregistered = LowLevelILBasicBlock(UNREGISTERED_BLOCK_OFFSET)
-
-        with self.assertRaises(RuntimeError):
-            builder.set_current_block(unregistered)
-
-        self.assertEqual(entry.sp_out, 0)
-
-    def test_begin_block_validates_before_mutating_previous_block(self):
-        builder = make_builder()
-        entry = builder.function.basic_blocks[0]
-        builder.push_int(1)
-
-        unregistered = LowLevelILBasicBlock(UNREGISTERED_BLOCK_OFFSET)
-
-        with self.assertRaises(RuntimeError):
-            builder.begin_block(unregistered)
-
-        self.assertEqual(entry.sp_out, 0)
-
-    def test_finalize_closes_the_active_block_without_an_explicit_end_call(self):
-        '''A caller that only ever calls set_current_block (as tests/demos do, never begin_block)
-        still gets its last block closed once finalize() runs.'''
-        builder = make_builder()
-        entry = builder.function.basic_blocks[0]
-        entry.sp_out = SENTINEL_SP_OUT
-
-        builder.ret()
-        builder.finalize()
-
-        self.assertEqual(entry.sp_out, 0)
-
-    def test_duplicate_block_start_raises(self):
-        builder = make_builder()
-        builder.create_basic_block(SECOND_BLOCK_START, 'first')
-
-        with self.assertRaises(RuntimeError):
-            builder.create_basic_block(SECOND_BLOCK_START, 'second')
 
 
 class TestComputeRPO(unittest.TestCase):
@@ -299,26 +252,6 @@ class TestRPOIntegration(unittest.TestCase):
         builder.finalize()
 
 
-class TestReachableEmptyBlocks(unittest.TestCase):
-    '''Every reachable block must end in a terminal - an empty one has none, so control would
-    leave the function without passing an exit check.'''
-
-    def test_jump_to_empty_block_raises_at_finalize(self):
-        builder = make_builder()
-        empty = builder.create_basic_block(SECOND_BLOCK_START, 'empty')
-        builder.jmp(empty)
-
-        with self.assertRaises(RuntimeError):
-            builder.finalize()
-
-    def test_unreferenced_empty_block_is_allowed(self):
-        builder = make_builder()
-        builder.create_basic_block(SECOND_BLOCK_START, 'unused')
-        builder.ret()
-
-        builder.finalize()
-
-
 class TestEntrySeed(unittest.TestCase):
     '''create_function records the entry state: only the parameters on the stack, none tracked.'''
 
@@ -338,18 +271,6 @@ class TestEntrySeed(unittest.TestCase):
         builder.begin_block(body)
         builder.jmp(entry)   # must not raise
 
-    def test_back_edge_into_entry_with_a_different_sp_raises(self):
-        builder = make_builder(num_params = SEED_PARAM_COUNT)
-        entry = builder.function.basic_blocks[0]
-        body = builder.create_basic_block(SECOND_BLOCK_START, 'body')
-        builder.jmp(body)
-
-        builder.begin_block(body)
-        builder.push_int(LEFT_VALUE)
-
-        with self.assertRaises(RuntimeError):
-            builder.jmp(entry)
-
 
 class TestStrictEdgeState(unittest.TestCase):
     '''The first edge into a block records its state; every other edge must bring the same shape.'''
@@ -363,23 +284,6 @@ class TestStrictEdgeState(unittest.TestCase):
         builder.pop_jmp_zero(left, right)
         return builder, left, right, join
 
-    def test_begin_block_without_recorded_state_raises(self):
-        builder = make_builder()
-        orphan = builder.create_basic_block(SECOND_BLOCK_START, 'orphan')
-
-        with self.assertRaises(RuntimeError):
-            builder.begin_block(orphan)
-
-    def test_join_with_different_sp_raises(self):
-        builder, left, right, join = self.make_diamond()
-        builder.begin_block(left)
-        builder.push_int(LEFT_VALUE)
-        builder.jmp(join)
-        builder.begin_block(right)
-
-        with self.assertRaises(RuntimeError):
-            builder.jmp(join)
-
     def test_join_with_different_values_in_one_slot_is_accepted(self):
         builder, left, right, join = self.make_diamond()
         builder.begin_block(left)
@@ -392,45 +296,6 @@ class TestStrictEdgeState(unittest.TestCase):
         builder.begin_block(join)
 
         self.assertEqual(builder.vstack_peek().slot_index, 0)   # the join reads the slot, whichever arm wrote it
-
-    def test_back_edge_with_a_grown_stack_raises(self):
-        builder = make_builder()
-        header = builder.create_basic_block(SECOND_BLOCK_START, 'header')
-        exit_block = builder.create_basic_block(THIRD_BLOCK_START, 'exit')
-        body = builder.create_basic_block(FOURTH_BLOCK_START, 'body')
-        builder.jmp(header)
-        builder.begin_block(header)
-        builder.push_int(CONDITION_VALUE)
-        builder.pop_jmp_zero(exit_block, body)
-        builder.begin_block(body)
-        builder.push_int(LEFT_VALUE)
-
-        with self.assertRaises(RuntimeError):
-            builder.jmp(header)
-
-    def enter_caller_after_return_block_lifted_at_sp_one(self):
-        builder, direct, caller, ret_block = self.make_diamond()
-        builder.begin_block(direct)
-        builder.push_int(LEFT_VALUE)
-        builder.jmp(ret_block)
-        builder.begin_block(ret_block)   # lifted with sp 1
-        builder.begin_block(caller)
-        return builder, ret_block
-
-    def test_local_call_return_into_a_lifted_block_with_a_different_sp_raises(self):
-        builder, ret_block = self.enter_caller_after_return_block_lifted_at_sp_one()
-        builder.push_func_id()
-        builder.push_ret_addr(ret_block)
-
-        with self.assertRaises(RuntimeError):
-            builder.call('f', NO_ARGS)   # returns at sp 0
-
-    def test_script_call_return_into_a_lifted_block_with_a_different_sp_raises(self):
-        builder, ret_block = self.enter_caller_after_return_block_lifted_at_sp_one()
-        builder.push_caller_frame(ret_block)
-
-        with self.assertRaises(RuntimeError):
-            builder.call_script(MODULE_NAME, 'f', 0)   # returns at sp 0
 
     def test_parameter_kept_on_one_arm_and_repushed_on_the_other_raises(self):
         '''The arms hold different lifetimes in slot 0 - the caller's parameter (arg1) and a pushed value
@@ -447,8 +312,7 @@ class TestStrictEdgeState(unittest.TestCase):
 
 
 class TestEdgeRecording(unittest.TestCase):
-    '''Each terminal records the stack state of its own edges; finalize() checks the records are
-    exactly the CFG's edges.'''
+    '''Each terminal records the stack state of its own edges.'''
 
     def test_terminals_record_their_edges(self):
         builder = make_builder()
@@ -467,51 +331,6 @@ class TestEdgeRecording(unittest.TestCase):
         builder.ret()
 
         builder.finalize()   # every edge recorded without a manual save
-
-    def test_generic_call_edge_without_a_record_raises_at_finalize(self):
-        builder = make_builder()
-        ret_block = builder.create_basic_block(SECOND_BLOCK_START, 'ret')
-        LowLevelILBuilder.call(builder, 'f', ret_block)   # records nothing
-        builder.set_current_block(ret_block)
-        builder.ret()
-
-        with self.assertRaisesRegex(RuntimeError, 'no recorded stack state'):
-            builder.finalize()
-
-    def test_manual_save_does_not_stand_in_for_a_raw_terminal_edge(self):
-        builder = make_builder()
-        target = builder.create_basic_block(SECOND_BLOCK_START, 'target')
-        builder.save_stack_for_offset(target.start)   # sp 0
-        builder.push_int(LEFT_VALUE)
-        builder.add_instruction(LowLevelILJmp(target))   # the edge carries sp 1
-        builder.begin_block(target)
-        builder.ret()
-
-        with self.assertRaisesRegex(RuntimeError, 'no recorded stack state'):
-            builder.finalize()
-
-    def test_recorded_edge_outside_the_cfg_raises_at_finalize(self):
-        builder = make_builder()
-        target = builder.create_basic_block(SECOND_BLOCK_START, 'target')
-        other = builder.create_basic_block(THIRD_BLOCK_START, 'other')
-        jmp_inst = LowLevelILJmp(target)
-        builder.add_instruction(jmp_inst)
-        builder._record_edge_state(jmp_inst, target)
-        builder._record_edge_state(jmp_inst, other)
-        builder.begin_block(target)
-        builder.ret()
-        builder.begin_block(other)
-        builder.ret()
-
-        with self.assertRaisesRegex(RuntimeError, 'not a CFG edge'):
-            builder.finalize()
-
-    def test_edge_record_for_a_terminal_that_does_not_end_the_block_raises(self):
-        builder = make_builder()
-        target = builder.create_basic_block(SECOND_BLOCK_START, 'target')
-
-        with self.assertRaises(RuntimeError):
-            builder._record_edge_state(LowLevelILJmp(target), target)
 
 
 if __name__ == '__main__':

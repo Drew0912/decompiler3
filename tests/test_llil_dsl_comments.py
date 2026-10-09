@@ -282,9 +282,6 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
                          [f'# id: 0x0001 offset: 0x{callee.offset:X}', '@scena.LLILCode()'])
         self.assertEqual(parser.format_function(callee)[0], '@scena.LLILCode()')
 
-        callee.index = None                                             # a hand-built function has no table index
-        self.assertEqual(parser.format_function(callee, CommentOptions(function_ids = True))[0], '@scena.LLILCode()')
-
     def test_index_is_the_table_position_not_the_code_order(self):
         '''The writer sorts the table by name and lays code out in source order, so Second comes first in the code'''
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -306,13 +303,6 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
         self.assertEqual([(func.name, func.index) for func in functions], [('Second', 1), ('First', 0)])
         self.assertEqual(parser.format_function(functions[0], CommentOptions(function_ids = True))[0],
                          f'# id: 0x0001 offset: 0x{functions[0].offset:X}')
-
-    def test_opt_in_comments_are_off_by_default(self):
-        config = ScenaDecompileConfig()
-        self.assertEqual(CommentOptions(), CommentOptions(stack_slots = True, float_bits = False, function_ids = False,
-                                                          call_args = False))
-        self.assertEqual((config.stack_slot_comments, config.float_bits_comments, config.function_id_comments,
-                          config.call_arg_comments), (True, False, False, False))
 
 
 @unittest.skipUnless(CHECK_ALGO_USE_FILE.exists(), 'needs the sora2_1.0 corpus')

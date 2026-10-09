@@ -17,11 +17,11 @@ from common import fileio
 from common.config import default_encoding
 from common.logging import log
 from falcom.ed9.disasm import (
-    BranchKind, Disassembler, DisassemblerContext, ED9_INSTRUCTION_TABLE, ED9Opcode, Formatter, FormatterContext,
+    Disassembler, DisassemblerContext, ED9_INSTRUCTION_TABLE, ED9Opcode, Formatter, FormatterContext,
 )
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
-from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblerContext, ScpDisassemblyError, ScpParser
+from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblyError, ScpParser
 from falcom.ed9.parser.types_parser import Function, FunctionParam, SlotRef, StackLayout
 from falcom.ed9.parser.types_scp import ScpFunctionEntry, ScpParamFlags, ScpValue, Value32
 from falcom.ed9.ir.llil import ED9VMLifter
@@ -353,41 +353,6 @@ class TestEdgeStates(unittest.TestCase):
         asm = Asm()
         asm.push_int(LEFT_VALUE); asm.pop_to(-2 * WORD_SIZE); asm.ret()   # sp 1, 0 after its pop: slot -2
         assert_fails_at(self, Program(main_function(asm)), 0x6, 'POP_TO', 'writes below the stack')
-
-    @classmethod
-    def disassemble_keeping_context(cls, asm: Asm) -> tuple[Program, Function, ScpDisassemblerContext]:
-        '''Disassemble the single function with a context the test keeps, to audit its recorded edges'''
-        program = Program(main_function(asm))
-        parser = program.parser()
-        func = program.entries[0]
-        context = parser.disasm_context(func, code_end = None)
-        disassembler = Disassembler(ED9_INSTRUCTION_TABLE, context)
-        func.entry_block = disassembler.disasm_function(parser.fs, offset = func.offset, name = func.name)
-        return program, func, context
-
-    def test_unrecorded_cfg_edge_is_reported(self):
-        asm = Asm()
-        asm.get_reg(REG_INDEX); asm.jz('end')
-        asm.label('end'); asm.ret()
-        program, func, context = self.disassemble_keeping_context(asm)
-        ScpParser.require_recorded_edges(func, context)     # every edge went through the hooks
-
-        blocks_by_offset(func)[program.label('end')].add_branch(func.entry_block)     # one that did not
-        with self.assertRaises(ValueError):
-            ScpParser.require_recorded_edges(func, context)
-
-    def test_audit_counts_each_kind_of_edge(self):
-        '''A conditional whose true and false targets are one block has two edges there, not one'''
-        asm = Asm()
-        asm.get_reg(REG_INDEX); asm.jz('same')
-        asm.label('same'); asm.ret()
-        _, func, context = self.disassemble_keeping_context(asm)
-        ScpParser.require_recorded_edges(func, context)
-
-        branch = next(key for key in context.recorded_edges if key[2] == BranchKind.FALSE)
-        context.recorded_edges.remove(branch)                    # as if the false edge had bypassed the hook
-        with self.assertRaises(ValueError):
-            ScpParser.require_recorded_edges(func, context)
 
 
 class TestInstructionBounds(unittest.TestCase):

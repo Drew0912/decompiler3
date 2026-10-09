@@ -9,11 +9,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from ir.core import IRParameter
-from ir.llil.llil import (
-    LowLevelILBasicBlock, LowLevelILFrameLoad, LowLevelILFrameStore, LowLevelILFunction, LowLevelILStackAddr,
-    LowLevelILStackLoad, LowLevelILStackStore, WORD_SIZE,
-)
+from ir.llil.llil import LowLevelILFrameLoad, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore, WORD_SIZE
 from ir.llil.llil_builder import LowLevelILBuilder
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
@@ -41,17 +37,6 @@ def make_builder(num_params: int) -> FalcomVMBuilder:
     builder = FalcomVMBuilder()
     builder.create_function('slot_lifetime_test', FUNC_START, num_params = num_params)
     builder.set_current_block(builder.create_basic_block(FUNC_START, 'slot_lifetime_test'))
-    return builder
-
-
-def make_existing_function_builder() -> LowLevelILBuilder:
-    '''A builder around an already constructed 1-parameter function, not create_function, with its entry block
-    begun - which restores the entry state the constructor recorded'''
-    function = LowLevelILFunction('existing_function_test', FUNC_START, [IRParameter('arg1')])
-    block = LowLevelILBasicBlock(FUNC_START)
-    function.add_basic_block(block)
-    builder = LowLevelILBuilder(function)
-    builder.begin_block(block)
     return builder
 
 
@@ -189,7 +174,8 @@ class TestAccessAtOrAboveSp(unittest.TestCase):
 
 
 class TestAccessBelowTheStack(unittest.TestCase):
-    '''A slot below the frame base is the caller's: reads, addresses and stores raise'''
+    '''A slot below the frame base is the caller's: reads and addresses raise (a store there fails in the parser
+    first)'''
 
     BELOW_ONE_PARAMETER = -3 * WORD_SIZE    # with 1 parameter and 1 push (sp 2): slot -1
 
@@ -198,11 +184,10 @@ class TestAccessBelowTheStack(unittest.TestCase):
         builder.push_int(PUSHED_VALUE)
         return builder
 
-    def test_every_access_raises(self):
+    def test_reads_and_addresses_raise(self):
         for access, emit in (
             ('Read', lambda builder: builder.load_stack(self.BELOW_ONE_PARAMETER)),
             ('Address', lambda builder: builder.push_stack_addr(self.BELOW_ONE_PARAMETER)),
-            ('Store', lambda builder: builder.pop_to(self.BELOW_ONE_PARAMETER + WORD_SIZE)),  # after its pop, sp 1
         ):
             with self.subTest(access = access):
                 with self.assertRaisesRegex(NotImplementedError, rf'^{access} of slot -1 below the stack'):
@@ -268,28 +253,6 @@ class TestLiveParameterSlot(unittest.TestCase):
         stored = builder.current_block.instructions[-1].value
         self.assertIsInstance(stored, LowLevelILStackLoad)
         self.assertEqual(stored.slot_index, 0)
-
-
-class TestExistingFunctionBuilder(unittest.TestCase):
-    '''LowLevelILBuilder(function) starts from the entry state create_function records, so the slot rule has a
-    frame base; the caller-less legacy stack_store follows the same rule as every other access.'''
-
-    def test_constructor_seeds_the_entry_state(self):
-        builder = make_existing_function_builder()
-        builder.load_stack(-WORD_SIZE)                  # slot 0: the caller's parameter
-
-        self.assertIsInstance(last_pushed_value(builder), LowLevelILFrameLoad)
-
-    def test_stack_store_follows_the_slot_rule(self):
-        builder = make_existing_function_builder()
-
-        builder.stack_store(STORED_VALUE, -WORD_SIZE)   # slot 0: the live parameter
-        self.assertIsInstance(builder.current_block.instructions[-1], LowLevelILFrameStore)
-
-        builder.stack_store(STORED_VALUE, 0)            # slot 1, at sp: a dead stack slot
-        store = builder.current_block.instructions[-1]
-        self.assertIsInstance(store, LowLevelILStackStore)
-        self.assertEqual(store.slot_index, 1)
 
 
 if __name__ == '__main__':
