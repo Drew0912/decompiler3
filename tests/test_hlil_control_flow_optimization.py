@@ -91,13 +91,17 @@ def block_contains_call(block: HLILBlock, func_name: str) -> bool:
     return False
 
 
+def run_cfo(*statements: HLILStatement) -> HighLevelILFunction:
+    '''A function of these statements, after ControlFlowOptimizationPass'''
+    func = HighLevelILFunction(TEST_FUNCTION_NAME)
+    for stmt in statements:
+        func.add_statement(stmt)
+
+    return ControlFlowOptimizationPass().run(func)
+
+
 class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
     '''Tests for if-chain to switch conversion.'''
-
-    def run_pass(self, first_if: HLILIf) -> HighLevelILFunction:
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(first_if)
-        return ControlFlowOptimizationPass().run(func)
 
     def test_ne_chain_terminal_eq_becomes_final_switch_case(self):
         terminal_if = HLILIf(
@@ -109,7 +113,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         second_if = make_ne_check(SECOND_CASE_VALUE, third_if)
         first_if = make_ne_check(FIRST_CASE_VALUE, second_if)
 
-        func = self.run_pass(first_if)
+        func = run_cfo(first_if)
 
         self.assertEqual(len(func.body.statements), EXPECTED_TOP_LEVEL_STATEMENT_COUNT)
         switch_stmt = func.body.statements[0]
@@ -132,7 +136,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         second_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock([third_if]))
         first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), HLILBlock([second_if]))
 
-        func = self.run_pass(first_if)
+        func = run_cfo(first_if)
 
         self.assertEqual(len(func.body.statements), EXPECTED_TOP_LEVEL_STATEMENT_COUNT)
         switch_stmt = func.body.statements[0]
@@ -146,7 +150,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         second_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock())
         first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), HLILBlock([second_if]))
 
-        func = self.run_pass(first_if)
+        func = run_cfo(first_if)
 
         self.assertEqual(len(func.body.statements), EXPECTED_TOP_LEVEL_STATEMENT_COUNT)
         self.assertIsInstance(func.body.statements[0], HLILIf)
@@ -157,7 +161,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         second_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock([third_if]))
         first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), HLILBlock([second_if]))
 
-        func = self.run_pass(first_if)
+        func = run_cfo(first_if)
 
         self.assertEqual(len(func.body.statements), EXPECTED_TOP_LEVEL_STATEMENT_COUNT)
         self.assertIsInstance(func.body.statements[0], HLILIf)
@@ -171,7 +175,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         second_if = make_ne_check(SECOND_CASE_VALUE, third_if)
         first_if = make_ne_check(FIRST_CASE_VALUE, second_if)
 
-        func = self.run_pass(first_if)
+        func = run_cfo(first_if)
 
         self.assertEqual(len(func.body.statements), EXPECTED_TOP_LEVEL_STATEMENT_COUNT)
         self.assertIsInstance(func.body.statements[0], HLILIf)
@@ -190,7 +194,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
 
         # A case label that is not a constant cannot be merged in, so the chain
         # must be left alone rather than converted without it
-        func = self.run_pass(first_if)
+        func = run_cfo(first_if)
 
         self.assertIsInstance(func.body.statements[0], HLILIf)
 
@@ -209,7 +213,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         second_if = make_ne_check(SECOND_CASE_VALUE, third_if)
         first_if = make_ne_check(FIRST_CASE_VALUE, second_if)
 
-        func = self.run_pass(first_if)
+        func = run_cfo(first_if)
         switch_stmt = func.body.statements[0]
 
         self.assertIsInstance(switch_stmt, HLILSwitch)
@@ -236,7 +240,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         )
         grouped_if = HLILIf(grouped, make_case_body(FIRST_CASE_VALUE), HLILBlock([third_if]))
 
-        func = self.run_pass(grouped_if)
+        func = run_cfo(grouped_if)
         switch_stmt = func.body.statements[0]
 
         self.assertIsInstance(switch_stmt, HLILSwitch)
@@ -281,18 +285,12 @@ def arm_calls(block: Optional[HLILBlock]) -> list:
 class TestBooleanTempInlining(unittest.TestCase):
     '''Tests for the [assign, if] -> [if(bool_expr)] boolean-temp inlining transform.'''
 
-    def run_pass(self, statements: list) -> HighLevelILFunction:
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        for stmt in statements:
-            func.add_statement(stmt)
-        return ControlFlowOptimizationPass().run(func)
-
     def test_assignment_survives_when_var_is_read_by_a_later_statement(self):
         assign_stmt = make_flag_assign()
         first_if = make_flag_check(FIRST_CHECK_CALL)
         second_if = make_flag_check(SECOND_CHECK_CALL)
 
-        func = self.run_pass([assign_stmt, first_if, second_if])
+        func = run_cfo(assign_stmt, first_if, second_if)
 
         # second_if reads the same flag var again - deleting the assignment would leave
         # it undefined there, so the inline-and-delete transform must not fire at all
@@ -317,7 +315,7 @@ class TestBooleanTempInlining(unittest.TestCase):
                 check = HLILIf(HLILBinaryOp(op, make_flag_var(), HLILConst(0)),
                                HLILBlock([HLILExprStmt(HLILCall(FIRST_CHECK_CALL, []))]), HLILBlock(second))
 
-                func = self.run_pass([HLILAssign(make_flag_var(), make_less_than()), check])
+                func = run_cfo(HLILAssign(make_flag_var(), make_less_than()), check)
 
                 [inlined] = func.body.statements
                 self.assertEqual(HLILFormatter._format_expr(inlined.condition), condition)
@@ -334,12 +332,6 @@ SOURCE_REG_NAME = 'source_reg'
 class TestRedundantElseAssignSideEffects(unittest.TestCase):
     '''Tests for _remove_redundant_else_assign not discarding side effects.'''
 
-    def run_pass(self, *statements: HLILStatement) -> HighLevelILFunction:
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        for stmt in statements:
-            func.add_statement(stmt)
-        return ControlFlowOptimizationPass().run(func)
-
     def build_switch_case_if(self, source_expr) -> HLILIf:
         # if (selector == FIRST) { case_1 } else { selector = source_expr; if (selector == SECOND) { case_2 } }
         inner_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock())
@@ -350,7 +342,7 @@ class TestRedundantElseAssignSideEffects(unittest.TestCase):
     def test_call_reload_is_not_removed_even_when_result_looks_redundant(self):
         first_if = self.build_switch_case_if(HLILCall(RELOAD_CALL_NAME, []))
 
-        func = self.run_pass(first_if)
+        func = run_cfo(first_if)
 
         else_block = func.body.statements[0].false_block
         # The reassignment must survive - deleting it would drop the call's side effect
@@ -370,7 +362,7 @@ class TestRedundantElseAssignSideEffects(unittest.TestCase):
         reaching_load = HLILAssign(make_var(), HLILVar(source_var))
         first_if = self.build_switch_case_if(HLILVar(source_var))
 
-        func = self.run_pass(reaching_load, first_if)
+        func = run_cfo(reaching_load, first_if)
 
         else_block = func.body.statements[1].false_block
         # The reassignment is gone - only the inner if remains
@@ -384,7 +376,7 @@ class TestRedundantElseAssignSideEffects(unittest.TestCase):
         unrelated_init = HLILAssign(make_var(), HLILConst(999))
         first_if = self.build_switch_case_if(HLILConst(SECOND_CASE_VALUE))
 
-        func = self.run_pass(unrelated_init, first_if)
+        func = run_cfo(unrelated_init, first_if)
 
         else_block = func.body.statements[1].false_block
         self.assertEqual(len(else_block.statements), 2)
@@ -406,10 +398,7 @@ class TestBooleanTempInliningPreservesGlobals(unittest.TestCase):
             HLILBlock(),
         )
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(assign_stmt)
-        func.add_statement(if_stmt)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(assign_stmt, if_stmt)
 
         self.assertEqual(len(func.body.statements), 2)
         self.assertIsInstance(func.body.statements[0], HLILAssign)
@@ -429,10 +418,7 @@ class TestRedundantElseAssignRejectsRegisterDiscriminants(unittest.TestCase):
         first_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, HLILVar(reg), HLILConst(FIRST_CASE_VALUE)),
                           make_case_body(FIRST_CASE_VALUE), HLILBlock([reload_assign, inner_if]))
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(reaching_assign)
-        func.add_statement(first_if)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(reaching_assign, first_if)
 
         else_stmts = func.body.statements[1].false_block.statements
         self.assertEqual(len(else_stmts), 2)
@@ -451,11 +437,7 @@ class TestBooleanTempInliningSwitchCaseLabelIsARead(unittest.TestCase):
             [HLILSwitchCase([make_flag_var()], HLILBlock([HLILExprStmt(HLILCall('case_body_call', []))]))],
         )
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(assign_stmt)
-        func.add_statement(if_stmt)
-        func.add_statement(switch_stmt)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(assign_stmt, if_stmt, switch_stmt)
 
         # The switch case label reads the same flag var - assignment must survive
         self.assertEqual(len(func.body.statements), 3)
@@ -478,10 +460,7 @@ class TestBooleanTempInliningSwitchWithoutDefaultDoesNotHideAReadingPath(unittes
             HLILBlock(),
         )
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(assign_stmt)
-        func.add_statement(if_stmt)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(assign_stmt, if_stmt)
 
         # When x != 1, the switch matches nothing and flag keeps its original value, which
         # use_after then reads - the assignment must survive
@@ -507,10 +486,7 @@ class TestBooleanTempInliningCaseLabelInsideTheIfItself(unittest.TestCase):
             HLILBlock(),
         )
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(assign_stmt)
-        func.add_statement(if_stmt)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(assign_stmt, if_stmt)
 
         self.assertEqual(len(func.body.statements), 2)
         self.assertIsInstance(func.body.statements[0], HLILAssign)
@@ -527,9 +503,7 @@ class TestRedundantElseAssignRejectsSelfReference(unittest.TestCase):
         false_block = HLILBlock([reload_assign, inner_if])
         first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), false_block)
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(first_if)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(first_if)
 
         else_stmts = func.body.statements[0].false_block.statements
         self.assertEqual(len(else_stmts), 2)
@@ -551,10 +525,7 @@ class TestRedundantElseAssignRejectsUnstableSourceKinds(unittest.TestCase):
         return reaching_load, first_if
 
     def run_and_get_else_stmts(self, reaching_load, first_if) -> list:
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(reaching_load)
-        func.add_statement(first_if)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(reaching_load, first_if)
         return func.body.statements[1].false_block.statements
 
     def test_global_source_is_not_removed_even_with_a_reaching_assignment(self):
@@ -590,10 +561,7 @@ class TestRedundantElseAssignRequiresConstantConditions(unittest.TestCase):
         outer_cond = HLILBinaryOp(BinaryOp.EQ, make_var(), HLILCall('mutate_and_return', []))
         first_if = HLILIf(outer_cond, make_case_body(FIRST_CASE_VALUE), false_block)
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(reaching_load)
-        func.add_statement(first_if)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(reaching_load, first_if)
 
         else_stmts = func.body.statements[1].false_block.statements
         self.assertEqual(len(else_stmts), 2)
@@ -607,10 +575,7 @@ class TestRedundantElseAssignRequiresConstantConditions(unittest.TestCase):
         false_block = HLILBlock([reload_assign, inner_if])
         first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), false_block)
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(reaching_load)
-        func.add_statement(first_if)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(reaching_load, first_if)
 
         else_stmts = func.body.statements[1].false_block.statements
         self.assertEqual(len(else_stmts), 2)
@@ -705,10 +670,7 @@ class TestRedundantElseAssignChainInteractionWithSwitchConversion(unittest.TestC
     def test_exactly_three_links_removes_every_reload_and_converts_to_switch(self):
         reaching_load, first_if = self.build_reload_chain(3)
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(reaching_load)
-        func.add_statement(first_if)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(reaching_load, first_if)
 
         self.assertEqual(len(func.body.statements), 2)
         self.assertIsInstance(func.body.statements[1], HLILSwitch)
@@ -716,10 +678,7 @@ class TestRedundantElseAssignChainInteractionWithSwitchConversion(unittest.TestC
     def test_four_links_the_outermost_reload_survives_once_the_inner_suffix_becomes_a_switch(self):
         reaching_load, first_if = self.build_reload_chain(4)
 
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(reaching_load)
-        func.add_statement(first_if)
-        func = ControlFlowOptimizationPass().run(func)
+        func = run_cfo(reaching_load, first_if)
 
         outer_if = func.body.statements[1]
         self.assertIsInstance(outer_if, HLILIf)
@@ -934,12 +893,9 @@ class TestReturnValueIsStillARead(unittest.TestCase):
         self.assertFalse(reads)
 
     def test_boolean_temp_returned_inside_the_if_survives_the_full_pass(self):
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(make_flag_assign())
-        func.add_statement(HLILIf(HLILBinaryOp(BinaryOp.NE, make_flag_var(), HLILConst(0)),
-                                   HLILBlock([HLILReturn(make_flag_var())]),
-                                   HLILBlock()))
-        func = ControlFlowOptimizationPass().run(func)
+        check = HLILIf(HLILBinaryOp(BinaryOp.NE, make_flag_var(), HLILConst(0)),
+                       HLILBlock([HLILReturn(make_flag_var())]), HLILBlock())
+        func = run_cfo(make_flag_assign(), check)
 
         # _var_read_elsewhere excludes the whole if, so the return's own read is the only
         # thing standing between this assignment and a wrong deletion

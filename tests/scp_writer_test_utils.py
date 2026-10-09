@@ -22,16 +22,21 @@ def fresh_writer() -> scp_writer.ScpWriter:
     return scp_writer._gScp
 
 
-def marked_line(path: str, marker: str) -> int:
+def marked_line(path: str | Path, marker: str) -> int:
     '''The line of a file that ends with the comment # line: <marker>'''
     lines = Path(path).read_text(encoding = 'utf-8').splitlines()
     [number] = [number for number, text in enumerate(lines, 1) if text.rstrip().endswith(f'# line: {marker}')]
     return number
 
 
-def at(path: str, marker: str) -> str:
+def location(path: str | Path, marker: str) -> str:
+    '''The location 'file:line' of a marked line of a file, as a regex'''
+    return re.escape(f'{path}:{marked_line(path, marker)}')
+
+
+def at(path: str | Path, marker: str) -> str:
     '''A message prefix 'file:line: ' for a marked line of a file, as a regex'''
-    return re.escape(f'{path}:{marked_line(path, marker)}: ')
+    return location(path, marker) + ': '
 
 
 def load_module(path: Path) -> ModuleType:

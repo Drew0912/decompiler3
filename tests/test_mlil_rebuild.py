@@ -18,6 +18,7 @@ from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILRet
 from ir.mlil.passes.pass_ssa_sccp import SCCP
 from ir.mlil.passes.pass_ssa_constant_propagation import ConstantPropagationPass
 from ir.mlil.passes.pass_ssa_nnf import NNFPass
+from tests.shared.ir_utils import concrete_subclasses
 
 
 BINARY_OP_COUNT = 18
@@ -28,22 +29,6 @@ SOURCE_LLIL_INDEX = 9
 OPERAND_FIELDS = {'lhs', 'rhs', 'operand'}
 BINARY_OP_PARAMETERS = ['self', 'lhs', 'rhs', 'kwargs']
 UNARY_OP_PARAMETERS = ['self', 'operand', 'kwargs']
-
-
-def concrete_subclasses(base: type) -> list:
-    '''Every leaf subclass of base, however deep.'''
-    found = []
-    pending = list(base.__subclasses__())
-    while pending:
-        cls = pending.pop()
-        children = cls.__subclasses__()
-        if children:
-            pending.extend(children)
-
-        else:
-            found.append(cls)
-
-    return sorted(found, key = lambda cls: cls.__name__)
 
 
 def with_metadata(inst):
@@ -76,7 +61,7 @@ class TestRebuildEveryOp(unittest.TestCase):
 
     def test_every_binary_op_rebuilds(self):
         classes = concrete_subclasses(MLILBinaryOp)
-        self.assertEqual(len(classes), BINARY_OP_COUNT, [cls.__name__ for cls in classes])
+        self.assertEqual(len(classes), BINARY_OP_COUNT, sorted(cls.__name__ for cls in classes))
 
         for cls in classes:
             with self.subTest(op = cls.__name__):
@@ -92,7 +77,7 @@ class TestRebuildEveryOp(unittest.TestCase):
 
     def test_every_unary_op_rebuilds(self):
         classes = concrete_subclasses(MLILUnaryOp)
-        self.assertEqual(len(classes), UNARY_OP_COUNT, [cls.__name__ for cls in classes])
+        self.assertEqual(len(classes), UNARY_OP_COUNT, sorted(cls.__name__ for cls in classes))
 
         for cls in classes:
             with self.subTest(op = cls.__name__):

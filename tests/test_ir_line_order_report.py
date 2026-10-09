@@ -16,6 +16,7 @@ from ir.mlil.mlil import MediumLevelILFunction, MLILDebug, MLILGoto, MLILIf, MLI
 from ir.mlil.passes import BlockMergePass
 from ir_line_order_report import analyse_file, collect_mlil_lines
 from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.ir_utils import connect
 
 
 SMALL_SCRIPT = corpus_file(SORA2_SCRIPTS, 'minigame/slot.dat')
@@ -44,12 +45,9 @@ class TestMLILLinesInAddressOrder(unittest.TestCase):
 
         entry.add_instruction(MLILDebug('line', ENTRY_LINE, address = ENTRY_START))
         entry.add_instruction(MLILIf(cond, head, other))
-        entry.add_outgoing_edge(head)
-        entry.add_outgoing_edge(other)
 
         head.add_instruction(MLILDebug('line', HEAD_LINE, address = HEAD_START))
         head.add_instruction(MLILGoto(target))
-        head.add_outgoing_edge(target)
 
         other.add_instruction(MLILDebug('line', OTHER_LINE, address = OTHER_START))
         other.add_instruction(MLILRet(None))
@@ -57,6 +55,7 @@ class TestMLILLinesInAddressOrder(unittest.TestCase):
         target.add_instruction(MLILDebug('line', TARGET_LINE, address = TARGET_START))
         target.add_instruction(MLILRet(None))
 
+        connect(func)
         BlockMergePass().run(func)
 
         # head's goto was target's only way in: target's code now sits ahead of other's block

@@ -46,6 +46,7 @@ from ir.hlil import (
     stmt_children,
 )
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
+from tests.shared.ir_utils import concrete_subclasses
 
 FIRST_CASE_VALUE = 1
 SECOND_CASE_VALUE = 2
@@ -55,21 +56,6 @@ SECOND_VALUE = 2
 TRUE_CONDITION = 1
 LINE_NUMBER = 3
 LOOP_LABEL = 'outer'
-
-
-def concrete_subclasses(base: type) -> set:
-    found = set()
-    pending = list(base.__subclasses__())
-    while pending:
-        cls = pending.pop()
-        children = cls.__subclasses__()
-        if children:
-            pending.extend(children)
-
-        else:
-            found.add(cls)
-
-    return found
 
 
 def var(name: str) -> HLILVar:

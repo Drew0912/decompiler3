@@ -28,9 +28,8 @@ LIBRARY_SOURCE = '''from falcom.ed9.writer.scp_writer_helper import *
 
 
 def lib_unbalanced(arg1: Value32):
-    RETURN()
+    RETURN()                                    # line: return
 '''
-LIBRARY_RETURN_LINE = 5
 
 
 def decorate(**kwargs):
@@ -435,7 +434,7 @@ class TestLocations(CheckTestCase):
         def commonImports():
             return [module.lib_unbalanced]
 
-        self.assertCheckFails(rf"{re.escape(f'{library}:{LIBRARY_RETURN_LINE}: ')}lib_unbalanced: RETURN at {HEX}: ")
+        self.assertCheckFails(rf"{at(library, 'return')}lib_unbalanced: RETURN at {HEX}: ")
 
     def test_helper_maps_to_the_calling_line(self):
         def pop_twice():

@@ -18,6 +18,7 @@ from ir.mlil.mlil import (
 from ir.hlil.hlil import HLILIf, HLILWhile, sub_blocks
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from tests.shared.ir_utils import connect
 
 
 def make_func(name: str, block_count: int):
@@ -29,24 +30,6 @@ def make_func(name: str, block_count: int):
     reg1 = func.get_or_create_register_var(1)
     blocks = [func.create_block() for _ in range(block_count)]
     return func, blocks, arg1, arg2, reg0, reg1
-
-
-def connect(func: MediumLevelILFunction):
-    '''Add the edges each block's last instruction implies (fallthrough when it is not a branch)'''
-    blocks = func.basic_blocks
-
-    for idx, block in enumerate(blocks):
-        last = block.instructions[-1]
-
-        if isinstance(last, MLILIf):
-            block.add_outgoing_edge(last.true_target)
-            block.add_outgoing_edge(last.false_target)
-
-        elif isinstance(last, MLILGoto):
-            block.add_outgoing_edge(last.target)
-
-        elif not isinstance(last, MLILRet) and idx + 1 < len(blocks):
-            block.add_outgoing_edge(blocks[idx + 1])
 
 
 def convert(func: MediumLevelILFunction):

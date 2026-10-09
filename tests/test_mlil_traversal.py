@@ -18,21 +18,7 @@ from ir.mlil.mlil import (
 from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILPhi, iter_ssa_reads
 from ir.mlil.passes.pass_ssa_copy_propagation import CopyPropagationPass
 from ir.mlil.passes.pass_ssa_expression_inlining import ExpressionInliningPass
-
-
-def concrete_subclasses(base: type) -> set:
-    found = set()
-    pending = list(base.__subclasses__())
-    while pending:
-        cls = pending.pop()
-        children = cls.__subclasses__()
-        if children:
-            pending.extend(children)
-
-        else:
-            found.add(cls)
-
-    return found
+from tests.shared.ir_utils import concrete_subclasses
 
 
 _const_values = itertools.count()

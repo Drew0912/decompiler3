@@ -22,6 +22,7 @@ from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLI
                           reachable_statements)
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter, constant_condition_truth
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from tests.shared.ir_utils import connect
 
 FUEL = 400
 
@@ -75,18 +76,14 @@ def build_function(name: str, blocks: Dict[str, BlockSpec]) -> MediumLevelILFunc
 
         elif terminal[0] == 'goto':
             instructions.append(MLILGoto(mlil_blocks[terminal[1]]))
-            block.add_outgoing_edge(mlil_blocks[terminal[1]])
 
         else:
             _, cond, true_label, false_label = terminal
             instructions.append(MLILIf(_condition(cond, variables), mlil_blocks[true_label], mlil_blocks[false_label]))
-            block.add_outgoing_edge(mlil_blocks[true_label])
-            block.add_outgoing_edge(mlil_blocks[false_label])
 
         block.instructions = instructions
 
-    func.renumber_instructions()
-    return func
+    return connect(func)
 
 
 def to_hlil(func: MediumLevelILFunction) -> HighLevelILFunction:

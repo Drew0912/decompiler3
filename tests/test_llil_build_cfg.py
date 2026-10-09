@@ -14,14 +14,15 @@ from ir.llil.llil import (
 )
 
 
+FUNCTION_NAME = 'build_cfg_test'
 FUNC_START = 0x1000
 BLOCK_SPACING = 0x10
 CONDITION_VALUE = 0
 
 
-def make_function(*labels: str, name: str = 'build_cfg_test'):
+def make_function(*labels: str):
     '''A function with one registered, empty block per label, in order from FUNC_START'''
-    function = LowLevelILFunction(name, FUNC_START)
+    function = LowLevelILFunction(FUNCTION_NAME, FUNC_START)
     blocks = []
     for position, label in enumerate(labels):
         block = LowLevelILBasicBlock(FUNC_START + position * BLOCK_SPACING, label = label)

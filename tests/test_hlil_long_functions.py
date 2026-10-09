@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from ir.mlil.mlil import MediumLevelILFunction, MLILCall, MLILIf, MLILGoto, MLILRet, MLILConst, MLILVar, MLILEq, MLILLt
 from ir.hlil.hlil import HLILIf, HLILWhile
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
+from tests.shared.ir_utils import connect
 
 # Long enough that two frames per statement would pass the limit below
 CHAIN_LENGTH = 300
@@ -26,24 +27,6 @@ def frame_depth() -> int:
     while frame is not None:
         depth, frame = depth + 1, frame.f_back
     return depth
-
-
-def connect(func: MediumLevelILFunction):
-    '''Add the edges each block's last instruction implies (fallthrough when it is not a branch)'''
-    blocks = func.basic_blocks
-
-    for idx, block in enumerate(blocks):
-        last = block.instructions[-1]
-
-        if isinstance(last, MLILIf):
-            block.add_outgoing_edge(last.true_target)
-            block.add_outgoing_edge(last.false_target)
-
-        elif isinstance(last, MLILGoto):
-            block.add_outgoing_edge(last.target)
-
-        elif not isinstance(last, MLILRet) and idx + 1 < len(blocks):
-            block.add_outgoing_edge(blocks[idx + 1])
 
 
 def convert_with_tight_limit(func: MediumLevelILFunction):

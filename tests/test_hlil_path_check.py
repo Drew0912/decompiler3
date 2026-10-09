@@ -17,20 +17,7 @@ from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLI
                           HLILReturn, HLILExprStmt, HLILCall, HLILConst, HLILVar, HLILVariable, HLILBinaryOp, BinaryOp,
                           iter_tree)
 from hlil_path_check import check_function, FALLOFF
-
-
-def connect(func: MediumLevelILFunction) -> MediumLevelILFunction:
-    for block in func.basic_blocks:
-        last = block.instructions[-1]
-        if isinstance(last, MLILIf):
-            block.add_outgoing_edge(last.true_target)
-            block.add_outgoing_edge(last.false_target)
-
-        elif isinstance(last, MLILGoto):
-            block.add_outgoing_edge(last.target)
-
-    func.renumber_instructions()
-    return func
+from tests.shared.ir_utils import connect
 
 
 def calls_then_test(first: str, second: str) -> MediumLevelILFunction:

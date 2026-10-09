@@ -15,11 +15,9 @@ sys.path.insert(0, str(Path(__file__).parent))
 from common.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
-from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import WriterTestCase, at, fresh_writer, marked_line
-
-OPCODE_SIZE = 1  # a jump's label operand follows its 1-byte opcode
+from scp_writer_test_utils import WriterTestCase, at, fresh_writer, location
 
 
 def read_uint32(data: bytes, offset: int) -> int:
@@ -121,12 +119,12 @@ class TestLabels(WriterTestCase):
         with self.assertLogs(log, 'WARNING') as logs:
             data = self.writer.build({})
 
-        location = rf'^{re.escape(__file__)}:\d+: '
+        any_line = rf'^{re.escape(__file__)}:\d+: '
         for record, message in zip(logs.records, (
             "A: jumps to label 'in_b' in B (another function)",
             "B: jumps to label 'in_a' in A (another function)",
         ), strict = True):
-            self.assertRegex(record.getMessage(), location + re.escape(message) + '$')
+            self.assertRegex(record.getMessage(), any_line + re.escape(message) + '$')
 
         a, b = self.writer.functions
         self.assertEqual(read_uint32(data, a.entry.offset + OPCODE_SIZE), b.entry.offset)
@@ -357,7 +355,7 @@ class TestGlobalVarNames(WriterTestCase):
         def first():                                        # line: first block
             GLOBAL_VAR('a', 1)
 
-        first_def = re.escape(f'{__file__}:{marked_line(__file__, "first block")}')
+        first_def = location(__file__, 'first block')
         with self.assertRaisesRegex(ValueError, rf"^{at(__file__, 'second block')}the global var table is already "
                                                 rf"declared at {first_def}$"):
             @self.writer.GlobalVars()

@@ -8,7 +8,6 @@ parameter checks on every new function.'''
 
 from pathlib import Path
 import functools
-import re
 import runpy
 import sys
 import textwrap
@@ -24,7 +23,7 @@ from falcom.ed9.parser.types_scp import ScpParamFlags
 from falcom.ed9.writer import scp_writer, scp_writer_helper, scp_writer_hook_registry, scp_writer_hooks
 from falcom.ed9.writer.scp_compile_check import CompileCheckError
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_writer_test_utils import WriterTestCase, at, load_module, marked_line
+from scp_writer_test_utils import WriterTestCase, at, load_module, location
 
 HEX = '0x[0-9A-F]+'
 PUSH_POP_RETURN = ['PUSH_INT', 'POP', 'RETURN']
@@ -238,8 +237,8 @@ class TestReplace(HookTestCase):
             ''')
 
         [warning] = [record.getMessage() for record in logs.records]
-        first, second = (f'{hook.__file__}:{marked_line(hook.__file__, marker)}' for marker in ('first', 'second'))
-        self.assertEqual(warning, f"{second}: replace_function('Target') again, overriding the one at {first}")
+        self.assertRegex(warning, rf"^{at(hook.__file__, 'second')}replace_function\('Target'\) again, "
+                                  rf"overriding the one at {location(hook.__file__, 'first')}$")
         self.assertEqual(self.mnemonics(self.parsed()['Target']), PUSH_POP_RETURN)
 
     def test_unknown_name_points_at_the_hook(self):
@@ -992,7 +991,7 @@ class TestAddFunction(HookTestCase):
 
     def test_existing_name_points_at_both_definitions(self):
         '''A script function, or one another hook already added: the error names where that one is defined'''
-        target_site = re.escape(f'{__file__}:{marked_line(__file__, "target def")}')
+        target_site = location(__file__, 'target def')
         cases = {'script function': ('Target', target_site), 'added by another hook': ('Extra', None)}
         for case, (name, existing_site) in cases.items():
             with self.subTest(case):
@@ -1008,7 +1007,7 @@ class TestAddFunction(HookTestCase):
                     def {name}(arg1: Value32 = 0):              # line: def
                         RETURN()
                 ''')
-                existing_site = existing_site or re.escape(f'{first.__file__}:{marked_line(first.__file__, "first extra")}')
+                existing_site = existing_site or location(first.__file__, 'first extra')
 
                 with self.assertRaisesRegex(ValueError, f"^{at(second.__file__, 'def')}add_function: '{name}' is already "
                                                         f"defined at {existing_site}; replace_function replaces a function$"):
@@ -1403,7 +1402,7 @@ class TestOpcodeCallbacks(HookTestCase):
 
             registerOpcodeCallback(harmless)
         '''
-        trigger = re.escape(f'{__file__}:{marked_line(__file__, "second push")}')
+        trigger = location(__file__, 'second push')
         cases = {
             'emitted': (bad_pop, rf'\(opcode callback bad_pop, triggered at {trigger}\) Target: POP at {HEX}: '),
             'decorated': (decorated, rf'\(opcode callback bad_pop, triggered at {trigger}\) Target: POP at {HEX}: '),
@@ -1449,7 +1448,7 @@ class TestOpcodeCallbacks(HookTestCase):
             POP(2 * WORD_SIZE)
             RETURN()
 
-        trigger = re.escape(f'{__file__}:{marked_line(__file__, "trigger push")}')
+        trigger = location(__file__, 'trigger push')
         with self.assertRaisesRegex(ValueError, rf'^{at(hook.__file__, "emit")}\(opcode callback two_opcodes, '
                                                 rf'triggered at {trigger}\) Target: POP at {HEX}: '):
             self.writer.build({})

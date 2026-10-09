@@ -15,7 +15,7 @@ def corpus_file(corpus: Path, relative_path: str) -> Path:
 
 
 def require(path: Path) -> Path:
-    '''path, or skip the test when the corpus is not checked out'''
+    '''path, or skip the test when the file is missing (e.g. the corpus is not checked out)'''
     if not path.exists():
         raise unittest.SkipTest(f'corpus file not found: {path}')
 

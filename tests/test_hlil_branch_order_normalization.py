@@ -27,6 +27,7 @@ from ir.hlil import (
     HLILWhile,
 )
 from ir.mlil.mlil import MediumLevelILFunction, MLILCall, MLILDebug, MLILGoto, MLILIf, MLILRet, MLILVar
+from tests.shared.ir_utils import connect
 
 
 EARLY_LINE = 100
@@ -79,16 +80,13 @@ def make_reversed_arms_mlil() -> MediumLevelILFunction:
     early = func.create_block(start = EARLY_START, label = 'early')
     join = func.create_block(start = JOIN_START, label = 'join')
     entry.add_instruction(MLILIf(MLILVar(func.get_or_create_parameter(1, 'arg1')), late, early))
-    entry.add_outgoing_edge(late)
-    entry.add_outgoing_edge(early)
     for block, line in ((late, LATE_LINE), (early, EARLY_LINE)):
         block.add_instruction(MLILDebug('line', line, address = block.start))
         block.add_instruction(MLILCall(f'work_{line}', []))
         block.add_instruction(MLILGoto(join))
-        block.add_outgoing_edge(join)
 
     join.add_instruction(MLILRet(None))
-    return func
+    return connect(func)
 
 
 class TestBranchOrderNormalization(unittest.TestCase):
