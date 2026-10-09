@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+'''Unit tests for the string pool's sections (falcom/ed9/parser/string_pool.py) - every section in pool order, code
+strings in code order with unreachable code - and the round-trip validator that checks them.'''
+
+from pathlib import Path
+import sys
+import tempfile
+import unittest
+from unittest import mock
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+sys.path.insert(0, str(REPO_ROOT / 'tools'))
+
+from ir.llil import WORD_SIZE
+from falcom.ed9.parser.call_records import read_debug_records
+from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.parser.string_pool import StringPoolSection, StringRefs, collect_string_refs, pool_strings, read_text
+from falcom.ed9.writer.scp_writer_helper import *
+from scp_roundtrip_validator import Status, load_script, validate_file
+from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.scp_writer_test_utils import fresh_writer
+
+PERSONAL_TEMPLATE_FILE = corpus_file(SORA2_SCRIPTS, 'scena/personalTemplate.dat')
+
+# compile_script's strings by section, in pool order
+SCRIPT_SECTIONS = {
+    StringPoolSection.Code      : ['zeta', 'dead', 'hello', 'arg', 'this', 'Zeta', 'mod', 'Tail'],
+    StringPoolSection.Name      : ['Alpha', 'Mid', 'Zeta'],
+    StringPoolSection.Default   : ['fallback'],
+    StringPoolSection.Debug     : ['this.Zeta'],
+    StringPoolSection.Global    : ['flag'],
+}
+
+
+def compile_script(dat: Path):
+    '''Zeta is defined first, so the code order (Zeta, Alpha, Mid) is not the table's (Alpha, Mid, Zeta). Zeta pushes a
+    string in dead code after its RETURN; Alpha passes a pushed string to Zeta, so its debug record repeats a code string,
+    and its CALL_SCRIPT record names "this.Zeta", a debug-only string.'''
+    fresh_writer()
+    writer = create_scp_writer(str(dat))
+
+    @writer.GlobalVars()
+    def globalvars():
+        GLOBAL_VAR('flag', 1)
+
+    @writer.LLILCode()
+    def Zeta(arg1: str = 'fallback'):
+        PUSH_STR('zeta')
+        POP(WORD_SIZE)
+        POP(WORD_SIZE)
+        RETURN()
+        PUSH_STR('dead')
+        POP(WORD_SIZE)
+        RETURN()
+
+    @writer.LLILCode()
+    def Alpha():
+        DEBUG_SET_LINENO(1)  # a call gets a debug record only after line info
+        PUSH_STR('hello')
+        POP(WORD_SIZE)
+        PUSH_CURRENT_FUNC_ID()
+        PUSH_RET_ADDR('ret')
+        PUSH_STR('arg')
+        CALL(Zeta)
+        label('ret')
+        PUSH_CALLER_FRAME('back')
+        CALL_SCRIPT('this', 'Zeta', 0)
+        label('back')
+        RETURN()
+
+    @writer.LLILCode()
+    def Mid():
+        CALL_SCRIPT_NO_RETURN('mod', 'Tail', 0)
+
+    writer.run({})
+
+
+def compile_shared_string(dat: Path):
+    '''AEmpty has no code, so it starts where ZBody does: both decode ZBody's PUSH_STR (compiles with a warning)'''
+    fresh_writer()
+    writer = create_scp_writer(str(dat))
+
+    @writer.LLILCode()
+    def AEmpty():
+        pass
+
+    @writer.LLILCode()
+    def ZBody():
+        PUSH_STR('shared')
+        POP(WORD_SIZE)
+        RETURN()
+
+    writer.run({})
+
+
+def load_string_refs(path: Path) -> tuple[bytes, StringRefs]:
+    '''The file's bytes and string refs, unreachable code decoded; the raw debug records are read from the bytes'''
+    parser, _ = ScpParser.load(path, round_trip = True, keep_unreachable_code = True)
+    data = path.read_bytes()
+    return data, collect_string_refs(data, parser, read_debug_records(parser, data))
+
+
+class TestCollectStringRefs(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dat = Path(tmp_dir) / 'test.dat'
+            compile_script(dat)
+            cls.data, cls.refs = load_string_refs(dat)
+
+    def test_every_section_in_pool_order(self):
+        sections = {section: [read_text(self.data, offset) for offset in offsets] for section, offsets in self.refs.sections()}
+        self.assertEqual(sections, SCRIPT_SECTIONS)
+
+    def test_sections_hold_every_pool_string_in_order(self):
+        self.assertEqual(self.refs.pool_start, self.refs.code[0])
+        self.assertEqual(self.refs.expected_pool, pool_strings(self.data, self.refs.pool_start))
+
+    def test_shared_code_strings_counted_once(self):
+        '''Two functions decode ZBody's PUSH_STR; the pool holds its string once, and so do the code strings'''
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dat = Path(tmp_dir) / 'shared.dat'
+            compile_shared_string(dat)
+            data, refs = load_string_refs(dat)
+            results, _ = validate_file(dat)
+
+        self.assertEqual([read_text(data, offset) for offset in refs.code], ['shared'])
+        [string_pool] = [result for result in results if result.name == 'string pool']
+        self.assertEqual(string_pool.status, Status.PASS, string_pool.details)
+
+
+class TestValidator(unittest.TestCase):
+    def test_string_pool_check_counts_unreachable_code_strings(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dat = Path(tmp_dir) / 'test.dat'
+            compile_script(dat)
+            results, _ = validate_file(dat)
+
+        [string_pool] = [result for result in results if result.name == 'string pool']
+        self.assertEqual(string_pool.status, Status.PASS, string_pool.details)
+
+    def test_load_script_closes_the_file_when_the_load_fails(self):
+        streams = []
+
+        def fail(parser, *args, **kwargs):
+            streams.append(parser.fs)
+            raise ValueError('bad code')
+
+        # A leaked handle would also fail the cleanup on Windows; report the assertion instead
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors = True) as tmp_dir:
+            dat = Path(tmp_dir) / 'test.dat'
+            compile_script(dat)
+            with mock.patch.object(ScpParser, 'disasm_all_functions', autospec = True, side_effect = fail):
+                with self.assertRaisesRegex(ValueError, '^bad code$'):
+                    load_script(dat)
+
+            self.assertTrue(streams[0].Stream.closed)
+
+
+class TestRealScript(unittest.TestCase):
+    '''Its table order is not its code order, and 5 of its 6 debug record strings repeat a code string'''
+
+    def test_personal_template_sections(self):
+        data, refs = load_string_refs(require(PERSONAL_TEMPLATE_FILE))
+
+        self.assertEqual([len(offsets) for _, offsets in refs.sections()], [19, 18, 4, 1, 1])
+        self.assertEqual(refs.expected_pool, pool_strings(data, refs.pool_start))
+        self.assertEqual([read_text(data, offset) for offset in refs.code[:2]], ['system', 'OnTalkBegin'])
+        self.assertEqual(read_text(data, refs.names[0]), 'Init')
+        self.assertEqual([read_text(data, offset) for offset in refs.debug + refs.global_names],
+                         ['system.OnMapReinit', 'lastMenuSel'])
+
+
+if __name__ == '__main__':
+    unittest.main()

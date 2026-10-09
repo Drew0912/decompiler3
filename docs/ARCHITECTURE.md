@@ -51,7 +51,7 @@ the values it pops, a call's setup slots, the values it reads in place, the valu
 addresses a slot, whether the stack must be empty after it). The parser's simulation and the debug-record
 tracker (`CallDebugInfoTracker`) dispatch on the kind and read the effects; the LLIL lifter takes only
 which opcodes are binary and a local `CALL`'s argument count from the table (Layer 3).
-`tests/test_stack_effects.py` checks all three walkers of the VM stack against the table.
+`tests/parser_tests/test_stack_effects.py` checks all three walkers of the VM stack against the table.
 
 While the disassembler decodes a function, `ScpParser` simulates the VM stack to find each call's
 setup: the two pushes a `CALL` consumes (rewritten to `PUSH_CURRENT_FUNC_ID` / `PUSH_RET_ADDR`) and
@@ -63,7 +63,7 @@ A push that an ordinary consumer reads, discards or overwrites cannot also be a 
 parser also rejects overlapping instructions, targets inside an instruction, and code that runs
 into the string pool. The pool's start is known only from references (function names, and the
 strings the decoded code references), so a string referenced only by undecoded dead code does not
-bound it. See `tests/test_scp_stack_simulation.py`.
+bound it. See `tests/parser_tests/test_scp_stack_simulation.py`.
 
 Each disassembled function keeps the simulated stack as `Function.stack_layout` (`StackLayout`, for
 the `.py` comments): the depth before every reachable real instruction (not the synthetic
@@ -178,7 +178,8 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
 1. **Separation of concerns:** Parser only cares about file format; Disassembler only cares about
    bytecode-to-instruction; Lifter only cares about instruction-to-LLIL; structural recovery
    (if/else, loops, switch) happens only at HLIL, not earlier.
-2. **Testability:** each layer is independently testable, with clearly defined interfaces.
+2. **Testability:** each layer is independently testable, with clearly defined interfaces. The tests are
+   grouped the same way under `tests/` (`docs/TESTS_GUIDE.md`).
 3. **Extensibility:** opcode-table-driven design — new instructions only need a table entry.
 4. **Type safety:** dataclasses, type annotations, explicit enum types throughout.
 

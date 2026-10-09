@@ -191,13 +191,14 @@ the generic `LLILFormatter` prints those instructions' own text. `to_dot()` draw
 
 ## Testing
 
-`tests/test_llil_build_cfg.py` (CFG construction), `tests/test_llil_call_setup.py` (call setups),
-`tests/test_llil_call_script_no_return.py`, `tests/test_llil_deref.py` (pointer opcodes),
-`tests/test_llil_frame_addr.py` / `tests/test_llil_frame_store.py` / `tests/test_llil_slot_lifetime.py`
-(parameter slots), `tests/test_llil_lift_order.py` (lifting order, per-edge state, numbering),
-`tests/test_llil_stack_sync.py` (`POP`/`POP_N` and the virtual stack),
-`tests/test_scp_stack_simulation.py` (the parser's simulation), and `tests/test_stack_effects.py` (the
-lifter, the parser and the debug-record tracker against the opcode table's stack effects).
+`tests/llil_tests/test_llil_build_cfg.py` (CFG construction), `tests/llil_tests/test_llil_call_setup.py` (call setups),
+`tests/llil_tests/test_llil_call_script_no_return.py`, `tests/llil_tests/test_llil_deref.py` (pointer opcodes),
+`tests/llil_tests/test_llil_frame_addr.py` / `tests/llil_tests/test_llil_frame_store.py` /
+`tests/llil_tests/test_llil_slot_lifetime.py` (parameter slots), `tests/llil_tests/test_llil_lift_order.py` (lifting
+order, per-edge state, numbering), `tests/llil_tests/test_llil_stack_sync.py` (`POP`/`POP_N` and the virtual stack),
+`tests/parser_tests/test_scp_stack_simulation.py` (the parser's simulation), and
+`tests/parser_tests/test_stack_effects.py` (the lifter, the parser and the debug-record tracker against the opcode
+table's stack effects).
 `demos/llil_demo.py` builds small functions by hand.
 
 ## Open Items

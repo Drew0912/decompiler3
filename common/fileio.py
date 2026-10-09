@@ -1,7 +1,7 @@
 '''Binary stream over a file or an in-memory buffer
 
 Ported from the external ml (Ouroboros PyLibs) FileStream; round trips rely on these deliberate quirks
-(tests/test_fileio.py checks each one):
+(tests/dc3_tests/test_fileio.py checks each one):
 - Write(*bufs) stops at the first empty buffer and returns None; a FileStream buffer writes its whole content
 - integer writers truncate like a C cast, so a signed writer is its unsigned twin
 - WriteFloat turns an out-of-range float into inf instead of raising

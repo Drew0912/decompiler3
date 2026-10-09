@@ -41,9 +41,9 @@ work happen upstream; HLIL favors explicit tree ownership and straightforward co
 | `ir/hlil/hlil_passes.py` | Compatibility re-export of `ir/hlil/passes/`. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, formatter, converter, and passes. |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry point, `convert_falcom_mlil_to_hlil()`, and its pass ordering/configuration. |
-| `tests/test_hlil_branch_order_normalization.py` | Unit tests for source-order arm normalization and its pipeline flag. |
-| `tests/test_hlil_control_flow_optimization.py` | Unit tests for equality-chain and grouped-label switch recovery. |
-| `tests/test_hlil_loop_recovery.py` | Unit tests for guarded-loop recovery and its safety checks. |
+| `tests/hlil_tests/test_hlil_branch_order_normalization.py` | Unit tests for source-order arm normalization and its pipeline flag. |
+| `tests/hlil_tests/test_hlil_control_flow_optimization.py` | Unit tests for equality-chain and grouped-label switch recovery. |
+| `tests/hlil_tests/test_hlil_loop_recovery.py` | Unit tests for guarded-loop recovery and its safety checks. |
 
 The generic/project-specific split is deliberate. The core converter understands MLIL nodes and
 structured control flow; the Falcom entry point chooses the production pass sequence and runs
@@ -92,7 +92,7 @@ labels, then its body), `read_children` the same without a plain assignment targ
 `break`/`continue` leaves a block (a loop owns both, a switch only a `break`), and `sole_statement`
 finds a block's one non-comment statement. The passes, the converter's variable declaration and
 the renderers are built on these, so a new node type needs a sample in
-`tests/test_hlil_traversal.py` and an entry in `stmt_children` (a statement) or `expr_children` (an
+`tests/hlil_tests/test_hlil_traversal.py` and an entry in `stmt_children` (a statement) or `expr_children` (an
 expression), plus `sub_blocks` if it owns a block - that test fails until both exist.
 
 `HLILSwitchCase` is a helper owned by `HLILSwitch`, not an `HLILInstruction`. Its `values` field is
@@ -271,37 +271,37 @@ performed by each active pass and why the copy-propagation pass was removed.
 
 Several dedicated HLIL unit-test files exist today:
 
-- `tests/test_hlil_branch_order_normalization.py` covers line-based swaps, nesting-depth fallback,
+- `tests/hlil_tests/test_hlil_branch_order_normalization.py` covers line-based swaps, nesting-depth fallback,
   chain preservation, De Morgan negation, nested ordering, and the production enable/disable flag.
-- `tests/test_hlil_control_flow_optimization.py` covers switch conversion thresholds, mixed
+- `tests/hlil_tests/test_hlil_control_flow_optimization.py` covers switch conversion thresholds, mixed
   equality/inequality chains, grouped labels, duplicate rejection, and scrutinee consistency.
-- `tests/test_hlil_loop_recovery.py` covers leading break/return guards, unsafe rotations, nested
+- `tests/hlil_tests/test_hlil_loop_recovery.py` covers leading break/return guards, unsafe rotations, nested
   switch breaks, preservation of already-tested loops, the while(1)->do-while rotation, and its
   continue-safety/label-preservation guards (Step H, 2026-09-22).
-- `tests/test_hlil_loop_traversal.py` (Step H, 2026-09-22) covers `DeadCodeEliminationPass`,
+- `tests/hlil_tests/test_hlil_loop_traversal.py` (Step H, 2026-09-22) covers `DeadCodeEliminationPass`,
   `CommonReturnExtractionPass`, and `TypeScriptGenerator._infer_return_type` each correctly seeing
   into a do-while body via the shared `sub_blocks` helper.
-- `tests/test_hlil_call_fold_short_circuit.py` covers the MLIL->HLIL call-fold short-circuit safety
+- `tests/hlil_tests/test_hlil_call_fold_short_circuit.py` covers the MLIL->HLIL call-fold short-circuit safety
   work.
-- `tests/test_hlil_long_functions.py` checks that long runs of sequential ifs and loops convert
+- `tests/hlil_tests/test_hlil_long_functions.py` checks that long runs of sequential ifs and loops convert
   without recursing once per statement.
-- `tests/test_hlil_common_return_extraction.py` covers when `CommonReturnExtractionPass` may hoist a
+- `tests/hlil_tests/test_hlil_common_return_extraction.py` covers when `CommonReturnExtractionPass` may hoist a
   shared return (switch default and bare-break guards, `if` without `else`, int/float and NaN
   constants) plus the shared `constant_values_equal` and `contains_bare_break` helpers.
-- `tests/test_hlil_operators.py` covers the shared operator tables (comparison negation is the
+- `tests/hlil_tests/test_hlil_operators.py` covers the shared operator tables (comparison negation is the
   complement), `negate_condition`, `needs_parentheses`, and the debug formatter's operator symbols
   and switch-case `break`s.
-- `tests/test_hlil_traversal.py` covers the shared tree walkers: every node type's children, source
+- `tests/hlil_tests/test_hlil_traversal.py` covers the shared tree walkers: every node type's children, source
   order, `iter_tree`'s exclusion, the escaping-exit rules, `sole_statement`, declaration order, and
   control-flow optimization reaching into a do-while body.
-- `tests/test_hlil_structuring.py` (CX Step G, 2026-09-28) runs small CFGs through structuring
+- `tests/hlil_tests/test_hlil_structuring.py` (CX Step G, 2026-09-28) runs small CFGs through structuring
   against their MLIL for every parameter assignment: merge points, loop exits and headers, the
   region-repeat limits, and the `HLILUnstructured` node (reachability, passes, rendering, validator
   report).
-- `tests/test_hlil_structuring_fuzz.py` does the same for 1,000 random CFGs.
-- `tests/test_hlil_path_check.py` covers `tools/hlil_path_check.py`: each way of losing or inventing
+- `tests/hlil_tests/test_hlil_structuring_fuzz.py` does the same for 1,000 random CFGs.
+- `tests/tools_tests/test_hlil_path_check.py` covers `tools/hlil_path_check.py`: each way of losing or inventing
   a path, deleting an effect, or changing what a repeated region does is reported.
-- `tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared
+- `tests/hlil_tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared
   parameter flag gives, the declared flag winning over an inferred int/float variant, and default
   values still printed once.
 
@@ -335,8 +335,8 @@ still have no dedicated test file of their own.
 - **Resolved (Codex IR review plan Step G, 2026-09-28):** structuring used to lose or invent paths
   in 94 sora2_1.0 functions - 47 behind the 89 `[hlil] dropped path` warnings, 47 with no warning at
   all (loops that never exited, a case's code run twice). The causes were merge points that were not
-  merges and loop exits through goto-only blocks, not the clone limits. `tests/test_hlil_structuring.py`
-  pins each shape and the node's handling; `tests/test_hlil_structuring_fuzz.py` runs 1,000 random
+  merges and loop exits through goto-only blocks, not the clone limits. `tests/hlil_tests/test_hlil_structuring.py`
+  pins each shape and the node's handling; `tests/hlil_tests/test_hlil_structuring_fuzz.py` runs 1,000 random
   CFGs through the pipeline against their MLIL for every parameter assignment; `tools/hlil_path_check.py`
   checks real scripts (0 of 80,571 sora2_1.0 functions lose or invent a path). Still open: 14 of the
   1,000 random CFGs are reducible yet need a node (pinned in the fuzz test; `docs/FUTURE_WORK.md`,

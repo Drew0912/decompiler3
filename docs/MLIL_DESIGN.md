@@ -37,7 +37,7 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `falcom/ed9/ir/mlil/mlil_passes.py` | `ED9LLILToMLILPass`, the pipeline's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
 | `falcom/ed9/ir/mlil/mlil_translator.py` | Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
 | `falcom/ed9/ir/mlil/type_signatures.py` | Type signature data used by Falcom-specific passes. |
-| `tests/test_mlil_metadata.py` | One of several dedicated MLIL test files today — see Testing below. |
+| `tests/mlil_tests/test_mlil_metadata.py` | One of several dedicated MLIL test files today — see Testing below. |
 
 Note: `falcom/ed9/lifters/mlil_lifter.py`, previously listed here, does not exist anywhere in the
 tree. This table now reflects the real path.

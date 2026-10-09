@@ -94,7 +94,7 @@ Keep comments brief and meaningful. Avoid redundant explanations.
 
 ### Python
 - Python 3.14+, standard library only: no third-party packages and no venv (`python` on PATH is 3.14.6)
-- Run tests from the repo root: `python -m unittest discover -s tests` (always pass `-s tests`; bare `python -m unittest` walks every package and hits the unused `falcom.ed9.signatures` package's missing `yaml` import)
+- Run tests from the repo root: `python -m unittest discover -s tests` (always pass `-s tests`; bare `python -m unittest` walks every package and hits the unused `falcom.ed9.signatures` package's missing `yaml` import). One file: `python -m unittest tests.hlil_tests.test_hlil_traversal` from the repo root, or `python tests/hlil_tests/test_hlil_traversal.py`. Layout and shared helpers: `docs/TESTS_GUIDE.md`
 - Tests and tools insert the repo root into `sys.path` themselves; a generated script `.py` inserts the repo root into `sys.path` itself (the path of the checkout that generated it), so no `PYTHONPATH` is needed to run it
 - Environment: Git Bash (MINGW64) on Windows
 

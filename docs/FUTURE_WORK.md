@@ -547,7 +547,7 @@ falcom/ed9/dsl/         # what scripts and hook files import
 
 Since 2026-09-28 a jump the HLIL tree cannot express becomes an `HLILUnstructured` node: loud, but the
 path is lost to the reader (and to a future HLIL DSL). None remains on the sora2_1.0 corpus. On random
-CFGs (`tests/test_hlil_structuring_fuzz.py`'s generator) 96 of 6,000 are reducible yet get a reachable
+CFGs (`tests/hlil_tests/test_hlil_structuring_fuzz.py`'s generator) 96 of 6,000 are reducible yet get a reachable
 node - a reducible CFG can always be structured, so these are converter gaps; the 14 among the test's
 1,000 seeds are pinned, so a new one fails the suite. Two causes (nodes counted over those 96):
 
@@ -631,7 +631,8 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
     expansion (`rhs = STACK[--sp]` ...) stays generic, since the generic builder's binary and unary operations pop
     their operands.
   - Kept generic: "parameters are on the stack at entry" (`_seed_entry_state`, `ir/llil/llil_builder.py`) - the
-    generic slot rule (`_holds_parameter`) and `tests/test_llil_slot_lifetime.py` assume parameters at the frame base.
+    generic slot rule (`_holds_parameter`) and `tests/llil_tests/test_llil_slot_lifetime.py` assume parameters at the
+    frame base.
 - **Game-specific by design:** all of `codegen/` - the TypeScript header (`generate_typescript_header`: `GLOBALS`,
   `REGS`, `debug.log`, `extern_call`, `syscall`), the syscall and extern-call rendering, and its use of the signature
   database; no change planned. If a second game ever needs different output, that is the time to move or split it.

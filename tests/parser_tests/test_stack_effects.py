@@ -1,0 +1,403 @@
+#!/usr/bin/env python3
+'''Unit tests for the ED9 stack effects: the agreement test - the parser's stack simulation, the lifter's builder and
+the debug-record tracker change the stack as the opcode table says and take a call's arguments as it says, and the
+parser rejects a value left on the stack exactly at the instructions the table says exit; a local call's argument count
+through each walker's lookup; and the table's lookup of an opcode without a row. The parser and the tracker apply the
+row they are checked against, so their legs check the wiring; a wrong row shows through the lifter, whose builder
+operations push and pop on their own - except a local CALL's argument count, which the lifter reads from the row too.'''
+
+from contextlib import contextmanager
+from pathlib import Path
+from typing import NamedTuple
+from unittest import mock
+import sys
+import unittest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
+from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
+from falcom.ed9.disasm.instruction import SYNTHETIC_INSTRUCTION_SIZE
+from falcom.ed9.disasm.stack_effects import STACK_EFFECTS, InstructionKind, StackEffect
+from falcom.ed9.ir.llil import ED9VMLifter
+from falcom.ed9.parser.scp import CallDebugInfoTracker, ScpDisassemblyError, ScpParser
+from falcom.ed9.parser.types_parser import Function
+from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
+from tests.shared.scp_asm import (
+    CALLER_ID, CALLEE_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, MODULE_NAME, REG_INDEX, RIGHT_VALUE,
+    SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm, Func, Program, main_function, returning_callee,
+)
+
+
+LINE = 1
+BINARY_OPERATORS = (
+    'add', 'sub', 'mul', 'div', 'mod', 'eq', 'ne', 'gt', 'ge', 'lt', 'le',
+    'bitwise_and', 'bitwise_or', 'logical_and', 'logical_or',
+)
+UNARY_OPERATORS = ('neg', 'ez', 'not_')
+CALL_KINDS = {InstructionKind.CALL, InstructionKind.CALL_SCRIPT, InstructionKind.TAIL_CALL, InstructionKind.SYSCALL}
+TABLE_OPCODES = {ED9Opcode(entry.opcode) for entry in ED9_OPCODE_TABLE}
+NEVER_SEEN = {
+    'parser'    : {ED9Opcode.PUSH, ED9Opcode.PUSH_CURRENT_FUNC_ID, ED9Opcode.PUSH_RET_ADDR},    # decoded as PUSH_RAW etc.
+    'lifter'    : {ED9Opcode.PUSH},
+    'tracker'   : {ED9Opcode.PUSH},     # only the writer feeds a raw PUSH (test_call_records.TestWriterOnlyInputs)
+}
+
+
+def constants_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.push_raw(LEFT_VALUE); asm.push_int(LEFT_VALUE); asm.push_float(FLOAT_VALUE); asm.push_str(MODULE_NAME)
+    asm.pop(4 * WORD_SIZE); asm.ret()                                   # the 4 constants
+    return (main_function(asm),)
+
+
+def slots_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.push_int(LEFT_VALUE)
+    asm.load_stack(-WORD_SIZE)                                          # sp 1: slot 0
+    asm.push_stack_offset(-2 * WORD_SIZE)                               # sp 2: slot 0
+    asm.push_int(RIGHT_VALUE)
+    asm.pop_to(-WORD_SIZE)                                              # sp 4, 3 after its pop: slot 2
+    asm.pop(3 * WORD_SIZE); asm.ret()
+    return (main_function(asm),)
+
+
+def deref_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.load_stack_deref(-WORD_SIZE)                                    # through the parameter in slot 0
+    asm.push_int(LEFT_VALUE)
+    asm.pop_to_deref(-2 * WORD_SIZE)                                    # sp 3, 2 after its pop: slot 0
+    asm.pop(2 * WORD_SIZE); asm.ret()                                   # the loaded value and the parameter
+    return (Func(FUNC_NAME, 1, asm),)
+
+
+def globals_and_registers_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.load_global(GLOBAL_INDEX); asm.set_global(GLOBAL_INDEX)
+    asm.get_reg(REG_INDEX); asm.set_reg(REG_INDEX); asm.ret()
+    return (main_function(asm),)
+
+
+def operators_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.push_int(LEFT_VALUE)
+    for operator in BINARY_OPERATORS:
+        asm.push_int(RIGHT_VALUE); getattr(asm, operator)()
+
+    for operator in UNARY_OPERATORS:
+        getattr(asm, operator)()
+
+    asm.pop(WORD_SIZE); asm.ret()
+    return (main_function(asm),)
+
+
+def branches_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.get_reg(REG_INDEX); asm.jz('else')
+    asm.push_int(LEFT_VALUE); asm.set_reg(REG_INDEX)
+    asm.label('else'); asm.get_reg(REG_INDEX); asm.jnz('end')
+    asm.jmp('end')
+    asm.label('end'); asm.ret()
+    return (main_function(asm),)
+
+
+def local_call_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.debug_set_lineno(LINE)                                          # the tracker records calls after line info
+    asm.push_raw(CALLER_ID); asm.push_raw('return')
+    asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE); asm.call(CALLEE_ID)
+    asm.label('return'); asm.ret()
+    return main_function(asm), returning_callee(argc = 2)                # the 2 values pushed
+
+
+def script_call_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.debug_set_lineno(LINE)
+    asm.frame('return'); asm.push_int(LEFT_VALUE); asm.call_script(1)  # the 1 value pushed
+    asm.label('return'); asm.ret()
+    return (main_function(asm),)
+
+
+def tail_call_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.debug_set_lineno(LINE)
+    asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE); asm.call_script_no_return(2)     # the 2 values pushed
+    return (main_function(asm),)
+
+
+def syscall_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.debug_set_lineno(LINE)
+    asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE)
+    asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2)                     # the 2 values pushed
+    asm.pop(2 * WORD_SIZE); asm.ret()                                   # its arguments, left on the stack
+    return (main_function(asm),)
+
+
+def debug_log_program() -> tuple[Func, ...]:
+    asm = Asm()
+    asm.push_str(MODULE_NAME); asm.push_int(LEFT_VALUE); asm.debug_log(2); asm.ret()      # logs the 2 values pushed
+    return (main_function(asm),)
+
+
+PROGRAMS = (
+    constants_program, slots_program, deref_program, globals_and_registers_program, operators_program,
+    branches_program, local_call_program, script_call_program, tail_call_program, syscall_program, debug_log_program,
+)
+
+
+class Step(NamedTuple):
+    '''One instruction as a walker handled it'''
+    opcode  : ED9Opcode
+    values  : tuple                 # operand values
+    offset  : int | None
+    before  : int                   # stack depth before it
+    after   : int                   # and after it
+    argc    : int | None = None     # the arguments a call took, as the walker saw them
+    entries_before  : tuple = ()    # the walker's stack entries before it, bottom first
+    entries_after   : tuple = ()    # and after it
+
+
+def effect_of(opcode: int) -> StackEffect:
+    return ED9_INSTRUCTION_TABLE.get_descriptor(opcode).effect
+
+
+def is_call(opcode: int) -> bool:
+    return ED9_INSTRUCTION_TABLE.get_descriptor(opcode).kind in CALL_KINDS
+
+
+def operand_values(inst) -> tuple:
+    return tuple(operand.value for operand in inst.operands)
+
+
+@contextmanager
+def tracing_the_parser(steps: list[Step]):
+    '''Records each decoded instruction's simulated stack depth and, for a call, its argument count. A wrapper, not a
+    subclass: ScpParser is a StrictBase, which lets a subclass set only the attributes it annotates itself.'''
+    decoded = ScpParser.on_instruction_decoded
+
+    def on_instruction_decoded(parser, context, inst, block):
+        opcode, values, entries = ED9Opcode(inst.opcode), operand_values(inst), tuple(context.stack_simulation)
+        argc = context.call_argc(inst) if is_call(opcode) else None
+        targets = decoded(parser, context, inst, block)
+        after = tuple(context.stack_simulation)
+        steps.append(Step(opcode, values, inst.offset, len(entries), len(after), argc, entries, after))
+        return targets
+
+    with mock.patch.object(ScpParser, 'on_instruction_decoded', on_instruction_decoded):
+        yield
+
+
+def vstack_entries(builder) -> tuple:
+    '''The builder's virtual stack, bottom first (vstack_peek_many gives the top first, and every entry for 0)'''
+    size = builder.vstack_size()
+    return tuple(reversed(builder.vstack_peek_many(size))) if size else ()
+
+
+class TracingLifter(ED9VMLifter):
+    '''Records the builder's sp and virtual stack around each lifted instruction'''
+
+    def __init__(self, *, parser: ScpParser):
+        super().__init__(parser = parser)
+        self.steps: list[Step] = []
+
+    def _translate_instruction(self, builder, inst, block, block_map, llil_blocks):
+        if inst.size == SYNTHETIC_INSTRUCTION_SIZE:         # a split block's fall-through JMP, not in the bytecode
+            return super()._translate_instruction(builder, inst, block, block_map, llil_blocks)
+
+        before, entries = builder.sp_get(), vstack_entries(builder)
+        super()._translate_instruction(builder, inst, block, block_map, llil_blocks)
+        self.steps.append(Step(ED9Opcode(inst.opcode), operand_values(inst), inst.offset, before, builder.sp_get(),
+                               entries_before = entries, entries_after = vstack_entries(builder)))
+
+
+class TracingTracker(CallDebugInfoTracker):
+    '''Records the tracked stack's depth around each opcode and the arguments of each call it records'''
+
+    def __init__(self, get_param_count):
+        super().__init__(get_param_count)
+        self.steps: list[Step] = []
+
+    def on_opcode(self, opcode, operands, payload = None):
+        entries, calls = tuple(self.stack), len(self.calls)
+        super().on_opcode(opcode, operands, payload)
+        argc = len(self.calls[-1].args) if len(self.calls) > calls else None
+        after = tuple(self.stack)
+        self.steps.append(Step(ED9Opcode(opcode), tuple(operands), None, len(entries), len(after), argc,
+                               entries, after))
+
+
+def disassemble(functions: tuple[Func, ...], steps: list[Step]) -> tuple[ScpParser, list[Function]]:
+    '''The parser's steps go to steps, also when it rejects the program'''
+    parser = Program(*functions).parser()
+    with tracing_the_parser(steps):
+        return parser, parser.disasm_all_functions(quiet = True)
+
+
+def lift(parser: ScpParser, decoded: list[Function]) -> list[Step]:
+    '''Every function lifted; a call's argument count is its LLIL call node's'''
+    steps, call_nodes = [], {}
+    for func in decoded:
+        lifter = TracingLifter(parser = parser)
+        llil = lifter.lift_function(func)
+        steps += lifter.steps
+        for block in llil.basic_blocks:
+            call_nodes.update((node.address, node) for node in block.instructions
+                              if isinstance(node, (LowLevelILCall, LowLevelILSyscall)))
+
+    return [step._replace(argc = len(call_nodes[step.offset].args)) if is_call(step.opcode) else step for step in steps]
+
+
+def track(parser: ScpParser, decoded: list[Function]) -> list[Step]:
+    '''Every function's decoded instructions fed in address order, as replay does (without the constants' payloads,
+    which don't move the stack)'''
+    steps = []
+    for func in decoded:
+        tracker = TracingTracker(parser.get_func_argc)
+        for inst in parser.get_instructions(func):
+            tracker.on_opcode(inst.opcode, list(operand_values(inst)))
+
+        steps += tracker.steps
+
+    return steps
+
+
+def table_change(step: Step, parser: ScpParser) -> int:
+    '''The stack change the table gives for step; a local call's arguments are its callee's declared parameters, from
+    the function table every walker reads'''
+    effect = effect_of(step.opcode)
+    return effect.pushes - effect.pop_count(step.values, parser.get_func_argc) - effect.setup_pops
+
+
+def table_argc(step: Step, parser: ScpParser) -> int:
+    '''A call's arguments, popped or read in place'''
+    effect = effect_of(step.opcode)
+    return effect.pop_count(step.values, parser.get_func_argc) + effect.read_count(step.values)
+
+
+class TestLocalCallArgumentCount(unittest.TestCase):
+    '''A local CALL pops its callee's declared parameters, which each walker looks up with its own function table'''
+    DECLARED_PARAMS = 3
+
+    def test_counted_with_the_walkers_lookup(self):
+        params = {CALLEE_ID: self.DECLARED_PARAMS}
+        self.assertEqual(STACK_EFFECTS[InstructionKind.CALL].pop_count([CALLEE_ID], params.__getitem__),
+                         self.DECLARED_PARAMS)
+
+
+class TestDescriptorLookup(unittest.TestCase):
+    '''An opcode without a row: UNKNOWN_28's operand format is unknown, any other opcode is unknown itself; neither
+    error is chained to anything'''
+
+    def assert_unchained(self, error: Exception):
+        self.assertIsNone(error.__cause__)
+        self.assertIsNone(error.__context__)
+
+    def test_unknown_28_is_not_implemented(self):
+        with self.assertRaises(NotImplementedError) as caught:
+            ED9_INSTRUCTION_TABLE.get_descriptor(ED9Opcode.UNKNOWN_28)
+
+        self.assertEqual(str(caught.exception), f'opcode 0x{ED9Opcode.UNKNOWN_28:02X} decoded - never seen in a sample '
+                                                'script, operand format unknown')
+        self.assert_unchained(caught.exception)
+
+    def test_an_opcode_without_a_row_is_unknown(self):
+        opcode = max(ED9_INSTRUCTION_TABLE.descriptors) + 1
+        with self.assertRaises(ValueError) as caught:
+            ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
+
+        self.assertEqual(str(caught.exception), f'Unknown opcode: 0x{opcode:02X}')
+        self.assert_unchained(caught.exception)
+
+
+class TestWalkersAgreeWithTheTable(unittest.TestCase):
+    '''Every program through the parser, the lifter and the tracker, each instruction checked against its effect'''
+
+    @classmethod
+    def setUpClass(cls):
+        cls.runs = []           # (program, parser, {walker: steps})
+        for program in PROGRAMS:
+            parser_steps = []
+            parser, decoded = disassemble(program(), parser_steps)
+            steps = {'parser': parser_steps, 'lifter': lift(parser, decoded), 'tracker': track(parser, decoded)}
+            cls.runs.append((program.__name__, parser, steps))
+
+    def test_every_opcode_is_covered(self):
+        for walker, never_seen in NEVER_SEEN.items():
+            seen = {step.opcode for _, _, steps in self.runs for step in steps[walker]}
+            self.assertEqual(seen, TABLE_OPCODES - never_seen, walker)
+
+    def test_each_instruction_changes_the_stack_as_the_table_says(self):
+        for program, parser, walkers in self.runs:
+            for walker, steps in walkers.items():
+                for step in steps:
+                    with self.subTest(program = program, walker = walker, opcode = step.opcode.name):
+                        expected = table_change(step, parser)
+                        if walker == 'tracker':
+                            # It starts each function empty, without the caller's parameters: a POP reaching into
+                            # them pops only what it holds
+                            expected = max(expected, -step.before)
+
+                        self.assertEqual(step.after - step.before, expected)
+
+    def test_each_instruction_keeps_what_the_table_does_not_pop(self):
+        '''The depth can't see an effect whose pops equal its pushes (NEG's row read as DEBUG_LINE keeps every depth):
+        the entries below what the table pops stay the same objects, and its pushes put new ones in their place. A
+        slot-addressing effect that pops stores into its slot, so it may replace one entry below.'''
+        for program, parser, walkers in self.runs:
+            for walker, steps in walkers.items():
+                for step in steps:
+                    with self.subTest(program = program, walker = walker, opcode = step.opcode.name):
+                        effect = effect_of(step.opcode)
+                        popped = effect.pop_count(step.values, parser.get_func_argc) + effect.setup_pops
+                        kept = max(len(step.entries_before) - popped, 0)
+                        self.assertGreaterEqual(len(step.entries_after), kept)
+                        replaced_below = [index for index in range(kept)
+                                          if step.entries_after[index] is not step.entries_before[index]]
+                        self.assertLessEqual(len(replaced_below), int(effect.addresses_slot and effect.pops > 0))
+
+                        shared = min(len(step.entries_before), len(step.entries_after))
+                        pushed_over = range(kept, min(kept + effect.pushes, shared))
+                        self.assertFalse([index for index in pushed_over
+                                          if step.entries_after[index] is step.entries_before[index]])
+
+    def test_each_call_takes_the_tables_argument_count(self):
+        calls = 0
+        for program, parser, walkers in self.runs:
+            for walker, steps in walkers.items():
+                for step in steps:
+                    if not is_call(step.opcode):
+                        continue
+
+                    calls += 1
+                    with self.subTest(program = program, walker = walker, opcode = step.opcode.name):
+                        self.assertEqual(step.argc, table_argc(step, parser))
+
+        self.assertGreater(calls, 0)
+
+    def test_only_exiting_instructions_reject_a_value_left_below(self):
+        '''Each program again with one more parameter than it pops - a value below everything else, so no offset moves.
+        The parser must reject it at the first exiting instruction and nowhere before.'''
+        seen = set()
+        for program in PROGRAMS:
+            main, *others = program()
+            with self.subTest(program = program.__name__):
+                steps = []
+                with self.assertRaises(ScpDisassemblyError) as caught:
+                    disassemble((main._replace(argc = main.argc + 1), *others), steps)
+
+                seen |= self.assert_rejected_at_an_exit(steps, caught.exception)
+
+        self.assertEqual(seen, TABLE_OPCODES - NEVER_SEEN['parser'])
+
+    def assert_rejected_at_an_exit(self, steps: list[Step], error) -> set[ED9Opcode]:
+        '''No instruction handled before the rejection exits; the rejecting one does. Returns the opcodes checked.'''
+        rejecting = ED9Opcode[error.mnemonic]
+        self.assertEqual([step.opcode.name for step in steps if effect_of(step.opcode).exits], [], str(error))
+        self.assertTrue(effect_of(rejecting).exits, str(error))
+        return {step.opcode for step in steps} | {rejecting}
+
+
+if __name__ == '__main__':
+    unittest.main()

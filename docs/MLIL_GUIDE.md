@@ -140,5 +140,5 @@ debug dumps — analogous to `HLILFormatter` on the HLIL side.
 
 ## Testing
 
-`tests/test_mlil_*.py` (and `tests/test_llil_deref.py`) - see `docs/MLIL_DESIGN.md`'s Testing
+`tests/mlil_tests/test_mlil_*.py` (and `tests/llil_tests/test_llil_deref.py`) - see `docs/MLIL_DESIGN.md`'s Testing
 section.

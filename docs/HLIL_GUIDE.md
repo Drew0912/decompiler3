@@ -158,10 +158,11 @@ Two output modes exist side by side:
 
 ## Testing
 
-Several dedicated test files: `tests/test_hlil_branch_order_normalization.py`,
-`tests/test_hlil_control_flow_optimization.py`, `tests/test_hlil_loop_recovery.py`,
-`tests/test_hlil_loop_traversal.py`, `tests/test_hlil_call_fold_short_circuit.py`,
-`tests/test_hlil_long_functions.py`, `tests/test_hlil_common_return_extraction.py`,
-`tests/test_hlil_operators.py`, `tests/test_hlil_traversal.py`, `tests/test_hlil_structuring.py`,
-`tests/test_hlil_structuring_fuzz.py`, `tests/test_hlil_path_check.py`,
-`tests/test_falcom_param_types.py` (see `HLIL_DESIGN.md`'s Testing section for what each covers).
+Several dedicated test files: `tests/hlil_tests/test_hlil_branch_order_normalization.py`,
+`tests/hlil_tests/test_hlil_control_flow_optimization.py`, `tests/hlil_tests/test_hlil_loop_recovery.py`,
+`tests/hlil_tests/test_hlil_loop_traversal.py`, `tests/hlil_tests/test_hlil_call_fold_short_circuit.py`,
+`tests/hlil_tests/test_hlil_long_functions.py`, `tests/hlil_tests/test_hlil_common_return_extraction.py`,
+`tests/hlil_tests/test_hlil_operators.py`, `tests/hlil_tests/test_hlil_traversal.py`,
+`tests/hlil_tests/test_hlil_structuring.py`, `tests/hlil_tests/test_hlil_structuring_fuzz.py`,
+`tests/tools_tests/test_hlil_path_check.py`,
+`tests/hlil_tests/test_falcom_param_types.py` (see `HLIL_DESIGN.md`'s Testing section for what each covers).
