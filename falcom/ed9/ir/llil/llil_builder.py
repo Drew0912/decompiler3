@@ -422,7 +422,31 @@ class FalcomLLILFormatter(LLILFormatter):
 
     @classmethod
     def _format_simplified(cls, inst: LowLevelILInstruction) -> List[str]:
-        lines = super()._format_simplified(inst)
+        '''SET_REG, POP_JMP_* and POP_TO hide their pop (hidden_for_formatter): their line shows it'''
+        # SET_REG
+        if isinstance(inst, LowLevelILRegStore):
+            lines = [f'REG[{inst.reg_index}] = STACK[--sp]  ; {inst.value}']
+
+        # POP_JMP_ZERO / POP_JMP_NOT_ZERO
+        elif isinstance(inst, LowLevelILIf):
+            cond = inst.condition
+            lhs = cond.lhs if isinstance(cond.lhs, Constant) else 'STACK[--sp]'
+            true_name = inst.true_target.block_name
+            false_name = inst.false_target.block_name
+            lines = [f'if ({lhs} {cond.operation_name} {cond.rhs}) goto {true_name} else {false_name}']
+
+        # POP_TO into a local
+        elif isinstance(inst, LowLevelILStackStore) and inst.offset != 0:
+            lines = [f'STACK[{inst.slot_index}] = STACK[--sp] ; {inst.value}']
+
+        # POP_TO into a parameter
+        elif isinstance(inst, LowLevelILFrameStore):
+            word_offset = inst.offset // WORD_SIZE
+            location = f'fp + {word_offset}' if word_offset >= 0 else f'fp - {-word_offset}'
+            lines = [f'STACK[{location}] = STACK[--sp] ; {inst.value}']
+
+        else:
+            lines = super()._format_simplified(inst)
 
         # A float from the bytecode also shows its exact bits; a plain float has none to show
         if isinstance(inst, LowLevelILStackStore) and isinstance(inst.value, LowLevelILConst):

@@ -71,11 +71,6 @@ class LowLevelILOperation(IntEnum2):
     LLIL_STORE              = 64    # *ptr = value
     LLIL_FRAME_ADDR         = 65    # address of frame-relative location (fp + offset)
 
-    # Falcom VM specific (user-defined extensions)
-    LLIL_PUSH_CALLER_FRAME     = 1000  # Falcom VM: push caller frame (4 values)
-    LLIL_CALL_SCRIPT           = 1001  # Falcom VM: call script function
-    LLIL_CALL_SCRIPT_NO_RETURN = 1002  # Falcom VM: tail-call script function (never returns to caller)
-
     # User-defined extensions (reserved range: 1003+)
     LLIL_USER_DEFINED       = 1003  # Start of user-defined operations
 

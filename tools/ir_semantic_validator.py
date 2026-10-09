@@ -32,7 +32,7 @@ from ir.hlil import (
     HighLevelILFunction, HLILInstruction, HLILOperation, HLILStatement,
     HLILUnstructured, HLILVariable, VariableKind, BinaryOp, UnaryOp, reachable_statements
 )
-from falcom.ed9.ir.llil.llil_ext import LowLevelILGlobalLoad
+from falcom.ed9.ir.llil.llil_ext import LowLevelILFalcomOperation, LowLevelILGlobalLoad
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil.vm_lifter import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
@@ -769,7 +769,7 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             source_location=loc
         )
 
-    elif op == LowLevelILOperation.LLIL_CALL_SCRIPT:
+    elif op == LowLevelILFalcomOperation.LLIL_CALL_SCRIPT:
         return SemanticOperation(
             kind=OperationKind.CALL,
             operator='CALL_SCRIPT',
@@ -890,7 +890,7 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
 
     # NOP and internal
     elif op in (LowLevelILOperation.LLIL_NOP, LowLevelILOperation.LLIL_DEBUG,
-                LowLevelILOperation.LLIL_SP_ADD, LowLevelILOperation.LLIL_PUSH_CALLER_FRAME):
+                LowLevelILOperation.LLIL_SP_ADD, LowLevelILFalcomOperation.LLIL_PUSH_CALLER_FRAME):
         return SemanticOperation(
             kind=OperationKind.NOP,
             operator=op.name.replace('LLIL_', ''),

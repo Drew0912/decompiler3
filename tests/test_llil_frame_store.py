@@ -96,7 +96,7 @@ class TestPopToParameterSlotMLIL(unittest.TestCase):
 
 
 class TestFrameStoreFormatting(unittest.TestCase):
-    '''LLILFormatter renders LowLevelILFrameStore like its StackStore sibling'''
+    '''FalcomLLILFormatter renders LowLevelILFrameStore (POP_TO into a parameter) like its StackStore sibling'''
 
     def test_simplified_format_shows_popped_value(self):
         inst = LowLevelILFrameStore(LowLevelILConst(42), offset = 0)

@@ -8,12 +8,12 @@ from .constants import *
 
 class LowLevelILFalcomOperation(IntEnum):
     '''Falcom-specific LLIL operations'''
-    LLIL_PUSH_CALLER_FRAME = LowLevelILOperation.LLIL_PUSH_CALLER_FRAME  # Push caller frame (4 values)
-    LLIL_CALL_SCRIPT = LowLevelILOperation.LLIL_CALL_SCRIPT              # Call script function
-    LLIL_CALL_SCRIPT_NO_RETURN = LowLevelILOperation.LLIL_CALL_SCRIPT_NO_RETURN  # Tail-call script function
-    LLIL_GLOBAL_LOAD = LowLevelILOperation.LLIL_USER_DEFINED     # Load from global variable array
-    LLIL_GLOBAL_STORE = LowLevelILOperation.LLIL_USER_DEFINED + 1  # Store to global variable array
-    LLIL_DEBUG_LOG = LowLevelILOperation.LLIL_USER_DEFINED + 2     # Debug print of stack values
+    LLIL_GLOBAL_LOAD           = LowLevelILOperation.LLIL_USER_DEFINED      # Load from global variable array
+    LLIL_GLOBAL_STORE          = LowLevelILOperation.LLIL_USER_DEFINED + 1  # Store to global variable array
+    LLIL_DEBUG_LOG             = LowLevelILOperation.LLIL_USER_DEFINED + 2  # Debug print of stack values
+    LLIL_PUSH_CALLER_FRAME     = LowLevelILOperation.LLIL_USER_DEFINED + 3  # Push 4 values in CALLER_FRAME_SLOTS
+    LLIL_CALL_SCRIPT           = LowLevelILOperation.LLIL_USER_DEFINED + 4  # Call script function
+    LLIL_CALL_SCRIPT_NO_RETURN = LowLevelILOperation.LLIL_USER_DEFINED + 5  # Tail-call script function
 
 
 class LowLevelILPushCallerFrame(LowLevelILStatement):

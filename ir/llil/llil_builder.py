@@ -794,41 +794,11 @@ class LLILFormatter:
 
     @classmethod
     def _format_simplified(cls, inst: LowLevelILInstruction) -> List[str]:
-        '''Format instruction with simplified display (not expanded, just cleaner)'''
-        # RegStore: show as pop from stack
-        if isinstance(inst, LowLevelILRegStore):
-            return [f'REG[{inst.reg_index}] = STACK[--sp]  ; {inst.value}']
+        '''One line: the instruction's own text; a stack store / load also shows its slot'''
+        if isinstance(inst, (LowLevelILStackStore, LowLevelILStackLoad)):
+            return [f'{inst} ; [{inst.slot_index}]']
 
-        # If instruction: simplify condition display
-        if isinstance(inst, LowLevelILIf):
-            true_name = inst.true_target.block_name
-            false_name = inst.false_target.block_name
-
-            cond = inst.condition
-
-            rhs = cond.rhs
-            lhs = cond.lhs
-            opr = cond.operation_name
-
-            if not isinstance(lhs, Constant):
-                lhs = f'STACK[--sp]'
-
-            return [f'if ({lhs} {opr} {rhs}) goto {true_name} else {false_name}']
-
-        line = str(inst)
-
-        if isinstance(inst, LowLevelILStackStore) and inst.offset != 0:
-            line = f'STACK[{inst.slot_index}] = STACK[--sp] ; {inst.value}'
-
-        elif isinstance(inst, (LowLevelILStackStore, LowLevelILStackLoad)):
-            line = f'{line} ; [{inst.slot_index}]'
-
-        elif isinstance(inst, LowLevelILFrameStore):
-            word_offset = inst.offset // WORD_SIZE
-            location = f'fp + {word_offset}' if word_offset >= 0 else f'fp - {-word_offset}'
-            line = f'STACK[{location}] = STACK[--sp] ; {inst.value}'
-
-        return [line]
+        return [str(inst)]
 
     @classmethod
     def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> List[str]:
