@@ -297,7 +297,8 @@ class ED9VMLifter:
         return self._parser.get_func_name_from_func_id(func_id)
 
     def _pop_count(self, inst: Instruction) -> int:
-        '''How many entries inst pops, by its stack effect; a local CALL's are its callee's declared parameters'''
+        '''How many entries inst pops, by its stack effect; a local CALL's are its callee's declared parameters. Only
+        the CALL arm asks: the other calls take their count from their operand, every other opcode from its builder'''
         operand_values = [operand.value for operand in inst.operands]
         return inst.descriptor.effect.pop_count(operand_values, self._parser.get_func_argc)
 

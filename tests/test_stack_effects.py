@@ -157,6 +157,8 @@ class Step(NamedTuple):
     before  : int                   # stack depth before it
     after   : int                   # and after it
     argc    : int | None = None     # the arguments a call took, as the walker saw them
+    entries_before  : tuple = ()    # the walker's stack entries before it, bottom first
+    entries_after   : tuple = ()    # and after it
 
 
 def effect_of(opcode: int) -> StackEffect:
@@ -178,18 +180,25 @@ def tracing_the_parser(steps: list[Step]):
     decoded = ScpParser.on_instruction_decoded
 
     def on_instruction_decoded(parser, context, inst, block):
-        opcode, values, before = ED9Opcode(inst.opcode), operand_values(inst), len(context.stack_simulation)
+        opcode, values, entries = ED9Opcode(inst.opcode), operand_values(inst), tuple(context.stack_simulation)
         argc = context.call_argc(inst) if is_call(opcode) else None
         targets = decoded(parser, context, inst, block)
-        steps.append(Step(opcode, values, inst.offset, before, len(context.stack_simulation), argc))
+        after = tuple(context.stack_simulation)
+        steps.append(Step(opcode, values, inst.offset, len(entries), len(after), argc, entries, after))
         return targets
 
     with mock.patch.object(ScpParser, 'on_instruction_decoded', on_instruction_decoded):
         yield
 
 
+def vstack_entries(builder) -> tuple:
+    '''The builder's virtual stack, bottom first (vstack_peek_many gives the top first, and every entry for 0)'''
+    size = builder.vstack_size()
+    return tuple(reversed(builder.vstack_peek_many(size))) if size else ()
+
+
 class TracingLifter(ED9VMLifter):
-    '''Records the builder's sp around each lifted instruction'''
+    '''Records the builder's sp and virtual stack around each lifted instruction'''
 
     def __init__(self, *, parser: ScpParser):
         super().__init__(parser = parser)
@@ -199,9 +208,10 @@ class TracingLifter(ED9VMLifter):
         if inst.size == SYNTHETIC_INSTRUCTION_SIZE:         # a split block's fall-through JMP, not in the bytecode
             return super()._translate_instruction(builder, inst, block, block_map, llil_blocks)
 
-        before = builder.sp_get()
+        before, entries = builder.sp_get(), vstack_entries(builder)
         super()._translate_instruction(builder, inst, block, block_map, llil_blocks)
-        self.steps.append(Step(ED9Opcode(inst.opcode), operand_values(inst), inst.offset, before, builder.sp_get()))
+        self.steps.append(Step(ED9Opcode(inst.opcode), operand_values(inst), inst.offset, before, builder.sp_get(),
+                               entries_before = entries, entries_after = vstack_entries(builder)))
 
 
 class TracingTracker(CallDebugInfoTracker):
@@ -212,10 +222,12 @@ class TracingTracker(CallDebugInfoTracker):
         self.steps: list[Step] = []
 
     def on_opcode(self, opcode, operands, payload = None):
-        before, calls = len(self.stack), len(self.calls)
+        entries, calls = tuple(self.stack), len(self.calls)
         super().on_opcode(opcode, operands, payload)
         argc = len(self.calls[-1].args) if len(self.calls) > calls else None
-        self.steps.append(Step(ED9Opcode(opcode), tuple(operands), None, before, len(self.stack), argc))
+        after = tuple(self.stack)
+        self.steps.append(Step(ED9Opcode(opcode), tuple(operands), None, len(entries), len(after), argc,
+                               entries, after))
 
 
 def disassemble(functions: tuple[Func, ...], steps: list[Step]) -> tuple[ScpParser, list[Function]]:
@@ -391,6 +403,27 @@ class TestWalkersAgreeWithTheTable(unittest.TestCase):
                             expected = max(expected, -step.before)
 
                         self.assertEqual(step.after - step.before, expected)
+
+    def test_each_instruction_keeps_what_the_table_does_not_pop(self):
+        '''The depth can't see an effect whose pops equal its pushes (NEG's row read as DEBUG_LINE keeps every depth):
+        the entries below what the table pops stay the same objects, and its pushes put new ones in their place. A
+        slot-addressing effect that pops stores into its slot, so it may replace one entry below.'''
+        for program, parser, walkers in self.runs:
+            for walker, steps in walkers.items():
+                for step in steps:
+                    with self.subTest(program = program, walker = walker, opcode = step.opcode.name):
+                        effect = effect_of(step.opcode)
+                        popped = effect.pop_count(step.values, parser.get_func_argc) + effect.setup_pops
+                        kept = max(len(step.entries_before) - popped, 0)
+                        self.assertGreaterEqual(len(step.entries_after), kept)
+                        replaced_below = [index for index in range(kept)
+                                          if step.entries_after[index] is not step.entries_before[index]]
+                        self.assertLessEqual(len(replaced_below), int(effect.addresses_slot and effect.pops > 0))
+
+                        shared = min(len(step.entries_before), len(step.entries_after))
+                        pushed_over = range(kept, min(kept + effect.pushes, shared))
+                        self.assertFalse([index for index in pushed_over
+                                          if step.entries_after[index] is step.entries_before[index]])
 
     def test_each_call_takes_the_tables_argument_count(self):
         calls = 0

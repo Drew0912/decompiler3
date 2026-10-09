@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from common.utils import display_width
-from ir.llil import WORD_SIZE
 from .ed9_optable import ED9Opcode, ED9OperandType
 from ..parser.types_scp import ScpValue
 
@@ -85,7 +84,7 @@ def stack_comments(layout: 'StackLayout', inst: 'Instruction') -> list[str]:
         comments.append(f'slot {layout.local_slots[inst.offset]} (local)')
 
     if inst.opcode == ED9Opcode.POP:
-        count = inst.operands[0].value // WORD_SIZE
+        count = inst.descriptor.effect.pop_count([operand.value for operand in inst.operands])
         comments.append(f'{count} slot' if count == 1 else f'{count} slots')
 
     return comments
