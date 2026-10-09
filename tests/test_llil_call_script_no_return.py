@@ -41,18 +41,17 @@ def build_tail_call_function(arg_count: int, *, name: str = 'tail_call_test'):
 class TestCallScriptNoReturnLLIL(unittest.TestCase):
     '''LLIL-level behavior of the tail-call opcode'''
 
-    def test_zero_args_balances_stack_and_has_no_successors(self):
+    def test_zero_args_has_no_successors(self):
         _, entry = build_tail_call_function(0)
 
         self.assertEqual(entry.outgoing_edges, [])
 
-    def test_args_are_popped_and_stack_balances(self):
+    def test_pushed_args_become_its_arguments(self):
         _, entry = build_tail_call_function(3)
 
-        self.assertEqual(entry.outgoing_edges, [])
         inst = entry.instructions[-1]
         self.assertIsInstance(inst, LowLevelILCallScriptNoReturn)
-        self.assertEqual(len(inst.args), 3)
+        self.assertEqual([arg.slot_index for arg in inst.args], [2, 1, 0])     # arg1 is the last push
 
     def test_instruction_shape(self):
         _, entry = build_tail_call_function(2)

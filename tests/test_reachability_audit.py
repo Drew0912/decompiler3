@@ -76,7 +76,7 @@ class TestDroppedRanges(unittest.TestCase):
 
 
 class TestCheckInstructionRanges(unittest.TestCase):
-    '''Overlap and target-validity checks, hand-built rather than from a real .dat'''
+    '''Target-validity checks, hand-built rather than from a real .dat'''
 
     def test_target_inside_another_instruction_fails(self):
         insts = [

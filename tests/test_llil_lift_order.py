@@ -89,26 +89,27 @@ class TestReindexInBlockOrder(unittest.TestCase):
         self.assertIs(builder.function.get_instruction_block_by_index(0), entry)
         self.assertIs(builder.function.get_instruction_block_by_index(1), second)
 
-    def test_finalize_leaves_function_already_reindexed(self):
+    def test_finalize_numbers_in_block_order(self):
         builder = make_builder()
         second = builder.create_basic_block(SECOND_BLOCK_START, 'second')
+        entry = builder.function.basic_blocks[0]
 
-        builder.jmp(second)
+        # second's instruction is registered before entry's, as when the lifter translates out of block order
         builder.set_current_block(second)
         builder.ret()
+        ret_inst = second.instructions[-1]
+        builder.set_current_block(entry)
+        builder.jmp(second)
+        jmp_inst = entry.instructions[-1]
 
         func = builder.finalize()
-        before = [(inst.inst_index, id(inst)) for inst in func.iter_instructions()]
-        func.reindex_in_block_order()
-        after = [(inst.inst_index, id(inst)) for inst in func.iter_instructions()]
 
-        self.assertEqual(before, after)
+        self.assertEqual((jmp_inst.inst_index, ret_inst.inst_index), (0, 1))
+        self.assertEqual(list(func.iter_instructions()), [jmp_inst, ret_inst])
 
 
 class TestBlockLifecycle(unittest.TestCase):
-    '''begin_block/set_current_block/finalize() split "close the old block" from "open the new
-    one" with a restore in between, fixing a bug where the previous block's sp_out was recorded
-    from the next block's just-restored sp instead of its own true exit sp.'''
+    '''begin_block records the previous block's true exit sp, not the next block's just-restored one.'''
 
     def test_begin_block_records_previous_blocks_true_exit_sp(self):
         builder = make_builder()

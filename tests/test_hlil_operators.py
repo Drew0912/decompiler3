@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for the shared HLIL tables and helpers in ir/hlil/hlil.py - operator semantics,
-C-family syntax and terminal statements - and for HLILFormatter's operators and switch breaks.'''
+'''Unit tests for the shared HLIL tables and helpers in ir/hlil/hlil.py - operator semantics and
+C-family syntax - and for HLILFormatter's operators and switch breaks.'''
 
 from pathlib import Path
 import operator

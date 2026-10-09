@@ -65,7 +65,7 @@ class TestBuildCfgEdges(unittest.TestCase):
         self.assertEqual(edges(function), [([], []), ([], [])])
 
 
-class TestBlockMembership(unittest.TestCase):
+class TestBlockLabels(unittest.TestCase):
     '''Block labels are unique within a function: the entry block takes the function's name, so a script function
     named loc_1A0 meets the block at 0x1A0.'''
 

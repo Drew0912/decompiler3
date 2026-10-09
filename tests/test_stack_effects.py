@@ -2,7 +2,9 @@
 '''Unit tests for the ED9 stack effects: the agreement test - the parser's stack simulation, the lifter's builder and
 the debug-record tracker change the stack as the opcode table says and take a call's arguments as it says, and the
 parser rejects a value left on the stack exactly at the instructions the table says exit; a local call's argument count
-through each walker's lookup; and the table's lookup of an opcode without a row.'''
+through each walker's lookup; and the table's lookup of an opcode without a row. The parser and the tracker apply the
+row they are checked against, so their legs check the wiring; a wrong row shows through the lifter, whose builder
+operations push and pop on their own - except a local CALL's argument count, which the lifter reads from the row too.'''
 
 from contextlib import contextmanager
 from pathlib import Path

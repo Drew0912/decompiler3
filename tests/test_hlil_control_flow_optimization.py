@@ -2,6 +2,7 @@
 '''Unit tests for HLIL control-flow optimization.'''
 
 from pathlib import Path
+from typing import Optional
 import sys
 import unittest
 
@@ -22,6 +23,7 @@ from ir.hlil import (
     HLILContinue,
     HLILDoWhile,
     HLILExprStmt,
+    HLILFormatter,
     HLILIf,
     HLILReturn,
     HLILStatement,
@@ -31,6 +33,7 @@ from ir.hlil import (
     HLILVariable,
     HLILWhile,
     VariableKind,
+    iter_tree,
 )
 from ir.hlil.passes.pass_control_flow_optimization import ExitKind
 
@@ -266,6 +269,15 @@ def make_flag_check(call_name: str) -> HLILIf:
     return HLILIf(condition, HLILBlock([HLILExprStmt(HLILCall(call_name, []))]), HLILBlock())
 
 
+def make_less_than() -> HLILBinaryOp:
+    return HLILBinaryOp(BinaryOp.LT, HLILVar(HLILVariable('a')), HLILVar(HLILVariable('b')))
+
+
+def arm_calls(block: Optional[HLILBlock]) -> list:
+    '''The functions an arm calls, in order; an absent arm calls none'''
+    return [stmt.expr.func_name for stmt in block.statements] if block else []
+
+
 class TestBooleanTempInlining(unittest.TestCase):
     '''Tests for the [assign, if] -> [if(bool_expr)] boolean-temp inlining transform.'''
 
@@ -274,13 +286,6 @@ class TestBooleanTempInlining(unittest.TestCase):
         for stmt in statements:
             func.add_statement(stmt)
         return ControlFlowOptimizationPass().run(func)
-
-    def test_assignment_inlined_and_removed_when_var_is_not_read_again(self):
-        func = self.run_pass([make_flag_assign(), make_flag_check(FIRST_CHECK_CALL)])
-
-        # Only the inlined if remains - the temp assignment was safe to delete
-        self.assertEqual(len(func.body.statements), 1)
-        self.assertIsInstance(func.body.statements[0], HLILIf)
 
     def test_assignment_survives_when_var_is_read_by_a_later_statement(self):
         assign_stmt = make_flag_assign()
@@ -295,6 +300,31 @@ class TestBooleanTempInlining(unittest.TestCase):
         self.assertIsInstance(func.body.statements[0], HLILAssign)
         self.assertIsInstance(func.body.statements[1], HLILIf)
         self.assertIsInstance(func.body.statements[2], HLILIf)
+
+    def test_each_shape_gives_the_expression_and_arms(self):
+        '''flag = a < b; if (flag != 0 / == 0) {first} [else {second}]: the expression replaces the test, negated or
+        with the arms swapped for == 0, and no read of flag is left'''
+        shapes = [
+            # (comparison with zero, with an else, condition, true arm, false arm)
+            (BinaryOp.NE, False, 'a < b', [FIRST_CHECK_CALL], []),
+            (BinaryOp.NE, True, 'a < b', [FIRST_CHECK_CALL], [SECOND_CHECK_CALL]),
+            (BinaryOp.EQ, False, 'a >= b', [FIRST_CHECK_CALL], []),
+            (BinaryOp.EQ, True, 'a < b', [SECOND_CHECK_CALL], [FIRST_CHECK_CALL]),
+        ]
+        for op, with_else, condition, true_calls, false_calls in shapes:
+            with self.subTest(op = op.name, with_else = with_else):
+                second = [HLILExprStmt(HLILCall(SECOND_CHECK_CALL, []))] if with_else else []
+                check = HLILIf(HLILBinaryOp(op, make_flag_var(), HLILConst(0)),
+                               HLILBlock([HLILExprStmt(HLILCall(FIRST_CHECK_CALL, []))]), HLILBlock(second))
+
+                func = self.run_pass([HLILAssign(make_flag_var(), make_less_than()), check])
+
+                [inlined] = func.body.statements
+                self.assertEqual(HLILFormatter._format_expr(inlined.condition), condition)
+                self.assertEqual((arm_calls(inlined.true_block), arm_calls(inlined.false_block)),
+                                 (true_calls, false_calls))
+                self.assertNotIn(make_flag_var().var,
+                                 [node.var for node in iter_tree(func.body) if isinstance(node, HLILVar)])
 
 
 RELOAD_CALL_NAME = 'reload_discriminant'
@@ -385,34 +415,28 @@ class TestBooleanTempInliningPreservesGlobals(unittest.TestCase):
         self.assertIsInstance(func.body.statements[0], HLILAssign)
 
 
-class TestRedundantElseAssignVariableIdentity(unittest.TestCase):
-    '''Originally: _remove_redundant_else_assign must compare full variable identity, not just
-    .name, since REG-kind variables commonly share name=None, distinguished only by index. Now
-    moot as a live concern for this function specifically - a REG-kind outer_var is rejected
-    outright before any name/identity comparison runs (a register still literally REG-kind at
-    this layer means SSA never resolved it to a concrete value, never a safe reload source
-    either way) - kept as a regression guard on that rejection, not on identity comparison.'''
+class TestRedundantElseAssignRejectsRegisterDiscriminants(unittest.TestCase):
+    '''_remove_redundant_else_assign rejects a REG-kind discriminant outright: a register still REG-kind at this layer
+    was never resolved to a value, so it is no safe reload source, and the else arm keeps its assignment.'''
 
-    def test_distinct_reg_variables_are_not_conflated(self):
-        r1 = HLILVariable(None, kind = VariableKind.REG, index = 1)
-        r2 = HLILVariable(None, kind = VariableKind.REG, index = 2)
-        r3 = HLILVariable(None, kind = VariableKind.REG, index = 3)
-
-        inner_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, HLILVar(r3), HLILConst(SECOND_CASE_VALUE)),
-                           make_case_body(SECOND_CASE_VALUE), HLILBlock())
-        unrelated_assign = HLILAssign(HLILVar(r2), HLILConst(99))
-        false_block = HLILBlock([unrelated_assign, inner_if])
-        first_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, HLILVar(r1), HLILConst(FIRST_CASE_VALUE)),
-                           make_case_body(FIRST_CASE_VALUE), false_block)
+    def test_else_arm_assignment_survives(self):
+        '''r = 2; if (r == 1) {...} else {r = 2; if (r == 2) {...}} - for a local the reload would go'''
+        reg = HLILVariable(None, kind = VariableKind.REG, index = 1)
+        reaching_assign = HLILAssign(HLILVar(reg), HLILConst(SECOND_CASE_VALUE))
+        reload_assign = HLILAssign(HLILVar(reg), HLILConst(SECOND_CASE_VALUE))
+        inner_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, HLILVar(reg), HLILConst(SECOND_CASE_VALUE)),
+                          make_case_body(SECOND_CASE_VALUE), HLILBlock())
+        first_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, HLILVar(reg), HLILConst(FIRST_CASE_VALUE)),
+                          make_case_body(FIRST_CASE_VALUE), HLILBlock([reload_assign, inner_if]))
 
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(reaching_assign)
         func.add_statement(first_if)
         func = ControlFlowOptimizationPass().run(func)
 
-        else_stmts = func.body.statements[0].false_block.statements
-        # r2's assignment is unrelated to r1/r3 - must survive despite sharing name=None
+        else_stmts = func.body.statements[1].false_block.statements
         self.assertEqual(len(else_stmts), 2)
-        self.assertIsInstance(else_stmts[0], HLILAssign)
+        self.assertIs(else_stmts[0], reload_assign)
 
 
 class TestBooleanTempInliningSwitchCaseLabelIsARead(unittest.TestCase):

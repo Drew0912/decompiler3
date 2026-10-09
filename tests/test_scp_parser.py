@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for SCP parser'''
+'''Unit tests for ScpValue encoding and quote_string'''
 
 from pathlib import Path
 import sys

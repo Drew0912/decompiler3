@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''DSL argument checks (bool operands, CALL's function argument, value ranges, operand count), UNKNOWN_28's raw bytes,
-what handle_opcode tracks and the helper module's non-opcode statements (label, GLOBAL_VAR).'''
+'''DSL argument checks (bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes and what
+handle_opcode tracks.'''
 
 import math
 from pathlib import Path
@@ -67,7 +67,7 @@ class TestCall(unittest.TestCase):
 
 
 class TestHandleOpcode(unittest.TestCase):
-    '''handle_opcode itself: paths no opcode function or corpus script reaches, and what it hands the tracker'''
+    '''handle_opcode itself: UNKNOWN_28's raw bytes, and what it hands the tracker'''
 
     def setUp(self):
         self.writer = body_writer()

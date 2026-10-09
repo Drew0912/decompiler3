@@ -316,6 +316,15 @@ class TestEdgeStates(unittest.TestCase):
                         'the stack on the edge 0x0 -> 0x2 is [GET_REG@0x0], but an earlier edge into 0x2 recorded '
                         '[PUSH_INT@0xB, PUSH_INT@0x11]')
 
+    def test_back_edge_into_the_entry_with_a_different_height_raises(self):
+        '''The entry's state is recorded before decoding - only the parameters - so a back edge meets it'''
+        asm = Asm()
+        asm.label('head'); asm.get_reg(REG_INDEX); asm.jz('end')
+        asm.push_int(LEFT_VALUE); asm.jmp('head')
+        asm.label('end'); asm.ret()
+        assert_fails_at(self, Program(main_function(asm)), 0xD, 'JMP',
+                        'the stack on the edge 0xD -> 0x0 is [PUSH_INT@0x7], but an earlier edge into 0x0 recorded []')
+
     def test_value_carried_across_a_join_is_accepted(self):
         asm = Asm()
         asm.get_reg(REG_INDEX); asm.jz('right')
@@ -687,6 +696,14 @@ class TestScriptCalls(unittest.TestCase):
         caller.push_int(RIGHT_VALUE); caller.call_script(1); caller.ret()
         assert_fails_at(self, Program(main_function(caller)), 0x24, 'CALL_SCRIPT',
                         'expects a return address, found PUSH_INT@0x0')
+
+    def test_one_argument_more_than_its_count_raises(self):
+        '''The extra argument shifts the frame down a slot: the call finds the wrong frame slot where it expects one'''
+        caller = Asm()
+        caller.frame('return'); caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE); caller.call_script(1)
+        caller.label('return'); caller.ret()
+        assert_fails_at(self, Program(main_function(caller)), 0x11, 'CALL_SCRIPT',
+                        'expects caller frame slot 0 returning to 0x1B, found frame_1@0x0')
 
     def test_frames_meeting_other_values_at_a_join_raises(self):
         '''The join's call consumes the first arm's frame before the other arm's edge brings plain values'''

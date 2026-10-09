@@ -75,9 +75,10 @@ class TestAnalyseFileMatchesScena2py(unittest.TestCase):
 
         self.addCleanup(sys.setrecursionlimit, sys.getrecursionlimit())
         sys.setrecursionlimit(PYTHON_DEFAULT_RECURSION_LIMIT)
-        analyse_file(SMALL_SCRIPT)
 
     def test_raises_the_recursion_limit_to_scena2py_headroom(self):
+        analyse_file(SMALL_SCRIPT)
+
         self.assertGreaterEqual(sys.getrecursionlimit(), RECURSION_LIMIT)
 
 

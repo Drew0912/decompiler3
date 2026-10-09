@@ -289,8 +289,8 @@ Several dedicated HLIL unit-test files exist today:
   shared return (switch default and bare-break guards, `if` without `else`, int/float and NaN
   constants) plus the shared `constant_values_equal` and `contains_bare_break` helpers.
 - `tests/test_hlil_operators.py` covers the shared operator tables (comparison negation is the
-  complement), `negate_condition`, `needs_parentheses`,
-  and the debug formatter's operator symbols and switch-case `break`s.
+  complement), `negate_condition`, `needs_parentheses`, and the debug formatter's operator symbols
+  and switch-case `break`s.
 - `tests/test_hlil_traversal.py` covers the shared tree walkers: every node type's children, source
   order, `iter_tree`'s exclusion, the escaping-exit rules, `sole_statement`, declaration order, and
   control-flow optimization reaching into a do-while body.

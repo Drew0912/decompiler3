@@ -8,6 +8,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.hlil import (
     BinaryOp,
     BranchOrderNormalizationPass,
@@ -25,6 +26,7 @@ from ir.hlil import (
     HLILVariable,
     HLILWhile,
 )
+from ir.mlil.mlil import MediumLevelILFunction, MLILCall, MLILDebug, MLILGoto, MLILIf, MLILRet, MLILVar
 
 
 EARLY_LINE = 100
@@ -32,6 +34,10 @@ LATE_LINE = 200
 THIRD_LINE = 300
 THRESHOLD = 2
 CASE_VALUE = 1
+ENTRY_START = 0x10
+LATE_START = 0x20
+EARLY_START = 0x30
+JOIN_START = 0x40
 
 
 def make_var(name: str = 'selector') -> HLILVar:
@@ -63,6 +69,26 @@ def run_pass(stmt) -> HighLevelILFunction:
 
 def first_comment(block: HLILBlock) -> str:
     return block.statements[0].text
+
+
+def make_reversed_arms_mlil() -> MediumLevelILFunction:
+    '''if (arg1) {line LATE_LINE} else {line EARLY_LINE}, the arms rejoining: structuring keeps the bytecode's order'''
+    func = MediumLevelILFunction('reversed_arms', ENTRY_START)
+    entry = func.create_block(start = ENTRY_START, label = 'entry')
+    late = func.create_block(start = LATE_START, label = 'late')
+    early = func.create_block(start = EARLY_START, label = 'early')
+    join = func.create_block(start = JOIN_START, label = 'join')
+    entry.add_instruction(MLILIf(MLILVar(func.get_or_create_parameter(1, 'arg1')), late, early))
+    entry.add_outgoing_edge(late)
+    entry.add_outgoing_edge(early)
+    for block, line in ((late, LATE_LINE), (early, EARLY_LINE)):
+        block.add_instruction(MLILDebug('line', line, address = block.start))
+        block.add_instruction(MLILCall(f'work_{line}', []))
+        block.add_instruction(MLILGoto(join))
+        block.add_outgoing_edge(join)
+
+    join.add_instruction(MLILRet(None))
+    return func
 
 
 class TestBranchOrderNormalization(unittest.TestCase):
@@ -224,6 +250,21 @@ class TestBranchOrderNormalization(unittest.TestCase):
         self.assertEqual(first_comment(result.true_block), f'line({EARLY_LINE})')
         self.assertEqual(first_comment(result.false_block.statements[0].true_block),
                          f'line({LATE_LINE})')
+
+
+class TestNormalizeBranchOrderFlag(unittest.TestCase):
+    '''convert_falcom_mlil_to_hlil's normalize_branch_order: on by default, off keeps the bytecode's arm order'''
+
+    def test_on_by_default_puts_the_earlier_line_first(self):
+        [result, _] = convert_falcom_mlil_to_hlil(make_reversed_arms_mlil()).body.statements
+
+        self.assertEqual(first_comment(result.true_block), f'line({EARLY_LINE})')
+
+    def test_off_keeps_the_bytecode_order(self):
+        hlil = convert_falcom_mlil_to_hlil(make_reversed_arms_mlil(), normalize_branch_order = False)
+        [result, _] = hlil.body.statements
+
+        self.assertEqual(first_comment(result.true_block), f'line({LATE_LINE})')
 
 
 if __name__ == '__main__':
