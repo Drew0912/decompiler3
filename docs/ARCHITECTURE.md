@@ -46,7 +46,12 @@ source-precondition and reachability checks use them.
 Converts bytecode into a readable instruction sequence, identifies basic block boundaries, and
 parses operands. Instruction encoding/decoding is table-driven (an opcode table maps each opcode to
 its mnemonic and operand format), so adding a new instruction is a table entry rather than new
-parsing code.
+parsing code. Each row also has a kind, and each kind a stack effect (`falcom/ed9/disasm/stack_effects.py`:
+the values it pops, a call's setup slots, the values it reads in place, the values it pushes, whether it
+addresses a slot, whether the stack must be empty after it). The parser's simulation and the debug-record
+tracker (`CallDebugInfoTracker`) dispatch on the kind and read the effects; the LLIL lifter takes only
+which opcodes are binary and a local `CALL`'s argument count from the table (Layer 3).
+`tests/test_stack_effects.py` checks all three walkers of the VM stack against the table.
 
 While the disassembler decodes a function, `ScpParser` simulates the VM stack to find each call's
 setup: the two pushes a `CALL` consumes (rewritten to `PUSH_CURRENT_FUNC_ID` / `PUSH_RET_ADDR`) and
@@ -87,8 +92,9 @@ semantics such as calls, branches, and CFG shape. It does **not** recover `if`/`
 switch structure — that recovery is entirely HLIL's job, several layers up. The LLIL `Function`
 assigns every instruction a global `inst_index` (see `get_instruction_by_index()`,
 `get_instruction_block_by_index()`, `iter_instructions()`); each MLIL statement records the one it
-comes from as its `llil_index`. The stack model, slot lifetimes, call setups and per-edge stack state
-are in `docs/LLIL_DESIGN.md`.
+comes from as its `llil_index`. Which opcodes are binary and how many arguments a local `CALL` pops
+come from the opcode table's kinds and stack effects. The stack model, slot lifetimes, call setups and
+per-edge stack state are in `docs/LLIL_DESIGN.md`.
 
 ## Layer 4: MLIL — Implemented
 

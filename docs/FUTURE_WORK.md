@@ -258,8 +258,9 @@ The output was correct in every function traced; what it costs is readability.
   register; constant expressions unfolded (`1 | 32768`); bare truth tests vs `!= 0`; eager vs
   short-circuit logic; a tail-call node; the compiler's switch pattern. Loop rotation, switch recovery,
   return hoisting and region cloning are not worth inverting; the comparator covers those functions.
-- **Shared stack model.** One stack-effect table shared by the parser, the LLIL lifter and the
-  lowering, and the lowering designed as a pair with the rewrite's translator.
+- **Shared stack model.** The lowering reads the opcode table's stack effects
+  (`falcom/ed9/disasm/stack_effects.py`), which the parser and the debug-record tracker already share and
+  the lifter is tested against, and is designed as a pair with the rewrite's translator.
 - **Two layers.** Structured statements lower to labels and jumps; the bottom layer lowers expressions,
   assignments, calls, labels and jumps. The bottom layer can compile the rewrite's MLIL directly: a
   round-trip test that isolates translator bugs from structuring bugs.
@@ -619,13 +620,18 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
   `ir/mlil/llil_to_mlil.py:101`, `MLILCallScript`, and the generic `RegStore`/`RegLoad`/`Syscall` translation
   that only the Falcom translator has. The rules for the new translator are in
   `notes/rewrite/08_decision_and_checklist.md` (Checklist, "Boundary rules").
-- **Small moves that change no output (for the opcode-table plan):**
-  - `LLIL_PUSH_CALLER_FRAME`/`LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` leave the generic enum
-    (`ir/llil/llil.py:74-77`) for `LowLevelILFalcomOperation`, numbered after `LLIL_DEBUG_LOG` like the global ops.
-  - `LLILFormatter`'s ED9 shapes (`REG[n] = STACK[--sp]`, `if (STACK[--sp] ...)`, `ir/llil/llil_builder.py:786-805`)
-    move to `FalcomLLILFormatter`.
-  - "Parameters are on the stack at entry" (`_seed_entry_state`, `ir/llil/llil_builder.py:117-123`) becomes a
-    `FalcomVMBuilder` override; the generic default starts with an empty stack.
+- **Small moves, done by the opcode-table plan** (Step 7 `89063e4`, no output change; Step 7b `f8f4682` changed only
+  the `POP_TO_DEREF` lines of `.llil.asm`):
+  - `LLIL_PUSH_CALLER_FRAME`/`LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` live only in `LowLevelILFalcomOperation`
+    (`falcom/ed9/ir/llil/llil_ext.py`) with the global ops, numbered after `LLIL_DEBUG_LOG`.
+  - The pop shapes are `FalcomLLILFormatter`'s: a shape is Falcom's when the pop it shows is done by a
+    `FalcomVMBuilder` method that hides it (`set_reg`, `pop_jmp_zero`/`pop_jmp_not_zero`, `pop_to`, `pop_to_deref`:
+    `REG[n] = STACK[--sp]`, `if (STACK[--sp] ...)`, two `= STACK[--sp]` stores, `*ptr = STACK[--sp]`; `set_global`'s
+    `GLOBAL[n] = STACK[--sp]` already was). The generic `LLILFormatter` prints the IR's own text; the binary/unary
+    expansion (`rhs = STACK[--sp]` ...) stays generic, since the generic builder's binary and unary operations pop
+    their operands.
+  - Kept generic: "parameters are on the stack at entry" (`_seed_entry_state`, `ir/llil/llil_builder.py`) - the
+    generic slot rule (`_holds_parameter`) and `tests/test_llil_slot_lifetime.py` assume parameters at the frame base.
 - **Game-specific by design:** all of `codegen/` - the TypeScript header (`generate_typescript_header`: `GLOBALS`,
   `REGS`, `debug.log`, `extern_call`, `syscall`), the syscall and extern-call rendering, and its use of the signature
   database; no change planned. If a second game ever needs different output, that is the time to move or split it.

@@ -26,12 +26,12 @@ half.
 
 | Path | Responsibility |
 | --- | --- |
-| `ir/llil/llil.py` | Node model: `LowLevelILOperation`, the `LowLevelILExpr`/`LowLevelILStatement` split, every generic node, `LowLevelILBasicBlock`, `LowLevelILFunction` (instruction numbering, `build_cfg()`), `WORD_SIZE`. |
-| `ir/llil/llil_builder.py` | `LowLevelILBuilder`: stack pointer and virtual stack, push/pop, slot storage (`_holds_parameter`), per-edge stack state (`StackSnapshot`, `save_stack_for_offset`, `_record_edge_state`); `LLILFormatter` for the `.llil.asm` text and `.llil.dot` graphs. |
-| `falcom/ed9/ir/llil/llil_builder.py` | `FalcomVMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `EMPTY_STACK_SP`, `finalize()`; `FalcomLLILFormatter`. |
-| `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILPushCallerFrame`, `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILDebugLog`. |
+| `ir/llil/llil.py` | Node model: the generic `LowLevelILOperation`, the `LowLevelILExpr`/`LowLevelILStatement` split, every generic node, `LowLevelILBasicBlock`, `LowLevelILFunction` (instruction numbering, `build_cfg()`), `WORD_SIZE`. |
+| `ir/llil/llil_builder.py` | `LowLevelILBuilder`: stack pointer and virtual stack, push/pop, slot storage (`_holds_parameter`), per-edge stack state (`StackSnapshot`, `save_stack_for_offset`, `_record_edge_state`); `LLILFormatter` for the `.llil.asm` text and `.llil.dot` graphs (each instruction's own text, the binary/unary expansion). |
+| `falcom/ed9/ir/llil/llil_builder.py` | `FalcomVMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `EMPTY_STACK_SP`, `finalize()`; `FalcomLLILFormatter` (the pops the builder hides, see Formatting). |
+| `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILPushCallerFrame`, `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILDebugLog`; their operations in `LowLevelILFalcomOperation`. |
 | `falcom/ed9/ir/llil/constants.py` | ED9 constants the call setups push: function ID, return-address block, script pointer, script name. |
-| `falcom/ed9/ir/llil/vm_lifter.py` | `ED9VMLifter.lift_function()`: the production entry point, one `match` arm per opcode. |
+| `falcom/ed9/ir/llil/vm_lifter.py` | `ED9VMLifter.lift_function()`: the production entry point, a `match` arm per opcode - the binary opcodes share one, picked by the opcode table's kind (`BINARY_BUILDER_METHODS` names each one's builder operation), and a local `CALL`'s argument count comes from its stack effect. |
 | `ir/llil/lifters/`, `ir/llil/passes/` | Empty placeholder packages. |
 
 ## Node Model
@@ -181,8 +181,13 @@ its token. A float prints through `str()`: a `SourceFloat` (`ir/core/il_literals
 keeps the exact decoded value and attaches the `.py`'s spelling, `ScpValue.float_literal`) prints that
 text, a plain float its exact `repr`. A pushed `SourceFloat` also gets its bits from
 `FalcomLLILFormatter`: `STACK[sp] = 27.2 ; [5] f32 0x41D99998, raw 0x90766666` (`f32` is what the VM
-computes with, `raw` the stored word). `hidden_for_formatter` drops the `SpAdd` lines that form
-already spells out. `to_dot()` draws a function's CFG (`.llil.dot`).
+computes with, `raw` the stored word). `hidden_for_formatter` drops an `SpAdd` line when the
+instruction's own line already spells out the stack action. `SET_REG`, `SET_GLOBAL`, `POP_JMP_*`,
+`POP_TO` and `POP_TO_DEREF` pop with their `SpAdd` hidden, so `FalcomLLILFormatter` shows the pop on
+their own line (`REG[0] = STACK[--sp]  ; ...`, `GLOBAL[0] = STACK[--sp] ; ...`,
+`if (STACK[--sp] EQ 0) goto ...`, `STACK[1] = STACK[--sp] ; ...`, `*STACK[fp + 3] = STACK[--sp] ; ...`);
+the generic `LLILFormatter` prints those instructions' own text. `to_dot()` draws a function's CFG
+(`.llil.dot`).
 
 ## Testing
 
@@ -190,9 +195,10 @@ already spells out. `to_dot()` draws a function's CFG (`.llil.dot`).
 `tests/test_llil_call_script_no_return.py`, `tests/test_llil_deref.py` (pointer opcodes),
 `tests/test_llil_frame_addr.py` / `tests/test_llil_frame_store.py` / `tests/test_llil_slot_lifetime.py`
 (parameter slots), `tests/test_llil_lift_order.py` (lifting order, per-edge state, numbering),
-`tests/test_llil_stack_sync.py` (`POP`/`POP_N` and the virtual stack), and
-`tests/test_scp_stack_simulation.py` (the parser's simulation). `demos/llil_demo.py` builds small
-functions by hand.
+`tests/test_llil_stack_sync.py` (`POP`/`POP_N` and the virtual stack),
+`tests/test_scp_stack_simulation.py` (the parser's simulation), and `tests/test_stack_effects.py` (the
+lifter, the parser and the debug-record tracker against the opcode table's stack effects).
+`demos/llil_demo.py` builds small functions by hand.
 
 ## Open Items
 

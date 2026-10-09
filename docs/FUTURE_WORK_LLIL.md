@@ -147,8 +147,8 @@ byte.
   fails the compile at the `.py` line - what it checks, its message and its limits are in
   `docs/LLIL_DSL.md` §1. All 1,082 `sora2_1.0` scripts pass in both decompile modes. It replaced the
   earlier design of a writer-side walker over an effect table, a second stack model next to the
-  parser's; moving the parser's per-opcode stack effects into the opcode table is a separate plan
-  (`notes/opcode_table_handoff.md`). Checking an HLIL DSL `EmitLLIL` list before anything is written
+  parser's; the per-opcode stack effects have since moved into the opcode table (the opcode-table plan,
+  `notes/plans/archive/opcode-table.md`). Checking an HLIL DSL `EmitLLIL` list before anything is written
   stays with the HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Mixing LLIL and HLIL).
 - **Hook callbacks** (item 19; Step 10, done), moved here from the HLIL DSL work. Every generated script
   imports `<stem>_hook`, but the writer had nothing for a hook to register with. Now a hook can replace a
