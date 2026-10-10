@@ -174,15 +174,21 @@ class TestStackMistakes(CheckTestCase):
 
         self.assertCheckFails(rf"{at(__file__, 'dead store')}SetArg: POP_TO at {HEX}: addresses slot 1 \(above the stack\)$")
 
-    def test_unreachable_code_is_not_checked(self):
+    def test_unreachable_code_is_not_stack_checked(self):
+        '''Only warned about (TestUnreachableCode)'''
         @self.writer.LLILCode()
         def Dead():
             JMP('dead_end')
-            POP(WORD_SIZE)
+            POP(WORD_SIZE)                          # line: dead pop
             label('dead_end')
             RETURN()
 
-        self.writer.run({})
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.writer.run({})
+
+        [warning] = [record.getMessage() for record in logs.records]
+        self.assertRegex(warning, rf'^{at(__file__, "dead pop")}Dead: 1 opcode at {HEX}\.\.{HEX} never runs \(no path '
+                                  r'reaches it\); the everyday decompile drops it$')
 
         self.dat.unlink()
         self.writer = self.fresh_writer()
@@ -460,14 +466,15 @@ class TestBackwardReturn(CheckTestCase):
             PUSH_RET_ADDR('first')                  # should name 'second'
             CALL(Callee)                            # line: stale copy
             label('second')
-            RETURN()
+            RETURN()                                # line: never reached
 
         with self.assertLogs(log, 'WARNING') as logs:
             self.writer.run({})
 
-        [warning] = [record.getMessage() for record in logs.records]
-        self.assertRegex(warning, rf'^{at(__file__, "stale copy")}Caller: CALL at {HEX}: returns to {HEX}, '
-                                  r'at or before the call, so it loops back there \(a stale return label\?\)$')
+        [backward, unreachable] = [record.getMessage() for record in logs.records]
+        self.assertRegex(backward, rf'^{at(__file__, "stale copy")}Caller: CALL at {HEX}: returns to {HEX}, '
+                                   r'at or before the call, so it loops back there \(a stale return label\?\)$')
+        self.assertRegex(unreachable, rf'^{at(__file__, "never reached")}Caller: 1 opcode at {HEX}\.\.{HEX} never runs')
         self.assertTrue(self.dat.exists())
 
     def test_warnings_follow_the_script_lines(self):
@@ -527,6 +534,106 @@ class TestBackwardReturn(CheckTestCase):
         line = at(__file__, 'copy over a pushed value')
         self.assertCheckFails(rf'{line}Caller: CALL at {HEX}: the stack on the edge .*; {line}Caller: CALL at {HEX}: '
                               r'returns to 0x[0-9A-F]+, at or before the call')
+
+
+class TestUnreachableCode(CheckTestCase):
+    '''Code no path reaches compiles with one warning per range, at its first opcode's line: it never runs, and the
+    everyday decompile drops it. A script can turn it off'''
+
+    def assert_warns(self, *patterns: str):
+        '''run() writes the .dat and logs one warning per pattern, each matching from its start'''
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.writer.run({})
+
+        messages = [record.getMessage() for record in logs.records]
+        self.assertEqual(len(messages), len(patterns), messages)
+        for message, pattern in zip(messages, patterns):
+            self.assertRegex(message, f'^{pattern}')
+
+        self.assertTrue(self.dat.exists())
+
+    def test_code_between_a_call_and_its_return_label_warns(self):
+        @self.writer.LLILCode()
+        def Callee():
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Caller():
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('ret')
+            CALL(Callee)
+            PUSH_INT(5)                             # line: skipped by the call
+            POP(WORD_SIZE)
+            label('ret')
+            RETURN()
+
+        self.assert_warns(rf'{at(__file__, "skipped by the call")}Caller: 2 opcodes at {HEX}\.\.{HEX} never run \(no '
+                          r'path reaches them\); the everyday decompile drops them$')
+
+    def test_code_after_an_early_return_is_one_warning(self):
+        '''The rest of the body, branches and labels included, in a function that isn't the last'''
+        @self.writer.LLILCode()
+        def First():
+            RETURN()                                # an early return
+            GET_REG(0)                              # line: old body
+            POP_JMP_ZERO('end')
+            PUSH_INT(1)
+            POP(WORD_SIZE)
+            label('end')
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Last():
+            RETURN()
+
+        self.assert_warns(rf'{at(__file__, "old body")}First: 5 opcodes at {HEX}\.\.{HEX} never run ')
+
+    def test_code_only_another_function_jumps_to_is_reached(self):
+        '''Pin: all functions' code at once, in offset order - B's tail is A's, and B's own RETURN comes before it'''
+        @self.writer.LLILCode()
+        def A():
+            JMP('shared')                           # line: jump into B
+
+        @self.writer.LLILCode()
+        def B():
+            RETURN()
+            label('shared')
+            PUSH_INT(1)
+            POP(WORD_SIZE)
+            RETURN()
+
+        self.assert_warns(rf"{at(__file__, 'jump into B')}A: jumps to label 'shared' in B \(another function\)$")
+
+    def test_body_without_a_gap_logs_nothing(self):
+        '''Pin: both arms and the join are reached'''
+        @self.writer.LLILCode()
+        def Main():
+            GET_REG(0)
+            POP_JMP_ZERO('else_')
+            PUSH_INT(1)
+            JMP('join')
+            label('else_')
+            PUSH_INT(2)
+            label('join')
+            POP(WORD_SIZE)
+            RETURN()
+
+        with self.assertNoLogs(log, 'WARNING'):
+            self.writer.run({})
+
+    def test_turned_off_logs_nothing(self):
+        '''Pin: scena.warn_unreachable_code = False'''
+        self.writer.warn_unreachable_code = False
+
+        @self.writer.LLILCode()
+        def Dead():
+            RETURN()
+            PUSH_INT(1)
+            POP(WORD_SIZE)
+            RETURN()
+
+        with self.assertNoLogs(log, 'WARNING'):
+            self.writer.run({})
 
 
 class TestLocations(CheckTestCase):

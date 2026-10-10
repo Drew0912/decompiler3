@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 '''Text of the generated LLIL DSL .py (header, hook import, label spacers, footer, the omitted-commons comment),
-scena2py's recursion limit and summary, the opt-in hook template, and LF
-line endings in every generated text file (scena2py.process_file, the common-library generator, the round-trip
+scena2py's recursion limit and summary, the opt-in hook template, a fidelity script compiling back to its bytes,
+and LF line endings in every generated text file (scena2py.process_file, the common-library generator, the round-trip
 validator's intermediate scripts).'''
 
 from pathlib import Path
@@ -37,6 +37,7 @@ from tests.shared.scp_writer_test_utils import fresh_writer
 
 TEST_FILE = SORA2_SCRIPTS / 'ai/ai_chr5122_e00.dat'
 SMALL_FILE = SORA2_SCRIPTS / 'scena/e0000.dat'
+DEAD_CODE_FILE = SORA2_SCRIPTS / 'ai/ai_chr5121_e01.dat'    # has unreachable code
 PYTHON_DEFAULT_RECURSION_LIMIT = 1000
 LABEL_LINE = re.compile(r"^ *label\('[^']*'\)( +# .*)?$")     # with its depth comment, if any
 
@@ -350,6 +351,31 @@ class TestHookTemplateCompiles(unittest.TestCase):
         self.assertEqual(max(functions, key = lambda func: func.offset).name, 'HookExtra')
         [call] = [inst for inst in parser.get_instructions(by_name['HookExtra']) if inst.mnemonic == 'CALL']
         self.assertEqual(call.operands[0].value, by_name['Init'].index)
+
+
+class TestFidelityScriptCompiles(unittest.TestCase):
+    '''A fidelity decompile of a script with dead code compiles back to its own bytes, warning about that dead code'''
+
+    def setUp(self):
+        require(DEAD_CODE_FILE)
+        out = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        self.script = out / DEAD_CODE_FILE.with_suffix('.py').name
+        decompile_to_python(DEAD_CODE_FILE, self.script, round_trip = True, keep_unreachable_code = True)
+        self.text = self.script.read_text(encoding = 'utf-8')
+
+    def compiled(self, text: str) -> bytes:
+        '''text compiled in memory'''
+        self.script.write_text(text, encoding = 'utf-8', newline = '\n')
+        fresh_writer()
+        g = runpy.run_path(str(self.script), run_name = 'fidelity_check')
+        return g['scena'].build(g)
+
+    def test_same_bytes_with_only_unreachable_code_warnings(self):
+        with self.assertLogs(log, 'WARNING') as logs:
+            data = self.compiled(self.text)
+
+        self.assertEqual(data, DEAD_CODE_FILE.read_bytes())
+        self.assertEqual([message for message in logs.output if 'never run' not in message], [])
 
 
 class TestFooter(unittest.TestCase):

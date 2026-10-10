@@ -102,6 +102,9 @@ class ScpWriter:
     # Check that the compiled bytes decompile again (disassemble and lift), with errors pointing at script lines
     check_compiled = True
 
+    # With check_compiled: warn about code no path reaches, at its script line - a fidelity script's own dead code too
+    warn_unreachable_code = True
+
     def __init__(self):
         # The script and what it registers
         self.dat_name: str = None                            # the .dat create_scp_writer() names; None before it
@@ -366,7 +369,8 @@ class ScpWriter:
         data, code_end = self._write_file(hdr, code)
         if self.check_compiled:
             functions = [CheckedFunction(f.name, f.entry.offset, f.body) for f in self.functions]
-            CompileCheck(self.dat_name, functions, self.source_map, self.code_offset).run(data, code_end)
+            CompileCheck(self.dat_name, functions, self.source_map, self.code_offset,
+                         warn_unreachable_code = self.warn_unreachable_code).run(data, code_end)
 
         return data
 

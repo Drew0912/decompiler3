@@ -157,10 +157,18 @@ it loops back there`): valid VM code - a loop that jumps out between the label a
 almost always a copied call that kept the old label. A label right at the call fails the stack check
 instead, and any failure in a function with such a call carries the warning as a note. A failed check is
 a failed compile: no `.dat` is written, an older one stays, and the writer is spent like after any failed
-compile. Not checked: unreachable code (the parser never simulates it) and a stack that balances but
-reads the wrong slot. A read or write outside the live stack fails at once; decompiling a game `.dat`
-only warns about it. The check costs about twice the compile itself (`mp0000_ev`, a 1.6 MB script:
-about 4 s on top of 1.7 s); while it is on, each opcode also records where it was emitted.
+compile. Code no path reaches (code between a call and its return label, or after a `RETURN`) isn't
+simulated, so its stack isn't checked, but it compiles with one warning per range, at its first opcode's
+line: it never runs, and the everyday decompile drops it.
+```
+WARNING   test.py:31: A: 2 opcodes at 0x3D..0x45 never run (no path reaches them); the everyday decompile drops them
+```
+A fidelity decompile keeps the game's own dead code, which warns the same way. A script turns the
+warning off with `scena.warn_unreachable_code = False` (`ScpWriter.warn_unreachable_code`, on by
+default; turning the compile check off also silences it). Not checked: a stack that balances but reads
+the wrong slot. A read or write outside the live stack fails at once; decompiling a game `.dat` only
+warns about it. The check costs about twice the compile itself (`mp0000_ev`, a 1.6 MB script: about 4 s
+on top of 1.7 s); while it is on, each opcode also records where it was emitted.
 
 ## 2. Round-Trip Policy
 
@@ -179,7 +187,7 @@ Two tiers, in priority order:
 2. **Byte-exact round trip — nice to have, low priority.** `source.dat → out.py → c.dat` with
    `c.dat == source.dat`. Needs `round_trip=True, keep_unreachable_code=True` — this also disables
    the common-function library (§3), so this path behaves exactly as it did before the library
-   existed.
+   existed. The script it writes keeps the original's dead code, which its compile warns about (§1).
 
 **Measured on the full sora2_1.0 corpus** (1082 files, `tools/scp_roundtrip_validator.py
 --logic-round-trip`, before the common-function library existed): all 1082 files reach the fixed
@@ -468,8 +476,8 @@ only, check `get_scp_writer().current_function.name`. Pitfalls:
 - Emitting replacement opcodes without returning `True` writes both; the compile check notices only when that
   breaks the stack.
 - Nothing a callback emits after a call opcode it emits runs: the call returns to the label after the triggering
-  opcode, so the rest is unreachable, and the compile check doesn't look at unreachable code. To add code after a
-  call, trigger on the first opcode after its return label (such as `GET_REG`).
+  opcode, so the rest is unreachable: the compile check doesn't simulate it, only warns that it never runs, at the
+  callback's line. To add code after a call, trigger on the first opcode after its return label (such as `GET_REG`).
 - A drop that breaks the stack is reported where the stack breaks, at a later kept opcode (often the `RETURN`), never
   at the callback.
 - Labels a callback emits need fresh names (`genLabel()`): a fixed name fails on the callback's second hit, and that

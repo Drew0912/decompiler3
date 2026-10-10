@@ -92,6 +92,8 @@ class TestWrittenOnlyOnSuccess(WriterTestCase):
 
 class TestLabels(WriterTestCase):
     def test_label_at_the_end_of_a_function_is_where_the_next_starts(self):
+        self.writer.warn_unreachable_code = False       # B's skipped pushes are on purpose
+
         @self.writer.LLILCode()
         def A():
             JMP('a_end')
@@ -233,7 +235,9 @@ class TestDebugArgc(WriterTestCase):
         self.assertRegex(message, '^' + at(__file__, marker) + re.escape(f'Main: {expected}') + '$')
 
     def test_script_call_in_unreachable_code_without_a_caller_frame_warns(self):
-        '''The compile check skips unreachable code'''
+        '''The compile check doesn't simulate unreachable code; its warning about it is off here'''
+        self.writer.warn_unreachable_code = False
+
         @self.writer.LLILCode()
         def Main():
             DEBUG_SET_LINENO(1)

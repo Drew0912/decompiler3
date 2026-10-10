@@ -1515,6 +1515,40 @@ class TestOpcodeCallbacks(HookTestCase):
 
         self.assertEqual(hook.seen, [ED9Opcode.PUSH_INT, ED9Opcode.PUSH_INT, ED9Opcode.POP, ED9Opcode.RETURN])
 
+    def test_code_emitted_after_an_emitted_call_warns(self):
+        '''docs/LLIL_DSL.md's pitfall: the call returns to the label after the triggering opcode, so what the callback
+        emits after it never runs - warned about at the callback's line, naming the trigger'''
+        hook = self.hook('''
+            def call_then_more(opcode, *args):
+                if opcode == ED9Opcode.CALL:
+                    CALL(*args)
+                    PUSH_INT(9)                         # line: after the call
+                    POP(WORD_SIZE)
+                    return True
+
+            registerOpcodeCallback(call_then_more)
+        ''')
+
+        @self.writer.LLILCode()
+        def Callee():
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Target():
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('ret')
+            CALL(Callee)                                # line: trigger call
+            label('ret')
+            RETURN()
+
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.writer.build({})
+
+        [warning] = [record.getMessage() for record in logs.records]
+        trigger = location(__file__, 'trigger call')
+        self.assertRegex(warning, rf'^{at(hook.__file__, "after the call")}\(opcode callback call_then_more, '
+                                  rf'triggered at {trigger}\) Target: 2 opcodes at {HEX}\.\.{HEX} never run ')
+
 
 if __name__ == '__main__':
     unittest.main()
