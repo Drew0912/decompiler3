@@ -31,6 +31,8 @@ from tests.shared.scp_asm import (
 
 LOOP_LIMIT = 10
 OUTSIDE_OFFSET = 0x1000
+EARLIER_FUNCTION_START = 0                          # the first function's code, before the main one
+BACKWARD_RETURN_TEXT = 'at or before the call, so it loops back there (a stale return label?)'
 RETURN_STRING = '\r'                                # its first byte decodes as RETURN
 
 
@@ -47,6 +49,18 @@ def assert_fails_at(test: unittest.TestCase, program: Program, offset: int, mnem
     error = caught.exception
     test.assertEqual(str(error), f'{FUNC_NAME}: {mnemonic} at 0x{offset:X}: {text}')
     test.assertEqual((error.function, error.offset, error.mnemonic), (FUNC_NAME, offset, mnemonic))
+
+
+def assert_warns_backward_return(test: unittest.TestCase, program: Program, call: str, mnemonic: str,
+                                 target: int) -> tuple[ScpParser, list[Function]]:
+    '''Disassembly succeeds, logging exactly the warning for the main function's call at label call returning to
+    target; (parser, functions)'''
+    with test.assertLogs(log, 'WARNING') as logs:
+        parser, functions = program.disassemble()
+
+    test.assertEqual([record.getMessage() for record in logs.records], [
+        f'{FUNC_NAME}: {mnemonic} at 0x{program.label(call):X}: returns to 0x{target:X}, {BACKWARD_RETURN_TEXT}'])
+    return parser, functions
 
 
 def blocks_by_offset_of(entry_block) -> dict:
@@ -401,6 +415,67 @@ class TestLocalCalls(unittest.TestCase):
         assert_fails_at(self, Program(main_function(caller), returning_callee()), 0xC, 'CALL',
                         f'return offset 0x{OUTSIDE_OFFSET:X} is outside the function')
 
+    def test_return_address_in_an_earlier_function_is_outside(self):
+        '''The callee laid out first, so the two function IDs swap'''
+        caller = Asm()
+        caller.push_raw(CALLEE_ID); caller.push_raw(EARLIER_FUNCTION_START)
+        caller.label('call'); caller.call(CALLER_ID); caller.ret()
+        program = Program(returning_callee(), main_function(caller))
+        assert_fails_at(self, program, program.label('call'), 'CALL',
+                        f'return offset 0x{EARLIER_FUNCTION_START:X} is outside the function')
+
+    def test_return_label_at_the_function_start_warns(self):
+        caller = Asm()
+        caller.label('top'); caller.push_raw(CALLER_ID); caller.push_raw('top')
+        caller.label('call'); caller.call(CALLEE_ID); caller.ret()
+        program = Program(main_function(caller), returning_callee())
+        parser, functions = assert_warns_backward_return(self, program, 'call', 'CALL', program.label('top'))
+
+        self.assertEqual(list(functions[0].backward_returns), [program.label('call')])
+        lift_all(parser, functions)
+
+    def test_return_label_on_the_call_warns_then_fails(self):
+        '''The call pops its setup, so the edge back to itself never matches: the warning, then the stack failure'''
+        caller = Asm()
+        caller.push_raw(CALLER_ID); caller.push_raw('call'); caller.label('call'); caller.call(CALLEE_ID); caller.ret()
+        program = Program(main_function(caller), returning_callee())
+        with self.assertLogs(log, 'WARNING') as logs, self.assertRaises(ScpDisassemblyError):
+            program.disassemble()
+
+        call = program.label('call')
+        self.assertIn(f'{FUNC_NAME}: CALL at 0x{call:X}: returns to 0x{call:X}, {BACKWARD_RETURN_TEXT}',
+                      [record.getMessage() for record in logs.records])
+
+    def test_return_label_on_the_first_setup_push_warns(self):
+        caller = Asm()
+        caller.get_reg(REG_INDEX); caller.pop(WORD_SIZE)
+        caller.label('setup'); caller.push_raw(CALLER_ID); caller.push_raw('setup')
+        caller.label('call'); caller.call(CALLEE_ID); caller.ret()
+        program = Program(main_function(caller), returning_callee())
+        assert_warns_backward_return(self, program, 'call', 'CALL', program.label('setup'))
+
+    def test_copied_call_with_a_stale_return_label_warns(self):
+        caller = Asm()
+        caller.push_raw(CALLER_ID); caller.push_raw('first'); caller.call(CALLEE_ID); caller.label('first')
+        caller.push_raw(CALLER_ID); caller.push_raw('first')                           # should name 'second'
+        caller.label('call'); caller.call(CALLEE_ID); caller.label('second'); caller.ret()
+        program = Program(main_function(caller), returning_callee())
+        assert_warns_backward_return(self, program, 'call', 'CALL', program.label('first'))
+
+    def test_call_looping_back_with_an_exit_only_warns(self):
+        '''while (REG) callee() with the return as the back edge is valid: a warning, not a failure'''
+        caller = Asm()
+        caller.label('top'); caller.get_reg(REG_INDEX); caller.jz('done')
+        caller.label('body'); caller.push_raw(CALLER_ID); caller.push_raw('top'); caller.label('call')
+        caller.call(CALLEE_ID)
+        caller.label('done'); caller.ret()
+        program = Program(main_function(caller), returning_callee())
+        parser, functions = assert_warns_backward_return(self, program, 'call', 'CALL', program.label('top'))
+
+        call_block = blocks_by_offset(functions[0])[program.label('body')]
+        self.assertEqual(successors(call_block), [program.label('top')])
+        lift_all(parser, functions)
+
     def test_equal_setups_on_both_branches_are_rewritten(self):
         caller = Asm()
         caller.get_reg(REG_INDEX); caller.jz('right')
@@ -469,6 +544,13 @@ class TestScriptCalls(unittest.TestCase):
 
         self.assertEqual(successors(functions[0].entry_block), [program.label('resume')])
         lift_all(parser, functions)
+
+    def test_frame_returning_before_itself_warns(self):
+        caller = Asm()
+        caller.label('top'); caller.frame('top'); caller.push_int(LEFT_VALUE)
+        caller.label('call'); caller.call_script(1); caller.ret()
+        program = Program(main_function(caller))
+        assert_warns_backward_return(self, program, 'call', 'CALL_SCRIPT', program.label('top'))
 
     def test_call_script_without_a_frame_raises(self):
         caller = Asm()

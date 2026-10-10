@@ -441,6 +441,94 @@ class TestRunOn(CheckTestCase):
         self.assertEqual({func.name: func.runs_on and func.runs_on.mnemonic for func in functions}, {'A': 'SET_REG', 'B': None})
 
 
+class TestBackwardReturn(CheckTestCase):
+    '''A call whose return label is at or before it loops back there: valid VM code (a loop that jumps out ends), so it
+    compiles, with a warning at the call's line - a copied call that kept the old label is the usual cause'''
+
+    def test_copied_call_with_a_stale_label_warns_at_its_line(self):
+        @self.writer.LLILCode()
+        def Callee():
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Caller():
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('first')
+            CALL(Callee)
+            label('first')
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('first')                  # should name 'second'
+            CALL(Callee)                            # line: stale copy
+            label('second')
+            RETURN()
+
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.writer.run({})
+
+        [warning] = [record.getMessage() for record in logs.records]
+        self.assertRegex(warning, rf'^{at(__file__, "stale copy")}Caller: CALL at {HEX}: returns to {HEX}, '
+                                  r'at or before the call, so it loops back there \(a stale return label\?\)$')
+        self.assertTrue(self.dat.exists())
+
+    def test_warnings_follow_the_script_lines(self):
+        '''The parser decodes the later call first; the warnings still come in line order'''
+        @self.writer.LLILCode()
+        def Callee():
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Caller():
+            GET_REG(0)
+            POP_JMP_ZERO('a')
+            JMP('b')
+            label('a')
+            GET_REG(0)
+            POP_JMP_ZERO('end')
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('a')
+            CALL(Callee)                            # line: first call
+            label('b')
+            GET_REG(0)
+            POP_JMP_ZERO('end')
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('b')
+            CALL(Callee)                            # line: second call
+            label('end')
+            RETURN()
+
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.writer.run({})
+
+        prefixes = [at(__file__, 'first call'), at(__file__, 'second call')]
+        self.assertEqual(len(logs.records), len(prefixes))
+        for record, prefix in zip(logs.records, prefixes):
+            self.assertRegex(record.getMessage(), f'^{prefix}Caller: CALL at ')
+
+    def test_failure_in_its_function_carries_the_warning(self):
+        '''A stale label with a value pushed in between also breaks the stack: the failure keeps the hint'''
+        @self.writer.LLILCode()
+        def Callee():
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Caller():
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('first')
+            CALL(Callee)
+            label('first')
+            PUSH(1)
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('first')                  # should name 'second'
+            CALL(Callee)                            # line: copy over a pushed value
+            label('second')
+            POP(WORD_SIZE)
+            RETURN()
+
+        line = at(__file__, 'copy over a pushed value')
+        self.assertCheckFails(rf'{line}Caller: CALL at {HEX}: the stack on the edge .*; {line}Caller: CALL at {HEX}: '
+                              r'returns to 0x[0-9A-F]+, at or before the call')
+
+
 class TestLocations(CheckTestCase):
     def test_unusual_slot_warning_has_its_line(self):
         '''A valid script reading a caller-frame slot compiles; the parser's warning gets the line, once'''

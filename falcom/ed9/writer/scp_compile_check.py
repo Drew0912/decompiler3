@@ -49,14 +49,17 @@ class CompileCheck:
         """The compiled bytes disassemble and lift again; a failure names the script line that emitted the failing
         opcode, or the failing function's def. A function that runs on into the next function's code (no RETURN) is a
         warning while the bytes still decompile, and a note on the failure when they don't; the parser's warnings for
-        unusual slots get their script line too."""
+        unusual slots and for a call returning at or before itself get their script line too, and the latter becomes
+        a note on a failure in its function."""
         try:
             parser, parsed_functions = require_decompilable(data, self.dat_name, code_end)
 
         except ScpFunctionError as e:
-            note = self._run_on_note(e.function, e.runs_on)
+            notes = [self._run_on_note(e.function, e.runs_on)]
+            notes += [self._failure_text(e.function, text, call)
+                      for _, (call, text) in sorted(e.backward_returns.items())]
             message = f'{self._failure_prefix(e.function, e.offset)}{e}'
-            raise CompileCheckError(f'{message}; {note}' if note else message) from e
+            raise CompileCheckError('; '.join([message, *(note for note in notes if note)])) from e
 
         except Exception as e:
             raise CompileCheckError(f'{self.dat_name}: {e}') from e
@@ -72,6 +75,10 @@ class CompileCheck:
                 ref = parsed_function.stack_layout.slot_refs.get(inst.offset)
                 if ref is not None and ref.unusual:
                     log.warning(self._failure_text(parsed_function.name, f'addresses {ref}', inst))
+
+                backward_return = parsed_function.backward_returns.get(inst.offset)
+                if backward_return is not None:
+                    log.warning(self._failure_text(parsed_function.name, backward_return[1], inst))
 
     def _run_on_note(self, function_name: str | None, inst: Instruction | None) -> str | None:
         """How the function runs on into the next function's code, located: it has no code at all, or inst runs past
@@ -111,8 +118,8 @@ class CompileCheck:
 
 def require_decompilable(data: bytes, name: str, code_end: int) -> tuple[ScpParser, list[Function]]:
     """Raise the parser's or the lifter's error when data, whose code ends at code_end, doesn't decompile again; return
-    the quiet parse, whose warnings (run-ons, unusual slots) the caller reports. Unreachable code is not checked, and a
-    stack that balances but reads the wrong slot passes."""
+    the quiet parse, whose warnings (run-ons, unusual slots, backward returns) the caller reports. Unreachable code is
+    not checked, and a stack that balances but reads the wrong slot passes."""
     parser, functions = ScpParser.load_bytes(data, name, round_trip = False, keep_unreachable_code = False, quiet = True,
                                              reject_outside_stack = True, known_code_end = code_end)
     for func in functions:
@@ -121,6 +128,7 @@ def require_decompilable(data: bytes, name: str, code_end: int) -> tuple[ScpPars
 
         except ED9LiftError as e:
             e.runs_on = func.runs_on
+            e.backward_returns = func.backward_returns
             raise
 
     return parser, functions

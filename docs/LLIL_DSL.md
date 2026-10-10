@@ -151,8 +151,12 @@ WARNING   test.py:41: AEmpty: has no code, so it runs on into B without RETURN
 Nothing follows the last function, so code that runs or jumps past the end of the code fails, in
 whichever function's code it is, and so does a call whose return label is its function's very end
 (`returns to 0x.., past its end (no RETURN after its return label)`). The parser's warning for a slot
-that is legal but unusual (a caller-frame or call-setup slot) gets its line the same way. A failed check is a
-failed compile: no `.dat` is written, an older one stays, and the writer is spent like after any failed
+that is legal but unusual (a caller-frame or call-setup slot) gets its line the same way, and so does its
+warning for a call whose return label is at or before the call (`returns to 0x.., at or before the call, so
+it loops back there`): valid VM code - a loop that jumps out between the label and the call ends - but
+almost always a copied call that kept the old label. A label right at the call fails the stack check
+instead, and any failure in a function with such a call carries the warning as a note. A failed check is
+a failed compile: no `.dat` is written, an older one stays, and the writer is spent like after any failed
 compile. Not checked: unreachable code (the parser never simulates it) and a stack that balances but
 reads the wrong slot. A read or write outside the live stack fails at once; decompiling a game `.dat`
 only warns about it. The check costs about twice the compile itself (`mp0000_ev`, a 1.6 MB script:

@@ -117,6 +117,7 @@ class Function(StrictBase):
     unreachable_blocks : list[BasicBlock]   # code no branch reaches, linearly decoded (not linked into the CFG)
     stack_layout    : StackLayout | None    # set by the parser; a hand-built function has none
     runs_on         : Instruction | None    # the instruction that runs on past its end into the next function's code
+    backward_returns : dict[int, tuple[Instruction, str]]   # call offset -> (call, warning) of each backward return
 
     def __init__(self):
         self.index      = None
@@ -127,6 +128,7 @@ class Function(StrictBase):
         self.unreachable_blocks = []
         self.stack_layout = None
         self.runs_on = None
+        self.backward_returns = {}
 
     def name_hash(self) -> int:
         return hash_func_Name(self.name)

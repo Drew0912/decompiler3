@@ -391,6 +391,7 @@ class ScpFunctionError(ValueError):
         self.offset = offset
         self.mnemonic = mnemonic
         self.runs_on = None         # the function's instruction that ran on into the next function's code first
+        self.backward_returns = {}  # the function's calls returning at or before themselves, as on Function
 
     @classmethod
     def describe(cls, function: str, message, inst: Instruction | None = None) -> str:
@@ -418,8 +419,9 @@ class ScpDisassemblerContext(DisassemblerContext):
     code_end         : int | None = None            # Where the next function's code starts (None: last function)
     known_code_end   : int | None = None            # Where the code ends, when known: nothing may run or jump past it
     reject_outside_stack : bool = False             # fail on a slot outside the live stack instead of only warning
-    quiet            : bool = False                 # no unusual-slot warnings: the caller reports them itself
+    quiet            : bool = False                 # the caller reports the unusual-slot and backward-return warnings
     runs_on          : Instruction | None = None    # the first instruction that runs on past code_end
+    backward_returns : dict = field(default_factory = dict)                 # call offset -> (call, warning)
     current_inst     : Instruction | None = None    # Instruction being simulated
     stack_simulation : list = field(default_factory = list)                 # Simulated stack of the block being decoded
     edge_states      : dict[int, tuple] = field(default_factory = dict)     # block start -> state; later edges match its height
@@ -522,7 +524,8 @@ class ScpDisassemblerContext(DisassemblerContext):
         push.operands = [Operand(descriptor = op_desc, value = value) for op_desc, value in zip(op_descs, values)]
 
     def return_target(self, entry, target: int | None) -> int:
-        """The return offset entry encodes, which must lie in this function's code"""
+        """The return offset entry encodes, which must lie in this function's code; one at or before the call only
+        warns"""
         if target is None:
             self.fail(f'expects a return address, found {format_stack_entry(entry)}', self.current_inst)
 
@@ -532,7 +535,18 @@ class ScpDisassemblerContext(DisassemblerContext):
         if target < self.current_func.offset or (self.code_end is not None and target >= self.code_end):
             self.fail(f'return offset 0x{target:X} is outside the function', self.current_inst)
 
+        if target <= self.current_inst.offset:
+            self.note_backward_return(target)
+
         return target
+
+    def note_backward_return(self, target: int):
+        """A call returning at or before itself loops back to its return label - endless unless code in between jumps
+        out, and almost always a stale label (no game script or decompiled one has it)"""
+        message = f'returns to 0x{target:X}, at or before the call, so it loops back there (a stale return label?)'
+        self.backward_returns[self.current_inst.offset] = (self.current_inst, message)
+        if not self.quiet:
+            log.warning(ScpFunctionError.describe(self.current_func.name, message, self.current_inst))
 
     def enter_block(self, offset: int):
         """Start a block from the state its edges recorded"""
@@ -747,7 +761,7 @@ class ScpParser(StrictBase):
         known_code_end: int | None = None,
     ) -> tuple['ScpParser', list[Function]]:
         """load() for a script already in memory, named name; quiet drops the per-function progress and error lines
-        and the unusual-slot warnings, for a caller that reports them itself (the compile check).
+        and the unusual-slot and backward-return warnings, for a caller that reports them itself (the compile check).
         reject_outside_stack and known_code_end are the compile check's (see the class attributes)."""
         with fileio.FileStream(data, encoding = default_encoding()) as fs:
             parser = cls(fs, name)
@@ -1090,7 +1104,7 @@ class ScpParser(StrictBase):
 
     def disasm_all_functions(self, filter_func = None, quiet: bool = False) -> list[Function]:
         """Disassemble all functions in the SCP file; quiet drops the per-function progress and error lines and the
-        unusual-slot warnings. A function's failure is raised as a ScpDisassemblyError naming it."""
+        unusual-slot and backward-return warnings. A function's failure is raised as a ScpDisassemblyError naming it."""
         disassembled_functions = []
         starts = sorted({func.offset for func in self.functions})
 
@@ -1114,6 +1128,7 @@ class ScpParser(StrictBase):
                 self.require_recorded_edges(func, context)
                 func.stack_layout = context.stack_layout(func.entry_block)
                 func.runs_on = context.runs_on
+                func.backward_returns = context.backward_returns
                 disassembled_functions.append(func)
             except Exception as e:
                 if not quiet:
@@ -1121,6 +1136,7 @@ class ScpParser(StrictBase):
 
                 error = e if isinstance(e, ScpDisassemblyError) else ScpDisassemblyError.at(func.name, e)
                 error.runs_on = context.runs_on
+                error.backward_returns = context.backward_returns
                 if error is e:
                     raise
 
