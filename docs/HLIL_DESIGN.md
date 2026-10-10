@@ -206,8 +206,8 @@ cannot always be expressed that way. The converter may reconstruct that region a
 entered again is rebuilt whole), bounded by `CLONE_STATEMENT_BUDGET` statements per function -
 nested statements counted, a region repeated inside another charged once - and
 `CLONE_MAX_REGION_BLOCKS` blocks per region (both overridable in the converter's constructor, for
-tests). A jump it cannot express - a region it may not repeat, or a merge that falling out of a
-branch would not reach (a loop entered since, or a nearer merge in between) - becomes an
+tests). A merge that falling out of a branch would not reach (a loop entered since, or a nearer merge
+in between) is repeated the same way. A jump it cannot express - a region it may not repeat - becomes an
 `HLILUnstructured` node rather than a fallthrough to whatever follows: the path ends there, visibly.
 
 Nested loop exits are represented with optional labels. The converter maintains a loop stack; a

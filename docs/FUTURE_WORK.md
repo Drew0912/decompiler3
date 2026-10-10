@@ -547,15 +547,14 @@ falcom/ed9/dsl/         # what scripts and hook files import
 
 Since 2026-09-28 a jump the HLIL tree cannot express becomes an `HLILUnstructured` node: loud, but the
 path is lost to the reader (and to a future HLIL DSL). None remains on the sora2_1.0 corpus. On random
-CFGs (`tests/hlil_tests/test_hlil_structuring_fuzz.py`'s generator) 96 of 6,000 are reducible yet get a reachable
-node - a reducible CFG can always be structured, so these are converter gaps; the 14 among the test's
-1,000 seeds are pinned, so a new one fails the suite. Two causes (nodes counted over those 96):
-
-- 57 fall-outs to a merge that a loop lies in front of: a loop with several non-returning exits keeps
-  one as its `break` target, and a path leaving through another one cannot reach the enclosing merge
-  by falling out of the loop body.
-- 46 re-emissions refused because the region reaches the active loop's header, where
-  `_reconstruct_control_flow` would in fact emit `continue` (or at an exit, `break`).
+CFGs (`tests/hlil_tests/test_hlil_structuring_fuzz.py`'s generator) 48 of 6,000 are reducible yet get a reachable
+node - a reducible CFG can always be structured, so these are converter gaps; the 6 among the test's
+1,000 seeds are pinned, so a new one fails the suite. One cause is left (51 nodes over those 48): re-emissions
+refused because the region reaches the active loop's header, where `_reconstruct_control_flow` would in fact
+emit `continue` (or at an exit, `break`). The other, a path leaving a loop with several exits that could not
+fall out to the enclosing merge (57 nodes over 96 CFGs), was fixed 2026-10-10: such a merge is now repeated
+like any other block emitted elsewhere, and a `while (1)` whose first `if` stays in the body picks a `break`
+target as the goto-header loop does.
 
 Options, cheapest first: let `_clone_region_blocks` treat the active loops' headers and exits as
 region boundaries instead of refusing; express a loop with several exits with a labelled block

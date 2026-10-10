@@ -8,7 +8,9 @@ kind, and every test runs the result against its MLIL for every parameter assign
   past the enclosing merge inside a loop (mon5027_c11 AniFieldSwarmAttack), a case falling
   into the next case's code (mp3000 TK_KUNO);
 - loops: an exit through goto-only blocks (CheckAlgoUse's infinite loops), the enclosing stop
-  inside that chain, a goto-only header, a loop entered again after it was emitted;
+  inside that chain, a goto-only header, a loop entered again after it was emitted, a loop whose
+  exits reach the merge of an if or a loop around it (btl_EV_00_12_00 edited) - also when the
+  copies this needs run out of clone budget;
 - a jump HLIL cannot express becomes an HLILUnstructured node, never a fall-through: the node's
   reachability, its handling in the passes, its rendering and the validator's report;
 - converter details: a join after an if emitted once, a loop of goto-only blocks (fuzz seed 1208), a
@@ -40,6 +42,7 @@ from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizatio
 from ir.hlil.passes.pass_dead_code_elimination import DeadCodeEliminationPass
 from ir.hlil.passes.pass_loop_recovery import LoopRecoveryPass
 from codegen.typescript import generate_typescript
+from hlil_path_check import check_function
 from ir_semantic_validator import compare_mlil_hlil
 from tests.shared.hlil_cfg_utils import (
     EARLY_EXIT, SHARED_LOOP, SHARED_LOOP_COPY_STATEMENTS, build_function, to_hlil, structure, classify, hlil_run,
@@ -192,6 +195,59 @@ GOTO_ONLY_LOOP = {
     'B7': ([], ('goto', 'B5')),
 }
 
+# if (a) { while (1) { check; if (p) act0; act1; if (c1) break; act3; if (c2) break; } } else { act7 }  act8 - the
+# loop's header if has both targets in the body, and both breaks reach the enclosing if's merge M
+LEADING_IF_LOOP_IN_IF = {
+    'C':    ([], ('if', 'a', 'TOP', 'ELSE')),
+    'TOP':  (['check'], ('if', 'p', 'ACT0', 'SKIP')),
+    'ACT0': (['act0'], ('goto', 'SKIP')),
+    'SKIP': (['act1'], ('if', 'c1', 'M', 'NEXT')),
+    'NEXT': (['act3'], ('if', 'c2', 'M', 'TOP')),
+    'ELSE': (['act7'], ('goto', 'M')),
+    'M':    (['act8'], ('ret', 0)),
+}
+
+# The same loop inside an outer loop: while (1) { act9; <loop>; act8; if (c3) break; }  act6
+LEADING_IF_LOOP_IN_LOOP = {
+    'E':     (['start'], ('goto', 'OUTER')),
+    'OUTER': (['act9'], ('goto', 'TOP')),
+    'TOP':   (['check'], ('if', 'p', 'ACT0', 'SKIP')),
+    'ACT0':  (['act0'], ('goto', 'SKIP')),
+    'SKIP':  (['act1'], ('if', 'c1', 'M', 'NEXT')),
+    'NEXT':  (['act3'], ('if', 'c2', 'M', 'TOP')),
+    'M':     (['act8'], ('if', 'c3', 'DONE', 'OUTER')),
+    'DONE':  (['act6'], ('ret', 0)),
+}
+
+# if (a) { while (1) { act1; if (c1) { act2; break; } act3; if (c2) { act4; break; } act5; if (c3) { act6; break; } } }
+# else { act7 }  act8 - three exits, each doing work before it reaches M
+THREE_BREAKS_WITH_WORK_IN_IF = {
+    'C':    ([], ('if', 'a', 'TOP', 'ELSE')),
+    'TOP':  (['act1'], ('if', 'c1', 'W2', 'N1')),
+    'W2':   (['act2'], ('goto', 'M')),
+    'N1':   (['act3'], ('if', 'c2', 'W4', 'N2')),
+    'W4':   (['act4'], ('goto', 'M')),
+    'N2':   (['act5'], ('if', 'c3', 'W6', 'TOP')),
+    'W6':   (['act6'], ('goto', 'M')),
+    'ELSE': (['act7'], ('goto', 'M')),
+    'M':    (['act8'], ('ret', 0)),
+}
+
+# if (a) { if (b) { while (1) { act1; if (c1) -> M; act3; if (c2) -> TAIL; } } else { e1 }  M: m } else { e0 }  TAIL -
+# the loop's second exit skips M for the outer if's merge TAIL, which gets a copy there besides its own emission;
+# the copies charge 3 statements in all
+BYPASS_TO_OUTER_MERGE = {
+    'C0':   ([], ('if', 'a', 'C1', 'E0')),
+    'C1':   (['check'], ('if', 'b', 'TOP', 'E1')),
+    'TOP':  (['act1'], ('if', 'c1', 'M', 'N1')),
+    'N1':   (['act3'], ('if', 'c2', 'TAIL', 'TOP')),
+    'E1':   (['e1'], ('goto', 'M')),
+    'M':    (['m'], ('goto', 'TAIL')),
+    'E0':   (['e0'], ('goto', 'TAIL')),
+    'TAIL': (['tail'], ('ret', 0)),
+}
+BYPASS_TO_OUTER_MERGE_CHARGE = 3
+
 
 def var(name: str) -> HLILVar:
     return HLILVar(HLILVariable(name))
@@ -259,6 +315,20 @@ class TestLoopExitsAndHeaders(unittest.TestCase):
         self.assertEqual(calls_emitted(hlil, 'loop'), 2)
 
 
+class TestLoopExitsReachingAnOuterMerge(unittest.TestCase):
+    '''A loop with several exits to the merge of an if or a loop around it: every exit is structured'''
+
+    def test_each_shape_has_no_node(self):
+        for name, blocks in [('in an if', LEADING_IF_LOOP_IN_IF), ('in a loop', LEADING_IF_LOOP_IN_LOOP),
+                             ('exits with work', THREE_BREAKS_WITH_WORK_IN_IF)]:
+            with self.subTest(shape = name):
+                func = build_function('f', blocks)
+                hlil = to_hlil(func)
+                self.assertEqual(classify(func, hlil), ('ok', None))
+                self.assertEqual(unstructured_nodes(hlil, reachable_only = False), [])
+                self.assertTrue(check_function(func, hlil).ok)
+
+
 class TestUnstructuredNodes(unittest.TestCase):
 
     def test_repeated_region_within_the_limits(self):
@@ -278,6 +348,17 @@ class TestUnstructuredNodes(unittest.TestCase):
 
         func, hlil = structure(NESTED_REPEATS, clone_budget = NESTED_REPEATS_CHARGE - 1)
         self.assertEqual(classify(func, hlil)[0], 'loud')
+
+    def test_refused_copy_never_costs_the_merge_its_own_emission(self):
+        func, hlil = structure(BYPASS_TO_OUTER_MERGE, clone_budget = BYPASS_TO_OUTER_MERGE_CHARGE)
+        self.assertEqual(classify(func, hlil), ('ok', None))
+        self.assertEqual(calls_emitted(hlil, 'tail'), 2)
+
+        for budget in range(BYPASS_TO_OUTER_MERGE_CHARGE):
+            with self.subTest(budget = budget):
+                func, hlil = structure(BYPASS_TO_OUTER_MERGE, clone_budget = budget)
+                self.assertEqual(classify(func, hlil)[0], 'loud')
+                self.assertEqual(check_function(func, hlil).uncovered, [])
 
     def test_region_over_the_block_cap(self):
         func, hlil = structure(SHARED_LOOP, max_region_blocks = 0)

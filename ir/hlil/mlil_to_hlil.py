@@ -779,6 +779,7 @@ class MLILToHLILConverter:
                 # Loop condition is not at the header: while(1) with the if inside the body
                 condition = HLILConst(1)
                 header_if_into_body = True
+                exit_block_idx = self._find_loop_break_target(loop_info)
 
             else:
                 print(f'[loop] cannot decide loop body at header {header_label} in {self.mlil_func.name} (treated as non-loop)', file = sys.stderr)
@@ -997,7 +998,8 @@ class MLILToHLILConverter:
         self.visited_blocks = saved_visited.copy()
 
         # The outer stop point is off limits unless it is the merge: reaching it means falling out
-        # of this if, which the pending-merge check allows only when nothing lies in between
+        # of this if, which the pending-merge check allows only when nothing lies in between, and
+        # repeats otherwise
         if stop_at is not None and stop_at != merge_block_idx:
             self.visited_blocks.add(stop_at)
 
@@ -1175,7 +1177,8 @@ class MLILToHLILConverter:
         finally:
             self.cloning_blocks.discard(block_idx)
             self.visited_blocks = saved_visited
-            self.globally_processed |= saved_processed
+            # A copy is charged, never recorded: a block first emitted inside it still gets its own emission
+            self.globally_processed = saved_processed
 
         # Regions re-emitted inside this one were charged already; a refused region gives their share back
         size = self._statement_count(scratch)
@@ -1239,18 +1242,16 @@ class MLILToHLILConverter:
             # Already emitted somewhere else in the function
             if block_idx in self.visited_blocks or block_idx in self.globally_processed:
                 # An enclosing if emits its merge point after itself, so control reaches it by
-                # falling out of this branch - unless a loop or a nearer merge lies in between.
-                if any(merge.block_idx == block_idx for merge in self.pending_merges):
-                    if not self._falls_out_to(block_idx):
-                        target_block.add_statement(
-                            self._unstructured(block_idx, 'merge not reachable by falling out', jump_source))
-
+                # falling out of this branch - unless a loop or a nearer merge lies in between,
+                # and then the merge is repeated here like any other block emitted elsewhere.
+                if self.pending_merges and self._falls_out_to(block_idx):
                     return None
 
                 # Still reachable from here too - several conditions funnelling into one
-                # shared body, or a loop entered again. HLIL has no goto, so repeating it is
-                # the only faithful representation; one that cannot be repeated ends in an
-                # unstructured-jump node rather than falling through.
+                # shared body, a loop entered again, or a merge out of reach of falling out.
+                # HLIL has no goto, so repeating it is the only faithful representation; one
+                # that cannot be repeated ends in an unstructured-jump node rather than falling
+                # through.
                 self._clone_processed_region(block_idx, target_block, stop_at, jump_source)
                 return None
 
