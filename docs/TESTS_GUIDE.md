@@ -39,24 +39,25 @@ need goes in `tests/shared/`.
 
 | Module | Gives |
 |---|---|
-| `corpus.py` | `corpus_file(SORA2_SCRIPTS, 'ai/x.dat')`, a script's path, and `require(path)`, which skips the test when the file is missing |
+| `corpus.py` | `SORA2_SCRIPTS`, the `sora2_1.0` scripts folder (a script is `SORA2_SCRIPTS / 'ai/x.dat'`), and `require(path)` for the corpus skip (below) |
 | `llil_utils.py` | `make_builder(num_params)`: a `FalcomVMBuilder` with one function and its entry block open |
 | `ir_utils.py` | `connect(func)`: an MLIL function's edges from its blocks' last instructions; `concrete_subclasses(base)` |
 | `hlil_cfg_utils.py` | `build_function` and `structure`: small MLIL CFGs from a block spec, and their HLIL; `classify` and `hlil_run`: an oracle that runs MLIL and HLIL side by side |
 | `scp_asm.py` | `Asm` and `Program`: hand-written ED9 bytecode for a real `ScpParser` |
-| `scp_writer_test_utils.py` | `fresh_writer()` (a clean `ScpWriter`), `body_writer()` (one inside a function body, to emit opcodes one at a time), `WriterTestCase` (compiles `test.dat` in a temp folder), `load_module` (a hook or library file as a fresh module), and `marked_line`/`location`/`at` for `file:line` messages |
+| `scp_writer_test_utils.py` | `fresh_writer(dat)` (a clean `ScpWriter` for `dat`), `body_writer()` (one inside a function body, to emit opcodes one at a time), `WriterTestCase` (compiles `test.dat` in a temp folder), `load_module` (a hook or library file as a fresh module), `marked_line`/`location`/`at` for `file:line` messages, and `HEX`, an address in a writer message as a regex |
 
 ## Corpus and generated files
 
-- Tests that read a real script take it from `sora2_1.0/script_en/` through `corpus.py`. Without `sora2_1.0/` they
-  skip.
-- A few tests need the generated common-function library (`falcom/ed9/writer/metadata/common/`, gitignored), made by
-  `python falcom/ed9/writer/scp_writer_gen_common_funcs.py sora2_1.0`. It also rewrites the tracked
-  `falcom/ed9/writer/metadata/common_index.py` and `common_all.py`, so run it on `sora2_1.0` only.
+- A test that reads a real script passes its path through `require(path)`, which skips the test when the file is
+  missing (no `sora2_1.0/`).
+- A few tests need the generated common-function library (`falcom/ed9/writer/metadata/common/`, gitignored); without
+  it they fail (one class skips). Make it with `python falcom/ed9/writer/scp_writer_gen_common_funcs.py sora2_1.0`. It
+  also rewrites the tracked `falcom/ed9/writer/metadata/common_index.py` and `common_all.py`, so run it on `sora2_1.0`
+  only.
 
 ## Adding tests
 
-- Put the file in the folder of the code it tests and set it up like its neighbours:
+- Set the file up like its neighbours:
 
   ```python
   REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -71,5 +72,4 @@ need goes in `tests/shared/`.
   Without the last two lines, `python tests/<folder>/<file>.py` runs nothing and still exits cleanly. A test that
   imports a `tools/` script also adds `sys.path.insert(0, str(REPO_ROOT / 'tools'))` and imports the script by its
   plain module name.
-- A new folder is named `<package or area>_tests` and needs an empty `__init__.py`. Without one, `unittest` discovery
-  skips the folder without an error.
+- A new folder needs an empty `__init__.py`; without one, `unittest` discovery skips it without an error.

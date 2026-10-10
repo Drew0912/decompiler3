@@ -17,19 +17,14 @@ from tests.shared.llil_utils import make_builder
 
 
 def build_function_with_push_stack_addr(num_params: int, offset: int):
-    '''Function with num_params parameters: push_stack_addr(offset), landing on the block's
-    first instruction so its shape is inspectable on its own.
-
-    sp starts at num_params on entry (params are already on the caller's stack), so offset
-    must be negative to reach a parameter slot - mirrors test_llil_frame_store.py's own
-    build_function_with_pop_to convention.
-    '''
+    '''The entry block of a function with num_params parameters whose first instruction is push_stack_addr(offset);
+    sp starts at num_params, so a parameter slot takes a negative offset'''
     builder = make_builder(num_params)
     entry = builder.current_block
 
     builder.push_stack_addr(offset)
 
-    return builder.function, entry
+    return entry
 
 
 class TestPushStackAddrParameterSlot(unittest.TestCase):
@@ -39,7 +34,7 @@ class TestPushStackAddrParameterSlot(unittest.TestCase):
     def test_parameter_slot_emits_frame_addr(self):
         # 1 parameter (slot 0). sp starts at 1 (num_params), so offset -WORD_SIZE targets
         # slot 0 - the sole parameter.
-        _, entry = build_function_with_push_stack_addr(num_params = 1, offset = -WORD_SIZE)
+        entry = build_function_with_push_stack_addr(num_params = 1, offset = -WORD_SIZE)
 
         stack_store = entry.instructions[0]
         self.assertIsInstance(stack_store.value, LowLevelILFrameAddr)
@@ -59,17 +54,14 @@ class TestPushStackAddrParameterSlot(unittest.TestCase):
         self.assertEqual(stack_store.value.slot_index, 1)
 
     def test_frame_offset_is_absolute_slot_times_word_size(self):
-        # 2 parameters (slots 0, 1). The frame offset must come from the absolute slot
-        # index, not the opcode's own sp-relative operand. sp starts at 2 (num_params).
-        _, entry_slot0 = build_function_with_push_stack_addr(num_params = 2, offset = -2 * WORD_SIZE)
-        inst_slot0 = entry_slot0.instructions[0].value
-        self.assertIsInstance(inst_slot0, LowLevelILFrameAddr)
-        self.assertEqual(inst_slot0.offset, 0)
-
-        _, entry_slot1 = build_function_with_push_stack_addr(num_params = 2, offset = -1 * WORD_SIZE)
-        inst_slot1 = entry_slot1.instructions[0].value
-        self.assertIsInstance(inst_slot1, LowLevelILFrameAddr)
-        self.assertEqual(inst_slot1.offset, WORD_SIZE)
+        # 2 parameters (slots 0, 1), sp 2 on entry. The frame offset must come from the absolute slot
+        # index, not the opcode's own sp-relative operand.
+        for offset, frame_offset in ((-2 * WORD_SIZE, 0), (-WORD_SIZE, WORD_SIZE)):
+            with self.subTest(offset = offset):
+                entry = build_function_with_push_stack_addr(num_params = 2, offset = offset)
+                inst = entry.instructions[0].value
+                self.assertIsInstance(inst, LowLevelILFrameAddr)
+                self.assertEqual(inst.offset, frame_offset)
 
 
 class TestPushStackAddrParameterSlotMLIL(unittest.TestCase):
@@ -101,7 +93,7 @@ class TestFrameAddrFormatting(unittest.TestCase):
     '''LLILFormatter renders LowLevelILFrameAddr like its StackAddr sibling'''
 
     def test_simplified_format_shows_pushed_address(self):
-        _, entry = build_function_with_push_stack_addr(num_params = 1, offset = -WORD_SIZE)
+        entry = build_function_with_push_stack_addr(num_params = 1, offset = -WORD_SIZE)
 
         lines = FalcomLLILFormatter.format_instruction_sequence([entry.instructions[0]], indent = '')
 

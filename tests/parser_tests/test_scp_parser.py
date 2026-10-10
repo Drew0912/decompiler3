@@ -1,89 +1,70 @@
 #!/usr/bin/env python3
 '''Unit tests for ScpValue encoding and quote_string'''
 
+import ast
 from pathlib import Path
+import struct
 import sys
+import unittest
 
-# Add project root to path
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from io import BytesIO
 from common import *
 from falcom.ed9 import *
-import ast
-import unittest
-import struct
+
+
+ENDIAN = '<' if default_endian() == 'little' else '>'
+STRING_OFFSET = 0x100
+
+
+def decode(data: bytes, **kwargs) -> ScpValue:
+    '''The ScpValue read from the start of data (kwargs go to the FileStream)'''
+    return ScpValue(fs = fileio.FileStream(**kwargs).OpenMemory(data))
 
 
 class TestScpValue(unittest.TestCase):
-    '''Test ScpValue serialization and deserialization'''
+    '''Each ScpValue type is one 4-byte word and decodes back to its value'''
 
     def test_raw_value(self):
-        '''Test Raw type value'''
-        # Raw value is stored as-is
         raw_val = 0x12345678
-        val = ScpValue(RawInt(raw_val))
-
-        # Serialize
-        data = val.to_bytes()
+        data = ScpValue(RawInt(raw_val)).to_bytes()
         self.assertEqual(len(data), 4)
 
-        # Deserialize
-        fs = fileio.FileStream()
-        fs.OpenMemory(data)
-        val2 = ScpValue(fs = fs)
+        val2 = decode(data)
         self.assertEqual(val2.value, raw_val)
         self.assertEqual(val2.type, ScpValue.Type.Raw)
 
     def test_integer_value(self):
-        '''Test Integer type value'''
         test_values = [0, 1, -1, 100, -100, 0x1FFFFFFF]  # 0x1FFFFFFF is safe max for 30-bit signed
 
         for test_val in test_values:
             with self.subTest(value = test_val):
                 val = ScpValue(test_val)
                 self.assertEqual(val.type, ScpValue.Type.Integer)
-
-                # Serialize
                 data = val.to_bytes()
                 self.assertEqual(len(data), 4)
+                self.assertEqual(struct.unpack(f'{ENDIAN}I', data)[0] >> ScpValue.TYPE_SHIFT, ScpValue.Type.Integer)
 
-                # Check type bits (top 2 bits should be 01)
-                endian = '<' if default_endian() == 'little' else '>'
-                raw = struct.unpack(f'{endian}I', data)[0]
-                type_bits = raw >> 30
-                self.assertEqual(type_bits, ScpValue.Type.Integer)
-
-                # Deserialize
-                fs = fileio.FileStream()
-                fs.OpenMemory(data)
-                val2 = ScpValue(fs = fs)
+                val2 = decode(data)
                 self.assertEqual(val2.value, test_val)
                 self.assertEqual(val2.type, ScpValue.Type.Integer)
 
     def test_float_value(self):
-        '''Test Float type value'''
         test_values = [0.0, 1.0, -1.0, 3.14159, -2.71828, 100.5]
 
         for test_val in test_values:
             with self.subTest(value = test_val):
                 val = ScpValue(test_val)
                 self.assertEqual(val.type, ScpValue.Type.Float)
-
-                # Serialize
                 data = val.to_bytes()
                 self.assertEqual(len(data), 4)
 
-                # Deserialize
-                fs = fileio.FileStream()
-                fs.OpenMemory(data)
-                val2 = ScpValue(fs = fs)
+                val2 = decode(data)
                 self.assertAlmostEqual(val2.value, test_val, places = 5)
                 self.assertEqual(val2.type, ScpValue.Type.Float)
 
     def test_roundtrip(self):
-        '''Test value roundtrip (serialize then deserialize)'''
         test_cases = [
             RawInt(0x12345678),  # Must have top 2 bits as 00 for Raw type
             42,
@@ -95,11 +76,7 @@ class TestScpValue(unittest.TestCase):
         for original_value in test_cases:
             with self.subTest(value = original_value):
                 val1 = ScpValue(original_value)
-                data = val1.to_bytes()
-
-                fs = fileio.FileStream()
-                fs.OpenMemory(data)
-                val2 = ScpValue(fs = fs)
+                val2 = decode(val1.to_bytes())
 
                 self.assertEqual(val1.type, val2.type)
                 if isinstance(original_value, float):
@@ -108,31 +85,13 @@ class TestScpValue(unittest.TestCase):
                     self.assertEqual(val1.value, val2.value)
 
     def test_string_value_deserialize(self):
-        '''Test String type deserialization'''
-        endian = '<' if default_endian() == 'little' else '>'
-
-        # Create a buffer with string data at offset 0x100
-        buffer = BytesIO()
-        buffer.write(b'\x00' * 0x100)  # Padding
-        string_offset = buffer.tell()
-        test_string = "TestFunction"
-        buffer.write(test_string.encode('utf-8') + b'\x00')  # Null-terminated
-
-        # Write ScpValue at beginning pointing to string
-        buffer.seek(0)
-        string_value = string_offset | (ScpValue.Type.String << 30)
-        buffer.write(struct.pack(f'{endian}I', string_value))
-
-        # Parse it
-        buffer.seek(0)
-        fs = fileio.FileStream()
-        fs.OpenMemory(buffer.getvalue())
-        # Set encoding to utf-8 to avoid mbcs encoding error on Linux
-        fs._encoding = 'utf-8'
-        val = ScpValue(fs = fs)
+        '''A String value is the offset of a NUL-terminated string; utf-8, not the platform's default encoding'''
+        text = 'TestFunction'
+        word = struct.pack(f'{ENDIAN}I', ScpValue.Type.String << ScpValue.TYPE_SHIFT | STRING_OFFSET)
+        val = decode(word.ljust(STRING_OFFSET, b'\0') + text.encode('utf-8') + b'\0', encoding = 'utf-8')
 
         self.assertEqual(val.type, ScpValue.Type.String)
-        self.assertEqual(val.value, test_string)
+        self.assertEqual(val.value, text)
 
 
 class TestQuoteString(unittest.TestCase):

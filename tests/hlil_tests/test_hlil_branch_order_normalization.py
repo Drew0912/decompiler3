@@ -63,10 +63,11 @@ def guarded_call(name: str) -> HLILIf:
     return HLILIf(make_condition(), HLILBlock([HLILExprStmt(HLILCall(name, []))]), None)
 
 
-def run_pass(stmt) -> HighLevelILFunction:
+def run_pass(stmt) -> HLILIf:
+    '''stmt after BranchOrderNormalizationPass'''
     func = HighLevelILFunction('test_branch_order')
     func.add_statement(stmt)
-    return BranchOrderNormalizationPass().run(func)
+    return BranchOrderNormalizationPass().run(func).body.statements[0]
 
 
 def first_comment(block: HLILBlock) -> str:
@@ -95,8 +96,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
     def test_reversed_arms_are_swapped_and_condition_negated(self):
         stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(LATE_LINE), make_arm(EARLY_LINE))
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(first_comment(result.true_block), f'line({EARLY_LINE})')
         self.assertEqual(first_comment(result.false_block), f'line({LATE_LINE})')
@@ -105,8 +105,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
     def test_ascending_arms_are_left_alone(self):
         stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(EARLY_LINE), make_arm(LATE_LINE))
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(first_comment(result.true_block), f'line({EARLY_LINE})')
         self.assertEqual(result.condition.op, BinaryOp.GT)
@@ -116,8 +115,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         inner = HLILIf(make_condition(), make_arm(EARLY_LINE), None)
         stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(LATE_LINE), HLILBlock([inner]))
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(first_comment(result.true_block), f'line({LATE_LINE})')
         self.assertEqual(result.condition.op, BinaryOp.GT)
@@ -128,8 +126,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         early_chain = HLILBlock([HLILIf(make_condition(), make_arm(EARLY_LINE), None)])
         stmt = HLILIf(make_condition(BinaryOp.GT), late_chain, early_chain)
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(result.condition.op, BinaryOp.LE)
         self.assertEqual(first_comment(result.true_block.statements[0].true_block),
@@ -146,8 +143,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         shallow = HLILBlock([HLILExprStmt(HLILCall('shallow', []))])
         stmt = HLILIf(make_condition(BinaryOp.GT), deep, shallow)
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(result.condition.op, BinaryOp.LE)
         self.assertIsInstance(result.true_block.statements[0], HLILExprStmt)
@@ -157,8 +153,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         right = HLILBlock([HLILExprStmt(HLILCall('right', []))])
         stmt = HLILIf(make_condition(BinaryOp.GT), left, right)
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(result.condition.op, BinaryOp.GT)
         self.assertIs(result.true_block, left)
@@ -169,8 +164,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         shallow = HLILBlock([HLILExprStmt(HLILCall('shallow', []))])
         stmt = HLILIf(make_condition(BinaryOp.GT), deep, shallow)
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(result.condition.op, BinaryOp.LE)
         self.assertIs(result.true_block, shallow)
@@ -181,8 +175,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         shallow = HLILBlock([HLILExprStmt(HLILCall('shallow', []))])
         stmt = HLILIf(make_condition(BinaryOp.GT), deep, shallow)
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(result.condition.op, BinaryOp.LE)
         self.assertIs(result.true_block, shallow)
@@ -193,8 +186,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         plain = HLILBlock([HLILExprStmt(HLILCall('plain', []))])
         stmt = HLILIf(make_condition(BinaryOp.GT), loop, plain)
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(result.condition.op, BinaryOp.GT)
         self.assertIs(result.true_block, loop)
@@ -207,8 +199,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         one_level = HLILBlock([guarded_call('shallow'), HLILExprStmt(HLILCall('after', []))])
         stmt = HLILIf(make_condition(BinaryOp.GT), two_levels, one_level)
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(result.condition.op, BinaryOp.LE)
         self.assertIs(result.true_block, one_level)
@@ -216,8 +207,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
     def test_empty_arm_is_refused(self):
         stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(LATE_LINE), HLILBlock())
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(first_comment(result.true_block), f'line({LATE_LINE})')
         self.assertEqual(result.condition.op, BinaryOp.GT)
@@ -231,8 +221,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         )
         stmt = HLILIf(condition, make_arm(LATE_LINE), make_arm(EARLY_LINE))
 
-        func = run_pass(stmt)
-        result = func.body.statements[0]
+        result = run_pass(stmt)
 
         self.assertEqual(result.condition.op, BinaryOp.OR)
         self.assertEqual(result.condition.lhs.op, BinaryOp.EQ)
@@ -243,8 +232,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
         inner = HLILIf(make_condition(BinaryOp.GT), make_arm(THIRD_LINE), make_arm(LATE_LINE))
         outer = HLILIf(make_condition(BinaryOp.GT), HLILBlock([inner]), make_arm(EARLY_LINE))
 
-        func = run_pass(outer)
-        result = func.body.statements[0]
+        result = run_pass(outer)
 
         self.assertEqual(first_comment(result.true_block), f'line({EARLY_LINE})')
         self.assertEqual(first_comment(result.false_block.statements[0].true_block),

@@ -221,8 +221,9 @@ class Program:
         parser = self.parser(keep_unreachable_code)
         return parser, parser.disasm_all_functions()
 
-    def label(self, name: str, func: str = FUNC_NAME) -> int:
-        return self.labels[func][name]
+    def label(self, name: str) -> int:
+        '''The address of a label in the function named FUNC_NAME'''
+        return self.labels[FUNC_NAME][name]
 
 
 def main_function(asm: Asm) -> Func:

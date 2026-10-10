@@ -18,10 +18,10 @@ from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.string_pool import StringPoolSection, StringRefs, collect_string_refs, pool_strings, read_text
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_roundtrip_validator import Status, load_script, validate_file
-from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
 
-PERSONAL_TEMPLATE_FILE = corpus_file(SORA2_SCRIPTS, 'scena/personalTemplate.dat')
+PERSONAL_TEMPLATE_FILE = SORA2_SCRIPTS / 'scena/personalTemplate.dat'
 
 # compile_script's strings by section, in pool order
 SCRIPT_SECTIONS = {
@@ -37,8 +37,7 @@ def compile_script(dat: Path):
     '''Zeta is defined first, so the code order (Zeta, Alpha, Mid) is not the table's (Alpha, Mid, Zeta). Zeta pushes a
     string in dead code after its RETURN; Alpha passes a pushed string to Zeta, so its debug record repeats a code string,
     and its CALL_SCRIPT record names "this.Zeta", a debug-only string.'''
-    fresh_writer()
-    writer = create_scp_writer(str(dat))
+    writer = fresh_writer(dat)
 
     @writer.GlobalVars()
     def globalvars():
@@ -78,8 +77,7 @@ def compile_script(dat: Path):
 
 def compile_shared_string(dat: Path):
     '''AEmpty has no code, so it starts where ZBody does: both decode ZBody's PUSH_STR (compiles with a warning)'''
-    fresh_writer()
-    writer = create_scp_writer(str(dat))
+    writer = fresh_writer(dat)
 
     @writer.LLILCode()
     def AEmpty():

@@ -13,12 +13,15 @@ from common.config import default_encoding
 from falcom.ed9.writer import scp_writer
 
 
-def fresh_writer() -> scp_writer.ScpWriter:
-    '''Replace the module-level writer singleton so a compile starts from a clean state. The writer
-    supports only one compile per interpreter in production (docs/LLIL_DSL.md) - it has no reset -
-    so tests isolate this way instead.'''
+HEX = '0x[0-9A-F]+'     # an address in a writer message, as a regex
+
+
+def fresh_writer(dat: Path | None = None) -> scp_writer.ScpWriter:
+    '''Replace the module-level writer singleton so a compile starts from a clean state (for dat, if given). The
+    writer supports only one compile per interpreter in production (docs/LLIL_DSL.md) - it has no reset - so tests
+    isolate this way instead.'''
     scp_writer._gScp = scp_writer.ScpWriter()
-    return scp_writer._gScp
+    return scp_writer.create_scp_writer(str(dat)) if dat is not None else scp_writer._gScp
 
 
 def marked_line(path: str | Path, marker: str) -> int:
@@ -64,15 +67,12 @@ class WriterTestCase(unittest.TestCase):
     '''A fresh writer that compiles test.dat in a temp dir'''
 
     def setUp(self):
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.tmp = Path(tmp.name)
+        self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.dat = self.tmp / 'test.dat'
         self.writer = self.fresh_writer()
 
     def fresh_writer(self, check: bool = True) -> scp_writer.ScpWriter:
         '''A fresh writer for test.dat, with the compile check on or off'''
-        fresh_writer()
-        writer = scp_writer.create_scp_writer(str(self.dat))
+        writer = fresh_writer(self.dat)
         writer.check_compiled = check
         return writer

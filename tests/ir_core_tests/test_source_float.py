@@ -128,10 +128,9 @@ class TestDecompiledFloats(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        fresh_writer()
         with tempfile.TemporaryDirectory() as tmp:
             dat = Path(tmp) / 'floats.dat'
-            writer = create_scp_writer(str(dat))
+            writer = fresh_writer(dat)
 
             @writer.LLILCode()
             def Short(arg1: Nullable32 = 0.2):

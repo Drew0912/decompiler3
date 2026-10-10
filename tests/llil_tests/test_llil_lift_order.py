@@ -14,12 +14,11 @@ sys.path.insert(0, str(REPO_ROOT))
 from ir.llil.llil import LowLevelILEq, WORD_SIZE
 from falcom.ed9.disasm.basic_block import BasicBlock
 from falcom.ed9.ir.llil import ED9VMLifter
-from tests.shared.llil_utils import FUNC_START, make_builder
+from tests.shared.llil_utils import (
+    FOURTH_BLOCK_START, FUNC_START, SECOND_BLOCK_START, THIRD_BLOCK_START, make_builder,
+)
 
 
-SECOND_BLOCK_START = FUNC_START + 0x10
-THIRD_BLOCK_START = FUNC_START + 0x20
-FOURTH_BLOCK_START = FUNC_START + 0x30
 DELIBERATELY_DIFFERENT_SP = 9
 CONDITION_VALUE = 0
 LEFT_VALUE = 1
@@ -32,6 +31,17 @@ def make_rpo_lifter() -> ED9VMLifter:
     '''_compute_rpo touches no lifter/parser state, so any non-None parser satisfies the
     constructor.'''
     return ED9VMLifter(parser = object())
+
+
+def make_diamond(num_params: int = 0):
+    '''entry tests a pushed constant and branches to left or right; join is created but not reached yet'''
+    builder = make_builder(num_params = num_params)
+    left = builder.create_basic_block(SECOND_BLOCK_START, 'left')
+    right = builder.create_basic_block(THIRD_BLOCK_START, 'right')
+    join = builder.create_basic_block(FOURTH_BLOCK_START, 'join')
+    builder.push_int(CONDITION_VALUE)
+    builder.pop_jmp_zero(left, right)
+    return builder, left, right, join
 
 
 class TestReindexInBlockOrder(unittest.TestCase):
@@ -125,9 +135,9 @@ class TestComputeRPO(unittest.TestCase):
 
     def test_diamond_places_join_after_both_arms(self):
         entry = BasicBlock(start_offset = FUNC_START)
-        a = BasicBlock(start_offset = FUNC_START + 0x10)
-        b = BasicBlock(start_offset = FUNC_START + 0x20)
-        join = BasicBlock(start_offset = FUNC_START + 0x30)
+        a = BasicBlock(start_offset = SECOND_BLOCK_START)
+        b = BasicBlock(start_offset = THIRD_BLOCK_START)
+        join = BasicBlock(start_offset = FOURTH_BLOCK_START)
         entry.add_branch(a)
         entry.add_branch(b)
         a.add_branch(join)
@@ -145,8 +155,8 @@ class TestComputeRPO(unittest.TestCase):
         body -> header. RPO must place header first; body (which can legitimately carry state
         across the back edge) ends up last, not exit (the real RETURN path).'''
         header = BasicBlock(start_offset = FUNC_START)
-        body = BasicBlock(start_offset = FUNC_START + 0x10)
-        exit_block = BasicBlock(start_offset = FUNC_START + 0x20)
+        body = BasicBlock(start_offset = SECOND_BLOCK_START)
+        exit_block = BasicBlock(start_offset = THIRD_BLOCK_START)
         header.add_branch(body)
         header.add_branch(exit_block)
         body.add_branch(header)
@@ -268,17 +278,8 @@ class TestEntrySeed(unittest.TestCase):
 class TestStrictEdgeState(unittest.TestCase):
     '''The first edge into a block records its state; every other edge must bring the same shape.'''
 
-    def make_diamond(self, num_params: int = 0):
-        builder = make_builder(num_params = num_params)
-        left = builder.create_basic_block(SECOND_BLOCK_START, 'left')
-        right = builder.create_basic_block(THIRD_BLOCK_START, 'right')
-        join = builder.create_basic_block(FOURTH_BLOCK_START, 'join')
-        builder.push_int(CONDITION_VALUE)
-        builder.pop_jmp_zero(left, right)
-        return builder, left, right, join
-
     def test_join_with_different_values_in_one_slot_is_accepted(self):
-        builder, left, right, join = self.make_diamond()
+        builder, left, right, join = make_diamond()
         builder.begin_block(left)
         builder.push_int(LEFT_VALUE)
         builder.jmp(join)
@@ -293,7 +294,7 @@ class TestStrictEdgeState(unittest.TestCase):
     def test_parameter_kept_on_one_arm_and_repushed_on_the_other_raises(self):
         '''The arms hold different lifetimes in slot 0 - the caller's parameter (arg1) and a pushed value
         (var_s0) - so no single name is right for a read after the join.'''
-        builder, left, right, join = self.make_diamond(num_params = 1)
+        builder, left, right, join = make_diamond(num_params = 1)
         builder.begin_block(left)
         builder.pop_n(1)
         builder.push_int(LEFT_VALUE)
@@ -308,12 +309,7 @@ class TestEdgeRecording(unittest.TestCase):
     '''Each terminal records the stack state of its own edges.'''
 
     def test_terminals_record_their_edges(self):
-        builder = make_builder()
-        left = builder.create_basic_block(SECOND_BLOCK_START, 'left')
-        right = builder.create_basic_block(THIRD_BLOCK_START, 'right')
-        join = builder.create_basic_block(FOURTH_BLOCK_START, 'join')
-        builder.push_int(CONDITION_VALUE)
-        builder.pop_jmp_zero(left, right)
+        builder, left, right, join = make_diamond()
 
         builder.begin_block(left)
         condition = LowLevelILEq(builder.const_int(CONDITION_VALUE), builder.const_int(CONDITION_VALUE))

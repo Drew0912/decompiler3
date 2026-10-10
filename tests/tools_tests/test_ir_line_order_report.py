@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''Unit tests for tools/ir_line_order_report.py: MLIL line directives are read in address order, and
-a file is analysed the way scena2py.py decompiles it. BlockMergePass splices a block onto its only
+analyse_file gives itself scena2py.py's recursion headroom. BlockMergePass splices a block onto its only
 predecessor wherever that sits in the block list, so reading MLIL in block order reports line
 reorders the bytecode does not have.'''
 
@@ -16,11 +16,11 @@ from falcom.ed9.scena2py import RECURSION_LIMIT
 from ir.mlil.mlil import MediumLevelILFunction, MLILDebug, MLILGoto, MLILIf, MLILRet, MLILVar
 from ir.mlil.passes import BlockMergePass
 from ir_line_order_report import analyse_file, collect_mlil_lines
-from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.ir_utils import connect
 
 
-SMALL_SCRIPT = corpus_file(SORA2_SCRIPTS, 'minigame/slot.dat')
+SMALL_SCRIPT = SORA2_SCRIPTS / 'minigame/slot.dat'
 PYTHON_DEFAULT_RECURSION_LIMIT = 1000
 
 ENTRY_START = 0x1000

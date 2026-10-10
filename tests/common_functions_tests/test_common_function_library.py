@@ -18,7 +18,6 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function
-from falcom.ed9.writer import scp_writer
 from falcom.ed9.writer import scp_writer_gen_common_funcs as gen
 from falcom.ed9.writer.metadata import COMMON_LIBRARY_PACKAGE
 from falcom.ed9.writer.metadata.common_index import COMMON_FUNCTIONS
@@ -60,8 +59,7 @@ def compile_and_fingerprint(name: str) -> str:
     with tempfile.TemporaryDirectory() as tmp:
         dat_path = Path(tmp) / 'test_output.dat'
 
-        fresh_writer()
-        writer = scp_writer.create_scp_writer(str(dat_path))
+        writer = fresh_writer(dat_path)
 
         @writer.CommonImports()
         def commonImports():

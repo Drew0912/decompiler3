@@ -2,7 +2,7 @@
 '''Unit tests for ScpParser's selection-to-emission contract: match_library_functions,
 get_inline_functions, gen_common_imports and gen_python_script must all agree on which functions got
 matched to the shared library, in the script's own code order, and only outside strict round-trip
-mode. Uses a real corpus file (sora2_1.0/script_en/ai/ai_chr0100_e00.dat) rather than a fake index,
+mode. Uses a real corpus file (TEST_FILE) rather than a fake index,
 since its common/source split is already exercised (and known) elsewhere in this test suite.'''
 
 from pathlib import Path
@@ -13,9 +13,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.parser.scp import ScpParser
-from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.corpus import SORA2_SCRIPTS, require
 
-TEST_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr0100_e00.dat')
+TEST_FILE = SORA2_SCRIPTS / 'ai/ai_chr0100_e00.dat'
 
 MATCHED_COMMON_FUNC = 'chr_info'   # canonical-matching common function - imported, not inlined
 SOURCE_FUNC = 'SkillTable'         # this script's own function - always inlined

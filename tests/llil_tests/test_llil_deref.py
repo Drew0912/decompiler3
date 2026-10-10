@@ -28,13 +28,13 @@ from ir.hlil.hlil import (
     HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock,
 )
 from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
-from tests.shared.llil_utils import FUNC_START, make_builder
+from tests.shared.llil_utils import FUNC_START, SECOND_BLOCK_START, THIRD_BLOCK_START, make_builder
 
 
 def build_function_with_deref(num_params: int, offset: int, *, deref_write: bool, with_ret: bool = False):
     '''1-param function: load_stack_deref(offset) if not deref_write, else push a marker then
-    pop_to_deref(offset). Does not call finalize() unless with_ret - see
-    test_llil_frame_store.py for why (MLIL finalize() requires a terminal instruction).'''
+    pop_to_deref(offset). with_ret also pops the stack and returns, which MLIL translation needs (every block
+    ends in a terminal); without it only the LLIL shape is checked.'''
     builder = make_builder(num_params)
     entry = builder.current_block
 
@@ -324,8 +324,8 @@ class TestCallAddressTakenArgNeedsNoPhi(unittest.TestCase):
         # var_s0 = 0; if (arg1 == 0) { f(&var_s0) } ; return var_s0 + 1
         func = MediumLevelILFunction(name)
         entry = func.create_block(start = FUNC_START)
-        call_block = func.create_block(start = FUNC_START + 0x10)
-        merge_block = func.create_block(start = FUNC_START + 0x20)
+        call_block = func.create_block(start = SECOND_BLOCK_START)
+        merge_block = func.create_block(start = THIRD_BLOCK_START)
 
         arg1 = func.get_or_create_parameter(1, 'arg1')
         var_s0 = func.get_or_create_local('var_s0')

@@ -15,12 +15,9 @@ from ir.llil.llil_builder import LowLevelILBuilder
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from ir.mlil.mlil import MLILCallScript, MLILConst, MLILStoreGlobal, MLILVar
-from tests.shared.llil_utils import FUNC_START, make_builder
+from tests.shared.llil_utils import FOURTH_BLOCK_START, SECOND_BLOCK_START, THIRD_BLOCK_START, make_builder
 
 
-SECOND_BLOCK_START = FUNC_START + 0x10
-THIRD_BLOCK_START = FUNC_START + 0x20
-FOURTH_BLOCK_START = FUNC_START + 0x30
 PUSHED_VALUE = 10
 STORED_VALUE = 99
 CONDITION_VALUE = 0

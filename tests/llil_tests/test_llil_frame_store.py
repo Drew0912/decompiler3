@@ -17,20 +17,15 @@ from tests.shared.llil_utils import make_builder
 
 
 def build_function_with_pop_to(num_params: int, offset: int):
-    '''Function with num_params parameters: pushes a marker value, then pop_to(offset)
-
-    Returns the raw builder.function rather than calling finalize(): a real function
-    would clean up its parameter slots with an explicit pop opcode before RETURN, but
-    that is irrelevant to the instruction-shape assertions here, so skip finalize()'s
-    unrelated sp == 0 end-of-function check rather than pad the test with a fake pop.
-    '''
+    '''The entry block of a function with num_params parameters that pushes a marker, then pop_to(offset); not
+    finalized (no cleanup pop or RETURN), since only the store's shape is checked'''
     builder = make_builder(num_params)
     entry = builder.current_block
 
     builder.push_int(99)
     builder.pop_to(offset)
 
-    return builder.function, entry
+    return entry
 
 
 class TestPopToParameterSlot(unittest.TestCase):
@@ -39,7 +34,7 @@ class TestPopToParameterSlot(unittest.TestCase):
     def test_parameter_slot_emits_frame_store(self):
         # 1 parameter (slot 0). After push_int, sp=2; pop_to(-WORD_SIZE) pops back to sp=1,
         # then slot_index = 1 + (-WORD_SIZE // WORD_SIZE) = 0 - the sole parameter slot.
-        _, entry = build_function_with_pop_to(num_params = 1, offset = -WORD_SIZE)
+        entry = build_function_with_pop_to(num_params = 1, offset = -WORD_SIZE)
 
         inst = entry.instructions[-1]
         self.assertIsInstance(inst, LowLevelILFrameStore)
@@ -49,7 +44,7 @@ class TestPopToParameterSlot(unittest.TestCase):
     def test_non_parameter_slot_still_emits_stack_store(self):
         # 1 parameter (slot 0). pop_to(0) targets slot 1 (the just-pushed temp itself, a
         # local) - unaffected by this step, must keep today's StackStore behavior exactly.
-        _, entry = build_function_with_pop_to(num_params = 1, offset = 0)
+        entry = build_function_with_pop_to(num_params = 1, offset = 0)
 
         inst = entry.instructions[-1]
         self.assertIsInstance(inst, LowLevelILStackStore)
@@ -58,15 +53,11 @@ class TestPopToParameterSlot(unittest.TestCase):
     def test_frame_offset_is_absolute_slot_times_word_size(self):
         # 2 parameters (slots 0, 1). The frame offset must come from the absolute slot
         # index (slot_index * WORD_SIZE), not the opcode's own sp-relative operand.
-        _, entry_slot0 = build_function_with_pop_to(num_params = 2, offset = -2 * WORD_SIZE)
-        inst_slot0 = entry_slot0.instructions[-1]
-        self.assertIsInstance(inst_slot0, LowLevelILFrameStore)
-        self.assertEqual(inst_slot0.offset, 0)
-
-        _, entry_slot1 = build_function_with_pop_to(num_params = 2, offset = -1 * WORD_SIZE)
-        inst_slot1 = entry_slot1.instructions[-1]
-        self.assertIsInstance(inst_slot1, LowLevelILFrameStore)
-        self.assertEqual(inst_slot1.offset, WORD_SIZE)
+        for offset, frame_offset in ((-2 * WORD_SIZE, 0), (-WORD_SIZE, WORD_SIZE)):
+            with self.subTest(offset = offset):
+                inst = build_function_with_pop_to(num_params = 2, offset = offset).instructions[-1]
+                self.assertIsInstance(inst, LowLevelILFrameStore)
+                self.assertEqual(inst.offset, frame_offset)
 
 
 class TestPopToParameterSlotMLIL(unittest.TestCase):

@@ -22,13 +22,13 @@ from falcom.ed9.parser.types_scp import ScpFunctionCallDebugInfo
 from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
-from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
 
-CHECK_ALGO_USE_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5122_e00.dat')
-DEAD_CODE_CALLS_FILE = corpus_file(SORA2_SCRIPTS, 'ani/chr0109.dat')
-CODE_BEFORE_FUNCTIONS_FILE = corpus_file(SORA2_SCRIPTS, 'scena/mp0090.dat')
-UNMARKED_CALL_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5004p.dat')
+CHECK_ALGO_USE_FILE = SORA2_SCRIPTS / 'ai/ai_chr5122_e00.dat'
+DEAD_CODE_CALLS_FILE = SORA2_SCRIPTS / 'ani/chr0109.dat'
+CODE_BEFORE_FUNCTIONS_FILE = SORA2_SCRIPTS / 'scena/mp0090.dat'
+UNMARKED_CALL_FILE = SORA2_SCRIPTS / 'ai/ai_chr5004p.dat'
 
 SPECIAL_TEXT = 'a, "b" \\ c\r\nd'      # a comma, quotes, a backslash, CR and LF
 POOL_HEADING = '=== String pool'
@@ -54,8 +54,7 @@ def compile_main(dat: Path):
     '''Global var types 1 and 2; Outer has a float and a string default; Main makes a call before any line info, pushes a
     string with every character that needs escaping, nests Inner() in Outer's arguments (records in source order: Outer's
     first), and calls Inner again in dead code after its RETURN'''
-    fresh_writer()
-    writer = create_scp_writer(str(dat))
+    writer = fresh_writer(dat)
 
     @writer.GlobalVars()
     def globalvars():
@@ -114,8 +113,7 @@ def compile_main(dat: Path):
 
 def compile_shared(dat: Path):
     '''ZEmpty has no code, so it starts where ABody does; Jumper jumps into ABody (compiles with a warning for each)'''
-    fresh_writer()
-    writer = create_scp_writer(str(dat))
+    writer = fresh_writer(dat)
 
     @writer.LLILCode()
     def ZEmpty():
@@ -135,8 +133,7 @@ def compile_shared(dat: Path):
 
 def compile_common(dat: Path):
     '''A common function (laid out first, with no line info) and two source functions'''
-    fresh_writer()
-    writer = create_scp_writer(str(dat))
+    writer = fresh_writer(dat)
 
     @writer.LLILCommonCode()
     def CommonOne():
@@ -207,16 +204,11 @@ def patched_listing(data: bytes) -> ScpListing:
 class TestListing(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp_dir = tempfile.TemporaryDirectory()
-        cls.dat = Path(cls.tmp_dir.name) / 'main.dat'
+        cls.dat = Path(cls.enterClassContext(tempfile.TemporaryDirectory())) / 'main.dat'
         compile_main(cls.dat)
         cls.listing = ScpListing(cls.dat)
         cls.lines = cls.listing.lines(ListingSections())
         cls.functions = {func.name: func for func in cls.listing.parser.functions}
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tmp_dir.cleanup()
 
     def test_each_section_alone(self):
         for field in fields(ListingSections):
@@ -308,15 +300,10 @@ class TestListing(unittest.TestCase):
 class TestSharedCode(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp_dir = tempfile.TemporaryDirectory()
-        cls.dat = Path(cls.tmp_dir.name) / 'shared.dat'
+        cls.dat = Path(cls.enterClassContext(tempfile.TemporaryDirectory())) / 'shared.dat'
         compile_shared(cls.dat)
         cls.listing = ScpListing(cls.dat)
         cls.indices = {func.name: func.index for func in cls.listing.parser.functions}
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tmp_dir.cleanup()
 
     def test_shared_start_listed_once(self):
         lines = self.listing.lines(ListingSections())
@@ -339,20 +326,16 @@ class TestSharedCode(unittest.TestCase):
 class TestProcessFile(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp_dir = tempfile.TemporaryDirectory()
-        cls.main = Path(cls.tmp_dir.name) / 'main.dat'
-        cls.common = Path(cls.tmp_dir.name) / 'common.dat'
+        cls.tmp = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
+        cls.main = cls.tmp / 'main.dat'
+        cls.common = cls.tmp / 'common.dat'
         compile_main(cls.main)
         compile_common(cls.common)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.tmp_dir.cleanup()
 
     def listing_text(self, dat: Path, **settings) -> str:
         '''dat's .debug.txt from process_file, every other output off, into an output folder of its own'''
         config = ScenaDecompileConfig()
-        config.output_dir = Path(tempfile.mkdtemp(dir = self.tmp_dir.name))
+        config.output_dir = Path(tempfile.mkdtemp(dir = self.tmp))
         for flag in IR_OUTPUTS:
             setattr(config, flag, False)
 

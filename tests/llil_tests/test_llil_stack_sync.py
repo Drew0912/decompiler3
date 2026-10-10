@@ -9,10 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import WORD_SIZE
-from tests.shared.llil_utils import FUNC_START, make_builder
-
-
-SECOND_BLOCK_START = FUNC_START + 0x10
+from tests.shared.llil_utils import SECOND_BLOCK_START, make_builder
 
 
 class TestPopKeepsVstackInSync(unittest.TestCase):

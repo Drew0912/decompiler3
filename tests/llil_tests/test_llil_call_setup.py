@@ -15,10 +15,9 @@ from ir.llil.llil import LowLevelILCall, WORD_SIZE
 from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript
-from tests.shared.llil_utils import FUNC_START, make_builder
+from tests.shared.llil_utils import BLOCK_STRIDE, FUNC_START, make_builder
 
 
-BLOCK_STRIDE = 0x10
 ARG_VALUE = 7
 FILLER_VALUE = 123
 STORED_VALUE = 5

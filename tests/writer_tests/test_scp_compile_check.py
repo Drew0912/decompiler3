@@ -20,9 +20,7 @@ from falcom.ed9.scena2py import main
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_compile_check import CompileCheckError, definition_line
 from falcom.ed9.writer.scp_writer_helper import *
-from tests.shared.scp_writer_test_utils import WriterTestCase, at, load_module, marked_line
-
-HEX = '0x[0-9A-F]+'
+from tests.shared.scp_writer_test_utils import HEX, WriterTestCase, at, load_module, marked_line
 
 LIBRARY_SOURCE = '''from falcom.ed9.writer.scp_writer_helper import *
 

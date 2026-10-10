@@ -43,8 +43,7 @@ def compile_script(dat: Path):
     '''Main's records are in source order, not address order: Outer's record comes before the Inner call in its argument,
     and the SYSCALL's before the Inner call whose result it takes. Main's first call is made before any line info, so it
     has no record. Defined in source order Inner, Outer, Main, Tail; the table is sorted by name.'''
-    fresh_writer()
-    writer = create_scp_writer(str(dat))
+    writer = fresh_writer(dat)
 
     @writer.LLILCode()
     def Inner():
@@ -160,20 +159,15 @@ class TestWriterOnlyInputs(unittest.TestCase):
 class CompiledScript(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.tmp_dir = tempfile.TemporaryDirectory()
-        cls.dat = Path(cls.tmp_dir.name) / 'test.dat'
+        cls.dat = Path(cls.enterClassContext(tempfile.TemporaryDirectory())) / 'test.dat'
         compile_script(cls.dat)
         cls.ctx = load_script(cls.dat)
+        cls.addClassCleanup(cls.ctx.fs.Close)
         cls.parser = cls.ctx.parser
         cls.data = cls.ctx.data
         names = [func.name for func in cls.parser.functions]
         cls.records = dict(zip(names, cls.ctx.records))
         cls.instructions = dict(zip(names, cls.ctx.instructions))
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.ctx.fs.Close()
-        cls.tmp_dir.cleanup()
 
     def replay(self, name: str) -> list:
         return CallDebugInfoTracker.replay(self.instructions[name], self.parser.get_func_argc)

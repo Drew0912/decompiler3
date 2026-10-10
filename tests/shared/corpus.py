@@ -9,11 +9,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]     # tests/shared/corpus.py -> 
 SORA2_SCRIPTS = REPO_ROOT / 'sora2_1.0' / 'script_en'
 
 
-def corpus_file(corpus: Path, relative_path: str) -> Path:
-    '''A script in a corpus folder - only a path, it never skips'''
-    return corpus / relative_path
-
-
 def require(path: Path) -> Path:
     '''path, or skip the test when the file is missing (e.g. the corpus is not checked out)'''
     if not path.exists():

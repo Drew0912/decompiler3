@@ -3,7 +3,6 @@
 
 from pathlib import Path
 import sys
-import tempfile
 import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -11,21 +10,18 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.writer import scp_writer
 from falcom.ed9.writer.scp_writer_helper import *
-from tests.shared.scp_writer_test_utils import fresh_writer
+from tests.shared.scp_writer_test_utils import WriterTestCase
 
 
-def compile_dsl(build) -> scp_writer.ScpWriter:
-    '''Run build(scena) against a fresh writer and a throwaway output path; returns the writer'''
-    fresh_writer()
-    with tempfile.TemporaryDirectory() as tmp:
-        writer = create_scp_writer(str(Path(tmp) / 'test_output.dat'))
-        build(writer)
-        writer.run(globals())
-
-    return writer
+class CompileTestCase(WriterTestCase):
+    def compile_dsl(self, build) -> scp_writer.ScpWriter:
+        '''Run build(scena) against the test's fresh writer; returns the writer'''
+        build(self.writer)
+        self.writer.run(globals())
+        return self.writer
 
 
-class TestCommonImportsRegistrationOrder(unittest.TestCase):
+class TestCommonImportsRegistrationOrder(CompileTestCase):
     '''CommonImports (library imports) registers before any @LLILCommonCode fallback or @LLILCode
     source function textually below it, since all three register at decoration time and Python
     decorators run top-to-bottom.'''
@@ -50,7 +46,7 @@ class TestCommonImportsRegistrationOrder(unittest.TestCase):
             def SourceFunc():
                 RETURN()
 
-        writer = compile_dsl(build)
+        writer = self.compile_dsl(build)
         names = [f.name for f in writer.functions]
 
         self.assertEqual(names, ['imported_common', 'fallback_common', 'SourceFunc'])
@@ -73,50 +69,41 @@ class TestCommonImportsRegistrationOrder(unittest.TestCase):
             def commonImports():
                 return [imported_a, imported_b]
 
-        writer = compile_dsl(build)
+        writer = self.compile_dsl(build)
 
         self.assertEqual([f.name for f in writer.functions], ['imported_a', 'imported_b'])
 
 
-class TestDuplicateNameGuard(unittest.TestCase):
+class TestDuplicateNameGuard(WriterTestCase):
     def test_duplicate_name_raises(self):
-        fresh_writer()
-        with tempfile.TemporaryDirectory() as tmp:
-            writer = create_scp_writer(str(Path(tmp) / 'test_dup.dat'))
+        @self.writer.LLILCode()
+        def Dup():
+            RETURN()
 
-            @writer.LLILCode()
+        with self.assertRaisesRegex(ValueError, 'duplicate function name'):
+            @self.writer.LLILCode()
             def Dup():
                 RETURN()
 
-            with self.assertRaisesRegex(ValueError, 'duplicate function name'):
-                @writer.LLILCode()
-                def Dup():
-                    RETURN()
-
     def test_duplicate_name_across_common_and_source_raises(self):
-        fresh_writer()
-        with tempfile.TemporaryDirectory() as tmp:
-            writer = create_scp_writer(str(Path(tmp) / 'test_dup2.dat'))
+        def imported_shared():
+            RETURN()
 
+        @self.writer.CommonImports()
+        def commonImports():
+            return [imported_shared]
+
+        with self.assertRaisesRegex(ValueError, 'duplicate function name'):
+            @self.writer.LLILCode()
             def imported_shared():
                 RETURN()
 
-            @writer.CommonImports()
-            def commonImports():
-                return [imported_shared]
 
-            with self.assertRaisesRegex(ValueError, 'duplicate function name'):
-                @writer.LLILCode()
-                def imported_shared():
-                    RETURN()
-
-
-class TestGenLabel(unittest.TestCase):
+class TestGenLabel(CompileTestCase):
     '''genLabel() names must never collide with a decompiled loc_XXXX label, and must let a
     hand-written or generated function body resolve ordinary forward/backward jumps.'''
 
     def test_name_never_matches_the_decompiled_label_pattern(self):
-        fresh_writer()
         name = genLabel()
 
         self.assertNotRegex(name, r'^loc_[0-9A-Fa-f]+$')
@@ -133,7 +120,7 @@ class TestGenLabel(unittest.TestCase):
                 RETURN()
 
         # writer.run() raises an undefined-label error if the label never resolved
-        writer = compile_dsl(build)
+        writer = self.compile_dsl(build)
         self.assertIn('WithForwardJump', writer.functions_by_name)
 
     def test_two_functions_each_calling_genlabel_do_not_collide(self):
@@ -152,7 +139,7 @@ class TestGenLabel(unittest.TestCase):
                 label(target)
                 RETURN()
 
-        writer = compile_dsl(build)
+        writer = self.compile_dsl(build)
         self.assertEqual({f.name for f in writer.functions}, {'First', 'Second'})
 
 

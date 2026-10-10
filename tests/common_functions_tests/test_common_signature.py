@@ -12,13 +12,15 @@ from falcom.ed9.disasm import *
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.parser import *
 from falcom.ed9.writer.metadata.signature import body_fingerprint, function_fingerprint
-from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.corpus import SORA2_SCRIPTS, require
+from tests.shared.scp_asm import REG_INDEX, Asm
 
 
 def load_function(relative_path: str, name: str):
     '''(parser, function) for one common function of a local sora2_1.0 script, decompiled like scena2py.py'''
-    path = require(corpus_file(SORA2_SCRIPTS, relative_path))
-    parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False, filter_func = lambda f: f.name == name)
+    path = require(SORA2_SCRIPTS / relative_path)
+    parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False,
+                                       filter_func = lambda f: f.name == name)
     return parser, functions[0]
 
 
@@ -30,17 +32,13 @@ def reachable_instructions(bytecode: bytes) -> list[Instruction]:
     return Formatter.reachable_instructions(entry_block)
 
 
-def branch_bytecode(target: int) -> bytes:
+def branch_bytecode(target: str) -> bytes:
     '''Same instructions every time; only where POP_JMP_ZERO lands changes'''
-    return bytes([
-        0x09, 0x00,                          # 0x00: GET_REG(0)
-        0x0F, target, 0x00, 0x00, 0x00,      # 0x02: POP_JMP_ZERO(target)
-        0x00, 0x04, 0x01, 0x00, 0x00, 0x40,  # 0x07: PUSH_INT(1)
-        0x0A, 0x00,                          # 0x0D: SET_REG(0)
-        0x00, 0x04, 0x02, 0x00, 0x00, 0x40,  # 0x0F: PUSH_INT(2)
-        0x0A, 0x00,                          # 0x15: SET_REG(0)
-        0x0D,                                # 0x17: RETURN()
-    ])
+    asm = Asm()
+    asm.get_reg(REG_INDEX); asm.jz(target)
+    asm.push_int(1); asm.label('set_reg'); asm.set_reg(REG_INDEX)
+    asm.label('push_int'); asm.push_int(2); asm.set_reg(REG_INDEX); asm.ret()
+    return asm.assemble(0, {})[0]
 
 
 class TestCorpusFingerprints(unittest.TestCase):
@@ -76,8 +74,8 @@ class TestBranchDestination(unittest.TestCase):
     '''A branch target must be identified by where it lands, not just by which label it is'''
 
     def test_branch_landing_one_instruction_later_differs(self):
-        to_set_reg = reachable_instructions(branch_bytecode(0x0D))
-        to_push_int = reachable_instructions(branch_bytecode(0x0F))
+        to_set_reg = reachable_instructions(branch_bytecode('set_reg'))
+        to_push_int = reachable_instructions(branch_bytecode('push_int'))
         no_calls = lambda func_id: None
         no_globals = lambda index: None
 

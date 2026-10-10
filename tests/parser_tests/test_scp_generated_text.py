@@ -30,11 +30,11 @@ from falcom.ed9.writer.metadata import common_all
 from falcom.ed9.writer.metadata.common_index import COMMON_FUNCTIONS
 import scp_roundtrip_validator
 from scp_roundtrip_validator import compile_and_decompile_round, decompile_to_python
-from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
 
-TEST_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5122_e00.dat')
-SMALL_FILE = corpus_file(SORA2_SCRIPTS, 'scena/e0000.dat')
+TEST_FILE = SORA2_SCRIPTS / 'ai/ai_chr5122_e00.dat'
+SMALL_FILE = SORA2_SCRIPTS / 'scena/e0000.dat'
 LABEL_LINE = re.compile(r"^ *label\('[^']*'\)( +# .*)?$")     # with its depth comment, if any
 
 HOOK_TEMPLATE_IMPORTS = '''\

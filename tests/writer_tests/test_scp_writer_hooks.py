@@ -23,9 +23,8 @@ from falcom.ed9.parser.types_scp import ScpParamFlags
 from falcom.ed9.writer import scp_writer, scp_writer_helper, scp_writer_hook_registry, scp_writer_hooks
 from falcom.ed9.writer.scp_compile_check import CompileCheckError
 from falcom.ed9.writer.scp_writer_helper import *
-from tests.shared.scp_writer_test_utils import WriterTestCase, at, load_module, location
+from tests.shared.scp_writer_test_utils import HEX, WriterTestCase, at, load_module, location
 
-HEX = '0x[0-9A-F]+'
 PUSH_POP_RETURN = ['PUSH_INT', 'POP', 'RETURN']
 
 # A body taking Target's one parameter that calls Helper by its plain name (a script function, never defined in a hook)

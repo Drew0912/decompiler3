@@ -19,16 +19,16 @@ from falcom.ed9.parser.types_parser import SlotRef
 from falcom.ed9.parser.types_scp import ScpValue
 from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
-from falcom.ed9.writer.scp_writer_helper import RETURN, create_scp_writer
+from falcom.ed9.writer.scp_writer_helper import RETURN
 from ir.llil.llil import WORD_SIZE
-from tests.shared.corpus import SORA2_SCRIPTS, corpus_file, require
+from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_asm import (
     Asm, Func, Program, CALLEE_ID, CALLER_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, PARAM_COUNT,
     REG_INDEX, RIGHT_VALUE, main_function, returning_callee,
 )
 from tests.shared.scp_writer_test_utils import fresh_writer
 
-CHECK_ALGO_USE_FILE = corpus_file(SORA2_SCRIPTS, 'ai/ai_chr5122_e00.dat')
+CHECK_ALGO_USE_FILE = SORA2_SCRIPTS / 'ai/ai_chr5122_e00.dat'
 SYSCALL_SUBSYSTEM = 1
 SYSCALL_FUNC = 0x2F
 FLOAT_BITS = 'f32 0x3E999998, raw 0x8FA66666'      # FLOAT_VALUE's float32 bits and stored word
@@ -286,8 +286,7 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
         '''The writer sorts the table by name and lays code out in source order, so Second comes first in the code'''
         with tempfile.TemporaryDirectory() as tmp_dir:
             dat = Path(tmp_dir) / 'test.dat'
-            fresh_writer()
-            writer = create_scp_writer(str(dat))
+            writer = fresh_writer(dat)
 
             @writer.LLILCode()
             def Second():
