@@ -23,8 +23,10 @@ from ir.hlil import (
     HLILSwitch,
     HLILSwitchCase,
     HLILTypeKind,
+    HLILUnaryOp,
     HLILVar,
     HLILVariable,
+    UnaryOp,
     VariableKind,
 )
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
@@ -36,10 +38,23 @@ TEST_FUNCTION_NAME = 'test_func'
 FIRST_CASE_VALUE = 1
 SECOND_CASE_VALUE = 2
 SECOND_CASE_CALL = 'second_case_call'
+NEGATIVE_INT = -5
+NEGATIVE_FLOAT = -3.0
+# A quote, a backslash, a newline and a tab, and its TypeScript literal
+SPECIAL_TEXT = 'a"b\\c\nd\te'
+SPECIAL_TEXT_LITERAL = r'"a\"b\\c\nd\te"'
 
 
 def make_scrutinee() -> HLILVar:
     return HLILVar(HLILVariable('selector'))
+
+
+def render_call(argument, parameters = ()) -> str:
+    '''The TypeScript of a function whose body is f(argument)'''
+    func = HighLevelILFunction(TEST_FUNCTION_NAME)
+    func.parameters = list(parameters)
+    func.add_statement(HLILExprStmt(HLILCall('f', [argument])))
+    return generate_typescript(func)
 
 
 class TestSwitchEmptyCase(unittest.TestCase):
@@ -115,9 +130,7 @@ class TestConstantComparisonCodegen(unittest.TestCase):
     Seen live: mon5265 printed if (2.0 > 0) as if (true).'''
 
     def render(self, op: BinaryOp, lhs, rhs) -> str:
-        func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(HLILExprStmt(HLILCall('f', [HLILBinaryOp(op, HLILConst(lhs), HLILConst(rhs))])))
-        return generate_typescript(func)
+        return render_call(HLILBinaryOp(op, HLILConst(lhs), HLILConst(rhs)))
 
     def test_float_comparison_is_printed(self):
         self.assertIn('f(2.0 > 0);', self.render(BinaryOp.GT, 2.0, 0))
@@ -125,6 +138,34 @@ class TestConstantComparisonCodegen(unittest.TestCase):
 
     def test_int_comparison_still_prints_its_value(self):
         self.assertIn('f(true);', self.render(BinaryOp.GT, 2, 0))
+
+
+class TestUnaryMinusCodegen(unittest.TestCase):
+    '''A minus over an operand printed with a leading minus keeps its parentheses: --x is a decrement.
+    Reachable from the LLIL DSL: PUSH_FLOAT(-3.0) then NEG() printed f(--3.0).'''
+
+    def test_minus_over_a_leading_minus_keeps_its_parentheses(self):
+        rows = [
+            (HLILUnaryOp(UnaryOp.NEG, HLILVar(HLILVariable('a'))), 'f(-(-a));'),
+            (HLILConst(NEGATIVE_INT), f'f(-({NEGATIVE_INT}));'),
+            (HLILConst(NEGATIVE_FLOAT), f'f(-({NEGATIVE_FLOAT}));'),
+        ]
+
+        for operand, text in rows:
+            with self.subTest(text = text):
+                self.assertIn(text, render_call(HLILUnaryOp(UnaryOp.NEG, operand)))
+
+
+class TestStringCodegen(unittest.TestCase):
+    '''An argument and a parameter default print the same quote_string literal (a default used to escape only
+    the backslash and the quote).'''
+
+    def test_string_argument_and_default_are_escaped(self):
+        parameter = HLILVariable('arg1', HLILTypeKind.STRING, default_value = SPECIAL_TEXT, kind = VariableKind.PARAM)
+        ts = render_call(HLILConst(SPECIAL_TEXT), [parameter])
+
+        self.assertIn(f'arg1: string = {SPECIAL_TEXT_LITERAL}', ts)
+        self.assertIn(f'f({SPECIAL_TEXT_LITERAL});', ts)
 
 
 if __name__ == '__main__':

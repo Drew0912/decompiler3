@@ -183,7 +183,7 @@ class HLILConst(HLILExpression):
 
     def __str__(self) -> str:
         if isinstance(self.value, str):
-            return f'"{self.value}"'
+            return quote_string(self.value)
 
         elif isinstance(self.value, bool):
             return 'true' if self.value else 'false'
@@ -300,6 +300,15 @@ def needs_parentheses(child_op: BinaryOp, parent_op: BinaryOp, is_left: bool) ->
         return child_precedence < parent_precedence
 
     return not is_left and parent_op in NON_ASSOCIATIVE_OPS
+
+
+def unary_operand_needs_parentheses(op: UnaryOp, operand: HLILExpression, operand_text: str) -> bool:
+    '''Whether operand, printed as operand_text after op, needs parentheses: a binary operand, or a minus whose operand
+    already starts with one (-(-a), -(-3.0) - never --, a decrement)'''
+    if isinstance(operand, HLILBinaryOp):
+        return True
+
+    return op == UnaryOp.NEG and operand_text.startswith(UNARY_OP_STR[UnaryOp.NEG])
 
 
 class HLILBinaryOp(HLILExpression):

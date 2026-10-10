@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-'''The .hlil.ts text, line by line: the function header lists its parameters, a syscall and a script
-call print their arguments, an if / else-if / else chain and a nested block indent one level per
-nesting, and every statement comes back as lines. The future HLIL DSL starts from this text.'''
+'''The .hlil.ts text, line by line: the function header lists its parameters, a syscall and a script call print
+their arguments (a string escaped and a hex constant written as the .ts writes them), an if / else-if / else chain
+and a nested block indent one level per nesting, and every statement comes back as lines. The future HLIL DSL starts
+from this text.'''
 
 from pathlib import Path
 import sys
@@ -37,6 +38,12 @@ COMMAND = 3
 FIRST_VALUE = 1
 SECOND_VALUE = 2
 ARGUMENT_VALUE = 65535
+# A quote, a backslash, a newline and a tab, and the literal the .ts prints for it
+SPECIAL_TEXT = 'a"b\\c\nd\te'
+SPECIAL_TEXT_LITERAL = r'"a\"b\\c\nd\te"'
+# A hex constant holding -1 prints unsigned, as the .ts prints it
+ALL_BITS_SET = -1
+ALL_BITS_SET_HEX = '0xFFFFFFFF'
 
 
 def var(name: str) -> HLILVar:
@@ -104,6 +111,18 @@ class TestFunctionText(unittest.TestCase):
 
     def test_function_without_parameters_has_an_empty_list(self):
         self.assertEqual(HLILFormatter.format_function(HighLevelILFunction('Init'))[0], 'function Init() {')
+
+    def test_string_argument_is_escaped(self):
+        func = HighLevelILFunction('Init')
+        func.add_statement(HLILExprStmt(HLILCall('show', [HLILConst(SPECIAL_TEXT)])))
+
+        self.assertIn(indented(1, f'show({SPECIAL_TEXT_LITERAL});'), HLILFormatter.format_function(func))
+
+    def test_hex_constant_prints_unsigned_hex(self):
+        func = HighLevelILFunction('Init')
+        func.add_statement(HLILExprStmt(HLILCall('show', [HLILConst(ALL_BITS_SET, is_hex = True)])))
+
+        self.assertIn(indented(1, f'show({ALL_BITS_SET_HEX});'), HLILFormatter.format_function(func))
 
 
 if __name__ == '__main__':

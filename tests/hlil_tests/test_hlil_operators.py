@@ -32,9 +32,12 @@ from ir.hlil import (
     is_boolean_expr,
     needs_parentheses,
     negate_condition,
+    unary_operand_needs_parentheses,
 )
 
 MULTIPLIER = 2
+NEGATIVE_INT = -5
+NEGATIVE_FLOAT = -3.0
 FIRST_CASE_VALUE = 1
 SECOND_CASE_VALUE = 2
 SAMPLE_OPERANDS = (-1, 0, 1)
@@ -86,6 +89,26 @@ class TestNeedsParentheses(unittest.TestCase):
         for op in (BinaryOp.ADD, BinaryOp.MUL):
             with self.subTest(op = op.name):
                 self.assertFalse(needs_parentheses(op, op, False))
+
+
+class TestUnaryOperandNeedsParentheses(unittest.TestCase):
+    '''Decided on the operand's printed text, which the .hlil.ts and .ts printers write differently for constants'''
+
+    def test_binary_operand_is_wrapped(self):
+        operand = HLILBinaryOp(BinaryOp.LT, var('a'), var('b'))
+        self.assertTrue(unary_operand_needs_parentheses(UnaryOp.NOT, operand, 'a < b'))
+
+    def test_minus_over_a_leading_minus_is_wrapped(self):
+        self.assertTrue(unary_operand_needs_parentheses(UnaryOp.NEG, HLILUnaryOp(UnaryOp.NEG, var('a')), '-a'))
+        self.assertTrue(unary_operand_needs_parentheses(UnaryOp.NEG, HLILConst(NEGATIVE_FLOAT), str(NEGATIVE_FLOAT)))
+
+    def test_minus_over_other_text_and_other_operators_are_not(self):
+        negated = HLILUnaryOp(UnaryOp.NEG, var('a'))
+        self.assertFalse(unary_operand_needs_parentheses(UnaryOp.NEG, var('a'), 'a'))
+
+        for op in (UnaryOp.NOT, UnaryOp.BIT_NOT):
+            with self.subTest(op = op.name):
+                self.assertFalse(unary_operand_needs_parentheses(op, negated, '-a'))
 
 
 class TestNegateCondition(unittest.TestCase):
@@ -161,6 +184,21 @@ class TestFormatterOperators(unittest.TestCase):
         self.assertEqual(self.format(HLILUnaryOp(UnaryOp.NOT, HLILBinaryOp(BinaryOp.LT, a, b))), '!(a < b)')
         self.assertEqual(self.format(HLILUnaryOp(UnaryOp.NEG, a)), '-a')
         self.assertEqual(self.format(HLILUnaryOp(UnaryOp.BIT_NOT, a)), '~a')
+
+    def test_minus_over_a_leading_minus_keeps_its_parentheses(self):
+        a, b = var('a'), var('b')
+        negated = HLILUnaryOp(UnaryOp.NEG, a)
+        rows = [
+            (HLILUnaryOp(UnaryOp.NEG, negated), '-(-a)'),
+            (HLILUnaryOp(UnaryOp.NEG, HLILConst(NEGATIVE_INT)), f'-({NEGATIVE_INT})'),
+            (HLILUnaryOp(UnaryOp.NEG, HLILConst(NEGATIVE_FLOAT)), f'-({NEGATIVE_FLOAT})'),
+            (HLILUnaryOp(UnaryOp.NOT, negated), '!-a'),
+            (HLILUnaryOp(UnaryOp.NEG, HLILBinaryOp(BinaryOp.ADD, a, b)), '-(a + b)'),
+        ]
+
+        for expr, text in rows:
+            with self.subTest(text = text):
+                self.assertEqual(self.format(expr), text)
 
 
 class TestFormatterSwitchBreak(unittest.TestCase):

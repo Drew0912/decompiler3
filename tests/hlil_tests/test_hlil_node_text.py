@@ -31,6 +31,7 @@ NODE_TEXT = [
     (HLILVariable('x', HLILTypeKind.INT), 'x', 'HLILVariable(x: INT)'),
     (HLILVariable('x'), 'x', 'HLILVariable(x)'),
     (HLILConst('t'), '"t"', 'HLILConst(t)'),
+    (HLILConst('a"b'), r'"a\"b"', 'HLILConst(a"b)'),
     (HLILConst(True), 'true', 'HLILConst(True)'),
     (HLILConst(HEX_VALUE, True), '0x000000FF', 'HLILConst(255)'),
     (HLILConst(HEX_VALUE), '255', 'HLILConst(255)'),

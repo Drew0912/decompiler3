@@ -45,8 +45,7 @@ class TypeScriptGenerator:
     def _format_default_value(cls, value) -> str:
         '''Format default value as TypeScript literal'''
         if isinstance(value, str):
-            escaped = value.replace('\\', '\\\\').replace('"', '\\"')
-            return f'"{escaped}"'
+            return quote_string(value)
 
         elif isinstance(value, float):
             return cls._format_float(value)
@@ -226,8 +225,7 @@ class TypeScriptGenerator:
 
                         # (bool) == 0 -> !bool
                         inner = cls._format_expr(expr.lhs)
-                        # Add parentheses if inner is any binary expression (! has higher precedence)
-                        if isinstance(expr.lhs, HLILBinaryOp):
+                        if unary_operand_needs_parentheses(UnaryOp.NOT, expr.lhs, inner):
                             inner = f'({inner})'
                         return f'!{inner}'
 
@@ -255,13 +253,12 @@ class TypeScriptGenerator:
                     elif inner.op == BinaryOp.NE:
                         # !(x != 0) -> x == 0 -> !x
                         lhs_str = cls._format_expr(inner.lhs)
-                        if isinstance(inner.lhs, HLILBinaryOp):
+                        if unary_operand_needs_parentheses(UnaryOp.NOT, inner.lhs, lhs_str):
                             lhs_str = f'({lhs_str})'
                         return f'!{lhs_str}'
 
             operand = cls._format_expr(expr.operand)
-            # Add parentheses around binary operands to avoid precedence issues
-            if isinstance(expr.operand, HLILBinaryOp):
+            if unary_operand_needs_parentheses(expr.op, expr.operand, operand):
                 operand = f'({operand})'
             return f'{UNARY_OP_STR[expr.op]}{operand}'
 

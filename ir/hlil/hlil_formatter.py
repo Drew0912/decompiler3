@@ -15,15 +15,8 @@ class HLILFormatter:
             return str(expr.var)  # Use __str__ to handle GLOBAL/REG properly
 
         elif isinstance(expr, HLILConst):
-            # Handle different constant types
-            if isinstance(expr.value, str):
-                return f'"{expr.value}"'
-
-            elif isinstance(expr.value, bool):
-                return 'true' if expr.value else 'false'
-
-            else:
-                return str(expr.value)
+            # The constant's own text: quoted strings, true/false, hex constants unsigned as in the .ts
+            return str(expr)
 
         elif isinstance(expr, HLILBinaryOp):
             lhs_str = cls._format_expr(expr.lhs)
@@ -40,8 +33,7 @@ class HLILFormatter:
 
         elif isinstance(expr, HLILUnaryOp):
             operand = cls._format_expr(expr.operand)
-            # Add parentheses around binary operands for clarity
-            if isinstance(expr.operand, HLILBinaryOp):
+            if unary_operand_needs_parentheses(expr.op, expr.operand, operand):
                 operand = f'({operand})'
             return f'{UNARY_OP_STR[expr.op]}{operand}'
 
