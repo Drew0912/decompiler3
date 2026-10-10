@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for .py label emission: only an offset something references gets a label.'''
+'''Unit tests for .py label emission: only an offset something references gets a label; and the synthetic
+fall-through jump's place.'''
 
 from pathlib import Path
 import sys
@@ -11,6 +12,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from falcom.ed9.disasm import *
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.parser import *
+
+FALLTHROUGH_TARGET = 0x20
 
 
 def disasm_to_dsl(name: str, bytecode: bytes) -> list[str]:
@@ -134,6 +137,15 @@ class TestOperandText(unittest.TestCase):
         # Integer and integral float defaults keep their own form: they encode differently
         self.assertEqual(param_text(0), 'arg1: Nullable32 = 0')
         self.assertEqual(param_text(1.0), 'arg1: Nullable32 = 1.0')
+
+
+class TestFallthroughJump(unittest.TestCase):
+    def test_synthetic_jump_sits_before_the_block_it_enters(self):
+        '''Its offset must not collide with an instruction of the block it enters'''
+        jump = ed9_create_fallthrough_jump(FALLTHROUGH_TARGET, FALLTHROUGH_TARGET, ED9_INSTRUCTION_TABLE)
+
+        self.assertEqual(jump.offset, FALLTHROUGH_TARGET - 1)
+        self.assertEqual(jump.opcode, ED9Opcode.JMP)
 
 
 if __name__ == '__main__':

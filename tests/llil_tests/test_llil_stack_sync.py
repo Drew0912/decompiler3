@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for POP/POP_N virtual-stack synchronization.'''
+'''Unit tests for POP/POP_N virtual-stack synchronization, and argument counts that reach past the pushes into the
+function's own parameters.'''
 
 from pathlib import Path
 import sys
@@ -8,8 +9,12 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ir.llil.llil import WORD_SIZE
-from tests.shared.llil_utils import SECOND_BLOCK_START, make_builder
+from ir.llil.llil import LowLevelILSyscall, WORD_SIZE
+from tests.shared.llil_utils import SECOND_BLOCK_START, instructions_of, lift_asm, make_builder
+from tests.shared.scp_asm import SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm
+
+
+PUSHED_VALUE = 7
 
 
 class TestPopKeepsVstackInSync(unittest.TestCase):
@@ -122,6 +127,46 @@ class TestPopValidation(unittest.TestCase):
 
         self.assertEqual(builder.sp_get(), 1)
         self.assertEqual(builder.vstack_size(), 1)
+
+
+class TestArgumentCountReachingIntoParameters(unittest.TestCase):
+    '''A function's own parameters sit on the VM stack below its pushes. An argument count larger than the pushes the
+    call really has must fail the lift at that instruction, not take the parameter as an argument.'''
+
+    def assert_lift_fails_at(self, mnemonic: str, build):
+        asm = Asm()
+        build(asm)
+
+        with self.assertRaisesRegex(ValueError, f'{mnemonic} at 0x'):
+            lift_asm(asm, argc = 1)
+
+    def test_syscall_with_more_arguments_than_pushed(self):
+        def build(asm: Asm):
+            asm.push_int(PUSHED_VALUE); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2)
+            asm.pop(2 * WORD_SIZE); asm.ret()
+
+        self.assert_lift_fails_at('SYSCALL', build)
+
+    def test_debug_log_with_more_arguments_than_pushed(self):
+        def build(asm: Asm):
+            asm.push_int(PUSHED_VALUE); asm.debug_log(2); asm.ret()
+
+        self.assert_lift_fails_at('DEBUG_LOG', build)
+
+    def test_tail_call_with_more_arguments_than_pushed(self):
+        def build(asm: Asm):
+            asm.push_int(PUSHED_VALUE); asm.call_script_no_return(2)
+
+        self.assert_lift_fails_at('CALL_SCRIPT_NO_RETURN', build)
+
+    def test_syscall_with_exactly_the_pushed_arguments_is_accepted(self):
+        asm = Asm()
+        asm.push_int(PUSHED_VALUE); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 1); asm.pop(2 * WORD_SIZE); asm.ret()
+
+        _, llil_func = lift_asm(asm, argc = 1)
+
+        syscall, = instructions_of(llil_func, LowLevelILSyscall)
+        self.assertEqual(len(syscall.args), syscall.argc)
 
 
 if __name__ == '__main__':

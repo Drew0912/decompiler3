@@ -57,6 +57,19 @@ def make_guard(exit_stmt) -> HLILIf:
     return HLILIf(make_exit_condition(), HLILBlock([exit_stmt]), None)
 
 
+def make_flag(name: str) -> HLILVar:
+    return HLILVar(HLILVariable(name))
+
+
+def make_call(name: str) -> HLILExprStmt:
+    return HLILExprStmt(HLILCall(name, []))
+
+
+def call_names(block: HLILBlock) -> list:
+    '''The called functions among a block's top-level statements, in order'''
+    return [stmt.expr.func_name for stmt in block.statements if isinstance(stmt, HLILExprStmt)]
+
+
 def run_pass(loop: HLILWhile) -> HighLevelILFunction:
     func = HighLevelILFunction('test_loop')
     func.add_statement(loop)
@@ -287,6 +300,75 @@ class TestLoopRecoveryDoWhileLabel(unittest.TestCase):
         recovered = func.body.statements[0]
         self.assertIsInstance(recovered, HLILDoWhile)
         self.assertEqual(recovered.label, loop_label)
+
+
+class TestGuardedLoopKeepsItsBody(unittest.TestCase):
+    '''while (1) { if (c) { body } else { break } } is while (c) { body }'''
+
+    def test_break_in_the_else_arm(self):
+        condition = make_flag('c')
+        loop = HLILWhile(HLILConst(1), HLILBlock([
+            HLILIf(condition, HLILBlock([make_call('work'), make_call('more')]), HLILBlock([HLILBreak()])),
+        ]))
+
+        [recovered] = run_pass(loop).body.statements
+
+        self.assertIsInstance(recovered, HLILWhile)
+        self.assertIs(recovered.condition, condition)
+        self.assertEqual(call_names(recovered.body), ['work', 'more'])
+
+    def test_break_in_the_then_arm_negates_the_test(self):
+        loop = HLILWhile(HLILConst(1), HLILBlock([
+            HLILIf(make_flag('c'), HLILBlock([HLILBreak()]), HLILBlock([make_call('work')])),
+        ]))
+
+        [recovered] = run_pass(loop).body.statements
+
+        self.assertEqual(str(recovered.condition), '!c')
+        self.assertEqual(call_names(recovered.body), ['work'])
+
+    def test_comments_above_the_test_move_into_the_body(self):
+        comment = HLILComment(GUARD_LINE)
+        loop = HLILWhile(HLILConst(1), HLILBlock([
+            comment, HLILIf(make_flag('c'), HLILBlock([make_call('work')]), HLILBlock([HLILBreak()])),
+        ]))
+
+        [recovered] = run_pass(loop).body.statements
+
+        self.assertIs(recovered.body.statements[0], comment)
+        self.assertEqual(call_names(recovered.body), ['work'])
+
+
+class TestLeadingExitGuardLeavesTheBody(unittest.TestCase):
+    def test_guard_is_removed_from_a_longer_body(self):
+        guard = HLILIf(make_flag('done'), HLILBlock([HLILBreak()]), None)
+        loop = HLILWhile(HLILConst(1), HLILBlock([guard, make_call('a'), make_call('b'), make_call('c')]))
+
+        [recovered] = run_pass(loop).body.statements
+
+        self.assertEqual(str(recovered.condition), '!done')
+        self.assertEqual(call_names(recovered.body), ['a', 'b', 'c'])
+
+    def test_guard_after_a_comment_is_removed_and_the_comment_stays(self):
+        comment = HLILComment(GUARD_LINE)
+        guard = HLILIf(make_flag('done'), HLILBlock([HLILBreak()]), None)
+        loop = HLILWhile(HLILConst(1), HLILBlock([comment, guard, make_call('a'), make_call('b')]))
+
+        [recovered] = run_pass(loop).body.statements
+
+        self.assertEqual(recovered.body.statements[0], comment)
+        self.assertEqual(call_names(recovered.body), ['a', 'b'])
+        self.assertFalse([stmt for stmt in recovered.body.statements if isinstance(stmt, HLILIf)])
+
+
+class TestTrailingContinueIsDropped(unittest.TestCase):
+    def test_continue_ending_a_loop_with_a_real_condition(self):
+        loop = HLILWhile(make_flag('c'), HLILBlock([make_call('work'), HLILContinue()]))
+
+        [recovered] = run_pass(loop).body.statements
+
+        self.assertEqual(call_names(recovered.body), ['work'])
+        self.assertEqual(len(recovered.body.statements), 1)
 
 
 if __name__ == '__main__':

@@ -40,7 +40,7 @@ need goes in `tests/shared/`.
 | Module | Gives |
 |---|---|
 | `corpus.py` | `SORA2_SCRIPTS`, the `sora2_1.0` scripts folder (a script is `SORA2_SCRIPTS / 'ai/x.dat'`), and `require(path)` for the corpus skip (below) |
-| `llil_utils.py` | `make_builder(num_params)`: a `FalcomVMBuilder` with one function and its entry block open |
+| `llil_utils.py` | `make_builder(num_params)`: a `FalcomVMBuilder` with one function and its entry block open; `lift_asm(asm)`: `scp_asm` bytecode disassembled and lifted; `instructions_of(func, kind)` |
 | `ir_utils.py` | `connect(func)`: an MLIL function's edges from its blocks' last instructions; `concrete_subclasses(base)` |
 | `hlil_cfg_utils.py` | `build_function` and `structure`: small MLIL CFGs from a block spec, and their HLIL; `classify` and `hlil_run`: an oracle that runs MLIL and HLIL side by side |
 | `scp_asm.py` | `Asm` and `Program`: hand-written ED9 bytecode for a real `ScpParser` |

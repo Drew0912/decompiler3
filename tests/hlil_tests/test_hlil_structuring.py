@@ -10,7 +10,10 @@ kind, and every test runs the result against its MLIL for every parameter assign
 - loops: an exit through goto-only blocks (CheckAlgoUse's infinite loops), the enclosing stop
   inside that chain, a goto-only header, a loop entered again after it was emitted;
 - a jump HLIL cannot express becomes an HLILUnstructured node, never a fall-through: the node's
-  reachability, its handling in the passes, its rendering and the validator's report.
+  reachability, its handling in the passes, its rendering and the validator's report;
+- converter details: a join after an if emitted once, a loop of goto-only blocks (fuzz seed 1208), a
+  one-block loop, the locals declared (each once, parameters excluded), loop labels, a logical not,
+  provenance.
 '''
 
 from pathlib import Path
@@ -27,6 +30,11 @@ from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLI
                           HLILConst, HLILVar, HLILVariable, HLILBinaryOp, HLILUnaryOp, BinaryOp, UnaryOp,
                           constant_truth, reachable_statements, iter_tree)
 from ir.hlil.hlil_formatter import HLILFormatter
+from ir.hlil.mlil_to_hlil import MLILToHLILConverter, constant_condition_truth, convert_mlil_to_hlil
+from ir.mlil.mlil import (
+    MediumLevelILFunction, MLILCall, MLILConst, MLILIf, MLILLogicalNot, MLILRet, MLILSetVar, MLILTestZero, MLILVar,
+    MLILVariable,
+)
 from ir.hlil.structural_analysis import StructuralAnalyzer
 from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
 from ir.hlil.passes.pass_dead_code_elimination import DeadCodeEliminationPass
@@ -37,9 +45,16 @@ from tests.shared.hlil_cfg_utils import (
     EARLY_EXIT, SHARED_LOOP, SHARED_LOOP_COPY_STATEMENTS, build_function, to_hlil, structure, classify, hlil_run,
     parameters, unstructured_nodes, calls_emitted,
 )
+from tests.shared.ir_utils import connect
 
 TARGET = 'loc_1'
 REASON = 'region not repeatable'
+START_ADDRESS = 0x40
+NONZERO_VALUE = 5
+CALL_ADDRESS = 0x1234
+BRANCH_BASE_ADDRESS = 0x2000
+BRANCH_STEP = 0x10
+BRANCH_BASE_INDEX = 100
 
 # In a loop: one path breaks, the other rejoins MOVE, the enclosing if's merge
 MERGE_IN_LOOP = {
@@ -141,6 +156,40 @@ CONSTANT_COMPARE = {
     'L2': (['tail'], ('goto', 'L')),
     'E':  ([], ('ret', 0)),
     'D':  (['dead'], ('goto', 'L2')),
+}
+
+
+# if (a) { c1(); if (b) { c2(); } m(); if (c) { x(); } else { y(); } }: m() is where the two paths meet
+JOIN_AFTER_IF = {
+    'E':  ([], ('if', 'a', 'B1', 'R')),
+    'B1': (['c1'], ('if', 'b', 'B2', 'M')),
+    'B2': (['c2'], ('goto', 'M')),
+    'M':  (['m'], ('if', 'c', 'X', 'Y')),
+    'X':  (['x'], ('goto', 'R')),
+    'Y':  (['y'], ('goto', 'R')),
+    'R':  ([], ('ret', 0)),
+}
+
+# A loop with a break and a continue of its own, nothing outside it to jump to
+SINGLE_LOOP_WITH_BREAK = {
+    'E':    ([], ('goto', 'H')),
+    'H':    ([], ('if', 'more', 'BODY', 'DONE')),
+    'BODY': (['work'], ('if', 'stop', 'DONE', 'NEXT')),
+    'NEXT': (['next'], ('goto', 'H')),
+    'DONE': (['done'], ('ret', 0)),
+}
+
+# Seed 1208 of the structuring fuzz reduced: a loop whose blocks only jump on (B3, B7), entered from B4
+# and B6. Skipping the goto-only blocks wrongly let a run leave through the loop's entry
+GOTO_ONLY_LOOP = {
+    'B0': ([], ('if', 'p0', 'B1', 'B6')),
+    'B1': ([], ('if', 'p1', 'B4', 'B2')),
+    'B2': ([], ('ret', 2)),
+    'B3': ([], ('goto', 'B5')),
+    'B4': ([], ('goto', 'B5')),
+    'B5': (['A5'], ('if', 'p5', 'B3', 'B7')),
+    'B6': ([], ('if', 'p6', 'B3', 'B0')),
+    'B7': ([], ('goto', 'B5')),
 }
 
 
@@ -343,6 +392,14 @@ class TestConstantTruth(unittest.TestCase):
         self.assertIs(constant_truth(HLILBinaryOp(BinaryOp.AND, var('c'), HLILConst(0))), False)
         self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.AND, var('c'), HLILConst(1))))
 
+    def test_logical_operators_decided_by_both_sides(self):
+        false, true, other_true = HLILConst(0), HLILConst(1), HLILConst(2)
+
+        self.assertIs(constant_truth(HLILBinaryOp(BinaryOp.OR, false, HLILConst(0))), False)
+        self.assertIs(constant_truth(HLILBinaryOp(BinaryOp.AND, true, other_true)), True)
+        self.assertIs(constant_truth(HLILBinaryOp(BinaryOp.OR, false, true)), True)
+        self.assertIs(constant_truth(HLILBinaryOp(BinaryOp.AND, false, true)), False)
+
     def test_anything_else_is_unknown(self):
         self.assertIsNone(constant_truth(var('c')))
         self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.EQ, var('c'), HLILConst(1))))
@@ -382,6 +439,130 @@ class TestReachableStatements(unittest.TestCase):
         # do { if (c) continue; return; } while (c) - the condition can end the loop
         body = HLILBlock([HLILIf(var('c'), HLILBlock([HLILContinue()])), HLILReturn()])
         self.assertEqual(self.reached(HLILDoWhile(var('c'), body), self.call('after')), ['after'])
+
+
+class TestJoinAfterAnIf(unittest.TestCase):
+    def test_the_join_is_emitted_once(self):
+        func, hlil = structure(JOIN_AFTER_IF)
+
+        self.assertEqual(classify(func, hlil), ('ok', None))
+        self.assertEqual(unstructured_nodes(hlil, reachable_only = False), [])
+        self.assertEqual(calls_emitted(hlil, 'm'), 1)
+
+
+class TestGotoOnlyBlocks(unittest.TestCase):
+    def test_loop_of_goto_only_blocks_never_gives_a_wrong_run(self):
+        func = build_function('f', GOTO_ONLY_LOOP)
+
+        self.assertNotEqual(classify(func, to_hlil(func))[0], 'wrong')
+
+
+class TestSingleBlockFunction(unittest.TestCase):
+    def test_block_that_jumps_to_itself_is_an_endless_loop(self):
+        func, hlil = structure({'A': (['wait'], ('goto', 'A'))})
+
+        [loop] = hlil.body.statements
+
+        self.assertIsInstance(loop, HLILWhile)
+        self.assertEqual(str(loop.condition), '1')
+        self.assertEqual([str(stmt) for stmt in loop.body.statements], ['wait()'])
+        self.assertEqual(classify(func, hlil), ('ok', None))
+
+
+class TestDeclaredLocals(unittest.TestCase):
+    def test_each_local_is_declared_once_in_first_use_order_and_parameters_are_not(self):
+        func = MediumLevelILFunction('locals', START_ADDRESS)
+        arg1 = func.get_or_create_parameter(1, 'arg1')
+        x, y = MLILVariable('x'), MLILVariable('y')
+        func.create_block().instructions = [
+            MLILSetVar(x, MLILVar(arg1)),
+            MLILSetVar(y, MLILVar(x)),
+            MLILSetVar(x, MLILVar(y)),
+            MLILRet(MLILVar(y)),
+        ]
+
+        hlil = MLILToHLILConverter(connect(func)).convert()
+
+        self.assertEqual([variable.name for variable in hlil.variables], ['x', 'y'])
+        self.assertEqual([variable.name for variable in hlil.parameters], ['arg1'])
+
+
+class TestLoopLabels(unittest.TestCase):
+    def test_a_loop_left_by_its_own_break_has_no_label(self):
+        _, hlil = structure(SINGLE_LOOP_WITH_BREAK)
+
+        loops = [node for node in iter_tree(hlil.body) if isinstance(node, (HLILWhile, HLILDoWhile))]
+
+        self.assertEqual(len(loops), 1)
+        self.assertIsNone(loops[0].label)
+
+
+class TestLogicalNot(unittest.TestCase):
+    '''A logical not and a test against zero both become `operand == 0`'''
+
+    def test_condition_is_compared_with_zero(self):
+        for negation in (MLILLogicalNot, MLILTestZero):
+            with self.subTest(negation = negation.__name__):
+                func = MediumLevelILFunction('negated', START_ADDRESS)
+                arg1 = func.get_or_create_parameter(1, 'arg1')
+                entry, then, done = func.create_block(), func.create_block(), func.create_block()
+                entry.instructions = [MLILIf(negation(MLILVar(arg1)), then, done)]
+                then.instructions = [MLILRet(MLILConst(1))]
+                done.instructions = [MLILRet(MLILConst(0))]
+
+                hlil = MLILToHLILConverter(connect(func)).convert()
+                lines = [line.strip() for line in HLILFormatter.format_function(hlil)]
+
+                self.assertIn('if (arg1 == 0) {', lines)
+
+    def test_constant_truth_of_a_negated_constant(self):
+        self.assertIs(constant_condition_truth(MLILLogicalNot(MLILConst(0))), True)
+        self.assertIs(constant_condition_truth(MLILTestZero(MLILConst(NONZERO_VALUE))), False)
+
+
+class TestProvenance(unittest.TestCase):
+    def test_function_without_a_start_address_starts_at_zero(self):
+        self.assertEqual(HighLevelILFunction('f').start_addr, 0)
+
+    def test_function_keeps_its_start_address(self):
+        func = MediumLevelILFunction('start', START_ADDRESS)
+        func.create_block().instructions = [MLILRet(MLILConst(0))]
+
+        self.assertEqual(MLILToHLILConverter(connect(func)).convert().start_addr, START_ADDRESS)
+        self.assertEqual(convert_mlil_to_hlil(connect(func)).start_addr, START_ADDRESS)
+
+    def test_statement_keeps_the_address_and_index_of_its_instruction(self):
+        func = MediumLevelILFunction('source', START_ADDRESS)
+        call = MLILCall('work', [], address = CALL_ADDRESS)
+        func.create_block().instructions = [MLILCall('first', []), call, MLILRet(MLILConst(0))]
+        connect(func)
+
+        [_, stmt, _] = MLILToHLILConverter(func).convert().body.statements
+
+        self.assertIsInstance(stmt, HLILExprStmt)
+        self.assertNotEqual(call.inst_index, 0)
+        self.assertEqual((stmt.address, stmt.mlil_index), (CALL_ADDRESS, call.inst_index))
+        self.assertEqual((stmt.expr.address, stmt.expr.mlil_index), (CALL_ADDRESS, call.inst_index))
+
+    def test_node_without_a_source_has_address_zero(self):
+        self.assertEqual(HLILConst(1).address, 0)
+
+    def test_unstructured_node_keeps_the_branch_it_stands_for(self):
+        func = build_function('f', SHARED_LOOP)
+        branches = {}
+        for number, block in enumerate(func.basic_blocks):
+            last = block.instructions[-1]
+            last.address = BRANCH_BASE_ADDRESS + BRANCH_STEP * number
+            last.inst_index = BRANCH_BASE_INDEX + number
+            branches[last.address] = last.inst_index
+
+        hlil = MLILToHLILConverter(func, clone_budget = 0).convert()
+        nodes = unstructured_nodes(hlil)
+
+        self.assertTrue(nodes)
+        for node in nodes:
+            self.assertIn(node.address, branches)
+            self.assertEqual(node.mlil_index, branches[node.address])
 
 
 if __name__ == '__main__':

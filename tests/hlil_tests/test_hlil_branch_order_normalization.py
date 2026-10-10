@@ -254,5 +254,98 @@ class TestNormalizeBranchOrderFlag(unittest.TestCase):
         self.assertEqual(first_comment(result.true_block), f'line({LATE_LINE})')
 
 
+def compare(operand) -> HLILBinaryOp:
+    return HLILBinaryOp(BinaryOp.GT, operand, HLILConst(THRESHOLD))
+
+
+def lone_if_chain(*arms: HLILBlock) -> HLILBlock:
+    '''A block that is only an if whose else holds the next link: one link per arm'''
+    result = None
+    for arm in reversed(arms):
+        result = HLILBlock([HLILIf(make_condition(), arm, result)])
+
+    return result
+
+
+class TestChainsAndScrutinees(unittest.TestCase):
+    '''The longer else-if chain goes in the else whatever the lines say; a chain testing the same variable stays;
+    one testing something else, or a test that examines no variable, is ordered by its lines'''
+
+    def test_arm_without_a_line_number_never_fails_the_comparison(self):
+        with_line = make_arm(EARLY_LINE)
+        without_line = HLILBlock([HLILExprStmt(HLILCall('without_line', []))])
+
+        result = run_pass(HLILIf(make_condition(), with_line, without_line))
+
+        self.assertIs(result.true_block, with_line)
+        self.assertIs(result.false_block, without_line)
+
+    def test_the_longer_chain_goes_in_the_else(self):
+        # Ascending lines would leave the arms alone; the longer chain still moves to the else
+        long_chain = lone_if_chain(make_arm(EARLY_LINE), make_arm(EARLY_LINE + 1))
+        short_chain = lone_if_chain(make_arm(LATE_LINE))
+
+        result = run_pass(HLILIf(make_condition(), long_chain, short_chain))
+
+        self.assertIs(result.true_block, short_chain)
+        self.assertIs(result.false_block, long_chain)
+        self.assertEqual(result.condition.op, BinaryOp.LE)
+
+    def test_the_shorter_chain_stays_first_whatever_the_lines_say(self):
+        long_chain = lone_if_chain(make_arm(EARLY_LINE), make_arm(EARLY_LINE + 1))
+        short_chain = lone_if_chain(make_arm(LATE_LINE))
+
+        result = run_pass(HLILIf(make_condition(), short_chain, long_chain))
+
+        self.assertIs(result.true_block, short_chain)
+        self.assertIs(result.false_block, long_chain)
+        self.assertEqual(result.condition.op, BinaryOp.GT)
+
+    def test_a_chain_testing_something_else_is_swapped_by_line_order(self):
+        # The else holds a lone if on an unrelated variable: not a continuation of this test
+        chain = HLILBlock([HLILIf(compare(make_var('other')), make_arm(EARLY_LINE), None)])
+        late = make_arm(LATE_LINE)
+
+        result = run_pass(HLILIf(make_condition(), late, chain))
+
+        self.assertIs(result.true_block, chain)
+        self.assertIs(result.false_block, late)
+
+    def test_a_chain_on_another_bare_variable_is_swapped_by_line_order(self):
+        chain = HLILBlock([HLILIf(make_var('other'), make_arm(EARLY_LINE), None)])
+        late = make_arm(LATE_LINE)
+
+        result = run_pass(HLILIf(make_var(), late, chain))
+
+        self.assertIs(result.true_block, chain)
+        self.assertIs(result.false_block, late)
+
+    def test_a_chain_on_the_same_variable_is_left_alone(self):
+        chain = HLILBlock([HLILIf(make_condition(), make_arm(EARLY_LINE), None)])
+        late = make_arm(LATE_LINE)
+
+        result = run_pass(HLILIf(make_condition(), late, chain))
+
+        self.assertIs(result.true_block, late)
+
+    def test_a_chain_whose_inner_test_examines_no_variable_is_left_alone(self):
+        total = HLILBinaryOp(BinaryOp.ADD, make_var('a'), make_var('b'))
+        chain = HLILBlock([HLILIf(compare(total), make_arm(EARLY_LINE), None)])
+        late = make_arm(LATE_LINE)
+
+        result = run_pass(HLILIf(make_condition(), late, chain))
+
+        self.assertIs(result.true_block, late)
+
+    def test_a_chain_whose_outer_test_examines_no_variable_is_left_alone(self):
+        total = HLILBinaryOp(BinaryOp.ADD, make_var('a'), make_var('b'))
+        chain = HLILBlock([HLILIf(make_condition(), make_arm(EARLY_LINE), None)])
+        late = make_arm(LATE_LINE)
+
+        result = run_pass(HLILIf(compare(total), late, chain))
+
+        self.assertIs(result.true_block, late)
+
+
 if __name__ == '__main__':
     unittest.main()

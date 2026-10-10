@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for ScpWriter.CommonImports, the duplicate-name guard, and genLabel()'''
+'''Unit tests for ScpWriter.CommonImports, a common function called by its name, the duplicate-name guard, and
+genLabel()'''
 
 from pathlib import Path
 import sys
@@ -8,6 +9,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer import scp_writer
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_writer_test_utils import WriterTestCase
@@ -72,6 +74,30 @@ class TestCommonImportsRegistrationOrder(CompileTestCase):
         writer = self.compile_dsl(build)
 
         self.assertEqual([f.name for f in writer.functions], ['imported_a', 'imported_b'])
+
+
+class TestCallByName(WriterTestCase):
+    '''The decompiler emits @scena.LLILCommonCode() for a common function the library didn't match, and other
+    functions CALL it by its name: the decorator must give the name back'''
+
+    def test_common_function_is_called_by_its_name(self):
+        @self.writer.LLILCommonCode()
+        def Common():
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Caller():
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('ret')
+            CALL(Common)
+            label('ret')
+            RETURN()
+
+        self.assertIsNotNone(Common)
+        _, functions = ScpParser.load_bytes(self.writer.build({}), 'test.dat', round_trip = False,
+                                            keep_unreachable_code = False, quiet = True)
+
+        self.assertEqual({func.name: func.is_common_func for func in functions}, {'Common': 1, 'Caller': 0})
 
 
 class TestDuplicateNameGuard(WriterTestCase):

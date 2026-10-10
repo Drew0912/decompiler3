@@ -194,6 +194,47 @@ class TestStackMistakes(CheckTestCase):
 
         self.assertCheckFails(rf"{at(__file__, 'reachable pop')}Live: POP at {HEX}: pops 1 entries, the stack has 0")
 
+    def test_argument_count_past_the_pushes_reaching_a_parameter(self):
+        '''The missing arguments would be the function's own parameters: entries to the parser's stack simulation, so
+        only the lift notices'''
+        @self.writer.LLILCode()
+        def Syscall(arg1: Value32):
+            PUSH_INT(1)
+            SYSCALL(1, 2, 2)                        # line: syscall past the pushes
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        self.assertCheckFails(rf"{at(__file__, 'syscall past the pushes')}Syscall: SYSCALL at {HEX}: ")
+
+    def test_debug_log_count_past_the_pushes(self):
+        @self.writer.LLILCode()
+        def Log(arg1: Value32):
+            PUSH_INT(1)
+            DEBUG_LOG(2)                            # line: debug log past the pushes
+            RETURN()
+
+        self.assertCheckFails(rf"{at(__file__, 'debug log past the pushes')}Log: DEBUG_LOG at {HEX}: ")
+
+    def test_tail_call_count_past_the_pushes(self):
+        @self.writer.LLILCode()
+        def TailCall(arg1: Value32):
+            PUSH_INT(1)
+            CALL_SCRIPT_NO_RETURN('this', 'g', 2)   # line: tail call past the pushes
+
+        self.assertCheckFails(rf"{at(__file__, 'tail call past the pushes')}TailCall: CALL_SCRIPT_NO_RETURN at {HEX}: ")
+
+    def test_argument_count_matching_the_pushes_compiles(self):
+        @self.writer.LLILCode()
+        def Syscall(arg1: Value32):
+            PUSH_INT(1)
+            SYSCALL(1, 2, 1)
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        self.writer.run({})
+
+        self.assertTrue(self.dat.exists())
+
 
 class TestRunOn(CheckTestCase):
     '''A function without RETURN runs on into the next function's code: a warning while that decompiles, a note on the

@@ -4,8 +4,9 @@ table index and common flag kept, the signature merged with the original's; run 
 add_function adds functions after the script's own; hook modules get the script's names; original.Name(...) and
 inline_original_func() inline a body from before any hook; opcode callbacks keep, drop or add opcodes as they are
 compiled; and the writer's errors about a hook and compile-check failures in it point at the hook's own line. Also the
-parameter checks on every new function.'''
+parameter checks on every new function, and wrapped_chain's end on a cycle.'''
 
+from itertools import islice
 from pathlib import Path
 import functools
 import runpy
@@ -26,6 +27,7 @@ from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_writer_test_utils import HEX, WriterTestCase, at, load_module, location
 
 PUSH_POP_RETURN = ['PUSH_INT', 'POP', 'RETURN']
+CHAIN_LIMIT = 10            # more than any chain below: a chain that never ends shows as this many entries
 
 # A body taking Target's one parameter that calls Helper by its plain name (a script function, never defined in a hook)
 CALLS_HELPER = '''
@@ -1012,6 +1014,25 @@ class TestAddFunction(HookTestCase):
                                                         f"defined at {existing_site}; replace_function replaces a function$"):
                     self.writer.build({})
 
+    def test_added_function_is_called_by_its_name(self):
+        '''@add_function gives the function back, so another added function can CALL it by name'''
+        self.hook('''
+            @add_function
+            def Helper2():
+                RETURN()
+
+            @add_function
+            def Caller2():
+                PUSH_CURRENT_FUNC_ID()
+                PUSH_RET_ADDR('ret')
+                CALL(Helper2)
+                label('ret')
+                RETURN()
+        ''')
+        functions = self.parsed()
+
+        self.assertEqual(self.called(functions['Caller2']), functions['Helper2'].index)
+
 
 class TestInjection(HookTestCase):
     def test_script_names_reach_hook_bodies(self):
@@ -1096,6 +1117,46 @@ class TestInjection(HookTestCase):
 
         for module in (scp_writer, scp_writer_helper, scp_writer_hook_registry, scp_writer_hooks):
             self.assertNotIn('OnlyScript', vars(module))
+
+    def test_body_wrapping_a_non_function_callable(self):
+        '''functools.wraps over a partial: that layer has no __globals__ to give the script's names to'''
+        self.define_target()
+        self.hook('''
+            import functools
+
+            def pop_one(extra, arg1):
+                POP(WORD_SIZE)
+                RETURN()
+
+            @replace_function('Target')
+            @functools.wraps(functools.partial(pop_one, 1))
+            def Target(arg1):
+                pop_one(1, arg1)
+        ''')
+        functions = self.parsed({'Helper': self.define_helper()})      # names to give the hook's module
+
+        self.assertEqual(self.mnemonics(functions['Target']), ['POP', 'RETURN'])
+
+
+class TestWrappedChain(unittest.TestCase):
+    def test_chain_ends_with_the_innermost_function(self):
+        def inner():
+            pass
+
+        def outer():
+            pass
+
+        outer.__wrapped__ = inner
+
+        self.assertEqual(list(islice(scp_writer_hook_registry.wrapped_chain(outer), CHAIN_LIMIT)), [outer, inner])
+
+    def test_cycle_ends_the_chain(self):
+        def looped():
+            pass
+
+        functools.update_wrapper(looped, looped)          # looped.__wrapped__ is looped
+
+        self.assertEqual(list(islice(scp_writer_hook_registry.wrapped_chain(looped), CHAIN_LIMIT)), [looped])
 
 
 class TestOriginal(HookTestCase):

@@ -1,20 +1,23 @@
 #!/usr/bin/env python3
-'''DSL argument checks (bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes and what
-handle_opcode tracks.'''
+'''DSL argument checks (bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes, what
+handle_opcode tracks, every opcode function handing the writer its own opcode, and PUSH.'''
 
+import inspect
 import math
 from pathlib import Path
 import re
 import sys
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
-from falcom.ed9.parser.types_scp import ScpValue
+from falcom.ed9.parser.types_scp import RawInt, ScpValue
+from falcom.ed9.writer import scp_writer_opcode_handler
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_writer_test_utils import at, body_writer, fresh_writer
 
@@ -107,6 +110,36 @@ class TestHandleOpcode(unittest.TestCase):
         self.assertEqual(no_payloads, [None, None, None])
 
 
+class TestOpcodeFunctions(unittest.TestCase):
+    ARGS = {
+        'PUSH': (1,), 'POP': (WORD_SIZE,), 'LOAD_STACK': (0,), 'LOAD_STACK_DEREF': (0,), 'PUSH_STACK_OFFSET': (0,),
+        'POP_TO': (0,), 'POP_TO_DEREF': (0,), 'LOAD_GLOBAL': (0,), 'SET_GLOBAL': (0,), 'GET_REG': (0,),
+        'SET_REG': (0,), 'JMP': ('target',), 'CALL': (lambda: None,), 'POP_JMP_NOT_ZERO': ('target',),
+        'POP_JMP_ZERO': ('target',), 'CALL_SCRIPT': ('this', 'func', 0), 'CALL_SCRIPT_NO_RETURN': ('this', 'func', 0),
+        'SYSCALL': (1, 2, 3), 'PUSH_CALLER_FRAME': ('target',), 'DEBUG_SET_LINENO': (1,), 'DEBUG_LOG': (1,),
+        'UNKNOWN_28': (b'',), 'PUSH_RET_ADDR': ('target',), 'PUSH_RAW': (RawInt(1),), 'PUSH_INT': (1,),
+        'PUSH_FLOAT': (1.0,), 'PUSH_STR': ('s',),
+    }
+
+    @classmethod
+    def opcode_functions(cls) -> dict:
+        return {name: func for name, func in vars(scp_writer_opcode_handler).items()
+                if inspect.isfunction(func) and func.__module__ == scp_writer_opcode_handler.__name__}
+
+    def test_each_function_emits_its_own_opcode(self):
+        '''Every statement of the DSL hands the writer its opcode and operands; none returns before it'''
+        writer = body_writer()
+        functions = self.opcode_functions()
+        no_operands = {name: () for name in ED9Opcode.__members__ if name not in self.ARGS}
+        args = {**no_operands, **self.ARGS}
+        emitted = []
+        with mock.patch.object(writer, 'handle_opcode', lambda opcode, *operands: emitted.append((opcode, operands))):
+            for name, func in functions.items():
+                func(*args[name])
+
+        self.assertEqual(emitted, [(ED9Opcode[name], args[name]) for name in functions])
+
+
 class TestPushFloat(unittest.TestCase):
     def setUp(self):
         self.writer = body_writer()
@@ -139,6 +172,22 @@ class TestPushFloat(unittest.TestCase):
             @writer.LLILCode()
             def NanDefault(arg1: Nullable32 = math.nan):    # line: nan default
                 RETURN()
+
+
+class TestPush(unittest.TestCase):
+    def test_push_encodes_like_its_typed_twin(self):
+        cases = {'int': (7, PUSH_INT), 'float': (1.5, PUSH_FLOAT), 'str': ('text', PUSH_STR),
+                 'raw': (RawInt(3), PUSH_RAW)}
+        for case, (value, typed) in cases.items():
+            with self.subTest(case):
+                writer = body_writer()
+                typed(value)
+                expected = writer.fs.ReadAll()
+
+                writer = body_writer()
+                PUSH(value)
+
+                self.assertEqual(writer.fs.ReadAll(), expected)
 
 
 class TestValueRanges(unittest.TestCase):

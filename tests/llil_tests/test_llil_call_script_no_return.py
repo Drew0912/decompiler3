@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 '''Unit tests for CALL_SCRIPT_NO_RETURN (opcode 0x23), a script tail call that never gives control
-back to the calling function.'''
+back to the calling function, and the module and function names both script calls lift.'''
 
 from pathlib import Path
 import sys
@@ -11,16 +11,19 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILCall
 from ir.mlil.mlil import MLILCallScript, MLILRet, MLILVar
-from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn
+from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript, LowLevelILCallScriptNoReturn
 from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
 from falcom.ed9.parser.scp import CallDebugInfoTracker
 from falcom.ed9.parser.types_scp import ScpFunctionCallDebugInfo
-from tests.shared.llil_utils import make_builder
+from tests.shared import scp_asm
+from tests.shared.llil_utils import instructions_of, lift_asm, make_builder
 
 
 MODULE_NAME = 'module'
 FUNC_NAME = 'func'
+PUSHED_VALUE = 7
+SCRIPT_ARGC = 1
 
 
 def build_tail_call_function(arg_count: int):
@@ -113,6 +116,31 @@ class TestCallScriptNoReturnDebugInfoTracker(unittest.TestCase):
         outer_call, inner_call = ordered
         self.assertEqual(outer_call.call_type, ScpFunctionCallDebugInfo.CallType.ScriptNoReturn)
         self.assertEqual(inner_call.call_type, ScpFunctionCallDebugInfo.CallType.Local)
+
+
+class TestScriptCallNames(unittest.TestCase):
+    '''The module and function a CALL_SCRIPT / CALL_SCRIPT_NO_RETURN names come from its two string operands'''
+
+    def test_call_script_keeps_module_and_function_names(self):
+        asm = scp_asm.Asm()
+        asm.frame('after'); asm.push_int(PUSHED_VALUE); asm.call_script(SCRIPT_ARGC); asm.label('after'); asm.ret()
+
+        _, llil_func = lift_asm(asm)
+
+        call, = instructions_of(llil_func, LowLevelILCallScript)
+        self.assertEqual((call.module, call.func, call.arg_count),
+                         (scp_asm.MODULE_NAME, scp_asm.SCRIPT_FUNC_NAME, SCRIPT_ARGC))
+        self.assertEqual(call.target, f'{scp_asm.MODULE_NAME}.{scp_asm.SCRIPT_FUNC_NAME}')
+
+    def test_tail_call_keeps_module_and_function_names(self):
+        asm = scp_asm.Asm()
+        asm.push_int(PUSHED_VALUE); asm.call_script_no_return(SCRIPT_ARGC)
+
+        _, llil_func = lift_asm(asm)
+
+        call, = instructions_of(llil_func, LowLevelILCallScriptNoReturn)
+        self.assertEqual((call.module, call.func, call.arg_count),
+                         (scp_asm.MODULE_NAME, scp_asm.SCRIPT_FUNC_NAME, SCRIPT_ARGC))
 
 
 if __name__ == '__main__':

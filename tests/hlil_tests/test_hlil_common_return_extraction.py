@@ -263,5 +263,51 @@ class TestContainsBareBreak(unittest.TestCase):
         self.assertFalse(contains_bare_break(HLILBlock([loop])))
 
 
+class TestCommonReturnValues(unittest.TestCase):
+    '''A return is hoisted only when every arm returns the same thing: a bare return and `return 5` differ'''
+
+    def test_switch_cases_mixing_a_bare_return_and_a_value_keep_their_returns(self):
+        switch = make_switch(
+            make_case(FIRST_CASE_VALUE, make_call('a'), HLILReturn()),
+            make_case(SECOND_CASE_VALUE, make_call('b'), make_return()),
+            make_default(make_call('c'), HLILReturn()),
+        )
+
+        func = run_pass(switch)
+
+        self.assertEqual(len(func.body.statements), 1)
+        self.assertTrue(all(ends_in_return(case.body) for case in switch.cases))
+        self.assertEqual(switch.cases[1].body.statements[-1].value.value, RETURN_VALUE)
+
+    def test_if_arms_mixing_a_bare_return_and_a_value_keep_their_returns(self):
+        stmt = HLILIf(make_selector(), HLILBlock([make_call('a'), HLILReturn()]),
+                      HLILBlock([make_call('b'), make_return()]))
+
+        func = run_pass(stmt)
+
+        self.assertEqual(len(func.body.statements), 1)
+        self.assertTrue(ends_in_return(stmt.true_block))
+        self.assertTrue(ends_in_return(stmt.false_block))
+
+    def test_arms_returning_the_same_variable_share_one_return(self):
+        result = HLILVariable('result')
+        stmt = HLILIf(make_selector(), HLILBlock([make_call('a'), HLILReturn(HLILVar(result))]),
+                      HLILBlock([make_call('b'), HLILReturn(HLILVar(result))]))
+
+        func = run_pass(stmt)
+
+        self.assertEqual(len(func.body.statements), 2)
+        self.assertIsInstance(func.body.statements[1], HLILReturn)
+        self.assertEqual((len(stmt.true_block.statements), len(stmt.false_block.statements)), (1, 1))
+
+    def test_arms_returning_different_variables_keep_their_returns(self):
+        stmt = HLILIf(make_selector(), HLILBlock([HLILReturn(HLILVar(HLILVariable('first')))]),
+                      HLILBlock([HLILReturn(HLILVar(HLILVariable('second')))]))
+
+        func = run_pass(stmt)
+
+        self.assertEqual(len(func.body.statements), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 '''The writer's compile: built in memory and written only on success, file-wide labels whose errors and warnings
-name their functions, DSL statements in the wrong place rejected, and global vars declared once, in their block or a
-run callback, and named right.'''
+name their functions, DSL statements in the wrong place rejected, global vars declared once, in their block or a
+run callback, and named right, the global opcodes by name or index, and the string pool without round_trip.'''
 
+import logging
 from pathlib import Path
 import re
 import struct
@@ -22,6 +23,13 @@ from tests.shared.scp_writer_test_utils import WriterTestCase, at, fresh_writer,
 
 def read_uint32(data: bytes, offset: int) -> int:
     return struct.unpack_from('<I', data, offset)[0]
+
+
+def parse(data: bytes) -> tuple:
+    '''(parser, {name: function}) of compiled bytes'''
+    parser, functions = ScpParser.load_bytes(data, 'test.dat', round_trip = False, keep_unreachable_code = False,
+                                             quiet = True)
+    return parser, {func.name: func for func in functions}
 
 
 class TestWrittenOnlyOnSuccess(WriterTestCase):
@@ -361,6 +369,99 @@ class TestGlobalVarNames(WriterTestCase):
             @self.writer.GlobalVars()
             def second():                                   # line: second block
                 GLOBAL_VAR('b', 1)
+
+
+class TestGlobalVarOpcodes(WriterTestCase):
+    def test_set_and_load_global_by_name_and_by_index(self):
+        @self.writer.GlobalVars()
+        def globalvars():
+            GLOBAL_VAR('a', 1)
+            GLOBAL_VAR('b', 1)
+
+        @self.writer.LLILCode()
+        def Body():
+            PUSH_INT(1)
+            SET_GLOBAL('b')
+            PUSH_INT(2)
+            SET_GLOBAL(0)
+            LOAD_GLOBAL('a')
+            SET_REG(0)
+            LOAD_GLOBAL(1)
+            SET_REG(0)
+            RETURN()
+
+        parser, functions = parse(self.writer.build({}))
+        globals_used = [(inst.mnemonic, inst.operands[0].value) for inst in parser.get_instructions(functions['Body'])
+                        if inst.opcode in (ED9Opcode.SET_GLOBAL, ED9Opcode.LOAD_GLOBAL)]
+
+        self.assertEqual(globals_used, [('SET_GLOBAL', 1), ('SET_GLOBAL', 0), ('LOAD_GLOBAL', 0), ('LOAD_GLOBAL', 1)])
+
+
+class TestWriterWithoutRoundTrip(WriterTestCase):
+    '''scena.round_trip = False: equal strings share one pool entry and no debug records are written'''
+
+    def define_repeating_strings(self):
+        @self.writer.LLILCode()
+        def Foo():
+            PUSH_STR('same')
+            PUSH_STR('same')
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+    def pushed_strings(self, data: bytes) -> list:
+        parser, functions = parse(data)
+        return [inst.operands[0].value for inst in parser.get_instructions(functions['Foo'])
+                if inst.opcode == ED9Opcode.PUSH_STR]
+
+    def test_equal_strings_share_one_pool_entry(self):
+        self.writer.round_trip = False
+        self.define_repeating_strings()
+        data = self.writer.build({})
+
+        self.assertEqual(data.count(b'same\x00'), 1)
+        self.assertEqual(self.pushed_strings(data), ['same', 'same'])
+
+    def test_round_trip_pools_every_string(self):
+        self.define_repeating_strings()
+        data = self.writer.build({})
+
+        self.assertEqual(data.count(b'same\x00'), 2)
+        self.assertEqual(self.pushed_strings(data), ['same', 'same'])
+
+
+class TestCheckOffLocations(WriterTestCase):
+    '''With the compile check off there is no source map: messages name the function and nothing else'''
+
+    def test_undefined_label_names_only_the_function(self):
+        writer = self.fresh_writer(check = False)
+
+        @writer.LLILCode()
+        def Foo():
+            JMP('nowhere')
+            RETURN()
+
+        with self.assertRaisesRegex(ValueError, r"^Foo: undefined label 'nowhere'$"):
+            writer.build({})
+
+    def test_jump_into_another_function_warns_with_the_function_only(self):
+        writer = self.fresh_writer(check = False)
+
+        @writer.LLILCode()
+        def A():
+            label('in_a')
+            JMP('in_b')
+            RETURN()
+
+        @writer.LLILCode()
+        def B():
+            label('in_b')
+            RETURN()
+
+        with self.assertLogs(log, logging.WARNING) as logs:
+            writer.build({})
+
+        self.assertEqual([record.getMessage() for record in logs.records],
+                         ["A: jumps to label 'in_b' in B (another function)"])
 
 
 if __name__ == '__main__':

@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for ScpValue encoding and quote_string'''
+'''Unit tests for ScpValue encoding, quote_string and the function-name hash (CRC-32 table)'''
 
 import ast
+import binascii
 from pathlib import Path
 import struct
 import sys
@@ -12,10 +13,16 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from common import *
 from falcom.ed9 import *
+from falcom.ed9.parser.crc32 import crc32_table, hash_func_Name
 
 
 ENDIAN = '<' if default_endian() == 'little' else '>'
 STRING_OFFSET = 0x100
+CRC32_POLYNOMIAL = 0xEDB88320
+BYTE_VALUES = 256
+BITS_PER_BYTE = 8
+NAME_HASH_SEED_MASK = 0x00FFFFFF    # the game's own seed for the rest of the name
+CRC32_FINAL_XOR = 0xFFFFFFFF
 
 
 def decode(data: bytes, **kwargs) -> ScpValue:
@@ -126,6 +133,31 @@ class TestQuoteString(unittest.TestCase):
         text = '◆敵から距離を取る'  # real corpus text (ai1.0/ai_chr5004p.dat)
         self.assertIn('◆', quote_string(text))
         self.assertNotIn('\\u', quote_string(text))
+
+
+class TestFunctionNameHash(unittest.TestCase):
+    @classmethod
+    def polynomial_table(cls) -> list[int]:
+        table = []
+        for value in range(BYTE_VALUES):
+            for _ in range(BITS_PER_BYTE):
+                value = value >> 1 ^ CRC32_POLYNOMIAL if value & 1 else value >> 1
+
+            table.append(value)
+
+        return table
+
+    def test_table_is_the_standard_crc32_table(self):
+        self.assertEqual(crc32_table, self.polynomial_table())
+
+    def test_name_hash_by_first_character(self):
+        '''The first byte picks a table entry: one name per UTF-8 lead byte a function name can start with'''
+        table = self.polynomial_table()
+        for first in ('a', 'Z', '_', '\u00e9', '\u3042', '\u6f22', '\ud55c', '\uac00'):
+            with self.subTest(first = first):
+                data = (first + 'Func').encode(default_encoding())
+                expected = binascii.crc32(data[1:], ~(table[~data[0]] ^ NAME_HASH_SEED_MASK)) ^ CRC32_FINAL_XOR
+                self.assertEqual(hash_func_Name(first + 'Func'), expected)
 
 
 if __name__ == '__main__':

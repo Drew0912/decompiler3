@@ -13,6 +13,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from ir.hlil import (
     BinaryOp,
     ControlFlowOptimizationPass,
+    HLILAddressOf,
+    HLILDeref,
     HighLevelILFunction,
     HLILAssign,
     HLILBinaryOp,
@@ -1045,6 +1047,65 @@ class TestKilledStateIsMonotonic(unittest.TestCase):
 
 def read_original_killed(var: HLILVariable, node) -> tuple:
     return ControlFlowOptimizationPass()._can_read_original_value(var, node, True)
+
+
+RELOADED_VALUE = 5
+STORED_THROUGH_ADDRESS = 7
+
+
+class TestBooleanTempStaysWhileTheBodyReadsItAfterAnInnerIf(unittest.TestCase):
+    '''flag = a < b; if (flag != 0) { if (g) { x(); } use(flag); } - use(flag) still reads flag'''
+
+    def test_assignment_is_kept(self):
+        flag = HLILVariable('flag')
+        assign = HLILAssign(HLILVar(flag), HLILBinaryOp(BinaryOp.LT, HLILVar(HLILVariable('a')),
+                                                        HLILVar(HLILVariable('b'))))
+        inner = HLILIf(HLILVar(HLILVariable('g')), HLILBlock([HLILExprStmt(HLILCall('x', []))]), None)
+        outer = HLILIf(HLILBinaryOp(BinaryOp.NE, HLILVar(flag), HLILConst(0)),
+                       HLILBlock([inner, HLILExprStmt(HLILCall('use', [HLILVar(flag)]))]), None)
+
+        func = run_cfo(assign, outer)
+
+        self.assertEqual(len(func.body.statements), 2)
+        self.assertIs(func.body.statements[0], assign)
+
+
+class TestChainKeepsTheCommentsBeforeItsLinks(unittest.TestCase):
+    def test_comment_before_a_nested_test_starts_that_case(self):
+        comment = HLILComment('line(55)')
+        third = HLILIf(make_condition(BinaryOp.EQ, THIRD_CASE_VALUE), make_case_body(THIRD_CASE_VALUE), None)
+        second = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE),
+                        HLILBlock([comment, third]))
+        first = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE),
+                       HLILBlock([second]))
+
+        [switch] = run_cfo(first).body.statements
+
+        self.assertIsInstance(switch, HLILSwitch)
+        self.assertEqual([case.values[0].value for case in switch.cases],
+                         [FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE])
+        self.assertIs(switch.cases[2].body.statements[0], comment)
+
+
+class TestRedundantReloadStaysWhenAnAddressTakenWriteIntervenes(unittest.TestCase):
+    '''x = 5; *(&x) = 7; if (x == 1) {..} else { x = 5; if (x == 2) {..} }: x is no longer 5 in the else'''
+
+    def test_reload_after_a_store_through_the_address_is_kept(self):
+        x = HLILVariable('x')
+
+        def equals(value: int) -> HLILBinaryOp:
+            return HLILBinaryOp(BinaryOp.EQ, HLILVar(x), HLILConst(value))
+
+        reload = HLILAssign(HLILVar(x), HLILConst(RELOADED_VALUE))
+        chain = HLILIf(equals(FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE),
+                       HLILBlock([reload, HLILIf(equals(SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE),
+                                                 make_case_body(THIRD_CASE_VALUE))]))
+
+        run_cfo(HLILAssign(HLILVar(x), HLILConst(RELOADED_VALUE)),
+                HLILAssign(HLILDeref(HLILAddressOf(HLILVar(x))), HLILConst(STORED_THROUGH_ADDRESS)),
+                chain)
+
+        self.assertIs(chain.false_block.statements[0], reload)
 
 
 if __name__ == '__main__':

@@ -19,7 +19,8 @@ from falcom.ed9.disasm import (
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblyError, ScpParser
-from falcom.ed9.parser.types_parser import Function, SlotRef, StackLayout
+from falcom.ed9.parser.types_parser import Function, FunctionCallDebugInfo, SlotRef, StackLayout
+from falcom.ed9.parser.types_scp import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
 from falcom.ed9.ir.llil import ED9VMLifter
 from ir.llil.llil import WORD_SIZE
 from tests.shared.scp_asm import (
@@ -150,7 +151,9 @@ class TestInstructionBounds(unittest.TestCase):
         asm = Asm()
         asm.push_int(LEFT_VALUE)
         asm.jmp(WORD_SIZE // 2)                             # inside the PUSH at 0
-        assert_rejected(self, main_function(asm))
+        with self.assertRaisesRegex(ScpDisassemblyError,
+                                    rf'^{FUNC_NAME}: Branch target 0x2 is inside the instruction at 0x0$'):
+            Program(main_function(asm)).disassemble()
 
     def test_instruction_covering_a_branch_target_raises(self):
         '''The target is recorded first; the instruction that covers it is decoded later'''
@@ -527,6 +530,19 @@ class TestScriptCalls(unittest.TestCase):
         self.assertIn(program.label('return'), blocks_by_offset(func))
         Formatter(FormatterContext()).format_function(func)
 
+    def test_call_script_with_too_few_arguments_names_the_frame_slot_it_found(self):
+        '''Four pushes stand above the frame: the call takes the frame's last slot and the four pushes as its frame. Its
+        first entry is a frame slot of the right frame, so the error is the wrong slot, not a missing return address'''
+        caller = Asm()
+        caller.frame('return')
+        for _ in range(CALLER_FRAME_SLOTS - 1):
+            caller.push_int(LEFT_VALUE)
+
+        caller.label('call'); caller.call_script(0); caller.label('return'); caller.ret()
+        program = Program(main_function(caller))
+        assert_fails_at(self, program, program.label('call'), 'CALL_SCRIPT',
+                        f'expects caller frame slot 0 returning to 0x{program.label("return"):X}, found frame_4@0x0')
+
 
 class TestCheckOrder(unittest.TestCase):
     '''An instruction that breaks two rules is reported by the check the parser makes first'''
@@ -566,6 +582,51 @@ class TestCheckOrder(unittest.TestCase):
         asm = Asm()
         asm.pop_to(-2 * WORD_SIZE); asm.ret()                                            # nothing to pop, slot -2
         assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP_TO', 'pops 1 entries, the stack has 0: []')
+
+
+class TestErrorWrapping(unittest.TestCase):
+    def test_a_rejection_the_parser_words_itself_is_not_chained_to_itself(self):
+        '''disasm_all_functions wraps other errors in ScpDisassemblyError, but re-raises its own as they are'''
+        asm = Asm()
+        asm.pop(WORD_SIZE); asm.ret()
+        with self.assertRaises(ScpDisassemblyError) as caught:
+            Program(main_function(asm)).disassemble()
+
+        self.assertIsNone(caught.exception.__cause__)
+
+
+class TestDebugArgcRecovery(unittest.TestCase):
+    '''round_trip: a local CALL that passes fewer arguments than the callee has parameters (the compiler pushed the
+    defaults) records its explicit count, which the .py keeps as debug_argc'''
+
+    def program(self, explicit_args: int) -> Program:
+        callee = returning_callee(argc = 2)
+        caller = Asm()
+        caller.debug_set_lineno(1)
+        caller.push_raw(CALLER_ID); caller.push_raw('ret')
+        caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE)
+        caller.call(CALLEE_ID); caller.label('ret'); caller.ret()
+        program = Program(main_function(caller), callee)
+
+        info = FunctionCallDebugInfo()
+        info.func_name = CALLEE_NAME
+        info.call_type = ScpFunctionCallDebugInfo.CallType.Local
+        info.args = [FunctionCallDebugInfo.ArgInfo(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(LEFT_VALUE))
+                     for _ in range(explicit_args)]
+        program.entries[0].debug_info = [info]
+        return program
+
+    def disassemble(self, program: Program) -> Function:
+        parser = program.parser()
+        parser.round_trip = True
+        return parser.disasm_all_functions()[0]
+
+    def test_fewer_explicit_arguments_than_parameters_is_recorded_at_the_return_label(self):
+        program = self.program(explicit_args = 1)
+        self.assertEqual(self.disassemble(program).call_debug_argc, {f'loc_{program.label("ret"):X}': 1})
+
+    def test_all_arguments_explicit_records_nothing(self):
+        self.assertEqual(self.disassemble(self.program(explicit_args = 2)).call_debug_argc, {})
 
 
 class TestBlockSplits(unittest.TestCase):

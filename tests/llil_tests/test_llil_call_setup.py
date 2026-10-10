@@ -15,7 +15,8 @@ from ir.llil.llil import LowLevelILCall, WORD_SIZE
 from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript
-from tests.shared.llil_utils import BLOCK_STRIDE, FUNC_START, make_builder
+from tests.shared.llil_utils import BLOCK_STRIDE, FUNC_START, instructions_of, lift_asm, make_builder
+from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, REG_INDEX, Asm, returning_callee
 
 
 ARG_VALUE = 7
@@ -239,6 +240,22 @@ class TestCallSetupsAtJoins(unittest.TestCase):
         builder.call('f', ONE_ARG)
 
         self.assertEqual(last_instruction(builder).args[0].slot_index, LOCAL_SETUP_SLOTS)
+
+
+class TestSetupMeetingAJoinBeforeItsReturnAddress(unittest.TestCase):
+    '''PUSH_CURRENT_FUNC_ID, a conditional that rejoins, then PUSH_RET_ADDR and the CALL: both arms bring the same
+    half-built setup to the join'''
+
+    def test_local_call_setup_survives_a_join_before_its_return_address(self):
+        asm = Asm()
+        asm.push_raw(CALLER_ID); asm.get_reg(REG_INDEX); asm.jz('join')
+        asm.push_int(ARG_VALUE); asm.pop(WORD_SIZE)
+        asm.label('join'); asm.push_raw('after'); asm.call(CALLEE_ID); asm.label('after'); asm.ret()
+
+        _, llil_func = lift_asm(asm, others = (returning_callee(NO_ARGS),))
+
+        call, = instructions_of(llil_func, LowLevelILCall)
+        self.assertEqual(call.target, 'callee')
 
 
 if __name__ == '__main__':

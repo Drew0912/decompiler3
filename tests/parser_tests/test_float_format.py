@@ -25,6 +25,7 @@ F32_EXP_MAX     = 0xFF          # all ones: inf or NaN
 F32_MANTISSA    = 0x007FFFFF
 F32_INF         = 0x7F800000
 F32_NEAR_MAX    = 0x7F7FF9C4    # rounding a candidate up can overflow float32
+MID_RANGE_BITS  = 0x1027C4D0    # float32 bits whose shortest literal lies inside the word's range
 
 
 def float_word(f32_bits: int) -> int:
@@ -94,6 +95,9 @@ class TestShortestText(unittest.TestCase):
             text = ScpValue.float_literal(decode(word))
             self.assertIs(type(ast.literal_eval(text)), float, text)
             self.assertEqual(ScpValue(float(text)).to_word(), word, f'0x{word:08X} -> {text}')
+
+    def test_shortest_over_the_words_whole_range(self):
+        self.assertEqual(ScpValue.float_literal(decode(float_word(MID_RANGE_BITS))), '3.308657e-29')
 
 
 class TestNonFinite(unittest.TestCase):

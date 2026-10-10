@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-'''Text of the generated LLIL DSL .py (header, hook import, label spacers, footer), the opt-in hook template, and LF
+'''Text of the generated LLIL DSL .py (header, hook import, label spacers, footer, the omitted-commons comment),
+scena2py's recursion limit and summary, the opt-in hook template, and LF
 line endings in every generated text file (scena2py.process_file, the common-library generator, the round-trip
 validator's intermediate scripts).'''
 
 from pathlib import Path
 import importlib
+import logging
 import re
 import runpy
 import sys
@@ -22,7 +24,7 @@ from common.utils import PROJECT_ROOT
 from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
 from falcom.ed9.parser.types_parser import GlobalVar
 from falcom.ed9.parser.types_scp import ScpGlobalVar
-from falcom.ed9.scena2py import process_file
+from falcom.ed9.scena2py import COMMON_FUNCTIONS_OMITTED_COMMENT, RECURSION_LIMIT, main, process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer import scp_writer_gen_common_funcs as gen
 from falcom.ed9.writer.metadata import SCP_WRITER_HELPER_IMPORT
@@ -35,6 +37,7 @@ from tests.shared.scp_writer_test_utils import fresh_writer
 
 TEST_FILE = SORA2_SCRIPTS / 'ai/ai_chr5122_e00.dat'
 SMALL_FILE = SORA2_SCRIPTS / 'scena/e0000.dat'
+PYTHON_DEFAULT_RECURSION_LIMIT = 1000
 LABEL_LINE = re.compile(r"^ *label\('[^']*'\)( +# .*)?$")     # with its depth comment, if any
 
 HOOK_TEMPLATE_IMPORTS = '''\
@@ -426,6 +429,47 @@ class TestLineEndings(unittest.TestCase):
                 compile_and_decompile_round('e0000', Path(tmp) / 'round1', first.read_text(encoding = 'utf-8'))
 
             self.assert_lf_only([first, Path(tmp) / 'round1' / 'e0000.py'])
+
+
+class TestScena2py(unittest.TestCase):
+    def setUp(self):
+        require(SMALL_FILE)
+        self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def config(self, **settings) -> ScenaDecompileConfig:
+        config = ScenaDecompileConfig()
+        config.output_dir = self.tmp
+        config.write_ts = config.write_mlil_asm = False
+        for name, value in settings.items():
+            setattr(config, name, value)
+
+        return config
+
+    def py_text(self) -> str:
+        return (self.tmp / SMALL_FILE.stem / f'{SMALL_FILE.stem}.py').read_text(encoding = 'utf-8')
+
+    def test_omitted_common_functions_comment_only_when_they_are_omitted(self):
+        for include, expected in ((True, False), (False, True)):
+            with self.subTest(include_common_functions = include):
+                process_file(SMALL_FILE, self.config(include_common_functions = include))
+                self.assertEqual(COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines()[0] in self.py_text(), expected)
+
+    def test_process_file_raises_the_recursion_limit(self):
+        self.addCleanup(sys.setrecursionlimit, sys.getrecursionlimit())
+        sys.setrecursionlimit(PYTHON_DEFAULT_RECURSION_LIMIT)
+        process_file(SMALL_FILE, self.config())
+
+        self.assertGreaterEqual(sys.getrecursionlimit(), RECURSION_LIMIT)
+
+    def test_main_logs_how_many_files_succeeded(self):
+        with (
+            mock.patch.object(sys, 'argv', ['scena2py', str(SMALL_FILE)]),
+            mock.patch.object(ScenaDecompileConfig, 'output_dir', self.tmp),
+            self.assertLogs(log, logging.INFO) as logs,
+        ):
+            self.assertEqual(main(), 0)
+
+        self.assertIn('1/1 succeeded', [record.getMessage() for record in logs.records])
 
 
 class TestLibraryExports(unittest.TestCase):

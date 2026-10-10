@@ -127,6 +127,26 @@ class TestCollectStringRefs(unittest.TestCase):
         [string_pool] = [result for result in results if result.name == 'string pool']
         self.assertEqual(string_pool.status, Status.PASS, string_pool.details)
 
+    def test_every_global_var_name_is_a_string_reference(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            dat = Path(tmp_dir) / 'test.dat'
+            writer = fresh_writer(dat)
+
+            @writer.GlobalVars()
+            def globalvars():
+                GLOBAL_VAR('first', 1)
+                GLOBAL_VAR('second', 1)
+                GLOBAL_VAR('third', 2)
+
+            @writer.LLILCode()
+            def Main():
+                RETURN()
+
+            writer.run({})
+            data, refs = load_string_refs(dat)
+
+        self.assertEqual([read_text(data, offset) for offset in refs.global_names], ['first', 'second', 'third'])
+
 
 class TestValidator(unittest.TestCase):
     def test_string_pool_check_counts_unreachable_code_strings(self):

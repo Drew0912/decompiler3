@@ -24,6 +24,9 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from hlil_path_check import check_function
+from ir.hlil.hlil import (
+    HLILBreak, HLILCall, HLILContinue, HLILDoWhile, HLILIf, HLILReturn, HLILUnstructured, HLILWhile, iter_tree,
+)
 from tests.shared.hlil_cfg_utils import BlockSpec, build_function, to_hlil, classify, unstructured_nodes
 
 SEEDS = 1000
@@ -165,5 +168,54 @@ class TestStructuringFuzz(unittest.TestCase):
         self.assertEqual(reducible_with_nodes, PINNED_REDUCIBLE_WITH_NODES)
 
 
+SHAPE_KINDS = (HLILIf, HLILWhile, HLILDoWhile, HLILBreak, HLILContinue, HLILReturn, HLILUnstructured, HLILCall)
+
+# Shapes, not meaning: a change to the merge heuristics or the clone limits shows here. When a deliberate change
+# moves one, check the new shape is as good, then re-pin from `python tests/hlil_tests/test_hlil_structuring_fuzz.py
+# --print`. seed: (verdict, ifs, whiles, do-whiles, breaks, continues, returns, unstructured-jump nodes, calls)
+SEED_SHAPES = {
+    7:    ('ok', 2, 1, 0, 0, 2, 1, 0, 4),
+    21:   ('ok', 2, 1, 0, 0, 1, 1, 0, 4),
+    84:   ('ok', 2, 2, 0, 1, 1, 1, 0, 4),
+    116:  ('ok', 6, 3, 0, 0, 0, 1, 0, 9),
+    119:  ('ok', 2, 2, 0, 2, 2, 1, 0, 4),
+    180:  ('ok', 5, 3, 0, 1, 1, 2, 0, 10),
+    182:  ('ok', 2, 1, 0, 0, 1, 1, 0, 4),
+    203:  ('ok', 2, 2, 0, 2, 2, 1, 0, 4),
+    230:  ('ok', 6, 1, 0, 3, 1, 3, 0, 10),
+    404:  ('ok', 7, 2, 0, 2, 2, 2, 1, 12),
+    919:  ('loud', 6, 0, 0, 0, 0, 1, 6, 7),
+    1069: ('loud', 5, 0, 0, 0, 0, 1, 2, 9),
+    1121: ('loud', 13, 0, 0, 0, 0, 1, 8, 20),
+    1136: ('ok', 2, 2, 0, 2, 1, 1, 0, 6),
+    1147: ('ok', 5, 3, 0, 2, 3, 2, 0, 11),
+    1202: ('ok', 15, 4, 0, 0, 12, 3, 0, 18),
+    1208: ('loud', 6, 4, 0, 7, 1, 1, 2, 8),
+    1427: ('ok', 10, 2, 0, 0, 1, 6, 1, 16),
+    1579: ('ok', 2, 0, 0, 0, 0, 1, 0, 7),
+    1760: ('ok', 3, 1, 0, 0, 1, 1, 0, 7),
+    4128: ('loud', 6, 1, 0, 3, 1, 1, 1, 9),
+}
+
+
+def shape_of(seed: int) -> tuple:
+    func = build_function(f'fuzz_{seed}', random_cfg(seed))
+    hlil = to_hlil(func)
+    nodes = list(iter_tree(hlil.body))
+    return (classify(func, hlil)[0], *(sum(isinstance(node, kind) for node in nodes) for kind in SHAPE_KINDS))
+
+
+class TestPinnedSeedShapes(unittest.TestCase):
+    def test_each_seed_keeps_its_shape(self):
+        for seed, shape in SEED_SHAPES.items():
+            with self.subTest(seed = seed):
+                self.assertEqual(shape_of(seed), shape)
+
+
 if __name__ == '__main__':
-    unittest.main()
+    if sys.argv[1:] == ['--print']:
+        for seed in SEED_SHAPES:
+            print(f'    {seed}: {shape_of(seed)!r},')
+
+    else:
+        unittest.main()

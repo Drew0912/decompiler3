@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for LLIL CFG construction: the edges build_cfg() gives each terminal, and a function's block labels
-are unique (a script function may be named like another block's loc_ label).'''
+'''Unit tests for LLIL CFG construction: the edges build_cfg() gives each terminal, a function's block labels
+are unique (a script function may be named like another block's loc_ label), and the function's lookups.'''
 
 from pathlib import Path
 import sys
@@ -13,11 +13,12 @@ from ir.llil.llil import (
     LowLevelILBasicBlock, LowLevelILCall, LowLevelILConst, LowLevelILEq, LowLevelILFunction, LowLevelILIf,
     LowLevelILRet,
 )
-from tests.shared.llil_utils import BLOCK_STRIDE, FUNC_START, SECOND_BLOCK_START
+from tests.shared.llil_utils import BLOCK_STRIDE, FUNC_START, SECOND_BLOCK_START, make_builder
 
 
 FUNCTION_NAME = 'build_cfg_test'
 CONDITION_VALUE = 0
+PUSHED_VALUE = 7
 
 
 def make_function(*labels: str):
@@ -75,6 +76,44 @@ class TestBlockLabels(unittest.TestCase):
 
         with self.assertRaisesRegex(RuntimeError, 'already labelled'):
             function.add_basic_block(LowLevelILBasicBlock(SECOND_BLOCK_START, label = 'entry'))
+
+
+class TestFunctionLookups(unittest.TestCase):
+    '''The function's lookups by instruction index, block address and label, and its block ownership test'''
+
+    def make_function(self):
+        builder = make_builder()
+        entry = builder.current_block
+        builder.push_int(PUSHED_VALUE)
+        builder.pop_n(1)
+        builder.ret()
+        return builder, entry, builder.finalize()
+
+    def test_instruction_lookup_stops_at_the_ends(self):
+        _, entry, func = self.make_function()
+        count = len(entry.instructions)
+
+        self.assertIs(func.get_instruction_by_index(0), entry.instructions[0])
+        self.assertIs(func.get_instruction_by_index(count - 1), entry.instructions[-1])
+        self.assertIsNone(func.get_instruction_by_index(-1))
+        self.assertIsNone(func.get_instruction_by_index(count))
+        self.assertIs(func.get_instruction_block_by_index(0), entry)
+
+    def test_block_lookups(self):
+        builder, entry, func = self.make_function()
+
+        self.assertIs(builder.get_block_by_addr(entry.start), entry)
+        self.assertIs(builder.get_block_by_label(entry.label), entry)
+        self.assertIsNone(builder.get_block_by_addr(entry.start + 1))
+        self.assertIsNone(builder.get_block_by_label('missing'))
+
+    def test_a_function_owns_only_its_own_blocks(self):
+        _, entry, func = self.make_function()
+        _, other_entry, _ = self.make_function()
+
+        self.assertTrue(func.owns_block(entry))
+        self.assertFalse(func.owns_block(other_entry))
+        self.assertFalse(func.owns_block('block_0'))
 
 
 if __name__ == '__main__':
