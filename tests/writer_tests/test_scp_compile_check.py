@@ -174,6 +174,45 @@ class TestStackMistakes(CheckTestCase):
 
         self.assertCheckFails(rf"{at(__file__, 'dead store')}SetArg: POP_TO at {HEX}: addresses slot 1 \(above the stack\)$")
 
+    def test_value_the_if_arm_leaves_names_its_line(self):
+        '''Caught where the arms meet, at the else arm's last opcode; the entry it names gets the push's line'''
+        @self.writer.LLILCode()
+        def Main(arg1: Value32):
+            LOAD_STACK(-WORD_SIZE)
+            POP_JMP_ZERO('else_')
+            PUSH_INT(1)                             # line: left on the stack
+            JMP('endif')
+            label('else_')
+            PUSH_INT(2)
+            SET_REG(0)                              # line: else arm end
+            label('endif')
+            POP(WORD_SIZE)
+            RETURN()
+
+        pushed = marked_line(__file__, 'left on the stack')
+        self.assertCheckFails(rf'{at(__file__, "else arm end")}Main: SET_REG at {HEX}: the stack on the edge {HEX} -> '
+                              rf'{HEX} is \[param_0\], but an earlier edge into {HEX} recorded \[param_0, '
+                              rf'PUSH_INT@{HEX} \(line {pushed}\)\]$')
+
+    def test_value_the_else_arm_leaves_names_its_line(self):
+        @self.writer.LLILCode()
+        def Main(arg1: Value32):
+            LOAD_STACK(-WORD_SIZE)
+            POP_JMP_ZERO('else_')
+            PUSH_INT(1)
+            SET_REG(0)
+            JMP('endif')
+            label('else_')
+            PUSH_INT(2)                             # line: left by the else arm
+            label('endif')
+            POP(WORD_SIZE)
+            RETURN()
+
+        pushed = marked_line(__file__, 'left by the else arm')
+        self.assertCheckFails(rf'{at(__file__, "left by the else arm")}Main: PUSH_INT at {HEX}: the stack on the edge '
+                              rf'{HEX} -> {HEX} is \[param_0, PUSH_INT@{HEX} \(line {pushed}\)\], but an earlier edge '
+                              rf'into {HEX} recorded \[param_0\]$')
+
     def test_unreachable_code_is_not_stack_checked(self):
         '''Only warned about (TestUnreachableCode)'''
         @self.writer.LLILCode()

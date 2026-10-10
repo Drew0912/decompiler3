@@ -1515,6 +1515,49 @@ class TestOpcodeCallbacks(HookTestCase):
 
         self.assertEqual(hook.seen, [ED9Opcode.PUSH_INT, ED9Opcode.PUSH_INT, ED9Opcode.POP, ED9Opcode.RETURN])
 
+    def test_stack_entry_a_callback_emitted_names_its_file(self):
+        '''The failure is the script's RETURN; the leftover entry came from the hook, so it gets the hook's file:line'''
+        hook = self.hook('''
+            def extra_push(opcode, *args):
+                if args == (1,):
+                    PUSH_INT(9)                         # line: extra push
+
+            registerOpcodeCallback(extra_push)
+        ''')
+
+        @self.writer.LLILCode()
+        def Target():
+            PUSH_INT(1)
+            POP(WORD_SIZE)
+            RETURN()                                    # line: script return
+
+        with self.assertRaisesRegex(CompileCheckError, rf'^{at(__file__, "script return")}Target: RETURN at {HEX}: the '
+                                                       rf'stack is not empty: \[PUSH_INT@{HEX} '
+                                                       rf'\({location(hook.__file__, "extra push")}\)\]$'):
+            self.writer.build({})
+
+    def test_script_entry_at_a_failing_opcode_a_callback_emitted_names_its_file(self):
+        '''The failure is the callback's RETURN, so the script's leftover entry gets the script's file:line'''
+        hook = self.hook('''
+            def early_return(opcode, *args):
+                if opcode == ED9Opcode.SET_REG:
+                    RETURN()                            # line: early return
+
+            registerOpcodeCallback(early_return)
+        ''')
+
+        @self.writer.LLILCode()
+        def Target():
+            PUSH_INT(1)                                 # line: script push
+            SET_REG(0)                                  # line: trigger
+            RETURN()
+
+        with self.assertRaisesRegex(CompileCheckError, rf'^{at(hook.__file__, "early return")}\(opcode callback '
+                                                       rf'early_return, triggered at {location(__file__, "trigger")}\) '
+                                                       rf'Target: RETURN at {HEX}: the stack is not empty: '
+                                                       rf'\[PUSH_INT@{HEX} \({location(__file__, "script push")}\)\]$'):
+            self.writer.build({})
+
     def test_code_emitted_after_an_emitted_call_warns(self):
         '''docs/LLIL_DSL.md's pitfall: the call returns to the label after the triggering opcode, so what the callback
         emits after it never runs - warned about at the callback's line, naming the trigger'''

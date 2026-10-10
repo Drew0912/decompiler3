@@ -2,6 +2,7 @@
 
 from common import *
 from typing import Callable
+import heapq
 
 from .instruction_table import *
 from .instruction import *
@@ -70,14 +71,15 @@ class Disassembler:
         return entry_block
 
     def disasm_block(self, fs) -> BasicBlock:
-        """Iteratively disassemble blocks using worklist algorithm"""
+        """Iteratively disassemble blocks, the lowest pending offset first: a forward join is then decoded after every
+        branch into it from below, so the context sees all their edges before the join's own code"""
         entry_offset = fs.Position
 
-        # Worklist of block offsets to process
+        # Min-heap of block offsets to process
         worklist = [entry_offset]
 
         while worklist:
-            offset = worklist.pop()
+            offset = heapq.heappop(worklist)
 
             # Check if already disassembled
             if offset in self.disassembled_blocks:
@@ -90,7 +92,7 @@ class Disassembler:
             # Add successors to worklist
             for succ in block.succs:
                 if succ.offset not in self.disassembled_blocks:
-                    worklist.append(succ.offset)
+                    heapq.heappush(worklist, succ.offset)
 
         return self.disassembled_blocks[entry_offset]
 

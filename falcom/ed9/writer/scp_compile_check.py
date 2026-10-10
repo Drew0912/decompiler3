@@ -5,6 +5,7 @@ which imports this module."""
 import bisect
 import functools
 import linecache
+import re
 import tokenize
 from types import CodeType
 from typing import Callable, NamedTuple
@@ -15,6 +16,9 @@ from ..ir.llil import ED9LiftError, ED9VMLifter
 from ..parser.code_layout import dropped_ranges
 from ..parser.scp import ScpFunctionError, ScpParser
 from ..parser.types_parser import Function
+
+# A stack entry in a parser message (format_stack_entry): MNEMONIC@0x.. or frame_N@0x.., the offset of its opcode
+STACK_ENTRY = re.compile(r'@0x([0-9A-F]+)\b')
 
 
 class SourceSite(NamedTuple):
@@ -62,7 +66,8 @@ class CompileCheck:
             notes = [self._run_on_note(e.function, e.runs_on)]
             notes += [self._failure_text(e.function, text, call)
                       for _, (call, text) in sorted(e.backward_returns.items())]
-            message = f'{self._failure_prefix(e.function, e.offset)}{e}'
+            text = self._with_entry_lines(str(e), e.function, e.offset)
+            message = f'{self._failure_prefix(e.function, e.offset)}{text}'
             raise CompileCheckError('; '.join([message, *(note for note in notes if note)])) from e
 
         except Exception as e:
@@ -137,6 +142,29 @@ class CompileCheck:
 
         return self._failure_prefix(function_name, offset) + ScpFunctionError.describe(function_name, message, inst)
 
+    def _with_entry_lines(self, text: str, function_name: str | None, offset: int | None) -> str:
+        """text with the script line after each stack entry an opcode pushed (not a parameter): '(line N)' in the file
+        of the opcode at offset (else of the function's def), 'file:N' in another (an opcode callback's)"""
+        site = self.source_map.get(offset - self.code_offset) if offset is not None else None
+        f = self.functions_by_name.get(function_name)
+        if site is not None:
+            failing_file = site.code.co_filename
+
+        else:
+            failing_file = f.body.__code__.co_filename if f is not None else None
+
+        def with_line(match: re.Match) -> str:
+            entry_site = self.source_map.get(int(match[1], 16) - self.code_offset)
+            if entry_site is None:
+                return match[0]
+
+            if entry_site.code.co_filename == failing_file:
+                return f'{match[0]} (line {source_line(entry_site)})'
+
+            return f'{match[0]} ({source_location(entry_site)})'
+
+        return STACK_ENTRY.sub(with_line, text)
+
     def _failure_prefix(self, function_name: str | None, offset: int | None) -> str:
         """'file:line: ' of the opcode compiled at a file offset, else of the function's def; '' when neither is known"""
         site = self.source_map.get(offset - self.code_offset) if offset is not None else None
@@ -183,9 +211,14 @@ def location_prefix(site: SourceSite | None) -> str:
 
 def source_location(site: SourceSite) -> str:
     """'file:line' of the call at a source site"""
+    return f'{site.code.co_filename}:{source_line(site)}'
+
+
+def source_line(site: SourceSite) -> int:
+    """The line of the call at a source site"""
     code, lasti = site.code, site.lasti
     line = next((line for start, end, line in code.co_lines() if start <= lasti < end and line is not None), None)
-    return f'{code.co_filename}:{line or definition_line(code)}'
+    return line or definition_line(code)
 
 
 def def_location(func: Callable) -> str:

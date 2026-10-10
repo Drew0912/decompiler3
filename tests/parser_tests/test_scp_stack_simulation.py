@@ -92,6 +92,18 @@ class TestEdgeStates(unittest.TestCase):
         assert_fails_at(self, Program(main_function(asm)), 0x12, 'JMP',
                         'the stack on the edge 0x12 -> 0x17 is [], but an earlier edge into 0x17 recorded [PUSH_INT@0x7]')
 
+    def test_value_the_first_arm_leaves_is_caught_where_the_arms_meet(self):
+        '''The join is decoded after both arms (lowest offset first), so the second arm's edge finds the leftover -
+        not the RETURN, after the join's POP took it for the parameter'''
+        asm = Asm()
+        asm.load_stack(-WORD_SIZE); asm.jz('else')
+        asm.push_int(LEFT_VALUE); asm.jmp('join')         # left on the stack
+        asm.label('else'); asm.push_int(RIGHT_VALUE); asm.set_reg(REG_INDEX)
+        asm.label('join'); asm.pop(WORD_SIZE); asm.ret()
+        assert_fails_at(self, Program(Func(FUNC_NAME, 1, asm)), 0x1B, 'SET_REG',
+                        'the stack on the edge 0x1B -> 0x1D is [param_0], but an earlier edge into 0x1D recorded '
+                        '[param_0, PUSH_INT@0xA]')
+
     def test_fall_through_with_a_different_height_raises(self):
         asm = Asm()
         asm.get_reg(REG_INDEX); asm.jz('target')
@@ -382,13 +394,14 @@ class TestLocalCalls(unittest.TestCase):
                         'PUSH_RET_ADDR@0x6 is consumed as the function ID and as the return address 0x16')
 
     def test_return_addresses_meeting_at_a_join_must_match(self):
-        '''The join's call consumes the first arm's return address before the other arm's edge brings its own'''
+        '''Both arms reach the join before its code is decoded (lowest offset first), so the call finds the second
+        arm's value where the return address must be'''
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.get_reg(REG_INDEX); caller.jz('right')
         caller.push_raw('return'); caller.jmp('join')
         caller.label('right'); caller.push_raw('right'); caller.jmp('join')
         caller.label('join'); caller.call(CALLEE_ID); caller.label('return'); caller.ret()
-        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0x1E, 'JMP',
+        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0x23, 'CALL',
                         'expects the return address 0x26, found PUSH_RAW@0x18')
 
     def test_return_label_at_the_end_of_the_function_raises(self):
@@ -492,8 +505,8 @@ class TestLocalCalls(unittest.TestCase):
         lift_all(parser, functions)
 
     def test_setup_meeting_plain_values_raises_in_either_decode_order(self):
-        '''The fall-through arm is decoded first: once the call consumes the setup before the plain values arrive,
-        once the plain values meet the call first'''
+        '''Both arms reach the join before its call is decoded, so the call fails on whichever arm brings the plain
+        values'''
         for setup_arm_first in (True, False):
             with self.subTest(setup_arm_first = setup_arm_first):
                 caller = Asm()
@@ -510,7 +523,7 @@ class TestLocalCalls(unittest.TestCase):
                 caller.label('join'); caller.call(CALLEE_ID); caller.label('return'); caller.ret()
                 program = Program(main_function(caller), returning_callee())
                 if setup_arm_first:
-                    assert_fails_at(self, program, 0x24, 'JMP', 'expects the function ID, found PUSH_INT@0x18')
+                    assert_fails_at(self, program, 0x29, 'CALL', 'expects the function ID, found PUSH_INT@0x18')
 
                 else:
                     assert_fails_at(self, program, 0x29, 'CALL', 'expects a return address, found PUSH_INT@0xD')
@@ -570,7 +583,8 @@ class TestScriptCalls(unittest.TestCase):
                         'expects caller frame slot 0 returning to 0x1B, found frame_1@0x0')
 
     def test_frames_meeting_other_values_at_a_join_raises(self):
-        '''The join's call consumes the first arm's frame before the other arm's edge brings plain values'''
+        '''Both arms reach the join before its code is decoded, so CALL_SCRIPT finds the second arm's plain values
+        where the frame must be'''
         caller = Asm()
         caller.get_reg(REG_INDEX); caller.jz('right')
         caller.frame('return'); caller.jmp('join')
@@ -580,7 +594,7 @@ class TestScriptCalls(unittest.TestCase):
 
         caller.jmp('join')
         caller.label('join'); caller.call_script(0); caller.label('return'); caller.ret()
-        assert_fails_at(self, Program(main_function(caller)), 0x2F, 'JMP',
+        assert_fails_at(self, Program(main_function(caller)), 0x34, 'CALL_SCRIPT',
                         'expects caller frame slot 0 returning to 0x3E, found PUSH_INT@0x11')
 
     def test_pop_reaching_into_the_frame_raises(self):

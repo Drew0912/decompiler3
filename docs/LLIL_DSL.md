@@ -140,10 +140,13 @@ CompileCheckError: test.py:12: Caller: CALL at 0x77: expects a return address, f
 ```
 The line is the one whose call emitted the failing opcode (a helper called from a body maps to the
 body's call); an error with no instruction to blame (an empty last function) points at the function's
-`def`, past its decorators. Undefined labels and jumps into another function get the same `file:line:`
-prefix. A function without `RETURN` runs on into the next function's code - a `.dat` has no
-end-of-function marker, so the VM keeps going - which compiles with a warning while the bytes still
-decompile, and adds a note to the error when they don't:
+`def`, past its decorators. Each stack entry an opcode pushed gets that opcode's line in the error:
+`[param_0, PUSH_INT@0x46 (line 23)]`, or `(file:line)` when it is in another file than the failing
+opcode (a hook's). Branch arms laid out before the code where they meet are decoded first, so a value
+one of them leaves is reported where the arms meet. Undefined labels and jumps into another function get
+the same `file:line:` prefix. A function without `RETURN` runs on into the next function's code - a
+`.dat` has no end-of-function marker, so the VM keeps going - which compiles with a warning while the
+bytes still decompile, and adds a note to the error when they don't:
 ```
 WARNING   test.py:38: A: SET_REG at 0x5E: runs past its end into B without RETURN
 WARNING   test.py:41: AEmpty: has no code, so it runs on into B without RETURN
