@@ -33,6 +33,10 @@ class OperandType(IntEnum2):
         return self.name
 
 
+SIGNED_INTEGER_TYPES    = {OperandType.SInt8, OperandType.SInt16, OperandType.SInt32}
+UNSIGNED_INTEGER_TYPES  = {OperandType.UInt8, OperandType.UInt16, OperandType.UInt32}
+
+
 class OperandFormat:
     """Operand format descriptor"""
     size_table: dict[OperandType, int] = {
@@ -60,6 +64,18 @@ class OperandFormat:
     @property
     def size(self):
         return self.size_table.get(self.type)
+
+    @property
+    def value_range(self) -> range | None:
+        """The integers this type reads back, from its width and signedness; None for a non-integer type"""
+        if self.type not in SIGNED_INTEGER_TYPES | UNSIGNED_INTEGER_TYPES:
+            return None
+
+        bits = self.size * fileio.BITS_PER_BYTE
+        if self.type in SIGNED_INTEGER_TYPES:
+            return range(-(1 << (bits - 1)), 1 << (bits - 1))
+
+        return range(1 << bits)
 
 
 class OperandDescriptor:
@@ -106,7 +122,7 @@ class OperandDescriptor:
 
     def format_integer(self, operand: 'Operand') -> str:
         if self.format.is_hex:
-            if self.format.type in (OperandType.SInt8, OperandType.SInt16, OperandType.SInt32):
+            if self.format.type in SIGNED_INTEGER_TYPES:
                 # Signed integer
                 if operand.value < 0:
                     return f'-0x{-operand.value:0{self.format.size * 2}X}'

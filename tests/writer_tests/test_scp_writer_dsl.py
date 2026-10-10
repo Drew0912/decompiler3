@@ -2,6 +2,7 @@
 '''DSL argument checks (bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes, what
 handle_opcode tracks, every opcode function handing the writer its own opcode, and PUSH.'''
 
+from enum import IntEnum
 import inspect
 import math
 from pathlib import Path
@@ -15,7 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil import WORD_SIZE
-from falcom.ed9.disasm import ED9Opcode
+from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.parser.types_scp import RawInt, ScpValue
 from falcom.ed9.writer import scp_writer_opcode_handler
 from falcom.ed9.writer.scp_writer_helper import *
@@ -191,7 +192,8 @@ class TestPush(unittest.TestCase):
 
 
 class TestValueRanges(unittest.TestCase):
-    '''The payload under the 2-bit type tag is 30 bits: a value outside it would compile as a different value or type'''
+    '''A value outside what its encoding holds would compile as a different value or type: a pushed value's payload
+    under the 2-bit type tag is 30 bits, and an opcode's integer operand is what its type reads back'''
 
     def test_integer_bounds(self):
         for value in (ScpValue.INTEGER_MIN, ScpValue.INTEGER_MAX):
@@ -233,6 +235,51 @@ class TestValueRanges(unittest.TestCase):
             with self.subTest(message = message):
                 with self.assertRaisesRegex(ValueError, f'^{message}'):
                     push()
+
+    def test_last_operand_that_fits_reads_back_and_the_next_fails(self):
+        '''SET_REG(256) used to compile as SET_REG(0)'''
+        cases = [
+            # (mnemonic, emit, operand number, last value that fits, first that doesn't, the range)
+            ('SET_REG', SET_REG, 1, 255, 256, '0..255'),
+            ('GET_REG', GET_REG, 1, 0, -1, '0..255'),
+            ('POP', POP, 1, 255, 256, '0..255'),
+            ('SYSCALL', lambda value: SYSCALL(1, value, 0), 2, 255, 256, '0..255'),
+            ('CALL_SCRIPT', lambda value: CALL_SCRIPT('this', 'Main', value), 3, 255, 256, '0..255'),
+            ('DEBUG_SET_LINENO', DEBUG_SET_LINENO, 1, 65535, 65536, '0..65535'),
+            ('LOAD_STACK', LOAD_STACK, 1, 2**31 - 1, 2**31, '-2147483648..2147483647'),
+            ('LOAD_STACK', LOAD_STACK, 1, -2**31, -2**31 - 1, '-2147483648..2147483647'),
+        ]
+        for mnemonic, emit, number, fits, too_far, valid in cases:
+            with self.subTest(mnemonic, value = fits):
+                writer = body_writer()
+                emit(fits)
+                self.assertEqual(self.first_operands(writer)[number - 1], fits)
+
+            with self.subTest(mnemonic, value = too_far):
+                body_writer()
+                with self.assertRaisesRegex(ValueError, rf'^Body: {mnemonic} operand {number} is {too_far}, outside '
+                                                        rf'{re.escape(valid)}$'):
+                    emit(too_far)
+
+    def test_int_subclass_operand_is_compared_not_scanned(self):
+        '''Pin: `in` on a range scans it with == for an int subclass - an IntEnum slot offset took 91 s'''
+        class Slot(IntEnum):
+            ARG1 = -WORD_SIZE
+
+            def __eq__(self, other):
+                raise AssertionError('the range check scanned the range')
+
+            __hash__ = IntEnum.__hash__
+
+        writer = body_writer()
+        LOAD_STACK(Slot.ARG1)
+        self.assertEqual(self.first_operands(writer), [-WORD_SIZE])
+
+    @classmethod
+    def first_operands(cls, writer) -> list:
+        '''The operand values of the first opcode the body wrote'''
+        writer.fs.Position = 0
+        return [operand.value for operand in ED9_INSTRUCTION_TABLE.decode_instruction(writer.fs, 0).operands]
 
 
 if __name__ == '__main__':

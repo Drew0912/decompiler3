@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 '''The writer's compile: built in memory and written only on success, file-wide labels whose errors and warnings
 name their functions, DSL statements in the wrong place rejected, global vars declared once, in their block or a
-run callback, and named right, the global opcodes by name or index, and the string pool without round_trip.'''
+run callback, and named right, the global opcodes by name or index (an index within the declared table), an operand
+out of its type's range failing at its line, and the string pool without round_trip.'''
 
 import logging
 from pathlib import Path
@@ -401,6 +402,70 @@ class TestGlobalVarOpcodes(WriterTestCase):
         self.assertEqual(globals_used, [('SET_GLOBAL', 1), ('SET_GLOBAL', 0), ('LOAD_GLOBAL', 0), ('LOAD_GLOBAL', 1)])
 
 
+class TestOperandRanges(WriterTestCase):
+    '''A global index must be in the declared table, and an operand out of its type's range (test_scp_writer_dsl.py's
+    TestValueRanges) fails at its line'''
+
+    def test_global_index_past_the_table_fails(self):
+        for index in (0, 1):
+            with self.subTest(index = index):
+                self.writer = self.fresh_writer()
+
+                @self.writer.GlobalVars()
+                def globalvars():
+                    GLOBAL_VAR('only', 1)
+
+                @self.writer.LLILCode()
+                def Main():
+                    LOAD_GLOBAL(index)                  # line: global index
+                    SET_REG(0)
+                    RETURN()
+
+                if index == 0:
+                    parser, functions = parse(self.writer.build({}))
+                    [load] = [inst for inst in parser.get_instructions(functions['Main'])
+                              if inst.opcode == ED9Opcode.LOAD_GLOBAL]
+                    self.assertEqual(load.operands[0].value, index)
+                    continue
+
+                with self.assertRaisesRegex(ValueError, rf'^{at(__file__, "global index")}Main: LOAD_GLOBAL operand 1 '
+                                                        rf'is 1, outside 0\.\.0$'):
+                    self.writer.build({})
+
+    def test_global_index_without_declared_globals(self):
+        @self.writer.LLILCode()
+        def Main():
+            LOAD_GLOBAL(0)                          # line: no globals
+            SET_REG(0)
+            RETURN()
+
+        with self.assertRaisesRegex(ValueError, rf'^{at(__file__, "no globals")}Main: LOAD_GLOBAL operand 1 is 0, but '
+                                                'no global vars are declared$'):
+            self.writer.build({})
+
+    def test_failure_names_its_line(self):
+        '''POP(256) used to pop 0 and fail later, at the RETURN'''
+        for case in ('SET_REG', 'POP', 'DEBUG_SET_LINENO'):
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Main():
+                    if case == 'SET_REG':
+                        SET_REG(256)                # line: SET_REG
+
+                    elif case == 'POP':
+                        POP(256)                    # line: POP
+
+                    else:
+                        DEBUG_SET_LINENO(70000)     # line: DEBUG_SET_LINENO
+
+                    RETURN()
+
+                with self.assertRaisesRegex(ValueError, rf'^{at(__file__, case)}Main: {case} operand 1 is '):
+                    self.writer.build({})
+
+
 class TestWriterWithoutRoundTrip(WriterTestCase):
     '''scena.round_trip = False: equal strings share one pool entry and no debug records are written'''
 
@@ -466,6 +531,17 @@ class TestCheckOffLocations(WriterTestCase):
 
         self.assertEqual([record.getMessage() for record in logs.records],
                          ["A: jumps to label 'in_b' in B (another function)"])
+
+    def test_operand_out_of_range_names_only_the_function(self):
+        writer = self.fresh_writer(check = False)
+
+        @writer.LLILCode()
+        def Main():
+            SET_REG(256)
+            RETURN()
+
+        with self.assertRaisesRegex(ValueError, r'^Main: SET_REG operand 1 is 256, outside 0\.\.255$'):
+            writer.build({})
 
 
 if __name__ == '__main__':

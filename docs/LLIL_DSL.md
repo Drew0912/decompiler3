@@ -127,7 +127,10 @@ function body`, and `GLOBAL_VAR` inside a body raises (the header counts the glo
 run). `GLOBAL_VAR` belongs in the script's one `@scena.GlobalVars()` block or a hook's run or function
 callback (§4): anywhere else it raises, and so do a second `@scena.GlobalVars()` and one before
 `create_scp_writer()`. Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the
-unknown name. Errors raised while a body runs carry the `.py` line in their traceback.
+unknown name. An integer operand must fit what its type reads back, and a global index the declared
+table - `SET_REG(256)` fails at its line (`SET_REG operand 1 is 256, outside 0..255`; `POP` takes at most
+255 bytes) instead of being truncated. Errors raised while a body runs carry the `.py` line in their
+traceback.
 
 **The compile check** (`ScpWriter.check_compiled`, on by default; a script turns it off with
 `scena.check_compiled = False`). At the end of `build()` the bytes are parsed and lifted again in memory

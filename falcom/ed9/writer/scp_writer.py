@@ -133,7 +133,7 @@ class ScpWriter:
 
         # The compile check's source map
         self.source_map: dict[int, SourceSite | None] = {}   # code position -> where it was emitted
-        self.current_site: SourceSite | None = None          # the compiling opcode's site, for its label operand
+        self.current_site: SourceSite | None = None          # the compiling opcode's site, for messages and its label
         # id(), not the code: code objects hash their constants on every lookup and compare equal across files
         self.opcode_emitter_code_ids: set[int] = set()       # code of every opcode emitter and of what it wraps
 
@@ -437,8 +437,12 @@ class ScpWriter:
         return self._find_function(func).entry.param_count
 
     def _warn_at_opcode(self, text: str):
-        """A warning about the opcode being compiled, at its .py line when the compile check keeps the source map"""
-        log.warning(f'{location_prefix(self.current_site)}{self.current_function.name}: {text}')
+        """A warning about the opcode being compiled"""
+        log.warning(self._at_opcode(text))
+
+    def _at_opcode(self, text: str) -> str:
+        """text about the opcode being compiled, at its .py line when the compile check keeps the source map"""
+        return f'{location_prefix(self.current_site)}{self.current_function.name}: {text}'
 
     def _build_debug_records(self):
         """Turn tracked call sites into debug-info records, in table order like the original compiler"""
@@ -674,10 +678,35 @@ class ScpWriter:
         assert len(operand_descriptors) == len(args), \
             f'{descriptor.mnemonic}: expected {len(operand_descriptors)} operands, got {len(args)}'
 
+        self._check_operands(descriptor.mnemonic, operand_descriptors, args)
         self.fs.WriteByte(opcode)
 
         for op_desc, value in zip(operand_descriptors, args):
             self._write_operand(op_desc, value)
+
+    def _check_operands(self, mnemonic: str, operand_descriptors: tuple[OperandDescriptor, ...], args: tuple):
+        """Each integer operand within what its type reads back (fileio would truncate it to a different value), a
+        global index within the declared table"""
+        for number, (op_desc, value) in enumerate(zip(operand_descriptors, args), 1):
+            valid = self._operand_range(op_desc)
+            # Compared, not `in`: a range scans itself for an int subclass (an IntEnum, RawInt)
+            if valid is None or valid.start <= value < valid.stop:
+                continue
+
+            # Only the global table can be empty
+            if not valid:
+                raise ValueError(self._at_opcode(f'{mnemonic} operand {number} is {value}, but no global vars are '
+                                                 'declared'))
+
+            raise ValueError(self._at_opcode(f'{mnemonic} operand {number} is {value}, outside '
+                                             f'{valid.start}..{valid.stop - 1}'))
+
+    def _operand_range(self, op_desc: OperandDescriptor) -> range | None:
+        """The values an operand may take: its type's (OperandFormat.value_range), or the declared global indices"""
+        if op_desc.type == ED9OperandType.GlobalVar:
+            return range(len(self.global_vars))
+
+        return op_desc.format.value_range
 
     def _write_push_value(self, value: ScpValue) -> PooledString | None:
         self._write_push_header()
