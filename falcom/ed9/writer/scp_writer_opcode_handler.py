@@ -28,32 +28,36 @@ def POP(byte_count: uint8):
 
 
 def LOAD_STACK(offset: sint32):
-    """Push stack[sp + offset // WORD_SIZE] (always sp-relative, parameters included) (Opcode 0x02)"""
+    """Push stack[sp + offset // WORD_SIZE] (always sp-relative, parameters included); offset counts bytes, a
+    multiple of WORD_SIZE (Opcode 0x02)"""
     assert isinstance(offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.LOAD_STACK, offset)
 
 
 def LOAD_STACK_DEREF(offset: sint32):
-    """Push *stack[sp + offset // WORD_SIZE] - reads through a pointer the caller passed in a parameter slot
-    (Opcode 0x03)"""
+    """Push *stack[sp + offset // WORD_SIZE] - reads through a pointer the caller passed in a parameter slot;
+    offset counts bytes, a multiple of WORD_SIZE (Opcode 0x03)"""
     assert isinstance(offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.LOAD_STACK_DEREF, offset)
 
 
 def PUSH_STACK_OFFSET(offset: sint32):
-    """Push a reference/offset for stack[sp + offset // WORD_SIZE] (Opcode 0x04)"""
+    """Push a reference/offset for stack[sp + offset // WORD_SIZE]; offset counts bytes, a multiple of WORD_SIZE
+    (Opcode 0x04)"""
     assert isinstance(offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH_STACK_OFFSET, offset)
 
 
 def POP_TO(offset: sint32):
-    """Pop, then store to stack[sp + offset // WORD_SIZE] (sp taken after the pop) (Opcode 0x05)"""
+    """Pop, then store to stack[sp + offset // WORD_SIZE] (sp taken after the pop); offset counts bytes, a
+    multiple of WORD_SIZE (Opcode 0x05)"""
     assert isinstance(offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.POP_TO, offset)
 
 
 def POP_TO_DEREF(offset: sint32):
-    """Pop, then store through the pointer in stack[sp + offset // WORD_SIZE] (sp taken after the pop) (Opcode 0x06)"""
+    """Pop, then store through the pointer in stack[sp + offset // WORD_SIZE] (sp taken after the pop); offset
+    counts bytes, a multiple of WORD_SIZE (Opcode 0x06)"""
     assert isinstance(offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.POP_TO_DEREF, offset)
 

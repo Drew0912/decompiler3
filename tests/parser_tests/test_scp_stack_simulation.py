@@ -159,6 +159,25 @@ class TestEdgeStates(unittest.TestCase):
         asm.push_int(LEFT_VALUE); asm.pop(WORD_SIZE // 2); asm.pop(WORD_SIZE // 2); asm.ret()
         assert_fails_at(self, Program(main_function(asm)), 0x6, 'POP', 'pops 2 bytes, not whole slots')
 
+    def test_slot_offset_that_is_not_a_whole_slot_raises(self):
+        '''Every slot-addressing opcode, before anything rounds the offset down to a slot; a positive offset too, which
+        would otherwise be above the stack'''
+        pops_a_value = {'LOAD_STACK': False, 'LOAD_STACK_DEREF': False, 'PUSH_STACK_OFFSET': False, 'POP_TO': True,
+                        'POP_TO_DEREF': True}
+        for mnemonic, pops in pops_a_value.items():
+            for offset in (-1, WORD_SIZE // 2):
+                with self.subTest(mnemonic, offset = offset):
+                    asm = Asm()
+                    asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE)
+                    if pops:
+                        asm.push_int(LEFT_VALUE)
+
+                    asm.label('access'); getattr(asm, mnemonic.lower())(offset)
+                    asm.pop(WORD_SIZE * (2 if pops else 3)); asm.ret()          # balanced, as for a whole slot
+                    program = Program(main_function(asm))
+                    assert_fails_at(self, program, program.label('access'), mnemonic,
+                                    f'addresses byte offset {offset}, not a whole slot ({WORD_SIZE} bytes each)')
+
     def test_return_with_a_value_left_raises(self):
         asm = Asm()
         asm.push_int(LEFT_VALUE); asm.ret()
@@ -673,6 +692,12 @@ class TestCheckOrder(unittest.TestCase):
         asm = Asm()
         asm.pop(WORD_SIZE + WORD_SIZE // 2); asm.ret()                                   # on an empty stack
         assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP', 'pops 6 bytes, not whole slots')
+
+    def test_pop_to_checks_whole_slots_before_it_pops(self):
+        asm = Asm()
+        asm.pop_to(-1); asm.ret()                                                        # on an empty stack
+        assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP_TO',
+                        f'addresses byte offset -1, not a whole slot ({WORD_SIZE} bytes each)')
 
     def test_pop_to_pops_before_it_writes(self):
         asm = Asm()

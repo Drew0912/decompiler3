@@ -133,8 +133,8 @@ unknown name. Errors raised while a body runs carry the `.py` line in their trac
 `scena.check_compiled = False`). At the end of `build()` the bytes are parsed and lifted again in memory
 by the decompiler's own `ScpParser` and `ED9VMLifter` (`falcom/ed9/writer/scp_compile_check.py`), so a
 stack mistake that compiles - a wrong `POP(n)`, a call with an extra or missing argument, branches that
-reach a label with different stacks, a read or write outside the live stack - fails the compile instead
-of reaching the game:
+reach a label with different stacks, a read or write outside the live stack, a slot offset that isn't a
+multiple of `WORD_SIZE` (offsets count bytes) - fails the compile instead of reaching the game:
 ```
 CompileCheckError: test.py:12: Caller: CALL at 0x77: expects a return address, found PUSH_INT@0x6B
 ```
@@ -170,8 +170,9 @@ A fidelity decompile keeps the game's own dead code, which warns the same way. A
 warning off with `scena.warn_unreachable_code = False` (`ScpWriter.warn_unreachable_code`, on by
 default; turning the compile check off also silences it). Not checked: a stack that balances but reads
 the wrong slot. A read or write outside the live stack fails at once; decompiling a game `.dat` only
-warns about it. The check costs about twice the compile itself (`mp0000_ev`, a 1.6 MB script: about 4 s
-on top of 1.7 s); while it is on, each opcode also records where it was emitted.
+warns about it. A slot offset that isn't a multiple of `WORD_SIZE` fails decompiling too, like a partial
+`POP`. The check costs about twice the compile itself (`mp0000_ev`, a 1.6 MB script: about 4 s on top of
+1.7 s); while it is on, each opcode also records where it was emitted.
 
 ## 2. Round-Trip Policy
 

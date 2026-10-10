@@ -174,6 +174,18 @@ class TestStackMistakes(CheckTestCase):
 
         self.assertCheckFails(rf"{at(__file__, 'dead store')}SetArg: POP_TO at {HEX}: addresses slot 1 \(above the stack\)$")
 
+    def test_slot_offset_counted_in_slots_fails_at_its_line(self):
+        '''Offsets count bytes: one slot down is -WORD_SIZE, not -1'''
+        @self.writer.LLILCode()
+        def Main(arg1: Value32):
+            LOAD_STACK(-1)                          # line: offset in slots
+            POP(WORD_SIZE)
+            POP(WORD_SIZE)
+            RETURN()
+
+        self.assertCheckFails(rf'{at(__file__, "offset in slots")}Main: LOAD_STACK at {HEX}: addresses byte offset -1, '
+                              rf'not a whole slot \({WORD_SIZE} bytes each\)$')
+
     def test_value_the_if_arm_leaves_names_its_line(self):
         '''Caught where the arms meet, at the else arm's last opcode; the entry it names gets the push's line'''
         @self.writer.LLILCode()

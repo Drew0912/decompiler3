@@ -951,6 +951,12 @@ class ScpParser(StrictBase):
         context.note_run_on(inst)
         effect = inst.descriptor.effect
 
+        # Before anything rounds it down to a slot (addressed_slot, the lifter)
+        if effect.addresses_slot:
+            offset = inst.operands[SLOT_OFFSET_OPERAND].value
+            if offset % WORD_SIZE:
+                context.fail(f'addresses byte offset {offset}, not a whole slot ({WORD_SIZE} bytes each)', inst)
+
         match inst.descriptor.kind:
             case kind if kind in PLAIN_VALUE_KINDS:
                 if effect.pops:
