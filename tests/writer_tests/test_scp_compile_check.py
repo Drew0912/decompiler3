@@ -144,7 +144,58 @@ class TestStackMistakes(CheckTestCase):
             label('ret')
             RETURN()
 
-        self.assertCheckFails(rf"{at(__file__, 'extra argument')}Caller: CALL at {HEX}: expects a return address")
+        self.assertCheckFails(rf"{at(__file__, 'extra argument')}Caller: CALL at {HEX}: Callee takes 1 argument, "
+                              r"found 2 above its call setup \[")
+
+    def test_missing_call_argument_names_the_count_and_the_setup(self):
+        '''With a value below the setup, which the checks after the count would read as the setup'''
+        @self.writer.LLILCode()
+        def Callee(arg1: Value32, arg2: Value32):
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Caller():
+            PUSH_INT(5)
+            PUSH_CURRENT_FUNC_ID()                  # line: setup ID
+            PUSH_RET_ADDR('ret')                    # line: setup return
+            PUSH_INT(1)
+            CALL(Callee)                            # line: missing argument
+            label('ret')
+            POP(WORD_SIZE)
+            RETURN()
+
+        setup = (rf"\[PUSH_RAW@{HEX} \(line {marked_line(__file__, 'setup ID')}\), "
+                 rf"PUSH_RAW@{HEX} \(line {marked_line(__file__, 'setup return')}\)\]")
+        self.assertCheckFails(rf"{at(__file__, 'missing argument')}Caller: CALL at {HEX}: Callee takes 2 arguments, "
+                              rf"found 1 above its call setup {setup}$")
+
+    def test_omitted_default_argument_says_defaults_need_a_call_by_name(self):
+        '''Only when every missing argument has a default'''
+        hint = ('; a local CALL passes every argument - defaults apply only when the engine calls the function by '
+                'name')
+        for pushed, expected_hint in ((1, hint), (0, '')):
+            with self.subTest(pushed = pushed):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Callee(arg1: Value32, arg2: Value32 = 5):
+                    POP(2 * WORD_SIZE)
+                    RETURN()
+
+                @self.writer.LLILCode()
+                def Caller():
+                    PUSH_CURRENT_FUNC_ID()
+                    PUSH_RET_ADDR('ret')
+                    for value in range(pushed):
+                        PUSH_INT(value)
+
+                    CALL(Callee)                    # line: default left out
+                    label('ret')
+                    RETURN()
+
+                self.assertCheckFails(rf"{at(__file__, 'default left out')}Caller: CALL at {HEX}: Callee takes 2 "
+                                      rf"arguments, found {pushed} above its call setup \[.*\]{expected_hint}$")
 
     def test_read_above_the_stack(self):
         define_read_above(self.writer)

@@ -374,12 +374,49 @@ class TestLocalCalls(unittest.TestCase):
         self.assertIn(program.label('return'), blocks_by_offset(func))
         lift_all(parser, functions)
 
-    def test_call_with_too_few_entries_raises(self):
+    def test_too_few_arguments_names_the_count(self):
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('return'); caller.call(CALLEE_ID)    # the callee takes one arg
         caller.label('return'); caller.ret()
         assert_fails_at(self, Program(main_function(caller), returning_callee(argc = 1)), 0xC, 'CALL',
+                        f'{CALLEE_NAME} takes 1 argument, found 0 above its call setup [PUSH_RAW@0x0, PUSH_RAW@0x6]')
+
+    def test_wrong_count_with_the_return_label_elsewhere_is_not_a_count(self):
+        '''Only a setup returning right after the call is counted from; this one returns past dead code'''
+        caller = Asm()
+        caller.push_raw(CALLER_ID); caller.push_raw('resume'); caller.call(CALLEE_ID)    # the callee takes one arg
+        caller.ret()                                        # dead
+        caller.label('resume'); caller.ret()
+        assert_fails_at(self, Program(main_function(caller), returning_callee(argc = 1)), 0xC, 'CALL',
                         'pops 2 entries, the stack has 1: [PUSH_RAW@0x0]')
+
+    def test_broken_setup_under_an_outer_calls_setup_is_not_a_count(self):
+        '''The outer call's pending setup returns elsewhere, and a plain value isn't a function ID, so the inner call
+        isn't counted from either: the message says what stands where the inner setup should be'''
+        cases = [
+            # (case, the inner setup's return labels, the inner args, the message, the label of the push it names)
+            ('function ID forgotten', ['inner'], 1, 'expects the function ID', 'outer_arg'),
+            ('setup forgotten', [], 1, 'expects a return address', 'outer_arg'),
+            ('function ID forgotten, one argument too many', ['inner'], 2, 'expects a return address', 'inner_arg'),
+        ]
+        for case, inner_setup, inner_args, message, named in cases:
+            with self.subTest(case):
+                caller = Asm()
+                caller.push_raw(CALLER_ID); caller.push_raw('outer')
+                caller.label('outer_arg'); caller.push_int(LEFT_VALUE)
+                for target in inner_setup:
+                    caller.push_raw(target)
+
+                caller.label('inner_arg')
+                for _ in range(inner_args):
+                    caller.push_int(RIGHT_VALUE)
+
+                caller.label('call'); caller.call(CALLEE_ID)
+                caller.label('inner'); caller.get_reg(REG_INDEX); caller.call(CALLEE_ID)
+                caller.label('outer'); caller.ret()
+                program = Program(main_function(caller), returning_callee(argc = 1))
+                assert_fails_at(self, program, program.label('call'), 'CALL',
+                                f'{message}, found PUSH_INT@0x{program.label(named):X}')
 
     def test_function_id_of_another_function_raises(self):
         program = self.call_program(lambda asm: (asm.push_raw(CALLEE_ID), asm.push_raw('return')))
@@ -668,12 +705,21 @@ class TestCheckOrder(unittest.TestCase):
         assert_fails_at(self, Program(main_function(caller), returning_callee()), 0xC, 'CALL',
                         'expects a return address, found PUSH_INT@0x6')
 
-    def test_call_checks_its_arguments_before_its_setup(self):
+    def test_call_checks_its_argument_count_first(self):
+        '''One argument too many: counted from the setup returning right after the call, before the entry where the
+        setup should be is checked'''
         caller = Asm()
-        caller.push_raw(CALLER_ID); caller.push_raw('return'); caller.call(CALLEE_ID)    # no args, the callee takes 3
+        caller.push_raw(CALLER_ID); caller.push_raw('return'); caller.push_int(LEFT_VALUE); caller.call(CALLEE_ID)
         caller.label('return'); caller.ret()
-        assert_fails_at(self, Program(main_function(caller), returning_callee(argc = PARAM_COUNT)), 0xC, 'CALL',
-                        'pops 3 entries, the stack has 2: [PUSH_RAW@0x0, PUSH_RAW@0x6]')
+        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0x12, 'CALL',
+                        f'{CALLEE_NAME} takes 0 arguments, found 1 above its call setup [PUSH_RAW@0x0, PUSH_RAW@0x6]')
+
+    def test_call_checks_its_arguments_before_its_setup(self):
+        '''With no setup returning here, the args are popped first'''
+        caller = Asm()
+        caller.push_int(LEFT_VALUE); caller.call(CALLEE_ID); caller.ret()               # no setup, the callee takes 3
+        assert_fails_at(self, Program(main_function(caller), returning_callee(argc = PARAM_COUNT)), 0x6, 'CALL',
+                        'pops 3 entries, the stack has 1: [PUSH_INT@0x0]')
 
     def test_call_script_checks_its_arguments_before_its_frame(self):
         caller = Asm()

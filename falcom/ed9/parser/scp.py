@@ -3,7 +3,7 @@ from .types_parser import *
 from common import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
-from ..disasm.stack_effects import CALLEE_OPERAND, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
+from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
 from ..writer.metadata import COMMON_LIBRARY_ALL_IMPORT, SCP_WRITER_HELPER_IMPORT
 from ..writer.metadata.common_index import COMMON_FUNCTIONS
@@ -497,9 +497,7 @@ class ScpDisassemblerContext(DisassemblerContext):
             fits = isinstance(member, FrameSlot) and member.index == role.slot and frame_return(member) == role.target
 
         elif role.kind == RoleKind.FUNC_ID:
-            fits = is_push(member, ED9Opcode.PUSH_CURRENT_FUNC_ID) or (
-                is_push(member, ED9Opcode.PUSH_RAW) and member.operands[0].value == self.current_func.index
-            )
+            fits = self.is_function_id(member)
 
         else:
             fits = encoded_return(member) == role.target
@@ -515,6 +513,30 @@ class ScpDisassemblerContext(DisassemblerContext):
 
         else:
             self.retarget_push(member, ED9Opcode.PUSH_RET_ADDR, member.operands[0].value)
+
+    def is_function_id(self, entry) -> bool:
+        """A local call setup's function ID: PUSH_CURRENT_FUNC_ID, or the PUSH_RAW of this function's index"""
+        return is_push(entry, ED9Opcode.PUSH_CURRENT_FUNC_ID) or (
+            is_push(entry, ED9Opcode.PUSH_RAW) and entry.operands[0].value == self.current_func.index
+        )
+
+    def is_inside(self, target: int) -> bool:
+        """target lies in this function's code"""
+        return self.current_func.offset <= target and (self.code_end is None or target < self.code_end)
+
+    def setup_return(self, start: int) -> int | None:
+        """The return offset of the local call setup at stack[start] - a function ID under a return address inside this
+        function, as a call's own checks accept them; None when there is none"""
+        stack = self.stack_simulation
+        if not 0 <= start <= len(stack) - LOCAL_SETUP_SLOTS:
+            return None
+
+        func_id, ret_addr = stack[start:start + LOCAL_SETUP_SLOTS]
+        target = encoded_return(ret_addr)
+        if not self.is_function_id(func_id) or target is None or not self.is_inside(target):
+            return None
+
+        return target
 
     def retarget_push(self, push: Instruction, opcode: int, *values):
         """Turn a setup push into a pseudo-instruction with the given operand values"""
@@ -532,7 +554,7 @@ class ScpDisassemblerContext(DisassemblerContext):
         if target == self.code_end:
             self.fail(f'returns to 0x{target:X}, past its end (no RETURN after its return label)', self.current_inst)
 
-        if target < self.current_func.offset or (self.code_end is not None and target >= self.code_end):
+        if not self.is_inside(target):
             self.fail(f'return offset 0x{target:X} is outside the function', self.current_inst)
 
         if target <= self.current_inst.offset:
@@ -1002,13 +1024,41 @@ class ScpParser(StrictBase):
     def simulate_call(self, context: ScpDisassemblerContext, inst: Instruction) -> list[BranchTarget]:
         """PUSH(func_id) PUSH(ret_addr) args... CALL: the callee pops the args and both setup pushes and returns to
         the pushed return address. The setup pushes become PUSH_CURRENT_FUNC_ID / PUSH_RET_ADDR. Checked in order: the
-        args, the setup's height, the return offset, the function ID, then the return address's group."""
-        context.pop_entries(context.call_argc(inst))
+        argument count, the args, the setup's height, the return offset, the function ID, then the return address's
+        group."""
+        argc = context.call_argc(inst)
+        self.require_argument_count(context, inst, argc)
+        context.pop_entries(argc)
         func_id, ret_addr = context.pop_call_setup(inst.descriptor.effect.setup_pops)
         target = context.return_target(ret_addr, encoded_return(ret_addr))
         context.consume(func_id, Role(RoleKind.FUNC_ID))
         context.consume(ret_addr, Role(RoleKind.RET_ADDR, target))
         return [BranchTarget.unconditional(target)]
+
+    def require_argument_count(self, context: ScpDisassemblerContext, inst: Instruction, argc: int):
+        """No setup right below the args, but this call's own setup - the one returning right after the call - lower or
+        higher: the mistake is the argument count, so say that instead of what stands where the setup should be. Only
+        the setup returning here counts, so an outer call's pending setup is never taken for this call's."""
+        stack = context.stack_simulation
+        if context.setup_return(len(stack) - argc - LOCAL_SETUP_SLOTS) is not None:
+            return
+
+        returns_here = inst.offset + inst.size
+        starts = [start for start in range(len(stack)) if context.setup_return(start) == returns_here]
+        if not starts:
+            return
+
+        start = starts[-1]
+        found = len(stack) - start - LOCAL_SETUP_SLOTS
+        callee = self.functions[inst.operands[CALLEE_OPERAND].value]
+        arguments = 'argument' if argc == 1 else 'arguments'
+        message = (f'{callee.name} takes {argc} {arguments}, found {found} above its call setup '
+                   f'{format_stack(stack[start:start + LOCAL_SETUP_SLOTS])}')
+        if found < argc and all(param.default_value is not None for param in callee.params[found:]):
+            message += ('; a local CALL passes every argument - defaults apply only when the engine calls the function '
+                        'by name')
+
+        context.fail(message, inst)
 
     def simulate_call_script(self, context: ScpDisassemblerContext, inst: Instruction) -> list[BranchTarget]:
         """PUSH_CALLER_FRAME(ret) args... CALL_SCRIPT: the callee pops the args and the caller frame, and returns to
