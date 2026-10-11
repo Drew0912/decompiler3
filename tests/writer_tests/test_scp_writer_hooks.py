@@ -444,6 +444,8 @@ class TestRejected(HookTestCase):
                                                                          "attribute 'Valu32'", False),
             'out-of-range default': ('def Target(arg1 = 0x80000000):', 'parameter arg1 of Target: Integer 2147483648 '
                                                                      'is outside', False),
+            'NUL default': ("def Target(arg1: str = 'a\\x00'):", r"parameter arg1 of Target: default 'a\\x00' contains "
+                                                                 r'a NUL, which ends a \.dat string early$', False),
         }
         for case, (definition, message, future) in cases.items():
             with self.subTest(case):
@@ -474,6 +476,8 @@ class TestRejected(HookTestCase):
             'NullableStr number default': "a NullableStr parameter can't default to 1$",
             'Nullable32 string default': "a Nullable32 parameter can't default to 'text'$",
             'Pointer string default': "a Pointer parameter can't default to 'text'$",
+            'NUL string default': r"default 'ab\\x00c' contains a NUL, which ends a \.dat string early$",
+            'surrogate string default': r"default '\\udfff' can't be encoded: surrogates not allowed at position 0$",
         }
         for case, message in cases.items():
             with self.subTest(case):
@@ -537,6 +541,16 @@ class TestRejected(HookTestCase):
                     elif case == 'Nullable32 string default':
                         @self.writer.LLILCode()
                         def New(arg1: Value32, arg2: Nullable32 = 'text'):  # line: Nullable32 string default
+                            RETURN()
+
+                    elif case == 'NUL string default':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: str = 'ab\x00c'):  # line: NUL string default
+                            RETURN()
+
+                    elif case == 'surrogate string default':
+                        @self.writer.LLILCode()
+                        def New(arg1: Value32, arg2: NullableStr = '\udfff'):   # line: surrogate string default
                             RETURN()
 
                     else:

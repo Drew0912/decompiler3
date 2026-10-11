@@ -129,8 +129,10 @@ callback (§4): anywhere else it raises, and so do a second `@scena.GlobalVars()
 `create_scp_writer()`. Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the
 unknown name. An integer operand must fit what its type reads back, and a global index the declared
 table - `SET_REG(256)` fails at its line (`SET_REG operand 1 is 256, outside 0..255`; `POP` takes at most
-255 bytes) instead of being truncated. Errors raised while a body runs carry the `.py` line in their
-traceback.
+255 bytes) instead of being truncated. A string - pushed, a `CALL_SCRIPT` name, a `str` default or a
+global name - can't hold a NUL (the game ends the string there) or a lone surrogate (it can't be encoded):
+`PUSH_STR('a\x00b')` fails at its line (`PUSH_STR string 'a\x00b' contains a NUL, ..`), a default at its
+`def`. Errors raised while a body runs carry the `.py` line in their traceback.
 
 **The compile check** (`ScpWriter.check_compiled`, on by default; a script turns it off with
 `scena.check_compiled = False`). At the end of `build()` the bytes are parsed and lifted again in memory

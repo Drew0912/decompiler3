@@ -2,7 +2,8 @@
 '''The writer's compile: built in memory and written only on success, file-wide labels whose errors and warnings
 name their functions, DSL statements in the wrong place rejected, global vars declared once, in their block or a
 run callback, and named right, the global opcodes by name or index (an index within the declared table), an operand
-out of its type's range failing at its line, and the string pool without round_trip.'''
+out of its type's range failing at its line, a string the pool can't store failing where it enters, and the string
+pool without round_trip.'''
 
 import logging
 from pathlib import Path
@@ -466,6 +467,63 @@ class TestOperandRanges(WriterTestCase):
                     self.writer.build({})
 
 
+class TestStrings(WriterTestCase):
+    '''A string the pool can't store fails where it enters (a default at its def: test_scp_writer_hooks.py's parameter
+    tests): the game reads a pooled string up to its first NUL, and a lone surrogate can't be encoded (it used to fail
+    writing the pool, after every body, with no script line)'''
+
+    def test_code_string_fails_at_its_line(self):
+        cases = {
+            'PUSH_STR NUL': r"PUSH_STR string 'abc\x00def' contains a NUL, which ends a .dat string early",
+            'PUSH_STR surrogate': r"PUSH_STR string 'bad\ud800char' can't be encoded: surrogates not allowed at "
+                                  'position 3',
+            'PUSH NUL': r"PUSH string 'a\x00' contains a NUL, which ends a .dat string early",
+            'CALL_SCRIPT module NUL': r"CALL_SCRIPT string 'mod\x00' contains a NUL, which ends a .dat string early",
+            'CALL_SCRIPT function surrogate': r"CALL_SCRIPT string 'f\udc80' can't be encoded: surrogates not allowed "
+                                              'at position 1',
+        }
+        for case, message in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Main():
+                    # An opcode on the line before: the message names the failing opcode's own line
+                    PUSH_CALLER_FRAME('back')
+                    if case == 'PUSH_STR NUL':
+                        PUSH_STR('abc\x00def')                              # line: PUSH_STR NUL
+
+                    elif case == 'PUSH_STR surrogate':
+                        PUSH_STR('bad\ud800char')                           # line: PUSH_STR surrogate
+
+                    elif case == 'PUSH NUL':
+                        PUSH('a\x00')                                       # line: PUSH NUL
+
+                    elif case == 'CALL_SCRIPT module NUL':
+                        CALL_SCRIPT('mod\x00', 'f', 0)                      # line: CALL_SCRIPT module NUL
+
+                    else:
+                        CALL_SCRIPT('mod', ScpValue('f\udc80'), 0)          # line: CALL_SCRIPT function surrogate
+
+                    label('back')
+                    RETURN()
+
+                with self.assertRaisesRegex(ValueError, rf'^{at(__file__, case)}Main: {re.escape(message)}$'):
+                    self.writer.build({})
+
+    def test_global_var_name_fails(self):
+        for name, message in (
+            ('g\x00h', r"global var name 'g\x00h' contains a NUL, which ends a .dat string early"),
+            ('g\ud800', r"global var name 'g\ud800' can't be encoded: surrogates not allowed at position 1"),
+        ):
+            with self.subTest(name = name):
+                self.writer = self.fresh_writer()
+                with self.assertRaisesRegex(ValueError, f'^{re.escape(message)}$'):
+                    @self.writer.GlobalVars()
+                    def globalvars():
+                        GLOBAL_VAR(name, 1)
+
+
 class TestWriterWithoutRoundTrip(WriterTestCase):
     '''scena.round_trip = False: equal strings share one pool entry and no debug records are written'''
 
@@ -541,6 +599,19 @@ class TestCheckOffLocations(WriterTestCase):
             RETURN()
 
         with self.assertRaisesRegex(ValueError, r'^Main: SET_REG operand 1 is 256, outside 0\.\.255$'):
+            writer.build({})
+
+    def test_string_with_a_nul_names_only_the_function(self):
+        writer = self.fresh_writer(check = False)
+
+        @writer.LLILCode()
+        def Main():
+            PUSH_STR('a\x00')
+            POP(WORD_SIZE)
+            RETURN()
+
+        with self.assertRaisesRegex(ValueError, r"^Main: PUSH_STR string 'a\\x00' contains a NUL, which ends a \.dat "
+                                                r'string early$'):
             writer.build({})
 
 

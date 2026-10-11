@@ -45,6 +45,20 @@ NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - WORD_SIZE  # name_offset is t
 POSITIONAL_KINDS = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
 
 
+def string_problem(text: str) -> str | None:
+    """Why text can't be a pooled string (stored encoded and NUL-terminated, read up to the first NUL), or None"""
+    if '\0' in text:
+        return 'contains a NUL, which ends a .dat string early'
+
+    try:
+        text.encode(default_encoding())
+
+    except UnicodeEncodeError as e:
+        return f"can't be encoded: {e.reason} at position {e.start}"
+
+    return None
+
+
 @dataclass
 class LabelSite:
     """A placed label, or an operand referring to one: the label's name, the position in the code buffer, the
@@ -221,6 +235,10 @@ class ScpWriter:
         if not self.in_global_vars_body and not self.compile_started:
             raise ValueError(f"GLOBAL_VAR({name!r}) is outside @scena.GlobalVars() and a hook's run or function callback")
 
+        problem = string_problem(name)
+        if problem is not None:
+            raise ValueError(f'global var name {name!r} {problem}')
+
         if name in self.global_var_indices:
             raise ValueError(f'global var already declared: {name!r}')
 
@@ -308,7 +326,12 @@ class ScpWriter:
                     if is_string != flags.takes_string():
                         raise TypeError(f"a {flags.get_python_type()} parameter can't default to {param.default!r}")
 
-                    if not is_string:
+                    if is_string:
+                        problem = string_problem(param.default)
+                        if problem is not None:
+                            raise ValueError(f'default {param.default!r} {problem}')
+
+                    else:
                         cls._value_bytes(value)
 
             except (NotImplementedError, TypeError, ValueError) as e:
@@ -635,6 +658,7 @@ class ScpWriter:
 
         payload = None
         if opcode in PUSH_CONSTANT_OPS:
+            self._check_code_string(ED9Opcode(opcode).name, args[0])
             payload = self._emit_push_constant(args[0])
 
         elif opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
@@ -686,8 +710,12 @@ class ScpWriter:
 
     def _check_operands(self, mnemonic: str, operand_descriptors: tuple[OperandDescriptor, ...], args: tuple):
         """Each integer operand within what its type reads back (fileio would truncate it to a different value), a
-        global index within the declared table"""
+        global index within the declared table, a string one the pool can store"""
         for number, (op_desc, value) in enumerate(zip(operand_descriptors, args), 1):
+            if op_desc.type == ED9OperandType.Value:
+                self._check_code_string(mnemonic, value)
+                continue
+
             valid = self._operand_range(op_desc)
             # Compared, not `in`: a range scans itself for an int subclass (an IntEnum, RawInt)
             if valid is None or valid.start <= value < valid.stop:
@@ -700,6 +728,13 @@ class ScpWriter:
 
             raise ValueError(self._at_opcode(f'{mnemonic} operand {number} is {value}, outside '
                                              f'{valid.start}..{valid.stop - 1}'))
+
+    def _check_code_string(self, mnemonic: str, value):
+        """A string operand (str, or a String ScpValue) the pool can store, else a ValueError at its opcode"""
+        text = value.value if isinstance(value, ScpValue) else value
+        problem = string_problem(text) if isinstance(text, str) else None
+        if problem is not None:
+            raise ValueError(self._at_opcode(f'{mnemonic} string {text!r} {problem}'))
 
     def _operand_range(self, op_desc: OperandDescriptor) -> range | None:
         """The values an operand may take: its type's (OperandFormat.value_range), or the declared global indices"""
