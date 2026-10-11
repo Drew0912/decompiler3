@@ -104,7 +104,10 @@ stack entry tracks it. Then reads, stores and addresses are `FrameLoad`/`FrameSt
 lifetime and every access to it is a `StackLoad`/`StackStore`/`StackAddr` (MLIL `var_sN`) - the
 tail-call idiom `SET_REG ...; POP frame; GET_REG ...; CALL_SCRIPT_NO_RETURN` does exactly this.
 Pointer access (`LOAD_STACK_DEREF`, `POP_TO_DEREF`) goes only through a slot still holding a
-caller's argument; any other pointer may point into the function's own frame, and raises.
+caller's argument; any other pointer may point into the function's own frame, and raises. The
+virtual stack never tracks a parameter, so an opcode that pops or reads one in place (`SET_REG` on
+`arg1`, a `SYSCALL` reading it) runs it short: `_require_tracked` raises naming the parameter (`uses
+the slot of parameter 1 (arg1) in place`), and a tail call forwarding one has its own message.
 
 ## Calls and Exits (ED9)
 

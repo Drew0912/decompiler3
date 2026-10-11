@@ -176,8 +176,15 @@ warning off with `scena.warn_unreachable_code = False` (`ScpWriter.warn_unreacha
 default; turning the compile check off also silences it). Not checked: a stack that balances but reads
 the wrong slot. A read or write outside the live stack fails at once; decompiling a game `.dat` only
 warns about it. A slot offset that isn't a multiple of `WORD_SIZE` fails decompiling too, like a partial
-`POP`. The check costs about twice the compile itself (`mp0000_ev`, a 1.6 MB script: about 4 s on top of
-1.7 s); while it is on, each opcode also records where it was emitted.
+`POP`. An opcode can't use a parameter's slot in place - consume it (`SET_REG`, `ADD`, `POP_TO`, ...),
+read it (`SYSCALL`, `DEBUG_LOG`) or forward it to `CALL_SCRIPT_NO_RETURN`: that is valid VM code, but
+the decompiler doesn't follow it, so the check fails naming the parameter (`uses the slot of parameter 1
+(arg1) in place`). Work on a `LOAD_STACK` copy, which moves every offset below it one slot further:
+`POP_TO(-WORD_SIZE)` (`arg1` into `arg2`) becomes `LOAD_STACK(-WORD_SIZE)`, `POP_TO(-2 * WORD_SIZE)`,
+then pop both parameters before `RETURN`. A tail call passes the copy through a register:
+`LOAD_STACK(-WORD_SIZE)`, `SET_REG(0)`, pop the parameters, `GET_REG(0)`, `CALL_SCRIPT_NO_RETURN`. The
+check costs about twice the compile itself (`mp0000_ev`, a 1.6 MB script: about 4 s on top of 1.7 s);
+while it is on, each opcode also records where it was emitted.
 
 ## 2. Round-Trip Policy
 

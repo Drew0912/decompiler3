@@ -29,6 +29,10 @@ GLOBAL_INDEX = 0
 SECOND_GLOBAL_INDEX = 1
 MODULE_NAME = ''
 TAIL_FUNC_NAME = 'Tail'
+REG_INDEX = 0
+SYSCALL_SUBSYSTEM = 1
+SYSCALL_FUNC = 2
+IN_PLACE = "in place, which the decompiler can't follow - work on a LOAD_STACK copy instead$"
 
 
 def last_pushed_value(builder: LowLevelILBuilder):
@@ -194,6 +198,77 @@ class TestAccessBelowTheStack(unittest.TestCase):
         builder.load_stack(self.BELOW_ONE_PARAMETER + WORD_SIZE)    # slot 0, the parameter
 
         self.assertIsInstance(last_pushed_value(builder), LowLevelILFrameLoad)
+
+
+class TestParameterUsedInPlace(unittest.TestCase):
+    '''The vstack never tracks a parameter, so an opcode consuming or reading one in place can't be lifted: it fails
+    naming the parameter's slot - parameters counted from the top, where arg1 is - instead of the vstack'''
+
+    def assert_in_place(self, emit, uses: str, num_params: int = 1):
+        builder = make_builder(num_params)
+        with self.assertRaisesRegex(RuntimeError, rf'^uses {uses} {IN_PLACE}'):
+            emit(builder)
+
+    def test_consumer_names_the_parameter_slot(self):
+        for opcode, emit in (
+            ('SET_REG', lambda builder: builder.set_reg(REG_INDEX)),
+            ('NEG', lambda builder: builder.neg()),
+            ('SET_GLOBAL', lambda builder: builder.set_global(GLOBAL_INDEX)),
+            ('POP_TO', lambda builder: builder.pop_to(0)),
+        ):
+            with self.subTest(opcode):
+                self.assert_in_place(emit, r'the slot of parameter 1 \(arg1\)')
+
+    def test_reader_names_the_parameter_slots(self):
+        for opcode, emit in (
+            ('SYSCALL', lambda builder: builder.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2)),
+            ('DEBUG_LOG', lambda builder: builder.debug_log(2)),
+        ):
+            with self.subTest(opcode):
+                self.assert_in_place(emit, r'the slots of parameters 1-2 \(arg1, arg2\)', num_params = 2)
+
+    def test_binary_op_names_both_parameters(self):
+        self.assert_in_place(lambda builder: builder.add(), r'the slots of parameters 1-2 \(arg1, arg2\)',
+                             num_params = 2)
+
+    def test_repushed_parameter_slot_is_not_named(self):
+        '''arg1 popped and its slot pushed again: the push is a value the function pushed, only arg2 is used in place'''
+        def emit(builder):
+            builder.pop_bytes(WORD_SIZE)
+            builder.push_int(PUSHED_VALUE)
+            builder.add()
+
+        self.assert_in_place(emit, r'the slot of parameter 2 \(arg2\)', num_params = 2)
+
+    def test_lower_parameter_is_numbered_from_the_top(self):
+        '''Arguments are pushed right to left: with arg1 popped, the top slot is arg2'''
+        def emit(builder):
+            builder.pop_bytes(WORD_SIZE)
+            builder.set_reg(REG_INDEX)
+
+        self.assert_in_place(emit, r'the slot of parameter 2 \(arg2\)', num_params = 2)
+
+    def test_overwritten_parameter_slot_is_still_its_slot(self):
+        def emit(builder):
+            builder.push_int(STORED_VALUE)
+            builder.pop_to(-WORD_SIZE)              # into the parameter's slot
+            builder.set_reg(REG_INDEX)
+
+        self.assert_in_place(emit, r'the slot of parameter 1 \(arg1\)')
+
+    def test_tail_call_forwarding_a_parameter(self):
+        '''A copy on the stack would sit above the parameter, which the tail call can't leave: it goes through a
+        register'''
+        builder = make_builder(num_params = 1)
+        with self.assertRaisesRegex(RuntimeError, r"^forwards the slot of parameter 1 \(arg1\) to a tail call, which "
+                                                  r"the decompiler can't follow - pass LOAD_STACK copies through "
+                                                  r'registers \(SET_REG, pop the parameters, GET_REG\)$'):
+            builder.call_script_no_return(MODULE_NAME, TAIL_FUNC_NAME, 1)
+
+    def test_shortfall_below_the_parameters_keeps_the_vstack_error(self):
+        '''Not a parameter: a broken builder invariant, which the parser keeps a pop from reaching'''
+        with self.assertRaisesRegex(RuntimeError, '^Vstack underflow'):
+            make_builder().set_reg(REG_INDEX)
 
 
 class TestLiveParameterSlot(unittest.TestCase):

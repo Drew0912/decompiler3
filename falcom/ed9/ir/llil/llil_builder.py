@@ -68,6 +68,8 @@ class FalcomStackSnapshot(StackSnapshot):
 class FalcomVMBuilder(LowLevelILBuilder):
     '''High-level builder with Falcom VM patterns'''
 
+    PARAMETER_COPY_HINT = 'work on a LOAD_STACK copy instead'
+
     def __init__(self):
         '''Create builder without function (call create_function first)'''
         super().__init__()
@@ -254,6 +256,13 @@ class FalcomVMBuilder(LowLevelILBuilder):
         reading them back), so _cleanup_stack brings the tracked sp back to 0 without emitting IL -
         matching the bytecode, which emits no cleanup POP before a tail call.
         '''
+        parameters = self._untracked_parameters(arg_count)
+        if parameters is not None:
+            raise RuntimeError(
+                f"forwards {parameters} to a tail call, which the decompiler can't follow - pass LOAD_STACK copies "
+                f'through registers (SET_REG, pop the parameters, GET_REG)'
+            )
+
         args = self.vstack_peek_many(arg_count) if arg_count > 0 else []   # last pushed first
 
         call_inst = LowLevelILCallScriptNoReturn(module, func, args)

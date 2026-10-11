@@ -197,6 +197,36 @@ class TestStackMistakes(CheckTestCase):
                 self.assertCheckFails(rf"{at(__file__, 'default left out')}Caller: CALL at {HEX}: Callee takes 2 "
                                       rf"arguments, found {pushed} above its call setup \[.*\]{expected_hint}$")
 
+    def test_parameter_used_in_place_names_it_at_its_line(self):
+        '''Valid VM code the lift doesn't follow; consumed after a join, whose arms agree on the parameter'''
+        cases = {
+            'read': (lambda: SYSCALL(1, 2, 1), 'uses', 'in place'),
+            'after a join': (lambda: SET_REG(0), 'uses', 'in place'),
+            'tail call': (lambda: CALL_SCRIPT_NO_RETURN('m', 'f', 1), 'forwards', 'to a tail call'),
+        }
+        for case, (use, verb, where) in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Main(arg1: Value32):
+                    if case == 'after a join':
+                        PUSH_INT(1)
+                        POP_JMP_ZERO('skip')
+                        PUSH_INT(2)
+                        POP(WORD_SIZE)
+                        label('skip')
+
+                    use()                                   # line: in place
+                    if case == 'read':
+                        POP(WORD_SIZE)
+
+                    if case != 'tail call':
+                        RETURN()
+
+                self.assertCheckFails(rf"{at(__file__, 'in place')}Main: [A-Z_]+ at {HEX}: {verb} the slot of "
+                                      rf"parameter 1 \(arg1\) {where}, which the decompiler can't follow")
+
     def test_read_above_the_stack(self):
         define_read_above(self.writer)
         self.assertCheckFails(rf"{at(__file__, 'above the stack')}Above: LOAD_STACK at {HEX}: addresses slot 0 \(above the stack\)$")

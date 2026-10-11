@@ -130,14 +130,15 @@ class TestPopValidation(unittest.TestCase):
 
 
 class TestArgumentCountReachingIntoParameters(unittest.TestCase):
-    '''A function's own parameters sit on the VM stack below its pushes. An argument count larger than the pushes the
-    call really has must fail the lift at that instruction, not take the parameter as an argument.'''
+    '''A function's own parameters sit on the VM stack below its pushes. An argument count larger than the pushes uses
+    a parameter's slot in place: the lift fails at that instruction naming it, rather than take it as an argument.'''
 
-    def assert_lift_fails_at(self, mnemonic: str, build):
+    def assert_lift_fails_at(self, mnemonic: str, build, verb: str = 'uses'):
         asm = Asm()
         build(asm)
 
-        with self.assertRaisesRegex(ValueError, f'{mnemonic} at 0x'):
+        uses = rf'{verb} the slot of parameter 1 \(arg1\) '
+        with self.assertRaisesRegex(ValueError, rf'{mnemonic} at 0x[0-9A-F]+: {uses}'):
             lift_asm(asm, argc = 1)
 
     def test_syscall_with_more_arguments_than_pushed(self):
@@ -157,7 +158,7 @@ class TestArgumentCountReachingIntoParameters(unittest.TestCase):
         def build(asm: Asm):
             asm.push_int(PUSHED_VALUE); asm.call_script_no_return(2)
 
-        self.assert_lift_fails_at('CALL_SCRIPT_NO_RETURN', build)
+        self.assert_lift_fails_at('CALL_SCRIPT_NO_RETURN', build, 'forwards')
 
     def test_syscall_with_exactly_the_pushed_arguments_is_accepted(self):
         asm = Asm()

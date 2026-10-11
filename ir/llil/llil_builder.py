@@ -78,6 +78,8 @@ class StackSnapshot:
 class LowLevelILBuilder:
     '''Mid-level builder with convenience methods'''
 
+    PARAMETER_COPY_HINT = 'work on a copy instead'
+
     def __init__(self, function: Optional[LowLevelILFunction] = None):
         self.function = function
         self.current_block: Optional[LowLevelILBasicBlock] = None
@@ -214,6 +216,7 @@ class LowLevelILBuilder:
 
     def vstack_peek_many(self, count: int) -> List[LowLevelILExpr]:
         '''Peek at multiple items from vstack in LIFO order'''
+        self._require_tracked(count)
         return self.__vstack.peek_many(count)
 
     def vstack_size(self) -> int:
@@ -402,6 +405,7 @@ class LowLevelILBuilder:
 
     def pop(self, *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
         '''Pop value from stack and emit SpAdd'''
+        self._require_tracked(1)
         self.emit_sp_add(-1, hidden_for_formatter = hidden_for_formatter)
         return self.__vstack_pop()
 
@@ -442,6 +446,36 @@ class LowLevelILBuilder:
     def _is_param_slot(self, slot_index: int) -> bool:
         '''The caller pushed the arguments into the slots starting at the frame base'''
         return self.frame_base_sp <= slot_index < self.frame_base_sp + self.function.num_params
+
+    def _param_position(self, slot_index: int) -> int:
+        '''1-based position of the parameter in slot_index: arguments are pushed right to left, so the first parameter
+        is in the highest slot'''
+        return self.function.num_params - (slot_index - self.frame_base_sp)
+
+    def _untracked_parameters(self, count: int) -> Optional[str]:
+        '''The parameter slots among the top count slots, described ('the slot of parameter 1 (arg1)'), when the vstack
+        runs short of count only by them; None when it holds count entries or a missing slot isn't a parameter's'''
+        sp = self.sp_get()
+        missing = range(sp - count, sp - self.__vstack.size())
+        if not missing or not all(self._is_param_slot(slot) for slot in missing):
+            return None
+
+        positions = sorted(self._param_position(slot) for slot in missing)
+        names = ', '.join(self.function.params[position - 1].name for position in positions)
+        if len(positions) == 1:
+            return f'the slot of parameter {positions[0]} ({names})'
+
+        return f'the slots of parameters {positions[0]}-{positions[-1]} ({names})'
+
+    def _require_tracked(self, count: int):
+        '''The top count slots must be values the function pushed. The vstack tracks every push but no parameter, so
+        running short there is an opcode using parameter slots in place, which the lift doesn't follow; any other
+        shortfall is left to the vstack's own error'''
+        parameters = self._untracked_parameters(count)
+        if parameters is not None:
+            raise RuntimeError(
+                f"uses {parameters} in place, which the decompiler can't follow - {self.PARAMETER_COPY_HINT}"
+            )
 
     def _holds_parameter(self, slot_index: int) -> bool:
         '''Whether slot_index still holds the caller's parameter, so accesses to it are frame-relative (argN).
@@ -543,7 +577,8 @@ class LowLevelILBuilder:
         '''Generic binary operation handler'''
         # Get operands - both must be None or both must be provided
         if lhs is None and rhs is None:
-            # Implicit mode: pop both from vstack (emit SpAdd for each)
+            # Implicit mode: pop both from vstack (emit SpAdd for each); checked together, to name both parameters
+            self._require_tracked(2)
             rhs = self.pop(hidden_for_formatter = hidden_for_formatter)  # First pop gets right operand (top of stack)
             lhs = self.pop(hidden_for_formatter = hidden_for_formatter)  # Second pop gets left operand (below it)
         elif lhs is not None and rhs is not None:
