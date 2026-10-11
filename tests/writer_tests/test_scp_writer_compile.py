@@ -2,8 +2,8 @@
 '''The writer's compile: built in memory and written only on success, file-wide labels whose errors and warnings
 name their functions, DSL statements in the wrong place rejected, global vars declared once, in their block or a
 run callback, and named right, the global opcodes by name or index (an index within the declared table), an operand
-out of its type's range failing at its line, a string the pool can't store failing where it enters, and the string
-pool without round_trip.'''
+out of its type's range or of the wrong type failing at its line, a string the pool can't store failing where it
+enters, and the string pool without round_trip.'''
 
 import logging
 from pathlib import Path
@@ -338,10 +338,11 @@ class TestGlobalVarNames(WriterTestCase):
 
         @self.writer.LLILCode()
         def Body():
-            LOAD_GLOBAL('b')
+            LOAD_GLOBAL('b')                        # line: unknown global
             RETURN()
 
-        with self.assertRaisesRegex(ValueError, r"^unknown global var 'b'; declared: \['a'\]$"):
+        with self.assertRaisesRegex(ValueError, rf"^{at(__file__, 'unknown global')}Body: unknown global var 'b'; "
+                                                r"declared: \['a'\]$"):
             self.writer.build({})
 
     def test_outside_the_block(self):
@@ -464,6 +465,80 @@ class TestOperandRanges(WriterTestCase):
                     RETURN()
 
                 with self.assertRaisesRegex(ValueError, rf'^{at(__file__, case)}Main: {case} operand 1 is '):
+                    self.writer.build({})
+
+
+class TestArgumentTypes(WriterTestCase):
+    '''A wrong argument type fails at its line (test_scp_writer_dsl.py's TestArgumentTypes has the texts); outside a
+    function body it comes before the body check, with no prefix'''
+
+    def test_type_error_names_its_line(self):
+        cases = {
+            'PUSH_INT type': r'PUSH_INT value is 5\.0 \(float\), not int',
+            'SET_REG type': r'SET_REG index is 1\.0 \(float\), not int',
+            'label type': r'label name is 5 \(int\), not str',
+            'CALL by name': r"CALL takes the function itself, not 'Foo'",
+        }
+        for case, message in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Main():
+                    # An opcode on the line before: the message names the failing statement's own line
+                    PUSH_INT(0)
+                    if case == 'PUSH_INT type':
+                        PUSH_INT(5.0)                                       # line: PUSH_INT type
+
+                    elif case == 'SET_REG type':
+                        SET_REG(1.0)                                        # line: SET_REG type
+
+                    elif case == 'label type':
+                        label(5)                                            # line: label type
+
+                    else:
+                        CALL('Foo')                                         # line: CALL by name
+
+                    RETURN()
+
+                with self.assertRaisesRegex(TypeError, rf'^{at(__file__, case)}Main: {message}$'):
+                    self.writer.build({})
+
+    def test_outside_a_body_the_type_error_comes_first(self):
+        with self.assertRaisesRegex(TypeError, r'^PUSH_INT value is 5\.0 \(float\), not int$'):
+            PUSH_INT(5.0)
+
+        with self.assertRaisesRegex(TypeError, r'^PUSH_INT value is 5\.0 \(float\), not int$'):
+            @self.writer.GlobalVars()
+            def globalvars():
+                PUSH_INT(5.0)
+
+    def test_bool_and_an_unregistered_call_name_their_line(self):
+        cases = {
+            'bool': r'PUSH_INT takes no bool operand: True',
+            'unregistered': r'CALL\(Unregistered\): no function of that name in this script - a library function must '
+                            r'be listed in @scena\.CommonImports\(\), a script function needs @scena\.LLILCode\(\), a '
+                            r'hook function @add_function',
+        }
+        for case, message in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                def Unregistered():
+                    RETURN()
+
+                @self.writer.LLILCode()
+                def Main():
+                    PUSH_INT(0)
+                    if case == 'bool':
+                        PUSH_INT(True)                                      # line: bool
+
+                    else:
+                        CALL(Unregistered)                                  # line: unregistered
+
+                    RETURN()
+
+                with self.assertRaisesRegex(TypeError, rf'^{at(__file__, case)}Main: {message}$'):
                     self.writer.build({})
 
 
@@ -612,6 +687,17 @@ class TestCheckOffLocations(WriterTestCase):
 
         with self.assertRaisesRegex(ValueError, r"^Main: PUSH_STR string 'a\\x00' contains a NUL, which ends a \.dat "
                                                 r'string early$'):
+            writer.build({})
+
+    def test_type_error_names_only_the_function(self):
+        writer = self.fresh_writer(check = False)
+
+        @writer.LLILCode()
+        def Main():
+            PUSH_INT(5.0)
+            RETURN()
+
+        with self.assertRaisesRegex(TypeError, r'^Main: PUSH_INT value is 5\.0 \(float\), not int$'):
             writer.build({})
 
 

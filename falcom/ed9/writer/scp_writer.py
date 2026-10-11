@@ -5,7 +5,8 @@ import math
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from types import UnionType
+from typing import Callable, get_args
 
 from common import fileio
 from common.config import default_encoding
@@ -57,6 +58,18 @@ def string_problem(text: str) -> str | None:
         return f"can't be encoded: {e.reason} at position {e.start}"
 
     return None
+
+
+def require_type(statement: str, name: str, value, kind: type | UnionType):
+    """A DSL statement's argument of type kind, else a TypeError at the statement's line:
+    'PUSH_INT value is 5.0 (float), not int'"""
+    if isinstance(value, kind):
+        return
+
+    names = [member.__name__ for member in get_args(kind) or (kind,)]
+    expected = names[0] if len(names) == 1 else f'{", ".join(names[:-1])} or {names[-1]}'
+    raise TypeError(get_scp_writer().at_statement(f'{statement} {name} is {value!r} ({type(value).__name__}), '
+                                                  f'not {expected}'))
 
 
 @dataclass
@@ -248,7 +261,8 @@ class ScpWriter:
     def global_var_index(self, name: str) -> int:
         index = self.global_var_indices.get(name)
         if index is None:
-            raise ValueError(f'unknown global var {name!r}; declared: {sorted(self.global_var_indices)}')
+            raise ValueError(self.at_statement(f'unknown global var {name!r}; declared: '
+                                               f'{sorted(self.global_var_indices)}'))
 
         return index
 
@@ -465,7 +479,18 @@ class ScpWriter:
 
     def _at_opcode(self, text: str) -> str:
         """text about the opcode being compiled, at its .py line when the compile check keeps the source map"""
-        return f'{location_prefix(self.current_site)}{self.current_function.name}: {text}'
+        return self._located(self.current_site, text)
+
+    def at_statement(self, text: str) -> str:
+        """text about the DSL statement running, before its opcode is written (current_site is still the previous
+        opcode's): at its .py line while the compile check is on, in its function when inside a body"""
+        if self.current_function is None:
+            return text
+
+        return self._located(self._opcode_site() if self.check_compiled else None, text)
+
+    def _located(self, site: SourceSite | None, text: str) -> str:
+        return f'{location_prefix(site)}{self.current_function.name}: {text}'
 
     def _build_debug_records(self):
         """Turn tracked call sites into debug-info records, in table order like the original compiler"""
@@ -647,10 +672,10 @@ class ScpWriter:
             self.current_site = site
             self.source_map[self.fs.Position] = site
 
-        # bool is an int subclass, so the opcode functions' isinstance asserts accept True/False
+        # bool is an int subclass, so the opcode functions' type checks accept True/False
         for arg in args:
             if isinstance(arg, bool):
-                raise TypeError(f'{ED9Opcode(opcode).name} takes no bool operand: {arg!r}')
+                raise TypeError(self._at_opcode(f'{ED9Opcode(opcode).name} takes no bool operand: {arg!r}'))
 
         # The value's Python type picks its encoding, so PUSH_FLOAT(1) would push an Integer
         if opcode == ED9Opcode.PUSH_FLOAT:
@@ -794,14 +819,17 @@ class ScpWriter:
         self._write_scp_value(value if isinstance(value, ScpValue) else ScpValue(value))
 
     def _write_func_operand(self, value):
-        self.fs.WriteUShort(self._find_function(value).index)
-
-    def _find_function(self, func: Callable) -> ScpFunction:
-        f = self.functions_by_name.get(func.__name__)
+        f = self._find_function(value)
         if f is None:
-            raise TypeError(f'CALL has unknown function name: {func.__name__}')
+            raise TypeError(self._at_opcode(f'CALL({value.__name__}): no function of that name in this script - a '
+                                            'library function must be listed in @scena.CommonImports(), a script '
+                                            'function needs @scena.LLILCode(), a hook function @add_function'))
 
-        return f
+        self.fs.WriteUShort(f.index)
+
+    def _find_function(self, func: Callable) -> ScpFunction | None:
+        """CALL resolves by the callee's name; past the CALL operand every callee has resolved"""
+        return self.functions_by_name.get(func.__name__)
 
     def add_label(self, name: str):
         """Labels are file-wide: a name is defined once in the script"""

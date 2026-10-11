@@ -127,7 +127,11 @@ function body`, and `GLOBAL_VAR` inside a body raises (the header counts the glo
 run). `GLOBAL_VAR` belongs in the script's one `@scena.GlobalVars()` block or a hook's run or function
 callback (§4): anywhere else it raises, and so do a second `@scena.GlobalVars()` and one before
 `create_scp_writer()`. Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the
-unknown name. An integer operand must fit what its type reads back, and a global index the declared
+unknown name, and `PUSH_INT(5.0)` there its type. A wrong argument type is a `TypeError` naming the
+statement, the argument and the types it takes - `PUSH_INT value is 5.0 (float), not int`, in a body at
+its line. `CALL` of a function the script never registered says where one comes from: a library function
+listed in `@scena.CommonImports()`, a script function with `@scena.LLILCode()`, a hook function with
+`@add_function`. An integer operand must fit what its type reads back, and a global index the declared
 table - `SET_REG(256)` fails at its line (`SET_REG operand 1 is 256, outside 0..255`; `POP` takes at most
 255 bytes) instead of being truncated. A string - pushed, a `CALL_SCRIPT` name, a `str` default or a
 global name - can't hold a NUL (the game ends the string there) or a lone surrogate (it can't be encoded):

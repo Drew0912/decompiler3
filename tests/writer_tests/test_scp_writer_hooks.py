@@ -1501,6 +1501,28 @@ class TestOpcodeCallbacks(HookTestCase):
                 with self.assertRaisesRegex(ValueError, f'^{expected}'):
                     self.writer.build({})
 
+    def test_type_error_in_a_callback_names_its_line_and_trigger(self):
+        '''A wrong argument type fails before its opcode is written, at the callback's line'''
+        hook = self.hook('''
+            def bad_type(opcode, *args):
+                if args == (2,):
+                    PUSH_INT(2.5)                       # line: emit
+
+            registerOpcodeCallback(bad_type)
+        ''')
+
+        @self.writer.LLILCode()
+        def Target():
+            PUSH_INT(1)
+            PUSH_INT(2)                                 # line: typed trigger
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        trigger = location(__file__, 'typed trigger')
+        with self.assertRaisesRegex(TypeError, rf'^{at(hook.__file__, "emit")}\(opcode callback bad_type, triggered at '
+                                               rf'{trigger}\) Target: PUSH_INT value is 2\.5 \(float\), not int$'):
+            self.writer.build({})
+
     def test_every_opcode_a_callback_emits_keeps_the_trigger(self):
         '''Every opcode a callback emits skips the callbacks and notes the trigger, not only its first'''
         hook = self.hook('''

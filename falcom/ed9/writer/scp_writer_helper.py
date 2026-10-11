@@ -5,7 +5,7 @@ bodies)"""
 import uuid
 
 from ir.llil import WORD_SIZE
-from .scp_writer import create_scp_writer
+from .scp_writer import create_scp_writer, require_type as _require_type
 from .scp_writer_opcode_handler import *
 from .scp_writer_hooks import *
 
@@ -19,12 +19,14 @@ def genLabel() -> str:
 
 def label(name: str):
     """Marks the current position in the function body as a jump target (emits no instruction)"""
-    assert isinstance(name, str)
+    _require_type('label', 'name', name, str)
     get_scp_writer().add_label(name)
 
 
 def GLOBAL_VAR(name: str, type: sint32):
     """Declares one entry of the script's global variable table (see @scena.GlobalVars())"""
-    assert isinstance(name, str)
-    assert isinstance(type, sint32) and not isinstance(type, bool), f'GLOBAL_VAR type must be an int, not {type!r}'
+    _require_type('GLOBAL_VAR', 'name', name, str)
+    if isinstance(type, bool) or not isinstance(type, sint32):
+        raise TypeError(get_scp_writer().at_statement(f'GLOBAL_VAR type must be an int, not {type!r}'))
+
     return get_scp_writer().add_global_var(name, type)

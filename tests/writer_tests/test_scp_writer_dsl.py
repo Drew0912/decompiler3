@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''DSL argument checks (bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes, what
+'''DSL argument checks (types, bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes, what
 handle_opcode tracks, every opcode function handing the writer its own opcode, and PUSH.'''
 
 from enum import IntEnum
@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import sys
 from types import SimpleNamespace
+from typing import get_args
 import unittest
 from unittest import mock
 
@@ -48,8 +49,36 @@ class TestBoolRejected(unittest.TestCase):
             SYSCALL(0, 0, True)
 
     def test_global_var_type_rejects_bool(self):
-        with self.assertRaisesRegex(AssertionError, 'GLOBAL_VAR type must be an int'):
+        with self.assertRaisesRegex(TypeError, 'GLOBAL_VAR type must be an int'):
             GLOBAL_VAR('isblackroom', True)
+
+
+class TestArgumentTypes(unittest.TestCase):
+    '''A wrong argument type is a TypeError naming the statement, the argument and the types it takes; outside a
+    function body it has no prefix (test_scp_writer_compile.py's TestArgumentTypes has the lines)'''
+
+    def setUp(self):
+        fresh_writer()
+
+    def test_types_taken_are_listed(self):
+        for statement, emit, message in (
+            ('PUSH', lambda: PUSH([1]), r'PUSH value is \[1\] \(list\), not int, float, str or RawInt'),
+            ('PUSH_FLOAT', lambda: PUSH_FLOAT('x'), r"PUSH_FLOAT value is 'x' \(str\), not float or int"),
+            ('CALL_SCRIPT', lambda: CALL_SCRIPT(1, 'f', 0), r'CALL_SCRIPT module is 1 \(int\), not str or ScpValue'),
+        ):
+            with self.subTest(statement):
+                with self.assertRaisesRegex(TypeError, f'^{message}$'):
+                    emit()
+
+    def test_statements_without_an_opcode(self):
+        for statement, emit, message in (
+            ('label', lambda: label(5), r'label name is 5 \(int\), not str'),
+            ('GLOBAL_VAR name', lambda: GLOBAL_VAR(5, 1), r'GLOBAL_VAR name is 5 \(int\), not str'),
+            ('GLOBAL_VAR type', lambda: GLOBAL_VAR('a', 1.0), r'GLOBAL_VAR type must be an int, not 1\.0'),
+        ):
+            with self.subTest(statement):
+                with self.assertRaisesRegex(TypeError, f'^{message}$'):
+                    emit()
 
 
 class TestCall(unittest.TestCase):
@@ -57,7 +86,7 @@ class TestCall(unittest.TestCase):
         fresh_writer()
 
     def test_call_by_name_names_the_mistake(self):
-        with self.assertRaisesRegex(AssertionError, r"CALL takes the function itself, not 'CheckSBreak'"):
+        with self.assertRaisesRegex(TypeError, r"^CALL takes the function itself, not 'CheckSBreak'$"):
             CALL('CheckSBreak')
 
     def test_unregistered_function_is_named(self):
@@ -66,7 +95,10 @@ class TestCall(unittest.TestCase):
         def Missing():
             pass
 
-        with self.assertRaisesRegex(TypeError, r'^CALL has unknown function name: Missing$'):
+        with self.assertRaisesRegex(TypeError, r'^Body: CALL\(Missing\): no function of that name in this script - '
+                                               r'a library function must be listed in @scena\.CommonImports\(\), a '
+                                               r'script function needs @scena\.LLILCode\(\), a hook function '
+                                               r'@add_function$'):
             CALL(Missing)
 
 
@@ -139,6 +171,25 @@ class TestOpcodeFunctions(unittest.TestCase):
                 func(*args[name])
 
         self.assertEqual(emitted, [(ED9Opcode[name], args[name]) for name in functions])
+
+    def test_each_function_checks_its_argument_types(self):
+        '''Every argument of every opcode function is checked against its annotation'''
+        body_writer()
+        for name, func in self.opcode_functions().items():
+            for number, param in enumerate(inspect.signature(func).parameters.values()):
+                with self.subTest(f'{name} {param.name}'):
+                    args = list(self.ARGS[name])
+                    args[number] = object()
+                    if name == 'CALL':
+                        message = r'CALL takes the function itself, not <object object at 0x\w+>'
+
+                    else:
+                        types = [kind.__name__ for kind in get_args(param.annotation) or (param.annotation,)]
+                        expected = types[0] if len(types) == 1 else f'{", ".join(types[:-1])} or {types[-1]}'
+                        message = rf'{name} {param.name} is <object object at 0x\w+> \(object\), not {expected}'
+
+                    with self.assertRaisesRegex(TypeError, f'^Body: {message}$'):
+                        func(*args)
 
 
 class TestPushFloat(unittest.TestCase):

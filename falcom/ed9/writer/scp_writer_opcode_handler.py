@@ -2,7 +2,7 @@
 
 from typing import Callable
 
-from .scp_writer import get_scp_writer
+from .scp_writer import get_scp_writer, require_type as _require_type
 from ..disasm import ED9Opcode
 from ..parser.types_scp import *
 
@@ -17,86 +17,88 @@ float32 = float | int
 
 def PUSH(value: sint32 | float32 | str | RawInt):
     """Push value onto stack (Opcode 0x00)"""
-    assert isinstance(value, sint32 | float32 | str | RawInt)
+    _require_type('PUSH', 'value', value, sint32 | float32 | str | RawInt)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH, value)
 
 
 def POP(byte_count: uint8):
     """Pop byte_count bytes (byte_count // WORD_SIZE values) and discard them (Opcode 0x01)"""
-    assert isinstance(byte_count, uint8)
+    _require_type('POP', 'byte_count', byte_count, uint8)
     return get_scp_writer().handle_opcode(ED9Opcode.POP, byte_count)
 
 
 def LOAD_STACK(offset: sint32):
     """Push stack[sp + offset // WORD_SIZE] (always sp-relative, parameters included); offset counts bytes, a
     multiple of WORD_SIZE (Opcode 0x02)"""
-    assert isinstance(offset, sint32)
+    _require_type('LOAD_STACK', 'offset', offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.LOAD_STACK, offset)
 
 
 def LOAD_STACK_DEREF(offset: sint32):
     """Push *stack[sp + offset // WORD_SIZE] - reads through a pointer the caller passed in a parameter slot;
     offset counts bytes, a multiple of WORD_SIZE (Opcode 0x03)"""
-    assert isinstance(offset, sint32)
+    _require_type('LOAD_STACK_DEREF', 'offset', offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.LOAD_STACK_DEREF, offset)
 
 
 def PUSH_STACK_OFFSET(offset: sint32):
     """Push a reference/offset for stack[sp + offset // WORD_SIZE]; offset counts bytes, a multiple of WORD_SIZE
     (Opcode 0x04)"""
-    assert isinstance(offset, sint32)
+    _require_type('PUSH_STACK_OFFSET', 'offset', offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH_STACK_OFFSET, offset)
 
 
 def POP_TO(offset: sint32):
     """Pop, then store to stack[sp + offset // WORD_SIZE] (sp taken after the pop); offset counts bytes, a
     multiple of WORD_SIZE (Opcode 0x05)"""
-    assert isinstance(offset, sint32)
+    _require_type('POP_TO', 'offset', offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.POP_TO, offset)
 
 
 def POP_TO_DEREF(offset: sint32):
     """Pop, then store through the pointer in stack[sp + offset // WORD_SIZE] (sp taken after the pop); offset
     counts bytes, a multiple of WORD_SIZE (Opcode 0x06)"""
-    assert isinstance(offset, sint32)
+    _require_type('POP_TO_DEREF', 'offset', offset, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.POP_TO_DEREF, offset)
 
 
 def LOAD_GLOBAL(name: str | sint32):
     """Push GLOBALS[name] onto stack (Opcode 0x07)"""
-    assert isinstance(name, str | sint32)
+    _require_type('LOAD_GLOBAL', 'name', name, str | sint32)
     index = name if isinstance(name, sint32) else get_scp_writer().global_var_index(name)
     return get_scp_writer().handle_opcode(ED9Opcode.LOAD_GLOBAL, index)
 
 
 def SET_GLOBAL(name: str | sint32):
     """Pop to GLOBALS[name] (Opcode 0x08)"""
-    assert isinstance(name, str | sint32)
+    _require_type('SET_GLOBAL', 'name', name, str | sint32)
     index = name if isinstance(name, sint32) else get_scp_writer().global_var_index(name)
     return get_scp_writer().handle_opcode(ED9Opcode.SET_GLOBAL, index)
 
 
 def GET_REG(index: uint8):
     """Push REG[index] onto stack (REG[0] holds a function's return value) (Opcode 0x09)"""
-    assert isinstance(index, uint8)
+    _require_type('GET_REG', 'index', index, uint8)
     return get_scp_writer().handle_opcode(ED9Opcode.GET_REG, index)
 
 
 def SET_REG(index: uint8):
     """Pop to REG[index] (Opcode 0x0A)"""
-    assert isinstance(index, uint8)
+    _require_type('SET_REG', 'index', index, uint8)
     return get_scp_writer().handle_opcode(ED9Opcode.SET_REG, index)
 
 
 def JMP(target: str):
     """Jump to a label, by name (Opcode 0x0B)"""
-    assert isinstance(target, str)
+    _require_type('JMP', 'target', target, str)
     return get_scp_writer().handle_opcode(ED9Opcode.JMP, target)
 
 
 def CALL(func: Callable):
     """Call a script function, passed as the function itself - CALL(Foo), not CALL('Foo') (Opcode 0x0C)"""
-    assert callable(func), f'CALL takes the function itself, not {func!r}'
+    if not callable(func):
+        raise TypeError(get_scp_writer().at_statement(f'CALL takes the function itself, not {func!r}'))
+
     return get_scp_writer().handle_opcode(ED9Opcode.CALL, func)
 
 
@@ -108,13 +110,13 @@ def RETURN():
 
 def POP_JMP_NOT_ZERO(target: str):
     """Pop value and jump if value not equal zero (Opcode 0x0E)"""
-    assert isinstance(target, str)
+    _require_type('POP_JMP_NOT_ZERO', 'target', target, str)
     return get_scp_writer().handle_opcode(ED9Opcode.POP_JMP_NOT_ZERO, target)
 
 
 def POP_JMP_ZERO(target: str):
     """Pop value and jump if value equal zero (Opcode 0x0F)"""
-    assert isinstance(target, str)
+    _require_type('POP_JMP_ZERO', 'target', target, str)
     return get_scp_writer().handle_opcode(ED9Opcode.POP_JMP_ZERO, target)
 
 
@@ -210,50 +212,50 @@ def NOT():
 
 def CALL_SCRIPT(module: str | ScpValue, func: str | ScpValue, argc: uint8):
     """Call func from module (Opcode 0x22)"""
-    assert isinstance(module, str | ScpValue)
-    assert isinstance(func, str | ScpValue)
-    assert isinstance(argc, uint8)
+    _require_type('CALL_SCRIPT', 'module', module, str | ScpValue)
+    _require_type('CALL_SCRIPT', 'func', func, str | ScpValue)
+    _require_type('CALL_SCRIPT', 'argc', argc, uint8)
     return get_scp_writer().handle_opcode(ED9Opcode.CALL_SCRIPT, module, func, argc)
 
 
 def CALL_SCRIPT_NO_RETURN(module: str | ScpValue, func: str | ScpValue, argc: uint8):
     """Call func from module with no return (tail call) (Opcode 0x23)"""
-    assert isinstance(module, str | ScpValue)
-    assert isinstance(func, str | ScpValue)
-    assert isinstance(argc, uint8)
+    _require_type('CALL_SCRIPT_NO_RETURN', 'module', module, str | ScpValue)
+    _require_type('CALL_SCRIPT_NO_RETURN', 'func', func, str | ScpValue)
+    _require_type('CALL_SCRIPT_NO_RETURN', 'argc', argc, uint8)
     return get_scp_writer().handle_opcode(ED9Opcode.CALL_SCRIPT_NO_RETURN, module, func, argc)
 
 
 def SYSCALL(subsystem: uint8, cmd: uint8, argc: uint8):
     """System call on the top argc stack values, which it reads without popping (Opcode 0x24)"""
-    assert isinstance(subsystem, uint8)
-    assert isinstance(cmd, uint8)
-    assert isinstance(argc, uint8)
+    _require_type('SYSCALL', 'subsystem', subsystem, uint8)
+    _require_type('SYSCALL', 'cmd', cmd, uint8)
+    _require_type('SYSCALL', 'argc', argc, uint8)
     return get_scp_writer().handle_opcode(ED9Opcode.SYSCALL, subsystem, cmd, argc)
 
 
 def PUSH_CALLER_FRAME(return_addr: str):
     """Push caller frame [func_id, &ret_addr, script_ptr, script_ptr, script_name] (Opcode 0x25)"""
-    assert isinstance(return_addr, str)
+    _require_type('PUSH_CALLER_FRAME', 'return_addr', return_addr, str)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH_CALLER_FRAME, return_addr)
 
 
 def DEBUG_SET_LINENO(lineno: uint16):
     """Line number (debug info) (Opcode 0x26)"""
-    assert isinstance(lineno, uint16)
+    _require_type('DEBUG_SET_LINENO', 'lineno', lineno, uint16)
     return get_scp_writer().handle_opcode(ED9Opcode.DEBUG_SET_LINENO, lineno)
 
 
 def DEBUG_LOG(argc: uint8):
     """Debug print of the top argc stack values, message first; pops them (Opcode 0x27)"""
-    assert isinstance(argc, uint8)
+    _require_type('DEBUG_LOG', 'argc', argc, uint8)
     return get_scp_writer().handle_opcode(ED9Opcode.DEBUG_LOG, argc)
 
 
 def UNKNOWN_28(operand_bytes: bytes = b''):
     """Never seen in a script, operand format unknown - writes the opcode then operand_bytes as-is, for testing
     (Opcode 0x28)"""
-    assert isinstance(operand_bytes, bytes)
+    _require_type('UNKNOWN_28', 'operand_bytes', operand_bytes, bytes)
     return get_scp_writer().handle_opcode(ED9Opcode.UNKNOWN_28, operand_bytes)
 
 
@@ -266,29 +268,29 @@ def PUSH_CURRENT_FUNC_ID():
 def PUSH_RET_ADDR(target: str):
     """Push the address of label target, where a local call returns to; pushed right after PUSH_CURRENT_FUNC_ID.
     A pseudo-op: a PUSH_RAW on disk (Opcode 0x1001)"""
-    assert isinstance(target, str)
+    _require_type('PUSH_RET_ADDR', 'target', target, str)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH_RET_ADDR, target)
 
 
 def PUSH_RAW(value: RawInt):
     """Push value typed Raw, not Integer. A pseudo-op: a PUSH on disk (Opcode 0x1002)"""
-    assert isinstance(value, RawInt)
+    _require_type('PUSH_RAW', 'value', value, RawInt)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH_RAW, value)
 
 
 def PUSH_INT(value: sint32):
     """Push integer value. A pseudo-op: a PUSH on disk (Opcode 0x1003)"""
-    assert isinstance(value, sint32)
+    _require_type('PUSH_INT', 'value', value, sint32)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH_INT, value)
 
 
 def PUSH_FLOAT(value: float32):
     """Push float value (an int is converted). A pseudo-op: a PUSH on disk (Opcode 0x1004)"""
-    assert isinstance(value, float32)
+    _require_type('PUSH_FLOAT', 'value', value, float32)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH_FLOAT, value)
 
 
 def PUSH_STR(value: str):
     """Push string value. A pseudo-op: a PUSH on disk (Opcode 0x1005)"""
-    assert isinstance(value, str)
+    _require_type('PUSH_STR', 'value', value, str)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH_STR, value)
