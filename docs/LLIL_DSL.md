@@ -181,8 +181,15 @@ A fidelity decompile keeps the game's own dead code, which warns the same way. A
 warning off with `scena.warn_unreachable_code = False` (`ScpWriter.warn_unreachable_code`, on by
 default; turning the compile check off also silences it). Not checked: a stack that balances but reads
 the wrong slot. A read or write outside the live stack fails at once; decompiling a game `.dat` only
-warns about it. A slot offset that isn't a multiple of `WORD_SIZE` fails decompiling too, like a partial
-`POP`. An opcode can't use a parameter's slot in place - consume it (`SET_REG`, `ADD`, `POP_TO`, ...),
+warns about it. A `SYSCALL` whose argc reaches past the stack fails at once too (`reads 2 entries, the
+stack has 1: [..]`); decompiling fails only that function's lift. While the stack balances, nothing checks a
+`SYSCALL`'s argc, so it must match its own `POP` right after it, the only form the game's compiler emits:
+a `POP` of another count, or none after an argc above 0, warns - a merged or shared `POP` too:
+```
+WARNING   test.py:12: Main: SYSCALL at 0x3C: reads 2 values, but the POP after it pops 3 (POP(12)) - is its argc stale?
+```
+A slot offset that isn't a multiple of `WORD_SIZE` fails decompiling too, like a partial `POP`.
+An opcode can't use a parameter's slot in place - consume it (`SET_REG`, `ADD`, `POP_TO`, ...),
 read it (`SYSCALL`, `DEBUG_LOG`) or forward it to `CALL_SCRIPT_NO_RETURN`: that is valid VM code, but
 the decompiler doesn't follow it, so the check fails naming the parameter (`uses the slot of parameter 1
 (arg1) in place`). Work on a `LOAD_STACK` copy, which moves every offset below it one slot further:

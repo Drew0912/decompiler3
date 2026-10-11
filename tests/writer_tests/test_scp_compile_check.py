@@ -90,6 +90,18 @@ class CheckTestCase(WriterTestCase):
 
         self.assertFalse(self.dat.exists())
 
+    def assert_warns(self, *patterns: str):
+        '''run() writes the .dat and logs one warning per pattern, each matching from its start'''
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.writer.run({})
+
+        messages = [record.getMessage() for record in logs.records]
+        self.assertEqual(len(messages), len(patterns), messages)
+        for message, pattern in zip(messages, patterns):
+            self.assertRegex(message, f'^{pattern}')
+
+        self.assertTrue(self.dat.exists())
+
     def compiled(self, define) -> bytes:
         '''The bytes of a script compiled with the check off'''
         writer = self.fresh_writer(check = False)
@@ -344,6 +356,32 @@ class TestStackMistakes(CheckTestCase):
 
         self.assertCheckFails(rf"{at(__file__, 'syscall past the pushes')}Syscall: SYSCALL at {HEX}: ")
 
+    def test_syscall_reading_past_the_stack_fails_at_its_line(self):
+        '''With POPs that match the real stack, only the lift noticed; the check names what the stack holds'''
+        @self.writer.LLILCode()
+        def Syscall():
+            PUSH_INT(1)                             # line: push under a read past the stack
+            SYSCALL(1, 2, 2)                        # line: read past the stack
+            POP(WORD_SIZE)
+            RETURN()
+
+        push = marked_line(__file__, 'push under a read past the stack')
+        self.assertCheckFails(rf"{at(__file__, 'read past the stack')}Syscall: SYSCALL at {HEX}: reads 2 entries, the "
+                              rf'stack has 1: \[PUSH_INT@{HEX} \(line {push}\)\]$')
+
+    def test_syscall_reading_past_a_parameter_names_it(self):
+        @self.writer.LLILCode()
+        def Syscall(arg1: Value32):
+            PUSH_INT(1)                             # line: push over a parameter
+            SYSCALL(1, 2, 3)                        # line: read past a parameter
+            POP(WORD_SIZE)
+            POP(WORD_SIZE)
+            RETURN()
+
+        push = marked_line(__file__, 'push over a parameter')
+        self.assertCheckFails(rf"{at(__file__, 'read past a parameter')}Syscall: SYSCALL at {HEX}: reads 3 entries, "
+                              rf'the stack has 2: \[param_0, PUSH_INT@{HEX} \(line {push}\)\]$')
+
     def test_debug_log_count_past_the_pushes(self):
         @self.writer.LLILCode()
         def Log(arg1: Value32):
@@ -366,7 +404,8 @@ class TestStackMistakes(CheckTestCase):
         def Syscall(arg1: Value32):
             PUSH_INT(1)
             SYSCALL(1, 2, 1)
-            POP(2 * WORD_SIZE)
+            POP(WORD_SIZE)
+            POP(WORD_SIZE)
             RETURN()
 
         self.writer.run({})
@@ -401,6 +440,23 @@ class TestRunOn(CheckTestCase):
             RETURN()
 
         self.assertCompilesWithWarning(rf"{at(__file__, 'runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN")
+
+    def test_syscall_ending_a_function_gets_only_the_run_on_warning(self):
+        '''Its next opcode is the next function's first, no POP: the run-on warning already says what is wrong'''
+        @self.writer.LLILCode()
+        def A():
+            PUSH_INT(1)
+            SYSCALL(1, 2, 1)                        # line: syscall runs on
+
+        @self.writer.LLILCode()
+        def B(arg1: Value32):
+            GET_REG(0)
+            SET_REG(1)
+            POP(WORD_SIZE)
+            RETURN()
+
+        self.assertCompilesWithWarning(rf"{at(__file__, 'syscall runs on')}A: SYSCALL at {HEX}: runs past its end into "
+                                       'B without RETURN')
 
     def test_conditional_jump_falls_through_into_the_next_function(self):
         @self.writer.LLILCode()
@@ -668,21 +724,131 @@ class TestBackwardReturn(CheckTestCase):
                               r'returns to 0x[0-9A-F]+, at or before the call')
 
 
+class TestSyscallArgc(CheckTestCase):
+    '''A SYSCALL's argc must match its own POP right after it, the only form the game's compiler emits: nothing else
+    checks it while the stack balances, so a mismatch compiles with a warning at the SYSCALL's line'''
+
+    def test_mismatch_warns_at_its_line(self):
+        stale = r' - is its argc stale\?'
+        cases = {
+            'push added, argc kept': r'reads 2 values, but the POP after it pops 3 \(POP\(12\)\)' + stale,
+            'argc raised over a local': r'reads 2 values, but the POP after it pops 1 \(POP\(4\)\)' + stale,
+            'argument added, argc 0': r'reads 0 values, but the POP after it pops 1 \(POP\(4\)\)' + stale,
+            'no POP after it': r'reads 1 value, but the next opcode is JMP, not POP\(4\)',
+        }
+        for case, message in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Main():
+                    PUSH_INT(1)
+                    PUSH_INT(2)
+                    if case == 'push added, argc kept':
+                        PUSH_INT(3)
+                        SYSCALL(1, 2, 2)                    # line: push added, argc kept
+                        POP(3 * WORD_SIZE)
+
+                    elif case == 'argc raised over a local':
+                        SYSCALL(1, 2, 2)                    # line: argc raised over a local
+                        POP(WORD_SIZE)
+                        POP(WORD_SIZE)
+
+                    elif case == 'argument added, argc 0':
+                        SYSCALL(1, 2, 0)                    # line: argument added, argc 0
+                        POP(WORD_SIZE)
+                        POP(WORD_SIZE)
+
+                    else:
+                        SYSCALL(1, 2, 1)                    # line: no POP after it
+                        JMP('pop')
+                        label('pop')
+                        POP(2 * WORD_SIZE)
+
+                    RETURN()
+
+                self.assert_warns(rf'{at(__file__, case)}Main: SYSCALL at {HEX}: {message}$')
+
+    def test_own_pop_right_after_it_is_quiet(self):
+        '''The game's form, argc 0 with its result read, and a label on the POP (a label emits no opcode)'''
+        for case in ('pop after it', 'argc 0, result read', 'label on the pop'):
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Main():
+                    if case == 'argc 0, result read':
+                        SYSCALL(1, 2, 0)
+                        GET_REG(0)
+                        SET_REG(1)
+
+                    else:
+                        PUSH_INT(1)
+                        SYSCALL(1, 2, 1)
+                        if case == 'label on the pop':
+                            label('pop')
+
+                        POP(WORD_SIZE)
+
+                    RETURN()
+
+                with self.assertNoLogs(log, 'WARNING'):
+                    self.writer.run({})
+
+    def test_first_opcode_of_a_function_is_named_by_it(self):
+        @self.writer.LLILCode()
+        def A(arg1: Value32):
+            SYSCALL(1, 2, 0)                        # line: syscall first in A
+            POP(WORD_SIZE)
+            RETURN()
+
+        @self.writer.LLILCode()
+        def B():
+            RETURN()
+
+        self.assert_warns(rf"{at(__file__, 'syscall first in A')}A: SYSCALL at {HEX}: reads 0 values, but the POP "
+                          r'after it pops 1 \(POP\(4\)\) - is its argc stale\?$')
+
+    def test_warns_with_the_unreachable_code_warning_off(self):
+        '''On whenever the compile check is; the dead code after RETURN stays silent'''
+        self.writer.warn_unreachable_code = False
+
+        @self.writer.LLILCode()
+        def Main():
+            PUSH_INT(1)
+            PUSH_INT(2)
+            SYSCALL(1, 2, 1)                        # line: syscall, unreachable warning off
+            POP(2 * WORD_SIZE)
+            RETURN()
+            PUSH_INT(5)
+            POP(WORD_SIZE)
+
+        self.assert_warns(rf"{at(__file__, 'syscall, unreachable warning off')}Main: SYSCALL at {HEX}: reads 1 value, "
+                          r'but the POP after it pops 2 \(POP\(8\)\) - is its argc stale\?$')
+
+    def test_code_two_functions_reach_warns_once_in_its_own_function(self):
+        @self.writer.LLILCode()
+        def A():
+            JMP('shared')                           # line: jump into shared code
+
+        @self.writer.LLILCode()
+        def B():
+            label('shared')
+            PUSH_INT(1)
+            PUSH_INT(2)
+            SYSCALL(1, 2, 1)                        # line: shared syscall
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        self.assert_warns(rf"{at(__file__, 'jump into shared code')}A: jumps to label 'shared' in B "
+                          r'\(another function\)$',
+                          rf"{at(__file__, 'shared syscall')}B: SYSCALL at {HEX}: reads 1 value, but the POP after it "
+                          r'pops 2 \(POP\(8\)\) - is its argc stale\?$')
+
+
 class TestUnreachableCode(CheckTestCase):
     '''Code no path reaches compiles with one warning per range, at its first opcode's line: it never runs, and the
     everyday decompile drops it. A script can turn it off'''
-
-    def assert_warns(self, *patterns: str):
-        '''run() writes the .dat and logs one warning per pattern, each matching from its start'''
-        with self.assertLogs(log, 'WARNING') as logs:
-            self.writer.run({})
-
-        messages = [record.getMessage() for record in logs.records]
-        self.assertEqual(len(messages), len(patterns), messages)
-        for message, pattern in zip(messages, patterns):
-            self.assertRegex(message, f'^{pattern}')
-
-        self.assertTrue(self.dat.exists())
 
     def test_code_between_a_call_and_its_return_label_warns(self):
         @self.writer.LLILCode()

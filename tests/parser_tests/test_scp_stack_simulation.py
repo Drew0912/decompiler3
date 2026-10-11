@@ -154,6 +154,22 @@ class TestEdgeStates(unittest.TestCase):
         asm.pop(WORD_SIZE); asm.ret()
         assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP', 'pops 1 entries, the stack has 0: []')
 
+    def test_syscall_reading_past_the_stack_raises_in_the_compile_check(self):
+        '''With the POP matching the real stack, only the lift noticed. A decompile still parses it - a parse failure
+        would lose the whole file, the lift fails the one function'''
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2); asm.pop(WORD_SIZE); asm.ret()
+        program = Program(main_function(asm))
+        program.disassemble()
+
+        parser = program.parser()
+        parser.reject_outside_stack = True
+        with self.assertRaises(ScpDisassemblyError) as caught:
+            parser.disasm_all_functions()
+
+        self.assertEqual(str(caught.exception),
+                         f'{FUNC_NAME}: SYSCALL at 0x6: reads 2 entries, the stack has 1: [PUSH_INT@0x0]')
+
     def test_pop_of_a_partial_slot_raises(self):
         asm = Asm()
         asm.push_int(LEFT_VALUE); asm.pop(WORD_SIZE // 2); asm.pop(WORD_SIZE // 2); asm.ret()

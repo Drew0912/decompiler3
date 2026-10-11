@@ -252,6 +252,8 @@ The output was correct in every function traced; what it costs is readability.
   `.py` lines come from walking up to the frame running the body, which only works while the body
   emits opcodes: an HLIL body has returned before its tree is lowered, so the lowering must set the
   writer's source site from each node's recorded file and line, or every error falls back to the `def`.
+  A syscall lowers its argc and the `POP` right after it from one count: the compile check warns when they
+  differ.
 - **What HLIL must keep for exact recompiles:** raw vs typed constants (`is_raw` exists only in LLIL
   today); which jump opcode was used (a "true arm is the fall-through" bit); block-scoped locals,
   including never-read ones and unused stores; stack temporaries rather than named locals; `reg0` as a

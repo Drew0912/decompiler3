@@ -11,7 +11,9 @@ from types import CodeType
 from typing import Callable, NamedTuple
 
 from common.logging import log
-from ..disasm import Instruction
+from ir.llil import WORD_SIZE
+from ..disasm import Instruction, InstructionKind
+from ..disasm.stack_effects import POP_SIZE_OPERAND
 from ..ir.llil import ED9LiftError, ED9VMLifter
 from ..parser.code_layout import dropped_ranges
 from ..parser.scp import ScpFunctionError, ScpParser
@@ -57,8 +59,8 @@ class CompileCheck:
         opcode, or the failing function's def. A function that runs on into the next function's code (no RETURN) is a
         warning while the bytes still decompile, and a note on the failure when they don't; the parser's warnings for
         unusual slots and for a call returning at or before itself get their script line too, and the latter becomes
-        a note on a failure in its function. Last, with warn_unreachable_code, a warning per range of code no path
-        reaches."""
+        a note on a failure in its function. Then a warning per SYSCALL whose argc disagrees with the instruction
+        after it, and last, with warn_unreachable_code, a warning per range of code no path reaches."""
         try:
             parser, parsed_functions = require_decompilable(data, self.dat_name, code_end)
 
@@ -92,8 +94,43 @@ class CompileCheck:
                 if backward_return is not None:
                     log.warning(self._failure_text(parsed_function.name, backward_return[1], inst))
 
+        self._warn_syscall_counts(reachable)
         if self.warn_unreachable_code:
             self._warn_unreachable(reachable, code_end)
+
+    def _warn_syscall_counts(self, reachable: list[Instruction]):
+        """A warning per SYSCALL whose argc disagrees with the instruction after it: a POP of another count, or no POP
+        though it reads values. The game's compiler always emits its own POP right after it, and nothing else checks
+        argc while the stack balances. Code two functions reach is warned once, named by the function it is in; a
+        SYSCALL ending a function gets only the run-on warning"""
+        by_offset = {inst.offset: inst for inst in reachable}
+        starts = [f.offset for f in self.functions]
+        start_set = set(starts)
+        for offset, inst in sorted(by_offset.items()):
+            end = offset + inst.size
+            if inst.descriptor.kind != InstructionKind.SYSCALL or end in start_set or end not in by_offset:
+                continue
+
+            follower = by_offset[end]
+            argc = inst.descriptor.effect.read_count([operand.value for operand in inst.operands])
+            values = 'value' if argc == 1 else 'values'
+            if follower.descriptor.kind == InstructionKind.POP:
+                size = follower.operands[POP_SIZE_OPERAND].value
+                if size == argc * WORD_SIZE:
+                    continue
+
+                message = (f'reads {argc} {values}, but the POP after it pops {size // WORD_SIZE} (POP({size})) - '
+                           'is its argc stale?')
+
+            elif argc:
+                message = (f'reads {argc} {values}, but the next opcode is {follower.mnemonic}, '
+                           f'not POP({argc * WORD_SIZE})')
+
+            else:
+                continue
+
+            owner = self.functions[bisect.bisect_right(starts, offset) - 1].name
+            log.warning(self._failure_text(owner, message, inst))
 
     def _warn_unreachable(self, reachable: list[Instruction], code_end: int):
         """A warning per range of code no function's reachable instructions cover, at its first opcode's line. All

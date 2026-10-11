@@ -418,7 +418,7 @@ class ScpDisassemblerContext(DisassemblerContext):
     current_func     : 'Function | None' = None     # Function being disassembled
     code_end         : int | None = None            # Where the next function's code starts (None: last function)
     known_code_end   : int | None = None            # Where the code ends, when known: nothing may run or jump past it
-    reject_outside_stack : bool = False             # fail on a slot outside the live stack instead of only warning
+    reject_outside_stack : bool = False             # fail on a slot outside the live stack, a read past it
     quiet            : bool = False                 # the caller reports the unusual-slot and backward-return warnings
     runs_on          : Instruction | None = None    # the first instruction that runs on past code_end
     backward_returns : dict = field(default_factory = dict)                 # call offset -> (call, warning)
@@ -615,12 +615,16 @@ class ScpDisassemblerContext(DisassemblerContext):
 
         return self.pop_count(inst)
 
+    def require_entries(self, count: int, verb: str):
+        """The stack holds the count entries the current instruction pops or reads"""
+        stack = self.stack_simulation
+        if count > len(stack):
+            self.fail(f'{verb} {count} entries, the stack has {len(stack)}: {format_stack(stack)}', self.current_inst)
+
     def pop_call_setup(self, count: int) -> list:
         """Pop count entries, bottom first, for the call that consumes them as its setup or caller frame"""
         stack = self.stack_simulation
-        if count > len(stack):
-            self.fail(f'pops {count} entries, the stack has {len(stack)}: {format_stack(stack)}', self.current_inst)
-
+        self.require_entries(count, 'pops')
         popped = stack[len(stack) - count:]
         del stack[len(stack) - count:]
         return popped
@@ -737,7 +741,7 @@ class ScpParser(StrictBase):
     keep_unreachable_code : bool = True
 
     # The compile check's stricter reading of bytes it just compiled: a slot outside the live stack fails instead of
-    # only warning, and no code may run or jump past the known end of the code
+    # only warning, so does a read past the stack, and no code may run or jump past the known end of the code
     reject_outside_stack : bool = False
     known_code_end  : int | None = None
 
@@ -981,6 +985,12 @@ class ScpParser(StrictBase):
 
         match inst.descriptor.kind:
             case kind if kind in PLAIN_VALUE_KINDS:
+                # SYSCALL's in-place read past the stack fails its lift; the compile check fails it here, at the
+                # instruction. Decompiling doesn't: a parse failure would lose the whole file, a lift failure only
+                # the function
+                if effect.reads and context.reject_outside_stack:
+                    context.require_entries(context.call_argc(inst), 'reads')
+
                 if effect.pops:
                     context.pop_entries(context.pop_count(inst))
 
