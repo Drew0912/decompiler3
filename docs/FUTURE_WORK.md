@@ -646,3 +646,15 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
   is wired in.
 - **Floats:** generic code prints floats without knowing their width - the Falcom lifter attaches the display text
   as a `SourceFloat` (`ir/core/il_literals.py`; LLIL DSL neatening plan, Step 4, done).
+
+## ED8 Support (`common/fileio.py`, `falcom/ed9/disasm/ed9_optable.py`)
+
+**Planned, not started** (user, 2026-10-12). Notes for when it starts, from decompiler2's ED8.x support:
+- **Wider reads:** `FileStream` reads only 8/16/32-bit integers and float32. decompiler2's operand tables also have
+  64-bit integers (`q`, `Q`) and float64 (`d`), so ED8 adds `ReadLong64`/`ReadULong64`/`ReadDouble` (their letters
+  in `STRUCT_FORMATS`), tested against ED8 scripts, once it is known which ED8 instructions use them.
+- **Game-metadata operands:** `N` (ChrId), `t` (Item) and `R` (CraftId) are operand-table letters, the layer of
+  `ED9_FORMAT_TABLE`, not stream formats. Each reads a plain integer (`ReadUShort`); only printing looks the name up in
+  a two-way table (`ChrTable[id]`), and the generated script writes `ChrTable['name']`, evaluated back to the integer
+  when it runs (decompiler2 `Falcom/ED83/InstructionTable/types.py`, `Falcom/ED83/Parser/scena_writer_helper.py`).
+  decompiler2's ED9 table has these descriptors too, with the letters commented out: no ED9 instruction uses them.

@@ -9,6 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from common import fileio
+from common.logging import log
 
 
 class TestFileStreamQuirks(unittest.TestCase):
@@ -45,10 +46,26 @@ class TestFileStreamQuirks(unittest.TestCase):
                 self.assertEqual(getattr(fs, method)(value), len(expected))
                 self.assertEqual(fs.ReadAll(), expected)
 
-    def test_read_multibyte_drops_undecodable_bytes(self):
+    def test_read_multibyte_drops_undecodable_bytes_with_a_warning(self):
         fs = self.memory(b'a\xffb\x00rest', encoding = 'utf-8')
-        self.assertEqual(fs.ReadMultiByte(), 'ab')
+        with self.assertLogs(log, 'WARNING') as logs:
+            self.assertEqual(fs.ReadMultiByte(), 'ab')
+
+        self.assertIn('string at 0x0', logs.output[0])
         self.assertEqual(fs.Position, 4)
+
+    def test_read_multibyte_stops_after_its_nul_across_chunks(self):
+        text = 'x' * (fileio.FileStream.STRING_CHUNK_SIZE * 2 + 3)
+        cases = [
+            ('longer than a chunk',     text.encode() + b'\x00rest',    text,   len(text) + 1),
+            ('empty',                   b'\x00rest',                    '',     1),
+            ('no NUL before the end',   b'abc',                         'abc',  3),
+        ]
+        for name, data, expected, position in cases:
+            with self.subTest(name):
+                fs = self.memory(data, encoding = 'utf-8')
+                self.assertEqual(fs.ReadMultiByte(), expected)
+                self.assertEqual(fs.Position, position)
 
     def test_endian_defaults_to_config_and_accepts_names(self):
         for kwargs, expected in [({}, b'\x01\x00'), ({'endian': 'big'}, b'\x00\x01'), ({'endian': '<'}, b'\x01\x00')]:

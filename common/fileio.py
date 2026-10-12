@@ -5,13 +5,14 @@ Ported from the external ml (Ouroboros PyLibs) FileStream; round trips rely on t
 - Write(*bufs) stops at the first empty buffer and returns None; a FileStream buffer writes its whole content
 - integer writers truncate like a C cast, so a signed writer is its unsigned twin
 - WriteFloat turns an out-of-range float into inf instead of raising
-- ReadMultiByte drops undecodable bytes (errors = 'ignore')
+- ReadMultiByte drops undecodable bytes (errors = 'ignore'), with a warning
 '''
 
 import io
 import struct
 from ctypes import c_float
 from .config import default_encoding, default_endian
+from .logging import log
 
 LITTLE_ENDIAN = '<'
 BIG_ENDIAN = '>'
@@ -40,10 +41,13 @@ class _PositionSaver:
 class FileStream:
     '''Typed reads/writes at the current position; endian/encoding None means default_endian()/default_encoding()'''
 
+    STRUCT_FORMATS = 'bBhHlLf'
+
     def __init__(self, file: str | bytes | bytearray = None, mode: str = 'rb', *, endian: str = None, encoding: str = None):
         endian = endian or default_endian()
         self._stream = None
         self._endian = _ENDIAN_NAMES.get(endian, endian)
+        self._structs = {fmt: struct.Struct(self._endian + fmt) for fmt in self.STRUCT_FORMATS}
         self._encoding = encoding or default_encoding()
 
         if file is not None:
@@ -119,14 +123,18 @@ class FileStream:
         return written
 
     def _read(self, fmt: str) -> int | float:
-        fmt = self._endian + fmt
-        return struct.unpack(fmt, self._stream.read(struct.calcsize(fmt)))[0]
+        layout = self._structs[fmt]
+        return layout.unpack(self._stream.read(layout.size))[0]
 
     def _write_int(self, fmt: str, values: tuple) -> int:
         '''Write each value truncated to fmt's width, like a C cast (fmt is the unsigned format of that width)'''
-        fmt = self._endian + fmt
-        mask = (1 << (struct.calcsize(fmt) * BITS_PER_BYTE)) - 1
-        return sum(self._stream.write(struct.pack(fmt, int(v) & mask)) for v in values)
+        layout = self._structs[fmt]
+        mask = (1 << (layout.size * BITS_PER_BYTE)) - 1
+        written = 0
+        for v in values:
+            written += self._stream.write(layout.pack(int(v) & mask))
+
+        return written
 
     def ReadChar(self) -> int:
         return self._read('b')
@@ -149,17 +157,31 @@ class FileStream:
     def ReadFloat(self) -> float:
         return self._read('f')
 
+    STRING_CHUNK_SIZE = 64    # bytes read at a time while looking for a string's terminating NUL
+
     def ReadMultiByte(self, cp: str = None) -> str:
-        '''Null-terminated string; undecodable bytes are dropped'''
+        '''Null-terminated string, leaving the stream after its NUL; undecodable bytes are dropped with a warning'''
+        start = self._stream.tell()
         s = bytearray()
         while True:
-            b = self._stream.read(1)
-            if b in (b'', b'\x00'):
+            chunk = self._stream.read(self.STRING_CHUNK_SIZE)
+            end = chunk.find(b'\x00')
+            if end >= 0:
+                s += chunk[:end]
+                self._stream.seek(start + len(s) + 1)
                 break
 
-            s.extend(b)
+            s += chunk
+            if len(chunk) < self.STRING_CHUNK_SIZE:
+                break
 
-        return s.decode(cp or self._encoding, errors = 'ignore')
+        encoding = cp or self._encoding
+        try:
+            return s.decode(encoding)
+
+        except UnicodeDecodeError as e:
+            log.warning(f'string at 0x{start:X}: {e.reason} at byte {e.start}; undecodable bytes dropped')
+            return s.decode(encoding, errors = 'ignore')
 
     def WriteByte(self, *values: int) -> int:
         return self._write_int('B', values)
