@@ -94,18 +94,20 @@ class OperandDescriptor:
     def type(self) -> OperandType:
         return self.format.type
 
+    READER_BY_TYPE = {
+        OperandType.SInt8   : fileio.FileStream.ReadChar,
+        OperandType.SInt16  : fileio.FileStream.ReadShort,
+        OperandType.SInt32  : fileio.FileStream.ReadLong,
+        OperandType.UInt8   : fileio.FileStream.ReadByte,
+        OperandType.UInt16  : fileio.FileStream.ReadUShort,
+        OperandType.UInt32  : fileio.FileStream.ReadULong,
+        OperandType.Float32 : fileio.FileStream.ReadFloat,
+        OperandType.Offset  : fileio.FileStream.ReadULong,
+    }
+
     def read_value(self, fs: 'fileio.FileStream') -> Any:
         """Read operand value from file stream"""
-        return {
-            OperandType.SInt8   : lambda: fs.ReadChar(),
-            OperandType.SInt16  : lambda: fs.ReadShort(),
-            OperandType.SInt32  : lambda: fs.ReadLong(),
-            OperandType.UInt8   : lambda: fs.ReadByte(),
-            OperandType.UInt16  : lambda: fs.ReadUShort(),
-            OperandType.UInt32  : lambda: fs.ReadULong(),
-            OperandType.Float32 : lambda: fs.ReadFloat(),
-            OperandType.Offset  : lambda: fs.ReadULong(),
-        }[self.format.type]()
+        return self.READER_BY_TYPE[self.format.type](fs)
 
     def format_operand(self, operand: 'Operand', context: 'FormatterContext') -> str:
         """Format operand for display"""
