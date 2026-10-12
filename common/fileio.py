@@ -6,7 +6,6 @@ Ported from the external ml (Ouroboros PyLibs) FileStream; round trips rely on t
 - integer writers truncate like a C cast, so a signed writer is its unsigned twin
 - WriteFloat turns an out-of-range float into inf instead of raising
 - ReadMultiByte drops undecodable bytes (errors = 'ignore')
-- an empty stream is falsy (len() is its length), and callers test `if not fs`
 '''
 
 import io
@@ -55,10 +54,6 @@ class FileStream:
 
     def __exit__(self, exc_type, exc_value, traceback):
         self.Close()
-
-    # An empty stream is falsy, as callers testing `if not fs` expect
-    def __len__(self) -> int:
-        return self.Length
 
     @property
     def Stream(self) -> io.IOBase:

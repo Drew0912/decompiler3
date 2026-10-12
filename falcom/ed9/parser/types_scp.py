@@ -51,7 +51,7 @@ class ScpParamFlags:
         self.from_stream(fs)
 
     def from_stream(self, fs: fileio.FileStream):
-        if not fs:
+        if fs is None:
             return
 
         self.flags = fs.ReadULong()
@@ -140,7 +140,7 @@ class ScpValue:
         self.from_stream(fs)
 
     def from_stream(self, fs: fileio.FileStream):
-        if not fs:
+        if fs is None:
             return
 
         value = fs.ReadULong()
@@ -283,7 +283,7 @@ class ScpHeader(StrictBase):
         self.from_stream(fs)
         
     def from_stream(self, fs: fileio.FileStream):
-        if not fs:
+        if fs is None:
             return
 
         assert fs.Read(4) == self.MAGIC
@@ -334,7 +334,7 @@ class ScpFunctionEntry(StrictBase):
         self.from_stream(fs)
 
     def from_stream(self, fs: fileio.FileStream):
-        if not fs:
+        if fs is None:
             return
 
         self.offset                 = fs.ReadULong()
@@ -426,7 +426,7 @@ class ScpFunctionCallDebugInfo(StrictBase):
         self.from_stream(fs)
 
     def from_stream(self, fs: fileio.FileStream):
-        if not fs:
+        if fs is None:
             return
 
         self.func_id     = fs.ReadULong()
@@ -475,7 +475,7 @@ class ScpGlobalVar(StrictBase):
         self.from_stream(fs)
 
     def from_stream(self, fs: fileio.FileStream):
-        if not fs:
+        if fs is None:
             return
 
         # name is a String-tagged ScpValue (pool ref), not a raw pool offset

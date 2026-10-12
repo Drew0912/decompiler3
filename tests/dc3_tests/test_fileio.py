@@ -50,10 +50,6 @@ class TestFileStreamQuirks(unittest.TestCase):
         self.assertEqual(fs.ReadMultiByte(), 'ab')
         self.assertEqual(fs.Position, 4)
 
-    def test_empty_stream_is_falsy(self):
-        self.assertFalse(self.memory())
-        self.assertTrue(self.memory(b'x'))
-
     def test_endian_defaults_to_config_and_accepts_names(self):
         for kwargs, expected in [({}, b'\x01\x00'), ({'endian': 'big'}, b'\x00\x01'), ({'endian': '<'}, b'\x01\x00')]:
             with self.subTest(**kwargs):

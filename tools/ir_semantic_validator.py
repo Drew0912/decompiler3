@@ -544,7 +544,7 @@ class IRPipeline:
             return False
 
     def close(self) -> None:
-        if self.fs:
+        if self.fs is not None:
             self.fs.Close()
             self.fs = None
 
