@@ -382,41 +382,19 @@ class ED9InstructionTable(InstructionTable):
 
         return operands
 
+    PSEUDO_PUSH_BY_TYPE = {
+        ScpValue.Type.Raw       : ED9Opcode.PUSH_RAW,
+        ScpValue.Type.Integer   : ED9Opcode.PUSH_INT,
+        ScpValue.Type.Float     : ED9Opcode.PUSH_FLOAT,
+        ScpValue.Type.String    : ED9Opcode.PUSH_STR,
+    }
+
     def _decode_push(self, inst: Instruction, operands: list[Operand]):
-        """Decode PUSH instruction to specific variant based on value type"""
-
-        operand_size = operands[0]
-        operand_value = operands[1]
-
-        if operand_size.descriptor.format.type not in (OperandType.SInt8, OperandType.UInt8):
-            raise ValueError(f'Expected SInt8 operand for size, got {operand_size.descriptor.format.type}')
-
-        if operand_value.descriptor.format.type != ED9OperandType.Value:
-            raise ValueError(f'Expected Value operand, got {operand_value.descriptor.format.type}')
-
-        value = operand_value.value
-        if not isinstance(value, ScpValue):
-            raise ValueError(f'Expected ScpValue, got {type(value)}')
-
-        # Helper to update instruction with new opcode and operand
-        def update_push_inst(opcode: int, operand_value: Any):
-            inst.opcode = opcode
-            inst.descriptor = self.get_descriptor(opcode)
-            inst.operands = [Operand(descriptor = inst.descriptor.operand_descriptors[0], value = operand_value)]
-
-        # Replace descriptor and operands based on value type
-        match value.type:
-            case ScpValue.Type.Raw:
-                update_push_inst(ED9Opcode.PUSH_RAW, value.value)
-
-            case ScpValue.Type.Integer:
-                update_push_inst(ED9Opcode.PUSH_INT, value.value)
-
-            case ScpValue.Type.Float:
-                update_push_inst(ED9Opcode.PUSH_FLOAT, value.value)
-
-            case ScpValue.Type.String:
-                update_push_inst(ED9Opcode.PUSH_STR, value.value)
+        """PUSH becomes the pseudo-op for its value's type (PUSH_INT, ...), with the plain value as its one operand"""
+        value = operands[1].value
+        inst.opcode = self.PSEUDO_PUSH_BY_TYPE[value.type]
+        inst.descriptor = self.get_descriptor(inst.opcode)
+        inst.operands = [Operand(descriptor = inst.descriptor.operand_descriptors[0], value = value.value)]
 
 
 def ed9_create_fallthrough_jump(offset: int, target: int, inst_table: 'InstructionTable') -> Instruction:
