@@ -155,9 +155,8 @@ class ScpValue:
                 value = RawInt(value)
 
             case ScpValue.Type.Integer:
-                value = (value << 2) & 0xFFFFFFFF
-                sign = 0xC0000000 if value & 0x80000000 != 0 else 0
-                value = int.from_bytes((sign | (value >> 2)).to_bytes(4, 'little'), 'little', signed = True)
+                payload = value & self.PAYLOAD_MASK
+                value = payload - (1 << self.TYPE_SHIFT) if payload > self.INTEGER_MAX else payload
 
             case ScpValue.Type.Float:
                 value = self.float32_from_bits(self.word_float32_bits(word))
