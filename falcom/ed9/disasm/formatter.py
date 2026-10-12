@@ -141,21 +141,24 @@ class Formatter:
             self.formatted_offsets.add(inst.offset)
 
             # Branch target of unreachable code that no block label covers
-            target_label = f'loc_{inst.offset:X}'
-            if inst.offset in self.unreachable_targets and target_label not in self.formatted_labels:
-                self.formatted_labels.add(target_label)
-                lines.extend(self._format_label(inst.offset, () if unreachable else (UNREACHABLE_TARGET_COMMENT,)))
-                lines.append('')
+            if inst.offset in self.unreachable_targets:
+                target_label = f'loc_{inst.offset:X}'
+                if target_label not in self.formatted_labels:
+                    self.formatted_labels.add(target_label)
+                    lines.extend(self._format_label(inst.offset, () if unreachable else (UNREACHABLE_TARGET_COMMENT,)))
+                    lines.append('')
 
             # Fallback for the (census-verified, never-observed) case where a referenced offset
             # is not a block start - see the assert in format_entry_block. Not gated on
             # `unreachable` (unlike the primary label above): a referenced offset could in
             # principle only be reachable via the unreachable_blocks list rather than succs, so
             # this must still fire there too for the "never go undefined" guarantee to hold.
-            if inst.offset in self.referenced_offsets and target_label not in self.formatted_labels:
-                self.formatted_labels.add(target_label)
-                lines.extend(self._format_label(inst.offset))
-                lines.append('')
+            if inst.offset in self.referenced_offsets:
+                target_label = f'loc_{inst.offset:X}'
+                if target_label not in self.formatted_labels:
+                    self.formatted_labels.add(target_label)
+                    lines.extend(self._format_label(inst.offset))
+                    lines.append('')
 
             # Format instruction with context
             formatted = inst.descriptor.format_instruction(inst, self.context)
