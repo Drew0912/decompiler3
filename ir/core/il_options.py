@@ -1,10 +1,10 @@
 '''IL Options - Generic options for all IL levels'''
 
-from common import *
 
-
-class ILOptions(StrictBase):
+class ILOptions:
     '''Attributes:'''
+
+    __slots__ = ('hidden_for_formatter',)
 
     hidden_for_formatter: bool
 

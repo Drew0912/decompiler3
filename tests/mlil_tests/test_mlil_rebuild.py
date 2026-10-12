@@ -10,6 +10,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from ir.core.il_options import ILOptions
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILVar,
     MLILBinaryOp, MLILUnaryOp, MLILAdd, MLILLogicalAnd, MLILLogicalNot, MLILAddressOf, MLILDeref,
@@ -44,7 +45,7 @@ def non_operand_state(inst) -> dict:
     fresh default ILOptions, like every other MLIL rebuild (copy_metadata_from does not copy them),
     and no MLIL code sets them on an expression.'''
     state = {key: value for key, value in vars(inst).items() if key not in OPERAND_FIELDS}
-    state['options'] = vars(inst.options)
+    state['options'] = {name: getattr(inst.options, name) for name in ILOptions.__slots__}
     return state
 
 
