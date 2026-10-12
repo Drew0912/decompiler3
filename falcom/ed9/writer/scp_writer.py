@@ -685,7 +685,10 @@ class ScpWriter:
 
         payload = None
         if opcode in PUSH_CONSTANT_OPS:
-            self._check_code_string(ED9Opcode(opcode).name, args[0])
+            problem = self._code_string_problem(args[0])
+            if problem is not None:
+                raise ValueError(self._at_opcode(f'{ED9Opcode(opcode).name} {problem}'))
+
             payload = self._emit_push_constant(args[0])
 
         elif opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
@@ -740,7 +743,10 @@ class ScpWriter:
         global index within the declared table, a string one the pool can store"""
         for number, (op_desc, value) in enumerate(zip(operand_descriptors, args), 1):
             if op_desc.type == ED9OperandType.Value:
-                self._check_code_string(mnemonic, value)
+                problem = self._code_string_problem(value)
+                if problem is not None:
+                    raise ValueError(self._at_opcode(f'{mnemonic} {problem}'))
+
                 continue
 
             valid = self._operand_range(op_desc)
@@ -756,12 +762,11 @@ class ScpWriter:
             raise ValueError(self._at_opcode(f'{mnemonic} operand {number} is {value}, outside '
                                              f'{valid.start}..{valid.stop - 1}'))
 
-    def _check_code_string(self, mnemonic: str, value):
-        """A string operand (str, or a String ScpValue) the pool can store, else a ValueError at its opcode"""
+    def _code_string_problem(self, value) -> str | None:
+        """Why the pool can't store a string operand (str, or a String ScpValue); None if it can or it isn't a string"""
         text = value.value if isinstance(value, ScpValue) else value
         problem = string_problem(text) if isinstance(text, str) else None
-        if problem is not None:
-            raise ValueError(self._at_opcode(f'{mnemonic} string {text!r} {problem}'))
+        return f'string {text!r} {problem}' if problem is not None else None
 
     def _operand_range(self, op_desc: OperandDescriptor) -> range | None:
         """The values an operand may take: its type's (OperandFormat.value_range), or the declared global indices"""
