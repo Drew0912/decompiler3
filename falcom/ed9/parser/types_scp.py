@@ -147,31 +147,33 @@ class ScpValue:
         return self.from_value(value, fs = fs)
 
     def from_value(self, value: int, *, fs: fileio.FileStream = None):
-        word = value
-        typ = value >> self.TYPE_SHIFT
+        self.type, self.value = self.decode_word(value, fs = fs)
+        return self
+
+    @classmethod
+    def decode_word(cls, word: int, *, fs: fileio.FileStream = None) -> tuple['ScpValue.Type', int | float | str | RawInt]:
+        """The type and value a stored word holds, without building an ScpValue; a String's text is read from fs"""
+        typ = word >> cls.TYPE_SHIFT
 
         match typ:
             case ScpValue.Type.Raw:
-                value = RawInt(value)
+                value = RawInt(word)
 
             case ScpValue.Type.Integer:
-                payload = value & self.PAYLOAD_MASK
-                value = payload - (1 << self.TYPE_SHIFT) if payload > self.INTEGER_MAX else payload
+                payload = word & cls.PAYLOAD_MASK
+                value = payload - (1 << cls.TYPE_SHIFT) if payload > cls.INTEGER_MAX else payload
 
             case ScpValue.Type.Float:
-                value = self.float32_from_bits(self.word_float32_bits(word))
+                value = cls.float32_from_bits(cls.word_float32_bits(word))
                 if not math.isfinite(value):
                     log.warning(f"non-finite float {value} (word 0x{word:08X}): the game can't use it, so compiling the .py will fail")
 
             case ScpValue.Type.String:
                 with fs.PositionSaver:
-                    fs.Position = value & self.PAYLOAD_MASK
+                    fs.Position = word & cls.PAYLOAD_MASK
                     value = fs.ReadMultiByte()
 
-        self.value = value
-        self.type = ScpValue.Type(typ)
-
-        return self
+        return ScpValue.Type(typ), value
 
     def to_bytes(self) -> bytes:
         match self.type:

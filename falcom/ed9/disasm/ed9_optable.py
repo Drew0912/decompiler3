@@ -370,15 +370,13 @@ class ED9InstructionTable(InstructionTable):
         if not isinstance(descriptor, ED9InstructionDescriptor):
             raise TypeError('Expected ED9InstructionDescriptor')
 
+        if descriptor.opcode == ED9Opcode.PUSH:
+            return self._decode_push(fs, inst)
+
         operands = []
         for op_desc in descriptor.operand_descriptors:
             value = op_desc.read_value(fs)
             operands.append(Operand(descriptor = op_desc, value = value))
-
-        # Special handling for PUSH instruction
-        if descriptor.opcode == ED9Opcode.PUSH:
-            self._decode_push(inst, operands)
-            return inst.operands
 
         return operands
 
@@ -389,12 +387,14 @@ class ED9InstructionTable(InstructionTable):
         ScpValue.Type.String    : ED9Opcode.PUSH_STR,
     }
 
-    def _decode_push(self, inst: Instruction, operands: list[Operand]):
-        """PUSH becomes the pseudo-op for its value's type (PUSH_INT, ...), with the plain value as its one operand"""
-        value = operands[1].value
-        inst.opcode = self.PSEUDO_PUSH_BY_TYPE[value.type]
+    def _decode_push(self, fs: fileio.FileStream, inst: Instruction) -> list[Operand]:
+        """PUSH becomes the pseudo-op for its value's type (PUSH_INT, ...), with the plain value as its one operand,
+        read straight from the stream rather than as PUSH's own operands"""
+        fs.ReadByte()   # PUSH's size byte (its 'C' operand), not kept
+        value_type, value = ScpValue.decode_word(fs.ReadULong(), fs = fs)
+        inst.opcode = self.PSEUDO_PUSH_BY_TYPE[value_type]
         inst.descriptor = self.get_descriptor(inst.opcode)
-        inst.operands = [Operand(descriptor = inst.descriptor.operand_descriptors[0], value = value.value)]
+        return [Operand(descriptor = inst.descriptor.operand_descriptors[0], value = value)]
 
 
 def ed9_create_fallthrough_jump(offset: int, target: int, inst_table: 'InstructionTable') -> Instruction:
