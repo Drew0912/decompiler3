@@ -542,8 +542,8 @@ class ScpDisassemblerContext(DisassemblerContext):
         """Turn a setup push into a pseudo-instruction with the given operand values"""
         push.opcode = opcode
         push.descriptor = self.instruction_table.get_descriptor(opcode)
-        op_descs = OperandDescriptor.from_format_string(push.descriptor.operand_fmt, ED9_FORMAT_TABLE)
-        push.operands = [Operand(descriptor = op_desc, value = value) for op_desc, value in zip(op_descs, values)]
+        push.operands = [Operand(descriptor = op_desc, value = value)
+                         for op_desc, value in zip(push.descriptor.operand_descriptors, values)]
 
     def return_target(self, entry, target: int | None) -> int:
         """The return offset entry encodes, which must lie in this function's code; one at or before the call only

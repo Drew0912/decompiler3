@@ -12,7 +12,7 @@ from common import fileio
 from common.config import default_encoding
 from common.logging import log
 from ir.llil import WORD_SIZE
-from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, ED9_FORMAT_TABLE, OperandDescriptor, OperandType
+from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandType
 from ..parser.crc32 import hash_func_Name
 from ..parser.scp import CallDebugInfoTracker, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
 from ..parser.string_pool import StringPoolSection
@@ -722,7 +722,7 @@ class ScpWriter:
 
     def _emit_described_opcode(self, opcode: int, args: tuple):
         descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
-        operand_descriptors = OperandDescriptor.from_format_string(descriptor.operand_fmt, ED9_FORMAT_TABLE)
+        operand_descriptors = descriptor.operand_descriptors
 
         assert len(operand_descriptors) == len(args), \
             f'{descriptor.mnemonic}: expected {len(operand_descriptors)} operands, got {len(args)}'

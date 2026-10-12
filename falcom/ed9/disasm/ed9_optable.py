@@ -279,6 +279,7 @@ class ED9InstructionDescriptor(InstructionDescriptor):
             raise RuntimeError('Cannot create ED9InstructionDescriptor after ED9InstructionTable initialization')
         super().__init__(opcode, mnemonic, flags)
         self.operand_fmt = operand_fmt
+        self.operand_descriptors = OperandDescriptor.from_format_string(operand_fmt, ED9_FORMAT_TABLE)
         self.kind = kind
         self.effect = STACK_EFFECTS[kind]
 
@@ -369,11 +370,8 @@ class ED9InstructionTable(InstructionTable):
         if not isinstance(descriptor, ED9InstructionDescriptor):
             raise TypeError('Expected ED9InstructionDescriptor')
 
-        # Get operand descriptors from format string
-        operand_descriptors = OperandDescriptor.from_format_string(descriptor.operand_fmt, ED9_FORMAT_TABLE)
-
         operands = []
-        for op_desc in operand_descriptors:
+        for op_desc in descriptor.operand_descriptors:
             value = op_desc.read_value(fs)
             operands.append(Operand(descriptor = op_desc, value = value))
 
@@ -404,9 +402,7 @@ class ED9InstructionTable(InstructionTable):
         def update_push_inst(opcode: int, operand_value: Any):
             inst.opcode = opcode
             inst.descriptor = self.get_descriptor(opcode)
-            # Get operand descriptor from instruction descriptor
-            op_desc = OperandDescriptor.from_format_string(inst.descriptor.operand_fmt, ED9_FORMAT_TABLE)[0]
-            inst.operands = [Operand(descriptor = op_desc, value = operand_value)]
+            inst.operands = [Operand(descriptor = inst.descriptor.operand_descriptors[0], value = operand_value)]
 
         # Replace descriptor and operands based on value type
         match value.type:
@@ -429,9 +425,7 @@ def ed9_create_fallthrough_jump(offset: int, target: int, inst_table: 'Instructi
     # Get JMP descriptor from instruction table
     jmp_descriptor = inst_table.get_descriptor(ED9Opcode.JMP)
 
-    # Create offset operand from instruction descriptor
-    op_desc = OperandDescriptor.from_format_string(jmp_descriptor.operand_fmt, ED9_FORMAT_TABLE)[0]
-    operand = Operand(descriptor = op_desc, value = target)
+    operand = Operand(descriptor = jmp_descriptor.operand_descriptors[0], value = target)
 
     # Create synthetic instruction
     # Use offset - 1 to avoid collision with tail block's first instruction
