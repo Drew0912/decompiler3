@@ -2,6 +2,7 @@
 '''Unit tests for common/fileio.py - the deliberate quirks of the ported ml FileStream that round trips rely on.'''
 
 from pathlib import Path
+import struct
 import sys
 import unittest
 
@@ -31,20 +32,28 @@ class TestFileStreamQuirks(unittest.TestCase):
         self.assertEqual(fs.ReadAll(), b'xyz')
         self.assertEqual(src.Position, 1)
 
-    def test_integer_writers_truncate_like_a_c_cast(self):
+    def test_integer_writers_write_their_type_range_and_raise_outside_it(self):
         cases = [
-            ('WriteChar',   -1,             b'\xff'),
-            ('WriteByte',   0x100,          b'\x00'),
-            ('WriteShort',  -1,             b'\xff\xff'),
-            ('WriteUShort', 0x12345,        b'\x45\x23'),
-            ('WriteLong',   -2,             b'\xfe\xff\xff\xff'),
-            ('WriteULong',  (1 << 32) + 5,  b'\x05\x00\x00\x00'),
+            ('WriteChar',   1, True),
+            ('WriteByte',   1, False),
+            ('WriteShort',  2, True),
+            ('WriteUShort', 2, False),
+            ('WriteLong',   4, True),
+            ('WriteULong',  4, False),
         ]
-        for method, value, expected in cases:
-            with self.subTest(method = method, value = value):
-                fs = self.memory()
-                self.assertEqual(getattr(fs, method)(value), len(expected))
-                self.assertEqual(fs.ReadAll(), expected)
+        for method, size, signed in cases:
+            bits = size * fileio.BITS_PER_BYTE
+            low, high = (-(1 << (bits - 1)), (1 << (bits - 1)) - 1) if signed else (0, (1 << bits) - 1)
+            for value in (low, high):
+                with self.subTest(method = method, value = value):
+                    fs = self.memory()
+                    self.assertEqual(getattr(fs, method)(value), size)
+                    self.assertEqual(fs.ReadAll(), value.to_bytes(size, 'little', signed = signed))
+
+            for value in (low - 1, high + 1):
+                with self.subTest(method = method, value = value):
+                    with self.assertRaises(struct.error):
+                        getattr(self.memory(), method)(value)
 
     def test_read_multibyte_drops_undecodable_bytes_with_a_warning(self):
         fs = self.memory(b'a\xffb\x00rest', encoding = 'utf-8')

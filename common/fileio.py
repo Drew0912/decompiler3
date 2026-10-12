@@ -3,7 +3,6 @@
 Ported from the external ml (Ouroboros PyLibs) FileStream; round trips rely on these deliberate quirks
 (tests/dc3_tests/test_fileio.py checks each one but WriteFloat's: no opcode writes a float through it):
 - Write(*bufs) writes a FileStream buffer's whole content, whatever its position
-- integer writers truncate like a C cast, so a signed writer is its unsigned twin
 - WriteFloat turns an out-of-range float into inf instead of raising
 - ReadMultiByte drops undecodable bytes (errors = 'ignore'), with a warning
 '''
@@ -124,12 +123,11 @@ class FileStream:
         return layout.unpack(self._stream.read(layout.size))[0]
 
     def _write_int(self, fmt: str, values: tuple) -> int:
-        '''Write each value truncated to fmt's width, like a C cast (fmt is the unsigned format of that width)'''
+        '''Write each value in fmt's format; a value outside its range raises struct.error'''
         layout = self._structs[fmt]
-        mask = (1 << (layout.size * BITS_PER_BYTE)) - 1
         written = 0
         for v in values:
-            written += self._stream.write(layout.pack(int(v) & mask))
+            written += self._stream.write(layout.pack(int(v)))
 
         return written
 
@@ -180,19 +178,23 @@ class FileStream:
             log.warning(f'string at 0x{start:X}: {e.reason} at byte {e.start}; undecodable bytes dropped')
             return s.decode(encoding, errors = 'ignore')
 
+    def WriteChar(self, *values: int) -> int:
+        return self._write_int('b', values)
+
     def WriteByte(self, *values: int) -> int:
         return self._write_int('B', values)
+
+    def WriteShort(self, *values: int) -> int:
+        return self._write_int('h', values)
 
     def WriteUShort(self, *values: int) -> int:
         return self._write_int('H', values)
 
+    def WriteLong(self, *values: int) -> int:
+        return self._write_int('l', values)
+
     def WriteULong(self, *values: int) -> int:
         return self._write_int('L', values)
-
-    # Truncation makes the signed bytes identical
-    WriteChar = WriteByte
-    WriteShort = WriteUShort
-    WriteLong = WriteULong
 
     def WriteFloat(self, *values: float) -> int:
         # Round through a C float first: an out-of-range value becomes inf instead of raising
