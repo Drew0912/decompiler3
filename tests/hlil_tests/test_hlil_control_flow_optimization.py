@@ -39,6 +39,7 @@ from ir.hlil import (
     iter_tree,
 )
 from ir.hlil.passes.pass_control_flow_optimization import ExitKind
+from tests.shared.hlil_cfg_utils import statements_in_two_places
 
 
 FIRST_CASE_VALUE = 1
@@ -55,6 +56,7 @@ EXPECTED_TERMINAL_CASE_COUNT = 1
 NESTED_CASE_VALUE = 4
 FOURTH_CASE_VALUE = 7
 DEFAULT_BODY_VALUE = 99
+AFTER_CHAIN_LINE = 999
 
 
 def make_var() -> HLILVar:
@@ -78,6 +80,21 @@ def make_terminal_body() -> HLILBlock:
 
 def make_ne_check(value: int, next_if: HLILIf) -> HLILIf:
     return HLILIf(make_condition(BinaryOp.NE, value), HLILBlock([next_if]), make_case_body(value))
+
+
+def line_comment(value: int) -> HLILComment:
+    '''The source-line comment of the test for value (its line number is the value, to tell them apart)'''
+    return HLILComment(f'line({value})')
+
+
+def make_marked_chain(*values: int) -> HLILIf:
+    '''An == chain on selector; each later test's line comment sits before it in the else arm, as converted'''
+    chain = HLILIf(make_condition(BinaryOp.EQ, values[-1]), make_case_body(values[-1]), HLILBlock())
+    for value, next_value in reversed(list(zip(values, values[1:]))):
+        chain = HLILIf(make_condition(BinaryOp.EQ, value), make_case_body(value),
+                       HLILBlock([line_comment(next_value), chain]))
+
+    return chain
 
 
 def collect_switch_case_values(switch_stmt: HLILSwitch) -> set:
@@ -254,6 +271,20 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         self.assertEqual(len(shared), 1)
         self.assertEqual({v.value for v in shared[0].values},
                          {FIRST_CASE_VALUE, SECOND_CASE_VALUE})
+
+    def test_a_link_with_no_case_body_gets_an_empty_case(self):
+        '''if (selector != k) { rest } with no else: the case for k does nothing'''
+        rest = make_case_body(DEFAULT_BODY_VALUE)
+        for value in (THIRD_CASE_VALUE, SECOND_CASE_VALUE, FIRST_CASE_VALUE):
+            rest = HLILBlock([HLILIf(make_condition(BinaryOp.NE, value), rest, None)])
+
+        [switch_stmt] = run_cfo(*rest.statements).body.statements
+
+        self.assertIsInstance(switch_stmt, HLILSwitch)
+        self.assertEqual([[v.value for v in case.values] for case in switch_stmt.cases[:-1]],
+                         [[FIRST_CASE_VALUE], [SECOND_CASE_VALUE], [THIRD_CASE_VALUE]])
+        self.assertEqual([case.body.statements for case in switch_stmt.cases[:-1]], [[], [], []])
+        self.assertTrue(switch_stmt.cases[-1].is_default())
 
 
 FLAG_COMPARE_LHS = 10
@@ -1085,6 +1116,43 @@ class TestChainKeepsTheCommentsBeforeItsLinks(unittest.TestCase):
         self.assertEqual([case.values[0].value for case in switch.cases],
                          [FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE])
         self.assertIs(switch.cases[2].body.statements[0], comment)
+
+    def test_a_chain_left_as_an_if_keeps_each_comment_once(self):
+        func = run_cfo(make_marked_chain(FIRST_CASE_VALUE, SECOND_CASE_VALUE))
+        [chain] = func.body.statements
+
+        self.assertIsInstance(chain, HLILIf)
+        self.assertEqual(statements_in_two_places(func), [])
+        self.assertEqual(str(chain.false_block.statements[0]), str(line_comment(SECOND_CASE_VALUE)))
+
+    def test_each_test_line_lands_in_its_case_once(self):
+        values = (FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE, FOURTH_CASE_VALUE)
+        func = run_cfo(make_marked_chain(*values))
+        [switch_stmt] = func.body.statements
+
+        self.assertIsInstance(switch_stmt, HLILSwitch)
+        self.assertEqual(statements_in_two_places(func), [])
+        first, *later = values
+        expected = [[str(stmt) for stmt in make_case_body(first).statements]]
+        expected += [[str(line_comment(value)), *(str(stmt) for stmt in make_case_body(value).statements)]
+                     for value in later]
+        self.assertEqual([[str(stmt) for stmt in case.body.statements] for case in switch_stmt.cases], expected)
+
+    def test_a_comment_after_the_rest_of_the_chain_keeps_it_an_if(self):
+        '''The rest is still an if (2 more tests) or already a switch (3): either way the comment stays after it'''
+        for values in ((FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE),
+                       (FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE, FOURTH_CASE_VALUE)):
+            with self.subTest(tests = len(values)):
+                first, second, *_ = values
+                after = line_comment(AFTER_CHAIN_LINE)
+                else_arm = HLILBlock([line_comment(second), make_marked_chain(*values[1:]), after])
+                func = run_cfo(HLILIf(make_condition(BinaryOp.EQ, first), make_case_body(first), else_arm))
+                [chain] = func.body.statements
+
+                self.assertIsInstance(chain, HLILIf)
+                self.assertEqual(statements_in_two_places(func), [])
+                self.assertEqual(str(chain.false_block.statements[0]), str(line_comment(second)))
+                self.assertIs(chain.false_block.statements[-1], after)
 
 
 class TestRedundantReloadStaysWhenAnAddressTakenWriteIntervenes(unittest.TestCase):

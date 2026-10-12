@@ -15,8 +15,8 @@ from ir.mlil.mlil import (MediumLevelILFunction, MLILIf, MLILGoto, MLILRet, MLIL
                           MLILDebug)
 from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLILDoWhile, HLILSwitch, HLILBreak,
                           HLILContinue, HLILReturn, HLILUnstructured, HLILExprStmt, HLILCall, HLILConst, HLILVar,
-                          HLILUnaryOp, HLILBinaryOp, UnaryOp, BinaryOp, COMPARISON_FUNCTIONS, iter_tree,
-                          reachable_statements)
+                          HLILUnaryOp, HLILBinaryOp, UnaryOp, BinaryOp, COMPARISON_FUNCTIONS, HLILStatement,
+                          iter_tree, reachable_statements)
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter, constant_condition_truth
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from tests.shared.ir_utils import connect
@@ -254,6 +254,16 @@ def classify(func: MediumLevelILFunction, hlil: HighLevelILFunction) -> Tuple[st
 def unstructured_nodes(hlil: HighLevelILFunction, reachable_only: bool = True) -> List[HLILUnstructured]:
     statements = reachable_statements(hlil.body) if reachable_only else iter_tree(hlil.body)
     return [stmt for stmt in statements if isinstance(stmt, HLILUnstructured)]
+
+
+def statements_in_two_places(hlil: HighLevelILFunction) -> List[str]:
+    '''Statements the tree reaches more than once: a pass that moved one left it behind too'''
+    reached = {}
+    for node in iter_tree(hlil.body):
+        if isinstance(node, HLILStatement):
+            reached.setdefault(id(node), []).append(node)
+
+    return [str(nodes[0]) for nodes in reached.values() if len(nodes) > 1]
 
 
 def calls_emitted(hlil: HighLevelILFunction, name: str) -> int:

@@ -284,7 +284,8 @@ Several dedicated HLIL unit-test files exist today:
 - `tests/hlil_tests/test_hlil_branch_order_normalization.py` covers line-based swaps, nesting-depth fallback,
   chain preservation, De Morgan negation, nested ordering, and the production enable/disable flag.
 - `tests/hlil_tests/test_hlil_control_flow_optimization.py` covers switch conversion thresholds, mixed
-  equality/inequality chains, grouped labels, duplicate rejection, and scrutinee consistency.
+  equality/inequality chains, grouped labels, duplicate rejection, scrutinee consistency, and where the line
+  comments before each later test end up.
 - `tests/hlil_tests/test_hlil_loop_recovery.py` covers leading break/return guards, unsafe rotations, nested
   switch breaks, preservation of already-tested loops, the while(1)->do-while rotation, and its
   continue-safety/label-preservation guards (Step H, 2026-09-22).
@@ -308,7 +309,8 @@ Several dedicated HLIL unit-test files exist today:
   against their MLIL for every parameter assignment: merge points, loop exits and headers, the
   region-repeat limits, and the `HLILUnstructured` node (reachability, passes, rendering, validator
   report).
-- `tests/hlil_tests/test_hlil_structuring_fuzz.py` does the same for 1,000 random CFGs.
+- `tests/hlil_tests/test_hlil_structuring_fuzz.py` does the same for 1,000 random CFGs, and checks no statement
+  sits in two places, with markers or without.
 - `tests/tools_tests/test_hlil_path_check.py` covers `tools/hlil_path_check.py`: each way of losing or inventing
   a path, deleting an effect, or changing what a repeated region does is reported.
 - `tests/hlil_tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared

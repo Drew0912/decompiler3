@@ -692,7 +692,8 @@ class ControlFlowOptimizationPass(Pass):
         '''Convert a chain of equality tests on one variable into a switch
 
         Handles `==`, `!=` and ||-grouped links in any order, so a chain that
-        alternates between them still becomes one switch.
+        alternates between them still becomes one switch. The chain is only read
+        until the conversion is certain, so one that stays an if keeps its comments.
         '''
         cases = []
         seen_case_values = set()
@@ -718,15 +719,10 @@ class ControlFlowOptimizationPass(Pass):
             if any(value in seen_case_values for value in values):
                 return None
 
-            case_body = case_body or HLILBlock()
-
-            # Comments sat before the test that is about to disappear
-            for comment in reversed(pending_comments):
-                case_body.statements.insert(0, comment)
-
-            pending_comments = []
             seen_case_values.update(values)
-            cases.append((values, case_body))
+            # Comments sat before the test that is about to disappear
+            cases.append((values, pending_comments, case_body))
+            pending_comments = []
 
             # Walk the continuation: another link, a switch already built from the
             # rest of the chain, or the default body
@@ -735,9 +731,15 @@ class ControlFlowOptimizationPass(Pass):
             if continuation and continuation.statements:
                 sole = sole_statement(continuation)
 
+                if isinstance(sole, (HLILIf, HLILSwitch)):
+                    # A comment after the rest of the chain marks a source statement there: the chain isn't flat
+                    if continuation.statements[-1] is not sole:
+                        return None
+
+                    pending_comments = continuation.statements[:-1]
+
                 if isinstance(sole, HLILIf):
                     current_if = sole
-                    pending_comments = [s for s in continuation.statements if self._is_nop_stmt(s)]
 
                 elif isinstance(sole, HLILSwitch):
                     nested = sole
@@ -759,7 +761,9 @@ class ControlFlowOptimizationPass(Pass):
                             return None
 
                         seen_case_values.update(nested_values)
-                        cases.append((nested_values, nested_case.body))
+                        # The nested switch's first case is the test they sat before
+                        cases.append((nested_values, pending_comments, nested_case.body))
+                        pending_comments = []
 
                 else:
                     default_body = continuation
@@ -768,11 +772,14 @@ class ControlFlowOptimizationPass(Pass):
             return None
 
         # A bare loop break inside a case would become a switch break after conversion
-        if any(contains_bare_break(body) for _, body in cases) or contains_bare_break(default_body):
+        if any(contains_bare_break(body) for _, _, body in cases) or contains_bare_break(default_body):
             return None
 
-        switch_cases = [HLILSwitchCase([HLILConst(v) for v in values], body)
-                        for values, body in cases]
+        switch_cases = []
+        for values, comments, body in cases:
+            body = body or HLILBlock()
+            body.statements[:0] = comments
+            switch_cases.append(HLILSwitchCase([HLILConst(v) for v in values], body))
 
         if default_body and default_body.statements:
             switch_cases.append(HLILSwitchCase(None, default_body))

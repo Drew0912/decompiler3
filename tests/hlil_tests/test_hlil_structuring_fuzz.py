@@ -28,7 +28,8 @@ from hlil_path_check import check_function
 from ir.hlil.hlil import (
     HLILBreak, HLILCall, HLILContinue, HLILDoWhile, HLILIf, HLILReturn, HLILUnstructured, HLILWhile, iter_tree,
 )
-from tests.shared.hlil_cfg_utils import BlockSpec, build_function, to_hlil, classify, unstructured_nodes, with_markers
+from tests.shared.hlil_cfg_utils import (BlockSpec, build_function, to_hlil, classify, statements_in_two_places,
+                                         unstructured_nodes, with_markers)
 
 SEEDS = 1000
 MIN_BLOCKS = 4
@@ -142,12 +143,19 @@ class TestStructuringFuzz(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.results = []
+        cls.marked = []
+        cls.in_two_places = []
         for seed in range(SEEDS):
             blocks = random_cfg(seed)
             func = build_function(f'fuzz_{seed}', blocks)
             hlil = to_hlil(func)
             verdict, env = classify(func, hlil)
             cls.results.append((seed, blocks, verdict, env, check_function(func, hlil), unstructured_nodes(hlil)))
+            marked_func = build_function(f'fuzz_{seed}', with_markers(blocks, every_block = True))
+            marked = to_hlil(marked_func)
+            cls.marked.append((marked_func, marked))
+            if statements_in_two_places(hlil) or statements_in_two_places(marked):
+                cls.in_two_places.append(seed)
 
     def test_no_run_differs_from_mlil(self):
         wrong = [(seed, env) for seed, _, verdict, env, _, _ in self.results if verdict == 'wrong']
@@ -164,6 +172,11 @@ class TestStructuringFuzz(unittest.TestCase):
 
         self.assertEqual(disagree, [])
 
+    def test_no_statement_sits_in_two_places(self):
+        '''With markers or without: a pass that moves a statement leaves no copy behind (the switch conversion
+        once did)'''
+        self.assertEqual(self.in_two_places, [])
+
     def test_nodes_on_reducible_cfgs_are_pinned(self):
         reducible_with_nodes = [seed for seed, blocks, _, _, _, nodes in self.results if nodes and is_reducible(blocks)]
         self.assertEqual(reducible_with_nodes, PINNED_REDUCIBLE_WITH_NODES)
@@ -171,9 +184,9 @@ class TestStructuringFuzz(unittest.TestCase):
     def test_markers_in_every_block_change_no_run(self):
         '''Kept, or removed after every pass (line_markers off: arms left empty tidied, conditions negated)'''
         changed = []
-        for seed, blocks, verdict, env, _, nodes in self.results:
-            func = build_function(f'fuzz_{seed}', with_markers(blocks, every_block = True))
-            for hlil in (to_hlil(func), to_hlil(func, line_markers = False)):
+        for seed, _, verdict, env, _, nodes in self.results:
+            func, marked = self.marked[seed]
+            for hlil in (marked, to_hlil(func, line_markers = False)):
                 if classify(func, hlil) != (verdict, env) or len(unstructured_nodes(hlil)) != len(nodes):
                     changed.append(seed)
 
