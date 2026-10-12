@@ -122,6 +122,7 @@ class Disassembler:
 
             # Decode instruction
             inst = self.instruction_table.decode_instruction(fs, pos)
+            next_pos = pos + inst.size
             self.claim_bytes(inst)
 
             # Record instruction
@@ -139,10 +140,10 @@ class Disassembler:
 
             # If block terminates or declares future targets, collect them
             if desc.ends_block:
-                pending_targets.extend(desc.get_branch_targets(inst, fs.Position))
+                pending_targets.extend(desc.get_branch_targets(inst, next_pos))
 
             if desc.starts_block and not self.context.declares_call_returns:
-                pending_targets.extend(desc.get_branch_targets(inst, fs.Position))
+                pending_targets.extend(desc.get_branch_targets(inst, next_pos))
 
             # Add any pending targets
             for target in pending_targets:
@@ -158,9 +159,9 @@ class Disassembler:
                 break
 
             # Check if next position is an allocated block
-            if fs.Position in self.allocated_blocks:
+            if next_pos in self.allocated_blocks:
                 # Next instruction belongs to a pre-allocated block
-                self._add_fallthrough_jump(block, pos, fs.Position)
+                self._add_fallthrough_jump(block, pos, next_pos)
                 break
 
         return block
