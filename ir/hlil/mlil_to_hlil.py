@@ -820,7 +820,6 @@ class MLILToHLILConverter:
 
         # Header instructions execute on every iteration, so they open the loop body
         self._convert_body(header_idx, loop_body)
-        self.current_instr_idx = len(mlil_block.instructions) - 1
 
         if header_if_into_body:
             follow_on = self._process_if_statement(last_instr, header_idx, loop_body, stop_at = header_idx)
@@ -1015,11 +1014,13 @@ class MLILToHLILConverter:
         return block
 
     def _bare_test_block(self, block_idx: int) -> Optional[Tuple[MLILIf, int, int]]:
-        '''The test and its targets, if block_idx holds nothing but a 2-way test.
+        '''The test and its targets, if block_idx is a bare 2-way test.
 
-        Bare means it holds only the test and is entered only from the previous
-        link, so folding it into a condition loses no other work and steals it
-        from no other path.
+        Bare means it holds only the test and the calls folded into it, and is
+        entered only from the previous link, so folding it into a condition
+        loses no other work and steals it from no other path. A line marker
+        makes it a statement of its own (a nested if in the source), and its
+        comment would have nowhere to go inside a condition.
         '''
         if block_idx is None or block_idx >= len(self.mlil_func.basic_blocks):
             return None
@@ -1029,10 +1030,13 @@ class MLILToHLILConverter:
 
         block = self.mlil_func.basic_blocks[block_idx]
 
-        if len(block.instructions) != 1 or len(block.incoming_edges) != 1:
+        if not block.instructions or len(block.incoming_edges) != 1:
             return None
 
-        instr = block.instructions[0]
+        *calls, instr = block.instructions
+
+        if not all(self.folder.is_folded(block_idx, idx) for idx in range(len(calls))):
+            return None
 
         if not isinstance(instr, MLILIf) or instr.true_target is None or instr.false_target is None:
             return None
@@ -1043,9 +1047,11 @@ class MLILToHLILConverter:
                                false_idx: Optional[int]):
         '''Merge consecutive tests that all branch to one block into one || condition.
 
-        Tests sharing a body are a switch case carrying several labels. Left as
-        nested ifs the body has to be repeated once per test, so folding them here
-        keeps it emitted once. Returns (condition, shared_target, else_target).
+        Tests sharing a body are a switch case carrying several labels, or a
+        short-circuit || written with jumps. Left as nested ifs the body has to be
+        repeated once per test, so folding them here keeps it emitted once. A later
+        test's calls run only when the earlier tests failed, as on the right of ||.
+        Returns (condition, shared_target, else_target).
         '''
         if true_idx is None or false_idx is None:
             return None
@@ -1060,23 +1066,16 @@ class MLILToHLILConverter:
             conditions = [negate_condition(first) if shared == false_idx else first]
             current = following
 
-            while True:
-                link = self._bare_test_block(current)
-
-                if link is None:
-                    break
-
+            while link is not None and shared in (link[1], link[2]):
                 instr, link_true, link_false = link
 
-                if shared not in (link_true, link_false):
-                    break
-
-                # Convert in the test's own context: a folded call result is looked
-                # up by reader position, and a miss would drop the call entirely
+                # Convert in the test's own context, its calls first: a read of a
+                # folded call is looked up by reader position in the cache those
+                # conversions fill, and a miss would drop the call entirely
                 saved_block, saved_instr = self.current_block_idx, self.current_instr_idx
-                self.current_block_idx, self.current_instr_idx = current, 0
 
                 try:
+                    self._convert_body(current, HLILBlock())
                     cond = self._convert_expr(instr.condition)
 
                 finally:
@@ -1084,8 +1083,9 @@ class MLILToHLILConverter:
 
                 conditions.append(negate_condition(cond) if shared == link_false else cond)
                 current = link_false if shared == link_true else link_true
+                link = self._bare_test_block(current)
 
-            if len(conditions) < 2 or current == shared:
+            if current == shared:
                 continue
 
             combined = conditions[0]
@@ -1290,7 +1290,6 @@ class MLILToHLILConverter:
 
             last_instr = mlil_block.instructions[-1]
             last_instr_idx = len(mlil_block.instructions) - 1
-            self.current_instr_idx = last_instr_idx
 
             if isinstance(last_instr, MLILIf):
                 follow_on = self._process_if_statement(last_instr, block_idx, target_block, stop_at)
@@ -1333,13 +1332,17 @@ class MLILToHLILConverter:
         hlil_instr.mlil_index = mlil_instr.inst_index
 
     def _convert_body(self, block_idx: int, target_block: HLILBlock) -> None:
-        '''Convert block_idx's instructions before its last one into target_block, in that block's context'''
+        '''Convert block_idx's instructions before its last one into target_block, in that block's context,
+        and leave the context at its last instruction'''
         self.current_block_idx = block_idx
+        instructions = self.mlil_func.basic_blocks[block_idx].instructions
 
-        for instr_idx, instr in enumerate(self.mlil_func.basic_blocks[block_idx].instructions[:-1]):
+        for instr_idx, instr in enumerate(instructions[:-1]):
             self.current_instr_idx = instr_idx
             for stmt in self._convert_instruction(instr, block_idx, instr_idx):
                 target_block.add_statement(stmt)
+
+        self.current_instr_idx = len(instructions) - 1
 
     def _convert_instruction(self, instr: MediumLevelILInstruction,
                               block_idx: int, instr_idx: int) -> List[HLILStatement]:

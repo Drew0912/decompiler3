@@ -2,8 +2,8 @@
 '''Unit tests for CallResultFolder short-circuit safety: the VM evaluates both operands of
 MLILLogicalAnd/Or, while HLIL's && / || short-circuit, so a call result read under their rhs is
 never folded - the call stays its own statement wherever its block sits, and a run of calls keeps
-its order. A read on the lhs, and a fold into a test that HLIL structuring builds itself (a funnel
-chain's head, a loop test), stays folded. Every CFG gets real edges, as the funnel check reads them.'''
+its order. A read on the lhs, and a fold into a test that HLIL structuring builds itself (any test of
+a funnel chain, a loop test), stays folded. Every CFG gets real edges, as the funnel check reads them.'''
 
 from pathlib import Path
 import sys
@@ -14,12 +14,16 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
     MediumLevelILFunction, MLILCall, MLILIf, MLILGoto, MLILRet, MLILConst, MLILVar,
-    MLILLogicalAnd, MLILLogicalOr, MLILAddressOf,
+    MLILLogicalAnd, MLILLogicalOr, MLILAddressOf, MLILDebug,
 )
 from ir.hlil.hlil import HLILIf, HLILWhile, sub_blocks
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from tests.shared.ir_utils import connect
+from tests.shared.hlil_cfg_utils import calls_emitted, unstructured_nodes
+
+# The line marker of a test that starts a source line of its own
+MARKER_LINE = 7
 
 
 def make_func(name: str, block_count: int):
@@ -226,6 +230,75 @@ class TestFunnelChainHeadStaysFolded(unittest.TestCase):
         statements = convert(func).body.statements
 
         self.assertEqual(str(statements[0].condition), 'f() || arg1')
+
+
+class TestFunnelLaterTestCallFolds(unittest.TestCase):
+    '''A later test whose call folds into it joins the || as well: the VM runs that call only when
+    the earlier tests failed, which is what || means, so the shared body is emitted once. A test that
+    runs anything else, or starts a line of its own (a nested if), stays a test of its own.'''
+
+    @classmethod
+    def funnel(cls, *later_tests, body_arg = None, use_and = False):
+        '''if (f() || <later tests>) do_x(); else do_y(), or with use_and && (the tests share the else).
+        A later test gives, from (reg0, reg1), what runs before its test of reg0.'''
+        func, blocks, _, _, reg0, reg1 = make_func('funnel_link', len(later_tests) + 4)
+        *tests, body, other, exit_block = blocks
+        for test, before, next_test in zip(tests, (cls.calls('f'),) + later_tests,
+                                           tests[1:] + [body if use_and else other]):
+            targets = (next_test, other) if use_and else (body, next_test)
+            test.instructions = before(reg0, reg1) + [MLILIf(MLILVar(reg0), *targets)]
+
+        body.instructions = [MLILCall('do_x', [] if body_arg is None else [body_arg(reg0)]), MLILGoto(exit_block)]
+        other.instructions = [MLILCall('do_y', []), MLILGoto(exit_block)]
+        exit_block.instructions = [MLILRet(MLILConst(0))]
+        return func
+
+    @classmethod
+    def calls(cls, name: str):
+        '''A test of name's result'''
+        return lambda reg0, reg1: [MLILCall(name, [], output = reg0)]
+
+    def test_call_folds_and_the_body_is_emitted_once(self):
+        hlil_func = convert(self.funnel(self.calls('g')))
+
+        self.assertEqual(str(hlil_func.body.statements[0].condition), 'f() || g()')
+        self.assertEqual(calls_emitted(hlil_func, 'do_x'), 1)
+
+    def test_body_over_the_region_cap_is_no_goto(self):
+        hlil_func = MLILToHLILConverter(connect(self.funnel(self.calls('g'))), max_region_blocks = 0).convert()
+
+        self.assertEqual(unstructured_nodes(hlil_func), [])
+
+    def test_and_emits_the_shared_else_once(self):
+        hlil_func = convert(self.funnel(self.calls('g'), use_and = True))
+
+        self.assertEqual(str(hlil_func.body.statements[0].condition), '!f() || !g()')
+        self.assertEqual(calls_emitted(hlil_func, 'do_y'), 1)
+
+    def test_third_test_with_a_nested_call_joins_too(self):
+        def nested(reg0, reg1):
+            return [MLILCall('h', [], output = reg1), MLILCall('k', [MLILVar(reg1)], output = reg0)]
+
+        hlil_func = convert(self.funnel(self.calls('g'), nested))
+
+        self.assertEqual(str(hlil_func.body.statements[0].condition), 'f() || g() || k(h())')
+        self.assertEqual([calls_emitted(hlil_func, name) for name in ('h', 'do_x')], [1, 1])
+
+    def test_result_read_again_is_not_merged(self):
+        hlil_func = convert(self.funnel(self.calls('g'), body_arg = MLILVar))
+
+        self.assertIsNone(find_statement(hlil_func.body, lambda stmt: isinstance(stmt, HLILIf) and
+                                         '||' in str(stmt.condition)))
+        self.assertIsNotNone(find_statement(hlil_func.body, lambda stmt: str(stmt) == 'reg0 = g()'))
+
+    def test_test_on_a_line_of_its_own_stays_nested(self):
+        def marked(reg0, reg1):
+            return [MLILDebug('line', MARKER_LINE), MLILCall('g', [], output = reg0)]
+
+        hlil_func = convert(self.funnel(marked))
+
+        self.assertEqual(str(hlil_func.body.statements[0].condition), 'f()')
+        self.assertIsNotNone(find_statement(hlil_func.body, if_with_condition('g()')))
 
 
 class TestLoopTestStaysFolded(unittest.TestCase):

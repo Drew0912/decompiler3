@@ -169,10 +169,11 @@ statement did (`CallResultFolder._read_unsafe_to_fold`). A fold is refused when 
 deref or a `REG[]`/`GLOBAL[]` load) comes earlier in the reader's evaluation order, when the read
 sits under `&x`, and when it sits on the right of an MLIL logical AND/OR. The VM evaluates both
 sides of those, but HLIL `&&`/`||` short-circuit, so **no call is ever folded under a native VM
-logical op**. The converter's other `||` chains (funnel collapse) only fold calls into their first,
-always-evaluated test, so a call on the right side of an HLIL `&&`/`||` really is conditional. The
-cost: a refused call sits between `else` and the next test, so such `else if` chains nest instead of
-printing flat (`docs/FUTURE_WORK.md`, "HLIL Nesting Depth").
+logical op**. The converter's other `||` chains (funnel collapse) take in a later test, calls folded
+into it included, only when that test is entered from the previous one alone, so its calls run only
+when the earlier tests failed: a call on the right side of an HLIL `&&`/`||` really is conditional.
+The cost: a refused call sits between `else` and the next test, so such `else if` chains nest
+instead of printing flat (`docs/FUTURE_WORK.md`, "HLIL Nesting Depth").
 
 This specialized folding belongs in conversion rather than a post-conversion tree pass: it
 uses MLIL instruction positions, CFG predecessor information, and call evaluation order before the
@@ -245,9 +246,10 @@ raise Python's recursion limit to 10,000.
 
 Before reconstruction, `CallResultFolder` computes its folding decisions. The converter then
 translates parameters, reconstructs from MLIL block zero, and finally declares the local variables
-actually present in the result. Funnel-shaped runs of bare tests that share a target are collapsed
-inside the converter into one logical-OR condition so the shared body need not be emitted for every
-test.
+actually present in the result. Funnel-shaped runs of tests that share a target - each later one
+holding only its test and the calls folded into it - are collapsed inside the converter into one
+logical-OR condition so the shared body need not be emitted for every test; a later test with a line
+marker of its own (a nested `if` in the source) is left out.
 
 The production entry point is `convert_falcom_mlil_to_hlil()` in
 `falcom/ed9/ir/hlil/hlil_converter.py`. Its configured pipeline is:

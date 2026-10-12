@@ -111,9 +111,9 @@ so none of the 27 improved the output.
 | `pass_branch_order_normalization.py` | The sole if/else arm-order decision point: swaps arms and negates the condition (De Morgan) to match the original source's `line(N)` order, with if-nesting depth as a tiebreak. Also decides which of two structurally-similar else-if chains to flatten, via "same-head" matching — this is where cascade-flattening behavior actually lives; there is no separate cascade-flattening pass. |
 
 A separate, smaller mechanism worth knowing about: `_collapse_funnel_chain` (in the converter, not
-a pass) merges same-target equality tests into one `||`. It's unrelated to MLIL-SSA critical-edge
-splitting, which is deconstruction machinery living in `ir/mlil/mlil_ssa.py`, entirely outside
-`ir/hlil/`.
+a pass) merges same-target tests - a switch case's labels, a short-circuit `||` written with jumps -
+into one `||`. It's unrelated to MLIL-SSA critical-edge splitting, which is deconstruction machinery
+living in `ir/mlil/mlil_ssa.py`, entirely outside `ir/hlil/`.
 
 ## Codegen
 
