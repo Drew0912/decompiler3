@@ -2,7 +2,7 @@
 
 Ported from the external ml (Ouroboros PyLibs) FileStream; round trips rely on these deliberate quirks
 (tests/dc3_tests/test_fileio.py checks each one but WriteFloat's: no opcode writes a float through it):
-- Write(*bufs) stops at the first empty buffer and returns None; a FileStream buffer writes its whole content
+- Write(*bufs) writes a FileStream buffer's whole content, whatever its position
 - integer writers truncate like a C cast, so a signed writer is its unsigned twin
 - WriteFloat turns an out-of-range float into inf instead of raising
 - ReadMultiByte drops undecodable bytes (errors = 'ignore'), with a warning
@@ -107,13 +107,10 @@ class FileStream:
         self.Position = 0
         return self.Read()
 
-    def Write(self, *bufs: 'bytes | bytearray | FileStream') -> int | None:
-        '''Write each buffer (a FileStream contributes its whole content); an empty buffer ends the write and returns None'''
+    def Write(self, *bufs: 'bytes | bytearray | FileStream') -> int:
+        '''Write each buffer (a FileStream contributes its whole content)'''
         written = 0
         for buf in bufs:
-            if not buf:
-                return None
-
             if isinstance(buf, FileStream):
                 with buf.PositionSaver:
                     buf = buf.ReadAll()

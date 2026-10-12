@@ -18,10 +18,10 @@ class TestFileStreamQuirks(unittest.TestCase):
     def memory(cls, data: bytes = b'', **kwargs) -> fileio.FileStream:
         return fileio.FileStream(**kwargs).OpenMemory(data)
 
-    def test_write_stops_at_first_empty_buffer(self):
+    def test_write_skips_nothing_after_an_empty_buffer(self):
         fs = self.memory()
-        self.assertIsNone(fs.Write(b'ab', b'', b'zz'))
-        self.assertEqual(fs.ReadAll(), b'ab')
+        self.assertEqual(fs.Write(b'ab', b'', b'zz'), 4)
+        self.assertEqual(fs.ReadAll(), b'abzz')
 
     def test_write_filestream_buffer_writes_whole_content_and_keeps_its_position(self):
         src = self.memory(b'xyz')
