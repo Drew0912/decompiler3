@@ -800,22 +800,30 @@ class ScpWriter:
 
         return value.to_bytes()
 
-    def _write_operand(self, op_desc: OperandDescriptor, value):
-        writers = {
-            OperandType.SInt8        : self.fs.WriteChar,
-            OperandType.UInt8        : self.fs.WriteByte,
-            OperandType.SInt16       : self.fs.WriteShort,
-            OperandType.UInt16       : self.fs.WriteUShort,
-            OperandType.SInt32       : self.fs.WriteLong,
-            OperandType.UInt32       : self.fs.WriteULong,
-            OperandType.Float32      : self.fs.WriteFloat,
-            OperandType.Offset       : self._write_label_ref,
-            ED9OperandType.Func      : self._write_func_operand,
-            ED9OperandType.Value     : self._write_value_operand,
-            ED9OperandType.GlobalVar : self.fs.WriteLong,
-        }
+    WRITER_BY_TYPE = {
+        OperandType.SInt8        : fileio.FileStream.WriteChar,
+        OperandType.UInt8        : fileio.FileStream.WriteByte,
+        OperandType.SInt16       : fileio.FileStream.WriteShort,
+        OperandType.UInt16       : fileio.FileStream.WriteUShort,
+        OperandType.SInt32       : fileio.FileStream.WriteLong,
+        OperandType.UInt32       : fileio.FileStream.WriteULong,
+        OperandType.Float32      : fileio.FileStream.WriteFloat,
+        ED9OperandType.GlobalVar : fileio.FileStream.WriteLong,
+    }
 
-        writers[op_desc.type](value)
+    def _write_operand(self, op_desc: OperandDescriptor, value):
+        match op_desc.type:
+            case OperandType.Offset:
+                self._write_label_ref(value)
+
+            case ED9OperandType.Func:
+                self._write_func_operand(value)
+
+            case ED9OperandType.Value:
+                self._write_value_operand(value)
+
+            case _:
+                self.WRITER_BY_TYPE[op_desc.type](self.fs, value)
 
     def _write_value_operand(self, value):
         self._write_scp_value(value if isinstance(value, ScpValue) else ScpValue(value))
