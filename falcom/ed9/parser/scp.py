@@ -451,7 +451,7 @@ class ScpDisassemblerContext(DisassemblerContext):
     def falls_through(cls, inst: Instruction, end: int) -> bool:
         """inst may continue at end: it doesn't end its block, or one of its branches is the fall-through"""
         desc = inst.descriptor
-        return not desc.is_end_block() or any(target.kind == BranchKind.FALSE for target in desc.get_branch_targets(inst, end))
+        return not desc.ends_block or any(target.kind == BranchKind.FALSE for target in desc.get_branch_targets(inst, end))
 
     def record_edge(self, source: int, target: int, state: tuple, kind: BranchKind):
         """The first edge into a block records its state. Every later edge - also one arriving after the block was

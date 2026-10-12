@@ -138,10 +138,10 @@ class Disassembler:
                 pending_targets = self.context.on_instruction_decoded(self.context, inst, block)
 
             # If block terminates or declares future targets, collect them
-            if desc.is_end_block():
+            if desc.ends_block:
                 pending_targets.extend(desc.get_branch_targets(inst, fs.Position))
 
-            if desc.is_start_block() and not self.context.declares_call_returns:
+            if desc.starts_block and not self.context.declares_call_returns:
                 pending_targets.extend(desc.get_branch_targets(inst, fs.Position))
 
             # Add any pending targets
@@ -154,7 +154,7 @@ class Disassembler:
                 block = self.offset_to_block[pos]
                 block.add_branch(target_block, target.kind)
 
-            if desc.is_end_block():
+            if desc.ends_block:
                 break
 
             # Check if next position is an allocated block

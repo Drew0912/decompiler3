@@ -2,7 +2,7 @@
 
 from common import *
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from .basic_block import BranchKind
 from typing import TYPE_CHECKING, Any
 from .instruction import Instruction
@@ -203,14 +203,12 @@ class InstructionDescriptor:
     opcode: int
     mnemonic: str
     flags: InstructionFlags = InstructionFlags.NONE
+    ends_block: bool = field(init = False, repr = False)
+    starts_block: bool = field(init = False, repr = False)
 
-    def is_end_block(self) -> bool:
-        """Check if instruction terminates a basic block"""
-        return bool(self.flags & InstructionFlags.END_BLOCK)
-
-    def is_start_block(self) -> bool:
-        """Check if instruction starts a new basic block"""
-        return bool(self.flags & InstructionFlags.START_BLOCK)
+    def __post_init__(self):
+        self.ends_block = bool(self.flags & InstructionFlags.END_BLOCK)
+        self.starts_block = bool(self.flags & InstructionFlags.START_BLOCK)
 
     def get_branch_targets(self, inst: Instruction, current_pos: int) -> list[BranchTarget]:
         """Get branch targets from this instruction"""
