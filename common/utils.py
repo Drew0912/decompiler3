@@ -46,4 +46,7 @@ def format_uint32_hex(value: int) -> str:
 
 def display_width(text: str) -> int:
     '''Columns text takes in a monospace editor, which draws CJK characters two columns wide'''
+    if text.isascii():
+        return len(text)
+
     return sum(WIDE_CHAR_COLUMNS if unicodedata.east_asian_width(ch) in WIDE_EAST_ASIAN_WIDTHS else 1 for ch in text)
