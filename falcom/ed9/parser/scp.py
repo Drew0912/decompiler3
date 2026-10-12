@@ -5,7 +5,8 @@ from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
-from ..writer.metadata import COMMON_LIBRARY_ALL_IMPORT, SCP_WRITER_HELPER_IMPORT
+from ..writer.metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT,
+                               SCP_WRITER_HELPER_IMPORT)
 from ..writer.metadata.common_index import COMMON_FUNCTIONS
 from ..writer.metadata.signature import function_fingerprint, fingerprint_digest
 from common.config import default_encoding
@@ -23,6 +24,19 @@ import sys
 
 # First lines of every generated script: the generating checkout's root, so it runs without PYTHONPATH
 SYS_PATH_SETUP_LINES = ['import sys', f'sys.path.insert(0, {str(PROJECT_ROOT)!r})']
+
+# The generated library modules common_index.py names: the ones common_all.py imports
+COMMON_LIBRARY_MODULES = frozenset(module for module, _ in COMMON_FUNCTIONS.values())
+
+
+def common_library_generated() -> bool:
+    """Every generated library module's file exists. Checked, not imported: importing them (common_all) loads the
+    whole library and the writer, which a decompile never uses"""
+    generated = all((COMMON_LIBRARY_DIR / f'{module}.py').is_file() for module in COMMON_LIBRARY_MODULES)
+    if not generated:
+        log.info(COMMON_LIBRARY_MISSING_HINT)
+
+    return generated
 
 
 def is_module_name(name: str) -> bool:
@@ -1454,7 +1468,7 @@ scena = create_scp_writer('{self.name}')
         diverges from the library (different body, signature, or subsystem) is left out here and
         stays inline as an ordinary @scena.LLILCommonCode() definition, same as a non-common one.
 
-        Also returns {} if the library package itself isn't actually generated on disk yet (fresh
+        Also returns {} if any library module isn't actually generated on disk yet (fresh
         checkout, generator never run) - common_index.py is tracked and would otherwise claim
         matches that don't actually exist, leaving a matched name referenced by the
         @scena.CommonImports() manifest but never defined anywhere.
@@ -1462,13 +1476,7 @@ scena = create_scp_writer('{self.name}')
         if self.round_trip or self.keep_unreachable_code:
             return {}
 
-        # Deferred import, not module-level (CLAUDE.md rule 2's circular-dependency exception):
-        # common_all pulls in the generated library modules, which import scp_writer_helper ->
-        # scp_writer, and scp_writer itself imports names from this module (parser.scp) - a
-        # module-level import here would fail while parser.scp is still mid-initialization. By the
-        # time this method actually runs, parser.scp has already finished loading, so it's safe.
-        from ..writer.metadata.common_all import COMMON_LIBRARY_GENERATED
-        if not COMMON_LIBRARY_GENERATED:
+        if not common_library_generated():
             return {}
 
         matched = {}

@@ -45,11 +45,12 @@ from falcom.ed9.disasm.llil_dsl_comments import CommentOptions, append_comment, 
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function
 from falcom.ed9.writer import scp_writer_helper
-from falcom.ed9.writer.metadata import COMMON_LIBRARY_PACKAGE, SCP_WRITER_HELPER_IMPORT
+from falcom.ed9.writer.metadata import (COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT, COMMON_LIBRARY_PACKAGE,
+                                        SCP_WRITER_HELPER_IMPORT)
 from falcom.ed9.writer.metadata.signature import function_fingerprint, fingerprint_digest
 
 DAT_PATTERN = '*.dat'
-OUTPUT_DIR = Path(__file__).resolve().parent / 'metadata' / 'common'
+OUTPUT_DIR = COMMON_LIBRARY_DIR
 INDEX_PATH = Path(__file__).resolve().parent / 'metadata' / 'common_index.py'
 ALL_PATH = Path(__file__).resolve().parent / 'metadata' / 'common_all.py'
 MODULE_PREFIX = 'scp_writer_common_'
@@ -339,9 +340,10 @@ def render_all(module_keys: list[str]) -> str:
         'script\'s own source happened to use - for adding a common function call by hand.',
         '',
         'COMMON_LIBRARY_GENERATED is False when this package hasn\'t been generated yet (a fresh',
-        'checkout before scp_writer_gen_common_funcs.py has been run) - match_library_functions',
-        'checks it before matching anything, so an ungenerated library safely falls back to fully',
-        'inline output instead of a manifest that would reference an undefined name."""',
+        'checkout before scp_writer_gen_common_funcs.py has been run). match_library_functions',
+        'checks that the module files exist instead of importing this, so an ungenerated library',
+        'falls back to fully inline output instead of a manifest that would reference an undefined',
+        'name."""',
         '',
         GENERATED_HEADER_COMMENT,
         '',
@@ -352,7 +354,7 @@ def render_all(module_keys: list[str]) -> str:
     lines.extend(f'    from {COMMON_LIBRARY_PACKAGE}.{module_key} import *' for module_key in module_keys)
     lines.append('    COMMON_LIBRARY_GENERATED = True')
     lines.append('except ModuleNotFoundError:')
-    lines.append("    _log.info('Shared common-function library not generated - run falcom/ed9/writer/scp_writer_gen_common_funcs.py <corpus_root> to build it')")
+    lines.append(f'    _log.info({COMMON_LIBRARY_MISSING_HINT!r})')
     lines.append('    COMMON_LIBRARY_GENERATED = False')
     return '\n'.join(lines) + '\n'
 

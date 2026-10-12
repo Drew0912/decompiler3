@@ -339,14 +339,13 @@ its *own* internal imports of the gitignored, locally-generated `common/` packag
 in `match_library_functions`: `not (self.round_trip or self.keep_unreachable_code)` (the everyday
 `scena2py_config.py` default; the library was generated with unreachable code already stripped, so
 either fidelity flag falls back to inlining everything, exactly as before this existed), and
-`common_all.COMMON_LIBRARY_GENERATED` (needed because `common_index.py` is tracked in git and would
-otherwise claim matches that don't actually exist on a fresh checkout, leaving the manifest
-referencing an undefined name). That second check is a **deferred import inside the method, not at
-module level** — `common_all` transitively imports `scp_writer`, which imports names from this same
-module (`parser/scp.py`), so importing it at module load time would be circular; by the time
-`match_library_functions` actually runs, `parser.scp` has already finished loading, so the deferred
-import is safe (CLAUDE.md rule 2's explicit circular-dependency exception). When the library isn't
-generated, matching returns `{}` and every function falls back to fully inline, same as strict mode.
+`common_library_generated()` in `parser/scp.py`: every module `common_index.py` names has its file
+in `metadata/common/` (needed because `common_index.py` is tracked in git and would otherwise claim
+matches that don't actually exist on a fresh checkout, leaving the manifest referencing an undefined
+name). That second check **looks for the files instead of importing `common_all`**: the import would
+load the whole library and the writer, none of which a decompile uses. When a module is missing, it logs
+the same "run the generator" hint `common_all` does, matching returns `{}` and every function falls
+back to fully inline, same as strict mode.
 
 **Regenerating the library:** `python falcom/ed9/writer/scp_writer_gen_common_funcs.py
 sora2_1.0` walks the corpus (round_trip=False, keep_unreachable_code=False), fingerprints every
@@ -365,8 +364,8 @@ regenerated locally, never committed. `metadata/common_index.py` and `metadata/c
 (pure data/import-statements — names, module keys, fingerprint digests, `import *` lines, no
 translated code) are checked in normally. **This means a fresh checkout needs the generator run
 once, against a local copy of the corpus, before the default (`round_trip=False`) `scena2py.py`
-path produces working output** — otherwise `common_index.py`/`common_all.py` reference modules
-that don't exist on disk yet.
+path imports common functions from the library** — until then `common_index.py`/`common_all.py`
+reference modules that don't exist on disk yet, so the gate above keeps every function inline.
 
 **The four questions this section used to leave open, now closed:**
 

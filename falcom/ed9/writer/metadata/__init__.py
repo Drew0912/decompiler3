@@ -1,6 +1,13 @@
 """Common-function library support: fingerprints, the generated index, and the generated modules"""
 
+from pathlib import Path
+
 COMMON_LIBRARY_PACKAGE = 'falcom.ed9.writer.metadata.common'  # dotted path to the generated modules
+COMMON_LIBRARY_DIR = Path(__file__).resolve().parent / 'common'  # the same modules on disk (gitignored)
+
+# Logged by common_all.py when a script imports it, and by the parser when it decompiles, while modules are missing
+COMMON_LIBRARY_MISSING_HINT = ('Shared common-function library not generated - run '
+                               'falcom/ed9/writer/scp_writer_gen_common_funcs.py <corpus_root> to build it')
 
 # Every generated module and every emitted script needs this - one place both sides spell it
 SCP_WRITER_HELPER_IMPORT = 'from falcom.ed9.writer.scp_writer_helper import *'
