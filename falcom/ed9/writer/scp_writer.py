@@ -10,6 +10,7 @@ from typing import Callable, get_args
 
 from common import fileio
 from common.config import default_encoding
+from common.gc_policy import infrequent_gc
 from common.logging import log
 from ir.llil import WORD_SIZE
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandType
@@ -382,6 +383,7 @@ class ScpWriter:
 
     # The compile: run() and build()
 
+    @infrequent_gc()
     def run(self, g: dict):
         """Compile the script and write the .dat - only once compiling succeeded, so a failure leaves an older .dat as it was"""
         data = self.build(g)

@@ -13,6 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
+from common.gc_policy import infrequent_gc
 from common.logging import log
 from falcom.ed9.disasm import CommentOptions
 from falcom.ed9.parser.scp import ScpParser
@@ -75,6 +76,7 @@ def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
     except FileExistsError:
         log.info(f'{path} exists - not overwritten')
 
+@infrequent_gc()
 def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
 
