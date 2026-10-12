@@ -3,7 +3,7 @@
 import sys
 from collections import deque
 from dataclasses import dataclass
-from typing import Dict, List, Set, Optional, Tuple
+from typing import Dict, FrozenSet, List, Set, Optional, Tuple
 
 from ir.mlil.mlil import *
 from ir.mlil.mlil_types import MLILType, MLILTypeKind
@@ -498,6 +498,7 @@ class LoopStackEntry:
     header: int
     exit: Optional[int]
     exit_target: Optional[int] = None  # exit after its goto-only blocks, where a jump through them lands
+    exit_chain: FrozenSet[int] = frozenset()  # those goto-only blocks: the code after the loop prints their markers
     label: Optional[str] = None
 
 
@@ -677,9 +678,14 @@ class MLILToHLILConverter:
             isinstance(block.instructions[-1], MLILGoto)
         )
 
-    def _skip_passthrough_blocks(self, block_idx: int, stop_at: Optional[int] = None) -> int:
+    def _skip_passthrough_blocks(self, block_idx: int, stop_at: Optional[int] = None,
+                                 markers_into: Optional[HLILBlock] = None,
+                                 chain_into: Optional[Set[int]] = None) -> int:
         '''Follow a chain of blocks that only jump onward, to the first real block. A loop header
-        is never skipped: it has to start its loop, or be recognized as a continue.'''
+        is never skipped: it has to start its loop, or be recognized as a continue.
+
+        Every skipped block goes to chain_into; its line markers go to markers_into unless it is on
+        an open loop's exit chain, whose markers the code after that loop prints, once for every way out.'''
         seen: Set[int] = set()
 
         while (self._is_passthrough_block(block_idx) and
@@ -691,6 +697,12 @@ class MLILToHLILConverter:
 
             if not isinstance(last_instr, MLILGoto) or last_instr.target is None:
                 break
+
+            if chain_into is not None:
+                chain_into.add(block_idx)
+
+            if markers_into is not None and not any(block_idx in entry.exit_chain for entry in self.loop_stack):
+                self._convert_body(block_idx, markers_into)
 
             block_idx = last_instr.target.index
 
@@ -797,22 +809,17 @@ class MLILToHLILConverter:
         self.visited_blocks.add(header_idx)
         self.globally_processed.add(header_idx)
 
-        exit_target = self._skip_passthrough_blocks(exit_block_idx) if exit_block_idx is not None else None
-        stack_entry = LoopStackEntry(header = header_idx, exit = exit_block_idx, exit_target = exit_target)
+        exit_chain: Set[int] = set()
+        exit_target = (self._skip_passthrough_blocks(exit_block_idx, chain_into = exit_chain)
+                       if exit_block_idx is not None else None)
+        stack_entry = LoopStackEntry(header = header_idx, exit = exit_block_idx, exit_target = exit_target,
+                                     exit_chain = frozenset(exit_chain))
         self.loop_stack.append(stack_entry)
 
         loop_body = HLILBlock()
 
         # Header instructions execute on every iteration, so they open the loop body
-        self.current_block_idx = header_idx
-
-        for instr_idx, instr in enumerate(mlil_block.instructions[:-1]):
-            self.current_instr_idx = instr_idx
-
-            stmts = self._convert_instruction(instr, header_idx, instr_idx)
-            for stmt in stmts:
-                loop_body.add_statement(stmt)
-
+        self._convert_body(header_idx, loop_body)
         self.current_instr_idx = len(mlil_block.instructions) - 1
 
         if header_if_into_body:
@@ -943,6 +950,7 @@ class MLILToHLILConverter:
 
         # Early return patterns (skip for else-if chains to preserve structure)
         if true_ends_with_return and false_ends_with_return:
+            # Comments count on purpose: a return with a line marker of its own is the later source line
             if len(true_block.statements) <= len(false_block.statements):
                 if_stmt = HLILIf(condition, true_block, None)
                 target_block.add_statement(if_stmt)
@@ -1101,8 +1109,8 @@ class MLILToHLILConverter:
 
     @classmethod
     def _statement_count(cls, block: HLILBlock) -> int:
-        '''Statements in block, nested ones included'''
-        return sum(1 + sum(cls._statement_count(sub) for sub in sub_blocks(stmt)) for stmt in block.statements)
+        '''Statements in block, nested ones included and comments left out'''
+        return sum(1 + sum(cls._statement_count(sub) for sub in sub_blocks(stmt)) for stmt in code_statements(block))
 
     def _falls_out_to(self, block_idx: int) -> bool:
         '''Whether falling out of the current branch reaches pending merge block_idx: it has to be
@@ -1207,7 +1215,7 @@ class MLILToHLILConverter:
         (used by _process_loop fallbacks to avoid bouncing back).
         '''
         while True:
-            block_idx = self._skip_passthrough_blocks(block_idx, stop_at)
+            block_idx = self._skip_passthrough_blocks(block_idx, stop_at, target_block)
 
             if block_idx >= len(self.mlil_func.basic_blocks):
                 return None
@@ -1274,14 +1282,8 @@ class MLILToHLILConverter:
             self.visited_blocks.add(block_idx)
             self.globally_processed.add(block_idx)
 
-            self.current_block_idx = block_idx
+            self._convert_body(block_idx, target_block)
             mlil_block = self.mlil_func.basic_blocks[block_idx]
-
-            for instr_idx, instr in enumerate(mlil_block.instructions[:-1]):
-                self.current_instr_idx = instr_idx
-                stmts = self._convert_instruction(instr, block_idx, instr_idx)
-                for stmt in stmts:
-                    target_block.add_statement(stmt)
 
             if not mlil_block.instructions:
                 return None
@@ -1329,6 +1331,15 @@ class MLILToHLILConverter:
         '''Propagate source address info from MLIL to HLIL'''
         hlil_instr.address = mlil_instr.address
         hlil_instr.mlil_index = mlil_instr.inst_index
+
+    def _convert_body(self, block_idx: int, target_block: HLILBlock) -> None:
+        '''Convert block_idx's instructions before its last one into target_block, in that block's context'''
+        self.current_block_idx = block_idx
+
+        for instr_idx, instr in enumerate(self.mlil_func.basic_blocks[block_idx].instructions[:-1]):
+            self.current_instr_idx = instr_idx
+            for stmt in self._convert_instruction(instr, block_idx, instr_idx):
+                target_block.add_statement(stmt)
 
     def _convert_instruction(self, instr: MediumLevelILInstruction,
                               block_idx: int, instr_idx: int) -> List[HLILStatement]:

@@ -73,6 +73,7 @@ __all__ = [
     'HLILComment',
 
     # Shape helpers
+    'code_statements',
     'sole_statement',
     'split_else_if_arm',
     'unwrap_address_taken_var',

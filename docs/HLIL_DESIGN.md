@@ -204,17 +204,20 @@ Removing CFG edges creates a representational constraint: HLIL has no goto node.
 become code after an enclosing construct, but a body reached independently from several conditions
 cannot always be expressed that way. The converter may reconstruct that region again (a loop
 entered again is rebuilt whole), bounded by `CLONE_STATEMENT_BUDGET` statements per function -
-nested statements counted, a region repeated inside another charged once - and
-`CLONE_MAX_REGION_BLOCKS` blocks per region (both overridable in the converter's constructor, for
-tests). A merge that falling out of a branch would not reach (a loop entered since, or a nearer merge
-in between) is repeated the same way. A jump it cannot express - a region it may not repeat - becomes an
-`HLILUnstructured` node rather than a fallthrough to whatever follows: the path ends there, visibly.
+nested statements counted, comments not (a line marker never decides what is repeated), a region
+repeated inside another charged once - and `CLONE_MAX_REGION_BLOCKS` blocks per region (both
+overridable in the converter's constructor, for tests). A merge that falling out of a branch would
+not reach (a loop entered since, or a nearer merge in between) is repeated the same way. A jump it
+cannot express - a region it may not repeat - becomes an `HLILUnstructured` node rather than a
+fallthrough to whatever follows: the path ends there, visibly.
 
 Nested loop exits are represented with optional labels. The converter maintains a loop stack; a
 jump to an active loop header becomes `continue`, and a jump to its selected exit becomes `break` -
 also through goto-only blocks, since the exit is compared after skipping them, while a loop header
-is never skipped. When an edge targets an outer rather than the innermost loop, the outer loop and
-transfer receive a generated label.
+is never skipped. A skipped block's line markers print where its code runs, once per copy; those of
+the goto-only blocks after a loop's chosen exit follow the loop, for every way out. When an edge
+targets an outer rather than the innermost loop, the outer loop and transfer receive a generated
+label.
 
 ## MLIL → HLIL Pipeline
 

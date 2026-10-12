@@ -1,17 +1,18 @@
 '''Small MLIL CFGs for HLIL structuring tests, and a trace oracle that runs MLIL and HLIL side by side.
 
-A block calls named functions and ends in a return, a goto, or an if testing a parameter or a
-constant. Run for one assignment of the parameters, a function gives the calls it makes, in
-order, and how it ends. Structuring must keep that for every assignment; an unstructured-jump
-node may cut a run short, but only where the MLIL run jumps to the node's target.
+A block calls named functions, may carry line markers, and ends in a return, a goto, or an if
+testing a parameter or a constant. Run for one assignment of the parameters, a function gives the
+calls it makes, in order, and how it ends. Structuring must keep that for every assignment; an
+unstructured-jump node may cut a run short, but only where the MLIL run jumps to the node's target.
 
 Such a run is decided by its parameters alone, so it either ends within one visit per block or
 loops forever: with FUEL well above that, both levels run out of fuel exactly when they loop.
 '''
-from itertools import product
-from typing import Dict, List, Optional, Sequence, Tuple
+from itertools import count, product
+from typing import Dict, List, Optional, Sequence, Tuple, Union
 
-from ir.mlil.mlil import MediumLevelILFunction, MLILIf, MLILGoto, MLILRet, MLILConst, MLILVar, MLILCall, MLILEq
+from ir.mlil.mlil import (MediumLevelILFunction, MLILIf, MLILGoto, MLILRet, MLILConst, MLILVar, MLILCall, MLILEq,
+                          MLILDebug)
 from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLILDoWhile, HLILSwitch, HLILBreak,
                           HLILContinue, HLILReturn, HLILUnstructured, HLILExprStmt, HLILCall, HLILConst, HLILVar,
                           HLILUnaryOp, HLILBinaryOp, UnaryOp, BinaryOp, COMPARISON_FUNCTIONS, iter_tree,
@@ -21,10 +22,12 @@ from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from tests.shared.ir_utils import connect
 
 FUEL = 400
+MARKER_FIRST_LINE = 1000
 
+# A block's list holds the functions it calls and, as ints, its line markers (debug.line(N)), in order.
 # Terminals: ('ret', value), ('goto', label), ('if', condition, true label, false label); a condition is
 # a parameter name, a constant, or ('==', constant, constant)
-BlockSpec = Tuple[Sequence[str], tuple]
+BlockSpec = Tuple[Sequence[Union[str, int]], tuple]
 
 # Shapes shared by the structuring and path-check tests
 
@@ -57,15 +60,15 @@ def _condition(cond, variables: Dict[str, object]):
 
 
 def build_function(name: str, blocks: Dict[str, BlockSpec]) -> MediumLevelILFunction:
-    '''An MLIL function from {label: (calls, terminal)}; the first block is the entry'''
+    '''An MLIL function from {label: (calls and markers, terminal)}; the first block is the entry'''
     func = MediumLevelILFunction(name, 0)
     params = sorted({t[1] for _, t in blocks.values() if t[0] == 'if' and isinstance(t[1], str)})
     variables = {p: func.get_or_create_parameter(i + 1, p) for i, p in enumerate(params)}
     mlil_blocks = {label: func.create_block(label = label) for label in blocks}
 
-    for label, (calls, terminal) in blocks.items():
+    for label, (items, terminal) in blocks.items():
         block = mlil_blocks[label]
-        instructions = [MLILCall(call, []) for call in calls]
+        instructions = [MLILDebug('line', item) if isinstance(item, int) else MLILCall(item, []) for item in items]
 
         if terminal[0] == 'ret':
             instructions.append(MLILRet(MLILConst(terminal[1])))
@@ -256,3 +259,18 @@ def unstructured_nodes(hlil: HighLevelILFunction, reachable_only: bool = True) -
 def calls_emitted(hlil: HighLevelILFunction, name: str) -> int:
     '''How many times the HLIL text contains a call to name'''
     return sum(1 for node in iter_tree(hlil.body) if isinstance(node, HLILCall) and node.func_name == name)
+
+
+def with_markers(blocks: Dict[str, BlockSpec], every_block: bool = False) -> Dict[str, BlockSpec]:
+    '''blocks with a line marker before each call; with every_block also one in each block making no call
+    (goto-only blocks, bare tests)'''
+    lines = count(MARKER_FIRST_LINE)
+    marked = {}
+    for label, (calls, terminal) in blocks.items():
+        items = [item for call in calls for item in (next(lines), call)]
+        if every_block and not calls:
+            items.append(next(lines))
+
+        marked[label] = (items, terminal)
+
+    return marked

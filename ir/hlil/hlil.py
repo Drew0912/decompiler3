@@ -713,12 +713,17 @@ def constant_truth(cond: HLILExpression) -> Optional[bool]:
     return None
 
 
+def code_statements(block: HLILBlock) -> List[HLILStatement]:
+    '''block's statements without its comments'''
+    return [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
+
+
 def sole_statement(block: Optional[HLILBlock]) -> Optional[HLILStatement]:
     '''The one non-comment statement in block, or None when it has none or several'''
     if block is None:
         return None
 
-    rest = [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
+    rest = code_statements(block)
     return rest[0] if len(rest) == 1 else None
 
 

@@ -15,7 +15,10 @@ kind, and every test runs the result against its MLIL for every parameter assign
   reachability, its handling in the passes, its rendering and the validator's report;
 - converter details: a join after an if emitted once, a loop of goto-only blocks (fuzz seed 1208), a
   one-block loop, the locals declared (each once, parameters excluded), loop labels, a logical not,
-  provenance.
+  provenance;
+- line markers: a goto-only block's markers printed where its code runs, once (a loop exit's after the
+  loop), and markers never count toward the clone budget; of two return arms, one whose return has a line
+  marker of its own goes after the if (the later source line, chr0003).
 '''
 
 from pathlib import Path
@@ -29,8 +32,8 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLILDoWhile, HLILSwitch, HLILSwitchCase,
                           HLILBreak, HLILContinue, HLILReturn, HLILUnstructured, HLILAssign, HLILExprStmt, HLILCall,
-                          HLILConst, HLILVar, HLILVariable, HLILBinaryOp, HLILUnaryOp, BinaryOp, UnaryOp,
-                          constant_truth, reachable_statements, iter_tree)
+                          HLILConst, HLILVar, HLILVariable, HLILBinaryOp, HLILUnaryOp, HLILComment, BinaryOp,
+                          UnaryOp, constant_truth, reachable_statements, iter_tree)
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter, constant_condition_truth, convert_mlil_to_hlil
 from ir.mlil.mlil import (
@@ -46,7 +49,7 @@ from hlil_path_check import check_function
 from ir_semantic_validator import compare_mlil_hlil
 from tests.shared.hlil_cfg_utils import (
     EARLY_EXIT, SHARED_LOOP, SHARED_LOOP_COPY_STATEMENTS, build_function, to_hlil, structure, classify, hlil_run,
-    parameters, unstructured_nodes, calls_emitted,
+    parameters, unstructured_nodes, calls_emitted, with_markers,
 )
 from tests.shared.ir_utils import connect
 
@@ -248,6 +251,84 @@ BYPASS_TO_OUTER_MERGE = {
 }
 BYPASS_TO_OUTER_MERGE_CHARGE = 3
 
+# Line markers in goto-only blocks: a source line that compiled to nothing but a jump
+LEAD_LINE = 10
+NEXT_LINE = 11
+
+# Two of them in a row, falling into a loop label
+MARKERS_INTO_LOOP = {
+    'E':  ([LEAD_LINE], ('goto', 'E2')),
+    'E2': ([NEXT_LINE], ('goto', 'H')),
+    'H':  (['body'], ('if', 'p', 'X', 'H')),
+    'X':  (['after'], ('ret', 0)),
+}
+
+# An arm holding nothing else (btlcom ChainEnemyPos)
+MARKER_ONLY_ARM = {
+    'C': (['pre'], ('if', 'p', 'T', 'F')),
+    'T': ([LEAD_LINE], ('goto', 'M')),
+    'F': (['f'], ('goto', 'M')),
+    'M': (['m'], ('ret', 0)),
+}
+
+# A continue through its own marker block
+MARKED_CONTINUE = {
+    'E': (['pre'], ('goto', 'H')),
+    'H': (['body'], ('if', 'p', 'K', 'C')),
+    'K': ([LEAD_LINE], ('goto', 'H')),
+    'C': (['more'], ('if', 'q', 'X', 'H')),
+    'X': (['after'], ('ret', 0)),
+}
+
+# A break through its own marker block, the loop's exit; a second one reaches it through another marker block
+MARKED_BREAK = {
+    'E': (['pre'], ('goto', 'H')),
+    'H': (['body'], ('if', 'p', 'B', 'C')),
+    'B': ([LEAD_LINE], ('goto', 'X')),
+    'C': (['more'], ('if', 'q', 'K', 'H')),
+    'K': ([NEXT_LINE], ('goto', 'B')),
+    'X': (['after'], ('ret', 0)),
+}
+
+# The jump from B1 to the repeated loop B3 runs through a marker block
+MARKER_BEFORE_REPEAT = {
+    'B0': (['A0'], ('if', 'p0', 'B3', 'B1')),
+    'B1': (['A1'], ('if', 'p1', 'B2', 'K')),
+    'K':  ([LEAD_LINE], ('goto', 'B3')),
+    'B2': (['A2'], ('ret', 2)),
+    'B3': (['A3'], ('if', 'p3', 'B3', 'B2')),
+}
+
+# Two return arms with equal code; the true one's return has a line marker of its own (chr0003)
+MARKED_TRUE_RETURN_ARM = {
+    'C': ([], ('if', 'a', 'T', 'F')),
+    'T': ([LEAD_LINE, 'one'], ('ret', 1)),
+    'F': (['zero'], ('ret', 0)),
+}
+
+# A labelled break through the outer loop's exit EO; the inner loop leaves through EI
+BREAK_THROUGH_OUTER_EXIT = {
+    'E':  (['pre'], ('goto', 'O')),
+    'O':  (['outer'], ('if', 'a', 'EO', 'I')),
+    'EO': ([LEAD_LINE], ('goto', 'X')),
+    'I':  (['inner'], ('if', 'p', 'EI', 'C')),
+    'EI': ([NEXT_LINE], ('goto', 'D')),
+    'C':  (['more'], ('if', 'q', 'EO', 'I')),
+    'D':  (['tail'], ('goto', 'O')),
+    'X':  (['after'], ('ret', 0)),
+}
+
+# The outer loop's exit chain E1 -> E2 runs through the inner loop's exit E2
+OUTER_EXIT_THROUGH_INNER_EXIT = {
+    'E':  (['pre'], ('goto', 'O')),
+    'O':  (['outer'], ('if', 'a', 'E1', 'I')),
+    'E1': ([NEXT_LINE], ('goto', 'E2')),
+    'I':  (['inner'], ('if', 'p', 'E2', 'C')),
+    'C':  (['more'], ('if', 'q', 'O', 'I')),
+    'E2': ([LEAD_LINE], ('goto', 'X')),
+    'X':  (['after'], ('ret', 0)),
+}
+
 
 def var(name: str) -> HLILVar:
     return HLILVar(HLILVariable(name))
@@ -261,6 +342,27 @@ def function(*statements) -> HighLevelILFunction:
     func = HighLevelILFunction('f')
     func.body = HLILBlock(list(statements))
     return func
+
+
+def marker(line: int) -> str:
+    '''The comment text of the line marker line(line)'''
+    return f'line({line})'
+
+
+def outline(statements: list) -> list:
+    '''Each statement as its comment's text, or else its node type's name'''
+    return [stmt.text if isinstance(stmt, HLILComment) else type(stmt).__name__ for stmt in statements]
+
+
+def blocks_holding(hlil: HighLevelILFunction, line: int) -> list:
+    '''The blocks holding the marker line(line) as one of their own statements'''
+    return [node for node in iter_tree(hlil.body) if isinstance(node, HLILBlock) and
+            marker(line) in outline(node.statements)]
+
+
+def marker_count(root, line: int) -> int:
+    '''How many times root and everything below it hold the marker line(line)'''
+    return sum(1 for node in iter_tree(root) if isinstance(node, HLILComment) and node.text == marker(line))
 
 
 class TestSelfLoopBody(unittest.TestCase):
@@ -341,6 +443,11 @@ class TestUnstructuredNodes(unittest.TestCase):
         self.assertEqual(classify(func, hlil)[0], 'loud')
         self.assertEqual([n.reason for n in unstructured_nodes(hlil)],
                          [f'{SHARED_LOOP_COPY_STATEMENTS} statements over budget'])
+
+    def test_line_markers_cost_no_budget(self):
+        func, hlil = structure(with_markers(SHARED_LOOP), clone_budget = SHARED_LOOP_COPY_STATEMENTS)
+        self.assertEqual(classify(func, hlil), ('ok', None))
+        self.assertEqual(calls_emitted(hlil, 'A3'), 2)
 
     def test_region_repeated_inside_another_is_charged_once(self):
         func, hlil = structure(NESTED_REPEATS, clone_budget = NESTED_REPEATS_CHARGE)
@@ -644,6 +751,69 @@ class TestProvenance(unittest.TestCase):
         for node in nodes:
             self.assertIn(node.address, branches)
             self.assertEqual(node.mlil_index, branches[node.address])
+
+
+class TestLineMarkersInGotoOnlyBlocks(unittest.TestCase):
+    '''A block that only jumps on keeps its line markers, printed where its code runs, once'''
+
+    def structure_ok(self, blocks) -> HighLevelILFunction:
+        func, hlil = structure(blocks)
+        self.assertEqual(classify(func, hlil), ('ok', None))
+        return hlil
+
+    def test_markers_falling_into_a_loop_stay_before_it_in_order(self):
+        statements = self.structure_ok(MARKERS_INTO_LOOP).body.statements
+
+        self.assertEqual(outline(statements[:3]), [marker(LEAD_LINE), marker(NEXT_LINE), 'HLILWhile'])
+
+    def test_marker_before_a_repeated_region_stays_before_the_copy(self):
+        blocks = blocks_holding(self.structure_ok(MARKER_BEFORE_REPEAT), LEAD_LINE)
+
+        self.assertEqual([outline(block.statements) for block in blocks], [[marker(LEAD_LINE), 'HLILWhile']])
+
+    def test_arm_that_is_only_a_marker_keeps_it(self):
+        [arm_if] = [stmt for stmt in self.structure_ok(MARKER_ONLY_ARM).body.statements if isinstance(stmt, HLILIf)]
+
+        self.assertEqual(outline(arm_if.true_block.statements), [marker(LEAD_LINE)])
+
+    def test_continue_through_a_marker_block_keeps_it_before_the_continue(self):
+        blocks = blocks_holding(self.structure_ok(MARKED_CONTINUE), LEAD_LINE)
+
+        self.assertEqual([outline(block.statements) for block in blocks], [[marker(LEAD_LINE), 'HLILContinue']])
+
+    def test_break_through_the_loop_exit_gives_its_marker_once_after_the_loop(self):
+        hlil = self.structure_ok(MARKED_BREAK)
+        [loop_at] = [i for i, stmt in enumerate(hlil.body.statements) if isinstance(stmt, HLILWhile)]
+
+        self.assertEqual(marker_count(hlil.body, LEAD_LINE), 1)
+        self.assertEqual(outline(hlil.body.statements[loop_at:loop_at + 2]), ['HLILWhile', marker(LEAD_LINE)])
+        self.assertEqual([outline(block.statements) for block in blocks_holding(hlil, NEXT_LINE)],
+                         [[marker(NEXT_LINE), 'HLILBreak']])
+
+    def test_labelled_break_through_the_outer_exit_gives_its_marker_once_after_the_outer_loop(self):
+        hlil = self.structure_ok(BREAK_THROUGH_OUTER_EXIT)
+        [outer] = [stmt for stmt in hlil.body.statements if isinstance(stmt, HLILWhile)]
+
+        self.assertEqual(marker_count(hlil.body, LEAD_LINE), 1)
+        self.assertEqual(marker_count(outer, LEAD_LINE), 0)
+
+    def test_exit_chain_through_an_inner_loop_exit_gives_each_marker_once(self):
+        hlil = self.structure_ok(OUTER_EXIT_THROUGH_INNER_EXIT)
+        [outer] = [stmt for stmt in hlil.body.statements if isinstance(stmt, HLILWhile)]
+
+        self.assertEqual([marker_count(hlil.body, line) for line in (NEXT_LINE, LEAD_LINE)], [1, 1])
+        self.assertEqual([marker_count(outer, line) for line in (NEXT_LINE, LEAD_LINE)], [0, 0])
+
+
+
+class TestEarlyReturnArms(unittest.TestCase):
+    '''Of two arms that both return, the shorter stays in the if - comments counted, on purpose'''
+
+    def test_arm_whose_return_has_its_own_marker_goes_after_the_if(self):
+        func, hlil = structure(MARKED_TRUE_RETURN_ARM)
+
+        self.assertEqual(classify(func, hlil), ('ok', None))
+        self.assertEqual(outline(hlil.body.statements), ['HLILIf', marker(LEAD_LINE), 'HLILExprStmt', 'HLILReturn'])
 
 
 if __name__ == '__main__':

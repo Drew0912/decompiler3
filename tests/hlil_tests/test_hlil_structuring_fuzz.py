@@ -5,7 +5,8 @@ Each CFG has 4-10 blocks ending in a return, a goto or an if; most blocks make o
 gotos only jump on (passthrough chains) and some ifs test a constant (dead arms). For every
 assignment of the parameters the HLIL must make the same calls and end the same way as the
 MLIL, or stop at an unstructured-jump node exactly where the MLIL run jumps to its target
-(hlil_cfg_utils.classify). tools/hlil_path_check.py must agree with that verdict.
+(hlil_cfg_utils.classify). tools/hlil_path_check.py must agree with that verdict. Line markers in every
+block (goto-only blocks too) change no run and no node.
 
 Irreducible CFGs may need nodes (HLIL has no goto). A reducible one could always be structured,
 so a node there is a gap the converter still has: the seeds that get one today are pinned below,
@@ -27,7 +28,7 @@ from hlil_path_check import check_function
 from ir.hlil.hlil import (
     HLILBreak, HLILCall, HLILContinue, HLILDoWhile, HLILIf, HLILReturn, HLILUnstructured, HLILWhile, iter_tree,
 )
-from tests.shared.hlil_cfg_utils import BlockSpec, build_function, to_hlil, classify, unstructured_nodes
+from tests.shared.hlil_cfg_utils import BlockSpec, build_function, to_hlil, classify, unstructured_nodes, with_markers
 
 SEEDS = 1000
 MIN_BLOCKS = 4
@@ -166,6 +167,16 @@ class TestStructuringFuzz(unittest.TestCase):
     def test_nodes_on_reducible_cfgs_are_pinned(self):
         reducible_with_nodes = [seed for seed, blocks, _, _, _, nodes in self.results if nodes and is_reducible(blocks)]
         self.assertEqual(reducible_with_nodes, PINNED_REDUCIBLE_WITH_NODES)
+
+    def test_markers_in_every_block_change_no_run(self):
+        changed = []
+        for seed, blocks, verdict, env, _, nodes in self.results:
+            func = build_function(f'fuzz_{seed}', with_markers(blocks, every_block = True))
+            hlil = to_hlil(func)
+            if classify(func, hlil) != (verdict, env) or len(unstructured_nodes(hlil)) != len(nodes):
+                changed.append(seed)
+
+        self.assertEqual(changed, [])
 
 
 SHAPE_KINDS = (HLILIf, HLILWhile, HLILDoWhile, HLILBreak, HLILContinue, HLILReturn, HLILUnstructured, HLILCall)
