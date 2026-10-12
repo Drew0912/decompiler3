@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from abc import abstractmethod
 from typing import Any, Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
 
 from common import *
@@ -137,7 +136,6 @@ class MediumLevelILInstruction(ILInstruction):
     def operation_name(self) -> str:
         return self.operation.name.replace('MLIL_', '')
 
-    @abstractmethod
     def __str__(self) -> str:
         raise NotImplementedError
 
@@ -526,7 +524,6 @@ class MediumLevelILCall(MediumLevelILStatement):
 
         return f'{self.output} = {call_str}'
 
-    @abstractmethod
     def rebuild(self, args: List[MediumLevelILInstruction]) -> 'MediumLevelILCall':
         '''Copy of this call with new arguments, keeping target, output, clobbers_registers and metadata'''
         raise NotImplementedError

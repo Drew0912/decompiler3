@@ -1,6 +1,5 @@
 '''LLIL - Stack-based low-level IR'''
 
-from abc import abstractmethod
 from typing import Any, List, Optional, Union, TYPE_CHECKING
 from common import *
 from ir.core import *
@@ -90,9 +89,8 @@ class LowLevelILInstruction(ILInstruction):
         '''Get operation name without LLIL_ prefix (e.g., 'LLIL_ADD' -> 'ADD')'''
         return self.operation.name.replace('LLIL_', '')
 
-    @abstractmethod
     def __str__(self) -> str:
-        pass
+        raise NotImplementedError
 
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__}: {str(self)}>'

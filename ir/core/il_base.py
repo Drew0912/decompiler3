@@ -1,12 +1,10 @@
 '''Base IL traits for LLIL, MLIL, HLIL'''
 
-from abc import ABC
-
 
 UNASSIGNED_INST_INDEX = -1   # Index before one is assigned (inst_index, llil_index, mlil_index)
 
 
-class ILInstruction(ABC):
+class ILInstruction:
     '''Base class for all IL instructions'''
     pass
 
