@@ -590,33 +590,33 @@ class ScpWriter:
                 self.fs.Write(ScpParamFlags(typ = param.annotation).to_bytes())
 
     def _write_debug_records(self):
-        records = [record for f in self.function_table for record in f.debug_records]
-        info_offset = self.fs.Position + len(records) * ScpFunctionCallDebugInfo.SIZE
+        """Each function's records in table order, then every record's args in the same order; both sections are built
+        in memory, so each offset is its section's start plus the bytes before it"""
+        word = ScpFunctionCallDebugInfoArg.WORD
+        record_count = sum(len(f.debug_records) for f in self.function_table)
+        records_start = self.fs.Position
+        args_start = records_start + record_count * ScpFunctionCallDebugInfo.SIZE
+        headers = bytearray()
+        args = bytearray()
 
         for f in self.function_table:
-            f.entry.debug_info_offset = self.fs.Position
+            f.entry.debug_info_offset = records_start + len(headers)
             f.entry.debug_info_count = len(f.debug_records)
 
             for record in f.debug_records:
-                info = ScpFunctionCallDebugInfo()
-                info.func_id = record.func_id
-                info.call_type = record.call_type
-                info.arg_count = len(record.args)
-                info.info_offset = info_offset
-                self.fs.Write(info.to_bytes())
+                headers += ScpFunctionCallDebugInfo.pack(record.func_id, record.call_type, len(record.args),
+                                                         args_start + len(args))
+                for arg in record.args:
+                    if arg.string is not None:
+                        arg.string.xref_offsets.append(args_start + len(args))
+                        args += word.pack(UNRESOLVED_STRING_OFFSET)
 
-                info_offset += info.arg_count * ScpFunctionCallDebugInfoArg.SIZE
+                    else:
+                        args += arg.value.to_bytes()
 
-        for record in records:
-            for arg in record.args:
-                if arg.string is not None:
-                    arg.string.xref_offsets.append(self.fs.Position)
-                    self.fs.WriteULong(UNRESOLVED_STRING_OFFSET)
+                    args += word.pack(arg.type)
 
-                else:
-                    self.fs.Write(arg.value.to_bytes())
-
-                self.fs.WriteULong(arg.type)
+        self.fs.Write(headers, args)
 
     def _write_global_vars(self):
         for var in self.global_vars:

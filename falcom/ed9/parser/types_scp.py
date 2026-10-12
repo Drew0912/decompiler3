@@ -389,6 +389,7 @@ class ScpFunctionEntry(StrictBase):
 
 class ScpFunctionCallDebugInfoArg(StrictBase):
     SIZE                = 0x08
+    WORD                = fileio.struct_layout('L')     # each of its two words: the value, then the type
     NON_CONSTANT_VALUE  = RawInt(0)     # value of every arg but a Constant (wrap in ScpValue)
 
     class Type(IntEnum2):
@@ -411,6 +412,7 @@ class ScpFunctionCallDebugInfoArg(StrictBase):
 
 class ScpFunctionCallDebugInfo(StrictBase):
     SIZE        = 0x0C
+    LAYOUT      = fileio.struct_layout('LHHL')      # func_id, call_type, arg_count, info_offset
     NO_FUNC_ID  = 0xFFFFFFFF    # func_id of script calls and syscalls
 
     class CallType(IntEnum2):
@@ -437,12 +439,12 @@ class ScpFunctionCallDebugInfo(StrictBase):
         self.info_offset = fs.ReadULong()
 
     def to_bytes(self) -> bytes:
-        return (
-            utils.int_to_bytes(self.func_id, 4) +
-            utils.int_to_bytes(self.call_type, 2) +
-            utils.int_to_bytes(self.arg_count, 2) +
-            utils.int_to_bytes(self.info_offset, 4)
-        )
+        return self.pack(self.func_id, self.call_type, self.arg_count, self.info_offset)
+
+    @classmethod
+    def pack(cls, func_id: int, call_type: int, arg_count: int, info_offset: int) -> bytes:
+        """to_bytes from the fields, without building a record"""
+        return cls.LAYOUT.pack(func_id, call_type, arg_count, info_offset)
 
     def arg_offsets(self) -> range:
         """File offset of each ScpFunctionCallDebugInfoArg of this record"""

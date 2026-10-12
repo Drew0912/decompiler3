@@ -23,6 +23,12 @@ _ENDIAN_NAMES = {
 }
 
 
+def struct_layout(fmt: str, endian: str = None) -> struct.Struct:
+    '''fmt as a struct in endian's byte order (default_endian() when None), to pack or unpack many values at once'''
+    endian = endian or default_endian()
+    return struct.Struct(_ENDIAN_NAMES.get(endian, endian) + fmt)
+
+
 class _PositionSaver:
     '''Restores the stream position on exit'''
 
@@ -46,7 +52,7 @@ class FileStream:
         endian = endian or default_endian()
         self._stream = None
         self._endian = _ENDIAN_NAMES.get(endian, endian)
-        self._structs = {fmt: struct.Struct(self._endian + fmt) for fmt in self.STRUCT_FORMATS}
+        self._structs = {fmt: struct_layout(fmt, endian) for fmt in self.STRUCT_FORMATS}
         self._encoding = encoding or default_encoding()
 
         if file is not None:
