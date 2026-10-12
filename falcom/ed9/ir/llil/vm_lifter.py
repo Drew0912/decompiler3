@@ -151,9 +151,7 @@ class ED9VMLifter:
         block_map: Dict[int, BasicBlock],
         llil_blocks: Dict[int, LowLevelILBasicBlock],
     ) -> None:
-        opcode = ED9Opcode(inst.opcode)
-
-        match opcode:
+        match inst.opcode:
             case ED9Opcode.PUSH_INT:
                 builder.push_int(int(inst.operands[0].value))
 
@@ -176,6 +174,36 @@ class ED9VMLifter:
             case ED9Opcode.PUSH_CALLER_FRAME:
                 target = self._require_block(inst.operands[0].value, block_map, llil_blocks)
                 builder.push_caller_frame(target)
+
+            case ED9Opcode.DEBUG_SET_LINENO:
+                builder.debug_line(int(inst.operands[0].value))
+
+            case ED9Opcode.DEBUG_LOG:
+                builder.debug_log(int(inst.operands[0].value))
+
+            case ED9Opcode.CALL:
+                func_id = int(inst.operands[0].value)
+                target = self._resolve_call_target(func_id)
+                argc = self._pop_count(inst)
+                builder.call(target, argc)
+
+            case ED9Opcode.CALL_SCRIPT:
+                module = self._must_str(inst.operands[0].value)
+                func_name = self._must_str(inst.operands[1].value)
+                argc = int(inst.operands[2].value)
+                builder.call_script(module, func_name, argc)
+
+            case ED9Opcode.CALL_SCRIPT_NO_RETURN:
+                module = self._must_str(inst.operands[0].value)
+                func_name = self._must_str(inst.operands[1].value)
+                argc = int(inst.operands[2].value)
+                builder.call_script_no_return(module, func_name, argc)
+
+            case ED9Opcode.SYSCALL:
+                subsystem = int(inst.operands[0].value)
+                cmd = int(inst.operands[1].value)
+                argc = int(inst.operands[2].value)
+                builder.syscall(subsystem, cmd, argc)
 
             case ED9Opcode.LOAD_STACK:
                 builder.load_stack(int(inst.operands[0].value))
@@ -209,7 +237,7 @@ class ED9VMLifter:
                 builder.set_global(int(inst.operands[0].value))
 
             case _ if inst.descriptor.kind == InstructionKind.BINARY:
-                self.BINARY_BUILDER_METHODS[opcode](builder)
+                self.BINARY_BUILDER_METHODS[inst.opcode](builder)
 
             case ED9Opcode.NEG:
                 builder.neg()
@@ -236,40 +264,11 @@ class ED9VMLifter:
 
                 builder.pop_jmp_not_zero(true_block, false_block)
 
-            case ED9Opcode.CALL:
-                func_id = int(inst.operands[0].value)
-                target = self._resolve_call_target(func_id)
-                argc = self._pop_count(inst)
-                builder.call(target, argc)
-
-            case ED9Opcode.CALL_SCRIPT:
-                module = self._must_str(inst.operands[0].value)
-                func_name = self._must_str(inst.operands[1].value)
-                argc = int(inst.operands[2].value)
-                builder.call_script(module, func_name, argc)
-
-            case ED9Opcode.CALL_SCRIPT_NO_RETURN:
-                module = self._must_str(inst.operands[0].value)
-                func_name = self._must_str(inst.operands[1].value)
-                argc = int(inst.operands[2].value)
-                builder.call_script_no_return(module, func_name, argc)
-
-            case ED9Opcode.SYSCALL:
-                subsystem = int(inst.operands[0].value)
-                cmd = int(inst.operands[1].value)
-                argc = int(inst.operands[2].value)
-                builder.syscall(subsystem, cmd, argc)
-
-            case ED9Opcode.DEBUG_SET_LINENO:
-                builder.debug_line(int(inst.operands[0].value))
-
-            case ED9Opcode.DEBUG_LOG:
-                builder.debug_log(int(inst.operands[0].value))
-
             case ED9Opcode.RETURN:
                 builder.ret()
 
             case _:
+                opcode = ED9Opcode(inst.opcode)
                 raise NotImplementedError(f'Unhandled opcode: {opcode.name} (0x{opcode.value:02X})')
 
     def _require_block(
