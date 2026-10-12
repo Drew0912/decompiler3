@@ -52,8 +52,9 @@ class OperandFormat:
     }
 
     def __init__(self, opr_type: OperandType, is_hex: bool = False):
-        self.type   = opr_type
-        self.is_hex = is_hex
+        self.type        = opr_type
+        self.is_hex      = is_hex
+        self.value_range = self.integer_range(opr_type)
 
     def __str__(self):
         return repr(self.type)
@@ -65,14 +66,14 @@ class OperandFormat:
     def size(self):
         return self.size_table.get(self.type)
 
-    @property
-    def value_range(self) -> range | None:
-        """The integers this type reads back, from its width and signedness; None for a non-integer type"""
-        if self.type not in SIGNED_INTEGER_TYPES | UNSIGNED_INTEGER_TYPES:
+    @classmethod
+    def integer_range(cls, opr_type: OperandType) -> range | None:
+        """The integers a type reads back, from its width and signedness; None for a non-integer type"""
+        if opr_type not in SIGNED_INTEGER_TYPES | UNSIGNED_INTEGER_TYPES:
             return None
 
-        bits = self.size * fileio.BITS_PER_BYTE
-        if self.type in SIGNED_INTEGER_TYPES:
+        bits = cls.size_table[opr_type] * fileio.BITS_PER_BYTE
+        if opr_type in SIGNED_INTEGER_TYPES:
             return range(-(1 << (bits - 1)), 1 << (bits - 1))
 
         return range(1 << bits)
