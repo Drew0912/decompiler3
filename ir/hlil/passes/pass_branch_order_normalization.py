@@ -19,7 +19,6 @@ emitted in, so it is optional - see `normalize_branch_order` in
 falcom/ed9/ir/hlil/hlil_converter.py.
 '''
 
-import re
 from typing import Optional
 
 from ir.pipeline import Pass
@@ -29,7 +28,6 @@ from ..hlil import (
     HLILBinaryOp,
     HLILBlock,
     HLILCall,
-    HLILComment,
     HLILExternCall,
     HLILIf,
     HLILSyscall,
@@ -37,13 +35,11 @@ from ..hlil import (
     HLILVar,
     UnaryOp,
     COMPARISON_OPS,
+    line_marker_number,
     negate_condition,
     sole_statement,
     sub_blocks,
 )
-
-
-LINE_COMMENT = re.compile(r'line\((\d+)\)')
 
 
 class BranchOrderNormalizationPass(Pass):
@@ -242,10 +238,9 @@ class BranchOrderNormalizationPass(Pass):
             return None
 
         for stmt in block.statements:
-            if isinstance(stmt, HLILComment):
-                match = LINE_COMMENT.search(stmt.text)
-                if match:
-                    return int(match.group(1))
+            line = line_marker_number(stmt)
+            if line is not None:
+                return line
 
             for child in sub_blocks(stmt):
                 line = self._first_line(child)

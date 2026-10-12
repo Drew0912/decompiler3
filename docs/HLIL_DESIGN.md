@@ -37,7 +37,7 @@ work happen upstream; HLIL favors explicit tree ownership and straightforward co
 | `ir/hlil/mlil_to_hlil.py` | Generic MLIL → HLIL conversion, including CFG construction, call-result folding, loop/branch reconstruction, shared-region cloning, and variable declaration. |
 | `ir/hlil/structural_analysis.py` | Dominator calculation, natural-loop discovery, iterative region reduction, and merge-point queries used by the converter. |
 | `ir/hlil/hlil_formatter.py` | Debug formatter for rendering an HLIL tree. It is separate from the TypeScript code generator. |
-| `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: control-flow optimization, loop recovery, common-return extraction, dead-code elimination, and branch-order normalization. |
+| `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: control-flow optimization, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
 | `ir/hlil/hlil_passes.py` | Compatibility re-export of `ir/hlil/passes/`. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, formatter, converter, and passes. |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry point, `convert_falcom_mlil_to_hlil()`, and its pass ordering/configuration. |
@@ -116,9 +116,10 @@ recovered into `do-while` form (`HLIL_GUIDE.md`'s loop recovery section) keeps w
 `continue`/`break` targets for anything that names it from a nested construct.
 
 Comments are first-class statements rather than formatter-only annotations. In particular,
-`line(N)` comments carry source-order evidence used by `BranchOrderNormalizationPass`. The shared
-`split_else_if_arm()` helper also treats comments before a lone nested `HLILIf` as annotations for
-the next test, allowing both renderers to agree on `else if` shape.
+`line(N)` comments carry source-order evidence used by `BranchOrderNormalizationPass`; every reader
+that needs a marker's line number (that pass, `tools/ir_line_order_report.py`) takes it from
+`line_marker_number()`. The shared `split_else_if_arm()` helper also treats comments before a lone
+nested `HLILIf` as annotations for the next test, allowing both renderers to agree on `else if` shape.
 
 ## Variable Model
 
@@ -257,14 +258,18 @@ The production entry point is `convert_falcom_mlil_to_hlil()` in
 ```
 MLILToHLILPass → FalcomTypeInferencePass (when the script function is given) →
 ControlFlowOptimizationPass → LoopRecoveryPass → CommonReturnExtractionPass →
-DeadCodeEliminationPass → BranchOrderNormalizationPass (enabled by default)
+DeadCodeEliminationPass → BranchOrderNormalizationPass (enabled by default) →
+LineMarkerRemovalPass (only with line_markers off)
 ```
 
 The post-conversion passes operate on the tree, not on the original CFG. In architectural terms,
 they divide into shape recovery (`ControlFlowOptimizationPass`, `LoopRecoveryPass`), cleanup
 (`CommonReturnExtractionPass`, `DeadCodeEliminationPass`), and presentation-preserving ordering
-(`BranchOrderNormalizationPass`). The last pass is optional through `normalize_branch_order`
-because it deliberately prefers recovered source-line order over bytecode emission order.
+(`BranchOrderNormalizationPass`), which is optional through `normalize_branch_order` because it
+deliberately prefers recovered source-line order over bytecode emission order.
+`LineMarkerRemovalPass` runs after all of them and only with `line_markers` off: it drops the
+`line(N)` comments, then tidies the if arms left empty without changing what runs (a negated
+condition, swapped or nested arms); the code statements and their order are unchanged.
 
 HLIL has no copy-propagation pass: copy propagation happens in MLIL SSA optimization (the disabled
 HLIL `CopyPropagationPass` was removed on 2026-09-27). `FalcomTypeInferencePass` only sets parameter
@@ -309,6 +314,9 @@ Several dedicated HLIL unit-test files exist today:
 - `tests/hlil_tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared
   parameter flag gives, the declared flag winning over an inferred int/float variant, and default
   values still printed once.
+- `tests/hlil_tests/test_hlil_line_marker_removal.py` covers `line_marker_number`, `LineMarkerRemovalPass` (markers
+  go from every block, other comments stay, the arms left empty are tidied) and the `line_markers` flag (on by
+  default; off, it runs after branch-order normalization).
 
 These tests directly exercise important tree rewrites and structuring, but not every part of HLIL
 construction. `StructuralAnalyzer`'s own analyses (dominators, natural loops, region reduction),

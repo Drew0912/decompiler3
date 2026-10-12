@@ -147,7 +147,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if not (config.write_hlil_ts or config.write_ts):
                 continue
 
-            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
+            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func, line_markers = config.line_markers)
 
             unstructured_targets = [stmt.target for stmt in reachable_statements(hlil_func.body)
                                     if isinstance(stmt, HLILUnstructured)]

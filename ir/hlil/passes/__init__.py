@@ -6,6 +6,7 @@ from .pass_loop_recovery import LoopRecoveryPass
 from .pass_common_return_extraction import CommonReturnExtractionPass
 from .pass_dead_code_elimination import DeadCodeEliminationPass
 from .pass_branch_order_normalization import BranchOrderNormalizationPass
+from .pass_line_marker_removal import LineMarkerRemovalPass
 
 __all__ = [
     'MLILToHLILPass',
@@ -14,4 +15,5 @@ __all__ = [
     'CommonReturnExtractionPass',
     'DeadCodeEliminationPass',
     'BranchOrderNormalizationPass',
+    'LineMarkerRemovalPass',
 ]

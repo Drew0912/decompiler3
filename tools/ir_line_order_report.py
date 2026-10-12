@@ -27,7 +27,6 @@ Note: prefix with PYTHONIOENCODING=utf-8 for scripts containing Japanese text.
 import argparse
 import contextlib
 import io
-import re
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -43,13 +42,12 @@ from ir.llil.llil import LowLevelILDebug
 from ir.mlil.mlil import MLILDebug
 from ir.hlil.hlil import (
     HLILBlock,
-    HLILComment,
+    line_marker_number,
     sub_blocks,
 )
 
 
 LEVELS = ('py', 'llil', 'mlil', 'hlil')
-LINE_COMMENT = re.compile(r'line\((\d+)\)')
 DEFAULT_WORST = 10
 
 # Same headroom as falcom/ed9/scena2py.py: the IR walkers recurse per nesting level, and Python's
@@ -142,10 +140,9 @@ def collect_hlil_lines(hlil_func) -> List[int]:
             return
 
         for stmt in block.statements:
-            if isinstance(stmt, HLILComment):
-                match = LINE_COMMENT.search(stmt.text)
-                if match:
-                    lines.append(int(match.group(1)))
+            line = line_marker_number(stmt)
+            if line is not None:
+                lines.append(line)
 
             for child in sub_blocks(stmt):
                 walk(child)

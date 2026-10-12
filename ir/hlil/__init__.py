@@ -74,6 +74,7 @@ __all__ = [
 
     # Shape helpers
     'code_statements',
+    'line_marker_number',
     'sole_statement',
     'split_else_if_arm',
     'unwrap_address_taken_var',
@@ -105,4 +106,5 @@ __all__ = [
     'CommonReturnExtractionPass',
     'DeadCodeEliminationPass',
     'BranchOrderNormalizationPass',
+    'LineMarkerRemovalPass',
 ]

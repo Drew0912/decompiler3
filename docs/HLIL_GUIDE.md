@@ -29,7 +29,7 @@ deals with VM-level calls, branches, and CFG shape.
 | `ir/hlil/structural_analysis.py` | Dominator / natural-loop / region-reduction CFG analysis (`StructuralAnalyzer`), used by the converter. |
 | `tools/hlil_path_check.py` | Checks that the final HLIL keeps every MLIL control path (lost or invented paths, missing calls/stores, each repeated region on its own); not part of the pipeline. |
 | `ir/hlil/hlil_passes.py` | Re-export shim (`from .passes import *`) — no logic of its own. |
-| `ir/hlil/passes/*.py` | Six pass modules (below) — one is the conversion wrapper itself, five are active post-conversion transformations. |
+| `ir/hlil/passes/*.py` | Seven pass modules (below) — one is the conversion wrapper itself, six are post-conversion transformations (line-marker removal only with `line_markers` off). |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Falcom's concrete pipeline wiring — this, not anything in `ir/hlil/` directly, is what the real driver calls. Mirrors the same generic/project-specific split MLIL uses (`ir/mlil/*` + `falcom/ed9/ir/mlil/`). |
 | `codegen/typescript.py` | HLIL → TypeScript pseudocode emitter (`TypeScriptGenerator`) — the actual human-readable output. |
 
@@ -49,7 +49,8 @@ was removed (Step H, 2026-09-22) — nothing ever constructed one, and its rende
 wrong for the shape.
 
 **Other statements:** `HLILBlock`, `HLILAssign`, `HLILExprStmt`, `HLILComment` (carries `line(N)`
-markers that the branch-order pass reads to recover original source ordering), `HLILUnstructured`
+markers that the branch-order pass reads to recover original source ordering; with `line_markers` off
+(`ScenaDecompileConfig.line_markers`) they are dropped after every pass that reads them), `HLILUnstructured`
 (a jump the tree cannot express - HLIL has no goto; terminal: the path ends there visibly instead
 of falling through. TypeScript renders it as a comment plus `throw new Error("unstructured: loc_X")`,
 the `.hlil.ts` listing as `goto loc_X;`. `falcom/ed9/scena2py.py` warns about every one on a path that
@@ -84,7 +85,8 @@ The real production entry point is `convert_falcom_mlil_to_hlil()`
 ```
 MLILToHLILPass → FalcomTypeInferencePass (when the script function is given) →
 ControlFlowOptimizationPass → LoopRecoveryPass → CommonReturnExtractionPass →
-DeadCodeEliminationPass → BranchOrderNormalizationPass (default on)
+DeadCodeEliminationPass → BranchOrderNormalizationPass (default on) →
+LineMarkerRemovalPass (only with line_markers off)
 ```
 
 `FalcomTypeInferencePass` sets each parameter's type from the flag the script declares for it
@@ -109,6 +111,7 @@ so none of the 27 improved the output.
 | `pass_common_return_extraction.py` | Hoists a `return` shared by every arm of an `if`/`switch` to after the construct - only when no path can leave the construct without one of those returns: an `if` needs both arms, a `switch` needs a `default` and no case holding a bare `break` (`contains_bare_break`, `ir/hlil/hlil.py`), since an unmatched value or that `break` would otherwise run the hoisted return instead of the code after the switch. Constants compare with `constant_values_equal` (`ir/core/il_literals.py`): `1` and `1.0` are different returns, so are `0.0` and `-0.0`; NaN matches NaN. |
 | `pass_dead_code_elimination.py` | Truncates a block immediately after `return`/`break`/`continue`. |
 | `pass_branch_order_normalization.py` | The sole if/else arm-order decision point: swaps arms and negates the condition (De Morgan) to match the original source's `line(N)` order, with if-nesting depth as a tiebreak. Also decides which of two structurally-similar else-if chains to flatten, via "same-head" matching — this is where cascade-flattening behavior actually lives; there is no separate cascade-flattening pass. |
+| `pass_line_marker_removal.py` | Only with `line_markers` off: drops the `line(N)` comments after every pass that reads them, then tidies the if arms left empty - an empty else goes, an empty then takes the else, its condition negated. |
 
 A separate, smaller mechanism worth knowing about: `_collapse_funnel_chain` (in the converter, not
 a pass) merges same-target tests - a switch case's labels, a short-circuit `||` written with jumps -
@@ -168,4 +171,4 @@ Several dedicated test files: `tests/hlil_tests/test_hlil_branch_order_normaliza
 `tests/hlil_tests/test_hlil_operators.py`, `tests/hlil_tests/test_hlil_traversal.py`,
 `tests/hlil_tests/test_hlil_structuring.py`, `tests/hlil_tests/test_hlil_structuring_fuzz.py`,
 `tests/tools_tests/test_hlil_path_check.py`,
-`tests/hlil_tests/test_falcom_param_types.py` (see `HLIL_DESIGN.md`'s Testing section for what each covers).
+`tests/hlil_tests/test_falcom_param_types.py`, `tests/hlil_tests/test_hlil_line_marker_removal.py` (see `HLIL_DESIGN.md`'s Testing section for what each covers).

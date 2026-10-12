@@ -169,12 +169,13 @@ class TestStructuringFuzz(unittest.TestCase):
         self.assertEqual(reducible_with_nodes, PINNED_REDUCIBLE_WITH_NODES)
 
     def test_markers_in_every_block_change_no_run(self):
+        '''Kept, or removed after every pass (line_markers off: arms left empty tidied, conditions negated)'''
         changed = []
         for seed, blocks, verdict, env, _, nodes in self.results:
             func = build_function(f'fuzz_{seed}', with_markers(blocks, every_block = True))
-            hlil = to_hlil(func)
-            if classify(func, hlil) != (verdict, env) or len(unstructured_nodes(hlil)) != len(nodes):
-                changed.append(seed)
+            for hlil in (to_hlil(func), to_hlil(func, line_markers = False)):
+                if classify(func, hlil) != (verdict, env) or len(unstructured_nodes(hlil)) != len(nodes):
+                    changed.append(seed)
 
         self.assertEqual(changed, [])
 

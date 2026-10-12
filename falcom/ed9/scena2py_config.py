@@ -31,6 +31,9 @@ class ScenaDecompileConfig(StrictBase):
     write_mlil_dot: bool = False    # one .mlil.<func>.dot CFG per function. Use Graphviz Online
     write_hlil_ts: bool = False     # .hlil.ts text dump (HLILFormatter text, not recompilable code)
 
+    # .hlil.ts and .ts: a // line(N) comment where each source line starts (the .py keeps its DEBUG_SET_LINENO)
+    line_markers: bool = True
+
     # .debug.txt: a listing of the whole .dat as the VM sees it (header, global vars, each function's table entry, code
     # and call-site debug records, the string pool), loaded on its own with the unreachable code decoded. Written last;
     # filter_func / include_common_functions pick the functions listed

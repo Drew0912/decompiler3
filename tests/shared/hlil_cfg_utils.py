@@ -85,9 +85,9 @@ def build_function(name: str, blocks: Dict[str, BlockSpec]) -> MediumLevelILFunc
     return connect(func)
 
 
-def to_hlil(func: MediumLevelILFunction) -> HighLevelILFunction:
-    '''The final HLIL, every pass included'''
-    return convert_falcom_mlil_to_hlil(func)
+def to_hlil(func: MediumLevelILFunction, **flags) -> HighLevelILFunction:
+    '''The final HLIL, every pass included (flags as convert_falcom_mlil_to_hlil's)'''
+    return convert_falcom_mlil_to_hlil(func, **flags)
 
 
 def structure(blocks: Dict[str, BlockSpec], **limits) -> Tuple[MediumLevelILFunction, HighLevelILFunction]:

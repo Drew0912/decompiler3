@@ -3,6 +3,7 @@
 from typing import Callable, Iterator, List, Optional, Sequence, Tuple, Union
 from enum import auto
 import operator
+import re
 from common import *
 from ir.core import UNASSIGNED_INST_INDEX
 
@@ -711,6 +712,19 @@ def constant_truth(cond: HLILExpression) -> Optional[bool]:
             return not decisive
 
     return None
+
+
+# The comment a source line's marker becomes: MLILDebug('line', N) -> HLILComment('line(N)')
+LINE_MARKER = re.compile(r'line\((\d+)\)')
+
+
+def line_marker_number(stmt: HLILStatement) -> Optional[int]:
+    '''N if stmt is a line(N) marker, else None. Shared by every reader that needs a marker's line'''
+    if not isinstance(stmt, HLILComment):
+        return None
+
+    match = LINE_MARKER.fullmatch(stmt.text)
+    return int(match.group(1)) if match else None
 
 
 def code_statements(block: HLILBlock) -> List[HLILStatement]:

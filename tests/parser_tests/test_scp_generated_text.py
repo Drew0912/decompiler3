@@ -480,6 +480,15 @@ class TestScena2py(unittest.TestCase):
                 process_file(SMALL_FILE, self.config(include_common_functions = include))
                 self.assertEqual(COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines()[0] in self.py_text(), expected)
 
+    def test_line_markers_reach_both_hlil_outputs(self):
+        '''On by default; off, neither .hlil.ts nor .ts has a // line(N) comment'''
+        for settings, expected in (({}, True), ({'line_markers': False}, False)):
+            with self.subTest(**settings):
+                process_file(SMALL_FILE, self.config(write_hlil_ts = True, write_ts = True, **settings))
+                for suffix in ('.hlil.ts', '.ts'):
+                    text = (self.tmp / SMALL_FILE.stem / f'{SMALL_FILE.stem}{suffix}').read_text(encoding = 'utf-8')
+                    self.assertEqual('// line(' in text, expected, suffix)
+
     def test_process_file_raises_the_recursion_limit(self):
         self.addCleanup(sys.setrecursionlimit, sys.getrecursionlimit())
         sys.setrecursionlimit(PYTHON_DEFAULT_RECURSION_LIMIT)
