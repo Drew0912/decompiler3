@@ -21,24 +21,18 @@ UINT32_HEX_DIGITS = 8
 WIDE_EAST_ASIAN_WIDTHS  = ('W', 'F')    # wide and full-width (CJK); ambiguous ones like '◆' are drawn narrow
 WIDE_CHAR_COLUMNS       = 2
 
+def _escape_table(quote: str) -> dict[int, str]:
+    '''str.translate table: STRING_ESCAPES, the quote, and every other control character as \\xNN'''
+    table = {cp: f'\\x{cp:02x}' for cp in [*range(MIN_PRINTABLE_CODEPOINT), DELETE_CODEPOINT]}
+    table.update({ord(ch): escaped for ch, escaped in STRING_ESCAPES.items()})
+    table[ord(quote)] = '\\' + quote
+    return table
+
+ESCAPES_BY_QUOTE = {quote: _escape_table(quote) for quote in ('"', "'")}
+
 def quote_string(text: str, quote: str = '"') -> str:
     '''Python string literal for text; printable non-ASCII (e.g. Japanese game text) is kept verbatim'''
-    chars = []
-
-    for ch in text:
-        if ch in STRING_ESCAPES:
-            chars.append(STRING_ESCAPES[ch])
-
-        elif ch == quote:
-            chars.append('\\' + quote)
-
-        elif ord(ch) < MIN_PRINTABLE_CODEPOINT or ord(ch) == DELETE_CODEPOINT:
-            chars.append(f'\\x{ord(ch):02x}')
-
-        else:
-            chars.append(ch)
-
-    return quote + ''.join(chars) + quote
+    return quote + text.translate(ESCAPES_BY_QUOTE[quote]) + quote
 
 def format_uint32_hex(value: int) -> str:
     '''Format value as an unsigned 32-bit hex literal: -1 -> 0xFFFFFFFF'''
