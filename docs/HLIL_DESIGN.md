@@ -353,7 +353,7 @@ still have no dedicated test file of their own.
   merges and loop exits through goto-only blocks, not the clone limits. `tests/hlil_tests/test_hlil_structuring.py`
   pins each shape and the node's handling; `tests/hlil_tests/test_hlil_structuring_fuzz.py` runs 1,000 random
   CFGs through the pipeline against their MLIL for every parameter assignment; `tools/hlil_path_check.py`
-  checks real scripts (0 of 80,571 sora2_1.0 functions lose or invent a path). Still open: 14 of the
+  checks real scripts (0 of 80,571 sora2_1.0 functions lose or invent a path). Still open: 6 of the
   1,000 random CFGs are reducible yet need a node (pinned in the fuzz test; `docs/FUTURE_WORK.md`,
   Structuring the Remaining Reducible Shapes), and the path check does not see which way a condition
   sends control.
