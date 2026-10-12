@@ -229,13 +229,39 @@ The output was correct in every function traced; what it costs is readability.
 - **Constants:** named pseudo-IDs for `65534` and the like, hex for bit flags, and float32 constants as
   the shortest decimal that encodes to the same value.
 - **Calls:** print script calls as `module.f()`, as the MLIL does, not `extern_call('module:f')`, and
-  leave out trailing arguments equal to the callee's declared defaults.
+  leave out trailing default arguments (Trailing Default Arguments, below).
 - **Structure:** don't split an `else if` chain into `switch` fragments when it has conditional arms
   (`var0 == N && !flag(M)` can't be a `case`: a set flag must reach later arms and the final `else`);
   don't invert an empty arm into `!= N` and nest the rest under it; drop a `break;` after arms that all
   return; don't let common-return extraction turn early-return guards into empty arms.
 - **Fidelity:** keep what the bytecode distinguishes: `return;` (raw zero) vs `return 0`, and locals the
   source declared but never read (dead-code elimination drops them today).
+
+### Trailing Default Arguments
+
+Wanted (user, 2026-10-12): print `mes_set_auto(1)`, not `mes_set_auto(1, 0)`. A local call pushes every
+argument, defaults included, so both compile to the same bytes and the HLIL/TypeScript prints every call
+in full today (`mp0000_ev`: 1,172 of 1,181 `camera_lookat` calls end in its defaults `3, -1`). Local calls
+only: their callee's defaults are in this script's function table. Two ways:
+
+- **(a) From the code:** leave out trailing constant arguments equal to the callee's declared defaults
+  (the TypeScript signatures already print them). This is the original compiler's own rule: no call-site
+  debug record drops an argument that differs from its default (0 of 734,250 local-call records in
+  `sora2_1.0`, 0 of 450,565 in `sora1`; `notes/debug_records_handoff.md`). Needs no records. It differs
+  from the author where they wrote a default out anyway, about 15% of calls (114,613 in `sora2_1.0`):
+  `mp0000_ev`'s 1,180 `camera_lookat` calls all keep the `3`, written `camera_lookat(63.153, 29.174,
+  -63.103, 0, 3)`, which (a) prints as `camera_lookat(63.153, 29.174, -63.103, 0)`; its 36
+  `mes_set_auto` calls match (a) exactly.
+- **(b) As written:** a local call's debug record keeps exactly the arguments the author wrote, so print
+  that many. The parser reads the records only when `round_trip` is on (`ScpParser._read_functions`), so
+  that gate becomes "`round_trip` or this option". Needs the debug-records plan's pairing fixes first
+  (`notes/debug_records_handoff.md`: of `sora2_1.0`'s 340,638 trims, 187 attach to the wrong call today
+  and 1,035 are lost). Calls
+  without a record (before the function's first `DEBUG_SET_LINENO`, or in dead code) fall back to (a).
+
+Either way only the HLIL/TypeScript side changes; the LLIL DSL keeps one line per push, and the HLIL
+DSL's lowering pushes the omitted defaults back, as Falcom's compiler did. Drop only constants, compared
+by raw encoding (floats, NaN): an expression that happens to equal the default stays.
 
 ### HLIL DSL: Recompile Path
 

@@ -746,8 +746,8 @@ class ScpDisassemblerContext(DisassemblerContext):
 
 
 class ScpParser(StrictBase):
-    # Keep data only needed for a byte-exact round trip: zero-arg debug records and the explicit
-    # arg count of each local CALL (debug_argc). Source function order is always kept - it's a free
+    # Keep data only needed for a byte-exact round trip: the call debug records, read only for the
+    # explicit arg count of each local CALL (debug_argc). Source function order is always kept - it's a free
     # reordering of already-parsed data, not extra fidelity data, so it isn't gated by this flag.
     round_trip      : bool = True
 
@@ -890,7 +890,9 @@ class ScpParser(StrictBase):
 
             functions.append(func)
 
-        # init debug info
+        # Call debug records only give each local CALL's explicit arg count (debug_argc), kept for a byte-exact round trip
+        if not self.round_trip:
+            return functions
 
         for i, func in enumerate(functions):
             entry = func_entries[i]
@@ -898,10 +900,6 @@ class ScpParser(StrictBase):
             debug_info_list = self.read_debug_info(fs, entry)
 
             for dbg_info in debug_info_list:
-                # round_trip keeps zero-arg records so records line up 1:1 with call sites
-                if dbg_info.arg_count == 0 and not self.round_trip:
-                    continue
-
                 info = FunctionCallDebugInfo()
                 info.call_type = dbg_info.call_type
 
