@@ -109,19 +109,6 @@ class OperandDescriptor:
         """Read operand value from file stream"""
         return self.READER_BY_TYPE[self.format.type](fs)
 
-    def format_operand(self, operand: 'Operand', context: 'FormatterContext') -> str:
-        """Format operand for display"""
-        return {
-            OperandType.SInt8   : self.format_integer,
-            OperandType.SInt16  : self.format_integer,
-            OperandType.SInt32  : self.format_integer,
-            OperandType.UInt8   : self.format_integer,
-            OperandType.UInt16  : self.format_integer,
-            OperandType.UInt32  : self.format_integer,
-            OperandType.Float32 : self.format_float,
-            OperandType.Offset  : self.format_offset,
-        }[self.format.type](operand)
-
     def format_integer(self, operand: 'Operand') -> str:
         if self.format.is_hex:
             if self.format.type in SIGNED_INTEGER_TYPES:
@@ -140,6 +127,21 @@ class OperandDescriptor:
 
     def format_offset(self, operand: 'Operand') -> str:
         return f'\'loc_{operand.value:X}\''
+
+    FORMATTER_BY_TYPE = {
+        OperandType.SInt8   : format_integer,
+        OperandType.SInt16  : format_integer,
+        OperandType.SInt32  : format_integer,
+        OperandType.UInt8   : format_integer,
+        OperandType.UInt16  : format_integer,
+        OperandType.UInt32  : format_integer,
+        OperandType.Float32 : format_float,
+        OperandType.Offset  : format_offset,
+    }
+
+    def format_operand(self, operand: 'Operand', context: 'FormatterContext') -> str:
+        """Format operand for display"""
+        return self.FORMATTER_BY_TYPE[self.format.type](self, operand)
 
 
 # Initialize format table
