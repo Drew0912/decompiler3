@@ -123,11 +123,8 @@ class Formatter:
             return lines
 
         # Generate label only when this block's start is actually referenced by something
-        label_name = f'loc_{block.offset:X}'
-        if not unreachable and block.offset in self.referenced_offsets and label_name not in self.formatted_labels:
-            self.formatted_labels.add(label_name)
-            lines.extend(self._format_label(block.offset))
-            lines.append('')
+        if not unreachable and block.offset in self.referenced_offsets:
+            lines.extend(self._format_label_once(block.offset))
 
         # Format instructions
         for inst in block.instructions:
@@ -142,23 +139,13 @@ class Formatter:
 
             # Branch target of unreachable code that no block label covers
             if inst.offset in self.unreachable_targets:
-                target_label = f'loc_{inst.offset:X}'
-                if target_label not in self.formatted_labels:
-                    self.formatted_labels.add(target_label)
-                    lines.extend(self._format_label(inst.offset, () if unreachable else (UNREACHABLE_TARGET_COMMENT,)))
-                    lines.append('')
+                lines.extend(self._format_label_once(inst.offset, () if unreachable else (UNREACHABLE_TARGET_COMMENT,)))
 
-            # Fallback for the (census-verified, never-observed) case where a referenced offset
-            # is not a block start - see the assert in format_entry_block. Not gated on
-            # `unreachable` (unlike the primary label above): a referenced offset could in
-            # principle only be reachable via the unreachable_blocks list rather than succs, so
-            # this must still fire there too for the "never go undefined" guarantee to hold.
+            # Fallback for a referenced offset that is not a block start: the assert in format_entry_block rejects
+            # that, so this only fires under -O. Not gated on `unreachable`: such an offset may then sit only in
+            # unreachable code, and its label must still be defined.
             if inst.offset in self.referenced_offsets:
-                target_label = f'loc_{inst.offset:X}'
-                if target_label not in self.formatted_labels:
-                    self.formatted_labels.add(target_label)
-                    lines.extend(self._format_label(inst.offset))
-                    lines.append('')
+                lines.extend(self._format_label_once(inst.offset))
 
             # Format instruction with context
             formatted = inst.descriptor.format_instruction(inst, self.context)
@@ -235,10 +222,15 @@ class Formatter:
             if operand.descriptor.type == OperandType.Offset
         ]
 
-    def _format_label(self, offset: int, notes: tuple[str, ...] = ()) -> list[str]:
-        """A label with the depth there, then any notes"""
+    def _format_label_once(self, offset: int, notes: tuple[str, ...] = ()) -> list[str]:
+        """A label with the depth there, notes and a blank line, added to formatted_labels; [] if already there"""
         name = f'loc_{offset:X}'
+        if name in self.formatted_labels:
+            return []
+
+        self.formatted_labels.add(name)
         return [
             f'def _{name}(): pass',
             append_comment(f"label('{name}')", [*label_comments(self.layout, offset, self.context.comments), *notes]),
+            '',
         ]
