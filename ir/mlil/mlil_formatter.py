@@ -23,7 +23,7 @@ class MLILFormatter:
     def _format_const(cls, const: MLILConst) -> str:
         '''Format a constant value'''
         if isinstance(const.value, str):
-            return f'"{const.value}"'
+            return str(const)   # MLILConst's own escaped literal
 
         elif isinstance(const.value, bool):
             return 'true' if const.value else 'false'

@@ -4,7 +4,6 @@ not repr() (which no MLIL class overrides), or an operand-only rewrite can look 
 the loop one iteration early.'''
 
 from pathlib import Path
-import io
 import itertools
 import sys
 import unittest
@@ -13,6 +12,7 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from dc3.logging import log
 from ir.mlil.mlil import MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILLogicalNot, MLILNe
 from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILIf, MLILRet
 from ir.mlil.mlil_ssa_optimizer import SSA_OPTIMIZER_MAX_ITERATIONS, SSAOptimizer
@@ -101,13 +101,13 @@ class TestSnapshotSchedule(unittest.TestCase):
 
         with (
             mock.patch.object(SSAOptimizer, '_snapshot', side_effect = itertools.count()) as snapshot,
-            mock.patch.object(sys, 'stderr', io.StringIO()) as stderr,
+            self.assertLogs(log, 'WARNING') as logs,
         ):
             SSAOptimizer(func).optimize()
 
         self.assertEqual(snapshot.call_count, SSA_OPTIMIZER_MAX_ITERATIONS + 1)
-        self.assertEqual(stderr.getvalue(),
-                         f'[optimizer] never_settles did not converge after {SSA_OPTIMIZER_MAX_ITERATIONS} iterations\n')
+        message = f'[optimizer] never_settles did not converge after {SSA_OPTIMIZER_MAX_ITERATIONS} iterations'
+        self.assertEqual([record.getMessage() for record in logs.records], [message])
 
 
 class TestStructuralKeyExactness(unittest.TestCase):

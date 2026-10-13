@@ -1,10 +1,10 @@
 '''MLIL to HLIL Converter - SSA-based Graph Rewriting'''
 
-import sys
 from collections import deque
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Set, Optional, Tuple
 
+from dc3.logging import log
 from ir.mlil.mlil import *
 from ir.mlil.mlil_types import MLILType, MLILTypeKind
 from .hlil import *
@@ -751,7 +751,7 @@ class MLILToHLILConverter:
         loop_info = self.structural_analyzer.get_loop_info(header_idx) if self.structural_analyzer else None
 
         if loop_info is None:
-            print(f'[loop] no LoopInfo for header {header_label} in {self.mlil_func.name}', file = sys.stderr)
+            log.warning(f'[loop] no LoopInfo for header {header_label} in {self.mlil_func.name}')
             return FollowOn(header_idx, force_plain = True)
 
         last_instr = mlil_block.instructions[-1] if mlil_block.instructions else None
@@ -794,7 +794,8 @@ class MLILToHLILConverter:
                 exit_block_idx = self._find_loop_break_target(loop_info)
 
             else:
-                print(f'[loop] cannot decide loop body at header {header_label} in {self.mlil_func.name} (treated as non-loop)', file = sys.stderr)
+                log.warning(f'[loop] cannot decide loop body at header {header_label} in {self.mlil_func.name} '
+                            '(treated as non-loop)')
                 return FollowOn(header_idx, force_plain = True)
 
         elif isinstance(last_instr, MLILGoto) and last_instr.target is not None and last_instr.target.index in loop_info.body:
@@ -803,7 +804,8 @@ class MLILToHLILConverter:
             exit_block_idx = self._find_loop_break_target(loop_info)
 
         else:
-            print(f'[loop] cannot decide loop body at header {header_label} in {self.mlil_func.name} (treated as non-loop)', file = sys.stderr)
+            log.warning(f'[loop] cannot decide loop body at header {header_label} in {self.mlil_func.name} '
+                        '(treated as non-loop)')
             return FollowOn(header_idx, force_plain = True)
 
         self.visited_blocks.add(header_idx)

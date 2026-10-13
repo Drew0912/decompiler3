@@ -1,8 +1,8 @@
 '''MLIL SSA Optimizer - orchestrates SSA optimization passes'''
 
-import sys
 from enum import Enum
 
+from dc3.logging import log
 from .mlil import MediumLevelILBasicBlock, MediumLevelILFunction, MediumLevelILInstruction
 from .passes import (
     NNFPass,
@@ -58,8 +58,8 @@ class SSAOptimizer:
                 break
 
         else:
-            print(f'[optimizer] {self.function.name} did not converge after '
-                  f'{SSA_OPTIMIZER_MAX_ITERATIONS} iterations', file = sys.stderr)
+            log.warning(f'[optimizer] {self.function.name} did not converge after '
+                        f'{SSA_OPTIMIZER_MAX_ITERATIONS} iterations')
 
         return self.function
 

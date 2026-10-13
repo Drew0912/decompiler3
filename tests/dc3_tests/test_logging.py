@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
-'''The shared logger (dc3.logging.log): a level change always takes effect, even after the level was cached.'''
+'''The shared logger (dc3.logging.log): a level change always takes effect, even after the level was cached, and it
+writes to the current sys.stderr.'''
 
 from pathlib import Path
+import contextlib
+import io
 import logging
 import sys
 import unittest
@@ -31,6 +34,17 @@ class TestLogLevel(unittest.TestCase):
     def test_records_do_not_reach_the_root_logger(self):
         with mock.patch.object(log, 'handlers', [logging.NullHandler()]), self.assertNoLogs(logging.getLogger(), 'INFO'):
             log.warning('only on the shared handler')
+
+
+class TestStderrRedirect(unittest.TestCase):
+    '''The shared handler writes to the current sys.stderr, so redirect_stderr captures the log as it does print'''
+
+    def test_redirect_stderr_captures_the_log(self):
+        captured = io.StringIO()
+        with contextlib.redirect_stderr(captured):
+            log.warning('inside the redirect')
+
+        self.assertIn('[WARNING] inside the redirect', captured.getvalue())
 
 
 if __name__ == '__main__':
