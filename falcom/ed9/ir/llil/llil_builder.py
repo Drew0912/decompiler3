@@ -1,6 +1,6 @@
 '''Falcom VM Builder - High-level builder with Falcom VM patterns'''
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from enum import Enum, auto
 from typing import List, NamedTuple, Optional, Tuple, Union
 from ir.core import SourceFloat
@@ -187,8 +187,8 @@ class FalcomVMBuilder(LowLevelILBuilder):
             )
 
         self.push(FalcomConstants.ret_addr_block(target))
-        self._pending_setups[-1] = replace(
-            setup, slot_loads = setup.slot_loads + (self.vstack_peek(),), return_block = target
+        self._pending_setups[-1] = PendingCallSetup(
+            setup.kind, setup.sp_before_call, setup.slot_loads + (self.vstack_peek(),), target, setup.caller_frame
         )
 
     def push_caller_frame(self, return_target: LowLevelILBasicBlock):
