@@ -285,9 +285,12 @@ class ScpHeader(StrictBase):
         if fs is None:
             return
 
-        (magic, self.function_entry_offset, self.function_count, self.global_var_offset, self.global_var_count,
-         self.dword_14) = self.LAYOUT.unpack(fs.Read(self.SIZE))
-        assert magic == self.MAGIC
+        header = fs.Read(self.SIZE)
+        if not header.startswith(self.MAGIC):
+            raise ValueError(f'not an ED9 script: it starts with {header[:len(self.MAGIC)]!r}, not {self.MAGIC!r}')
+
+        (_, self.function_entry_offset, self.function_count, self.global_var_offset, self.global_var_count,
+         self.dword_14) = self.LAYOUT.unpack(header)
 
     def to_bytes(self) -> bytes:
         return self.LAYOUT.pack(self.MAGIC, self.function_entry_offset, self.function_count, self.global_var_offset,
