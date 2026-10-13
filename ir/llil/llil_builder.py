@@ -88,7 +88,7 @@ class LowLevelILBuilder:
     def __init__(self, function: Optional[LowLevelILFunction] = None):
         self.function = function
         self.current_block: Optional[LowLevelILBasicBlock] = None
-        self.__current_sp: int = 0  # Track current stack pointer state (for block sp_in/sp_out) - PRIVATE
+        self.__current_sp: int = 0  # Track current stack pointer state (for block sp_in) - PRIVATE
         self.frame_base_sp: Optional[int] = None  # Stack pointer at function entry (for frame-relative access)
         self.__vstack = _VirtualStack()  # Virtual stack for expression tracking
         self.saved_stacks: dict[int, StackSnapshot] = {}  # block start -> the state every edge into it must match
@@ -255,11 +255,6 @@ class LowLevelILBuilder:
             name = block.label if isinstance(block, LowLevelILBasicBlock) else repr(block)
             raise RuntimeError(f'{name} is not a block of {self.function.name}')
 
-    def _finish_block(self):
-        '''Record the current block's exit sp, if any.'''
-        if self.current_block is not None:
-            self.current_block.sp_out = self.sp_get()
-
     def _start_block(self, block: LowLevelILBasicBlock):
         '''Start a registered block using the active stack state (create_function seeds the entry's).'''
         self.current_block = block
@@ -268,13 +263,11 @@ class LowLevelILBuilder:
     def set_current_block(self, block: LowLevelILBasicBlock):
         '''Set the current basic block for instruction insertion'''
         self._require_registered_block(block)
-        self._finish_block()
         self._start_block(block)
 
     def begin_block(self, block: LowLevelILBasicBlock):
-        '''Close the current block, restore `block`'s recorded stack state, and open it.'''
+        '''Restore `block`'s recorded stack state and open it.'''
         self._require_registered_block(block)
-        self._finish_block()
         self.restore_stack_for_offset(block.start)
         self._start_block(block)
 
@@ -579,7 +572,7 @@ class LowLevelILBuilder:
 
     # === Binary Operations ===
 
-    def _binary_op(self, op_class, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = False) -> LowLevelILExpr:
+    def _binary_op(self, op_class, lhs = None, rhs = None, *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
         '''Generic binary operation handler'''
         # Get operands - both must be None or both must be provided
         if lhs is None and rhs is None:
@@ -597,122 +590,107 @@ class LowLevelILBuilder:
         # Create operation with operands
         op = op_class(lhs, rhs)
 
-        # Binary operations are expressions, not statements
-        # Only add as instruction if we're pushing (making it a statement via StackPush)
-        if push:
-            # Use push() to properly set slot_index and maintain sp
-            self.push(op, hidden_for_formatter = hidden_for_formatter)
-        else:
-            # If not pushing, add the operation itself (e.g., for comparisons in branches)
-            self.add_instruction(op)
+        # Pushed as a statement: push() sets slot_index and maintains sp
+        self.push(op, hidden_for_formatter = hidden_for_formatter)
 
         return op
 
-    def add(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def add(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''ADD operation - computes lhs + rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILAdd, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILAdd, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def sub(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def sub(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''SUB operation - computes lhs - rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILSub, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILSub, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def mul(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def mul(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''MUL operation - computes lhs * rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILMul, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILMul, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def div(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def div(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''DIV operation - computes lhs / rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILDiv, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILDiv, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def mod(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def mod(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''MOD operation - computes lhs % rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILMod, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILMod, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
     # === Comparison Operations ===
 
-    def eq(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def eq(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''EQ operation - computes lhs == rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILEq, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILEq, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def ne(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def ne(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''NE operation - computes lhs != rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILNe, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILNe, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def lt(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def lt(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''LT operation - computes lhs < rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILLt, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILLt, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def le(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def le(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''LE operation - computes lhs <= rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILLe, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILLe, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def gt(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def gt(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''GT operation - computes lhs > rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILGt, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILGt, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def ge(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def ge(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''GE operation - computes lhs >= rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILGe, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILGe, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
     # === Bitwise Operations ===
 
-    def bitwise_and(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def bitwise_and(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''Bitwise AND operation - computes lhs & rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILAnd, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILAnd, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def bitwise_or(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def bitwise_or(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''Bitwise OR operation - computes lhs | rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILOr, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILOr, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
     # === Logical Operations ===
 
-    def logical_and(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def logical_and(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''Logical AND operation - computes lhs && rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILLogicalAnd, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILLogicalAnd, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
-    def logical_or(self, lhs = None, rhs = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def logical_or(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
         '''Logical OR operation - computes lhs || rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILLogicalOr, lhs, rhs, push = push, hidden_for_formatter = hidden_for_formatter)
+        return self._binary_op(LowLevelILLogicalOr, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
 
     # === Unary Operations ===
 
-    def neg(self, operand = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def neg(self, operand = None, *, hidden_for_formatter: bool = True):
         '''NEG operation - arithmetic negation -x (pops operand if not provided)'''
         if operand is None:
             operand = self.pop(hidden_for_formatter = hidden_for_formatter)
         else:
             operand = self._to_expr(operand)
         op = LowLevelILNeg(operand)
-        if push:
-            self.push(op, hidden_for_formatter = hidden_for_formatter)
-        else:
-            self.add_instruction(op)
+        self.push(op, hidden_for_formatter = hidden_for_formatter)
         return op
 
-    def bitwise_not(self, operand = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def bitwise_not(self, operand = None, *, hidden_for_formatter: bool = True):
         '''NOT operation - bitwise NOT ~x (pops operand if not provided)'''
         if operand is None:
             operand = self.pop(hidden_for_formatter = hidden_for_formatter)
         else:
             operand = self._to_expr(operand)
         op = LowLevelILBitwiseNot(operand)
-        if push:
-            self.push(op, hidden_for_formatter = hidden_for_formatter)
-        else:
-            self.add_instruction(op)
+        self.push(op, hidden_for_formatter = hidden_for_formatter)
         return op
 
-    def test_zero(self, operand = None, *, push: bool = True, hidden_for_formatter: bool = True):
+    def test_zero(self, operand = None, *, hidden_for_formatter: bool = True):
         '''TEST_ZERO operation - test if x == 0 (pops operand if not provided)'''
         if operand is None:
             operand = self.pop(hidden_for_formatter = hidden_for_formatter)
         else:
             operand = self._to_expr(operand)
         op = LowLevelILTestZero(operand)
-        if push:
-            self.push(op, hidden_for_formatter = hidden_for_formatter)
-        else:
-            self.add_instruction(op)
+        self.push(op, hidden_for_formatter = hidden_for_formatter)
         return op
 
     # === Control Flow ===

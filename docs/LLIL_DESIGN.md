@@ -32,7 +32,6 @@ half.
 | `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILPushCallerFrame`, `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILDebugLog`; their operations in `LowLevelILFalcomOperation`. |
 | `falcom/ed9/ir/llil/constants.py` | ED9 constants the call setups push: function ID, return-address block, script pointer, script name. |
 | `falcom/ed9/ir/llil/vm_lifter.py` | `ED9VMLifter.lift_function()`: the production entry point, a `match` arm per opcode - the binary opcodes share one, picked by the opcode table's kind (`BINARY_BUILDER_METHODS` names each one's builder operation), and a local `CALL`'s argument count comes from its stack effect. |
-| `ir/llil/lifters/`, `ir/llil/passes/` | Empty placeholder packages. |
 
 ## Node Model
 
@@ -172,7 +171,7 @@ parser's disassembly-time stack simulation checks the same stack heights earlier
    checked;
 3. renumbers the instructions in block order.
 
-Each block also keeps `sp_in` / `sp_out`, the `sp` at its start and end.
+Each block also keeps `sp_in`, the `sp` at its start.
 
 ## Formatting
 
@@ -207,6 +206,4 @@ table's stack effects).
 ## Open Items
 
 - Blocks are meant to hold statements, but `LowLevelILBasicBlock.add_instruction` accepts any
-  instruction, and the builder's binary/unary operations have a `push = False` mode that appends
-  the bare expression. The lifter never uses it.
-- `ir/llil/lifters/` and `ir/llil/passes/` are empty placeholder packages.
+  instruction.

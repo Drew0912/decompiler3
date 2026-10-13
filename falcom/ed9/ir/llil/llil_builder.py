@@ -84,8 +84,6 @@ class FalcomVMBuilder(LowLevelILBuilder):
         if self._finalized:
             raise RuntimeError('Builder already finalized')
 
-        self._finish_block()
-
         # RPO can end on a non-exit block; exit operations validate their own stack state.
         self.function.build_cfg()
         self._require_recorded_edges()

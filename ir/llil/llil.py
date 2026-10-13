@@ -562,7 +562,6 @@ class LowLevelILBasicBlock:
         self.label = label if label is not None else default_label_for_addr(start)
         self.instructions: List[LowLevelILInstruction] = []
         self.sp_in = 0   # sp state at block entry
-        self.sp_out = 0  # sp state at block exit
         self.function: Optional['LowLevelILFunction'] = None  # Set when block added to a function
 
         # Control flow edges (following BN design)

@@ -111,11 +111,10 @@ class TestReindexInBlockOrder(unittest.TestCase):
 
 
 class TestBlockLifecycle(unittest.TestCase):
-    '''begin_block records the previous block's true exit sp, not the next block's just-restored one.'''
+    '''begin_block opens a block with its recorded stack state, not the previous block's exit state.'''
 
-    def test_begin_block_records_previous_blocks_true_exit_sp(self):
+    def test_begin_block_opens_the_block_with_its_saved_sp(self):
         builder = make_builder()
-        entry = builder.function.basic_blocks[0]
         other = builder.create_basic_block(SECOND_BLOCK_START, 'other')
 
         builder.push_int(1)
@@ -125,7 +124,6 @@ class TestBlockLifecycle(unittest.TestCase):
 
         builder.begin_block(other)
 
-        self.assertEqual(entry.sp_out, 1)
         self.assertEqual(other.sp_in, DELIBERATELY_DIFFERENT_SP)
 
 
