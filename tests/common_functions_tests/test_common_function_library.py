@@ -12,6 +12,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -149,6 +150,21 @@ class TestGenerator(unittest.TestCase):
                 name_to_module = {FUNC_NAME: OWN_MODULE, CALLEE_NAME: callee_module}
                 text = gen.render_module(OWN_MODULE, [FUNC_NAME], rendered, facts, name_to_module)
                 self.assertEqual([line for line in text.split('\n') if line.startswith('import ')], imports)
+
+    def test_corpus_root_without_scripts_writes_nothing(self):
+        '''generate() replaces the whole library: a file, a missing path or a folder with no .dat must stop it first'''
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(gen, 'write_output') as write_output:
+            script = Path(tmp) / 'script.dat'
+            script.write_bytes(b'')
+            empty = Path(tmp) / 'empty'
+            empty.mkdir()
+            for corpus_root, error in ((script, NotADirectoryError), (Path(tmp) / 'missing', NotADirectoryError),
+                                       (empty, FileNotFoundError)):
+                with self.subTest(corpus_root = corpus_root.name):
+                    with self.assertRaises(error):
+                        gen.generate(corpus_root)
+
+                    write_output.assert_not_called()
 
 
 class TestGeneratedLibraryFingerprintStable(unittest.TestCase):

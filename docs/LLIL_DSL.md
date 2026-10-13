@@ -355,7 +355,8 @@ occurrence in sorted order), excludes any function touching `LOAD_GLOBAL`/`SET_G
 closure of anything calling an excluded function (asserting the closure holds) and assigns modules.
 Only then does it re-parse the files holding an included function's canonical copy, rendering each
 function's final text, stack comments included (§1). Every run is a full rewrite of the output
-directory — hand edits to generated files don't survive regeneration.
+directory — hand edits to generated files don't survive regeneration. A path that isn't a folder of
+`.dat` scripts stops it before anything is written.
 
 **`falcom/ed9/writer/metadata/common/` is gitignored, not checked in** — like the `sora2_1.0/`
 scripts it is generated from, its generated modules are a substantive translation of the game's own

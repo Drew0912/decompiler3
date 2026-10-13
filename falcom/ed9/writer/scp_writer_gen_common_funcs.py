@@ -376,7 +376,14 @@ def write_output(canonical: dict[str, tuple[str, int]], facts: dict[str, Functio
 
 
 def generate(corpus_root: Path):
+    # write_output replaces the whole library, so refuse anything that isn't a folder of scripts before it runs
+    if not corpus_root.is_dir():
+        raise NotADirectoryError(f'{corpus_root}: expected the corpus folder the library is rebuilt from')
+
     paths = collect_paths([corpus_root])
+    if not paths:
+        raise FileNotFoundError(f'{corpus_root}: no .dat scripts found, library left as it is')
+
     occurrences, facts_by_digest = collect_occurrences(paths)
     canonical = select_canonical(occurrences)
     facts = {name: facts_by_digest[digest] for name, (digest, _file_idx) in canonical.items()}
