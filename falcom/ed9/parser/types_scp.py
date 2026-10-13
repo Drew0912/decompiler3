@@ -123,6 +123,8 @@ class ScpValue:
         Float           = 2
         String          = 3
 
+    TYPE_BY_TAG = tuple(Type)       # decode_word's lookup by a word's top 2 bits: an enum call is ~20x slower
+
     ClassMap = {
         RawInt  : Type.Raw,
         int     : Type.Integer,
@@ -178,7 +180,7 @@ class ScpValue:
                     fs.Position = word & cls.PAYLOAD_MASK
                     value = fs.ReadMultiByte()
 
-        return ScpValue.Type(typ), value
+        return cls.TYPE_BY_TAG[typ], value
 
     def to_bytes(self) -> bytes:
         return self.WORD.pack(self.to_word())
