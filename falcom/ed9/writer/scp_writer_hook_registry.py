@@ -9,7 +9,7 @@ from pathlib import Path
 from types import FunctionType
 from typing import TYPE_CHECKING, Callable
 
-from common.logging import log
+from dc3.logging import log
 from .scp_compile_check import SourceSite, def_location
 
 if TYPE_CHECKING:

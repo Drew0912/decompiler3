@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''The shared logger (common.logging.log): a level change always takes effect, even after the level was cached.'''
+'''The shared logger (dc3.logging.log): a level change always takes effect, even after the level was cached.'''
 
 from pathlib import Path
 import logging
@@ -10,7 +10,7 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from common.logging import log
+from dc3.logging import log
 
 
 class TestLogLevel(unittest.TestCase):

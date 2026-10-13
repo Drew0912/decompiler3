@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Callable, Optional
 
-from common import StrictBase
+from dc3 import StrictBase
 from .parser.scp_listing import ListingSections
 from .parser.types_parser import Function
 

@@ -5,7 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
-from common import fileio
+from dc3 import fileio
 from falcom.ed9.disasm import *
 from falcom.ed9.parser import *
 from pathlib import Path

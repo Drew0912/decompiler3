@@ -5,8 +5,8 @@ functions, a string pool and a function table for a real ScpParser. The constant
 from typing import NamedTuple
 import struct
 
-from common import fileio
-from common.config import default_encoding
+from dc3 import fileio
+from dc3.config import default_encoding
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function, FunctionParam

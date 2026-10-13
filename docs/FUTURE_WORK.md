@@ -637,7 +637,7 @@ decompilation), and the correctness gate for the HLIL DSL (Recompilation Pipelin
 
 ## Generic/Falcom Boundary (`docs/ARCHITECTURE.md`)
 
-`ir/` and `common/` are meant to be generic, with game code under `falcom/`, and nothing generic imports
+`ir/` and `dc3/` are meant to be generic, with game code under `falcom/`, and nothing generic imports
 `falcom/`. `codegen/` is game output (user, 2026-10-02): it reads only HLIL and nothing in `ir/` depends on it, so
 game knowledge there can't spread back into the IR. An audit (2026-10-02, Fable and Codex, read-only) found ED9
 knowledge in generic code anyway. None of it is a bug, and with one VM it costs nothing today. Decided with the user:
@@ -673,7 +673,7 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
 - **Floats:** generic code prints floats without knowing their width - the Falcom lifter attaches the display text
   as a `SourceFloat` (`ir/core/il_literals.py`; LLIL DSL neatening plan, Step 4, done).
 
-## ED8 Support (`common/fileio.py`, `falcom/ed9/disasm/ed9_optable.py`)
+## ED8 Support (`dc3/fileio.py`, `falcom/ed9/disasm/ed9_optable.py`)
 
 **Planned, not started** (user, 2026-10-12). Notes for when it starts, from decompiler2's ED8.x support:
 - **Wider reads:** `FileStream` reads only 8/16/32-bit integers and float32. decompiler2's operand tables also have

@@ -1,6 +1,6 @@
 """Generic recursive descent disassembler"""
 
-from common import *
+from dc3 import *
 from typing import Callable
 import heapq
 

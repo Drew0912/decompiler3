@@ -13,8 +13,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
-from common.gc_policy import infrequent_gc
-from common.logging import log
+from dc3.gc_policy import infrequent_gc
+from dc3.logging import log
 from falcom.ed9.disasm import CommentOptions
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.scp_listing import write_listing

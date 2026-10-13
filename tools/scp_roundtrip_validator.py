@@ -66,8 +66,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from common import fileio
-from common.config import default_encoding
+from dc3 import fileio
+from dc3.config import default_encoding
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
 from falcom.ed9.parser.call_records import read_debug_records, record_mismatch
@@ -541,7 +541,7 @@ def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = Tru
 
 def compile_dsl(py_path: Path, run_dir: Path) -> tuple[int, list[str]]:
     """Compile a generated .py in a subprocess. -P keeps run_dir off sys.path, so a script named
-    after a top-level package (e.g. common.dat) can't shadow the real one; the script puts the repo
+    after a top-level package (e.g. dc3.dat) can't shadow the real one; the script puts the repo
     root on sys.path itself."""
     env = dict(os.environ)
     env['PYTHONIOENCODING'] = 'utf-8'

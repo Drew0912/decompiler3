@@ -4,8 +4,8 @@ the global var names reference, in the order the original compiler pooled them (
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
-from common.config import default_encoding, default_endian
-from common.enum import IntEnum2
+from dc3.config import default_encoding, default_endian
+from dc3.enum import IntEnum2
 from ir.llil import WORD_SIZE
 from .scp import ScpParser
 from .types_scp import ScpFunctionCallDebugInfo, ScpGlobalVar

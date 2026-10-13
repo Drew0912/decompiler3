@@ -12,7 +12,7 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from common.logging import log
+from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.ir.llil import ED9LiftError, ED9VMLifter
 from falcom.ed9.parser.scp import ScpDisassemblyError, ScpParser

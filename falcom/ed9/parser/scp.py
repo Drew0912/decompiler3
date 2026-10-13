@@ -1,6 +1,6 @@
 from .types_scp import *
 from .types_parser import *
-from common import fileio
+from dc3 import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
@@ -9,9 +9,9 @@ from ..writer.metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, CO
                                SCP_WRITER_HELPER_IMPORT)
 from ..writer.metadata.common_index import COMMON_FUNCTIONS
 from ..writer.metadata.signature import function_fingerprint, fingerprint_digest
-from common.config import default_encoding
-from common.logging import log
-from common.utils import PROJECT_ROOT
+from dc3.config import default_encoding
+from dc3.logging import log
+from dc3.utils import PROJECT_ROOT
 from ir.llil import WORD_SIZE
 from collections import Counter
 from enum import Enum, auto
@@ -46,13 +46,13 @@ def is_module_name(name: str) -> bool:
 
 def shadows_another_module(name: str) -> bool:
     """Pylance imports a stdlib module or one of this checkout's top-level packages of that name instead of a script
-    next to the hook (common.dat today). Renaming the checkout's common/ to dc3/ is the planned root-cause fix"""
+    next to the hook (e.g. dc3.dat, types.dat)"""
     return name in sys.stdlib_module_names or (PROJECT_ROOT / name).is_dir() or (PROJECT_ROOT / f'{name}.py').is_file()
 
 
 def suggested_module_name(stem: str) -> str:
     """A module name close to stem that no other module takes, for the hook template's rename hint: mon5078+ ->
-    mon5078_, common -> common_"""
+    mon5078_, dc3 -> dc3_"""
     name = ''.join(char if f'_{char}'.isidentifier() else '_' for char in stem.strip())
     if not name.isidentifier():
         name = f'_{name}'       # a leading digit
@@ -1425,7 +1425,7 @@ class ScpParser(StrictBase):
         common function in scope for CALL()/autocomplete even when adding one this script never
         originally used. Unlike the hook import above it, this one needs no try/except of its own:
         common_all.py is a tracked project file (always present) whose own internal imports of the
-        gitignored, locally-generated common/ package are what can fail on a fresh checkout - it
+        gitignored, locally-generated metadata/common/ package are what can fail on a fresh checkout - it
         catches that itself and logs a hint to run the generator, so importing common_all here
         always succeeds even when the library behind it doesn't exist yet.
         """

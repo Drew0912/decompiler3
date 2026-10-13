@@ -13,8 +13,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from common.config import default_endian
-from common.logging import log
+from dc3.config import default_endian
+from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS

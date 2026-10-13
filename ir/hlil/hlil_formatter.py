@@ -1,6 +1,6 @@
 '''HLIL Formatter - Format HLIL for debugging'''
 
-from common import *
+from dc3 import *
 from typing import List
 from .hlil import *
 

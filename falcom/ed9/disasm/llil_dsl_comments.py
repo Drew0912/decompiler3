@@ -4,7 +4,7 @@ becomes (read from the parser's StackLayout), float bits and function ids; trail
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from common.utils import display_width
+from dc3.utils import display_width
 from .ed9_optable import ED9Opcode, ED9OperandType
 from ..parser.types_scp import ScpValue
 

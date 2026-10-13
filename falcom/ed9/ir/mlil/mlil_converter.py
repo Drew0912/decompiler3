@@ -1,6 +1,6 @@
 '''Falcom LLIL to MLIL Converter'''
 
-from common.logging import log
+from dc3.logging import log
 from ir.llil import LowLevelILFunction
 from ir.mlil import MediumLevelILFunction, mlil_optimization_passes
 from ir.pipeline import Pipeline

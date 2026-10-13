@@ -4,7 +4,7 @@ from typing import Callable, Iterator, List, Optional, Sequence, Tuple, Union
 from enum import auto
 import operator
 import re
-from common import *
+from dc3 import *
 from ir.core import UNASSIGNED_INST_INDEX
 
 

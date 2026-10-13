@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for common/fileio.py - the deliberate quirks of the ported ml FileStream that round trips rely on.'''
+'''Unit tests for dc3/fileio.py - the deliberate quirks of the ported ml FileStream that round trips rely on.'''
 
 from pathlib import Path
 import struct
@@ -9,8 +9,8 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from common import fileio
-from common.logging import log
+from dc3 import fileio
+from dc3.logging import log
 
 
 class TestFileStreamQuirks(unittest.TestCase):

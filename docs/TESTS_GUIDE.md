@@ -27,7 +27,7 @@ A test sits in the folder of the code it tests. Each folder is named after that 
 | `writer_tests/` | `ScpWriter` (`falcom/ed9/writer/`): compiling the LLIL DSL, hooks, the compile check |
 | `common_functions_tests/` | the shared common-function library: fingerprints, matching, what a script imports |
 | `tools_tests/` | the scripts in `tools/`: the validators, the line-order report, the HLIL path check |
-| `dc3_tests/` | `common/` (to be renamed `dc3/`): logging, file I/O, the GC policy |
+| `dc3_tests/` | `dc3/`: logging, file I/O, the GC policy |
 | `codegen_tests/` | the TypeScript code generator (`codegen/`) |
 | `ir_core_tests/` | the `ir/core` values every layer shares: `is_int_zero`, `SourceFloat` |
 | `shared/` | helpers for the tests above; no tests |

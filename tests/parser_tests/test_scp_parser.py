@@ -11,7 +11,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from common import *
+from dc3 import *
 from falcom.ed9 import *
 from falcom.ed9.parser.crc32 import crc32_table, hash_func_Name
 

@@ -1,4 +1,4 @@
-from common import *
+from dc3 import *
 import struct
 
 # Unused: the records in types_scp pack through their LAYOUT. Kept for now

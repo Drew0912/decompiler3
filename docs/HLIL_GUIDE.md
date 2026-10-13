@@ -151,7 +151,7 @@ Two output modes exist side by side:
 - **`.hlil.ts`** — a raw `HLILFormatter` tree dump, explicitly documented in-repo as
   "not recompilable code." Useful for debugging the IR, not as generated output. It prints the
   same operator symbols, precedence parentheses and case `break`s as `.ts`, from the shared
-  tables in `ir/hlil/hlil.py`, the same string literals (`common.utils.quote_string`) and hex
+  tables in `ir/hlil/hlil.py`, the same string literals (`dc3.utils.quote_string`) and hex
   constants (`0xFFFFFFFF`, not `-1`). In
   both, a minus over an operand that already starts with one keeps its parentheses (`-(-a)`,
   never `--a`, a decrement).

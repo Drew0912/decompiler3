@@ -1,7 +1,7 @@
 '''TypeScript Code Generator - HLIL to production TypeScript'''
 
 import math
-from common import *
+from dc3 import *
 from typing import List
 from ir.core import is_int_zero
 from ir.hlil import *

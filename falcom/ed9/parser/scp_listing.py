@@ -6,8 +6,8 @@ from bisect import bisect_left
 from dataclasses import astuple, dataclass
 from pathlib import Path
 
-from common.logging import log
-from common.utils import quote_string
+from dc3.logging import log
+from dc3.utils import quote_string
 from ir.llil.llil import default_label_for_addr
 from ..disasm import CommentOptions, ED9Opcode, Formatter, FormatterContext, Instruction, OperandType
 from ..disasm.ed9_optable import ED9OperandType

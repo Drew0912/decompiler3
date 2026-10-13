@@ -9,7 +9,7 @@ __all__ = (
     'display_width',
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent   # common/ sits directly under the repo root
+PROJECT_ROOT = Path(__file__).resolve().parent.parent   # dc3/ sits directly under the repo root
 
 STRING_ESCAPES          = {'\\': '\\\\', '\r': '\\r', '\n': '\\n', '\t': '\\t'}
 MIN_PRINTABLE_CODEPOINT = 0x20

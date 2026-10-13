@@ -23,8 +23,8 @@ from typing import Any, Dict, List, Optional, TextIO, Tuple, Union
 # Add project root to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from common import fileio
-from common.config import default_encoding
+from dc3 import fileio
+from dc3.config import default_encoding
 from ir.core import UNASSIGNED_INST_INDEX
 from ir.llil import LowLevelILFunction, LowLevelILInstruction, LowLevelILOperation
 from ir.mlil import MediumLevelILFunction, MediumLevelILInstruction, MediumLevelILOperation, MLILLoadGlobal

@@ -12,7 +12,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from common.logging import log
+from dc3.logging import log
 from falcom.ed9.disasm import (
     Disassembler, DisassemblerContext, ED9_INSTRUCTION_TABLE, ED9Opcode, Formatter, FormatterContext,
 )

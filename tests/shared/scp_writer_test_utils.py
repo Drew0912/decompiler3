@@ -8,8 +8,8 @@ import re
 import tempfile
 import unittest
 
-from common import fileio
-from common.config import default_encoding
+from dc3 import fileio
+from dc3.config import default_encoding
 from falcom.ed9.writer import scp_writer
 
 

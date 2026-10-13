@@ -1,4 +1,4 @@
-from common import *
+from dc3 import *
 import binascii
 
 crc32_table = [

@@ -11,7 +11,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from common.utils import display_width
+from dc3.utils import display_width
 from falcom.ed9.disasm import CommentOptions, Formatter, FormatterContext
 from falcom.ed9.disasm.llil_dsl_comments import COMMENT_COLUMN, MIN_COMMENT_GAP, append_comment
 from falcom.ed9.parser.scp import ScpParser

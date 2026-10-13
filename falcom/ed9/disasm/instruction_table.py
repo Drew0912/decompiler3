@@ -1,6 +1,6 @@
 """Instruction table interface and descriptor"""
 
-from common import *
+from dc3 import *
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from .basic_block import BranchKind

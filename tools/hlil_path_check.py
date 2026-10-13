@@ -36,7 +36,7 @@ from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from common.logging import log
+from dc3.logging import log
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil.vm_lifter import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil

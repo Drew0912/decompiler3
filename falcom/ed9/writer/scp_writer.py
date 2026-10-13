@@ -8,10 +8,10 @@ from pathlib import Path
 from types import UnionType
 from typing import Callable, get_args
 
-from common import fileio
-from common.config import default_encoding
-from common.gc_policy import infrequent_gc
-from common.logging import log
+from dc3 import fileio
+from dc3.config import default_encoding
+from dc3.gc_policy import infrequent_gc
+from dc3.logging import log
 from ir.llil import WORD_SIZE
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandFormat, OperandType
 from ..parser.crc32 import hash_func_Name

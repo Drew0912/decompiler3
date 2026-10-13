@@ -247,7 +247,7 @@ comments = CommentOptions(...))` picks the optional comments (`falcom/ed9/disasm
 `scena2py` builds them from its config); the validator keeps the defaults, so the logic round trip
 checks that the stack comments reach the fixed point too. A generated script first puts the repo root on `sys.path` (`import sys` and
 `sys.path.insert(0, '<root>')`, the root of the checkout that generated it - `SYS_PATH_SETUP_LINES` in
-`falcom/ed9/parser/scp.py`, from `common.utils.PROJECT_ROOT`), so it runs from any folder without `PYTHONPATH`; moving the
+`falcom/ed9/parser/scp.py`, from `dc3.utils.PROJECT_ROOT`), so it runs from any folder without `PYTHONPATH`; moving the
 checkout means regenerating the script or editing that line. It then imports the helper, an
 optional `<stem>_hook` module for patches kept outside the generated file (only a missing hook is
 ignored; an import error inside the hook stops the compile; §4, which also covers the opt-in hook template), and the
@@ -332,7 +332,7 @@ as today.
 
 **Gating:** the *import* is unconditional (see above) and needs no `try`/`except` of its own in the
 generated script's header — `common_all.py` is a tracked project file (always present) that wraps
-its *own* internal imports of the gitignored, locally-generated `common/` package in
+its *own* internal imports of the gitignored, locally-generated `metadata/common/` package in
 `try`/`except ModuleNotFoundError`, logging a hint to run the generator and setting
 `COMMON_LIBRARY_GENERATED = False` if that package doesn't exist yet, `True` otherwise. The
 *manifest* — i.e. what actually gets matched and baked into bytecode — stays gated on two things
@@ -549,8 +549,8 @@ then name the decorator's wrapper `def`.
 **Pylance.** Hooks see the script's names only at runtime. The `TYPE_CHECKING` lines in the example show them to
 Pylance: `from <stem> import *` for plain names, and `import <stem> as original` for `original.Name(...)` with the real
 signatures. They work only when the stem is a valid module name (not `mon5078+`) that no other module takes: Pylance
-finds a stdlib module or one of the checkout's top-level packages first - `common.dat` gets the checkout's `common/`
-until that package is renamed `dc3/`, the planned root-cause fix. `# pyright: basic` turns on Pylance's
+finds a stdlib module or one of the checkout's top-level packages first - a script named `dc3.dat` gets the
+checkout's `dc3/`. `# pyright: basic` turns on Pylance's
 basic type checking for the hook file, without which Pylance reports no wrong argument counts or unknown attributes
 (`original.Nmae`). The
 ignore on the star-import line lets a replacement keep its function's name: basic mode otherwise reports the script's
@@ -576,8 +576,8 @@ registerRunCallback(run_hook)
 ```
 
 When no import can name the `.py`'s stem - it isn't a module name (`mon5078+`) or another module takes the name
-(`common`, see Pylance above) - the `TYPE_CHECKING` block holds a hint instead of the imports: rename the `.py` to the
-suggested name (`mon5078_.py`, `common_.py`; it still compiles to the same `.dat`, and the hook keeps its name) and
+(`dc3`, see Pylance above) - the `TYPE_CHECKING` block holds a hint instead of the imports: rename the `.py` to the
+suggested name (`mon5078_.py`, `dc3_.py`; it still compiles to the same `.dat`, and the hook keeps its name) and
 uncomment the two imports it lists. Until then, Pylance reports the script's names in that hook as undefined, though
 they work when it compiles. A stem with a dot gets no template, only a warning.
 

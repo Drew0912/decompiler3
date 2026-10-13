@@ -19,8 +19,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from common.logging import log
-from common.utils import PROJECT_ROOT
+from dc3.logging import log
+from dc3.utils import PROJECT_ROOT
 from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
 from falcom.ed9.parser.types_parser import GlobalVar
 from falcom.ed9.parser.types_scp import ScpGlobalVar
@@ -79,12 +79,12 @@ MON5078_RENAME_HINT = '''\
     pass
 '''
 
-# The checkout's own common/ package takes the name until it is renamed dc3/ (the planned root-cause fix)
-COMMON_RENAME_HINT = '''\
-    # 'common' is also the name of another module, so Pylance can't import the script's names. To get them, rename
-    # common.py to a valid name (it still compiles to common.dat; keep this file's name) and uncomment:
-    # from common_ import *  # pyright: ignore[reportAssignmentType]
-    # import common_ as original
+# The checkout's own dc3/ package takes the name
+DC3_RENAME_HINT = '''\
+    # 'dc3' is also the name of another module, so Pylance can't import the script's names. To get them, rename
+    # dc3.py to a valid name (it still compiles to dc3.dat; keep this file's name) and uncomment:
+    # from dc3_ import *  # pyright: ignore[reportAssignmentType]
+    # import dc3_ as original
     pass
 '''
 
@@ -221,8 +221,8 @@ class TestHookTemplate(unittest.TestCase):
                          HOOK_TEMPLATE.replace(HOOK_TEMPLATE_IMPORTS, MON5078_RENAME_HINT))
 
     def test_rename_hint_when_another_module_has_the_name(self):
-        self.assertEqual(named_parser('common.dat').gen_hook_template(),
-                         HOOK_TEMPLATE.replace(HOOK_TEMPLATE_IMPORTS, COMMON_RENAME_HINT))
+        self.assertEqual(named_parser('dc3.dat').gen_hook_template(),
+                         HOOK_TEMPLATE.replace(HOOK_TEMPLATE_IMPORTS, DC3_RENAME_HINT))
 
     def test_rename_hint_decided_on_the_raw_stem(self):
         '''A keyword, a leading digit or space, a stdlib module's name: the .py carries the raw stem, so no import names
@@ -234,7 +234,7 @@ class TestHookTemplate(unittest.TestCase):
 
     def test_hint_imports_parse_uncommented(self):
         '''An import under TYPE_CHECKING still has to parse: `from class import *` would break the whole hook'''
-        for name in ('mon5078+.dat', 'common.dat', 'class.dat', '0abc.dat', ' ai.dat', 'types.dat'):
+        for name in ('mon5078+.dat', 'dc3.dat', 'class.dat', '0abc.dat', ' ai.dat', 'types.dat'):
             with self.subTest(name = name):
                 text = named_parser(name).gen_hook_template()
                 compile(text.replace('    # from ', '    from ').replace('    # import ', '    import '), f'{name}_hook.py', 'exec')

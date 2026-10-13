@@ -1,8 +1,8 @@
 import math
 from typing import TypeAlias
 
-from common import *
-from common.logging import log
+from dc3 import *
+from dc3.logging import log
 from . import utils
 
 class ScpParamFlags(IntEnum2):

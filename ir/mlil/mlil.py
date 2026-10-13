@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
 
-from common import *
+from dc3 import *
 from ir.core import *
 
 

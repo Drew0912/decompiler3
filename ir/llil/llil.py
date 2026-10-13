@@ -1,7 +1,7 @@
 '''LLIL - Stack-based low-level IR'''
 
 from typing import Any, List, Optional, Union, TYPE_CHECKING
-from common import *
+from dc3 import *
 from ir.core import *
 
 if TYPE_CHECKING:

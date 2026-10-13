@@ -36,7 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
-from common.config import default_indent
+from dc3.config import default_indent
 from falcom.ed9.disasm.ed9_optable import ED9Opcode, ED9OperandType
 from falcom.ed9.disasm.formatter import Formatter, FormatterContext
 from falcom.ed9.disasm.instruction import Instruction
@@ -347,7 +347,7 @@ def render_all(module_keys: list[str]) -> str:
         '',
         GENERATED_HEADER_COMMENT,
         '',
-        'from common.logging import log as _log',
+        'from dc3.logging import log as _log',
         '',
         'try:',
     ]

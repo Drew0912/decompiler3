@@ -2,9 +2,9 @@
 raw arguments, and whether a record holds what its call would get (content only - the writer's own rules stay with the
 round-trip validator)"""
 
-from common import fileio
+from dc3 import fileio
 
-from common.config import default_encoding
+from dc3.config import default_encoding
 from ir.llil import WORD_SIZE
 from .scp import ScpParser, TrackedCall
 from .string_pool import read_text, read_u32

@@ -1,6 +1,6 @@
 """Formatter for ED9 VM disassembly output"""
 
-from common import *
+from dc3 import *
 from typing import TYPE_CHECKING, Callable
 from dataclasses import dataclass
 

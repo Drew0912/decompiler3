@@ -10,7 +10,7 @@ import tokenize
 from types import CodeType
 from typing import Callable, NamedTuple
 
-from common.logging import log
+from dc3.logging import log
 from ir.llil import WORD_SIZE
 from ..disasm import Instruction, InstructionKind
 from ..disasm.stack_effects import POP_SIZE_OPERAND

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''common/gc_policy.py: infrequent_gc() spaces collections out for a block and restores the thresholds it found, and
+'''dc3/gc_policy.py: infrequent_gc() spaces collections out for a block and restores the thresholds it found, and
 the decompile and compile entry points run under it.'''
 
 from pathlib import Path
@@ -11,7 +11,7 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from common.gc_policy import GC_THRESHOLD, infrequent_gc
+from dc3.gc_policy import GC_THRESHOLD, infrequent_gc
 from falcom.ed9 import scena2py
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer import ScpWriter
