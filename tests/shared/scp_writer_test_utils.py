@@ -9,7 +9,6 @@ import tempfile
 import unittest
 
 from dc3 import fileio
-from dc3.config import default_encoding
 from falcom.ed9.writer import scp_writer
 
 
@@ -59,7 +58,7 @@ def body_writer() -> scp_writer.ScpWriter:
 
     writer.LLILCode()(Body)
     writer.current_function = writer.functions_by_name['Body']
-    writer.fs = fileio.FileStream(encoding = default_encoding()).OpenMemory()
+    writer.fs = fileio.FileStream().OpenMemory()
     return writer
 
 

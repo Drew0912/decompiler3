@@ -1,6 +1,5 @@
 """Instruction and Operand definitions"""
 
-from dc3 import *
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 

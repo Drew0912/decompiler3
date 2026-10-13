@@ -3,9 +3,6 @@ raw arguments, and whether a record holds what its call would get (content only 
 round-trip validator)"""
 
 from dc3 import fileio
-
-from dc3.config import default_encoding
-from ir.llil import WORD_SIZE
 from .scp import ScpParser, TrackedCall
 from .string_pool import read_text, read_u32
 from .types_scp import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
@@ -13,13 +10,13 @@ from .types_scp import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, Sc
 
 def read_debug_records(parser: ScpParser, data: bytes) -> list[list[ScpFunctionCallDebugInfo]]:
     """Each function's raw records in table order, read from the file's bytes (the parser keeps converted ones only)"""
-    fs = fileio.FileStream(encoding = default_encoding()).OpenMemory(data)
+    fs = fileio.FileStream().OpenMemory(data)
     return [parser.read_debug_info(fs, entry) for entry in parser.function_entries]
 
 
 def record_args(data: bytes, record: ScpFunctionCallDebugInfo) -> list[tuple[int, int]]:
     """Each argument's raw type and raw value word, in record order"""
-    return [(read_u32(data, offset + WORD_SIZE), read_u32(data, offset)) for offset in record.arg_offsets()]
+    return [(read_u32(data, offset + ScpValue.WORD.size), read_u32(data, offset)) for offset in record.arg_offsets()]
 
 
 def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebugInfo) -> str | None:

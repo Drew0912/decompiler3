@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
 
-from dc3 import *
+from dc3 import format_uint32_hex, IntEnum2, quote_string
 from ir.core import *
 
 

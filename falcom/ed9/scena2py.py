@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
+from dc3.utils import collect_paths, raise_recursion_limit, write_text_lf
 from falcom.ed9.disasm import CommentOptions
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.scp_listing import write_listing
@@ -29,28 +30,6 @@ from ir.hlil.hlil_formatter import HLILFormatter
 from codegen import generate_typescript, generate_typescript_header
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 
-DAT_PATTERN = '*.dat'
-
-# The HLIL passes and the TS generator recurse once or twice per nesting level, and Python's
-# default limit of 1000 is close for the most deeply nested scripts; a RecursionError would drop
-# that function from the output. Past the real C stack, Python still raises rather than crashing.
-RECURSION_LIMIT = 10000
-
-def collect_paths(paths: list[str]) -> list[Path]:
-    """Expand directories (recursively) to their .dat files; keep file paths as-is"""
-    files = []
-
-    for name in paths:
-        path = Path(name)
-
-        if path.is_dir():
-            files.extend(sorted(path.rglob(DAT_PATTERN)))
-
-        else:
-            files.append(path)
-
-    return files
-
 COMMON_FUNCTIONS_OMITTED_COMMENT = (
     '# Common/shared functions were omitted (include_common_functions = False).\n'
     '# This script will NOT compile back to a .dat file: calls below reference\n'
@@ -59,7 +38,7 @@ COMMON_FUNCTIONS_OMITTED_COMMENT = (
 
 def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *, comments: CommentOptions = CommentOptions(), common_functions_omitted: bool = False) -> None:
     preamble = [*COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines(), ''] if common_functions_omitted else []
-    out_path.write_text(parser.gen_python_script(functions, preamble = preamble, comments = comments), encoding = 'utf-8', newline = '\n')
+    write_text_lf(out_path, parser.gen_python_script(functions, preamble = preamble, comments = comments))
 
 def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
     """A starting <stem>_hook.py next to the .py, never over an existing file"""
@@ -78,7 +57,7 @@ def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
 
 @infrequent_gc()
 def process_file(path: Path, config: ScenaDecompileConfig) -> None:
-    sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
+    raise_recursion_limit()
 
     output_dir = config.output_dir / path.stem
     out = output_dir / path.name
@@ -130,7 +109,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
                 llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
 
             if config.write_llil_dot:
-                (output_dir / f'{out.stem}.{func.name}.llil.dot').write_text(FalcomLLILFormatter.to_dot(llil_func), encoding = 'utf-8', newline = '\n')
+                write_text_lf(output_dir / f'{out.stem}.{func.name}.llil.dot', FalcomLLILFormatter.to_dot(llil_func))
 
             need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
             if not need_mlil:
@@ -142,7 +121,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
 
             if config.write_mlil_dot:
-                (output_dir / f'{out.stem}.{func.name}.mlil.dot').write_text(MLILFormatter.to_dot(mlil_func), encoding = 'utf-8', newline = '\n')
+                write_text_lf(output_dir / f'{out.stem}.{func.name}.mlil.dot', MLILFormatter.to_dot(mlil_func))
 
             if not (config.write_hlil_ts or config.write_ts):
                 continue
@@ -166,16 +145,16 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             log.warning(f'{path} [{func.name}]: {type(e).__name__}: {e}')
 
     if config.write_llil_asm:
-        out.with_suffix('.llil.asm').write_text('\n'.join(llil_asm_lines), encoding = 'utf-8', newline = '\n')
+        write_text_lf(out.with_suffix('.llil.asm'), '\n'.join(llil_asm_lines))
 
     if config.write_mlil_asm:
-        out.with_suffix('.mlil.asm').write_text('\n'.join(mlil_asm_lines), encoding = 'utf-8', newline = '\n')
+        write_text_lf(out.with_suffix('.mlil.asm'), '\n'.join(mlil_asm_lines))
 
     if config.write_hlil_ts:
-        out.with_suffix('.hlil.ts').write_text('\n'.join(hlil_ts_lines), encoding = 'utf-8', newline = '\n')
+        write_text_lf(out.with_suffix('.hlil.ts'), '\n'.join(hlil_ts_lines))
 
     if config.write_ts:
-        out.with_suffix('.ts').write_text(generate_typescript_header() + '\n'.join(ts_chunks), encoding = 'utf-8', newline = '\n')
+        write_text_lf(out.with_suffix('.ts'), generate_typescript_header() + '\n'.join(ts_chunks))
 
 def main() -> int:
     parser = argparse.ArgumentParser(description = 'Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')

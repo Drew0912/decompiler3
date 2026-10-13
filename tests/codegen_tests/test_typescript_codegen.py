@@ -20,6 +20,7 @@ from ir.hlil import (
     HLILCall,
     HLILConst,
     HLILExprStmt,
+    HLILExternCall,
     HLILSwitch,
     HLILSwitchCase,
     HLILTypeKind,
@@ -43,6 +44,9 @@ NEGATIVE_FLOAT = -3.0
 # A quote, a backslash, a newline and a tab, and its TypeScript literal
 SPECIAL_TEXT = 'a"b\\c\nd\te'
 SPECIAL_TEXT_LITERAL = r'"a\"b\\c\nd\te"'
+# A script-call target with a quote and a backslash, and its single-quoted TypeScript literal
+SPECIAL_TARGET = "mod:O'Reilly\\entry"
+SPECIAL_TARGET_LITERAL = r"'mod:O\'Reilly\\entry'"
 
 
 def make_scrutinee() -> HLILVar:
@@ -166,6 +170,16 @@ class TestStringCodegen(unittest.TestCase):
 
         self.assertIn(f'arg1: string = {SPECIAL_TEXT_LITERAL}', ts)
         self.assertIn(f'f({SPECIAL_TEXT_LITERAL});', ts)
+
+
+class TestExternCallCodegen(unittest.TestCase):
+    '''A script call's target prints as a quote_string literal (it used to be wrapped in quotes unescaped).'''
+
+    def test_target_is_escaped(self):
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(HLILExprStmt(HLILExternCall(SPECIAL_TARGET, [])))
+
+        self.assertIn(f'extern_call({SPECIAL_TARGET_LITERAL});', generate_typescript(func))
 
 
 if __name__ == '__main__':

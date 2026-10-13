@@ -1,3 +1,4 @@
+from dc3 import default_indent, StrictBase
 from .types_scp import *
 from .crc32 import hash_func_Name
 from dataclasses import dataclass, field

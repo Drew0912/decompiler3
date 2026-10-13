@@ -1,7 +1,7 @@
 '''LLIL - Stack-based low-level IR'''
 
 from typing import Any, List, Optional, Union, TYPE_CHECKING
-from dc3 import *
+from dc3 import format_signed_hex, IntEnum2, quote_string
 from ir.core import *
 
 if TYPE_CHECKING:
@@ -506,7 +506,7 @@ class LowLevelILConst(LowLevelILExpr, Constant):
 
         # Raw values always print in hex
         if isinstance(self.value, int) and (self.is_raw or self.is_hex):
-            return f'-0x{-self.value:X}' if self.value < 0 else f'0x{self.value:X}'
+            return format_signed_hex(self.value)
 
         return str(self.value)
 

@@ -33,6 +33,7 @@ from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from dc3.utils import collect_paths, raise_recursion_limit
 from falcom.ed9 import ScpParser
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
 from falcom.ed9.ir.llil import ED9VMLifter
@@ -49,10 +50,6 @@ from ir.hlil.hlil import (
 
 LEVELS = ('py', 'llil', 'mlil', 'hlil')
 DEFAULT_WORST = 10
-
-# Same headroom as falcom/ed9/scena2py.py: the IR walkers recurse per nesting level, and Python's
-# default limit of 1000 is close for the most deeply nested scripts
-RECURSION_LIMIT = 10000
 
 
 class FunctionReport:
@@ -153,7 +150,7 @@ def collect_hlil_lines(hlil_func) -> List[int]:
 
 def analyse_file(path: Path) -> List[FunctionReport]:
     '''Line sequences per function, from the pipeline scena2py.py decompiles with'''
-    sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
+    raise_recursion_limit()
     reports = []
 
     with contextlib.redirect_stdout(io.StringIO()):
@@ -255,7 +252,7 @@ def create_parser() -> argparse.ArgumentParser:
 def main() -> int:
     args = create_parser().parse_args()
     root = Path(args.scp_file)
-    paths = sorted(root.rglob('*.dat')) if root.is_dir() else [root]
+    paths = collect_paths([root])
 
     if not paths:
         print(f'no .dat files under {root}')

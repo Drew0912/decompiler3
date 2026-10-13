@@ -20,11 +20,11 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from dc3.logging import log
-from dc3.utils import PROJECT_ROOT
+from dc3.utils import PROJECT_ROOT, RECURSION_LIMIT, write_text_lf
 from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
 from falcom.ed9.parser.types_parser import GlobalVar
 from falcom.ed9.parser.types_scp import ScpGlobalVar
-from falcom.ed9.scena2py import COMMON_FUNCTIONS_OMITTED_COMMENT, RECURSION_LIMIT, main, process_file
+from falcom.ed9.scena2py import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer import scp_writer_gen_common_funcs as gen
 from falcom.ed9.writer.metadata import SCP_WRITER_HELPER_IMPORT
@@ -365,7 +365,7 @@ class TestFidelityScriptCompiles(unittest.TestCase):
 
     def compiled(self, text: str) -> bytes:
         '''text compiled in memory'''
-        self.script.write_text(text, encoding = 'utf-8', newline = '\n')
+        write_text_lf(self.script, text)
         fresh_writer()
         g = runpy.run_path(str(self.script), run_name = 'fidelity_check')
         return g['scena'].build(g)

@@ -12,12 +12,12 @@ from dc3 import fileio
 from dc3.config import default_encoding
 from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
-from ir.llil import WORD_SIZE
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandFormat, OperandType
 from ..parser.crc32 import hash_func_Name
 from ..parser.scp import CallDebugInfoTracker, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
 from ..parser.string_pool import StringPoolSection
 from ..parser.types_scp import (
+    UINT32_SIZE,
     ScpValue,
     RawInt,
     ScpFunctionEntry,
@@ -41,7 +41,7 @@ UNRESOLVED_STRING_OFFSET = 0xFFFFFFFF  # a string reference, until _write_string
 UNRESOLVED_FUNC_INDEX = -1  # ScpFunction.index, until _build_function_table() sorts the table
 
 STRING_OFFSET_TAG = ScpValue.Type.String << 30  # 0xC0000000 - top 2 bits of a resolved string-pool offset
-NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - WORD_SIZE  # name_offset is the last field of a function entry
+NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - UINT32_SIZE  # name_offset is the last field of a function entry
 
 # ScpGlobalVar.LAYOUT stores a global's type as an unsigned word
 GLOBAL_VAR_TYPE_RANGE = OperandFormat.integer_range(OperandType.UInt32)
@@ -435,7 +435,7 @@ class ScpWriter:
 
     def _compile_functions(self) -> fileio.FileStream:
         """Compile every function in script (source) order into a memory buffer; offsets are relative until _relocate_code()"""
-        code = fileio.FileStream(encoding = default_encoding()).OpenMemory()
+        code = fileio.FileStream().OpenMemory()
         self.fs = code
         self.opcode_emitter_code_ids = {id(emitter_code) for emitter_code in self._opcode_emitter_codes()}
 
@@ -549,7 +549,7 @@ class ScpWriter:
     def _write_file(self, hdr: ScpHeader, code: fileio.FileStream) -> tuple[bytes, int]:
         """Lay the .dat out in memory around the compiled code - header, function table, default params, param flags,
         debug records, global vars, code, string pool - and return its bytes and where its code ends"""
-        self.fs = fileio.FileStream(encoding = default_encoding()).OpenMemory()
+        self.fs = fileio.FileStream().OpenMemory()
         self.fs.Write(hdr.to_bytes())  # rewritten once global_var_offset is known
 
         self._write_function_table()  # reserves its space; rewritten below once every offset is known

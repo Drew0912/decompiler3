@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from falcom.ed9.scena2py import RECURSION_LIMIT
+from dc3.utils import RECURSION_LIMIT
 from ir.mlil.mlil import MediumLevelILFunction, MLILDebug, MLILGoto, MLILIf, MLILRet, MLILVar
 from ir.mlil.passes import BlockMergePass
 from ir_line_order_report import analyse_file, collect_mlil_lines

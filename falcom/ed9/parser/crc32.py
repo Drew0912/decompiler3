@@ -1,4 +1,4 @@
-from dc3 import *
+from dc3 import default_encoding
 import binascii
 
 crc32_table = [

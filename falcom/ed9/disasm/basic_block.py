@@ -1,6 +1,6 @@
 """Basic Block representation"""
 
-from dc3 import *
+from dc3 import default_indent, IntEnum2
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 

@@ -1,4 +1,4 @@
-from dc3 import *
+from dc3 import default_encoding, default_endian, fileio
 import struct
 
 # Unused: the records in types_scp pack through their LAYOUT. Kept for now

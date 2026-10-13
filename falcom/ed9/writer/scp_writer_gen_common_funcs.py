@@ -37,6 +37,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from dc3.config import default_indent
+from dc3.utils import collect_paths, write_text_lf
 from falcom.ed9.disasm.ed9_optable import ED9Opcode, ED9OperandType
 from falcom.ed9.disasm.formatter import Formatter, FormatterContext
 from falcom.ed9.disasm.instruction import Instruction
@@ -49,7 +50,6 @@ from falcom.ed9.writer.metadata import (COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSI
                                         SCP_WRITER_HELPER_IMPORT)
 from falcom.ed9.writer.metadata.signature import function_fingerprint, fingerprint_digest
 
-DAT_PATTERN = '*.dat'
 OUTPUT_DIR = COMMON_LIBRARY_DIR
 INDEX_PATH = Path(__file__).resolve().parent / 'metadata' / 'common_index.py'
 ALL_PATH = Path(__file__).resolve().parent / 'metadata' / 'common_all.py'
@@ -76,10 +76,6 @@ class FunctionFacts:
     touches_global: bool        # the exclusion trigger
     call_targets: set[str]      # the closure input
     subsystem: int | None       # the module-grouping key: the first SYSCALL's subsystem
-
-
-def collect_paths(corpus_root: Path) -> list[Path]:
-    return sorted(corpus_root.rglob(DAT_PATTERN))
 
 
 def function_facts(parser: ScpParser, func: Function) -> FunctionFacts:
@@ -364,7 +360,8 @@ def write_output(canonical: dict[str, tuple[str, int]], facts: dict[str, Functio
         stale.unlink()
 
     OUTPUT_DIR.mkdir(parents = True, exist_ok = True)
-    (OUTPUT_DIR / '__init__.py').write_text('"""Generated common-function library modules, one per syscall subsystem"""\n', encoding = 'utf-8', newline = '\n')
+    write_text_lf(OUTPUT_DIR / '__init__.py',
+                  '"""Generated common-function library modules, one per syscall subsystem"""\n')
 
     names_by_module: dict[str, list[str]] = {}
     for name in rendered:
@@ -372,14 +369,14 @@ def write_output(canonical: dict[str, tuple[str, int]], facts: dict[str, Functio
 
     for module_key, names in names_by_module.items():
         text = render_module(module_key, names, rendered, facts, name_to_module)
-        (OUTPUT_DIR / f'{module_key}.py').write_text(text, encoding = 'utf-8', newline = '\n')
+        write_text_lf(OUTPUT_DIR / f'{module_key}.py', text)
 
-    INDEX_PATH.write_text(render_index(canonical, name_to_module), encoding = 'utf-8', newline = '\n')
-    ALL_PATH.write_text(render_all(sorted(names_by_module)), encoding = 'utf-8', newline = '\n')
+    write_text_lf(INDEX_PATH, render_index(canonical, name_to_module))
+    write_text_lf(ALL_PATH, render_all(sorted(names_by_module)))
 
 
 def generate(corpus_root: Path):
-    paths = collect_paths(corpus_root)
+    paths = collect_paths([corpus_root])
     occurrences, facts_by_digest = collect_occurrences(paths)
     canonical = select_canonical(occurrences)
     facts = {name: facts_by_digest[digest] for name, (digest, _file_idx) in canonical.items()}

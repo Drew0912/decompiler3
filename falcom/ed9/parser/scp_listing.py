@@ -7,7 +7,7 @@ from dataclasses import astuple, dataclass
 from pathlib import Path
 
 from dc3.logging import log
-from dc3.utils import quote_string
+from dc3.utils import quote_string, write_text_lf
 from ir.llil.llil import default_label_for_addr
 from ..disasm import CommentOptions, ED9Opcode, Formatter, FormatterContext, Instruction, OperandType
 from ..disasm.ed9_optable import ED9OperandType
@@ -58,7 +58,7 @@ def write_listing(path: Path, out_path: Path, sections: ListingSections, selecte
     else:
         lines = ScpListing(path).lines(sections, selected)
 
-    out_path.write_text('\n'.join(lines) + '\n', encoding = 'utf-8', newline = '\n')
+    write_text_lf(out_path, '\n'.join(lines) + '\n')
 
 
 class ScpListing:

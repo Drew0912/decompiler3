@@ -1,7 +1,7 @@
 '''TypeScript Code Generator - HLIL to production TypeScript'''
 
 import math
-from dc3 import *
+from dc3 import default_indent, format_uint32_hex, quote_string
 from typing import List
 from ir.core import is_int_zero
 from ir.hlil import *
@@ -296,7 +296,7 @@ class TypeScriptGenerator:
 
         elif isinstance(expr, HLILExternCall):
             args = [
-                f"'{expr.target}'",
+                quote_string(expr.target, "'"),
                 *[cls._format_expr(arg) for arg in expr.args],
             ]
             return f'extern_call({', '.join(args)})'

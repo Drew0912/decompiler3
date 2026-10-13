@@ -9,7 +9,6 @@ from ..writer.metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, CO
                                SCP_WRITER_HELPER_IMPORT)
 from ..writer.metadata.common_index import COMMON_FUNCTIONS
 from ..writer.metadata.signature import function_fingerprint, fingerprint_digest
-from dc3.config import default_encoding
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT
 from ir.llil import WORD_SIZE
@@ -803,7 +802,7 @@ class ScpParser(StrictBase):
         """load() for a script already in memory, named name; quiet drops the per-function progress and error lines
         and the unusual-slot and backward-return warnings, for a caller that reports them itself (the compile check).
         reject_outside_stack and known_code_end are the compile check's (see the class attributes)."""
-        with fileio.FileStream(data, encoding = default_encoding()) as fs:
+        with fileio.FileStream(data) as fs:
             parser = cls(fs, name)
             parser.round_trip = round_trip
             parser.keep_unreachable_code = keep_unreachable_code
@@ -903,7 +902,7 @@ class ScpParser(StrictBase):
                 info = FunctionCallDebugInfo()
                 info.call_type = dbg_info.call_type
 
-                if dbg_info.func_id != 0xFFFFFFFF:
+                if dbg_info.func_id != ScpFunctionCallDebugInfo.NO_FUNC_ID:
                     if dbg_info.func_id >= len(functions):
                         raise ValueError(f'debug info func_id out of range: {dbg_info.func_id} >= {len(functions)}')
 
@@ -1328,10 +1327,10 @@ class ScpParser(StrictBase):
     def value_positions(cls, inst: Instruction) -> list[int]:
         """File positions of an instruction's ScpValue words: a push's value, CALL_SCRIPT's module and func"""
         if inst.opcode in PUSH_ENCODED_OPS:
-            return [inst.offset + inst.size - WORD_SIZE]                            # PUSH ends with its ScpValue
+            return [inst.offset + inst.size - ScpValue.WORD.size]                    # PUSH ends with its ScpValue
 
         if inst.opcode in SCRIPT_CALL_OPS:
-            return [inst.offset + OPCODE_SIZE, inst.offset + OPCODE_SIZE + WORD_SIZE]  # module, func
+            return [inst.offset + OPCODE_SIZE, inst.offset + OPCODE_SIZE + ScpValue.WORD.size]  # module, func
 
         return []
 

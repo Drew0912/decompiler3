@@ -1,6 +1,6 @@
 """Generic recursive descent disassembler"""
 
-from dc3 import *
+from dc3 import fileio
 from typing import Callable
 import heapq
 
@@ -51,7 +51,7 @@ class Disassembler:
             fs = stream
 
         elif isinstance(stream, bytes):
-            fs = fileio.FileStream(encoding = default_encoding())
+            fs = fileio.FileStream()
             fs.OpenMemory(stream)
 
         else:

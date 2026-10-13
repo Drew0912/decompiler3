@@ -1,6 +1,6 @@
 '''HLIL Formatter - Format HLIL for debugging'''
 
-from dc3 import *
+from dc3 import default_indent
 from typing import List
 from .hlil import *
 

@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, TextIO, Tuple, Union
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dc3 import fileio
-from dc3.config import default_encoding
+from dc3.utils import raise_recursion_limit
 from ir.core import UNASSIGNED_INST_INDEX
 from ir.llil import LowLevelILFunction, LowLevelILInstruction, LowLevelILOperation
 from ir.mlil import MediumLevelILFunction, MediumLevelILInstruction, MediumLevelILOperation, MLILLoadGlobal
@@ -37,10 +37,6 @@ from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil.vm_lifter import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-
-# Same headroom as falcom/ed9/scena2py.py: the IR walkers recurse per nesting level, and Python's
-# default limit of 1000 is close for the most deeply nested scripts
-RECURSION_LIMIT = 10000
 
 
 # =============================================================================
@@ -520,7 +516,7 @@ class IRPipeline:
     """Generates all IR layers from an SCP file"""
 
     def __init__(self, scp_path: str):
-        sys.setrecursionlimit(max(sys.getrecursionlimit(), RECURSION_LIMIT))
+        raise_recursion_limit()
 
         self.scp_path = scp_path
         self.scp = None
@@ -532,7 +528,7 @@ class IRPipeline:
     def load(self) -> bool:
         try:
             scp_path = Path(self.scp_path)
-            self.fs = fileio.FileStream(str(scp_path), encoding=default_encoding())
+            self.fs = fileio.FileStream(str(scp_path))
             parser = ScpParser(self.fs, scp_path.name)
             parser.parse()
             self.scp = parser

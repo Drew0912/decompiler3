@@ -6,6 +6,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 from dc3 import fileio
+from dc3.utils import write_text_lf
 from falcom.ed9.disasm import *
 from falcom.ed9.parser import *
 from pathlib import Path
@@ -16,7 +17,7 @@ def disasm_file(input_path: Path, output_path: Path):
     """Disassemble all functions in a single file"""
     print(f'Processing {input_path.name}...')
 
-    with fileio.FileStream(str(input_path), encoding = default_encoding()) as fs:
+    with fileio.FileStream(str(input_path)) as fs:
         parser = ScpParser(fs, input_path.name)
         parser.parse()
 
@@ -34,7 +35,7 @@ def disasm_file(input_path: Path, output_path: Path):
             all_lines.append('')
 
         # Write output
-        output_path.write_text('\n'.join(all_lines), encoding = 'utf-8')
+        write_text_lf(output_path, '\n'.join(all_lines))
         print(f'  -> {output_path}')
 
 

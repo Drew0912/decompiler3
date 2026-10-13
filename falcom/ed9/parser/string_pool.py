@@ -6,9 +6,8 @@ from dataclasses import dataclass
 
 from dc3.config import default_encoding, default_endian
 from dc3.enum import IntEnum2
-from ir.llil import WORD_SIZE
 from .scp import ScpParser
-from .types_scp import ScpFunctionCallDebugInfo, ScpGlobalVar
+from .types_scp import UINT32_SIZE, ScpFunctionCallDebugInfo, ScpGlobalVar
 
 NUL = b'\0'     # ends every pool string
 
@@ -41,7 +40,7 @@ class StringRefs:
 
 
 def read_u32(data: bytes, offset: int) -> int:
-    return int.from_bytes(data[offset:offset + WORD_SIZE], default_endian())
+    return int.from_bytes(data[offset:offset + UINT32_SIZE], default_endian())
 
 
 def read_text(data: bytes, offset: int) -> str:
@@ -77,7 +76,7 @@ def collect_string_refs(data: bytes, parser: ScpParser, records: list[list[ScpFu
     entries = parser.function_entries
     names = [ScpParser.get_string_offset(entry.name_offset) for entry in entries]
     names = [offset for offset in names if offset is not None]
-    defaults = string_offsets(data, (entry.default_params_offset + i * WORD_SIZE
+    defaults = string_offsets(data, (entry.default_params_offset + i * UINT32_SIZE
                                      for entry in entries for i in range(entry.default_params_count)))
 
     code_set = set(code)

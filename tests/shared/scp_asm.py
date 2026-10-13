@@ -6,7 +6,6 @@ from typing import NamedTuple
 import struct
 
 from dc3 import fileio
-from dc3.config import default_encoding
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function, FunctionParam
@@ -206,7 +205,7 @@ class Program:
         self.function_entries.append(table_entry)
 
     def parser(self, keep_unreachable_code: bool = False) -> ScpParser:
-        fs = fileio.FileStream(encoding = default_encoding())
+        fs = fileio.FileStream()
         fs.OpenMemory(self.code)
         parser = ScpParser(fs, 'test.dat')
         parser.functions = self.entries

@@ -556,6 +556,12 @@ falcom/ed9/dsl/         # what scripts and hook files import
 - **Collision check:** the library generator reserves the DSL namespace's names (`RESERVED_HELPER_NAMES`,
   `scp_writer_gen_common_funcs.py`), so a package that adds names to it is checked against the corpus and the
   library first.
+- **A deliberate namespace (`__all__`):** today what a script or hook sees is whatever leaks through star imports,
+  because no module on the chain (`scp_writer_helper.py` -> `scp_writer_opcode_handler.py` -> `parser/types_scp.py`)
+  defines `__all__`. When `types_scp.py`'s `from dc3 import *` became named imports (2026-10-13), 7 `dc3` names left
+  the namespace (`IntFlag2`, `PROJECT_ROOT`, `default_encoding`, `default_endian`, `default_indent`, `display_width`,
+  `quote_string`); nothing generated used them. The script-facing modules should list their exports in `__all__`,
+  so the namespace changes only on purpose.
 
 ### Open Questions
 

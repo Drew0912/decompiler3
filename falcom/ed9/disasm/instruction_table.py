@@ -1,6 +1,6 @@
 """Instruction table interface and descriptor"""
 
-from dc3 import *
+from dc3 import fileio, format_signed_hex, IntEnum2, IntFlag2
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from .basic_block import BranchKind
@@ -26,15 +26,10 @@ class OperandType(IntEnum2):
     Offset      = 9
     UserDefined = 100
 
-    def __str__(self):
-        return self.name
-
-    def __repr__(self):
-        return self.name
-
 
 SIGNED_INTEGER_TYPES    = {OperandType.SInt8, OperandType.SInt16, OperandType.SInt32}
 UNSIGNED_INTEGER_TYPES  = {OperandType.UInt8, OperandType.UInt16, OperandType.UInt32}
+HEX_DIGITS_PER_BYTE     = 2
 
 
 class OperandFormat:
@@ -112,15 +107,9 @@ class OperandDescriptor:
 
     def format_integer(self, operand: 'Operand') -> str:
         if self.format.is_hex:
-            if self.format.type in SIGNED_INTEGER_TYPES:
-                # Signed integer
-                if operand.value < 0:
-                    return f'-0x{-operand.value:0{self.format.size * 2}X}'
-                else:
-                    return f'0x{operand.value:0{self.format.size * 2}X}'
-            else:
-                # Unsigned integer
-                return f'0x{operand.value:0{self.format.size * 2}X}'
+            # Only a signed type can hold a negative value, so one rule fits both
+            return format_signed_hex(operand.value, self.format.size * HEX_DIGITS_PER_BYTE)
+
         return str(operand.value)
 
     def format_float(self, operand: 'Operand') -> str:

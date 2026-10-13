@@ -37,6 +37,7 @@ from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dc3.logging import log
+from dc3.utils import collect_paths, raise_recursion_limit
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil.vm_lifter import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
@@ -475,6 +476,7 @@ def check_function(mlil_func: MediumLevelILFunction, hlil_func: HighLevelILFunct
 
 def check_file(path: Path) -> List[Tuple[str, Optional[PathCheckResult], Optional[str]]]:
     '''(function name, result or None, error or None) for every function in path'''
+    raise_recursion_limit()
     rows = []
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
         parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
@@ -503,8 +505,7 @@ def main() -> int:
     # The pipeline logs every function it translates
     log.setLevel(logging.WARNING)
 
-    root = Path(args.scp_file)
-    paths = sorted(root.rglob('*.dat')) if root.is_dir() else [root]
+    paths = collect_paths([args.scp_file])
     functions = failing = unstructured = 0
 
     for path in paths:

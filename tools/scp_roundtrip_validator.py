@@ -68,6 +68,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dc3 import fileio
 from dc3.config import default_encoding
+from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
 from falcom.ed9.parser.call_records import read_debug_records, record_mismatch
@@ -87,7 +88,6 @@ from falcom.ed9.writer.scp_writer import PUSH_SIZE_BYTE
 from falcom.ed9.writer.metadata.signature import function_fingerprint
 
 
-DAT_PATTERN             = '*.dat'
 UINT8_SIZE              = 1
 OPCODE_SIZE             = UINT8_SIZE
 PUSH_SIZE_OFFSET        = OPCODE_SIZE                       # PUSH opcode, u8 size, ScpValue
@@ -160,7 +160,7 @@ class ScriptContext:
 
 def load_script(path: Path) -> ScriptContext:
     """Parse and disassemble path; the caller closes ctx.fs, or this closes it when the file fails to load"""
-    fs = fileio.FileStream(str(path), encoding = default_encoding())
+    fs = fileio.FileStream(str(path))
 
     try:
         parser = ScpParser(fs, path.name)
@@ -535,7 +535,7 @@ def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = Tru
     with contextlib.redirect_stdout(io.StringIO()):
         parser, functions = ScpParser.load(dat_path, round_trip = round_trip, keep_unreachable_code = keep_unreachable_code)
 
-    py_path.write_text(parser.gen_python_script(functions), encoding = 'utf-8', newline = '\n')
+    write_text_lf(py_path, parser.gen_python_script(functions))
     return parser, functions
 
 
@@ -640,7 +640,7 @@ def compile_and_decompile_round(stem: str, round_dir: Path, py_text: str) -> tup
     result back. Returns (returncode, compile output tail, the round's .dat path or None on failure)."""
     round_dir.mkdir()
     py_path = round_dir / f'{stem}.py'
-    py_path.write_text(py_text, encoding = 'utf-8', newline = '\n')
+    write_text_lf(py_path, py_text)
 
     returncode, tail = compile_dsl(py_path, round_dir)
     dat_path = round_dir / f'{stem}.dat'
@@ -747,20 +747,6 @@ def print_result(result: CheckResult, verbose: bool):
 
     if len(details) < len(result.details):
         print(f'{DETAIL_INDENT}... {len(result.details) - len(details)} more (--verbose)')
-
-
-def collect_paths(paths: list[str]) -> list[Path]:
-    files = []
-    for name in paths:
-        path = Path(name)
-
-        if path.is_dir():
-            files.extend(sorted(path.rglob(DAT_PATTERN)))
-
-        else:
-            files.append(path)
-
-    return files
 
 
 def create_parser() -> argparse.ArgumentParser:

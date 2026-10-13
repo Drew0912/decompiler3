@@ -1,9 +1,11 @@
 import math
 from typing import TypeAlias
 
-from dc3 import *
+from dc3 import fileio, format_uint32_hex, IntEnum2, StrictBase, UINT32_MASK
 from dc3.logging import log
 from . import utils
+
+UINT32_SIZE = fileio.struct_layout('L').size  # one u32 field of the .dat format
 
 class ScpParamFlags(IntEnum2):
     Pointer     = 0x04
