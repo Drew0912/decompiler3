@@ -851,7 +851,7 @@ def iter_tree(node: Optional[HLILInstruction],
     pending = [node]
     while pending:
         current = pending.pop()
-        if current is None or id(current) in exclude:
+        if current is None or (exclude and id(current) in exclude):
             continue
 
         yield current
