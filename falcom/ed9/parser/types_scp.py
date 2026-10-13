@@ -1,5 +1,4 @@
 import math
-import struct
 from typing import TypeAlias
 
 from common import *
@@ -107,8 +106,9 @@ class ScpValue:
     PAYLOAD_MASK    = (1 << TYPE_SHIFT) - 1     # value, or string pool offset for String
     INTEGER_MIN     = -(1 << (TYPE_SHIFT - 1))  # an Integer payload is a signed 30-bit value
     INTEGER_MAX     = (1 << (TYPE_SHIFT - 1)) - 1
+    WORD            = fileio.struct_layout('L')    # the stored word, in the scripts' byte order
 
-    FLOAT32_BITS                    = 32
+    FLOAT32_BITS                   = 32
     FLOAT_DROPPED_BITS              = FLOAT32_BITS - TYPE_SHIFT     # a Float payload is float32 bits >> FLOAT_DROPPED_BITS
     FLOAT32_MAX_SIGNIFICANT_DIGITS  = 9                             # enough to name any float32 exactly
 
@@ -164,7 +164,7 @@ class ScpValue:
                 value = payload - (1 << cls.TYPE_SHIFT) if payload > cls.INTEGER_MAX else payload
 
             case ScpValue.Type.Float:
-                value = cls.float32_from_bits(cls.word_float32_bits(word))
+                value = utils.float32_from_bits(cls.word_float32_bits(word))
                 if not math.isfinite(value):
                     log.warning(f"non-finite float {value} (word 0x{word:08X}): the game can't use it, so compiling the .py will fail")
 
@@ -176,41 +176,29 @@ class ScpValue:
         return ScpValue.Type(typ), value
 
     def to_bytes(self) -> bytes:
+        return self.WORD.pack(self.to_word())
+
+    def to_word(self) -> int:
+        '''The 32-bit word the value is stored as'''
         match self.type:
             # A decoded value is always in range, so only a hand-written one can fail these checks
             case ScpValue.Type.Raw:
                 if not 0 <= self.value <= self.PAYLOAD_MASK:
                     raise ValueError(f'RawInt {self.value:#x} is outside 0..{self.PAYLOAD_MASK:#x}: its top 2 bits would be read as the type')
 
-                v = self.value.to_bytes(4, default_endian())
+                return int(self.value)
 
             case ScpValue.Type.Integer:
                 if not self.INTEGER_MIN <= self.value <= self.INTEGER_MAX:
                     raise ValueError(f'Integer {self.value} is outside {self.INTEGER_MIN}..{self.INTEGER_MAX}: the game stores a signed 30-bit value')
 
-                v = (self.value & self.PAYLOAD_MASK) | (ScpValue.Type.Integer << self.TYPE_SHIFT)
-                v = int(v).to_bytes(4, default_endian(), signed = False)
+                return (self.value & self.PAYLOAD_MASK) | (ScpValue.Type.Integer << self.TYPE_SHIFT)
 
             case ScpValue.Type.Float:
-                v = (self.float32_bits(self.value) >> self.FLOAT_DROPPED_BITS) | (ScpValue.Type.Float << self.TYPE_SHIFT)
-                v = v.to_bytes(4, default_endian())
+                return self.encode_float(self.value)
 
             case _:
                 raise NotImplementedError(f'unsupported type: {self.value}')
-
-        return v
-
-    def to_word(self) -> int:
-        '''The 32-bit word to_bytes() writes'''
-        return int.from_bytes(self.to_bytes(), default_endian())
-
-    @classmethod
-    def float32_bits(cls, value: float) -> int:
-        return struct.unpack('<I', struct.pack('<f', value))[0]
-
-    @classmethod
-    def float32_from_bits(cls, bits: int) -> float:
-        return struct.unpack('<f', struct.pack('<I', bits))[0]
 
     @classmethod
     def word_float32_bits(cls, word: int) -> int:
@@ -218,10 +206,16 @@ class ScpValue:
         return (word << cls.FLOAT_DROPPED_BITS) & UINT32_MASK
 
     @classmethod
+    def encode_float(cls, value: float) -> int:
+        '''The Float word value is stored as: its float32 bits without the lowest FLOAT_DROPPED_BITS, under the Float
+        tag; OverflowError past float32's range'''
+        return (utils.float32_bits(value) >> cls.FLOAT_DROPPED_BITS) | (ScpValue.Type.Float << cls.TYPE_SHIFT)
+
+    @classmethod
     def float_word(cls, value: float) -> int | None:
         '''The word value is stored as, or None past float32's range'''
         try:
-            return cls(value).to_word()
+            return cls.encode_float(value)
 
         except OverflowError:
             return None
@@ -246,7 +240,7 @@ class ScpValue:
         # the middle one, so the text depends only on the word
         bits = cls.word_float32_bits(word)
         half_range = 1 << (cls.FLOAT_DROPPED_BITS - 1)
-        sources = (cls.float32_from_bits(bits), cls.float32_from_bits(bits | half_range))
+        sources = (utils.float32_from_bits(bits), utils.float32_from_bits(bits | half_range))
 
         for digits in range(1, cls.FLOAT32_MAX_SIGNIFICANT_DIGITS + 1):
             # The decoded value first: the midpoint's shortest form can be a different number (0.0 -> 2e-45)
@@ -260,8 +254,7 @@ class ScpValue:
     @classmethod
     def float_bits_text(cls, value: float) -> str:
         '''The float32 bits the VM computes with and the stored word: 'f32 0x41D99998, raw 0x90766666'.'''
-        # float(): ScpValue takes an exact float, not a subclass such as the IR's SourceFloat
-        word = cls(float(value)).to_word()
+        word = cls.encode_float(value)
         return f'f32 {format_uint32_hex(cls.word_float32_bits(word))}, raw {format_uint32_hex(word)}'
 
     def __str__(self) -> str:

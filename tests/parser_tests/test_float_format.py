@@ -15,6 +15,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.parser import types_scp
 from falcom.ed9.parser.types_scp import ScpValue
+from falcom.ed9.parser.utils import float32_from_bits
 
 FLOAT_TAG       = ScpValue.Type.Float << ScpValue.TYPE_SHIFT
 RANDOM_WORDS    = 20000
@@ -61,7 +62,7 @@ class TestShortestText(unittest.TestCase):
 
     def test_depends_only_on_the_word(self):
         # Values the decoder never produces: dropped bits set, or a double below float32's range
-        for value, text in ((ScpValue.float32_from_bits(1), '0.0'), (ScpValue.float32_from_bits(F32_SIGN | 1), '-0.0'), (1e-50, '0.0')):
+        for value, text in ((float32_from_bits(1), '0.0'), (float32_from_bits(F32_SIGN | 1), '-0.0'), (1e-50, '0.0')):
             with self.subTest(value = value):
                 self.assertEqual(ScpValue.float_literal(value), text)
 
@@ -88,7 +89,7 @@ class TestShortestText(unittest.TestCase):
         while len(words) < target:
             word = FLOAT_TAG | rng.getrandbits(ScpValue.TYPE_SHIFT)
             # Skip inf/NaN: decoding one would log a warning
-            if math.isfinite(ScpValue.float32_from_bits(ScpValue.word_float32_bits(word))):
+            if math.isfinite(float32_from_bits(ScpValue.word_float32_bits(word))):
                 words.append(word)
 
         for word in words:
@@ -106,7 +107,7 @@ class TestNonFinite(unittest.TestCase):
         self.assertEqual(ScpValue.float_literal(-math.inf), "-float('inf')")
 
         # Any NaN word, not just the canonical one: it can't compile, so its bits don't matter
-        self.assertEqual(ScpValue.float_literal(ScpValue.float32_from_bits(F32_INF | (1 << ScpValue.FLOAT_DROPPED_BITS))), "float('nan')")
+        self.assertEqual(ScpValue.float_literal(float32_from_bits(F32_INF | (1 << ScpValue.FLOAT_DROPPED_BITS))), "float('nan')")
 
     def test_decoding_warns(self):
         word = float_word(F32_INF)
