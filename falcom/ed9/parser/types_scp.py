@@ -24,6 +24,9 @@ class ScpParamType(IntEnum2):
 
 
 class ScpParamFlags:
+    LAYOUT  = fileio.struct_layout('L')     # flags
+    SIZE    = LAYOUT.size
+
     def __init__(self, typ: object = None, *, fs: fileio.FileStream = None):
         self.flags = 0
         self.defaultValue = None
@@ -53,10 +56,10 @@ class ScpParamFlags:
         if fs is None:
             return
 
-        self.flags = fs.ReadULong()
+        (self.flags,) = self.LAYOUT.unpack(fs.Read(self.SIZE))
 
     def to_bytes(self) -> bytes:
-        return utils.int_to_bytes(self.flags, 4)
+        return self.LAYOUT.pack(self.flags)
 
     def get_python_type(self) -> str:
         # type = self.flags & ScenaFunctionParamType.Mask
@@ -265,7 +268,8 @@ class ScpValue:
 
 
 class ScpHeader(StrictBase):
-    SIZE    = 0x18
+    LAYOUT  = fileio.struct_layout('4s5L')  # MAGIC, function_entry_offset, function_count, global_var_offset,
+    SIZE    = LAYOUT.size                   # global_var_count, dword_14: 0x18
     MAGIC   = b'#scp'
 
     function_entry_offset   : int = SIZE
@@ -281,23 +285,13 @@ class ScpHeader(StrictBase):
         if fs is None:
             return
 
-        assert fs.Read(4) == self.MAGIC
-
-        self.function_entry_offset  = fs.ReadULong()    # 0x04
-        self.function_count         = fs.ReadULong()    # 0x08
-        self.global_var_offset      = fs.ReadULong()    # 0x0C
-        self.global_var_count       = fs.ReadULong()    # 0x10
-        self.dword_14               = fs.ReadULong()    # 0x14
+        (magic, self.function_entry_offset, self.function_count, self.global_var_offset, self.global_var_count,
+         self.dword_14) = self.LAYOUT.unpack(fs.Read(self.SIZE))
+        assert magic == self.MAGIC
 
     def to_bytes(self) -> bytes:
-        return (
-            self.MAGIC +
-            utils.int_to_bytes(self.function_entry_offset, 4) +
-            utils.int_to_bytes(self.function_count, 4) +
-            utils.int_to_bytes(self.global_var_offset, 4) +
-            utils.int_to_bytes(self.global_var_count, 4) +
-            utils.int_to_bytes(self.dword_14, 4)
-        )
+        return self.LAYOUT.pack(self.MAGIC, self.function_entry_offset, self.function_count, self.global_var_offset,
+                                self.global_var_count, self.dword_14)
 
     def __str__(self) -> str:
         return '\n'.join([
@@ -311,7 +305,10 @@ class ScpHeader(StrictBase):
     __repr__ = __str__
 
 class ScpFunctionEntry(StrictBase):
-    SIZE = 0x20
+    # offset, param_count, is_common_func, byte06, default_params_count, default_params_offset, param_flags_offset,
+    # debug_info_count, debug_info_offset, name_hash (crc32), name_offset: 0x20
+    LAYOUT = fileio.struct_layout('L4B6L')
+    SIZE = LAYOUT.size
 
     offset                      : int
     param_count                 : int
@@ -332,35 +329,17 @@ class ScpFunctionEntry(StrictBase):
         if fs is None:
             return
 
-        self.offset                 = fs.ReadULong()
-        self.param_count            = fs.ReadByte()
-        self.is_common_func         = fs.ReadByte()
-        self.byte06                 = fs.ReadByte() # is_common_func is UShort?
-        self.default_params_count   = fs.ReadByte()
-        self.default_params_offset  = fs.ReadULong()
-        self.param_flags_offset     = fs.ReadULong()
-        self.debug_info_count       = fs.ReadULong()
-        self.debug_info_offset      = fs.ReadULong()
-        self.name_hash              = fs.ReadULong() # crc32
-        self.name_offset            = fs.ReadULong()
+        (self.offset, self.param_count, self.is_common_func, self.byte06, self.default_params_count,
+         self.default_params_offset, self.param_flags_offset, self.debug_info_count, self.debug_info_offset,
+         self.name_hash, self.name_offset) = self.LAYOUT.unpack(fs.Read(self.SIZE))
 
         if self.byte06 != 0:
             raise NotImplementedError(f'byte06 != 0: {self.byte06}. ScpFunctionEntry.is_common_func is UShort?')
 
     def to_bytes(self) -> bytes:
-        return (
-            utils.int_to_bytes(self.offset, 4) +
-            utils.int_to_bytes(self.param_count, 1) +
-            utils.int_to_bytes(self.is_common_func, 1) +
-            utils.int_to_bytes(self.byte06, 1) +
-            utils.int_to_bytes(self.default_params_count, 1) +
-            utils.int_to_bytes(self.default_params_offset, 4) +
-            utils.int_to_bytes(self.param_flags_offset, 4) +
-            utils.int_to_bytes(self.debug_info_count, 4) +
-            utils.int_to_bytes(self.debug_info_offset, 4) +
-            utils.int_to_bytes(self.name_hash, 4) +
-            utils.int_to_bytes(self.name_offset, 4)
-        )
+        return self.LAYOUT.pack(self.offset, self.param_count, self.is_common_func, self.byte06,
+                                self.default_params_count, self.default_params_offset, self.param_flags_offset,
+                                self.debug_info_count, self.debug_info_offset, self.name_hash, self.name_offset)
 
     def __str__(self) -> str:
         return '\n'.join([
@@ -381,8 +360,8 @@ class ScpFunctionEntry(StrictBase):
 
 
 class ScpFunctionCallDebugInfoArg(StrictBase):
-    SIZE                = 0x08
     WORD                = fileio.struct_layout('L')     # each of its two words: the value, then the type
+    SIZE                = 2 * WORD.size
     NON_CONSTANT_VALUE  = RawInt(0)     # value of every arg but a Constant (wrap in ScpValue)
 
     class Type(IntEnum2):
@@ -404,8 +383,8 @@ class ScpFunctionCallDebugInfoArg(StrictBase):
     __repr__ = __str__
 
 class ScpFunctionCallDebugInfo(StrictBase):
-    SIZE        = 0x0C
-    LAYOUT      = fileio.struct_layout('LHHL')      # func_id, call_type, arg_count, info_offset
+    LAYOUT      = fileio.struct_layout('LHHL')      # func_id, call_type, arg_count, info_offset: 0x0C
+    SIZE        = LAYOUT.size
     NO_FUNC_ID  = 0xFFFFFFFF    # func_id of script calls and syscalls
 
     class CallType(IntEnum2):
@@ -426,10 +405,8 @@ class ScpFunctionCallDebugInfo(StrictBase):
         if fs is None:
             return
 
-        self.func_id     = fs.ReadULong()
-        self.call_type   = self.CallType(fs.ReadUShort())
-        self.arg_count   = fs.ReadUShort()
-        self.info_offset = fs.ReadULong()
+        self.func_id, call_type, self.arg_count, self.info_offset = self.LAYOUT.unpack(fs.Read(self.SIZE))
+        self.call_type = self.CallType(call_type)
 
     def to_bytes(self) -> bytes:
         return self.pack(self.func_id, self.call_type, self.arg_count, self.info_offset)
@@ -446,18 +423,17 @@ class ScpFunctionCallDebugInfo(StrictBase):
 
     def __str__(self) -> str:
         return '\n'.join([
-            f'func_name     : {self.func_name}',
             f'func_id       : 0x{self.func_id:08X}',
             f'call_type     : {self.call_type}',
             f'arg_count     : {self.arg_count}',
             f'info_offset   : 0x{self.info_offset:08X}',
-            f'args          : {self.args}',
         ])
 
     __repr__ = __str__
 
 class ScpGlobalVar(StrictBase):
-    SIZE = 0x08
+    LAYOUT = fileio.struct_layout('LL')     # name (a String-tagged ScpValue word), type: 0x08
+    SIZE = LAYOUT.size
 
     name : str
     type : int
@@ -476,5 +452,5 @@ class ScpGlobalVar(StrictBase):
             return
 
         # name is a String-tagged ScpValue (pool ref), not a raw pool offset
-        self.name = ScpValue(fs = fs).value
-        self.type = fs.ReadULong()
+        name_word, self.type = self.LAYOUT.unpack(fs.Read(self.SIZE))
+        _, self.name = ScpValue.decode_word(name_word, fs = fs)

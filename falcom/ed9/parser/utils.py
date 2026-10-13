@@ -1,6 +1,7 @@
 from common import *
 import struct
 
+# Unused: the records in types_scp pack through their LAYOUT. Kept for now
 def int_to_bytes(i, size) -> bytes:
     return int.to_bytes(i, size, default_endian())
 
