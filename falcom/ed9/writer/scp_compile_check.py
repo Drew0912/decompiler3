@@ -94,19 +94,21 @@ class CompileCheck:
                 if backward_return is not None:
                     log.warning(self._failure_text(parsed_function.name, backward_return[1], inst))
 
-        self._warn_syscall_counts(reachable)
+        by_offset = {inst.offset: inst for inst in reachable}
+        ordered = [by_offset[offset] for offset in sorted(by_offset)]
+        self._warn_syscall_counts(by_offset, ordered)
         if self.warn_unreachable_code:
-            self._warn_unreachable(reachable, code_end)
+            self._warn_unreachable(ordered, code_end)
 
-    def _warn_syscall_counts(self, reachable: list[Instruction]):
+    def _warn_syscall_counts(self, by_offset: dict[int, Instruction], ordered: list[Instruction]):
         """A warning per SYSCALL whose argc disagrees with the instruction after it: a POP of another count, or no POP
         though it reads values. The game's compiler always emits its own POP right after it, and nothing else checks
         argc while the stack balances. Code two functions reach is warned once, named by the function it is in; a
         SYSCALL ending a function gets only the run-on warning"""
-        by_offset = {inst.offset: inst for inst in reachable}
         starts = [f.offset for f in self.functions]
         start_set = set(starts)
-        for offset, inst in sorted(by_offset.items()):
+        for inst in ordered:
+            offset = inst.offset
             end = offset + inst.size
             if inst.descriptor.kind != InstructionKind.SYSCALL or end in start_set or end not in by_offset:
                 continue
@@ -132,14 +134,13 @@ class CompileCheck:
             owner = self.functions[bisect.bisect_right(starts, offset) - 1].name
             log.warning(self._failure_text(owner, message, inst))
 
-    def _warn_unreachable(self, reachable: list[Instruction], code_end: int):
+    def _warn_unreachable(self, ordered: list[Instruction], code_end: int):
         """A warning per range of code no function's reachable instructions cover, at its first opcode's line. All
         functions' code at once, since a function may jump into another's; a range never crosses a function's start
         (every entry is reachable), so it is the last function's starting at or before it"""
-        reachable = sorted(reachable, key = lambda inst: inst.offset)
         positions = sorted(self.source_map)
         starts = [f.offset for f in self.functions]
-        for start, end, _ in dropped_ranges(reachable, self.code_offset, code_end):
+        for start, end, _ in dropped_ranges(ordered, self.code_offset, code_end):
             owner = self.functions[bisect.bisect_right(starts, start) - 1].name
             count = (bisect.bisect_left(positions, end - self.code_offset)
                      - bisect.bisect_left(positions, start - self.code_offset))
