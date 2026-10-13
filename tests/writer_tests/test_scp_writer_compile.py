@@ -355,6 +355,30 @@ class TestGlobalVarNames(WriterTestCase):
                 with self.assertRaisesRegex(ValueError, OUTSIDE_THE_BLOCK):
                     GLOBAL_VAR('x', 1)
 
+    def test_type_must_fit_an_unsigned_word(self):
+        '''The table stores the type as an unsigned word; one outside it failed the write with a bare struct.error'''
+        for type in (-1, 2 ** 32):
+            with self.subTest(type):
+                writer = self.fresh_writer()
+                with self.assertRaisesRegex(ValueError, rf"^GLOBAL_VAR\('x'\) type is {type}, "
+                                                        r"outside 0\.\.4294967295$"):
+                    @writer.GlobalVars()
+                    def globalvars():
+                        GLOBAL_VAR('x', type)
+
+        writer = self.fresh_writer()
+
+        @writer.GlobalVars()
+        def globalvars():
+            GLOBAL_VAR('x', 2 ** 32 - 1)
+
+        @writer.LLILCode()
+        def Body():
+            RETURN()
+
+        parser, _ = parse(writer.build({}))
+        self.assertEqual(parser.global_vars[0].type, 2 ** 32 - 1)
+
     def test_block_before_create_scp_writer(self):
         writer = fresh_writer()
         with self.assertRaisesRegex(ValueError, rf"^{at(__file__, 'early block')}@GlobalVars\(\) runs before "

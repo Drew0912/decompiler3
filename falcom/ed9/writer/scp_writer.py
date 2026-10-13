@@ -13,7 +13,7 @@ from common.config import default_encoding
 from common.gc_policy import infrequent_gc
 from common.logging import log
 from ir.llil import WORD_SIZE
-from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandType
+from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandFormat, OperandType
 from ..parser.crc32 import hash_func_Name
 from ..parser.scp import CallDebugInfoTracker, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
 from ..parser.string_pool import StringPoolSection
@@ -42,6 +42,9 @@ UNRESOLVED_FUNC_INDEX = -1  # ScpFunction.index, until _build_function_table() s
 
 STRING_OFFSET_TAG = ScpValue.Type.String << 30  # 0xC0000000 - top 2 bits of a resolved string-pool offset
 NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - WORD_SIZE  # name_offset is the last field of a function entry
+
+# ScpGlobalVar.LAYOUT stores a global's type as an unsigned word
+GLOBAL_VAR_TYPE_RANGE = OperandFormat.integer_range(OperandType.UInt32)
 
 # The engine passes arguments by position; param_count counts every parameter
 POSITIONAL_KINDS = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
@@ -255,6 +258,11 @@ class ScpWriter:
 
         if name in self.global_var_indices:
             raise ValueError(f'global var already declared: {name!r}')
+
+        # Compared, not `in`: a range scans itself for an int subclass (ScpGlobalVar.Type)
+        if not GLOBAL_VAR_TYPE_RANGE.start <= type < GLOBAL_VAR_TYPE_RANGE.stop:
+            raise ValueError(f'GLOBAL_VAR({name!r}) type is {type}, outside '
+                             f'{GLOBAL_VAR_TYPE_RANGE.start}..{GLOBAL_VAR_TYPE_RANGE.stop - 1}')
 
         self.global_var_indices[name] = len(self.global_vars)
         self.global_vars.append(ScpGlobalVar(name, type))

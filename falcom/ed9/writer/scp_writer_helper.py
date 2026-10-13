@@ -23,7 +23,7 @@ def label(name: str):
     get_scp_writer().add_label(name)
 
 
-def GLOBAL_VAR(name: str, type: sint32):
+def GLOBAL_VAR(name: str, type: uint32):
     """Declares one entry of the script's global variable table (see @scena.GlobalVars())"""
     _require_type('GLOBAL_VAR', 'name', name, str)
     if isinstance(type, bool) or not isinstance(type, sint32):
