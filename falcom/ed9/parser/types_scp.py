@@ -105,13 +105,13 @@ Pointer: TypeAlias     = object
 
 
 class ScpValue:
-    TYPE_SHIFT      = 30                        # type tag is the top 2 bits
-    PAYLOAD_MASK    = (1 << TYPE_SHIFT) - 1     # value, or string pool offset for String
-    INTEGER_MIN     = -(1 << (TYPE_SHIFT - 1))  # an Integer payload is a signed 30-bit value
+    TYPE_SHIFT      = 30                         # type tag is the top 2 bits
+    PAYLOAD_MASK    = (1 << TYPE_SHIFT) - 1      # value, or string pool offset for String
+    INTEGER_MIN     = -(1 << (TYPE_SHIFT - 1))   # an Integer payload is a signed 30-bit value
     INTEGER_MAX     = (1 << (TYPE_SHIFT - 1)) - 1
-    WORD            = fileio.struct_layout('L')    # the stored word, in the scripts' byte order
+    WORD            = fileio.struct_layout('L')  # the stored word, in the scripts' byte order
 
-    FLOAT32_BITS                   = 32
+    FLOAT32_BITS                    = 32
     FLOAT_DROPPED_BITS              = FLOAT32_BITS - TYPE_SHIFT     # a Float payload is float32 bits >> FLOAT_DROPPED_BITS
     FLOAT32_MAX_SIGNIFICANT_DIGITS  = 9                             # enough to name any float32 exactly
 
@@ -363,8 +363,8 @@ class ScpFunctionEntry(StrictBase):
 
 
 class ScpFunctionCallDebugInfoArg(StrictBase):
-    WORD                = fileio.struct_layout('L')     # each of its two words: the value, then the type
-    SIZE                = 2 * WORD.size
+    LAYOUT              = fileio.struct_layout('LL')    # value (an ScpValue word), type: 0x08
+    SIZE                = LAYOUT.size
     NON_CONSTANT_VALUE  = RawInt(0)     # value of every arg but a Constant (wrap in ScpValue)
 
     class Type(IntEnum2):

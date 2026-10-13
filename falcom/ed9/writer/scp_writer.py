@@ -600,7 +600,7 @@ class ScpWriter:
     def _write_debug_records(self):
         """Each function's records in table order, then every record's args in the same order; both sections are built
         in memory, so each offset is its section's start plus the bytes before it"""
-        word = ScpFunctionCallDebugInfoArg.WORD
+        arg_layout = ScpFunctionCallDebugInfoArg.LAYOUT
         record_count = sum(len(f.debug_records) for f in self.function_table)
         records_start = self.fs.Position
         args_start = records_start + record_count * ScpFunctionCallDebugInfo.SIZE
@@ -617,12 +617,12 @@ class ScpWriter:
                 for arg in record.args:
                     if arg.string is not None:
                         arg.string.xref_offsets.append(args_start + len(args))
-                        args += word.pack(UNRESOLVED_STRING_OFFSET)
+                        value = UNRESOLVED_STRING_OFFSET
 
                     else:
-                        args += arg.value.to_bytes()
+                        value = arg.value.to_word()
 
-                    args += word.pack(arg.type)
+                    args += arg_layout.pack(value, arg.type)
 
         self.fs.Write(headers, args)
 
