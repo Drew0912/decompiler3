@@ -37,9 +37,10 @@ no matter what the VM's exact answer turns out to be. The float part closed `chr
   analysis already done.
 - If/when this lands, `pass_ssa_expression_simplification.py`'s `_apply_algebraic_identity`
   should also be audited: its identities skip float constants, but `x * 0 → 0` is still wrong for a
-  float `x` (inf/NaN, `-0.0`), and the `0xFFFFFFFF` bitwise identities assume a 32-bit int against
-  the VM's 30-bit constant encoding - both predate this idea and are independent of it, but a
-  natural pass to make at the same time.
+  float `x` (inf/NaN, `-0.0`); its bitwise identities test all-ones as `-1`, so a constant SCCP folds
+  past the int width (`536870911 * 8 + 7` → `0xFFFFFFFF`, which a 32-bit VM would wrap to `-1`) is
+  left as it is - both predate this idea and are independent of it, but a natural pass to make at
+  the same time.
 - Mixed int/float arithmetic is typed `int`: `SSATypeInferencePass._infer_expr_type`
   (`ir/mlil/passes/pass_ssa_type_inference.py`) falls back to `int` when `unify_types` gives
   `variant<int, float>`, which `is_numeric()` rejects. Since Step 3b leaves such expressions

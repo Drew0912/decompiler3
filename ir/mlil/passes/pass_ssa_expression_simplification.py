@@ -6,6 +6,8 @@ Apply algebraic simplifications:
 - x * 0 → 0
 - x & 0 → 0
 - x | 0 → x
+- x & -1 → x
+- x | -1 → -1
 etc.
 
 Identities fire only on int constants.
@@ -35,6 +37,8 @@ from ..mlil import (
     MLILStoreDeref,
 )
 from ..mlil_ssa import MLILSetVarSSA, MLILIf
+
+ALL_BITS_SET = -1   # every bit set at any int width: script ints are signed, and SCCP folds ~0 to -1
 
 
 class ExpressionSimplificationPass(Pass):
@@ -142,14 +146,14 @@ class ExpressionSimplificationPass(Pass):
                 if rhs.value == 0:
                     return MLILConst(0, is_hex = False)
 
-                elif rhs.value == 0xFFFFFFFF:
+                elif rhs.value == ALL_BITS_SET:
                     return lhs
 
             if isinstance(lhs, MLILConst):
                 if lhs.value == 0:
                     return MLILConst(0, is_hex = False)
 
-                elif lhs.value == 0xFFFFFFFF:
+                elif lhs.value == ALL_BITS_SET:
                     return rhs
 
         elif op_type == MLILOr:
@@ -157,15 +161,15 @@ class ExpressionSimplificationPass(Pass):
                 if rhs.value == 0:
                     return lhs
 
-                elif rhs.value == 0xFFFFFFFF:
-                    return MLILConst(0xFFFFFFFF, is_hex = True)
+                elif rhs.value == ALL_BITS_SET:
+                    return rhs
 
             if isinstance(lhs, MLILConst):
                 if lhs.value == 0:
                     return rhs
 
-                elif lhs.value == 0xFFFFFFFF:
-                    return MLILConst(0xFFFFFFFF, is_hex = True)
+                elif lhs.value == ALL_BITS_SET:
+                    return lhs
 
         elif op_type == MLILXor:
             if isinstance(rhs, MLILConst) and rhs.value == 0:
