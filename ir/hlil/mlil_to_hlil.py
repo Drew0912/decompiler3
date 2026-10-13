@@ -1013,8 +1013,8 @@ class MLILToHLILConverter:
         self._reconstruct_control_flow(target_idx, block, stop_at = branch_stop, jump_source = if_instr)
         return block
 
-    def _bare_test_block(self, block_idx: int) -> Optional[Tuple[MLILIf, int, int]]:
-        '''The test and its targets, if block_idx is a bare 2-way test.
+    def _chain_link(self, block_idx: int, shared: int) -> Optional[Tuple[MLILIf, int, int]]:
+        '''The test and its targets, if block_idx is a bare 2-way test targeting shared.
 
         Bare means it holds only the test and the calls folded into it, and is
         entered only from the previous link, so folding it into a condition
@@ -1041,6 +1041,9 @@ class MLILToHLILConverter:
         if not isinstance(instr, MLILIf) or instr.true_target is None or instr.false_target is None:
             return None
 
+        if shared not in (instr.true_target.index, instr.false_target.index):
+            return None
+
         return instr, instr.true_target.index, instr.false_target.index
 
     def _collapse_funnel_chain(self, if_instr: MLILIf, true_idx: Optional[int],
@@ -1057,16 +1060,16 @@ class MLILToHLILConverter:
             return None
 
         for shared, following in ((true_idx, false_idx), (false_idx, true_idx)):
-            link = self._bare_test_block(following)
+            link = self._chain_link(following, shared)
 
-            if link is None or shared not in (link[1], link[2]):
+            if link is None:
                 continue
 
             first = self._convert_expr(if_instr.condition)
             conditions = [negate_condition(first) if shared == false_idx else first]
             current = following
 
-            while link is not None and shared in (link[1], link[2]):
+            while link is not None:
                 instr, link_true, link_false = link
 
                 # Convert in the test's own context, its calls first: a read of a
@@ -1083,7 +1086,7 @@ class MLILToHLILConverter:
 
                 conditions.append(negate_condition(cond) if shared == link_false else cond)
                 current = link_false if shared == link_true else link_true
-                link = self._bare_test_block(current)
+                link = self._chain_link(current, shared)
 
             if current == shared:
                 continue
