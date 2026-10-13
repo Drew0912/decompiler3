@@ -224,7 +224,7 @@ def require_decompilable(data: bytes, name: str, code_end: int) -> tuple[ScpPars
                                              reject_outside_stack = True, known_code_end = code_end)
     for func in functions:
         try:
-            ED9VMLifter(parser = parser).lift_function(func)
+            ED9VMLifter(parser = parser, spell_floats = False).lift_function(func)
 
         except ED9LiftError as e:
             e.runs_on = func.runs_on

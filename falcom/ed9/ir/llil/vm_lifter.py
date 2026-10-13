@@ -45,10 +45,12 @@ class ED9VMLifter:
         self,
         *,
         parser: ScpParser,
+        spell_floats: bool = True,
     ) -> None:
         if parser is None:
             raise ValueError('ED9VMLifter requires a parser instance')
         self._parser = parser
+        self.spell_floats = spell_floats    # False when nothing will print the LLIL (the compile check)
 
     # ----------------------------------------------------------------- public --
     def lift_function(self, func: Function) -> LowLevelILFunction:
@@ -103,12 +105,11 @@ class ED9VMLifter:
             result.append(IRParameter(name, type_name, default_value))
         return result
 
-    @classmethod
-    def _source_value(cls, value):
+    def _source_value(self, value):
         '''A decoded value as the IR keeps it: a finite float carries the .py's spelling, so every output prints
-        it the same way'''
+        it the same way (no spelling without spell_floats)'''
         if isinstance(value, float) and math.isfinite(value):
-            return SourceFloat(value, ScpValue.float_literal(value))
+            return SourceFloat(value, ScpValue.float_literal(value) if self.spell_floats else None)
 
         return value
 

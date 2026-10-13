@@ -32,6 +32,9 @@ from tests.shared.scp_writer_test_utils import fresh_writer
 STORED_0_3 = 0.2999999523162842     # what 0.3 decodes to
 WORD_0_3   = 0x8FA66666
 
+# _source_value reads no parser state, so any non-None parser satisfies the constructor
+LIFTER = ED9VMLifter(parser = object())
+
 
 class TestSourceFloat(unittest.TestCase):
     def test_prints_its_text_and_keeps_the_exact_value(self):
@@ -60,7 +63,7 @@ class TestSourceFloat(unittest.TestCase):
 
 class TestLiftedFloat(unittest.TestCase):
     def test_decoded_float_keeps_its_value_and_gets_the_py_text(self):
-        value = ED9VMLifter._source_value(ScpValue().from_value(WORD_0_3).value)
+        value = LIFTER._source_value(ScpValue().from_value(WORD_0_3).value)
 
         self.assertIs(type(value), SourceFloat)
         self.assertEqual(value.hex(), STORED_0_3.hex())
@@ -69,7 +72,7 @@ class TestLiftedFloat(unittest.TestCase):
     def test_other_values_stay_as_they_are(self):
         for value in (1, math.inf):
             with self.subTest(value = value):
-                self.assertIs(ED9VMLifter._source_value(value), value)
+                self.assertIs(LIFTER._source_value(value), value)
 
 
 class TestPlainFloatPrintsExactly(unittest.TestCase):
