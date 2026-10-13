@@ -130,7 +130,6 @@ class MediumLevelILInstruction(ILInstruction):
         self.address = address
         self.inst_index = UNASSIGNED_INST_INDEX  # Statement number, final once the MLIL pipeline ends
         self.llil_index = UNASSIGNED_INST_INDEX  # Source LLIL instruction index
-        self.options = ILOptions()
 
     @property
     def operation_name(self) -> str:

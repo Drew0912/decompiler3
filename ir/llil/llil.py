@@ -82,7 +82,6 @@ class LowLevelILInstruction(ILInstruction):
         self.address = 0
         self.inst_index = UNASSIGNED_INST_INDEX  # Assigned via LowLevelILFunction._register_instruction
         self.operation = operation
-        self.options = ILOptions()  # Formatting and processing options
 
     @property
     def operation_name(self) -> str:

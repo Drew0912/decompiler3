@@ -18,10 +18,9 @@ from .passes import (
 
 SSA_OPTIMIZER_MAX_ITERATIONS = 10
 
-# _structural_key excludes these - address/inst_index/llil_index are source-tracking metadata,
-# options is formatting-only metadata - none ever reflect a semantic change between fixpoint
-# iterations (MediumLevelILInstruction.__init__/ILOptions in mlil.py)
-_SNAPSHOT_EXCLUDED_ATTRS = frozenset({'address', 'inst_index', 'llil_index', 'options'})
+# _structural_key skips what never reflects a semantic change between fixpoint iterations: source tracking (address,
+# inst_index, llil_index) and the formatting options created on first use (_options)
+_SNAPSHOT_EXCLUDED_ATTRS = frozenset({'address', 'inst_index', 'llil_index', '_options'})
 
 
 class SSAOptimizer:

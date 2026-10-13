@@ -1,12 +1,23 @@
 '''Base IL traits for LLIL, MLIL, HLIL'''
 
+from .il_options import ILOptions
+
 
 UNASSIGNED_INST_INDEX = -1   # Index before one is assigned (inst_index, llil_index, mlil_index)
 
 
 class ILInstruction:
     '''Base class for all IL instructions'''
-    pass
+
+    _options = None
+
+    @property
+    def options(self) -> ILOptions:
+        '''Formatting and processing options: created on first use, since only the formatters read them'''
+        if self._options is None:
+            self._options = ILOptions()
+
+        return self._options
 
 
 class ControlFlow(ILInstruction):

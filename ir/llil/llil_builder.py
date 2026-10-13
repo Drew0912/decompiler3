@@ -182,7 +182,8 @@ class LowLevelILBuilder:
     def emit_sp_add(self, delta: int, *, hidden_for_formatter: bool = False) -> LowLevelILSpAdd:
         '''Emit SpAdd IL and sync shadow sp (single entry point for SP changes)'''
         sp_add = LowLevelILSpAdd(delta)
-        sp_add.options.hidden_for_formatter = hidden_for_formatter
+        if hidden_for_formatter:
+            sp_add.options.hidden_for_formatter = True
         self.add_instruction(sp_add)
         # Note: add_instruction will handle the sp update via its existing logic
         return sp_add
