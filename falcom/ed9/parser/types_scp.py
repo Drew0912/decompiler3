@@ -114,6 +114,8 @@ class ScpValue:
     FLOAT32_BITS                    = 32
     FLOAT_DROPPED_BITS              = FLOAT32_BITS - TYPE_SHIFT     # a Float payload is float32 bits >> FLOAT_DROPPED_BITS
     FLOAT32_MAX_SIGNIFICANT_DIGITS  = 9                             # enough to name any float32 exactly
+    # float_literal's candidate formats, fewest significant digits first
+    FLOAT_LITERAL_FORMATS           = tuple(f'.{digits}g' for digits in range(1, FLOAT32_MAX_SIGNIFICANT_DIGITS + 1))
 
     class Type(IntEnum2):
         Raw             = 0
@@ -244,13 +246,26 @@ class ScpValue:
         bits = cls.word_float32_bits(word)
         half_range = 1 << (cls.FLOAT_DROPPED_BITS - 1)
         sources = (utils.float32_from_bits(bits), utils.float32_from_bits(bits | half_range))
+        payload = word & cls.PAYLOAD_MASK
+        tried = set()
 
-        for digits in range(1, cls.FLOAT32_MAX_SIGNIFICANT_DIGITS + 1):
+        for spec in cls.FLOAT_LITERAL_FORMATS:
             # The decoded value first: the midpoint's shortest form can be a different number (0.0 -> 2e-45)
             for source in sources:
-                candidate = float(f'{source:.{digits}g}')
-                if cls.float_word(candidate) == word:
-                    return repr(candidate)
+                # Both sources, or one more digit, often give the same text: it was already rejected
+                text = format(source, spec)
+                if text in tried:
+                    continue
+
+                tried.add(text)
+                candidate = float(text)
+                try:
+                    # Every candidate's word has the Float tag, so the payload bits decide
+                    if utils.float32_bits(candidate) >> cls.FLOAT_DROPPED_BITS == payload:
+                        return repr(candidate)
+
+                except OverflowError:
+                    continue    # past float32's range: no word, as float_word's None
 
         return repr(value)
 
