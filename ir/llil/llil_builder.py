@@ -38,16 +38,21 @@ class _VirtualStack:
         return len(self._items)
 
     def index_of_slot(self, slot_index: int) -> Optional[int]:
-        '''List index of the entry tracking slot_index, or None if that slot is not tracked'''
-        for index in range(len(self._items) - 1, -1, -1):
-            entry_slot = self._items[index].slot_index
-            if entry_slot == slot_index:
-                return index
+        '''List index of the entry tracking slot_index, or None if that slot is not tracked. The entries track
+        consecutive slots ending at sp - 1 (push appends at sp, pops and _discard_vstack_to remove from the top), so
+        the index is the slot's distance from the bottom entry's'''
+        items = self._items
+        if not items:
+            return None
 
-            if entry_slot < slot_index:
-                break
+        index = slot_index - items[0].slot_index
+        if not 0 <= index < len(items):
+            return None
 
-        return None
+        if items[index].slot_index != slot_index:
+            raise RuntimeError(f'Vstack desync: entry {index} tracks slot {items[index].slot_index}, not {slot_index}')
+
+        return index
 
     def replace(self, index: int, expr: LowLevelILExpr):
         self._items[index] = expr
