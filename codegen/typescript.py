@@ -170,6 +170,72 @@ class TypeScriptGenerator:
         return f'{indent_str}{dest_str} = {src_str};'
 
     @classmethod
+    def _zero_comparison(cls, expr: HLILExpression) -> tuple[bool, HLILExpression] | None:
+        '''How a comparison with 0 simplifies, if it does: (negated, node) - it prints node's text, after a ! when
+        negated. (bool) != 0 -> bool, (!x) == 0 -> x, (bool) == 0 -> !bool, !(x == 0) -> x, !(x != 0) -> !x'''
+        if isinstance(expr, HLILBinaryOp):
+            if not (isinstance(expr.rhs, HLILConst) and is_int_zero(expr.rhs.value) and is_boolean_expr(expr.lhs)):
+                return None
+
+            if expr.op == BinaryOp.NE:
+                return False, expr.lhs
+
+            if expr.op == BinaryOp.EQ:
+                # Double negation elimination
+                if isinstance(expr.lhs, HLILUnaryOp) and expr.lhs.op == UnaryOp.NOT:
+                    return False, expr.lhs.operand
+
+                return True, expr.lhs
+
+            return None
+
+        if isinstance(expr, HLILUnaryOp) and expr.op == UnaryOp.NOT and isinstance(expr.operand, HLILBinaryOp):
+            inner = expr.operand
+            if not (isinstance(inner.rhs, HLILConst) and is_int_zero(inner.rhs.value)):
+                return None
+
+            if inner.op == BinaryOp.EQ:
+                return False, inner.lhs
+
+            if inner.op == BinaryOp.NE:
+                return True, inner.lhs
+
+        return None
+
+    @classmethod
+    def _format_zero_comparison(cls, negated: bool, node: HLILExpression) -> str:
+        text = cls._format_expr(node)
+        if not negated:
+            return text
+
+        if cls._unary_operand_needs_parentheses(UnaryOp.NOT, node, text):
+            text = f'({text})'
+        return f'!{text}'
+
+    @classmethod
+    def _printed_node(cls, expr: HLILExpression) -> HLILExpression:
+        '''The node whose operator heads expr's text: a comparison with 0 prints as another node's
+        ((a || b) != 0 prints a || b), and an operand is parenthesized by what it prints'''
+        simplified = cls._zero_comparison(expr)
+        if simplified is None:
+            return expr
+
+        negated, node = simplified
+        return HLILUnaryOp(UnaryOp.NOT, node) if negated else cls._printed_node(node)
+
+    @classmethod
+    def _operand_needs_parentheses(cls, operand: HLILExpression, parent_op: BinaryOp, is_left: bool) -> bool:
+        '''By the operand and by the node it prints - today's parentheses all stay'''
+        return any(isinstance(node, HLILBinaryOp) and needs_parentheses(node.op, parent_op, is_left)
+                   for node in (operand, cls._printed_node(operand)))
+
+    @classmethod
+    def _unary_operand_needs_parentheses(cls, op: UnaryOp, operand: HLILExpression, operand_text: str) -> bool:
+        '''By the operand and by the node it prints - today's parentheses all stay'''
+        return (unary_operand_needs_parentheses(op, operand, operand_text)
+                or isinstance(cls._printed_node(operand), HLILBinaryOp))
+
+    @classmethod
     def _format_expr(cls, expr: HLILExpression) -> str:
         if isinstance(expr, HLILVar):
             var = expr.var
@@ -208,57 +274,29 @@ class TypeScriptGenerator:
                 if truth is not None:
                     return 'true' if truth else 'false'
 
-            # Simplify boolean comparisons with 0
-            # (bool_expr) != 0 -> bool_expr
-            # (bool_expr) == 0 -> !bool_expr
-            # (!x) == 0 -> x (double negation elimination)
-            if isinstance(expr.rhs, HLILConst) and is_int_zero(expr.rhs.value):
-                if is_boolean_expr(expr.lhs):
-                    if expr.op == BinaryOp.NE:
-                        # (bool) != 0 -> bool
-                        return cls._format_expr(expr.lhs)
-
-                    elif expr.op == BinaryOp.EQ:
-                        # (!x) == 0 -> x (double negation elimination)
-                        if isinstance(expr.lhs, HLILUnaryOp) and expr.lhs.op == UnaryOp.NOT:
-                            return cls._format_expr(expr.lhs.operand)
-
-                        # (bool) == 0 -> !bool
-                        inner = cls._format_expr(expr.lhs)
-                        if unary_operand_needs_parentheses(UnaryOp.NOT, expr.lhs, inner):
-                            inner = f'({inner})'
-                        return f'!{inner}'
+            simplified = cls._zero_comparison(expr)
+            if simplified is not None:
+                return cls._format_zero_comparison(*simplified)
 
             lhs_str = cls._format_expr(expr.lhs)
             rhs_str = cls._format_expr(expr.rhs)
 
             # Add parentheses if needed based on precedence
-            if isinstance(expr.lhs, HLILBinaryOp) and needs_parentheses(expr.lhs.op, expr.op, True):
+            if cls._operand_needs_parentheses(expr.lhs, expr.op, True):
                 lhs_str = f'({lhs_str})'
 
-            if isinstance(expr.rhs, HLILBinaryOp) and needs_parentheses(expr.rhs.op, expr.op, False):
+            if cls._operand_needs_parentheses(expr.rhs, expr.op, False):
                 rhs_str = f'({rhs_str})'
 
             return f'{lhs_str} {BINARY_OP_STR[expr.op]} {rhs_str}'
 
         elif isinstance(expr, HLILUnaryOp):
-            # Simplify !(x == 0) -> x and !(x != 0) -> !x
-            if expr.op == UnaryOp.NOT and isinstance(expr.operand, HLILBinaryOp):
-                inner = expr.operand
-                if isinstance(inner.rhs, HLILConst) and is_int_zero(inner.rhs.value):
-                    if inner.op == BinaryOp.EQ:
-                        # !(x == 0) -> x
-                        return cls._format_expr(inner.lhs)
-
-                    elif inner.op == BinaryOp.NE:
-                        # !(x != 0) -> x == 0 -> !x
-                        lhs_str = cls._format_expr(inner.lhs)
-                        if unary_operand_needs_parentheses(UnaryOp.NOT, inner.lhs, lhs_str):
-                            lhs_str = f'({lhs_str})'
-                        return f'!{lhs_str}'
+            simplified = cls._zero_comparison(expr)
+            if simplified is not None:
+                return cls._format_zero_comparison(*simplified)
 
             operand = cls._format_expr(expr.operand)
-            if unary_operand_needs_parentheses(expr.op, expr.operand, operand):
+            if cls._unary_operand_needs_parentheses(expr.op, expr.operand, operand):
                 operand = f'({operand})'
             return f'{UNARY_OP_STR[expr.op]}{operand}'
 
@@ -347,19 +385,6 @@ class TypeScriptGenerator:
         return lines
 
     @classmethod
-    def _negate_condition_str(cls, cond: HLILExpression) -> str:
-        '''Format negated condition as string'''
-        if isinstance(cond, HLILBinaryOp):
-            if cond.op in NEGATED_COMPARISON_OP:
-                lhs = cls._format_expr(cond.lhs)
-                rhs = cls._format_expr(cond.rhs)
-                negated_op = BINARY_OP_STR[NEGATED_COMPARISON_OP[cond.op]]
-                return f'{lhs} {negated_op} {rhs}'
-
-        # Fallback: wrap original in !()
-        return f'!({cls._format_expr(cond)})'
-
-    @classmethod
     def _generate_statement(cls, stmt: HLILStatement, indent: int = 0) -> List[str]:
         indent_str = default_indent() * indent
         lines = []
@@ -371,12 +396,12 @@ class TypeScriptGenerator:
 
             # Arm order is decided in HLIL (BranchOrderNormalizationPass) so that
             # this output and the HLIL dump agree - only an empty then-branch is
-            # still worth rewriting here
+            # still worth rewriting here, negated as the HLIL passes negate
             false_has_content = false_block and false_block.statements
             true_empty = not true_block or not true_block.statements
 
             if true_empty and false_has_content:
-                cond_str = cls._negate_condition_str(condition)
+                cond_str = cls._format_expr(negate_condition(condition))
                 true_block, false_block = false_block, None
 
             else:

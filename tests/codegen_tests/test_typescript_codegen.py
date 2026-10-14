@@ -21,6 +21,7 @@ from ir.hlil import (
     HLILConst,
     HLILExprStmt,
     HLILExternCall,
+    HLILIf,
     HLILSwitch,
     HLILSwitchCase,
     HLILTypeKind,
@@ -59,6 +60,66 @@ def render_call(argument, parameters = ()) -> str:
     func.parameters = list(parameters)
     func.add_statement(HLILExprStmt(HLILCall('f', [argument])))
     return generate_typescript(func)
+
+
+def var(name: str) -> HLILVar:
+    return HLILVar(HLILVariable(name))
+
+
+class TestEmptyThenArm(unittest.TestCase):
+    '''An if whose then-arm is empty prints its else-arm under the negated condition, negated as the HLIL passes
+    negate (negate_condition: De Morgan, no double !), not wrapped in !(...)'''
+
+    def render_if(self, condition) -> str:
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(HLILIf(condition, HLILBlock(), HLILBlock([HLILExprStmt(HLILCall('f', []))])))
+        return generate_typescript(func)
+
+    def test_condition_is_negated_like_the_hlil_passes(self):
+        rows = [
+            (HLILBinaryOp(BinaryOp.AND, var('a'), var('b')), 'if (!a || !b) {'),
+            (HLILUnaryOp(UnaryOp.NOT, var('a')), 'if (a) {'),
+            (HLILBinaryOp(BinaryOp.LT, var('a'), var('b')), 'if (a >= b) {'),
+            (HLILBinaryOp(BinaryOp.OR, var('a'), HLILBinaryOp(BinaryOp.AND, var('b'), var('c'))),
+             'if (!a && (!b || !c)) {'),
+            # Then .ts's own comparison-with-0 simplifications, parenthesized by what they print
+            (HLILBinaryOp(BinaryOp.EQ, var('a'), HLILConst(0)), 'if (a != 0) {'),
+            (HLILBinaryOp(BinaryOp.EQ, HLILBinaryOp(BinaryOp.OR, var('a'), var('b')), HLILConst(0)), 'if (a || b) {'),
+            (HLILBinaryOp(BinaryOp.OR,
+                          HLILBinaryOp(BinaryOp.EQ, HLILBinaryOp(BinaryOp.OR, var('a'), var('b')), HLILConst(0)),
+                          var('c')),
+             'if ((a || b) && !c) {'),
+        ]
+
+        for condition, line in rows:
+            with self.subTest(line = line):
+                ts = self.render_if(condition)
+                self.assertIn(f'    {line}\n        f();\n    }}', ts)
+                self.assertNotIn('else', ts)
+
+
+class TestZeroComparisonParentheses(unittest.TestCase):
+    '''A comparison with 0 that prints as another node's text ((a || b) != 0 prints a || b) is parenthesized by
+    that node: it printed f(a || b && c), read as a || (b && c)'''
+
+    def test_operand_is_parenthesized_by_what_it_prints(self):
+        a_or_b = HLILBinaryOp(BinaryOp.OR, var('a'), var('b'))
+        rows = [
+            (HLILBinaryOp(BinaryOp.AND, HLILBinaryOp(BinaryOp.NE, a_or_b, HLILConst(0)), var('c')),
+             'f((a || b) && c);'),
+            (HLILUnaryOp(UnaryOp.NOT, HLILUnaryOp(UnaryOp.NOT, HLILBinaryOp(BinaryOp.EQ, a_or_b, HLILConst(0)))),
+             'f(!(a || b));'),
+            # Unchanged: a tighter operand, and the simplification on its own
+            (HLILBinaryOp(BinaryOp.AND,
+                          HLILBinaryOp(BinaryOp.NE, HLILBinaryOp(BinaryOp.LT, var('a'), var('b')), HLILConst(0)),
+                          var('c')),
+             'f(a < b && c);'),
+            (HLILBinaryOp(BinaryOp.NE, a_or_b, HLILConst(0)), 'f(a || b);'),
+        ]
+
+        for expr, text in rows:
+            with self.subTest(text = text):
+                self.assertIn(text, render_call(expr))
 
 
 class TestSwitchEmptyCase(unittest.TestCase):
