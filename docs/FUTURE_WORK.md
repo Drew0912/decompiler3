@@ -168,7 +168,7 @@ consulted by `codegen/typescript.py`).
 
 **The idea:** once a common function's arguments and their real meaning are identified (by hand,
 or by future analysis), that knowledge can be patched into the generated library the same way — a
-YAML-backed `CommonFunctionKnowledgeDB`, consulted by `scp_writer_gen_common_funcs.py` between
+YAML-backed `CommonFunctionKnowledgeDB`, consulted by `gen_common_library.py` between
 extraction and rendering. Every generator run does a full rewrite of the output directory, so this
 has to be a hook inside the generator, not a post-process edit of generated files (which would
 just be overwritten on the next regeneration).
@@ -552,10 +552,10 @@ falcom/ed9/dsl/         # what scripts and hook files import
   from the LLIL helper for this reason (2026-10-07).
 - **Cost:** every generated script, library module and hook file imports `falcom.ed9.writer.scp_writer_helper`,
   so the move needs a one-line forwarding module at the old path, or re-decompiling the scripts and regenerating
-  the library. The `metadata/` move (a follow-up of the writer neatening plan) changes the scripts'
-  `common_all` import line and asks the same question; doing both in one window means one regeneration.
+  the library. The `metadata/` move (2026-10-14) changed the scripts' `common_all` import line with no
+  forwarder: scripts are decompiled again and the library regenerated.
 - **Collision check:** the library generator reserves the DSL namespace's names (`RESERVED_HELPER_NAMES`,
-  `scp_writer_gen_common_funcs.py`), so a package that adds names to it is checked against the corpus and the
+  `gen_common_library.py`), so a package that adds names to it is checked against the corpus and the
   library first.
 - **A deliberate namespace (`__all__`):** today what a script or hook sees is whatever leaks through star imports,
   because no module on the chain (`scp_writer_helper.py` -> `scp_writer_opcode_handler.py` -> `parser/types_scp.py`)

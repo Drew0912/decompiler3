@@ -132,9 +132,9 @@ the game's conventions (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary").
 ## Recompilation Pipeline — Core mechanism implemented, extensions planned
 
 **Location:** `falcom/ed9/writer/` (`scp_writer.py`, `scp_writer_opcode_handler.py`,
-`scp_writer_helper.py`, `scp_writer_hooks.py`, `scp_writer_hook_registry.py`, `scp_compile_check.py`,
-`scp_writer_gen_common_funcs.py`, `metadata/`), driven by `falcom/ed9/scena2py.py`, validated by
-`tools/scp_roundtrip_validator.py`.
+`scp_writer_helper.py`, `scp_writer_hooks.py`, `scp_writer_hook_registry.py`, `scp_compile_check.py`) and
+`falcom/ed9/metadata/` (the common-function library, its generator `gen_common_library.py` and the fingerprints
+in `fingerprint.py`), driven by `falcom/ed9/scena2py.py`, validated by `tools/scp_roundtrip_validator.py`.
 
 A `.py` source file — sequential calls to per-opcode functions, one per VM opcode — executed
 against a `ScpWriter` to emit bytecode. Compilation itself only needs that `.py` file. The Parser
@@ -143,7 +143,7 @@ round-trip check), and in the compile check, which parses and lifts the compiled
 stack mistake fails the compile with the `.py` line that caused it (`ScpWriter.check_compiled`).
 An automated byte-exact round-trip check exists and works; fidelity settings are opt-in rather
 than default. A shared common-function library
-(`falcom/ed9/writer/metadata/common/`, generated from the corpus) is implemented and active by
+(`falcom/ed9/metadata/common/`, generated from the corpus) is implemented and active by
 default, so generated `.py` files import shared game functions instead of embedding full copies of
 them. A `<stem>_hook.py` next to a script can replace or add functions and rewrite opcodes when it
 compiles (`scp_writer_hooks.py`; `docs/LLIL_DSL.md` §4). Compiling from MLIL/HLIL DSL forms instead of

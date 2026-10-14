@@ -5,10 +5,10 @@ from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
-from ..writer.metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT,
-                               SCP_WRITER_HELPER_IMPORT)
-from ..writer.metadata.common_index import COMMON_FUNCTIONS
-from ..writer.metadata.signature import function_fingerprint, fingerprint_digest
+from ..metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT,
+                        SCP_WRITER_HELPER_IMPORT)
+from ..metadata.common_index import COMMON_FUNCTIONS
+from ..metadata.fingerprint import function_fingerprint, fingerprint_digest
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT
 from ir.llil import WORD_SIZE
@@ -1455,7 +1455,7 @@ scena = create_scp_writer('{self.name}')
 
     def match_library_functions(self, functions: list[Function]) -> dict[str, str]:
         """This script's common functions whose body+signature exactly match the shared library's
-        canonical variant (falcom/ed9/writer/metadata/common_index.py) - name -> library module key.
+        canonical variant (falcom/ed9/metadata/common_index.py) - name -> library module key.
 
         Only meaningful in the everyday (non-fidelity) mode: a byte-exact recompile needs every
         function inline and every byte of it kept, so this always returns {} when self.round_trip

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for the common-function library generator (scp_writer_gen_common_funcs.py) and the library it
+'''Unit tests for the common-function library generator (gen_common_library.py) and the library it
 generates. Generator: the facts that decide a function's inclusion and module, a function rendered from hand-built
 bytecode with the scripts' stack comments, and a module's imports. Library: compiling a label-heavy generated
 function twice in one process, each time on a fresh writer against the same cached module, must fingerprint
@@ -17,12 +17,12 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from falcom.ed9.metadata import COMMON_LIBRARY_PACKAGE
+from falcom.ed9.metadata import gen_common_library as gen
+from falcom.ed9.metadata.common_index import COMMON_FUNCTIONS
+from falcom.ed9.metadata.fingerprint import function_fingerprint, fingerprint_digest
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function
-from falcom.ed9.writer import scp_writer_gen_common_funcs as gen
-from falcom.ed9.writer.metadata import COMMON_LIBRARY_PACKAGE
-from falcom.ed9.writer.metadata.common_index import COMMON_FUNCTIONS
-from falcom.ed9.writer.metadata.signature import function_fingerprint, fingerprint_digest
 from ir.llil.llil import WORD_SIZE
 from tests.shared.scp_asm import (
     Asm, Func, Program, CALLEE_ID, CALLEE_NAME, CALLER_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE,

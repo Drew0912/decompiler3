@@ -71,6 +71,7 @@ from dc3.config import default_encoding
 from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
+from falcom.ed9.metadata.fingerprint import function_fingerprint
 from falcom.ed9.parser.call_records import read_debug_records, record_mismatch
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.parser.crc32 import hash_func_Name
@@ -85,7 +86,6 @@ from falcom.ed9.parser.types_scp import (
     ScpHeader,
 )
 from falcom.ed9.writer.scp_writer import PUSH_SIZE_BYTE
-from falcom.ed9.writer.metadata.signature import function_fingerprint
 
 
 UINT8_SIZE              = 1

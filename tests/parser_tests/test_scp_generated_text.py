@@ -21,15 +21,15 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT, RECURSION_LIMIT, write_text_lf
+from falcom.ed9.metadata import SCP_WRITER_HELPER_IMPORT
+from falcom.ed9.metadata import common_all
+from falcom.ed9.metadata import gen_common_library as gen
+from falcom.ed9.metadata.common_index import COMMON_FUNCTIONS
 from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
 from falcom.ed9.parser.types_parser import GlobalVar
 from falcom.ed9.parser.types_scp import ScpGlobalVar
 from falcom.ed9.scena2py import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
-from falcom.ed9.writer import scp_writer_gen_common_funcs as gen
-from falcom.ed9.writer.metadata import SCP_WRITER_HELPER_IMPORT
-from falcom.ed9.writer.metadata import common_all
-from falcom.ed9.writer.metadata.common_index import COMMON_FUNCTIONS
 import scp_roundtrip_validator
 from scp_roundtrip_validator import compile_and_decompile_round, decompile_to_python
 from tests.shared.corpus import SORA2_SCRIPTS, require

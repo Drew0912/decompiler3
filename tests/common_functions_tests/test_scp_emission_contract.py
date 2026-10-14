@@ -84,7 +84,7 @@ class TestEmissionContract(unittest.TestCase):
         script = parser.gen_python_script(functions)
         header = script.split('\n@scena.CommonImports()')[0]
 
-        self.assertIn('from falcom.ed9.writer.metadata.common_all import *', header)
+        self.assertIn('from falcom.ed9.metadata.common_all import *', header)
         self.assertIn(f'{MATCHED_COMMON_FUNC},', script.split('def commonImports():')[1].split(']')[0])
         self.assertIn(f'def {SOURCE_FUNC}(', script)
         self.assertNotIn(f'def {MATCHED_COMMON_FUNC}(', script)

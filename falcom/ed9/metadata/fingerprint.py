@@ -9,13 +9,13 @@ common-function library generator and the DSL emitter, so both sides always agre
 import hashlib
 from typing import TYPE_CHECKING, Callable
 
-from ...disasm.instruction import Instruction, Operand
-from ...disasm.instruction_table import OperandType
-from ...disasm.ed9_optable import ED9OperandType
+from ..disasm.instruction import Instruction, Operand
+from ..disasm.instruction_table import OperandType
+from ..disasm.ed9_optable import ED9OperandType
 
 if TYPE_CHECKING:
-    from ...parser.scp import ScpParser
-    from ...parser.types_parser import Function
+    from ..parser.scp import ScpParser
+    from ..parser.types_parser import Function
 
 BRANCH_TAG              = 'L'   # branch target, as the destination's ordinal among the reachable instructions
 UNRESOLVED_BRANCH_TAG   = 'L?'  # branch target that isn't a reachable instruction start, relative to the function
