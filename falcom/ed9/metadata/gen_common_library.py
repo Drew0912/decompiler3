@@ -33,6 +33,7 @@ import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
@@ -78,6 +79,12 @@ class FunctionFacts:
     subsystem: int | None       # the module-grouping key: the first SYSCALL's subsystem
 
 
+class Occurrence(NamedTuple):
+    """One is_common_func copy: its fingerprint digest and the corpus file holding it"""
+    digest: str
+    path: Path
+
+
 def function_facts(parser: ScpParser, func: Function) -> FunctionFacts:
     instructions = parser.get_instructions(func)
     return FunctionFacts(
@@ -88,13 +95,13 @@ def function_facts(parser: ScpParser, func: Function) -> FunctionFacts:
     )
 
 
-def collect_occurrences(paths: list[Path]) -> tuple[dict[str, list[tuple[str, int]]], dict[str, FunctionFacts]]:
-    """Pass 1: fingerprint every is_common_func occurrence. name -> [(digest, file_idx), ...], and digest -> facts
-    (from its first occurrence)"""
-    occurrences: dict[str, list[tuple[str, int]]] = {}
+def collect_occurrences(paths: list[Path]) -> tuple[dict[str, list[Occurrence]], dict[str, FunctionFacts]]:
+    """Pass 1: fingerprint every is_common_func occurrence. name -> its occurrences in paths order, and digest ->
+    facts (from its first occurrence)"""
+    occurrences: dict[str, list[Occurrence]] = {}
     facts_by_digest: dict[str, FunctionFacts] = {}
 
-    for file_idx, path in enumerate(paths):
+    for path in paths:
         parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
 
         for func in functions:
@@ -102,35 +109,31 @@ def collect_occurrences(paths: list[Path]) -> tuple[dict[str, list[tuple[str, in
                 continue
 
             digest = fingerprint_digest(function_fingerprint(parser, func))
-            occurrences.setdefault(func.name, []).append((digest, file_idx))
+            occurrences.setdefault(func.name, []).append(Occurrence(digest, path))
             if digest not in facts_by_digest:
                 facts_by_digest[digest] = function_facts(parser, func)
 
     return occurrences, facts_by_digest
 
 
-def select_canonical(occurrences: dict[str, list[tuple[str, int]]]) -> dict[str, tuple[str, int]]:
-    """Per name: the majority digest, ties broken by earliest first occurrence. name -> (digest, file_idx)"""
+def select_canonical(occurrences: dict[str, list[Occurrence]]) -> dict[str, Occurrence]:
+    """Per name: the majority digest's first occurrence; a tie goes to the digest seen first"""
     canonical = {}
 
     for name, entries in occurrences.items():
-        counts = Counter(digest for digest, _file_idx in entries)
-
-        first_seen: dict[str, int] = {}
-        for digest, file_idx in entries:  # entries are already in ascending file_idx order
-            first_seen.setdefault(digest, file_idx)
-
-        best_digest = max(counts, key = lambda d: (counts[d], -first_seen[d]))
-        canonical[name] = (best_digest, first_seen[best_digest])
+        # Counter keeps first-seen order (entries follow the sorted paths) and max returns the first of equal counts
+        counts = Counter(entry.digest for entry in entries)
+        best_digest = max(counts, key = counts.get)
+        canonical[name] = next(entry for entry in entries if entry.digest == best_digest)
 
     return canonical
 
 
-def verify_canonical_function(parser: ScpParser, func: Function, path: Path, expected_digest: str) -> tuple[list[Instruction], set[int]]:
-    """Verify func's fingerprint still matches pass 1's selection, and that every branch target it
-    contains lands on a retained instruction - both fail loudly instead of letting a later stage (a
-    corrupted digest, or the writer's own label xref patching) produce a confusing error. Returns
-    the function's reachable instructions and referenced offsets for render_function to use."""
+def verified_render_inputs(parser: ScpParser, func: Function, path: Path, expected_digest: str) -> tuple[list[Instruction], set[int]]:
+    """func's reachable instructions and referenced offsets, for render_function, once its fingerprint is checked
+    against pass 1's selection and every branch target it contains against the retained instructions - both fail
+    loudly instead of letting a later stage (a corrupted digest, or the writer's own label xref patching) produce a
+    confusing error."""
     digest = fingerprint_digest(function_fingerprint(parser, func))
     if digest != expected_digest:
         raise RuntimeError(f'{func.name}: fingerprint changed between pass 1 and pass 2 ({path})')
@@ -166,6 +169,15 @@ def compute_excluded(facts: dict[str, FunctionFacts]) -> set[str]:
                 changed = True
 
     return excluded
+
+
+def require_closed_calls(included: set[str], facts: dict[str, FunctionFacts]):
+    """Every included function's CALL targets are included too, so every callee has a module to render against - stop
+    here with a clear message instead of a bare KeyError in render_function"""
+    for name in included:
+        for target in facts[name].call_targets:
+            if target not in included:
+                raise RuntimeError(f'{name}: CALL target {target!r} is excluded or not a common function')
 
 
 def assign_modules(included: set[str], facts: dict[str, FunctionFacts]) -> dict[str, str]:
@@ -208,7 +220,7 @@ def validate_names(included: set[str], name_to_module: dict[str, str]):
 def render_function(parser: ScpParser, func: Function, path: Path, expected_digest: str, name_to_module: dict[str, str]) -> list[str]:
     """The function's final lines: branch targets become genLabel() locals, CALL targets a bare name or common_N.name,
     every other operand its formatted text; the stack comments the scripts get (llil_dsl_comments), always on"""
-    instructions, referenced_offsets = verify_canonical_function(parser, func, path, expected_digest)
+    instructions, referenced_offsets = verified_render_inputs(parser, func, path, expected_digest)
     formatter_context = FormatterContext(
         get_func_name_from_func_id = parser.get_func_name_from_func_id,
         get_global_name_from_index = parser.get_global_name_from_index,
@@ -251,25 +263,23 @@ def render_function(parser: ScpParser, func: Function, path: Path, expected_dige
     return lines
 
 
-def render_included_functions(canonical: dict[str, tuple[str, int]], included: set[str], paths: list[Path],
+def render_included_functions(canonical: dict[str, Occurrence], included: set[str],
                               name_to_module: dict[str, str]) -> dict[str, list[str]]:
     """Pass 2: re-parse only the files holding an included function's canonical copy (grouped, so a file shared by
     many names is parsed once) and render those functions while the parse is in hand"""
-    names_by_file_idx: dict[int, list[str]] = {}
-    for name, (_digest, file_idx) in canonical.items():
+    names_by_path: dict[Path, list[str]] = {}
+    for name, occurrence in canonical.items():
         if name in included:
-            names_by_file_idx.setdefault(file_idx, []).append(name)
+            names_by_path.setdefault(occurrence.path, []).append(name)
 
     rendered: dict[str, list[str]] = {}
 
-    for file_idx, names in names_by_file_idx.items():
-        path = paths[file_idx]
+    for path, names in names_by_path.items():
         parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
         functions_by_name = {func.name: func for func in functions}
 
         for name in names:
-            expected_digest, _ = canonical[name]
-            rendered[name] = render_function(parser, functions_by_name[name], path, expected_digest, name_to_module)
+            rendered[name] = render_function(parser, functions_by_name[name], path, canonical[name].digest, name_to_module)
 
     return rendered
 
@@ -312,7 +322,7 @@ def render_module(module_key: str, names: list[str], rendered: dict[str, list[st
     return '\n'.join(lines).rstrip() + '\n'
 
 
-def render_index(canonical: dict[str, tuple[str, int]], name_to_module: dict[str, str]) -> str:
+def render_index(canonical: dict[str, Occurrence], name_to_module: dict[str, str]) -> str:
     lines = [
         '"""Index of the common-function library: name -> (module, fingerprint digest)"""',
         '',
@@ -321,7 +331,7 @@ def render_index(canonical: dict[str, tuple[str, int]], name_to_module: dict[str
         'COMMON_FUNCTIONS = {',
     ]
     for name in sorted(name_to_module):
-        lines.append(f"    {name!r}: ({name_to_module[name]!r}, {canonical[name][0]!r}),")
+        lines.append(f"    {name!r}: ({name_to_module[name]!r}, {canonical[name].digest!r}),")
 
     lines.append('}')
     return '\n'.join(lines) + '\n'
@@ -355,7 +365,7 @@ def render_all(module_keys: list[str]) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def write_output(canonical: dict[str, tuple[str, int]], facts: dict[str, FunctionFacts], rendered: dict[str, list[str]], name_to_module: dict[str, str]):
+def write_output(canonical: dict[str, Occurrence], facts: dict[str, FunctionFacts], rendered: dict[str, list[str]], name_to_module: dict[str, str]):
     for stale in OUTPUT_DIR.glob('*.py'):
         stale.unlink()
 
@@ -386,19 +396,15 @@ def generate(corpus_root: Path):
 
     occurrences, facts_by_digest = collect_occurrences(paths)
     canonical = select_canonical(occurrences)
-    facts = {name: facts_by_digest[digest] for name, (digest, _file_idx) in canonical.items()}
+    facts = {name: facts_by_digest[occurrence.digest] for name, occurrence in canonical.items()}
 
     excluded = compute_excluded(facts)
     included = set(canonical) - excluded
-
-    for name in included:
-        for target in facts[name].call_targets:
-            if target not in included:
-                raise RuntimeError(f'{name}: CALL target {target!r} is excluded or not a common function')
+    require_closed_calls(included, facts)
 
     name_to_module = assign_modules(included, facts)
     validate_names(included, name_to_module)
-    rendered = render_included_functions(canonical, included, paths, name_to_module)
+    rendered = render_included_functions(canonical, included, name_to_module)
     write_output(canonical, facts, rendered, name_to_module)
 
     print(f'{len(canonical)} candidate common functions, {len(excluded)} excluded (globals/closure), {len(included)} generated')

@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 '''Unit tests for the common-function library generator (gen_common_library.py) and the library it
 generates. Generator: the facts that decide a function's inclusion and module, a function rendered from hand-built
-bytecode with the scripts' stack comments, and a module's imports. Library: compiling a label-heavy generated
-function twice in one process, each time on a fresh writer against the same cached module, must fingerprint
-identically to the corpus canonical both times - proving genLabel() names are allocated per execution, not baked in
-once at module import time.'''
+bytecode with the scripts' stack comments, a module's imports, the closure check and the corpus-root check. Library:
+compiling a label-heavy generated function twice in one process, each time on a fresh writer against the same cached
+module, must fingerprint identically to the corpus canonical both times - proving genLabel() names are allocated per
+execution, not baked in once at module import time.'''
 
 import importlib
 import inspect
@@ -35,6 +35,7 @@ SUBSYSTEM = 5
 SYSCALL_FUNC = 0
 SYSCALL_ARGC = 0
 OWN_MODULE = f'{gen.MODULE_PREFIX}{SUBSYSTEM}'
+SCRIPT_CALLEE = 'ScriptOnly'  # a script's own function: never in the library
 
 
 def disassemble(asm: Asm, argc: int = 0) -> tuple[ScpParser, dict[str, Function]]:
@@ -150,6 +151,26 @@ class TestGenerator(unittest.TestCase):
                 name_to_module = {FUNC_NAME: OWN_MODULE, CALLEE_NAME: callee_module}
                 text = gen.render_module(OWN_MODULE, [FUNC_NAME], rendered, facts, name_to_module)
                 self.assertEqual([line for line in text.split('\n') if line.startswith('import ')], imports)
+
+    def test_included_functions_call_only_included_ones(self):
+        '''require_closed_calls: a callee left out of the library, excluded or not a common function at all, stops
+        generation; a closed set passes'''
+        facts = {
+            FUNC_NAME   : gen.FunctionFacts(touches_global = False, call_targets = {CALLEE_NAME}, subsystem = None),
+            CALLEE_NAME : gen.FunctionFacts(touches_global = False, call_targets = set(), subsystem = None),
+        }
+        gen.require_closed_calls({FUNC_NAME, CALLEE_NAME}, facts)
+
+        calls_script = {FUNC_NAME: gen.FunctionFacts(touches_global = False, call_targets = {SCRIPT_CALLEE},
+                                                     subsystem = None)}
+        for case, included, case_facts, target in (('excluded', {FUNC_NAME}, facts, CALLEE_NAME),
+                                                   ('not common', {FUNC_NAME}, calls_script, SCRIPT_CALLEE)):
+            with self.subTest(case = case):
+                with self.assertRaises(RuntimeError) as raised:
+                    gen.require_closed_calls(included, case_facts)
+
+                self.assertEqual(str(raised.exception),
+                                 f'{FUNC_NAME}: CALL target {target!r} is excluded or not a common function')
 
     def test_corpus_root_without_scripts_writes_nothing(self):
         '''generate() replaces the whole library: a file, a missing path or a folder with no .dat must stop it first'''
