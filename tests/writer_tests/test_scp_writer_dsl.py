@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 '''DSL argument checks (types, bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes, what
-handle_opcode tracks, every opcode function handing the writer its own opcode, and PUSH.'''
+handle_opcode tracks, every opcode function handing the writer its own opcode, PUSH, and an int enum pushed as its
+value.'''
 
-from enum import IntEnum
+from enum import IntEnum, StrEnum
 import inspect
 import math
 from pathlib import Path
@@ -16,6 +17,7 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from dc3.enum import IntEnum2, IntFlag2
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.parser.types_scp import RawInt, ScpValue
@@ -209,11 +211,13 @@ class TestPushFloat(unittest.TestCase):
     def test_non_finite_float_does_not_compile(self):
         for value in (math.inf, -math.inf, math.nan):
             with self.subTest(value = value):
-                with self.assertRaisesRegex(ValueError, f"non-finite float {value}: the game can't use it"):
+                with self.assertRaisesRegex(ValueError, f"^Body: PUSH_FLOAT non-finite float {value}: the game can't "
+                                                        "use it$"):
                     PUSH_FLOAT(value)
 
     def test_float_past_float32_range_does_not_compile(self):
-        with self.assertRaisesRegex(ValueError, r"float 3\.5e\+38 is outside float32's range: the game can't use it"):
+        with self.assertRaisesRegex(ValueError, r"^Body: PUSH_FLOAT float 3\.5e\+38 is outside float32's range: the "
+                                                r"game can't use it$"):
             PUSH_FLOAT(3.5e38)
 
     def test_non_finite_default_does_not_compile(self):
@@ -240,6 +244,68 @@ class TestPush(unittest.TestCase):
                 PUSH(value)
 
                 self.assertEqual(writer.fs.ReadAll(), expected)
+
+
+# Named constants and flag masks, as a metadata table would define them
+class Mode(IntEnum):
+    A = 3
+
+
+class ChrId(IntEnum2):
+    Self = 0xFFFE
+
+
+class MoveFlags(IntFlag2):
+    A = 0x4000000
+    B = 0x8000000
+    TOO_BIG = 0x40000000
+
+
+class Kind(StrEnum):
+    A = 'a'
+
+
+class TestPushEnum(unittest.TestCase):
+    '''An int enum pushes its value: ScpValue takes only its exact types, so it failed with a TypeError and no line'''
+
+    def test_pushes_like_its_value(self):
+        cases = {
+            'IntEnum': (lambda: PUSH_INT(Mode.A), lambda: PUSH_INT(3)),
+            'IntEnum2 through PUSH': (lambda: PUSH(ChrId.Self), lambda: PUSH_INT(0xFFFE)),
+            'IntFlag2 mask': (lambda: PUSH_INT(MoveFlags.A | MoveFlags.B), lambda: PUSH_INT(0xC000000)),
+            # No member is 0, so its repr raises (IntFlag2 prints the name): converted before a message formats it
+            'IntFlag2 without a name': (lambda: PUSH_INT(MoveFlags(0)), lambda: PUSH_INT(0)),
+            'PUSH_FLOAT': (lambda: PUSH_FLOAT(Mode.A), lambda: PUSH_FLOAT(3.0)),
+        }
+        for case, (push, twin) in cases.items():
+            with self.subTest(case):
+                writer = body_writer()
+                twin()
+                expected = writer.fs.ReadAll()
+
+                writer = body_writer()
+                push()
+
+                self.assertEqual(writer.fs.ReadAll(), expected)
+
+    def test_raw_int_stays_raw(self):
+        '''RawInt is an int subclass ScpValue takes: Raw, not Integer (03 00 00 40)'''
+        writer = body_writer()
+        PUSH(RawInt(3))
+
+        self.assertEqual(writer.fs.ReadAll(), bytes.fromhex('00 04 03 00 00 00'))
+
+    def test_value_past_the_range_fails_with_its_number(self):
+        body_writer()
+        with self.assertRaisesRegex(ValueError, r'^Body: PUSH_INT Integer 1073741824 is outside '
+                                                r'-536870912\.\.536870911'):
+            PUSH_INT(MoveFlags.TOO_BIG)
+
+    def test_other_subclass_fails_naming_the_function(self):
+        '''Only an int enum converts: a str enum is still rejected, now in its function (at its line, with the check)'''
+        body_writer()
+        with self.assertRaisesRegex(TypeError, '^Body: PUSH_STR ScpValue takes int, float, str or RawInt, not Kind: '):
+            PUSH_STR(Kind.A)
 
 
 class TestValueRanges(unittest.TestCase):
@@ -278,13 +344,14 @@ class TestValueRanges(unittest.TestCase):
     def test_push_past_the_range_does_not_compile(self):
         body_writer()
 
-        # Before the check these compiled as -473741824 and as Integer 1
+        # Before the check these compiled as -473741824, as Integer 1 and as -473741824
         for message, push in (
-            ('Integer 600000000 is outside', lambda: PUSH_INT(600000000)),
-            ('RawInt 0x40000001 is outside', lambda: PUSH_RAW(RawInt(0x40000001))),
+            ('PUSH_INT Integer 600000000 is outside', lambda: PUSH_INT(600000000)),
+            ('PUSH_RAW RawInt 0x40000001 is outside', lambda: PUSH_RAW(RawInt(0x40000001))),
+            ('PUSH Integer 600000000 is outside', lambda: PUSH(600000000)),
         ):
             with self.subTest(message = message):
-                with self.assertRaisesRegex(ValueError, f'^{message}'):
+                with self.assertRaisesRegex(ValueError, f'^Body: {message}'):
                     push()
 
     def test_last_operand_that_fits_reads_back_and_the_next_fails(self):

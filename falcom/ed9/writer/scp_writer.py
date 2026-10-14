@@ -4,6 +4,7 @@ import inspect
 import math
 import sys
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
 from types import UnionType
 from typing import Callable, get_args
@@ -45,6 +46,8 @@ NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - UINT32_SIZE  # name_offset is
 
 # ScpGlobalVar.LAYOUT stores a global's type as an unsigned word
 GLOBAL_VAR_TYPE_RANGE = OperandFormat.integer_range(OperandType.UInt32)
+# The only types the games declare (sora2_1.0, sora1, kuro1); another compiles as written, with a warning
+GLOBAL_VAR_TYPES = tuple(ScpGlobalVar.Type)
 
 # The engine passes arguments by position; param_count counts every parameter
 POSITIONAL_KINDS = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
@@ -263,6 +266,10 @@ class ScpWriter:
         if not GLOBAL_VAR_TYPE_RANGE.start <= type < GLOBAL_VAR_TYPE_RANGE.stop:
             raise ValueError(f'GLOBAL_VAR({name!r}) type is {type}, outside '
                              f'{GLOBAL_VAR_TYPE_RANGE.start}..{GLOBAL_VAR_TYPE_RANGE.stop - 1}')
+
+        if type not in GLOBAL_VAR_TYPES:
+            log.warning(f'GLOBAL_VAR({name!r}) type is {type}, not '
+                        + ' or '.join(f'{known.value} ({known.name})' for known in GLOBAL_VAR_TYPES))
 
         self.global_var_indices[name] = len(self.global_vars)
         self.global_vars.append(ScpGlobalVar(name, type))
@@ -697,7 +704,11 @@ class ScpWriter:
             if problem is not None:
                 raise ValueError(self._at_opcode(f'{ED9Opcode(opcode).name} {problem}'))
 
-            payload = self._emit_push_constant(args[0])
+            try:
+                payload = self._emit_push_constant(args[0])
+
+            except (TypeError, ValueError) as e:
+                raise type(e)(self._at_opcode(f'{ED9Opcode(opcode).name} {e}')) from e
 
         elif opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
             self._write_push_value(ScpValue(RawInt(self.current_function.index)))
@@ -730,6 +741,10 @@ class ScpWriter:
     def _emit_push_constant(self, operand: int | float | str | RawInt) -> tuple[ScpValue, PooledString | None]:
         """PUSH and its constant pseudo-ops (PUSH_CONSTANT_OPS) all collapse to the on-disk PUSH opcode + size byte +
         ScpValue; returns the tracker's (value, string) payload"""
+        # ScpValue takes only its exact types: an int enum (a named constant, a flag mask) pushes its value
+        if type(operand) not in ScpValue.ClassMap and isinstance(operand, Enum) and isinstance(operand, int):
+            operand = int(operand)
+
         value = ScpValue(operand)
         return value, self._write_push_value(value)
 

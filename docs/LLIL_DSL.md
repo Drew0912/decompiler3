@@ -60,7 +60,9 @@ float. Non-finite floats, which the game can't use, print as `float('inf')`/`flo
 logs a warning and compiling it raises. `CALL_SCRIPT`/`CALL_SCRIPT_NO_RETURN` names print as plain
 strings, `CALL_SCRIPT("this", "GetCoolClone", 0)` - the writer wraps a bare `str` itself. An `int` must
 fit the 30-bit Integer payload (`ScpValue.INTEGER_MIN..INTEGER_MAX`, -0x20000000..0x1FFFFFFF) and a
-`RawInt` `0..0x3FFFFFFF`; past that, compiling raises instead of storing a different number or type.
+`RawInt` `0..0x3FFFFFFF`; past that, compiling raises at its line instead of storing a different number
+or type (`PUSH_INT Integer 600000000 is outside -536870912..536870911: ..`). An int enum (`IntEnum`,
+`IntFlag`: a named constant or a flag mask) pushes its value; `RawInt`, an `int` subclass too, stays Raw.
 
 **Comments.** Every trailing comment starts at display column 32 after the indent (a CJK character
 takes two columns; a longer line gets 2 spaces), several on one line joined by `, `. Besides
@@ -126,7 +128,9 @@ must be in their place: an opcode or `label()` outside a function body raises `P
 function body`, and `GLOBAL_VAR` inside a body raises (the header counts the globals before the bodies
 run). `GLOBAL_VAR` belongs in the script's one `@scena.GlobalVars()` block or a hook's run or function
 callback (§4): anywhere else it raises, and so do a second `@scena.GlobalVars()` and one before
-`create_scp_writer()`. Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the
+`create_scp_writer()`. Its type is stored as an unsigned word (`GLOBAL_VAR('x') type is -1, outside
+0..4294967295`); the games declare only 0 (Integer) and 1 (String), so another type compiles as written,
+with a warning (`GLOBAL_VAR('x') type is 2, not 0 (Integer) or 1 (String)`). Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the
 unknown name, and `PUSH_INT(5.0)` there its type. A wrong argument type is a `TypeError` naming the
 statement, the argument and the types it takes - `PUSH_INT value is 5.0 (float), not int`, in a body at
 its line. `CALL` of a function the script never registered says where one comes from: a library function

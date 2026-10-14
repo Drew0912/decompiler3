@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 '''The writer's compile: built in memory and written only on success, file-wide labels whose errors and warnings
 name their functions, DSL statements in the wrong place rejected, global vars declared once, in their block or a
-run callback, and named right, the global opcodes by name or index (an index within the declared table), an operand
-out of its type's range or of the wrong type failing at its line, a string the pool can't store failing where it
-enters, and the string pool without round_trip.'''
+run callback, named right and typed as the games do (else a warning), the global opcodes by name or index (an index
+within the declared table), an operand or pushed value out of its range or of the wrong type failing at its line, a
+string the pool can't store failing where it enters, and the string pool without round_trip.'''
 
+from enum import StrEnum
 import logging
+import math
 from pathlib import Path
 import re
 import struct
@@ -19,6 +21,7 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
+from falcom.ed9.parser.types_scp import ScpGlobalVar
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_writer_test_utils import WriterTestCase, at, fresh_writer, location
 
@@ -366,18 +369,45 @@ class TestGlobalVarNames(WriterTestCase):
                     def globalvars():
                         GLOBAL_VAR('x', type)
 
+        # The last type that fits compiles, with test_type_other_than_integer_or_string_warns's warning
+        with self.assertLogs(log, 'WARNING') as logs:
+            parser = self.compile_global(2 ** 32 - 1)
+
+        self.assertEqual(parser.global_vars[0].type, 2 ** 32 - 1)
+        self.assertEqual([record.getMessage() for record in logs.records],
+                         ["GLOBAL_VAR('x') type is 4294967295, not 0 (Integer) or 1 (String)"])
+
+    def test_type_other_than_integer_or_string_warns(self):
+        '''The games declare only Integer and String globals; another type compiles as written, so a script that has
+        one still round-trips'''
+        for type in (0, 1, ScpGlobalVar.Type.Integer, ScpGlobalVar.Type.String):
+            with self.subTest(type = repr(type)):
+                with self.assertNoLogs(log, 'WARNING'):
+                    parser = self.compile_global(type)
+
+                self.assertEqual(parser.global_vars[0].type, type)
+
+        with self.assertLogs(log, 'WARNING') as logs:
+            parser = self.compile_global(2)
+
+        self.assertEqual(parser.global_vars[0].type, 2)
+        self.assertEqual([record.getMessage() for record in logs.records],
+                         ["GLOBAL_VAR('x') type is 2, not 0 (Integer) or 1 (String)"])
+
+    def compile_global(self, global_type: int):
+        '''The parser of a compiled script whose one global var has global_type'''
         writer = self.fresh_writer()
 
         @writer.GlobalVars()
         def globalvars():
-            GLOBAL_VAR('x', 2 ** 32 - 1)
+            GLOBAL_VAR('x', global_type)
 
         @writer.LLILCode()
         def Body():
             RETURN()
 
         parser, _ = parse(writer.build({}))
-        self.assertEqual(parser.global_vars[0].type, 2 ** 32 - 1)
+        return parser
 
     def test_block_before_create_scp_writer(self):
         writer = fresh_writer()
@@ -489,6 +519,38 @@ class TestOperandRanges(WriterTestCase):
                     RETURN()
 
                 with self.assertRaisesRegex(ValueError, rf'^{at(__file__, case)}Main: {case} operand 1 is '):
+                    self.writer.build({})
+
+    def test_pushed_value_failure_names_its_line(self):
+        '''A pushed value's encoding errors had no line, unlike an operand's'''
+        class Kind(StrEnum):
+            A = 'a'
+
+        cases = {
+            'PUSH_INT': (lambda: PUSH_INT(600000000), ValueError,
+                         r'PUSH_INT Integer 600000000 is outside -536870912\.\.536870911: the game stores a signed '
+                         r'30-bit value$'),
+            'PUSH_RAW': (lambda: PUSH_RAW(RawInt(0x40000001)), ValueError,
+                         r'PUSH_RAW RawInt 0x40000001 is outside 0\.\.0x3fffffff: '),
+            'PUSH': (lambda: PUSH(600000000), ValueError, 'PUSH Integer 600000000 is outside '),
+            'PUSH_FLOAT inf': (lambda: PUSH_FLOAT(math.inf), ValueError,
+                               "PUSH_FLOAT non-finite float inf: the game can't use it$"),
+            'PUSH_FLOAT past float32': (lambda: PUSH_FLOAT(3.5e38), ValueError,
+                                        r"PUSH_FLOAT float 3\.5e\+38 is outside float32's range: "),
+            'PUSH_STR str enum': (lambda: PUSH_STR(Kind.A), TypeError,
+                                  'PUSH_STR ScpValue takes int, float, str or RawInt, not Kind: '),
+        }
+        for case, (push, error, message) in cases.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Main():
+                    push()                                  # line: push
+                    POP(WORD_SIZE)
+                    RETURN()
+
+                with self.assertRaisesRegex(error, rf'^{at(__file__, "push")}Main: {message}'):
                     self.writer.build({})
 
 
@@ -698,6 +760,19 @@ class TestCheckOffLocations(WriterTestCase):
             RETURN()
 
         with self.assertRaisesRegex(ValueError, r'^Main: SET_REG operand 1 is 256, outside 0\.\.255$'):
+            writer.build({})
+
+    def test_pushed_value_out_of_range_names_only_the_function(self):
+        writer = self.fresh_writer(check = False)
+
+        @writer.LLILCode()
+        def Main():
+            PUSH_INT(600000000)
+            POP(WORD_SIZE)
+            RETURN()
+
+        with self.assertRaisesRegex(ValueError, r'^Main: PUSH_INT Integer 600000000 is outside '
+                                                r'-536870912\.\.536870911: the game stores a signed 30-bit value$'):
             writer.build({})
 
     def test_string_with_a_nul_names_only_the_function(self):
