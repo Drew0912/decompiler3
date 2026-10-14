@@ -50,10 +50,10 @@ need goes in `tests/shared/`.
 
 - A test that reads a real script passes its path through `require(path)`, which skips the test when the file is
   missing (no `sora2_1.0/`).
-- A few tests need the generated common-function library (`falcom/ed9/metadata/common/`, gitignored); without
-  it they fail (one class skips). Make it with `python falcom/ed9/metadata/gen_common_library.py sora2_1.0`. It
-  also rewrites the tracked `falcom/ed9/metadata/common_index.py` and `common_all.py`, so run it on `sora2_1.0`
-  only.
+- A few tests need the generated common-function library (`falcom/ed9/metadata/common/`, gitignored); without it they
+  fail (one class skips). Make it with `python falcom/ed9/metadata/gen_common_library.py sora2_1.0/script_en`. It
+  also rewrites the tracked `falcom/ed9/metadata/common_index.py` and `common_all.py`, so run it on
+  `sora2_1.0/script_en` only.
 
 ## Adding tests
 

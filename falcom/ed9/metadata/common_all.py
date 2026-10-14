@@ -46,5 +46,5 @@ try:
     from falcom.ed9.metadata.common.scp_writer_common_no_syscall import *
     COMMON_LIBRARY_GENERATED = True
 except ModuleNotFoundError:
-    _log.info('Shared common-function library not generated - run falcom/ed9/metadata/gen_common_library.py <corpus_root> to build it')
+    _log.info('Shared common-function library not generated - run falcom/ed9/metadata/gen_common_library.py <game>/script_<lang> to build it')
     COMMON_LIBRARY_GENERATED = False

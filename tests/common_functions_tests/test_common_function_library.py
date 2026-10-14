@@ -6,8 +6,10 @@ compiling a label-heavy generated function twice in one process, each time on a 
 module, must fingerprint identically to the corpus canonical both times - proving genLabel() names are allocated per
 execution, not baked in once at module import time.'''
 
+import contextlib
 import importlib
 import inspect
+import io
 from pathlib import Path
 import sys
 import tempfile
@@ -172,20 +174,41 @@ class TestGenerator(unittest.TestCase):
                 self.assertEqual(str(raised.exception),
                                  f'{FUNC_NAME}: CALL target {target!r} is excluded or not a common function')
 
-    def test_corpus_root_without_scripts_writes_nothing(self):
-        '''generate() replaces the whole library: a file, a missing path or a folder with no .dat must stop it first'''
-        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(gen, 'write_output') as write_output:
-            script = Path(tmp) / 'script.dat'
+    def test_wrong_corpus_root_writes_nothing(self):
+        '''generate() replaces the whole library: anything but a game's script folder of .dat scripts (a file, a
+        missing path, the game folder, one of the script folder's subfolders, a script folder with no .dat) must
+        stop it first. Parsing is stubbed out, so only the input checks can stop it'''
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(gen, 'collect_occurrences', return_value = ({}, {})), \
+             mock.patch.object(gen, 'write_output') as write_output:
+            game = Path(tmp) / 'game'
+            subfolder = game / 'script_en' / 'ai'
+            subfolder.mkdir(parents = True)
+            script = subfolder / 'script.dat'
             script.write_bytes(b'')
-            empty = Path(tmp) / 'empty'
+            empty = Path(tmp) / 'script_fr'
             empty.mkdir()
             for corpus_root, error in ((script, NotADirectoryError), (Path(tmp) / 'missing', NotADirectoryError),
-                                       (empty, FileNotFoundError)):
+                                       (game, ValueError), (subfolder, ValueError), (empty, FileNotFoundError)):
                 with self.subTest(corpus_root = corpus_root.name):
                     with self.assertRaises(error):
                         gen.generate(corpus_root)
 
                     write_output.assert_not_called()
+
+    def test_script_folder_of_any_language_is_accepted(self):
+        '''The language in script_<lang> is not fixed (script_en today), and a bare script folder passes too'''
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()), \
+             mock.patch.object(gen, 'collect_occurrences', return_value = ({}, {})), \
+             mock.patch.object(gen, 'write_output') as write_output:
+            for folder_name in ('script_en', 'script_sc', 'script'):
+                with self.subTest(folder_name = folder_name):
+                    script_folder = Path(tmp) / folder_name
+                    (script_folder / 'ai').mkdir(parents = True)
+                    (script_folder / 'ai' / 'script.dat').write_bytes(b'')
+                    write_output.reset_mock()
+                    gen.generate(script_folder)
+                    write_output.assert_called_once()
 
 
 class TestGeneratedLibraryFingerprintStable(unittest.TestCase):
