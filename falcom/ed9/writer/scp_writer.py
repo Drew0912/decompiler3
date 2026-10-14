@@ -694,9 +694,12 @@ class ScpWriter:
             if isinstance(arg, bool):
                 raise TypeError(self._at_opcode(f'{ED9Opcode(opcode).name} takes no bool operand: {arg!r}'))
 
-        # The value's Python type picks its encoding, so PUSH_FLOAT(1) would push an Integer
+        # The value's Python type picks its encoding, so PUSH_FLOAT(1) would push an Integer, PUSH_INT(RawInt(5)) a Raw
         if opcode == ED9Opcode.PUSH_FLOAT:
             args = (float(args[0]),)
+
+        elif opcode == ED9Opcode.PUSH_INT:
+            args = (int(args[0]),)
 
         payload = None
         if opcode in PUSH_CONSTANT_OPS:

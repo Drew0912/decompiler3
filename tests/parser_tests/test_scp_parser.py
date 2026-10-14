@@ -42,6 +42,12 @@ class TestScpValue(unittest.TestCase):
         self.assertEqual(val2.value, raw_val)
         self.assertEqual(val2.type, ScpValue.Type.Raw)
 
+    def test_raw_int_prints_as_a_number_and_reprs_as_itself(self):
+        '''The IR's outputs print a Raw constant with str() like any int; the .py spells it with repr()'''
+        raw = RawInt(0x12345678)
+
+        self.assertEqual((str(raw), f'{raw}', repr(raw)), ('305419896', '305419896', 'RawInt(0x12345678)'))
+
     def test_integer_value(self):
         test_values = [0, 1, -1, 100, -100, 0x1FFFFFFF]  # 0x1FFFFFFF is safe max for 30-bit signed
 

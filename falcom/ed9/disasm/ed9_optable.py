@@ -60,6 +60,10 @@ class ED9OperandDescriptor(OperandDescriptor):
             case OperandType.Float32:
                 return ScpValue.float_literal(operand.value)
 
+            case OperandType.UInt32 if isinstance(operand.value, RawInt):
+                # PUSH_RAW's value: the RawInt(0x..) spelling PUSH_RAW takes, not str()'s plain number
+                return repr(operand.value)
+
             case ED9OperandType.GlobalVar:
                 # Try to get the global var's real name from context
                 if context.get_global_name_from_index:
@@ -81,6 +85,7 @@ def _ed9_oprdesc(opr_type: OperandType | ED9OperandType, is_hex: bool = False):
 # Extend format table with ED9-specific types
 ED9_FORMAT_TABLE = OperandDescriptor.format_table.copy()
 ED9_FORMAT_TABLE.update({
+    'I' : _ed9_oprdesc(OperandType.UInt32),     # PUSH_RAW / PUSH_INT only: a Raw value prints as RawInt(0x..)
     'f' : _ed9_oprdesc(OperandType.Float32),    # PUSH_FLOAT only: its value comes from a stored word, so float_literal's text is exact
     'F' : _ed9_oprdesc(ED9OperandType.Func),
     'V' : _ed9_oprdesc(ED9OperandType.Value),

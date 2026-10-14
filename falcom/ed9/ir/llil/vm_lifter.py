@@ -163,7 +163,8 @@ class ED9VMLifter:
                 builder.push_str(str(inst.operands[0].value))
 
             case ED9Opcode.PUSH_RAW:
-                builder.push_raw(int(inst.operands[0].value))
+                # Kept a RawInt: past LLIL's is_raw, only its type tells a Raw constant from an Integer
+                builder.push_raw(inst.operands[0].value)
 
             case ED9Opcode.PUSH_CURRENT_FUNC_ID:
                 builder.push_func_id()

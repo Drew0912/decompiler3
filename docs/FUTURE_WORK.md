@@ -281,8 +281,10 @@ by raw encoding (floats, NaN): an expression that happens to equal the default s
   writer's source site from each node's recorded file and line, or every error falls back to the `def`.
   A syscall lowers its argc and the `POP` right after it from one count: the compile check warns when they
   differ.
-- **What HLIL must keep for exact recompiles:** raw vs typed constants (`is_raw` exists only in LLIL
-  today); which jump opcode was used (a "true arm is the fall-through" bit); block-scoped locals,
+- **What HLIL must keep for exact recompiles:** raw vs typed constants (kept: past LLIL's `is_raw`, a
+  Raw constant stays a `RawInt` through MLIL and HLIL, and prints as its number; a folded one becomes an
+  `int`, and a Raw and an Integer constant never merge, since `constant_values_equal` compares types); which
+  jump opcode was used (a "true arm is the fall-through" bit); block-scoped locals,
   including never-read ones and unused stores; stack temporaries rather than named locals; `reg0` as a
   register; constant expressions unfolded (`1 | 32768`); bare truth tests vs `!= 0`; eager vs
   short-circuit logic; a tail-call node; the compiler's switch pattern. Loop rotation, switch recovery,

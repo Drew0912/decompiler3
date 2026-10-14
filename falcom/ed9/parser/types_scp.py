@@ -95,6 +95,9 @@ class ScpParamFlags:
 
 
 class RawInt(int):
+    # str() prints the plain number, as an int's does: int has no __str__ of its own, so it would print the repr
+    __str__ = int.__repr__
+
     def __repr__(self) -> str:
         return f'RawInt(0x{self:08X})'
 

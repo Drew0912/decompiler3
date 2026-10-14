@@ -194,6 +194,15 @@ class TestOpcodeFunctions(unittest.TestCase):
                         func(*args)
 
 
+class TestPushInt(unittest.TestCase):
+    def test_raw_int_is_pushed_as_an_integer(self):
+        # The value's Python type picks the encoding: unconverted, PUSH_INT(RawInt(5)) wrote Raw 5 (00 04 05 00 00 00)
+        writer = body_writer()
+        PUSH_INT(RawInt(5))
+
+        self.assertEqual(writer.fs.ReadAll(), bytes.fromhex('00 04 05 00 00 40'))
+
+
 class TestPushFloat(unittest.TestCase):
     def setUp(self):
         self.writer = body_writer()

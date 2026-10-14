@@ -56,7 +56,7 @@ shortest float literal that stores the same word (`ScpValue.float_literal`): `PU
 decoded `PUSH_FLOAT(0.2999999523162842)`, and the same for float parameter defaults (`= 0.2`). It is
 always a float literal (`1.0`, `-0.0`), because the writer picks the encoding from the Python type;
 `PUSH_FLOAT` itself converts an `int` with `float()`, so a hand-written `PUSH_FLOAT(1)` still pushes a
-float. Non-finite floats, which the game can't use, print as `float('inf')`/`float('nan')`: decoding one
+float, and `PUSH_INT` a `RawInt` with `int()`, so `PUSH_INT(RawInt(5))` pushes an Integer. Non-finite floats, which the game can't use, print as `float('inf')`/`float('nan')`: decoding one
 logs a warning and compiling it raises. `CALL_SCRIPT`/`CALL_SCRIPT_NO_RETURN` names print as plain
 strings, `CALL_SCRIPT("this", "GetCoolClone", 0)` - the writer wraps a bare `str` itself. An `int` must
 fit the 30-bit Integer payload (`ScpValue.INTEGER_MIN..INTEGER_MAX`, -0x20000000..0x1FFFFFFF) and a
