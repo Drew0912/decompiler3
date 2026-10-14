@@ -132,6 +132,15 @@ comparisons of two int constants via `constant_truth` - never floats, whose VM c
 unverified - `(bool) != 0` → `bool` for an int `0` only, double-negation elimination) — some
 optimization happens here, not only in `ir/hlil/passes/`.
 
+**Trailing default arguments.** A local call pushes every argument, so HLIL holds them all; `.ts` leaves
+out a call's longest tail of literal constants equal to the callee's declared defaults - the original
+compiler's own rule, and the signature prints the defaults: `camera_lookat(63.153, 29.174, -63.103, 0, 3,
+-1)` prints `camera_lookat(63.153, 29.174, -63.103, 0)`. Equal is `constant_values_equal`, as the HLIL
+passes compare constants: the same type (an Integer `0` is not a Raw `0` or `0.0`), floats by bits and
+spelling. `scena2py` passes `generate_typescript` every function's defaults as the lifter converts them
+(`ED9VMLifter.source_value`), from the whole function table. Syscalls, script calls and `.hlil.ts` print
+every argument.
+
 **Address-taken locals fold back to a plain variable, not a `deref` call.** MLIL SSA construction
 lowers every address-taken local/parameter `x` to explicit `*(&x)` memory form (see
 `MLIL_DESIGN.md`'s Variable Model & SSA section); that form survives SSA deconstruction and MLIL-

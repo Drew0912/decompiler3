@@ -101,13 +101,14 @@ class ED9VMLifter:
         for i, param in enumerate(params):
             name = f'arg{i + 1}'
             type_name = param.type.get_python_type()
-            default_value = self._source_value(param.default_value.value) if param.default_value else None
+            default_value = self.source_value(param.default_value.value) if param.default_value else None
             result.append(IRParameter(name, type_name, default_value))
         return result
 
-    def _source_value(self, value):
+    def source_value(self, value):
         '''A decoded value as the IR keeps it: a finite float carries the .py's spelling, so every output prints
-        it the same way (no spelling without spell_floats)'''
+        it the same way (no spelling without spell_floats). Public: .ts compares call arguments with the callees'
+        defaults converted by it'''
         if isinstance(value, float) and math.isfinite(value):
             return SourceFloat(value, ScpValue.float_literal(value) if self.spell_floats else None)
 
@@ -157,7 +158,7 @@ class ED9VMLifter:
                 builder.push_int(int(inst.operands[0].value))
 
             case ED9Opcode.PUSH_FLOAT:
-                builder.push(builder.const_float(self._source_value(inst.operands[0].value)))
+                builder.push(builder.const_float(self.source_value(inst.operands[0].value)))
 
             case ED9Opcode.PUSH_STR:
                 builder.push_str(str(inst.operands[0].value))

@@ -229,8 +229,8 @@ The output was correct in every function traced; what it costs is readability.
   chains such as `reg0 = f(); var_s1 = reg0; var_s0 = reg0;`.
 - **Constants:** named pseudo-IDs for `65534` and the like, hex for bit flags, and float32 constants as
   the shortest decimal that encodes to the same value.
-- **Calls:** print script calls as `module.f()`, as the MLIL does, not `extern_call('module:f')`, and
-  leave out trailing default arguments (Trailing Default Arguments, below).
+- **Calls:** print script calls as `module.f()`, as the MLIL does, not `extern_call('module:f')`
+  (trailing default arguments are left out since 2026-10-14: Trailing Default Arguments, below).
 - **Structure:** don't split an `else if` chain into `switch` fragments when it has conditional arms
   (`var0 == N && !flag(M)` can't be a `case`: a set flag must reach later arms and the final `else`);
   don't invert an empty arm into `!= N` and nest the rest under it; drop a `break;` after arms that all
@@ -240,9 +240,13 @@ The output was correct in every function traced; what it costs is readability.
 
 ### Trailing Default Arguments
 
+**(a) implemented 2026-10-14 in `.ts` only** (`docs/HLIL_GUIDE.md` Codegen; `.hlil.ts` keeps every argument).
+**(b)** is the last step of the debug-records plan (`notes/work_order.md` 3c), behind `round_trip`.
+
 Wanted (user, 2026-10-12): print `mes_set_auto(1)`, not `mes_set_auto(1, 0)`. A local call pushes every
-argument, defaults included, so both compile to the same bytes and the HLIL/TypeScript prints every call
-in full today (`mp0000_ev`: 1,172 of 1,181 `camera_lookat` calls end in its defaults `3, -1`). Local calls
+argument, defaults included, so both compile to the same bytes and the HLIL holds every call in full;
+`.hlil.ts` prints it so, and so did `.ts` before (a) (`mp0000_ev`: 1,172 of 1,181 `camera_lookat` calls end
+in its defaults `3, -1`). Local calls
 only: their callee's defaults are in this script's function table. Two ways:
 
 - **(a) From the code:** leave out trailing constant arguments equal to the callee's declared defaults
@@ -262,7 +266,8 @@ only: their callee's defaults are in this script's function table. Two ways:
 
 Either way only the HLIL/TypeScript side changes; the LLIL DSL keeps one line per push, and the HLIL
 DSL's lowering pushes the omitted defaults back, as Falcom's compiler did. Drop only constants, compared
-by raw encoding (floats, NaN): an expression that happens to equal the default stays.
+by `constant_values_equal` (type, float bits and spelling): an expression that happens to equal the default
+stays.
 
 ### HLIL DSL: Recompile Path
 

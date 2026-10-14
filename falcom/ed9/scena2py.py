@@ -88,6 +88,14 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     if config.write_debug_info:
         write_listing(path, out.with_suffix('.debug.txt'), config.debug_sections, {func.index for func in functions})
 
+def callee_default_values(parser: ScpParser) -> dict[str, tuple]:
+    """Each function's parameter defaults (None: none) as the IR holds them, by name - the values its .ts signature
+    prints; no type lookup, so a function the outputs skip can't fail it"""
+    lifter = ED9VMLifter(parser = parser)
+    return {func.name: tuple(lifter.source_value(param.default_value.value) if param.default_value is not None else None
+                             for param in func.params)
+            for func in parser.functions}
+
 def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScenaDecompileConfig, out: Path) -> None:
     """The .llil.asm, .mlil.asm, .hlil.ts, .ts and .dot outputs the config asks for"""
     output_dir = out.parent
@@ -100,6 +108,10 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
     mlil_asm_lines: list[str] = []
     hlil_ts_lines: list[str] = []
     ts_chunks: list[str] = []
+
+    # From the whole function table (callees the output omits included): .ts leaves out a call's trailing arguments
+    # equal to these defaults
+    callee_defaults = callee_default_values(parser) if config.write_ts else None
 
     for func in functions:
         try:
@@ -138,7 +150,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
                 hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))
 
             if config.write_ts:
-                ts_chunks.append(generate_typescript(hlil_func))
+                ts_chunks.append(generate_typescript(hlil_func, callee_defaults))
 
         except Exception as e:
             # One bad function shouldn't lose the rest of the file's output

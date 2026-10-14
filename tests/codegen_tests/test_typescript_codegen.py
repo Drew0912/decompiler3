@@ -9,7 +9,9 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from codegen.typescript import generate_typescript, generate_typescript_header
+from codegen.typescript import TypeScriptGenerator, generate_typescript, generate_typescript_header
+from falcom.ed9.parser.types_scp import RawInt
+from ir.core import SourceFloat
 from ir.core.il_base import IRParameter
 from ir.hlil import (
     BinaryOp,
@@ -19,9 +21,11 @@ from ir.hlil import (
     HLILBlock,
     HLILCall,
     HLILConst,
+    HLILExpression,
     HLILExprStmt,
     HLILExternCall,
     HLILIf,
+    HLILReturn,
     HLILSwitch,
     HLILSwitchCase,
     HLILTypeKind,
@@ -31,6 +35,7 @@ from ir.hlil import (
     UnaryOp,
     VariableKind,
 )
+from ir.hlil.hlil_formatter import HLILFormatter
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from ir.mlil.mlil import MediumLevelILFunction, MLILRet
 from ir.mlil.mlil_optimizer import optimize_mlil
@@ -241,6 +246,117 @@ class TestExternCallCodegen(unittest.TestCase):
         func.add_statement(HLILExprStmt(HLILExternCall(SPECIAL_TARGET, [])))
 
         self.assertIn(f'extern_call({SPECIAL_TARGET_LITERAL});', generate_typescript(func))
+
+
+CALLEE = 'g'                    # g(arg1, arg2 = 3, arg3 = -1)
+ONE_PARAM_CALLEE = 'h'          # h(arg1 = <the row's default>)
+LOG_FUNCTION = 'log'
+DEFAULT_INT = 3
+DEFAULT_NEGATIVE = -1
+OTHER_INT = 5
+HEX_VALUE = 0xFF
+STORED_0_3 = 0.2999999523162842     # what 0.3 decodes to
+DEFAULTS = {CALLEE: (None, DEFAULT_INT, DEFAULT_NEGATIVE)}
+
+
+def call(name: str, *args) -> HLILCall:
+    '''A call of name; a plain value argument becomes a constant'''
+    return HLILCall(name, [arg if isinstance(arg, HLILExpression) else HLILConst(arg) for arg in args])
+
+
+class TestTrailingDefaultArguments(unittest.TestCase):
+    '''.ts leaves out a local call's longest tail of constants that are the callee's defaults (compared as the IR
+    compares constants, constant_values_equal); the HLIL call and every other output keep them'''
+
+    def render(self, statement, defaults = DEFAULTS) -> str:
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        func.add_statement(statement)
+        return generate_typescript(func, defaults)
+
+    def test_trailing_defaults_left_out(self):
+        rows = [
+            (call(CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE), 'g(a);'),
+            (call(CALLEE, var('a'), OTHER_INT, DEFAULT_NEGATIVE), 'g(a, 5);'),
+            (call(CALLEE, var('a'), DEFAULT_INT, OTHER_INT), 'g(a, 3, 5);'),
+            (call(CALLEE, DEFAULT_INT, DEFAULT_INT, DEFAULT_NEGATIVE), 'g(3);'),
+            # Equal in value, but not a literal
+            (call(CALLEE, var('a'), HLILBinaryOp(BinaryOp.ADD, HLILConst(1), HLILConst(2)), DEFAULT_NEGATIVE),
+             'g(a, 1 + 2);'),
+            (call(CALLEE, var('a'), var('three'), DEFAULT_NEGATIVE), 'g(a, three);'),
+            (call(CALLEE, call(CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE), DEFAULT_INT, DEFAULT_NEGATIVE),
+             'g(g(a));'),
+        ]
+        for expr, expected in rows:
+            with self.subTest(expected):
+                self.assertIn(expected, self.render(HLILExprStmt(expr)))
+
+    def test_every_argument_left_out(self):
+        self.assertIn('h();', self.render(HLILExprStmt(call(ONE_PARAM_CALLEE, DEFAULT_INT)),
+                                          {ONE_PARAM_CALLEE: (DEFAULT_INT,)}))
+
+    def test_calls_in_any_statement(self):
+        full = call(CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE)
+        rows = [
+            (HLILIf(HLILBinaryOp(BinaryOp.LT, full, HLILConst(OTHER_INT)), HLILBlock([HLILReturn()])),
+             'if (g(a) < 5) {'),
+            (HLILReturn(full), 'return g(a);'),
+            (HLILAssign(var('x'), full), 'x = g(a);'),
+            (HLILExprStmt(HLILBinaryOp(BinaryOp.ADD, full, call(CALLEE, var('b'), DEFAULT_INT, DEFAULT_NEGATIVE))),
+             'g(a) + g(b);'),
+        ]
+        for statement, expected in rows:
+            with self.subTest(expected):
+                self.assertIn(expected, self.render(statement))
+
+    def test_compared_as_the_ir_compares_constants(self):
+        rows = [
+            # (argument, default, left out)
+            (0, 0.0, False),
+            (True, 1, False),
+            (-0.0, 0.0, False),
+            (SourceFloat(STORED_0_3, '0.3'), SourceFloat(STORED_0_3, '0.30'), False),
+            (DEFAULT_INT, RawInt(DEFAULT_INT), False),
+            (SourceFloat(STORED_0_3, '0.3'), SourceFloat(STORED_0_3, '0.3'), True),
+            (SourceFloat(-1.0, '-1.0'), SourceFloat(-1.0, '-1.0'), True),
+            (DEFAULT_NEGATIVE, DEFAULT_NEGATIVE, True),
+            ('text', 'text', True),
+            (HLILConst(HEX_VALUE, is_hex = True), HEX_VALUE, True),
+        ]
+        for argument, default, left_out in rows:
+            with self.subTest(argument = repr(argument), default = repr(default)):
+                statement = HLILExprStmt(call(ONE_PARAM_CALLEE, argument))
+                with_defaults = self.render(statement, {ONE_PARAM_CALLEE: (default,)})
+
+                self.assertEqual('h();' in with_defaults, left_out)
+                if not left_out:
+                    self.assertEqual(with_defaults, self.render(statement, None))
+
+    def test_nothing_left_out_without_a_matching_callee(self):
+        rows = [
+            (call(CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE), None, 'g(a, 3, -1);'),
+            (call('unknown', var('a'), DEFAULT_INT, DEFAULT_NEGATIVE), DEFAULTS, 'unknown(a, 3, -1);'),
+            # Another argument count (never in a lifted call, which pushes every argument): the last argument is the
+            # last default, so only the count keeps it
+            (call(CALLEE, var('a'), DEFAULT_NEGATIVE), DEFAULTS, 'g(a, -1);'),
+            # DEBUG_LOG's call is named debug.log; a script function named log is another callee
+            (call('debug.log', DEFAULT_INT), {LOG_FUNCTION: (DEFAULT_INT,)}, 'debug.log(3);'),
+        ]
+        for expr, defaults, expected in rows:
+            with self.subTest(expected):
+                self.assertIn(expected, self.render(HLILExprStmt(expr), defaults))
+
+    def test_the_call_keeps_every_argument(self):
+        '''.hlil.ts is written from the same tree before .ts, then later outputs and callers see it'''
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        statement = HLILExprStmt(call(CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE))
+        func.add_statement(statement)
+
+        self.assertIn('g(a);', generate_typescript(func, DEFAULTS))
+        # A direct caller (the codegen tests format single expressions) never sees the last render's defaults
+        self.assertEqual(TypeScriptGenerator._format_expr(statement.expr), 'g(a, 3, -1)')
+        self.assertEqual(len(statement.expr.args), 3)
+        self.assertIn('g(a, 3, -1)', '\n'.join(HLILFormatter.format_function(func)))
+        self.assertIn('g(a, 3, -1);', generate_typescript(func))
 
 
 if __name__ == '__main__':

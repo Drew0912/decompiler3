@@ -3,13 +3,14 @@
 import math
 from dc3 import default_indent, format_uint32_hex, quote_string
 from typing import List
-from ir.core import is_int_zero
+from ir.core import constant_values_equal, is_int_zero
 from ir.hlil import *
 
 
 class TypeScriptGenerator:
     _current_func: 'HighLevelILFunction' = None
     _signature_db = None  # FormatSignatureDB for arg formatting
+    _callee_defaults: dict[str, tuple] = {}  # local callee name -> each parameter's default (None: none)
 
     @classmethod
     def set_signature_db(cls, db):
@@ -62,12 +63,30 @@ class TypeScriptGenerator:
     @classmethod
     def _format_call_args(cls, func_name: str, args: list) -> str:
         '''Format call arguments, using signature hints if available'''
+        args = cls._without_trailing_defaults(func_name, args)
         if cls._signature_db:
             sig = cls._signature_db.get_function(func_name)
             if sig:
                 return cls._format_call_args_with_sig(args, sig.params)
 
         return ', '.join(cls._format_expr(arg) for arg in args)
+
+    @classmethod
+    def _without_trailing_defaults(cls, func_name: str, args: list) -> list:
+        '''args without the longest tail of constants that are the callee's defaults (the original compiler's own
+        rule; the signature prints them). A new list: the call keeps every argument'''
+        defaults = cls._callee_defaults.get(func_name)
+        if defaults is None or len(defaults) != len(args):
+            return args
+
+        kept = len(args)
+        for arg, default in zip(reversed(args), reversed(defaults)):
+            if not (isinstance(arg, HLILConst) and default is not None and constant_values_equal(arg.value, default)):
+                break
+
+            kept -= 1
+
+        return args[:kept]
 
     @classmethod
     def _format_call_args_with_sig(cls, args: list, params: list) -> str:
@@ -610,6 +629,14 @@ def generate_syscall_wrappers(signature_db) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def generate_typescript(func: HighLevelILFunction) -> str:
-    lines = TypeScriptGenerator.generate_function(func)
+def generate_typescript(func: HighLevelILFunction, callee_defaults: dict[str, tuple] | None = None) -> str:
+    '''func's TypeScript; with callee_defaults (local callee name -> each parameter's default as the lifter converts
+    it, None where there is none) a call leaves out its trailing arguments equal to them'''
+    TypeScriptGenerator._callee_defaults = callee_defaults or {}
+    try:
+        lines = TypeScriptGenerator.generate_function(func)
+
+    finally:
+        TypeScriptGenerator._callee_defaults = {}
+
     return '\n'.join(lines)
