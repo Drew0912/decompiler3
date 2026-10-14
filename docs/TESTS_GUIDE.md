@@ -25,7 +25,7 @@ A test sits in the folder of the code it tests. Each folder is named after that 
 | `hlil_tests/` | MLIL->HLIL structuring and the HLIL passes (`ir/hlil/`, `falcom/ed9/ir/hlil/`) |
 | `parser_tests/` | reading a `.dat` (`falcom/ed9/parser/`, `falcom/ed9/disasm/`): stack simulation, string pool, call records, listings, the opcode table's stack effects, and the `.py` text scena2py writes |
 | `writer_tests/` | `ScpWriter` (`falcom/ed9/writer/`): compiling the LLIL DSL, hooks, the compile check |
-| `common_functions_tests/` | the shared common-function library: fingerprints, matching, what a script imports |
+| `common_functions_tests/` | the shared common-function library (`falcom/ed9/metadata/`): fingerprints, matching, what a script imports, and its generator (the facts, rendering, the closure and input checks) |
 | `tools_tests/` | the scripts in `tools/`: the validators, the line-order report, the HLIL path check |
 | `dc3_tests/` | `dc3/`: logging, file I/O, the GC policy |
 | `codegen_tests/` | the TypeScript code generator (`codegen/`) |
