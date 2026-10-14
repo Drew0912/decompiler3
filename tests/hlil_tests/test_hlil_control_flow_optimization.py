@@ -32,9 +32,11 @@ from ir.hlil import (
     HLILStatement,
     HLILSwitch,
     HLILSwitchCase,
+    HLILUnaryOp,
     HLILVar,
     HLILVariable,
     HLILWhile,
+    UnaryOp,
     VariableKind,
     iter_tree,
 )
@@ -357,6 +359,40 @@ class TestBooleanTempInlining(unittest.TestCase):
                                  (true_calls, false_calls))
                 self.assertNotIn(make_flag_var().var,
                                  [node.var for node in iter_tree(func.body) if isinstance(node, HLILVar)])
+
+
+def named(name: str) -> HLILVar:
+    return HLILVar(HLILVariable(name))
+
+
+class TestNegatedConditions(unittest.TestCase):
+    '''Both places the pass negates a test - an empty then-arm inverted, flag == 0 inlined without an else - negate
+    as the other HLIL passes do (negate_condition: De Morgan, no double !), not as (cond) == 0'''
+
+    def check_arm(self) -> HLILBlock:
+        return HLILBlock([HLILExprStmt(HLILCall(FIRST_CHECK_CALL, []))])
+
+    def test_empty_then_arm_is_inverted_with_the_shared_negation(self):
+        rows = [
+            (HLILBinaryOp(BinaryOp.AND, named('a'), named('b')), '!a || !b'),
+            (HLILUnaryOp(UnaryOp.NOT, named('a')), 'a'),
+            (make_less_than(), 'a >= b'),
+        ]
+        for condition, text in rows:
+            with self.subTest(text = text):
+                [inverted] = run_cfo(HLILIf(condition, HLILBlock(), self.check_arm())).body.statements
+
+                self.assertEqual(HLILFormatter._format_expr(inverted.condition), text)
+                self.assertEqual((arm_calls(inverted.true_block), arm_calls(inverted.false_block)),
+                                 ([FIRST_CHECK_CALL], []))
+
+    def test_inlined_flag_test_is_negated_with_the_shared_negation(self):
+        check = HLILIf(HLILBinaryOp(BinaryOp.EQ, make_flag_var(), HLILConst(0)), self.check_arm(), HLILBlock())
+
+        [inlined] = run_cfo(HLILAssign(make_flag_var(), HLILBinaryOp(BinaryOp.AND, named('a'), named('b'))),
+                            check).body.statements
+
+        self.assertEqual(HLILFormatter._format_expr(inlined.condition), '!a || !b')
 
 
 RELOAD_CALL_NAME = 'reload_discriminant'

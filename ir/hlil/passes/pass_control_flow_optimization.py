@@ -34,10 +34,10 @@ from ..hlil import (
     contains_bare_break,
     is_boolean_expr,
     iter_tree,
+    negate_condition,
     read_children,
     sole_statement,
     sub_blocks,
-    NEGATED_COMPARISON_OP,
 )
 
 
@@ -149,7 +149,7 @@ class ControlFlowOptimizationPass(Pass):
                 # But skip if else block is [nop*, if] to preserve else-if chain
                 if not stmt.true_block.statements and stmt.false_block and stmt.false_block.statements:
                     if not isinstance(sole_statement(stmt.false_block), HLILIf):
-                        stmt.condition = self._negate_condition(stmt.condition)
+                        stmt.condition = negate_condition(stmt.condition)
                         stmt.true_block = stmt.false_block
                         stmt.false_block = None
 
@@ -204,7 +204,6 @@ class ControlFlowOptimizationPass(Pass):
         if self._var_read_elsewhere(assigned_var, exclude = (id(assign_stmt), id(next_stmt))):
             return None
 
-        # Build new condition
         condition_expr = assign_stmt.src
         negate = (cond.op == BinaryOp.EQ)
         has_else = next_stmt.false_block and next_stmt.false_block.statements
@@ -217,7 +216,7 @@ class ControlFlowOptimizationPass(Pass):
 
         elif negate:
             # if (var == 0) {A} -> if (!expr) {A}
-            new_condition = self._negate_condition(condition_expr)
+            new_condition = negate_condition(condition_expr)
             new_true_block = next_stmt.true_block
             new_false_block = None
 
@@ -785,13 +784,3 @@ class ControlFlowOptimizationPass(Pass):
             switch_cases.append(HLILSwitchCase(None, default_body))
 
         return HLILSwitch(scrutinee, switch_cases)
-
-    def _negate_condition(self, condition: HLILExpression) -> HLILExpression:
-        if isinstance(condition, HLILBinaryOp):
-            if condition.op in NEGATED_COMPARISON_OP:
-                return HLILBinaryOp(NEGATED_COMPARISON_OP[condition.op], condition.lhs, condition.rhs)
-
-            elif condition.op in (BinaryOp.AND, BinaryOp.OR):
-                return HLILBinaryOp(BinaryOp.EQ, condition, HLILConst(0))
-
-        return HLILBinaryOp(BinaryOp.EQ, condition, HLILConst(0))
