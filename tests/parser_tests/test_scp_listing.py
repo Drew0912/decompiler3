@@ -154,6 +154,28 @@ def compile_common(dat: Path):
     writer.run({})
 
 
+def compile_tail_calls(dat: Path):
+    '''Tail calls into this script: to a function it defines (Loop) and to one it doesn't'''
+    writer = fresh_writer(dat)
+
+    @writer.LLILCode()
+    def Loop():
+        DEBUG_SET_LINENO(1)
+        RETURN()
+
+    @writer.LLILCode()
+    def ToLoop():
+        DEBUG_SET_LINENO(2)
+        CALL_SCRIPT_NO_RETURN('', 'Loop', 0)
+
+    @writer.LLILCode()
+    def ToNowhere():
+        DEBUG_SET_LINENO(3)
+        CALL_SCRIPT_NO_RETURN('', 'Nowhere', 0)
+
+    writer.run({})
+
+
 def code_area(listing: ScpListing, lines: list[str]) -> bytes:
     '''The bytes of the code and raw lines before the string pool, in printed order; each line must start where the
     previous one ended (from the code start), so a range listed twice or skipped fails'''
@@ -295,6 +317,20 @@ class TestListing(unittest.TestCase):
         self.assertEqual(code_area(listing, lines), whole_code_area(listing))
         self.assertIn('--- call records (5) ---  ; records not paired: 4 calls, 5 records', main_lines)
         self.assertFalse(record_offsets_and_tags(main_lines))
+
+
+class TestSameScriptTailCalls(unittest.TestCase):
+    '''A tail call into the same script pairs with its record: the callee's table index and bare name, or NO_FUNC_ID
+    when the script doesn't define the callee'''
+
+    def test_records_pair(self):
+        dat = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'tail_calls.dat'
+        compile_tail_calls(dat)
+        listing = ScpListing(dat)
+        for name in ('ToLoop', 'ToNowhere'):
+            with self.subTest(function = name):
+                call_offsets, note = listing.pairing(listing.parser.get_func_by_name(name))
+                self.assertEqual((len(call_offsets), note), (1, None))
 
 
 class TestSharedCode(unittest.TestCase):

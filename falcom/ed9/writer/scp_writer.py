@@ -15,7 +15,8 @@ from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandFormat, OperandType
 from ..parser.crc32 import hash_func_Name
-from ..parser.call_debug_records import PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue
+from ..parser.call_debug_records import (PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue,
+                                         script_call_identity)
 from ..parser.string_pool import StringPoolSection
 from ..parser.types_scp import (
     UINT32_SIZE,
@@ -546,11 +547,17 @@ class ScpWriter:
         return DebugRecord(call_type = call.call_type, func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID, args = args)
 
     def _script_call_record(self, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
-        """No callee id; the pooled 'module.func' name leads the arguments"""
+        """The callee id and the pooled name script_call_identity gives; the name leads the arguments"""
         module, func = (value.value if isinstance(value, ScpValue) else value for value in call.target)
-        name = self._add_string(f'{module}.{func}', StringPoolSection.Debug)
+        func_id, text = script_call_identity(call.call_type, module, func, self._table_index)
+        name = self._add_string(text, StringPoolSection.Debug)
         args = [DebugArg(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(name.text), name)] + args
-        return DebugRecord(call_type = call.call_type, func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID, args = args)
+        return DebugRecord(call_type = call.call_type, func_id = func_id, args = args)
+
+    def _table_index(self, name: str) -> int | None:
+        """A function's table index by its name, None when the script doesn't define it"""
+        f = self.functions_by_name.get(name)
+        return f.index if f is not None else None
 
     def _write_file(self, hdr: ScpHeader, code: fileio.FileStream) -> tuple[bytes, int]:
         """Lay the .dat out in memory around the compiled code - header, function table, default params, param flags,

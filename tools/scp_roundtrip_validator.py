@@ -24,7 +24,8 @@ Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler l
                     falcom/ed9/parser/string_pool.py
     debug records   every record rebuilt from its call site with CallDebugInfoTracker
     round trip      (--round-trip) decompile into a work dir, delete the copy, run the generated .py,
-                    byte-compare with the original
+                    byte-compare with the original; when they differ, also compare the two files' debug
+                    records function by function (the first difference in each, see compare_file_records)
 
 --logic-round-trip checks (decompile with round_trip=False, the everyday config; see docs/LLIL_DSL.md
 Sec.2 for the full policy - byte-exact fidelity is not required, preserved game logic and a byte-level
@@ -72,7 +73,8 @@ from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
 from falcom.ed9.metadata.fingerprint import function_fingerprint
-from falcom.ed9.parser.call_debug_records import CallDebugInfoTracker, TrackedCall, read_debug_records, record_mismatch
+from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, RecordView, TrackedCall, read_debug_records,
+                                                  record_mismatch, record_view)
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.parser.crc32 import hash_func_Name
 from falcom.ed9.parser.scp import ScpParser
@@ -84,6 +86,7 @@ from falcom.ed9.parser.types_scp import (
     ScpFunctionEntry,
     ScpGlobalVar,
     ScpHeader,
+    ScpValue,
 )
 from falcom.ed9.writer.scp_writer import PUSH_SIZE_BYTE
 
@@ -350,7 +353,7 @@ def compare_record(ctx: ScriptContext, call: TrackedCall, record: ScpFunctionCal
     if call.call_type == ScpFunctionCallDebugInfo.CallType.Local and call.ret_label is None:
         return 'local CALL without a PUSH_RET_ADDR label'
 
-    return record_mismatch(ctx.data, call, record)
+    return record_mismatch(ctx.data, call, record, ctx.parser.get_func_index)
 
 
 def check_debug_records(ctx: ScriptContext) -> CheckResult:
@@ -582,9 +585,127 @@ def check_round_trip(path: Path, work_dir: Path) -> CheckResult:
         shutil.rmtree(run_dir)
         return CheckResult('round trip', Status.PASS, f'identical ({len(original)} bytes)')
 
+    summary, details = describe_difference(original, rebuilt)
+    return CheckResult('round trip', Status.FAIL, f'{summary}, kept {run_dir}', details)
+
+
+def describe_difference(original: bytes, rebuilt: bytes) -> tuple[str, list[str]]:
+    """The round trip's summary of two differing files and its detail lines: where the bytes first differ, and how
+    the debug records differ (compare_file_records). Records the comparison can't read keep the summary - otherwise
+    the exception would reach main(), which reports it in place of the whole result."""
     first_diff = next((i for i, (a, b) in enumerate(zip(original, rebuilt)) if a != b), min(len(original), len(rebuilt)))
-    summary = f'differs at 0x{first_diff:X} (original {len(original)} bytes, rebuilt {len(rebuilt)} bytes), kept {run_dir}'
-    return CheckResult('round trip', Status.FAIL, summary)
+    summary = f'differs at 0x{first_diff:X} (original {len(original)} bytes, rebuilt {len(rebuilt)} bytes)'
+    try:
+        lines = compare_file_records(original, rebuilt)
+
+    except Exception as e:
+        return f'{summary}, records unreadable', [f'records unreadable: {type(e).__name__}: {ascii(str(e))}']
+
+    if not lines:
+        return f'{summary}, records identical', []
+
+    return f'{summary}, records differ in {len(lines)} function{"" if len(lines) == 1 else "s"}', lines
+
+
+def compare_file_records(original: bytes, rebuilt: bytes) -> list[str]:
+    """One line per function whose records differ between the original and the rebuilt file - its first difference -
+    and per function only one file has; functions match by name, so a shifted table still compares"""
+    original_views, rebuilt_views = file_record_views(original), file_record_views(rebuilt)
+    lines = []
+    for name, views in original_views.items():
+        if name not in rebuilt_views:
+            lines.append(f'{name}: not in the rebuilt file')
+            continue
+
+        difference = first_record_difference(views, rebuilt_views[name])
+        if difference is not None:
+            lines.append(f'{name} {difference}')
+
+    lines += [f'{name}: not in the original' for name in rebuilt_views if name not in original_views]
+    return lines
+
+
+def file_record_views(data: bytes) -> dict[str, list[RecordView]]:
+    """Each function's record views by name, in table order: the header, table and raw records only, no disassembly"""
+    with fileio.FileStream(data) as fs:
+        parser = ScpParser(fs)
+        parser.round_trip = False   # no converted records: they reject a func_id out of range, record_view shows it
+        parser.parse()
+
+    names = [func.name for func in parser.functions]
+    return {name: [record_view(data, record, names) for record in records]
+            for name, records in zip(names, read_debug_records(parser, data))}
+
+
+def first_record_difference(original: list[RecordView], rebuilt: list[RecordView]) -> str | None:
+    """The first record that differs, else the first one missing from or extra in rebuilt"""
+    for i, (original_view, rebuilt_view) in enumerate(zip(original, rebuilt)):
+        difference = view_difference(original_view, rebuilt_view)
+        if difference is not None:
+            return f'record {i}: {difference}'
+
+    if len(rebuilt) < len(original):
+        return f'record {len(rebuilt)}: missing (original {view_text(original[len(rebuilt)])})'
+
+    if len(rebuilt) > len(original):
+        return f'record {len(original)}: extra ({view_text(rebuilt[len(original)])})'
+
+    return None
+
+
+def view_difference(original: RecordView, rebuilt: RecordView) -> str | None:
+    """The first field rebuilt differs in: call type, callee, argument count, then each argument (counted as stored,
+    a script call's name and a syscall's constants included)"""
+    if rebuilt.call_type != original.call_type:
+        return f'{rebuilt.call_type.name}, original {original.call_type.name}'
+
+    if rebuilt.callee != original.callee:
+        return f'callee {rebuilt.callee or "none"}, original {original.callee or "none"}'
+
+    if len(rebuilt.args) != len(original.args):
+        return f'{len(rebuilt.args)} args, original {len(original.args)}'
+
+    for i, (original_arg, rebuilt_arg) in enumerate(zip(original.args, rebuilt.args)):
+        if rebuilt_arg != original_arg:
+            return f'arg {i} {arg_text(rebuilt_arg)}, original {arg_text(original_arg)}'
+
+    return None
+
+
+def view_text(view: RecordView) -> str:
+    """A record as a missing or extra line names it: its call type, callee (a script call's name) and argument count"""
+    if view.callee is not None:
+        callee = view.callee
+
+    elif view.args:
+        callee = arg_text(view.args[0])     # a script call's name, a syscall's subsystem
+
+    else:
+        callee = 'none'
+
+    return f'{view.call_type.name} {callee}, {len(view.args)} args'
+
+
+def arg_text(arg: tuple[int, int | str]) -> str:
+    """A record view's argument: a string's text, a constant's typed value, or a non-constant's type (and its word if
+    it isn't the usual 0)"""
+    arg_type, value = arg
+    if isinstance(value, str):
+        return ascii(value)
+
+    if arg_type != ScpFunctionCallDebugInfoArg.Type.Constant:
+        name = ScpFunctionCallDebugInfoArg.Type(arg_type).name
+        return name if value == ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE else f'{name} 0x{value:X}'
+
+    value_type, decoded = ScpValue.decode_word(value)
+    match value_type:
+        case ScpValue.Type.Integer:
+            return f'Int({decoded})'
+
+        case ScpValue.Type.Float:
+            return f'Float({ScpValue.float_literal(decoded)})'
+
+    return f'Raw(0x{decoded:X})'
 
 
 @dataclass

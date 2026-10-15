@@ -275,7 +275,7 @@ class ScpListing:
             return {}, f'records not paired: {len(pairs)} calls, {len(records)} records'
 
         for i, ((call, _), record) in enumerate(zip(pairs, records)):
-            problem = record_mismatch(self.data, call, record)
+            problem = record_mismatch(self.data, call, record, self.parser.get_func_index)
             if problem is not None:
                 return {}, f'records not paired: record {i} differs from its call ({problem})'
 

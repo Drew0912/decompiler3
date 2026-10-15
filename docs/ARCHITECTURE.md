@@ -36,10 +36,12 @@ pool's strings by what references them, in pool order (code, function names, par
 debug-only, global var names); the round-trip validator checks the pool with it. `call_debug_records.py` holds
 `CallDebugInfoTracker`, which rebuilds the call-site debug records a function's calls get from its opcodes (a call
 tree in source pre-order, values carried through registers; shared by the parser, the writer, the listing and the
-validator), and compares a record with the record its call gets (content only: call type, callee, arguments), the
-calls coming from `CallDebugInfoTracker.replay` in record order with their instruction offsets; `code_layout.py`
-gives the code order, each function's byte range and the ranges no instruction covers. The validator's code, debug-record,
-source-precondition and reachability checks use them.
+validator), and compares a record with the record its call gets (content only: call type, callee, arguments; a
+script call's callee id and name come from `script_call_identity`, the writer's rule too), the calls coming from
+`CallDebugInfoTracker.replay` in record order with their instruction offsets; its `record_view` lets the validator's
+`--round-trip` name each function's first record difference between the original and the rebuilt file.
+`code_layout.py` gives the code order, each function's byte range and the ranges no instruction covers. The
+validator's code, debug-record, source-precondition and reachability checks use them.
 
 ## Layer 2: Disassembler — Done
 

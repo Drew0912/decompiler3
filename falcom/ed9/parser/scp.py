@@ -631,6 +631,11 @@ class ScpParser(StrictBase):
     def get_func_by_name(self, name: str) -> Function:
         return self.function_map[name]
 
+    def get_func_index(self, name: str) -> int | None:
+        """A function's table index by its name, None when the script doesn't define it"""
+        func = self.function_map.get(name)
+        return func.index if func is not None else None
+
     def get_func_name_from_func_id(self, func_id: int) -> str:
         if func_id >= len(self.functions):
             raise ValueError(f'func_id out of range: {func_id} >= {len(self.functions)}')

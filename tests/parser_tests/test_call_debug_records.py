@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 '''Unit tests for pairing call-site debug records with their calls: CallDebugInfoTracker (its call tree, registers and
 line gate; replay's record order and each call's instruction offset), falcom/ed9/parser/call_debug_records.py
-(record_args, record_mismatch), function_extents, and the round-trip validator's compare_record built on them.'''
+(record_args, record_mismatch, script_call_identity), function_extents, and the round-trip validator's compare_record
+and record comparison built on them.'''
 
 from pathlib import Path
+import copy
 import dataclasses
 import sys
 import tempfile
@@ -18,15 +20,25 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, RESULT_REGISTER
-from falcom.ed9.parser.call_debug_records import CallDebugInfoTracker, TrackedValue, record_args, record_mismatch
+from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, TrackedValue, record_args, record_mismatch,
+                                                  script_call_identity)
 from falcom.ed9.parser.code_layout import function_extents
+from falcom.ed9.parser.string_pool import NUL, read_text, string_offset
 from falcom.ed9.parser.types_scp import RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_roundtrip_validator import compare_record, load_script
+from scp_roundtrip_validator import (PUSH_VALUE_OFFSET, Status, check_round_trip, compare_file_records, compare_record,
+                                     describe_difference, load_script)
+from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
 
 CallType = ScpFunctionCallDebugInfo.CallType
 ArgType = ScpFunctionCallDebugInfoArg.Type
+NO_FUNC_ID = ScpFunctionCallDebugInfo.NO_FUNC_ID
+INVALID_CALL_TYPE = len(CallType)
+EXTRA_FUNCTION = 'AFirst'           # compile_script's extra function
+UNDEFINED_FUNCTION = 'Nowhere'
+# The smallest sora2_1.0 script with a tail call into itself; 37 of its records drop trailing default arguments
+SAME_SCRIPT_TAIL_CALL_FILE = SORA2_SCRIPTS / 'ani/mon5265_C.dat'
 CALL_OPCODES = (ED9Opcode.CALL, ED9Opcode.CALL_SCRIPT, ED9Opcode.CALL_SCRIPT_NO_RETURN, ED9Opcode.SYSCALL)
 SYSCALL_SUBSYSTEM = 1
 SYSCALL_FUNC = 0x02
@@ -117,11 +129,17 @@ def constants(args: list[TrackedValue]) -> list:
     return [(arg.type, arg.payload.value if arg.payload is not None else None) for arg in args]
 
 
-def compile_script(dat: Path):
+def compile_script(dat: Path, extra_function: bool = False):
     '''Main's records are in source order, not address order: Outer's record comes before the Inner call in its argument,
     and the SYSCALL's before the Inner call whose result it takes. Main's first call is made before any line info, so it
-    has no record. Defined in source order Inner, Outer, Main, Tail; the table is sorted by name.'''
+    has no record. Defined in source order Inner, Outer, Main, Tail; the table is sorted by name. extra_function adds
+    EXTRA_FUNCTION, whose name sorts first: every table id and every debug string's pool offset shifts.'''
     writer = fresh_writer(dat)
+
+    if extra_function:
+        @writer.LLILCode()
+        def AFirst():
+            RETURN()
 
     @writer.LLILCode()
     def Inner():
@@ -167,6 +185,57 @@ def compile_script(dat: Path):
     def Tail():
         DEBUG_SET_LINENO(2)
         CALL_SCRIPT_NO_RETURN('mod', 'Tail', 0)
+
+    writer.run({})
+
+
+def compile_tail_calls(dat: Path):
+    '''Tail calls into this script to a function defined before them in source (Earlier), one defined after (Later) and
+    one it doesn't define; tail calls to 'this' and 'common'; and a CALL_SCRIPT into this script'''
+    writer = fresh_writer(dat)
+
+    @writer.LLILCode()
+    def Earlier():
+        DEBUG_SET_LINENO(1)
+        RETURN()
+
+    @writer.LLILCode()
+    def ToEarlier():
+        DEBUG_SET_LINENO(2)
+        CALL_SCRIPT_NO_RETURN('', 'Earlier', 0)
+
+    @writer.LLILCode()
+    def ToLater():
+        DEBUG_SET_LINENO(3)
+        CALL_SCRIPT_NO_RETURN('', 'Later', 0)
+
+    @writer.LLILCode()
+    def ToNowhere():
+        DEBUG_SET_LINENO(4)
+        CALL_SCRIPT_NO_RETURN('', UNDEFINED_FUNCTION, 0)
+
+    @writer.LLILCode()
+    def ToThis():
+        DEBUG_SET_LINENO(5)
+        CALL_SCRIPT_NO_RETURN('this', 'Earlier', 0)
+
+    @writer.LLILCode()
+    def ToCommon():
+        DEBUG_SET_LINENO(6)
+        CALL_SCRIPT_NO_RETURN('common', 'Earlier', 0)
+
+    @writer.LLILCode()
+    def ScriptCall():
+        DEBUG_SET_LINENO(7)
+        PUSH_CALLER_FRAME('back')
+        CALL_SCRIPT('', 'Earlier', 0)
+        label('back')
+        RETURN()
+
+    @writer.LLILCode()
+    def Later():
+        DEBUG_SET_LINENO(8)
+        RETURN()
 
     writer.run({})
 
@@ -403,6 +472,51 @@ class TestWriterRecordOrder(unittest.TestCase):
                          [ScpValue(key).to_word() for key in INFO_KEYS])
 
 
+class TestScriptCallIdentity(unittest.TestCase):
+    '''A tail call into the same script names the bare function and its table index (NO_FUNC_ID when the script doesn't
+    define it); every other script call 'module.func' and NO_FUNC_ID'''
+
+    TABLE = {'First': 0, 'Loop': 3}
+
+    def test_rule(self):
+        tail, script = CallType.ScriptNoReturn, CallType.Script
+        for name, call_type, module, func, expected in (
+            ('tail call, defined',      tail,   '',         'Loop',     (3, 'Loop')),
+            ('tail call, index 0',      tail,   '',         'First',    (0, 'First')),
+            ('tail call, undefined',    tail,   '',         'Nowhere',  (NO_FUNC_ID, 'Nowhere')),
+            ("tail call, 'this'",       tail,   'this',     'Loop',     (NO_FUNC_ID, 'this.Loop')),
+            ("tail call, 'common'",     tail,   'common',   'Loop',     (NO_FUNC_ID, 'common.Loop')),
+            ('tail call, other script', tail,   'btlcom',   'Loop',     (NO_FUNC_ID, 'btlcom.Loop')),
+            ("CALL_SCRIPT, ''",         script, '',         'Loop',     (NO_FUNC_ID, '.Loop')),
+        ):
+            with self.subTest(name):
+                self.assertEqual(script_call_identity(call_type, module, func, self.TABLE.get), expected)
+
+    def test_writer_records_read_back(self):
+        '''Each function's one record as the writer wrote it, and the content check passes every one'''
+        dat = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'tail_calls.dat'
+        compile_tail_calls(dat)
+        ctx = load_script(dat)
+        self.addCleanup(ctx.fs.Close)
+        index = ctx.parser.get_func_index
+        expected = {
+            'ToEarlier'     : (index('Earlier'), 'Earlier'),
+            'ToLater'       : (index('Later'), 'Later'),
+            'ToNowhere'     : (NO_FUNC_ID, UNDEFINED_FUNCTION),
+            'ToThis'        : (NO_FUNC_ID, 'this.Earlier'),
+            'ToCommon'      : (NO_FUNC_ID, 'common.Earlier'),
+            'ScriptCall'    : (NO_FUNC_ID, '.Earlier'),
+        }
+        for name, identity in expected.items():
+            with self.subTest(function = name):
+                func_index = index(name)
+                [record] = ctx.records[func_index]
+                _, name_word = record_args(ctx.data, record)[0]
+                self.assertEqual((record.func_id, read_text(ctx.data, string_offset(name_word))), identity)
+                [(call, _)] = CallDebugInfoTracker.replay(ctx.instructions[func_index], ctx.parser.get_func_argc)
+                self.assertIsNone(record_mismatch(ctx.data, call, record, index))
+
+
 class CompiledScript(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -422,6 +536,9 @@ class CompiledScript(unittest.TestCase):
     def call_offsets(self, name: str) -> list[int]:
         '''Offsets of the function's call instructions, in address order'''
         return [inst.offset for inst in self.instructions[name] if inst.opcode in CALL_OPCODES]
+
+    def mismatch(self, data: bytes, call, record: ScpFunctionCallDebugInfo) -> str | None:
+        return record_mismatch(data, call, record, self.parser.get_func_index)
 
 
 class TestReplay(CompiledScript):
@@ -444,7 +561,7 @@ class TestReplay(CompiledScript):
             with self.subTest(function = name):
                 pairs = self.replay(name)
                 self.assertEqual(len(pairs), len(records))
-                self.assertEqual([record_mismatch(self.data, call, record) for (call, _), record in zip(pairs, records)],
+                self.assertEqual([self.mismatch(self.data, call, record) for (call, _), record in zip(pairs, records)],
                                  [None] * len(records))
 
 
@@ -465,21 +582,22 @@ class TestRecordMismatch(CompiledScript):
     def test_misordered_pair(self):
         outer_call, _ = self.pairs[0]
         # A local call is compared on as many args as the record keeps (trailing defaults may be dropped)
-        self.assertEqual(record_mismatch(self.data, outer_call, self.main_records[1]),
+        self.assertEqual(self.mismatch(self.data, outer_call, self.main_records[1]),
                          'record (Local, func_id 0x0, 0 args) != call (Local, func_id 0x2, 0 args)')
 
     def test_constant_value(self):
         syscall_call, _ = self.pairs[2]
         other_func = dataclasses.replace(syscall_call, target = (SYSCALL_SUBSYSTEM, SYSCALL_FUNC + 1))
-        self.assertEqual(record_mismatch(self.data, other_func, self.main_records[2]),
+        self.assertEqual(self.mismatch(self.data, other_func, self.main_records[2]),
                          f'arg 1: value 0x{ScpValue(SYSCALL_FUNC).to_word():08X} != {SYSCALL_FUNC + 1}')
 
     def test_string_by_text(self):
         script_call, _ = self.pairs[4]
         module, func = script_call.target
         other_module = dataclasses.replace(script_call, target = (ScpValue('that'), func))
-        self.assertIsNone(record_mismatch(self.data, script_call, self.main_records[4]))
-        self.assertRegex(record_mismatch(self.data, other_module, self.main_records[4]), r"^arg 0: value 0x[0-9A-F]{8} != 'that\.Inner'$")
+        self.assertIsNone(self.mismatch(self.data, script_call, self.main_records[4]))
+        self.assertRegex(self.mismatch(self.data, other_module, self.main_records[4]),
+                         r"^arg 0: value 0x[0-9A-F]{8} != 'that\.Inner'$")
 
     def test_string_by_text_wherever_pooled(self):
         '''A record string with the call's text matches at any pool offset; other text doesn't'''
@@ -493,7 +611,7 @@ class TestRecordMismatch(CompiledScript):
                 data += text.encode() + b'\0'
                 data[name_word:name_word + WORD_SIZE] = copy_word.to_bytes(WORD_SIZE, default_endian())
                 expected = problem and f'arg 0: value 0x{copy_word:08X} != {problem}'
-                self.assertEqual(record_mismatch(bytes(data), script_call, record), expected)
+                self.assertEqual(self.mismatch(bytes(data), script_call, record), expected)
 
     def with_constant(self, value: ScpValue) -> tuple:
         '''The syscall's call with its constant argument (record arg 3) replaced by value, and the syscall's record'''
@@ -504,7 +622,7 @@ class TestRecordMismatch(CompiledScript):
 
     def test_raw_and_integer_differ(self):
         call, record = self.with_constant(ScpValue(RawInt(SYSCALL_CONSTANT)))
-        self.assertEqual(record_mismatch(self.data, call, record),
+        self.assertEqual(self.mismatch(self.data, call, record),
                          f'arg 3: value 0x{ScpValue(SYSCALL_CONSTANT).to_word():08X} != {RawInt(SYSCALL_CONSTANT)!r}')
 
     def test_float_by_encoded_word(self):
@@ -516,7 +634,7 @@ class TestRecordMismatch(CompiledScript):
                 data = bytearray(self.data)
                 position = record.arg_offsets()[3]
                 data[position:position + WORD_SIZE] = zero_word.to_bytes(WORD_SIZE, default_endian())
-                self.assertEqual(record_mismatch(bytes(data), call, record), problem)
+                self.assertEqual(self.mismatch(bytes(data), call, record), problem)
 
     def test_non_constant_argument(self):
         syscall_call, _ = self.pairs[2]
@@ -529,18 +647,178 @@ class TestRecordMismatch(CompiledScript):
             with self.subTest(changed = name):
                 data = bytearray(self.data)
                 data[position:position + WORD_SIZE] = word.to_bytes(WORD_SIZE, default_endian())
-                self.assertEqual(record_mismatch(bytes(data), syscall_call, record), problem)
+                self.assertEqual(self.mismatch(bytes(data), syscall_call, record), problem)
 
     def test_local_call_without_return_label(self):
         '''Content only: the label rule (the writer keys trimmed args by it) stays with the validator'''
         outer_call, _ = self.pairs[0]
         no_label = dataclasses.replace(outer_call, ret_label = None)
-        self.assertIsNone(record_mismatch(self.data, no_label, self.main_records[0]))
+        self.assertIsNone(self.mismatch(self.data, no_label, self.main_records[0]))
         self.assertEqual(compare_record(self.ctx, no_label, self.main_records[0]), 'local CALL without a PUSH_RET_ADDR label')
         self.assertIsNone(compare_record(self.ctx, outer_call, self.main_records[0]))
 
         # The label rule comes first: a record whose content differs too still reports the label
         self.assertEqual(compare_record(self.ctx, no_label, self.main_records[1]), 'local CALL without a PUSH_RET_ADDR label')
+
+
+class TestRecordComparison(CompiledScript):
+    '''The round-trip validator's record comparison of an original file (compile_script's) and a rebuilt one (a patched
+    copy): each function's first difference, compared as stored - every argument's encoded word, strings by text'''
+
+    @classmethod
+    def with_word(cls, data: bytes, position: int, word: int) -> bytes:
+        return data[:position] + word.to_bytes(WORD_SIZE, default_endian()) + data[position + WORD_SIZE:]
+
+    @classmethod
+    def with_string(cls, data: bytes, position: int, text: str) -> bytes:
+        '''data with the String word at position pointing at text, appended after the pool'''
+        word = ScpValue.Type.String << ScpValue.TYPE_SHIFT | len(data)
+        return cls.with_word(data + text.encode() + NUL, position, word)
+
+    def with_record(self, data: bytes, name: str, i: int, **fields) -> bytes:
+        '''data with the function's record i rewritten, fields replaced'''
+        record = self.records[name][i]
+        values = dict(func_id = record.func_id, call_type = record.call_type, arg_count = record.arg_count,
+                      info_offset = record.info_offset) | fields
+        size = ScpFunctionCallDebugInfo.SIZE
+        position = self.parser.function_entries[self.parser.get_func_index(name)].debug_info_offset + i * size
+        return data[:position] + ScpFunctionCallDebugInfo.pack(**values) + data[position + size:]
+
+    def with_record_count(self, name: str, delta: int) -> bytes:
+        index = self.parser.get_func_index(name)
+        entry = copy.copy(self.parser.function_entries[index])
+        entry.debug_info_count += delta
+        position = self.parser.header.function_entry_offset + index * ScpFunctionEntry.SIZE
+        return self.data[:position] + entry.to_bytes() + self.data[position + ScpFunctionEntry.SIZE:]
+
+    def syscall_constant(self) -> int:
+        '''Position of the syscall record's constant argument (Int(SYSCALL_CONSTANT))'''
+        return self.records['Main'][2].arg_offsets()[3]
+
+    def test_identical_files(self):
+        self.assertEqual(compare_file_records(self.data, self.data), [])
+
+    def test_argument_count(self):
+        for delta, line in ((-1, 'Main record 2: 3 args, original 4'), (1, 'Main record 2: 5 args, original 4')):
+            with self.subTest(delta = delta):
+                rebuilt = self.with_record(self.data, 'Main', 2, arg_count = self.records['Main'][2].arg_count + delta)
+                self.assertEqual(compare_file_records(self.data, rebuilt), [line])
+
+    def test_missing_and_extra_record(self):
+        fewer = self.with_record_count('Main', -1)
+        self.assertEqual(compare_file_records(self.data, fewer),
+                         ["Main record 4: missing (original Script 'this.Inner', 1 args)"])
+        self.assertEqual(compare_file_records(fewer, self.data), ["Main record 4: extra (Script 'this.Inner', 1 args)"])
+
+    def test_call_type(self):
+        rebuilt = self.with_record(self.data, 'Tail', 0, call_type = CallType.Script)
+        self.assertEqual(compare_file_records(self.data, rebuilt), ['Tail record 0: Script, original ScriptNoReturn'])
+
+    def test_callee(self):
+        inner = self.parser.get_func_index('Inner')
+        for name, line in (('Main', 'Main record 0: callee Inner, original Outer'),
+                           ('Tail', 'Tail record 0: callee Inner, original none')):
+            with self.subTest(function = name):
+                rebuilt = self.with_record(self.data, name, 0, func_id = inner)
+                self.assertEqual(compare_file_records(self.data, rebuilt), [line])
+
+    def test_constant_value(self):
+        rebuilt = self.with_word(self.data, self.syscall_constant(), ScpValue(SYSCALL_CONSTANT + 1).to_word())
+        self.assertEqual(compare_file_records(self.data, rebuilt),
+                         [f'Main record 2: arg 3 Int({SYSCALL_CONSTANT + 1}), original Int({SYSCALL_CONSTANT})'])
+
+    def test_raw_and_integer_differ(self):
+        rebuilt = self.with_word(self.data, self.syscall_constant(), ScpValue(RawInt(SYSCALL_CONSTANT)).to_word())
+        self.assertEqual(compare_file_records(self.data, rebuilt),
+                         [f'Main record 2: arg 3 Raw(0x{SYSCALL_CONSTANT:X}), original Int({SYSCALL_CONSTANT})'])
+
+    def test_signed_zeros_differ(self):
+        '''+0.0 and -0.0 are equal floats but different words'''
+        original = self.with_word(self.data, self.syscall_constant(), ScpValue(0.0).to_word())
+        rebuilt = self.with_word(self.data, self.syscall_constant(), ScpValue(-0.0).to_word())
+        self.assertEqual(compare_file_records(original, rebuilt),
+                         ['Main record 2: arg 3 Float(-0.0), original Float(0.0)'])
+
+    def test_script_call_name(self):
+        '''Two records with no callee id, the same call type and count, differing only in the script call's name - as
+        an undefined tail callee's record did with a leading dot'''
+        name = self.records['Tail'][0].arg_offsets()[0]
+        original = self.with_string(self.data, name, UNDEFINED_FUNCTION)
+        rebuilt = self.with_string(self.data, name, f'.{UNDEFINED_FUNCTION}')
+        self.assertEqual(compare_file_records(original, rebuilt),
+                         [f"Tail record 0: arg 0 '.{UNDEFINED_FUNCTION}', original '{UNDEFINED_FUNCTION}'"])
+
+    def test_string_by_text_wherever_pooled(self):
+        rebuilt = self.with_string(self.data, self.records['Main'][4].arg_offsets()[0], 'this.Inner')
+        self.assertEqual(compare_file_records(self.data, rebuilt), [])
+
+    def test_summary_with_identical_records(self):
+        '''A byte outside the records differs: Inner's PUSH_INT operand'''
+        operand = self.parser.get_func_by_name('Inner').offset + PUSH_VALUE_OFFSET
+        rebuilt = self.with_word(self.data, operand, ScpValue(SAVED_VALUE).to_word())
+        self.assertNotEqual(rebuilt, self.data)
+        summary, lines = describe_difference(self.data, rebuilt)
+        self.assertEqual((summary.split(', ')[-1], lines), ('records identical', []))
+
+    def test_summary_counts_functions(self):
+        twice_in_main = self.with_record(self.with_record(self.data, 'Main', 0, func_id = NO_FUNC_ID), 'Main', 2,
+                                         arg_count = 0)
+        in_main_and_tail = self.with_record(twice_in_main, 'Tail', 0, call_type = CallType.Script)
+        for rebuilt, ending, line_count in ((twice_in_main, 'records differ in 1 function', 1),
+                                            (in_main_and_tail, 'records differ in 2 functions', 2)):
+            with self.subTest(ending = ending):
+                summary, lines = describe_difference(self.data, rebuilt)
+                self.assertEqual((summary.split(', ')[-1], len(lines)), (ending, line_count))
+
+    def test_unreadable_records_keep_the_summary(self):
+        rebuilt = self.with_record(self.data, 'Main', 0, call_type = INVALID_CALL_TYPE)
+        summary, lines = describe_difference(self.data, rebuilt)
+        self.assertRegex(summary,
+                         r'^differs at 0x[0-9A-F]+ \(original \d+ bytes, rebuilt \d+ bytes\), records unreadable$')
+        self.assertEqual(len(lines), 1)
+        self.assertTrue(lines[0].startswith('records unreadable: '), lines[0])
+
+
+class TestShiftedTable(unittest.TestCase):
+    '''compile_script with and without EXTRA_FUNCTION, whose name sorts first: every table id and debug string offset
+    shifts, yet the shared functions' records compare equal - callees by name, strings by text'''
+
+    @classmethod
+    def setUpClass(cls):
+        work = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
+        compile_script(work / 'base.dat')
+        compile_script(work / 'extra.dat', extra_function = True)
+        cls.base = (work / 'base.dat').read_bytes()
+        cls.extra = (work / 'extra.dat').read_bytes()
+
+    def test_only_the_extra_function_differs(self):
+        self.assertEqual(compare_file_records(self.base, self.extra), [f'{EXTRA_FUNCTION}: not in the original'])
+        self.assertEqual(compare_file_records(self.extra, self.base), [f'{EXTRA_FUNCTION}: not in the rebuilt file'])
+
+    def test_ids_and_string_offsets_did_shift(self):
+        '''The fixture's premise: Main's local callee id and the script call's name word differ between the files'''
+        words = []
+        for data in (self.base, self.extra):
+            with tempfile.TemporaryDirectory() as tmp:
+                dat = Path(tmp) / 'script.dat'
+                dat.write_bytes(data)
+                ctx = load_script(dat)
+                ctx.fs.Close()
+
+            main = ctx.records[ctx.parser.get_func_index('Main')]
+            words.append((main[0].func_id, record_args(data, main[4])[0][1]))
+
+        (base_id, base_name), (extra_id, extra_name) = words
+        self.assertNotEqual(base_id, extra_id)
+        self.assertNotEqual(base_name, extra_name)
+
+
+class TestRealRoundTrip(unittest.TestCase):
+    def test_a_same_script_tail_call_rebuilds_identical(self):
+        '''Its tail call's record has the callee's table index and bare name; a failure shows the record comparison'''
+        path = require(SAME_SCRIPT_TAIL_CALL_FILE)
+        result = check_round_trip(path, Path(self.enterContext(tempfile.TemporaryDirectory())))
+        self.assertEqual(result.status, Status.PASS, '\n'.join([result.summary, *result.details]))
 
 
 class TestFunctionExtents(CompiledScript):

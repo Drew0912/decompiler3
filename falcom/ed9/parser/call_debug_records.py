@@ -1,7 +1,8 @@
 """Call-site debug records: CallDebugInfoTracker rebuilds the records a function's calls get from its opcodes (shared by
 the parser, ScpWriter, the listing and tools/scp_roundtrip_validator.py); each function's raw records, each record's
-raw arguments, and whether a record holds what its call would get (content only - the writer's own rules stay with the
-round-trip validator)"""
+raw arguments, a script call's callee id and name (script_call_identity, shared by the writer and the check), a
+record's view for comparing two files, and whether a record holds what its call would get (content only - the
+writer's own rules stay with the round-trip validator)"""
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
     from .scp import ScpParser
 
 PUSH_CONSTANT_OPS = opcodes_of(InstructionKind.PUSH_CONST)
+SAME_SCRIPT_MODULE = ''     # a script call's module naming a function of the calling script
 
 
 @dataclass(slots = True)
@@ -243,10 +245,52 @@ def record_args(data: bytes, record: ScpFunctionCallDebugInfo) -> list[tuple[int
     return [(read_u32(data, offset + ScpValue.WORD.size), read_u32(data, offset)) for offset in record.arg_offsets()]
 
 
-def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebugInfo) -> str | None:
+@dataclass(frozen = True, slots = True)
+class RecordView:
+    """A record as two files compare it: the callee by name, every argument as stored (a script call's name and a
+    syscall's two constants too) by its type and encoded word, a string constant's word by its text"""
+    call_type   : ScpFunctionCallDebugInfo.CallType
+    callee      : str | None                        # the table name of the record's func_id, None for NO_FUNC_ID
+    args        : tuple[tuple[int, int | str], ...]
+
+
+def record_view(data: bytes, record: ScpFunctionCallDebugInfo, names: list[str]) -> RecordView:
+    """record read from data, its func_id resolved through names (its file's table)"""
+    if record.func_id == ScpFunctionCallDebugInfo.NO_FUNC_ID:
+        callee = None
+
+    elif record.func_id < len(names):
+        callee = names[record.func_id]
+
+    else:
+        callee = f'#{record.func_id}'
+
+    args = []
+    for arg_type, word in record_args(data, record):
+        offset = string_offset(word) if arg_type == ScpFunctionCallDebugInfoArg.Type.Constant else None
+        args.append((arg_type, read_text(data, offset) if offset is not None else word))
+
+    return RecordView(record.call_type, callee, tuple(args))
+
+
+def script_call_identity(call_type: ScpFunctionCallDebugInfo.CallType, module: str, func: str,
+                         table_index: Callable[[str], int | None]) -> tuple[int, str]:
+    """A script call record's func_id and leading name: a tail call into the same script names the bare function and
+    its table index (NO_FUNC_ID when the script doesn't define it); any other script call 'module.func' and
+    NO_FUNC_ID"""
+    if call_type == ScpFunctionCallDebugInfo.CallType.ScriptNoReturn and module == SAME_SCRIPT_MODULE:
+        index = table_index(func)
+        return (index if index is not None else ScpFunctionCallDebugInfo.NO_FUNC_ID), func
+
+    return ScpFunctionCallDebugInfo.NO_FUNC_ID, f'{module}.{func}'
+
+
+def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebugInfo,
+                    table_index: Callable[[str], int | None]) -> str | None:
     """How record differs from the record call gets (call type, callee, argument count, each argument by its encoded
-    word, strings by text), or None. A local call's record may drop trailing default arguments, so only its first
-    record.arg_count arguments are compared."""
+    word, strings by text), or None; table_index gives a function's table index by name (script_call_identity). A
+    local call's record may drop trailing default arguments, so only its first record.arg_count arguments are
+    compared."""
     CallType = ScpFunctionCallDebugInfo.CallType
     ArgType = ScpFunctionCallDebugInfoArg.Type
     leading_constants = []
@@ -261,9 +305,9 @@ def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebug
         leading_constants = [ScpValue(value) for value in call.target]
 
     else:
-        expected_func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID
         module, func = call.target
-        leading_constants = [ScpValue(f'{module.value}.{func.value}')]
+        expected_func_id, name = script_call_identity(call.call_type, module.value, func.value, table_index)
+        leading_constants = [ScpValue(name)]
 
     expected = [(ArgType.Constant, value) for value in leading_constants] + [(arg.type, arg.payload) for arg in call_args]
 
