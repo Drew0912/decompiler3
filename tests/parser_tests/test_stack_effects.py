@@ -21,7 +21,8 @@ from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
 from falcom.ed9.disasm.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from falcom.ed9.disasm.stack_effects import STACK_EFFECTS, InstructionKind, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.parser.scp import CallDebugInfoTracker, ScpDisassemblyError, ScpParser
+from falcom.ed9.parser.call_debug_records import CallDebugInfoTracker
+from falcom.ed9.parser.scp import ScpDisassemblyError, ScpParser
 from falcom.ed9.parser.types_parser import Function
 from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
 from tests.shared.scp_asm import (
@@ -41,7 +42,7 @@ TABLE_OPCODES = {ED9Opcode(entry.opcode) for entry in ED9_OPCODE_TABLE}
 NEVER_SEEN = {
     'parser'    : {ED9Opcode.PUSH, ED9Opcode.PUSH_CURRENT_FUNC_ID, ED9Opcode.PUSH_RET_ADDR},    # decoded as PUSH_RAW etc.
     'lifter'    : {ED9Opcode.PUSH},
-    'tracker'   : {ED9Opcode.PUSH},     # only the writer feeds a raw PUSH (test_call_records.TestWriterOnlyInputs)
+    'tracker'   : {ED9Opcode.PUSH},    # only the writer feeds a raw PUSH (test_call_debug_records.TestWriterOnlyInputs)
 }
 
 

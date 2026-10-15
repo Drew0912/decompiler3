@@ -3,11 +3,15 @@ the global var names reference, in the order the original compiler pooled them (
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from dc3.config import default_encoding, default_endian
 from dc3.enum import IntEnum2
-from .scp import ScpParser
-from .types_scp import UINT32_SIZE, ScpFunctionCallDebugInfo, ScpGlobalVar
+from .types_scp import UINT32_SIZE, ScpFunctionCallDebugInfo, ScpGlobalVar, ScpValue
+
+# An annotation only: scp.py imports this module (through call_debug_records too)
+if TYPE_CHECKING:
+    from .scp import ScpParser
 
 NUL = b'\0'     # ends every pool string
 
@@ -47,6 +51,14 @@ def read_text(data: bytes, offset: int) -> str:
     return data[offset:data.find(NUL, offset)].decode(default_encoding(), errors = 'replace')
 
 
+def string_offset(raw_value: int) -> int | None:
+    """String pool offset of a raw ScpValue word, None when it isn't a String"""
+    if raw_value >> ScpValue.TYPE_SHIFT != ScpValue.Type.String:
+        return None
+
+    return raw_value & ScpValue.PAYLOAD_MASK
+
+
 def pool_strings(data: bytes, start: int) -> list[int]:
     """Offset of every NUL-terminated string from start to the end of the file (an unterminated tail is left out)"""
     offsets = []
@@ -60,7 +72,7 @@ def pool_strings(data: bytes, start: int) -> list[int]:
 
 def string_offsets(data: bytes, positions: Iterable[int]) -> list[int]:
     """Pool offsets of the String-typed words at positions, in order"""
-    offsets = (ScpParser.get_string_offset(read_u32(data, position)) for position in positions)
+    offsets = (string_offset(read_u32(data, position)) for position in positions)
     return [offset for offset in offsets if offset is not None]
 
 
@@ -70,11 +82,11 @@ def collect_string_refs(data: bytes, parser: ScpParser, records: list[list[ScpFu
     (keep_unreachable_code); a debug record string that is also a code string is pooled once, with the code."""
     # Each operand once: functions that share code (one starting where another does, a jump into another) decode it twice
     positions = {position for func in parser.functions
-                 for position in ScpParser.string_operand_positions(parser.code_instructions(func))}
+                 for position in parser.string_operand_positions(parser.code_instructions(func))}
     code = string_offsets(data, sorted(positions))
 
     entries = parser.function_entries
-    names = [ScpParser.get_string_offset(entry.name_offset) for entry in entries]
+    names = [string_offset(entry.name_offset) for entry in entries]
     names = [offset for offset in names if offset is not None]
     defaults = string_offsets(data, (entry.default_params_offset + i * UINT32_SIZE
                                      for entry in entries for i in range(entry.default_params_count)))

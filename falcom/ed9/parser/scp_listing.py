@@ -12,10 +12,10 @@ from ir.llil.llil import default_label_for_addr
 from ..disasm import CommentOptions, ED9Opcode, Formatter, FormatterContext, Instruction, OperandType
 from ..disasm.ed9_optable import ED9OperandType
 from ..disasm.llil_dsl_comments import instruction_comments, label_comments
-from .call_records import read_debug_records, record_args, record_mismatch
+from .call_debug_records import CallDebugInfoTracker, read_debug_records, record_args, record_mismatch
 from .code_layout import code_order, code_start, dropped_ranges, function_extents
-from .scp import CallDebugInfoTracker, OPCODE_SIZE, PUSH_ENCODED_OPS, ScpParser
-from .string_pool import StringPoolSection, collect_string_refs, pool_strings, read_text, read_u32
+from .scp import OPCODE_SIZE, PUSH_ENCODED_OPS, ScpParser
+from .string_pool import StringPoolSection, collect_string_refs, pool_strings, read_text, read_u32, string_offset
 from .types_parser import Function
 from .types_scp import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpGlobalVar, ScpValue
 
@@ -174,7 +174,7 @@ class ScpListing:
         params = ', '.join(Formatter.format_param(i, param) for i, param in enumerate(func.params))
         return (f'code 0x{entry.offset:X}; {entry.param_count} params [{params}]; {entry.default_params_count} defaults; '
                 f'common {entry.is_common_func}; byte06 {entry.byte06}; name {quote_string(func.name)} '
-                f'(pool 0x{ScpParser.get_string_offset(entry.name_offset):X}, hash 0x{entry.name_hash:08X}); '
+                f'(pool 0x{string_offset(entry.name_offset):X}, hash 0x{entry.name_hash:08X}); '
                 f'{entry.debug_info_count} debug records at 0x{entry.debug_info_offset:X}')
 
     def code_lines(self, start: int, end: int, members: list[Function], tags: dict[int, list[str]]) -> list[str]:
@@ -253,7 +253,7 @@ class ScpListing:
 
     def value_text(self, word: int) -> tuple[str, str | None]:
         """An encoded ScpValue as Type(payload), and a string's text (read like the pool section, invalid bytes shown)"""
-        offset = ScpParser.get_string_offset(word)
+        offset = string_offset(word)
         if offset is not None:
             return f'Str(0x{offset:X})', quote_string(read_text(self.data, offset))
 

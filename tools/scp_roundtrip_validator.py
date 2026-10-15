@@ -72,10 +72,10 @@ from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
 from falcom.ed9.metadata.fingerprint import function_fingerprint
-from falcom.ed9.parser.call_records import read_debug_records, record_mismatch
+from falcom.ed9.parser.call_debug_records import CallDebugInfoTracker, TrackedCall, read_debug_records, record_mismatch
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.parser.crc32 import hash_func_Name
-from falcom.ed9.parser.scp import ScpParser, CallDebugInfoTracker, TrackedCall
+from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.string_pool import NUL, StringRefs, collect_string_refs, pool_strings, read_text, read_u32
 from falcom.ed9.parser.types_parser import Function
 from falcom.ed9.parser.types_scp import (

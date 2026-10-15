@@ -221,7 +221,7 @@ byte.
   section split from the round-trip validator into `falcom/ed9/parser/string_pool.py`, with one rule for where
   code strings sit (`ScpParser.string_operand_positions`), and counts the strings only unreachable code uses as
   code strings: the validator had missed them and failed the pool check of `ani/chr5000` and others. Step 8c-a
-  (done) moved the validator's record check into `falcom/ed9/parser/call_records.py` (content only; the validator
+  (done) moved the validator's record check into `falcom/ed9/parser/call_debug_records.py` (content only; the validator
   keeps its return-label rule on top) and the tracker replay into `CallDebugInfoTracker.replay`, which gives each call's
   instruction offset, so the listing can print a record under its call. Step 8c-b counts each code string operand once
   by its file position: functions that share code (an empty one starting where the next does, a jump into another)

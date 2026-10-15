@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from ir.llil import WORD_SIZE
-from falcom.ed9.parser.call_records import read_debug_records
+from falcom.ed9.parser.call_debug_records import read_debug_records
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.string_pool import StringPoolSection, StringRefs, collect_string_refs, pool_strings, read_text
 from falcom.ed9.writer.scp_writer_helper import *

@@ -5,6 +5,8 @@ from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
+from .call_debug_records import PUSH_CONSTANT_OPS, CallDebugInfoTracker
+from .string_pool import string_offset
 from ..metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT,
                         SCP_WRITER_HELPER_IMPORT)
 from ..metadata.common_index import COMMON_FUNCTIONS
@@ -14,7 +16,7 @@ from dc3.utils import PROJECT_ROOT
 from ir.llil import WORD_SIZE
 from collections import Counter
 from enum import Enum, auto
-from typing import Any, Callable, NamedTuple
+from typing import Callable, NamedTuple
 import bisect
 import keyword
 import pathlib
@@ -62,9 +64,7 @@ def suggested_module_name(stem: str) -> str:
     return name
 
 
-# Call-site debug-info rebuilding (shared by the parser, ScpWriter, the listing and tools/scp_roundtrip_validator.py)
-PUSH_CONSTANT_OPS = opcodes_of(InstructionKind.PUSH_CONST)
-
+# The script calls: their module and function are string operands
 SCRIPT_CALL_OPS = opcodes_of(InstructionKind.CALL_SCRIPT, InstructionKind.TAIL_CALL)
 
 # Every pseudo-op encoded as the real PUSH: one ScpValue word after the size byte
@@ -86,191 +86,6 @@ PLAIN_VALUE_KINDS = (
 ARGUMENT_CALL_KINDS = (
     InstructionKind.CALL, InstructionKind.SYSCALL, InstructionKind.CALL_SCRIPT, InstructionKind.TAIL_CALL,
 )
-
-
-@dataclass
-class TrackedValue:
-    """Simulated eval-stack slot"""
-    type        : ScpFunctionCallDebugInfoArg.Type
-    payload     : Any = None                # caller data for constants
-    call_key    : tuple | None = None       # key of the earliest call nested in this value
-
-
-@dataclass
-class TrackedCall:
-    """Call site, ordered like its debug-info record"""
-    call_type   : ScpFunctionCallDebugInfo.CallType
-    target      : Any                       # CALL operand, (module, func) or (subsystem, cmd)
-    ret_label   : Any                       # PUSH_RET_ADDR operand of a local CALL
-    args        : list[TrackedValue]        # top of stack first (parameter order)
-    key         : tuple
-
-
-class CallDebugInfoTracker:
-    """Rebuilds call-site debug-info records from opcodes fed in address order.
-
-    Records are in source pre-order: an outer call's record comes before calls nested in its args,
-    so each call is keyed by where it starts (its frame push) rather than by its CALL instruction.
-    """
-
-    def __init__(self, get_param_count: Callable[[Any], int], warn: Callable[[str], None] = log.warning):
-        self.get_param_count    = get_param_count
-        self.warn               = warn                              # the writer's warn adds the .py line
-        self.stack              : list[TrackedValue | None] = []    # None is a call frame slot
-        self.frames             : list[list] = []                   # [key, ret_label] of calls not made yet
-        self.calls              : list[TrackedCall] = []
-        self.counter            = 0
-        self.last_call_key      = None
-        self.has_line_info      = False
-
-    def on_opcode(self, opcode: int, operands: list | tuple, payload: Any = None):
-        ArgType = ScpFunctionCallDebugInfoArg.Type
-        CallType = ScpFunctionCallDebugInfo.CallType
-
-        # No row (its operand format is unknown) and nothing to track; only a DSL feeds it
-        if opcode == ED9Opcode.UNKNOWN_28:
-            return
-
-        descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
-        effect = descriptor.effect
-
-        # Arms in measured frequency order: each case alternative tried before the matching one costs a compare
-        match descriptor.kind:
-            case InstructionKind.PUSH_CONST:
-                self.stack.append(TrackedValue(ArgType.Constant, payload = payload))
-
-            case InstructionKind.DEBUG_LINE:
-                self.has_line_info = True
-
-            # A call's setup pushes placeholders: its first push opens the call's frame, the return address labels it
-            case InstructionKind.PUSH_FUNC_ID | InstructionKind.PUSH_CALLER_FRAME:
-                self.frames.append([self.next_key(), None])
-                self.stack.extend([None] * effect.pushes)
-
-            case InstructionKind.PUSH_RET_ADDR:
-                if self.frames:
-                    self.frames[-1][1] = operands[0]
-
-                self.stack.extend([None] * effect.pushes)
-
-            case InstructionKind.CALL:
-                args = self.pop(effect.pop_count(operands, self.get_param_count))
-                self.pop(effect.setup_pops)
-                key, ret_label = self.close_frame()
-                self.add_call(CallType.Local, operands[CALLEE_OPERAND], ret_label, args, key)
-
-            case InstructionKind.SYSCALL:
-                # Args stay on the stack - the following POP removes them
-                subsystem, cmd, _ = operands
-                args = self.peek(effect.read_count(operands))
-                self.add_call(CallType.Syscall, (subsystem, cmd), None, args, self.key_before_nested(args))
-
-            case (InstructionKind.POP | InstructionKind.STORE_REG | InstructionKind.CONDITIONAL_JUMP
-                  | InstructionKind.STORE_SLOT | InstructionKind.STORE_DEREF | InstructionKind.STORE_GLOBAL
-                  | InstructionKind.DEBUG_LOG):
-                self.pop(effect.pop_count(operands))
-
-            # LOAD_DEREF / LOAD_GLOBAL are unverified - no sample script passes them as call args
-            case (InstructionKind.LOAD_SLOT | InstructionKind.SLOT_ADDRESS | InstructionKind.LOAD_DEREF
-                  | InstructionKind.LOAD_GLOBAL):
-                self.stack.append(TrackedValue(ArgType.Variable))
-
-            case InstructionKind.LOAD_REG:
-                self.stack.append(TrackedValue(ArgType.CallResult, call_key = self.last_call_key))
-
-            case InstructionKind.BINARY | InstructionKind.UNARY:
-                self.push_expression(self.pop(effect.pops))
-
-            case InstructionKind.JUMP | InstructionKind.RETURN:
-                pass
-
-            case InstructionKind.CALL_SCRIPT:
-                module, func, _ = operands
-                args = self.pop(effect.pop_count(operands))
-                # Unreachable code (the compile check skips it) or a branch inside the arguments (the tracker reads
-                # straight through both arms): what the pop takes is a guess, and so is the record
-                if not self.holds_caller_frame(effect.setup_pops):
-                    self.warn(f'CALL_SCRIPT {module}.{func}: no caller frame below its arguments in address order - '
-                              'its debug record is a guess')
-
-                self.pop(effect.setup_pops)
-                key, _ = self.close_frame()
-                self.add_call(CallType.Script, (module, func), None, args, key)
-
-            case InstructionKind.TAIL_CALL:
-                # No caller frame precedes it (the table pops no setup): closing one would take an enclosing call's
-                module, func, _ = operands
-                args = self.pop(effect.pop_count(operands))
-                self.add_call(CallType.ScriptNoReturn, (module, func), None, args, self.key_before_nested(args))
-
-            case kind:
-                raise NotImplementedError(f'the tracker never tracks {kind.name}')
-
-    def ordered_calls(self) -> list[TrackedCall]:
-        """Calls in debug-info record order"""
-        return sorted(self.calls, key = lambda call: call.key)
-
-    @classmethod
-    def replay(cls, instructions: list[Instruction], get_param_count: Callable[[Any], int]) -> list[tuple[TrackedCall, int]]:
-        """Feed decoded instructions in address order; each call in record order, with the offset of its call instruction"""
-        tracker = cls(get_param_count)
-        call_offsets = {}
-        for inst in instructions:
-            payload = inst.operands[0].value if inst.opcode in PUSH_CONSTANT_OPS else None
-            tracker.on_opcode(inst.opcode, [operand.value for operand in inst.operands], payload)
-            if len(tracker.calls) > len(call_offsets):
-                call_offsets[id(tracker.calls[-1])] = inst.offset
-
-        return [(call, call_offsets[id(call)]) for call in tracker.ordered_calls()]
-
-    def next_key(self) -> tuple:
-        key = (self.counter, 0)
-        self.counter += 1
-        return key
-
-    @classmethod
-    def key_before(cls, key: tuple) -> tuple:
-        """Sorts right before key and every call nested inside it"""
-        return (key[0], key[1] - 1)
-
-    def key_before_nested(self, args: list[TrackedValue]) -> tuple:
-        """A call without a frame of its own: keyed before every call nested in its args (source pre-order), else new"""
-        nested_keys = [arg.call_key for arg in args if arg.call_key is not None]
-        return self.key_before(min(nested_keys)) if nested_keys else self.next_key()
-
-    def holds_caller_frame(self, slots: int) -> bool:
-        """The top slots entries are a caller frame's placeholders. Not a test for a local call's setup: in unreachable
-        code the parser doesn't rewrite its PUSH_RAWs, so a well-formed setup arrives as two constants"""
-        return self.stack[-slots:] == [None] * slots
-
-    def close_frame(self) -> tuple:
-        if self.frames:
-            key, ret_label = self.frames.pop()
-            return key, ret_label
-
-        return self.next_key(), None
-
-    def push_expression(self, operands: list[TrackedValue]):
-        keys = [value.call_key for value in operands if value.call_key is not None]
-        self.stack.append(TrackedValue(ScpFunctionCallDebugInfoArg.Type.Expression, call_key = min(keys) if keys else None))
-
-    def peek(self, count: int) -> list[TrackedValue]:
-        """Top count slots, top first; frame slots and underflow (from branches) become Expression placeholders"""
-        top = self.stack[max(0, len(self.stack) - count):] if count else []
-        values = [value or TrackedValue(ScpFunctionCallDebugInfoArg.Type.Expression) for value in reversed(top)]
-        return values + [TrackedValue(ScpFunctionCallDebugInfoArg.Type.Expression) for _ in range(count - len(values))]
-
-    def pop(self, count: int) -> list[TrackedValue]:
-        values = self.peek(count)
-        del self.stack[max(0, len(self.stack) - count):]
-        return values
-
-    def add_call(self, call_type: ScpFunctionCallDebugInfo.CallType, target: Any, ret_label: Any, args: list[TrackedValue], key: tuple):
-        self.last_call_key = key
-
-        # No record for calls compiled without line info (common functions, calls before the first DEBUG_SET_LINENO)
-        if self.has_line_info:
-            self.calls.append(TrackedCall(call_type, target, ret_label, args, key))
 
 
 @dataclass(eq = False)
@@ -1249,11 +1064,7 @@ class ScpParser(StrictBase):
 
     def pair_call_debug_info(self, func: Function):
         """Recover each local CALL's explicit arg count - its debug record drops trailing default args"""
-        tracker = CallDebugInfoTracker(get_param_count = self.get_func_argc)
-        for inst in self.get_instructions(func):
-            tracker.on_opcode(inst.opcode, [operand.value for operand in inst.operands])
-
-        calls = tracker.ordered_calls()
+        calls = CallDebugInfoTracker.from_instructions(self.get_instructions(func), self.get_func_argc).ordered_calls()
         if len(calls) != len(func.debug_info):
             log.warning(f'{func.name}: {len(calls)} call sites but {len(func.debug_info)} debug records, debug_argc not recovered')
             return
@@ -1301,7 +1112,7 @@ class ScpParser(StrictBase):
 
     def get_code_end(self, functions: list[Function]) -> int:
         """Where the string pool starts - it holds the code strings first, then the function names"""
-        names = [self.get_string_offset(entry.name_offset) for entry in self.function_entries]
+        names = [string_offset(entry.name_offset) for entry in self.function_entries]
         code_strings = self.get_string_refs([inst for func in functions for inst in self.get_instructions(func)])
         return min([offset for offset in names if offset is not None] + code_strings)
 
@@ -1311,7 +1122,7 @@ class ScpParser(StrictBase):
         with self.fs.PositionSaver:
             for position in self.string_operand_positions(instructions):
                 self.fs.Position = position
-                offset = self.get_string_offset(self.fs.ReadULong())
+                offset = string_offset(self.fs.ReadULong())
                 if offset is not None:
                     refs.append(offset)
 
@@ -1333,14 +1144,6 @@ class ScpParser(StrictBase):
             return [inst.offset + OPCODE_SIZE, inst.offset + OPCODE_SIZE + ScpValue.WORD.size]  # module, func
 
         return []
-
-    @classmethod
-    def get_string_offset(cls, raw_value: int) -> int | None:
-        """String pool offset of a raw ScpValue, None when it isn't a String"""
-        if raw_value >> ScpValue.TYPE_SHIFT != ScpValue.Type.String:
-            return None
-
-        return raw_value & ScpValue.PAYLOAD_MASK
 
     def _decode_unreachable_block(self, func: Function, start: int, end: int) -> BasicBlock | None:
         """Linearly decode [start, end), or None (with a warning) when the bytes aren't whole instructions"""

@@ -117,10 +117,10 @@ class TestHandleOpcode(unittest.TestCase):
         UNKNOWN_28(b'\x01\x02')
 
         self.assertEqual(self.writer.fs.ReadAll(), bytes.fromhex('28 01 02'))
-        self.assertEqual(calls, [(ED9Opcode.UNKNOWN_28, (b'\x01\x02',), None)])
+        self.assertEqual(calls, [(ED9Opcode.UNKNOWN_28, (b'\x01\x02',), None, None)])
 
     def test_tracked_once_after_its_write(self):
-        '''Tracked once, after its write, with the normalized operands and a pushed constant's (value, string) payload;
+        '''Tracked once, after its write, with the normalized operands and a pushed constant's value and pooled string;
         an opcode whose write raises is not tracked. UNKNOWN_28's branch: the test above'''
         calls = []
         self.writer.call_tracker = SimpleNamespace(on_opcode = lambda *call: calls.append(call))
@@ -139,10 +139,10 @@ class TestHandleOpcode(unittest.TestCase):
             (ED9Opcode.PUSH_RET_ADDR, ('ret',)), (ED9Opcode.POP, (WORD_SIZE,)),
         ])
         self.assertIs(type(calls[0][1][0]), float)
-        [(float_value, no_string), (str_value, string), *no_payloads] = [payload for _, _, payload in calls]
+        [(float_value, no_string), (str_value, string), *no_payloads] = [payload for _, _, *payload in calls]
         self.assertEqual((float_value.type, float_value.value, no_string), (ScpValue.Type.Float, 1.0, None))
         self.assertEqual((str_value.value, string.text), ('text', 'text'))
-        self.assertEqual(no_payloads, [None, None, None])
+        self.assertEqual(no_payloads, [[None, None]] * 3)
 
 
 class TestOpcodeFunctions(unittest.TestCase):

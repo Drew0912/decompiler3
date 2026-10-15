@@ -20,6 +20,8 @@ __all__ = (
     'ARGC_OPERAND',
     'SLOT_OFFSET_OPERAND',
     'CALLEE_OPERAND',
+    'REGISTER_OPERAND',
+    'RESULT_REGISTER',
 )
 
 ONE_VALUE               = 1
@@ -31,6 +33,8 @@ DEBUG_LOG_ARGC_OPERAND  = 0
 ARGC_OPERAND            = 2     # the argument count of every argument call but CALL, whose count is its callee's parameters
 SLOT_OFFSET_OPERAND     = 0     # the byte offset of a slot-addressing opcode
 CALLEE_OPERAND          = 0     # CALL's callee, whose parameters are its argument count
+REGISTER_OPERAND        = 0     # GET_REG / SET_REG's register
+RESULT_REGISTER         = 0     # where a returning call leaves its result
 
 
 class InstructionKind(Enum):
@@ -40,7 +44,7 @@ class InstructionKind(Enum):
     LOAD_SLOT           = auto()
     LOAD_DEREF          = auto()
     LOAD_GLOBAL         = auto()
-    LOAD_REG            = auto()    # GET_REG: a call's result
+    LOAD_REG            = auto()    # GET_REG: a register's value, a call's result after a call
     STORE_SLOT          = auto()    # POP_TO, the one store into a live slot
     STORE_DEREF         = auto()
     STORE_GLOBAL        = auto()

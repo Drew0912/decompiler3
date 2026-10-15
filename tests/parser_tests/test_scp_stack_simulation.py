@@ -812,6 +812,73 @@ class TestDebugArgcRecovery(unittest.TestCase):
         self.assertEqual(self.disassemble(self.program(explicit_args = 2)).call_debug_argc, {})
 
 
+class TestDebugArgcRecoveryOrder(unittest.TestCase):
+    '''round_trip: each record pairs with its own call in the compiler's record order - nested calls in parameter order,
+    a tail call's argument parked in a register after the previous statement's call - so a trimmed count reaches the
+    call it belongs to. The records are written here in the compiler's order, not by the tracker under test.'''
+    OUTER_ID = 1
+    INNER_ID = 2
+    CALLEE_ARGC = 2
+    TAIL_VALUE = 9
+    TAIL_REG = 1
+    TAIL_NAME = '.'.join(STRINGS)
+
+    @classmethod
+    def record(cls, func_name: str, call_type: ScpFunctionCallDebugInfo.CallType, values: list) -> FunctionCallDebugInfo:
+        info = FunctionCallDebugInfo()
+        info.func_name = func_name
+        info.call_type = call_type
+        info.args = [FunctionCallDebugInfo.ArgInfo(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(value))
+                     for value in values]
+        return info
+
+    @classmethod
+    def call_debug_argc(cls, caller: Asm, records: list[FunctionCallDebugInfo]) -> tuple[dict, Program]:
+        callee = returning_callee(argc = cls.CALLEE_ARGC)
+        program = Program(main_function(caller), callee._replace(name = 'outer'), callee._replace(name = 'inner'))
+        program.entries[0].debug_info = records
+        parser = program.parser()
+        parser.round_trip = True
+        return parser.disasm_all_functions()[0].call_debug_argc, program
+
+    @classmethod
+    def push_inner_call(cls, caller: Asm, ret: str):
+        caller.push_raw(CALLER_ID); caller.push_raw(ret)
+        caller.push_int(RIGHT_VALUE); caller.push_int(LEFT_VALUE)
+        caller.call(cls.INNER_ID); caller.label(ret)
+
+    def test_nested_calls_pair_in_parameter_order(self):
+        '''outer(inner(..), inner(..)): arguments are pushed last first, so the second argument's call runs first; the
+        first argument's call keeps one argument'''
+        CallType = ScpFunctionCallDebugInfo.CallType
+        caller = Asm()
+        caller.debug_set_lineno(1)
+        caller.push_raw(CALLER_ID); caller.push_raw('outer')
+        for ret in ('second', 'first'):
+            self.push_inner_call(caller, ret)
+            caller.get_reg(REG_INDEX)
+
+        caller.call(self.OUTER_ID); caller.label('outer'); caller.ret()
+        records = [self.record('outer', CallType.Local, [0, 0]), self.record('inner', CallType.Local, [LEFT_VALUE]),
+                   self.record('inner', CallType.Local, [LEFT_VALUE, RIGHT_VALUE])]
+        debug_argc, program = self.call_debug_argc(caller, records)
+        self.assertEqual(debug_argc, {f'loc_{program.label("first"):X}': 1})
+
+    def test_register_carried_tail_argument_pairs_after_the_previous_call(self):
+        '''inner(..) keeping one argument, then a tail call whose constant argument waits in a register'''
+        CallType = ScpFunctionCallDebugInfo.CallType
+        caller = Asm()
+        caller.debug_set_lineno(1)
+        self.push_inner_call(caller, 'ret')
+        caller.debug_set_lineno(2)
+        caller.push_int(self.TAIL_VALUE); caller.set_reg(self.TAIL_REG); caller.get_reg(self.TAIL_REG)
+        caller.call_script_no_return(1)
+        records = [self.record('inner', CallType.Local, [LEFT_VALUE]),
+                   self.record(self.TAIL_NAME, CallType.ScriptNoReturn, [self.TAIL_NAME, self.TAIL_VALUE])]
+        debug_argc, program = self.call_debug_argc(caller, records)
+        self.assertEqual(debug_argc, {f'loc_{program.label("ret"):X}': 1})
+
+
 class TestBlockSplits(unittest.TestCase):
     '''A branch into a decoded block splits it; the tail takes the terminator and its edges'''
 

@@ -14,7 +14,7 @@ from ir.mlil.mlil import MLILCallScript, MLILRet, MLILVar
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript, LowLevelILCallScriptNoReturn
 from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
-from falcom.ed9.parser.scp import CallDebugInfoTracker
+from falcom.ed9.parser.call_debug_records import CallDebugInfoTracker
 from falcom.ed9.parser.types_scp import ScpFunctionCallDebugInfo
 from tests.shared import scp_asm
 from tests.shared.llil_utils import instructions_of, lift_asm, make_builder

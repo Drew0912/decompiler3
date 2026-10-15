@@ -15,7 +15,7 @@ from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandFormat, OperandType
 from ..parser.crc32 import hash_func_Name
-from ..parser.scp import CallDebugInfoTracker, TrackedCall, TrackedValue, PUSH_CONSTANT_OPS
+from ..parser.call_debug_records import PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue
 from ..parser.string_pool import StringPoolSection
 from ..parser.types_scp import (
     UINT32_SIZE,
@@ -529,8 +529,7 @@ class ScpWriter:
 
     def _debug_arg(self, value: TrackedValue) -> DebugArg:
         if value.type == ScpFunctionCallDebugInfoArg.Type.Constant:
-            scp_value, string = value.payload
-            return DebugArg(value.type, scp_value, string)
+            return DebugArg(value.type, value.payload, value.string)
 
         return DebugArg(value.type, ScpValue(ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE))
 
@@ -701,14 +700,14 @@ class ScpWriter:
         elif opcode == ED9Opcode.PUSH_INT:
             args = (int(args[0]),)
 
-        payload = None
+        value = string = None
         if opcode in PUSH_CONSTANT_OPS:
             problem = self._code_string_problem(args[0])
             if problem is not None:
                 raise ValueError(self._at_opcode(f'{ED9Opcode(opcode).name} {problem}'))
 
             try:
-                payload = self._emit_push_constant(args[0])
+                value, string = self._emit_push_constant(args[0])
 
             except (TypeError, ValueError) as e:
                 raise type(e)(self._at_opcode(f'{ED9Opcode(opcode).name} {e}')) from e
@@ -729,7 +728,7 @@ class ScpWriter:
             self._emit_described_opcode(opcode, args)
 
         if self.call_tracker is not None:
-            self.call_tracker.on_opcode(opcode, args, payload)
+            self.call_tracker.on_opcode(opcode, args, value, string)
 
     def _opcode_site(self) -> SourceSite | None:
         """Where the opcode being compiled was emitted: the innermost frame running an opcode emitter or a function it
@@ -743,7 +742,7 @@ class ScpWriter:
 
     def _emit_push_constant(self, operand: int | float | str | RawInt) -> tuple[ScpValue, PooledString | None]:
         """PUSH and its constant pseudo-ops (PUSH_CONSTANT_OPS) all collapse to the on-disk PUSH opcode + size byte +
-        ScpValue; returns the tracker's (value, string) payload"""
+        ScpValue; returns the value and its pooled string, for the call tracker"""
         # ScpValue takes only its exact types: an int enum (a named constant, a flag mask) pushes its value
         if type(operand) not in ScpValue.ClassMap and isinstance(operand, Enum) and isinstance(operand, int):
             operand = int(operand)

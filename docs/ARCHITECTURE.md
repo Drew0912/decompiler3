@@ -33,10 +33,12 @@ Parses the SCP file format; extracts functions, global variables, strings, and o
 provides access to raw bytecode. Key components: `ScpParser` (main parser), `ScpHeader` (file
 header), `Function` (function metadata), `GlobalVar` (global variables). `string_pool.py` groups the
 pool's strings by what references them, in pool order (code, function names, parameter defaults,
-debug-only, global var names); the round-trip validator checks the pool with it. `call_records.py` compares a
-call-site debug record with the record its call gets (content only: call type, callee, arguments), the calls coming
-from `CallDebugInfoTracker.replay` in record order with their instruction offsets; `code_layout.py` gives the code
-order, each function's byte range and the ranges no instruction covers. The validator's code, debug-record,
+debug-only, global var names); the round-trip validator checks the pool with it. `call_debug_records.py` holds
+`CallDebugInfoTracker`, which rebuilds the call-site debug records a function's calls get from its opcodes (a call
+tree in source pre-order, values carried through registers; shared by the parser, the writer, the listing and the
+validator), and compares a record with the record its call gets (content only: call type, callee, arguments), the
+calls coming from `CallDebugInfoTracker.replay` in record order with their instruction offsets; `code_layout.py`
+gives the code order, each function's byte range and the ranges no instruction covers. The validator's code, debug-record,
 source-precondition and reachability checks use them.
 
 ## Layer 2: Disassembler — Done
@@ -49,8 +51,8 @@ its mnemonic and operand format), so adding a new instruction is a table entry r
 parsing code. Each row also has a kind, and each kind a stack effect (`falcom/ed9/disasm/stack_effects.py`:
 the values it pops, a call's setup slots, the values it reads in place, the values it pushes, whether it
 addresses a slot, whether the stack must be empty after it). The parser's simulation and the debug-record
-tracker (`CallDebugInfoTracker`) dispatch on the kind and read the effects; the LLIL lifter takes only
-which opcodes are binary and a local `CALL`'s argument count from the table (Layer 3).
+tracker (`CallDebugInfoTracker`, `parser/call_debug_records.py`) dispatch on the kind and read the effects; the LLIL
+lifter takes only which opcodes are binary and a local `CALL`'s argument count from the table (Layer 3).
 `tests/parser_tests/test_stack_effects.py` checks all three walkers of the VM stack against the table.
 
 While the disassembler decodes a function, `ScpParser` simulates the VM stack to find each call's

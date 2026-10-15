@@ -271,7 +271,7 @@ labels get their own line with the depth. The listing loads the file itself, unr
 once: under the function whose range holds it (functions starting at the same offset share one range),
 or as raw bytes where no instruction covers it (`mp0090`'s 21 bytes before its first function). A call's
 debug record is printed under it when every record of the function holds what its call gets
-(`call_records.record_mismatch`, content only); otherwise the function notes `records not paired: ...`,
+(`call_debug_records.record_mismatch`, content only); otherwise the function notes `records not paired: ...`,
 as for the `chr0000`-style files and calls without a record. `filter_func` and `include_common_functions`
 pick the functions listed; the listing is written after every other output.
 
