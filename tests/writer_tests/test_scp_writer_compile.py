@@ -21,9 +21,9 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
-from falcom.ed9.parser.types_scp import ScpGlobalVar
+from falcom.ed9.parser.types_scp import ScpGlobalVar, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
-from tests.shared.scp_writer_test_utils import WriterTestCase, at, fresh_writer, location
+from tests.shared.scp_writer_test_utils import WriterTestCase, at, fresh_writer, local_call, location
 
 
 def read_uint32(data: bytes, offset: int) -> int:
@@ -195,39 +195,130 @@ class TestLabels(WriterTestCase):
 
 
 class TestDebugArgc(WriterTestCase):
-    def test_debug_argc_trims_the_recorded_args(self):
+    '''A local call's record keeps its args up to the last one the author wrote: the CALL's debug_argc, else the
+    compiler's rule - trailing constants equal to the callee's defaults dropped'''
+    ALL_DEFAULTS = ((PUSH_INT, 2), (PUSH_INT, 1), (PUSH_INT, 5))    # Callee(5, 1, 2): pushed last parameter first
+
+    def define_callee(self):
         @self.writer.LLILCode()
-        def Callee(arg1: Value32, arg2: Value32, arg3: Nullable32 = 0):
+        def Callee(arg1: Value32, arg2: Value32 = 1, arg3: Nullable32 = 2):
             POP(3 * WORD_SIZE)
             RETURN()
 
-        def call_callee(ret: str):
-            DEBUG_SET_LINENO(1)  # a call gets a debug record only after line info
-            PUSH_CURRENT_FUNC_ID()
-            PUSH_RET_ADDR(ret)
-            PUSH_INT(0)
-            PUSH_INT(1)
-            PUSH_INT(2)
-            CALL(Callee)
-            label(ret)
+        return Callee
+
+    def counts(self, name: str = 'Main') -> list[int]:
+        '''Each record's arg count, in record order'''
+        return [len(record.args) for record in self.writer.functions_by_name[name].debug_records]
+
+    def test_records_keep_the_args_up_to_the_last_one_written(self):
+        @self.writer.LLILCode()
+        def Callee(arg1: Value32, arg2: Value32 = 1, arg3: Nullable32 = 2.0):
+            POP(3 * WORD_SIZE)
             RETURN()
 
-        @self.writer.LLILCode(debug_argc = {'ret_a': 2})
-        def DefaultLeftOut():
-            call_callee('ret_a')
+        # (pushes of arg3 and arg2, the CALL's keywords) -> the record's arg count; arg1 is 5
+        cases = {
+            'every default left out': (((PUSH_FLOAT, 2.0), (PUSH_INT, 1)), {}, 1),
+            'the last one differs': (((PUSH_FLOAT, 3.0), (PUSH_INT, 1)), {}, 3),
+            'a differing one stops the walk': (((PUSH_FLOAT, 2.0), (PUSH_INT, 7)), {}, 2),
+            'Integer for a Float default': (((PUSH_INT, 2), (PUSH_INT, 1)), {}, 3),
+            'a non-constant is kept': (((GET_REG, 1), (PUSH_INT, 1)), {}, 3),
+            'debug_argc keeps more': (((PUSH_FLOAT, 2.0), (PUSH_INT, 1)), {'debug_argc': 3}, 3),
+            'debug_argc keeps none': (((PUSH_FLOAT, 2.0), (PUSH_INT, 1)), {'debug_argc': 0}, 0),
+        }
 
         @self.writer.LLILCode()
-        def AllPassed():
-            call_callee('ret_b')
+        def Main():
+            DEBUG_SET_LINENO(1)  # a call gets a debug record only after line info
+            for number, (pushes, keywords, _) in enumerate(cases.values()):
+                local_call(Callee, f'ret{number}', (*pushes, (PUSH_INT, 5)), **keywords)
+
+            RETURN()
 
         self.writer.build({})
         callee = self.writer.functions_by_name['Callee']
+        self.assertEqual({record.func_id for record in self.writer.functions_by_name['Main'].debug_records}, {callee.index})
+        self.assertEqual(dict(zip(cases, self.counts())), {case: count for case, (*_, count) in cases.items()})
 
-        for name, argc in (('DefaultLeftOut', 2), ('AllPassed', 3)):
-            with self.subTest(function = name):
-                [record] = self.writer.functions_by_name[name].debug_records
-                self.assertEqual(record.func_id, callee.index)
-                self.assertEqual(len(record.args), argc)
+    def test_default_vectors(self):
+        '''One entry per parameter, None without a default - the parser's shape; the file stores only the defaulted
+        suffix'''
+        @self.writer.LLILCode()
+        def OneDefault(arg1: Value32, arg2: Value32 = 0):
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        @self.writer.LLILCode()
+        def AllDefaults(arg1: Value32 = 1, arg2: Nullable32 = 2.0):
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        @self.writer.LLILCode()
+        def NoDefaults(arg1: Value32, arg2: Value32):
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        def typed(values) -> list:
+            return [None if value is None else (value.type, value.value) for value in values]
+
+        _, functions = parse(self.writer.build({}))
+        expected = {'OneDefault': [None, 0], 'AllDefaults': [1, 2.0], 'NoDefaults': [None, None]}
+        for name, values in expected.items():
+            with self.subTest(name):
+                vector = typed(self.writer._parameter_defaults(self.writer.functions_by_name[name]))
+                self.assertEqual(vector, typed(None if value is None else ScpValue(value) for value in values))
+                self.assertEqual(vector, typed(param.default_value for param in functions[name].params))
+
+    def test_callee_defaults_from_its_registered_function(self):
+        '''A callee defined after its caller, and one imported as a common function'''
+        def Imported(arg1: Value32, arg2: Value32 = 1, arg3: Nullable32 = 2):
+            POP(3 * WORD_SIZE)
+            RETURN()
+
+        @self.writer.CommonImports()
+        def commonImports():
+            return [Imported]
+
+        @self.writer.LLILCode()
+        def Main():
+            DEBUG_SET_LINENO(1)
+            local_call(Later, 'later', self.ALL_DEFAULTS)
+            local_call(Imported, 'imported', self.ALL_DEFAULTS)
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Later(arg1: Value32, arg2: Value32 = 1, arg3: Nullable32 = 2):
+            POP(3 * WORD_SIZE)
+            RETURN()
+
+        self.writer.build({})
+        self.assertEqual(self.counts(), [1, 1])
+
+    def test_an_edit_changes_no_other_record(self):
+        '''Each count rides on its own CALL: renaming labels, deleting or inserting a call leaves the other records'''
+        annotated = {'debug_argc': 3}
+        variants = {
+            'as decompiled': ((('a', {}), ('b', annotated), ('c', {})), [1, 3, 1]),
+            'labels renamed': ((('x', {}), ('y', annotated), ('z', {})), [1, 3, 1]),
+            'first call deleted': ((('b', annotated), ('c', {})), [3, 1]),
+            'a call inserted': ((('a', {}), ('new', {}), ('b', annotated), ('c', {})), [1, 1, 3, 1]),
+        }
+        for variant, (calls, expected) in variants.items():
+            with self.subTest(variant):
+                self.writer = self.fresh_writer()
+                callee = self.define_callee()
+
+                @self.writer.LLILCode()
+                def Main():
+                    DEBUG_SET_LINENO(1)
+                    for ret, keywords in calls:
+                        local_call(callee, ret, self.ALL_DEFAULTS, **keywords)
+
+                    RETURN()
+
+                self.writer.build({})
+                self.assertEqual(self.counts(), expected)
 
     def assert_warns_of_no_caller_frame(self, marker: str):
         '''Main compiles, and the tracker warns once, at the CALL_SCRIPT, that its debug record is a guess'''
@@ -627,6 +718,28 @@ class TestArgumentTypes(WriterTestCase):
                 with self.assertRaisesRegex(TypeError, rf'^{at(__file__, case)}Main: {message}$'):
                     self.writer.build({})
 
+    def test_debug_argc_is_exactly_an_int(self):
+        '''Checked in CALL itself: bool is an int subclass, and handle_opcode's bool check sees positional operands only'''
+        for case, value in {'bool': True, 'float': 2.0}.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Callee():
+                    RETURN()
+
+                @self.writer.LLILCode()
+                def Main():
+                    PUSH_CURRENT_FUNC_ID()
+                    PUSH_RET_ADDR('ret')
+                    CALL(Callee, debug_argc = value)                    # line: debug_argc
+                    label('ret')
+                    RETURN()
+
+                message = rf'CALL debug_argc is {re.escape(repr(value))} \({type(value).__name__}\), not int'
+                with self.assertRaisesRegex(TypeError, rf'^{at(__file__, "debug_argc")}Main: {message}$'):
+                    self.writer.build({})
+
 
 class TestStrings(WriterTestCase):
     '''A string the pool can't store fails where it enters (a default at its def: test_scp_writer_hooks.py's parameter
@@ -715,6 +828,29 @@ class TestWriterWithoutRoundTrip(WriterTestCase):
 
         self.assertEqual(data.count(b'same\x00'), 2)
         self.assertEqual(self.pushed_strings(data), ['same', 'same'])
+
+    def test_debug_argc_compiles_to_the_same_bytes(self):
+        '''No call is tracked, so a CALL's debug_argc changes nothing: no records, the bytes of the call without it'''
+        compiled = {}
+        for case, keywords in {'annotated': {'debug_argc': 2}, 'plain': {}}.items():
+            self.writer = self.fresh_writer()
+            self.writer.round_trip = False
+
+            @self.writer.LLILCode()
+            def Callee(arg1: Value32, arg2: Value32 = 0):
+                POP(2 * WORD_SIZE)
+                RETURN()
+
+            @self.writer.LLILCode()
+            def Main():
+                DEBUG_SET_LINENO(1)
+                local_call(Callee, 'ret', ((PUSH_INT, 0), (PUSH_INT, 1)), **keywords)
+                RETURN()
+
+            compiled[case] = self.writer.build({})
+            self.assertEqual([f.debug_records for f in self.writer.functions], [[], []])
+
+        self.assertEqual(compiled['annotated'], compiled['plain'])
 
 
 class TestCheckOffLocations(WriterTestCase):

@@ -142,6 +142,19 @@ global name - can't hold a NUL (the game ends the string there) or a lone surrog
 `PUSH_STR('a\x00b')` fails at its line (`PUSH_STR string 'a\x00b' contains a NUL, ..`), a default at its
 `def`. Errors raised while a body runs carry the `.py` line in their traceback.
 
+**Call-site debug records.** With `ScpWriter.round_trip` on (the default), every call made after a
+function's first `DEBUG_SET_LINENO` gets a debug record of its arguments. A local call's record keeps them
+up to the last one its author wrote, by the original compiler's rule: trailing constant arguments equal to
+the callee's defaults (the same type and stored word, a string by its text; the callee's final signature,
+hooks included) are left out. A call whose original record breaks the rule carries its count on the `CALL`
+- `CALL(chr_allow_controll, debug_argc = 2)` - which the round-trip `.py` (`ScpParser(round_trip=True)`)
+writes. `debug_argc` must be an `int` (`CALL debug_argc is True (bool), not int`) and is used as given;
+opcode callbacks never see it, and it goes with its `CALL` when one drops it. An everyday `.py` (decompiled
+with `ScpParser.round_trip` off: no `debug_argc`) compiled with the writer's default gets rule-trimmed
+records; `ScpWriter.round_trip = False` writes no records at all. Records don't affect the logic. An older
+round-trip `.py` with `@scena.LLILCode(debug_argc = {...})` stops at Python's `TypeError` there: decompile
+the `.dat` again.
+
 **The compile check** (`ScpWriter.check_compiled`, on by default; a script turns it off with
 `scena.check_compiled = False`). At the end of `build()` the bytes are parsed and lifted again in memory
 by the decompiler's own `ScpParser` and `ED9VMLifter` (`falcom/ed9/writer/scp_compile_check.py`), so a

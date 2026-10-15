@@ -10,9 +10,22 @@ import unittest
 
 from dc3 import fileio
 from falcom.ed9.writer import scp_writer
+from falcom.ed9.writer.scp_writer_helper import CALL, PUSH_CURRENT_FUNC_ID, PUSH_RET_ADDR, label
 
 
 HEX = '0x[0-9A-F]+'     # an address in a writer message, as a regex
+
+
+def local_call(callee, ret: str, pushes, **keywords):
+    '''A local call of callee in a DSL body: pushes are (DSL push function, value) in push order - the last parameter
+    first; keywords go to the CALL'''
+    PUSH_CURRENT_FUNC_ID()
+    PUSH_RET_ADDR(ret)
+    for push, value in pushes:
+        push(value)
+
+    CALL(callee, **keywords)
+    label(ret)
 
 
 def fresh_writer(dat: Path | None = None) -> scp_writer.ScpWriter:

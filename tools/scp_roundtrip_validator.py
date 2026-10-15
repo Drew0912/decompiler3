@@ -73,8 +73,8 @@ from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
 from falcom.ed9.metadata.fingerprint import function_fingerprint
-from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, RecordView, TrackedCall, read_debug_records,
-                                                  record_mismatch, record_view)
+from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, RecordView, read_debug_records, record_mismatch,
+                                                  record_view)
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.parser.crc32 import hash_func_Name
 from falcom.ed9.parser.scp import ScpParser
@@ -348,14 +348,6 @@ def check_string_pool(ctx: ScriptContext, refs: StringRefs) -> CheckResult:
     return CheckResult.build('string pool', summary, failures, warnings)
 
 
-def compare_record(ctx: ScriptContext, call: TrackedCall, record: ScpFunctionCallDebugInfo) -> str | None:
-    # The writer keys a local call's dropped default args by its return label (debug_argc): without one it can't round-trip
-    if call.call_type == ScpFunctionCallDebugInfo.CallType.Local and call.ret_label is None:
-        return 'local CALL without a PUSH_RET_ADDR label'
-
-    return record_mismatch(ctx.data, call, record, ctx.parser.get_func_index)
-
-
 def check_debug_records(ctx: ScriptContext) -> CheckResult:
     failures = []
     rebuilt = 0
@@ -369,7 +361,7 @@ def check_debug_records(ctx: ScriptContext) -> CheckResult:
             continue
 
         for i, (call, record) in enumerate(zip(calls, records)):
-            problem = compare_record(ctx, call, record)
+            problem = record_mismatch(ctx.data, call, record, ctx.parser.get_func_index)
             if problem is not None:
                 failures.append(f'{func.name} record {i}: {problem}')
                 continue

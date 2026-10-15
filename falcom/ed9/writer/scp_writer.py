@@ -16,7 +16,7 @@ from dc3.logging import log
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandFormat, OperandType
 from ..parser.crc32 import hash_func_Name
 from ..parser.call_debug_records import (PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue,
-                                         script_call_identity)
+                                         canonical_argc, script_call_identity)
 from ..parser.string_pool import StringPoolSection
 from ..parser.types_scp import (
     UINT32_SIZE,
@@ -121,7 +121,6 @@ class ScpFunction:
     original_body: Callable  # the body before any hook replaced it
     signature: inspect.Signature
     entry: ScpFunctionEntry
-    debug_argc: dict[str, int] = field(default_factory = dict)       # CALL return label -> args passed explicitly
     calls: list[TrackedCall] = field(default_factory = list)
     debug_records: list[DebugRecord] = field(default_factory = list)
     callback_bodies: list[Callable] = field(default_factory = list)  # from function callbacks, in chain order; may repeat or include the original
@@ -185,16 +184,16 @@ class ScpWriter:
 
     # Script registration: functions, common imports, global vars and replaced bodies
 
-    def LLILCode(self, debug_argc: dict[str, int] | None = None):
+    def LLILCode(self):
         def wrapper(func):
-            self._register_function(func, debug_argc = debug_argc)
+            self._register_function(func)
             return func
 
         return wrapper
 
-    def LLILCommonCode(self, debug_argc: dict[str, int] | None = None):
+    def LLILCommonCode(self):
         def wrapper(func):
-            self._register_function(func, is_common_func = True, debug_argc = debug_argc)
+            self._register_function(func, is_common_func = True)
             return func
 
         return wrapper
@@ -204,10 +203,7 @@ class ScpWriter:
         the shared library, some defined locally as a fallback when this script's own copy diverges
         from the library's canonical body. Like GlobalVars, the decorated body runs immediately - it
         returns the functions to register, in this script's own code order, and each one is
-        registered the same way an inline @scena.LLILCommonCode() definition would be. debug_argc
-        isn't exposed here because it can never apply: it's only recovered when round_trip is True
-        (pair_call_debug_info), but the manifest is only emitted when round_trip is False - the two
-        conditions can't hold at once.
+        registered the same way an inline @scena.LLILCommonCode() definition would be.
         """
         def wrapper(func):
             for common_func in func():
@@ -283,8 +279,7 @@ class ScpWriter:
 
         return index
 
-    def _register_function(self, func: Callable, is_common_func: bool = False,
-                           debug_argc: dict[str, int] | None = None):
+    def _register_function(self, func: Callable, is_common_func: bool = False):
         """A script function: checked, then given its pending table entry (registration order is code order)"""
         require_function(func, 'LLILCommonCode' if is_common_func else 'LLILCode')
         self._require_open(func)
@@ -297,7 +292,7 @@ class ScpWriter:
 
         entry = self._new_function_entry(name, len(signature.parameters), is_common_func)
         f = ScpFunction(index = UNRESOLVED_FUNC_INDEX, name = name, body = func, original_body = func,
-                        signature = signature, entry = entry, debug_argc = debug_argc or {})
+                        signature = signature, entry = entry)
         self.functions.append(f)
         self.functions_by_name[name] = f
 
@@ -373,7 +368,6 @@ class ScpWriter:
         """f keeps its position, table index, common flag and name hash; its signature merges with the replacement's"""
         f.signature = cls._replaced_signature(f, body)
         f.body = body
-        f.debug_argc = {}  # keyed by the original's return labels, which a replacement may reuse for other calls
 
     @classmethod
     def _replaced_signature(cls, f: ScpFunction, body: Callable) -> inspect.Signature:
@@ -515,13 +509,21 @@ class ScpWriter:
         if not self.round_trip:
             return
 
+        defaults = {f.name: self._parameter_defaults(f) for f in self.function_table}
         for f in self.function_table:
-            f.debug_records = [self._debug_record(f, call) for call in f.calls]
+            f.debug_records = [self._debug_record(call, defaults) for call in f.calls]
 
-    def _debug_record(self, f: ScpFunction, call: TrackedCall) -> DebugRecord:
+    @classmethod
+    def _parameter_defaults(cls, f: ScpFunction) -> list[ScpValue | None]:
+        """One entry per parameter of f's final signature, None without a default (canonical_argc's shape; the file
+        stores only the defaulted suffix)"""
+        params = f.signature.parameters.values()
+        return [None if param.default is param.empty else ScpValue(param.default) for param in params]
+
+    def _debug_record(self, call: TrackedCall, defaults: dict[str, list[ScpValue | None]]) -> DebugRecord:
         args = [self._debug_arg(value) for value in call.args]
         if call.call_type == ScpFunctionCallDebugInfo.CallType.Local:
-            return self._local_call_record(f, call, args)
+            return self._local_call_record(call, args, defaults)
 
         if call.call_type == ScpFunctionCallDebugInfo.CallType.Syscall:
             return self._syscall_record(call, args)
@@ -534,11 +536,13 @@ class ScpWriter:
 
         return DebugArg(value.type, ScpValue(ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE))
 
-    def _local_call_record(self, f: ScpFunction, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
-        """The callee by table index; only the arguments passed explicitly (debug_argc, by the call's return label)"""
-        func_id = self._find_function(call.target).index
-        args = args[:f.debug_argc.get(call.ret_label, len(args))]
-        return DebugRecord(call_type = call.call_type, func_id = func_id, args = args)
+    def _local_call_record(self, call: TrackedCall, args: list[DebugArg],
+                           defaults: dict[str, list[ScpValue | None]]) -> DebugRecord:
+        """The callee by table index; the arguments up to the last one written: the CALL's debug_argc, else the
+        compiler's rule on the callee's final defaults"""
+        callee = self._find_function(call.target)
+        count = call.debug_argc if call.debug_argc is not None else canonical_argc(call.args, defaults[callee.name])
+        return DebugRecord(call_type = call.call_type, func_id = callee.index, args = args[:count])
 
     @classmethod
     def _syscall_record(cls, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
@@ -681,8 +685,9 @@ class ScpWriter:
 
     # Opcode emission: operands, labels and strings
 
-    def handle_opcode(self, opcode: int, *args):
-        """Write one opcode a DSL opcode function emitted, unless an opcode callback drops it"""
+    def handle_opcode(self, opcode: int, *args, debug_argc: int | None = None):
+        """Write one opcode a DSL opcode function emitted, unless an opcode callback drops it; a CALL's debug_argc goes
+        to its tracked call only, never to the callbacks"""
         if self.current_function is None:
             raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
@@ -736,6 +741,8 @@ class ScpWriter:
 
         if self.call_tracker is not None:
             self.call_tracker.on_opcode(opcode, args, value, string)
+            if debug_argc is not None:
+                self.call_tracker.calls[-1].debug_argc = debug_argc
 
     def _opcode_site(self) -> SourceSite | None:
         """Where the opcode being compiled was emitted: the innermost frame running an opcode emitter or a function it

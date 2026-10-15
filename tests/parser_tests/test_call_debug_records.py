@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 '''Unit tests for pairing call-site debug records with their calls: CallDebugInfoTracker (its call tree, registers and
 line gate; replay's record order and each call's instruction offset), falcom/ed9/parser/call_debug_records.py
-(record_args, record_mismatch, script_call_identity), function_extents, and the round-trip validator's compare_record
-and record comparison built on them.'''
+(canonical_argc, record_args, record_mismatch, script_call_identity), a local call's count on its CALL through a
+round trip, function_extents, and the round-trip validator's record comparison built on them.'''
 
 from pathlib import Path
 import copy
@@ -20,14 +20,14 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, RESULT_REGISTER
-from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, TrackedValue, record_args, record_mismatch,
-                                                  script_call_identity)
+from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, TrackedValue, canonical_argc, record_args,
+                                                  record_mismatch, script_call_identity)
 from falcom.ed9.parser.code_layout import function_extents
 from falcom.ed9.parser.string_pool import NUL, read_text, string_offset
 from falcom.ed9.parser.types_scp import RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_roundtrip_validator import (PUSH_VALUE_OFFSET, Status, check_round_trip, compare_file_records, compare_record,
-                                     describe_difference, load_script)
+from scp_roundtrip_validator import (PUSH_VALUE_OFFSET, Status, check_round_trip, compare_file_records,
+                                     decompile_to_python, describe_difference, load_script)
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
 
@@ -238,6 +238,65 @@ def compile_tail_calls(dat: Path):
         RETURN()
 
     writer.run({})
+
+
+def compile_counts(dat: Path):
+    '''mp4000_ev EV_03_62_01's shape: two calls with identical bytes, the first as the compiler's rule leaves it
+    (SetAuto(1)), the second written out in full (SetAuto(1, 0): debug_argc = 2)'''
+    writer = fresh_writer(dat)
+
+    @writer.LLILCode()
+    def SetAuto(arg1: Value32, arg2: Value32 = 0):
+        POP(2 * WORD_SIZE)
+        RETURN()
+
+    @writer.LLILCode()
+    def Main():
+        DEBUG_SET_LINENO(1)
+        for ret, keywords in (('by_rule', {}), ('written_out', {'debug_argc': 2})):
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR(ret)
+            PUSH_INT(0)
+            PUSH_INT(1)
+            CALL(SetAuto, **keywords)
+            label(ret)
+
+        RETURN()
+
+    writer.run({})
+
+
+def constant(value: int | float | str | RawInt) -> TrackedValue:
+    return TrackedValue(ArgType.Constant, ScpValue(value))
+
+
+class TestCanonicalArgc(unittest.TestCase):
+    '''The compiler's rule: trailing constants equal to the callee's defaults (by type and encoded word, a string by its
+    text) are dropped, up to the first that isn't one'''
+    VARIABLE = TrackedValue(ArgType.Variable)
+    DEFAULTS = [None, ScpValue(1), ScpValue(2.0)]
+
+    def test_rule(self):
+        cases = {
+            'every default left out': ([constant(5), constant(1), constant(2.0)], self.DEFAULTS, 1),
+            'the last one differs': ([constant(5), constant(1), constant(3.0)], self.DEFAULTS, 3),
+            'a differing one stops the walk': ([constant(5), constant(7), constant(2.0)], self.DEFAULTS, 2),
+            'a non-constant stops the walk': ([constant(5), self.VARIABLE, constant(2.0)], self.DEFAULTS, 2),
+            'a non-constant is kept': ([constant(5), constant(1), self.VARIABLE], self.DEFAULTS, 3),
+            'Integer for a Float default': ([constant(5), constant(1), constant(2)], self.DEFAULTS, 3),
+            'Raw for an Integer default': ([constant(5), constant(RawInt(1))], [None, ScpValue(1)], 2),
+            '-0.0 for a +0.0 default': ([constant(-0.0)], [ScpValue(0.0)], 1),
+            '+0.0 for a +0.0 default': ([constant(0.0)], [ScpValue(0.0)], 0),
+            'a string by its text': ([constant('a')], [ScpValue('a')], 0),
+            'another string': ([constant('b')], [ScpValue('a')], 1),
+            'an Integer for a string default': ([constant(0)], [ScpValue('')], 1),     # a String has no word to compare
+            'no defaults': ([constant(1), constant(2)], [None, None], 2),
+            'fewer defaults than args': ([constant(1)], [], 1),
+            'more defaults than args': ([constant(1)], [ScpValue(1), ScpValue(1)], 1),
+        }
+        for case, (args, defaults, expected) in cases.items():
+            with self.subTest(case):
+                self.assertEqual(canonical_argc(args, defaults), expected)
 
 
 class TestWriterOnlyInputs(unittest.TestCase):
@@ -650,15 +709,10 @@ class TestRecordMismatch(CompiledScript):
                 self.assertEqual(self.mismatch(bytes(data), syscall_call, record), problem)
 
     def test_local_call_without_return_label(self):
-        '''Content only: the label rule (the writer keys trimmed args by it) stays with the validator'''
+        '''Content only: a local call's count rides on its CALL, so the record needs no return label'''
         outer_call, _ = self.pairs[0]
         no_label = dataclasses.replace(outer_call, ret_label = None)
         self.assertIsNone(self.mismatch(self.data, no_label, self.main_records[0]))
-        self.assertEqual(compare_record(self.ctx, no_label, self.main_records[0]), 'local CALL without a PUSH_RET_ADDR label')
-        self.assertIsNone(compare_record(self.ctx, outer_call, self.main_records[0]))
-
-        # The label rule comes first: a record whose content differs too still reports the label
-        self.assertEqual(compare_record(self.ctx, no_label, self.main_records[1]), 'local CALL without a PUSH_RET_ADDR label')
 
 
 class TestRecordComparison(CompiledScript):
@@ -818,6 +872,40 @@ class TestRealRoundTrip(unittest.TestCase):
         '''Its tail call's record has the callee's table index and bare name; a failure shows the record comparison'''
         path = require(SAME_SCRIPT_TAIL_CALL_FILE)
         result = check_round_trip(path, Path(self.enterContext(tempfile.TemporaryDirectory())))
+        self.assertEqual(result.status, Status.PASS, '\n'.join([result.summary, *result.details]))
+
+
+class TestCountsOnTheCall(unittest.TestCase):
+    '''A local call's record count rides on its CALL, written only where it isn't the compiler's rule: two calls with
+    identical bytes keep their own counts through a round trip'''
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
+        cls.dat = cls.tmp / 'counts.dat'
+        compile_counts(cls.dat)
+
+    def test_records(self):
+        ctx = load_script(self.dat)
+        self.addCleanup(ctx.fs.Close)
+        records = dict(zip([func.name for func in ctx.parser.functions], ctx.records))
+        self.assertEqual([record.arg_count for record in records['Main']], [1, 2])
+
+    def test_round_trip_py_writes_the_count_on_its_call(self):
+        py_path = self.tmp / 'counts.py'
+        _, functions = decompile_to_python(self.dat, py_path)
+        main = next(func for func in functions if func.name == 'Main')
+        first, second = sorted(main.call_written_argc)
+        self.assertEqual(main.call_written_argc, {first: 1, second: 2})
+        self.assertEqual(main.call_debug_argc, {second: 2})
+
+        lines = [line.strip() for line in py_path.read_text().splitlines()]
+        self.assertEqual([line for line in lines if line.startswith('CALL(')],
+                         ['CALL(SetAuto)', 'CALL(SetAuto, debug_argc = 2)'])
+        self.assertNotIn('debug_argc = {', '\n'.join(lines))
+
+    def test_rebuilds_identical(self):
+        result = check_round_trip(self.dat, Path(self.enterContext(tempfile.TemporaryDirectory())))
         self.assertEqual(result.status, Status.PASS, '\n'.join([result.summary, *result.details]))
 
 

@@ -300,8 +300,9 @@ stays.
 - **Two layers.** Structured statements lower to labels and jumps; the bottom layer lowers expressions,
   assignments, calls, labels and jumps. The bottom layer can compile the rewrite's MLIL directly: a
   round-trip test that isolates translator bugs from structuring bugs.
-- **Small blockers:** `CALL` resolves functions by their Python `__name__`; `debug_argc` cannot be
-  rebuilt from HLIL (it only affects debug records); `HLILSyscall.subsystem`/`cmd` are annotated `str`.
+- **Small blockers:** `CALL` resolves functions by their Python `__name__`; a `CALL`'s `debug_argc` (a
+  record keeping more args than the compiler's rule) has no HLIL form, so such a call gets the rule's record
+  (debug records only); `HLILSyscall.subsystem`/`cmd` are annotated `str`.
 
 ### HLIL DSL: Form
 

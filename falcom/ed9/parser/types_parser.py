@@ -113,7 +113,8 @@ class Function(StrictBase):
     params          : list[FunctionParam]
     is_common_func  : bool
     debug_info      : list[FunctionCallDebugInfo]
-    call_debug_argc : dict[str, int]    # CALL return label -> args passed explicitly, when fewer than the callee's params
+    call_written_argc : dict[int, int]  # local CALL offset -> args its debug record keeps, every paired local call
+    call_debug_argc : dict[int, int]    # the same, only where that isn't the compiler's rule (canonical_argc)
     entry_block     : BasicBlock | None
     unreachable_blocks : list[BasicBlock]   # code no branch reaches, linearly decoded (not linked into the CFG)
     stack_layout    : StackLayout | None    # set by the parser; a hand-built function has none
@@ -124,6 +125,7 @@ class Function(StrictBase):
         self.index      = None
         self.params     = []
         self.debug_info = []
+        self.call_written_argc = {}
         self.call_debug_argc = {}
         self.entry_block = None
         self.unreachable_blocks = []

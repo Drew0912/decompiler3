@@ -24,7 +24,7 @@ from falcom.ed9.parser.types_scp import ScpParamFlags
 from falcom.ed9.writer import scp_writer, scp_writer_helper, scp_writer_hook_registry, scp_writer_hooks
 from falcom.ed9.writer.scp_compile_check import CompileCheckError
 from falcom.ed9.writer.scp_writer_helper import *
-from tests.shared.scp_writer_test_utils import HEX, WriterTestCase, at, load_module, location
+from tests.shared.scp_writer_test_utils import HEX, WriterTestCase, at, load_module, local_call, location
 
 PUSH_POP_RETURN = ['PUSH_INT', 'POP', 'RETURN']
 CHAIN_LIMIT = 10            # more than any chain below: a chain that never ends shows as this many entries
@@ -256,38 +256,58 @@ class TestReplace(HookTestCase):
 
         self.assertFalse(self.dat.exists())
 
-    def test_debug_argc_cleared(self):
-        '''The original's record trimming is keyed by its return labels, which a copied body reuses for other calls'''
+    def test_replacement_calls_carry_their_own_counts(self):
+        '''A copied body reusing the original's return labels: its CALLs' counts are its own, not the original's'''
         @self.writer.LLILCode()
         def Callee(arg1: Value32, arg2: Value32):
             POP(2 * WORD_SIZE)
             RETURN()
 
-        @self.writer.LLILCode(debug_argc = {'ret': 1})
+        @self.writer.LLILCode()
         def Caller():
-            PUSH_CURRENT_FUNC_ID()
-            PUSH_RET_ADDR('ret')
-            PUSH_INT(1)
-            PUSH_INT(2)
-            CALL(Callee)
-            label('ret')
+            DEBUG_SET_LINENO(1)                     # call records start at a function's first line number
+            local_call(Callee, 'ret', ((PUSH_INT, 1), (PUSH_INT, 2)), debug_argc = 1)
             RETURN()
 
         @replace_function('Caller')
         def Copied():
-            DEBUG_SET_LINENO(1)                     # call records start at a function's first line number
-            PUSH_CURRENT_FUNC_ID()
-            PUSH_RET_ADDR('ret')
-            PUSH_INT(3)
-            PUSH_INT(4)
-            CALL(Callee)
-            label('ret')
+            DEBUG_SET_LINENO(1)
+            local_call(Callee, 'ret', ((PUSH_INT, 3), (PUSH_INT, 4)))
             RETURN()
 
         self.writer.build({})
 
         [record] = self.writer.functions_by_name['Caller'].debug_records
         self.assertEqual(len(record.args), 2)
+
+    def test_callee_defaults_from_its_final_signature(self):
+        '''A callee whose replacement changes a default, and one add_function adds: the rule reads the signature the
+        file gets'''
+        @self.writer.LLILCode()
+        def Callee(arg1: Value32, arg2: Value32 = 0):
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        @replace_function('Callee')
+        def NewDefault(arg1, arg2 = 5):
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        @add_function
+        def Added(arg1: Value32, arg2: Value32 = 5):
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Caller():
+            DEBUG_SET_LINENO(1)
+            local_call(Callee, 'callee', ((PUSH_INT, 5), (PUSH_INT, 1)))
+            local_call(Added, 'added', ((PUSH_INT, 5), (PUSH_INT, 1)))
+            RETURN()
+
+        self.writer.build({})
+
+        self.assertEqual([len(record.args) for record in self.writer.functions_by_name['Caller'].debug_records], [1, 1])
 
     def test_hook_imported_before_the_writer_exists(self):
         '''The generated script's own order: the hook import comes before create_scp_writer()'''
@@ -1337,6 +1357,76 @@ class TestOpcodeCallbacks(HookTestCase):
                 self.assertEqual((self.scripts_called(functions['Target']), debug_record.args[0].value.value),
                                  ([called], f'this.{called}'))
                 self.assertEqual(seen, [] if result is True else [('this', 'Old', 0)])
+
+    def test_debug_argc_reaches_only_its_own_call(self):
+        '''A CALL's debug_argc stays with it when a callback keeps it and goes when one drops it - never to the
+        callback (it sees (CALL, func) only), to a replacement CALL the callback emits, or to the next call'''
+        cases = {                                   # callback result, emits a replacement -> record counts
+            'kept': (None, False, [3, 1]),
+            'dropped': (True, False, [1]),
+            'replaced': (True, True, [1, 1]),
+        }
+        for case, (result, replace, expected) in cases.items():
+            with self.subTest(case):
+                # A dropped CALL leaves its setup and args on the stack: the compile check would reject that
+                self.writer = self.fresh_writer(check = result is None or replace)
+
+                @self.writer.LLILCode()
+                def Callee(arg1: Value32, arg2: Value32 = 1, arg3: Value32 = 2):
+                    POP(3 * WORD_SIZE)
+                    RETURN()
+
+                @self.writer.LLILCode()
+                def Main():
+                    DEBUG_SET_LINENO(1)
+                    local_call(Callee, 'annotated', ((PUSH_INT, 2), (PUSH_INT, 1), (PUSH_INT, 5)), debug_argc = 3)
+                    local_call(Callee, 'next', ((PUSH_INT, 2), (PUSH_INT, 1), (PUSH_INT, 5)))
+                    RETURN()
+
+                seen = []
+
+                def first_call(opcode, *args):
+                    if opcode == ED9Opcode.CALL and not seen:
+                        seen.append(args)
+                        if replace:
+                            CALL(Callee)
+
+                        return result
+
+                registerOpcodeCallback(first_call)
+                self.writer.build({})
+
+                self.assertEqual(seen, [(Callee,)])
+                self.assertEqual([len(record.args) for record in self.writer.functions_by_name['Main'].debug_records],
+                                 expected)
+
+    def test_bad_debug_argc_fails_before_the_callbacks(self):
+        '''CALL checks debug_argc itself: a callback that would drop the CALL never sees it'''
+        @self.writer.LLILCode()
+        def Callee():
+            RETURN()
+
+        @self.writer.LLILCode()
+        def Main():
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR('ret')
+            CALL(Callee, debug_argc = True)                     # line: bool debug_argc
+            label('ret')
+            RETURN()
+
+        seen = []
+
+        def drop_calls(opcode, *args):
+            if opcode == ED9Opcode.CALL:
+                seen.append(args)
+                return True
+
+        registerOpcodeCallback(drop_calls)
+        with self.assertRaisesRegex(TypeError, rf'^{at(__file__, "bool debug_argc")}Main: CALL debug_argc is True '
+                                               r'\(bool\), not int$'):
+            self.writer.build({})
+
+        self.assertEqual(seen, [])
 
     def test_library_and_inlined_bodies(self):
         '''The callbacks see every body that compiles: a library function's, and an original inline_original_func()

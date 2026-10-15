@@ -44,20 +44,23 @@ class Formatter:
         self.unreachable_targets: set[int] = set()   # offsets unreachable code branches to - each needs a label
         self.referenced_offsets: set[int] = set()    # offsets real reachable-code operands point at - each needs a label
         self.layout: StackLayout | None = None       # the stack and argument comments' source
+        self.call_debug_argc: dict[int, int] = {}    # CALL offset -> args its debug record keeps, off the compiler's rule
 
-    def format_entry_block(self, entry_block: 'BasicBlock', unreachable_blocks: 'list[BasicBlock]' = (), layout: 'StackLayout | None' = None) -> list[str]:
+    def format_entry_block(self, entry_block: 'BasicBlock', unreachable_blocks: 'list[BasicBlock]' = (), layout: 'StackLayout | None' = None,
+                           call_debug_argc: dict[int, int] | None = None) -> list[str]:
         """Format blocks starting from entry block (without function header), plus unreachable blocks in offset order;
-        layout gives the stack and argument comments"""
+        layout gives the stack and argument comments, call_debug_argc the CALLs that write their debug_argc"""
         # Reset formatted tracking
         self.formatted_offsets.clear()
         self.formatted_labels.clear()
         self.unreachable_targets = {target for block in unreachable_blocks for target in self.branch_targets(block)}
         self.layout = layout
+        self.call_debug_argc = call_debug_argc or {}
 
         # Collect reachable blocks and every offset a real instruction's Offset operand points at -
         # only those offsets earn a label, so a JMP/POP_JMP_*/PUSH_RET_ADDR/PUSH_CALLER_FRAME target
-        # (or debug_argc key, which is always one of those) always resolves, and the synthetic
-        # fall-through block after a conditional branch (referenced by nothing) does not.
+        # always resolves, and the synthetic fall-through block after a conditional branch (referenced by nothing)
+        # does not.
         reachable_blocks = self.collect_blocks(entry_block)
         self.referenced_offsets = self.find_referenced_offsets(entry_block, reachable_blocks = reachable_blocks)
 
@@ -101,17 +104,10 @@ class Formatter:
         lines = function_comments(func, self.context.comments)
         param_str = ', '.join(self.format_param(i, param) for i, param in enumerate(func.params))
         decorator = 'LLILCommonCode' if func.is_common_func else 'LLILCode'
-
-        if func.call_debug_argc:
-            lines.append(f'@scena.{decorator}(debug_argc = {{')
-            lines.extend(f"{self.indent}'{label}': {argc}," for label, argc in func.call_debug_argc.items())
-            lines.append('})')
-
-        else:
-            lines.append(f'@scena.{decorator}()')
-
+        lines.append(f'@scena.{decorator}()')
         lines.append(f'def {func.name}({param_str}):')
-        lines.extend(self.format_entry_block(func.entry_block, func.unreachable_blocks, func.stack_layout))
+        lines.extend(self.format_entry_block(func.entry_block, func.unreachable_blocks, func.stack_layout,
+                                             func.call_debug_argc))
 
         return lines
 
@@ -149,6 +145,11 @@ class Formatter:
 
             # Format instruction with context
             formatted = inst.descriptor.format_instruction(inst, self.context)
+            debug_argc = self.call_debug_argc.get(inst.offset)
+            if debug_argc is not None:
+                # Inside the CALL's parentheses: CALL(f) -> CALL(f, debug_argc = 2)
+                formatted = f'{formatted[:-1]}, debug_argc = {debug_argc})'
+
             lines.append(append_comment(formatted, instruction_comments(self.layout, inst, self.context.comments)))
 
         return lines

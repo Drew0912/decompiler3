@@ -1,8 +1,8 @@
 """Call-site debug records: CallDebugInfoTracker rebuilds the records a function's calls get from its opcodes (shared by
-the parser, ScpWriter, the listing and tools/scp_roundtrip_validator.py); each function's raw records, each record's
+the parser, ScpWriter, the listing and tools/scp_roundtrip_validator.py); how many args a local call's record keeps by
+the compiler's rule (canonical_argc, shared by the writer and the parser); each function's raw records, each record's
 raw arguments, a script call's callee id and name (script_call_identity, shared by the writer and the check), a
-record's view for comparing two files, and whether a record holds what its call would get (content only - the
-writer's own rules stay with the round-trip validator)"""
+record's view for comparing two files, and whether a record holds what its call would get (content only)"""
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
@@ -42,6 +42,7 @@ class TrackedCall:
     recorded    : bool                              # made after line info, so it has a debug record
     children    : list['TrackedCall'] = field(default_factory = list)  # the calls nested in its args, parameter order
     parent      : 'TrackedCall | None' = None
+    debug_argc  : int | None = None                 # the writer's CALL(f, debug_argc = N): args its record keeps
 
 
 def nested_calls(values) -> tuple[TrackedCall, ...]:
@@ -232,6 +233,37 @@ class CallDebugInfoTracker:
         self.calls.append(call)
         if returns:
             self.registers[RESULT_REGISTER] = TrackedValue(ScpFunctionCallDebugInfoArg.Type.CallResult, calls = (call,))
+
+
+def same_constant(payload: ScpValue, default: ScpValue) -> bool:
+    """payload stores the same word as default: the same type and encoded word, a string by its text"""
+    if payload.type != default.type:
+        return False
+
+    # Float by its encoded float32 word (-0.0, rounding); a Raw or in-range Integer word is its value
+    if payload.type == ScpValue.Type.Float:
+        return payload.to_word() == default.to_word()
+
+    return payload.value == default.value
+
+
+def canonical_argc(args: list[TrackedValue], defaults: list[ScpValue | None]) -> int:
+    """How many of a local call's args its debug record keeps by the compiler's rule: trailing constants equal to the
+    callee's defaults are dropped, up to the first that isn't one. defaults has one entry per callee parameter (None
+    without a default); another length (unresolved metadata) keeps every argument."""
+    count = len(args)
+    if len(defaults) != count:
+        return count
+
+    while count:
+        arg = args[count - 1]
+        default = defaults[count - 1]
+        if arg.type != ScpFunctionCallDebugInfoArg.Type.Constant or default is None or not same_constant(arg.payload, default):
+            break
+
+        count -= 1
+
+    return count
 
 
 def read_debug_records(parser: ScpParser, data: bytes) -> list[list[ScpFunctionCallDebugInfo]]:

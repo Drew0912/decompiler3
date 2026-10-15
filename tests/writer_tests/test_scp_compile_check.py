@@ -615,9 +615,8 @@ class TestRunOn(CheckTestCase):
                         writer.build({})
 
     def test_empty_last_function_points_at_its_def(self):
-        @self.writer.LLILCode(debug_argc = {
-            'unused': 1,
-        })
+        @self.writer.LLILCode(
+        )                                           # over two lines: the def's own line is the one reported
         def Last():                                 # line: last def
             pass
 

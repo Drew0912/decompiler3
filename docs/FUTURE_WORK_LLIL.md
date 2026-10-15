@@ -172,10 +172,9 @@ byte.
 - **`GLOBAL_VAR` and `label()` moved into `scp_writer_helper.py`** (item 13; Step 2b, done), next to
   `genLabel()`: they are DSL statements that emit no instruction. `GLOBAL_VAR` was the only non-opcode in
   the opcode handler, and `label()` sat at the end of `scp_writer.py`. No output change.
-- **Validate `debug_argc` keys** (found in Step 5's review, not planned). A key that names no return
-  label of the function's calls is silently ignored, so the call's debug record keeps all its arguments:
-  renaming a return label by hand quietly changes the debug-record bytes (not the game logic).
-  `_build_debug_records` could check that every key is the return label of one of the function's calls.
+- **Validate `debug_argc` keys** (found in Step 5's review; obsolete). The decorator's return-label keys
+  are gone: a count now rides on its own `CALL` (`CALL(f, debug_argc = N)`, debug records plan 3c Step 3),
+  so renaming a label can't detach it.
 - **Simpler Integer decode** (found in Step 5's review, not planned). `ScpValue.from_value` sign-extends
   an Integer by shifting through `0xC0000000`/`0x80000000` and a bytes round trip; with Step 5's
   `INTEGER_MAX` it is `value &= PAYLOAD_MASK`, then `value -= 1 << TYPE_SHIFT` past `INTEGER_MAX` (same

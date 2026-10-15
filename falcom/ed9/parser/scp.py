@@ -5,7 +5,7 @@ from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
-from .call_debug_records import PUSH_CONSTANT_OPS, CallDebugInfoTracker
+from .call_debug_records import PUSH_CONSTANT_OPS, CallDebugInfoTracker, canonical_argc
 from .string_pool import string_offset
 from ..metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT,
                         SCP_WRITER_HELPER_IMPORT)
@@ -580,6 +580,7 @@ class ScpParser(StrictBase):
     functions       : list[Function]
     global_vars     : list[GlobalVar]
     function_map    : dict[str, Function]
+    defaults_by_func_id : list[list[ScpValue | None]] | None = None    # func_defaults(), once the table is read
 
     def __init__(self, fs: fileio.FileStream, name: str = ''):
         self.fs = fs
@@ -1068,18 +1069,29 @@ class ScpParser(StrictBase):
         return [inst for block in func.unreachable_blocks for inst in block.instructions]
 
     def pair_call_debug_info(self, func: Function):
-        """Recover each local CALL's explicit arg count - its debug record drops trailing default args"""
-        calls = CallDebugInfoTracker.from_instructions(self.get_instructions(func), self.get_func_argc).ordered_calls()
+        """Recover the args each local CALL's debug record keeps, by CALL offset; where that isn't the compiler's rule
+        (canonical_argc) the .py writes it on the CALL"""
+        calls = CallDebugInfoTracker.replay(self.get_instructions(func), self.get_func_argc)
         if len(calls) != len(func.debug_info):
             log.warning(f'{func.name}: {len(calls)} call sites but {len(func.debug_info)} debug records, debug_argc not recovered')
             return
 
-        for call, info in zip(calls, func.debug_info):
-            if call.call_type != ScpFunctionCallDebugInfo.CallType.Local or call.ret_label is None:
+        defaults = self.func_defaults()
+        for (call, offset), info in zip(calls, func.debug_info):
+            if call.call_type != ScpFunctionCallDebugInfo.CallType.Local:
                 continue
 
-            if len(info.args) != len(call.args):
-                func.call_debug_argc[f'loc_{call.ret_label:X}'] = len(info.args)
+            written = len(info.args)
+            func.call_written_argc[offset] = written
+            if written != canonical_argc(call.args, defaults[call.target]):
+                func.call_debug_argc[offset] = written
+
+    def func_defaults(self) -> list[list[ScpValue | None]]:
+        """Each function's defaults by table index, one entry per parameter (None without a default); built once"""
+        if self.defaults_by_func_id is None:
+            self.defaults_by_func_id = [[param.default_value for param in func.params] for func in self.functions]
+
+        return self.defaults_by_func_id
 
     def find_unreachable_code(self, functions: list[Function], has_all_functions: bool):
         """Linearly decode the bytes no branch reaches (between reachable instructions and up to the next function) into func.unreachable_blocks"""

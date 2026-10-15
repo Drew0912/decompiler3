@@ -778,11 +778,16 @@ class TestErrorWrapping(unittest.TestCase):
         self.assertIsNone(caught.exception.__cause__)
 
 
-class TestDebugArgcRecovery(unittest.TestCase):
-    '''round_trip: a local CALL that passes fewer arguments than the callee has parameters (the compiler pushed the
-    defaults) records its explicit count, which the .py keeps as debug_argc'''
+def call_offsets(parser: ScpParser, func: Function) -> list[int]:
+    return [inst.offset for inst in parser.get_instructions(func) if inst.opcode == ED9Opcode.CALL]
 
-    def program(self, explicit_args: int) -> Program:
+
+class TestDebugArgcRecovery(unittest.TestCase):
+    '''round_trip: a paired local CALL's recorded arg count by its offset (call_written_argc); the .py writes it on the
+    CALL (call_debug_argc) only where it isn't the compiler's rule - trailing constants equal to the callee's defaults
+    dropped. The call is callee(RIGHT_VALUE, LEFT_VALUE).'''
+
+    def program(self, explicit_args: int, last_default: int | None = None) -> Program:
         callee = returning_callee(argc = 2)
         caller = Asm()
         caller.debug_set_lineno(1)
@@ -790,26 +795,69 @@ class TestDebugArgcRecovery(unittest.TestCase):
         caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE)
         caller.call(CALLEE_ID); caller.label('ret'); caller.ret()
         program = Program(main_function(caller), callee)
+        if last_default is not None:
+            program.entries[CALLEE_ID].params[-1].default_value = ScpValue(last_default)
 
         info = FunctionCallDebugInfo()
         info.func_name = CALLEE_NAME
         info.call_type = ScpFunctionCallDebugInfo.CallType.Local
-        info.args = [FunctionCallDebugInfo.ArgInfo(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(LEFT_VALUE))
-                     for _ in range(explicit_args)]
+        info.args = [FunctionCallDebugInfo.ArgInfo(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(value))
+                     for value in (RIGHT_VALUE, LEFT_VALUE)[:explicit_args]]
         program.entries[0].debug_info = [info]
         return program
 
-    def disassemble(self, program: Program) -> Function:
-        parser = program.parser()
-        parser.round_trip = True
-        return parser.disasm_all_functions()[0]
+    def test_counts_by_call_offset(self):
+        '''(recorded args, the callee's last default) -> whether the .py writes the count'''
+        cases = {
+            'fewer than the parameters, no default': (1, None, True),
+            'all, no default': (2, None, False),
+            'the default left out': (1, LEFT_VALUE, False),
+            'the default written out': (2, LEFT_VALUE, True),
+            'all, another default': (2, RIGHT_VALUE, False),
+        }
+        for case, (explicit_args, last_default, written_on_the_call) in cases.items():
+            with self.subTest(case):
+                parser = self.program(explicit_args, last_default).parser()
+                parser.round_trip = True
+                func = parser.disasm_all_functions()[0]
+                [offset] = call_offsets(parser, func)
 
-    def test_fewer_explicit_arguments_than_parameters_is_recorded_at_the_return_label(self):
-        program = self.program(explicit_args = 1)
-        self.assertEqual(self.disassemble(program).call_debug_argc, {f'loc_{program.label("ret"):X}': 1})
+                self.assertEqual(func.call_written_argc, {offset: explicit_args})
+                self.assertEqual(func.call_debug_argc, {offset: explicit_args} if written_on_the_call else {})
 
-    def test_all_arguments_explicit_records_nothing(self):
-        self.assertEqual(self.disassemble(self.program(explicit_args = 2)).call_debug_argc, {})
+
+class TestDebugArgcFormatting(unittest.TestCase):
+    '''The .py writes a count on its CALL line, inside the parentheses; the decorator is always plain'''
+
+    def disassemble(self) -> tuple[Function, int]:
+        '''The main function of TestDebugArgcRecovery's program and its CALL's offset'''
+        parser = TestDebugArgcRecovery().program(explicit_args = 1).parser()
+        func = parser.disasm_all_functions()[0]
+        [offset] = call_offsets(parser, func)
+        return func, offset
+
+    def test_count_on_its_call_line(self):
+        func, offset = self.disassemble()
+        func.call_debug_argc = {offset: 1}
+        lines = [line.strip() for line in Formatter(FormatterContext()).format_function(func)]
+
+        self.assertIn('@scena.LLILCode()', lines)
+        [call] = [line for line in lines if line.startswith('CALL(')]
+        self.assertTrue(call.endswith(', debug_argc = 1)'), call)
+
+    def test_a_reused_formatter_keeps_no_count(self):
+        '''A later function with a CALL at the same offset, and a block formatted on its own'''
+        annotated, offset = self.disassemble()
+        annotated.call_debug_argc = {offset: 1}
+        plain, same_offset = self.disassemble()
+        self.assertEqual(same_offset, offset)
+        formatter = Formatter(FormatterContext())
+        formatter.format_function(annotated)
+
+        for case, lines in (('function', formatter.format_function(plain)),
+                            ('block', formatter.format_entry_block(plain.entry_block))):
+            with self.subTest(case):
+                self.assertNotIn('debug_argc', '\n'.join(lines))
 
 
 class TestDebugArgcRecoveryOrder(unittest.TestCase):
@@ -833,13 +881,15 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
         return info
 
     @classmethod
-    def call_debug_argc(cls, caller: Asm, records: list[FunctionCallDebugInfo]) -> tuple[dict, Program]:
+    def call_debug_argc(cls, caller: Asm, records: list[FunctionCallDebugInfo]) -> tuple[dict, list[int]]:
+        '''Main's call_debug_argc and its CALL offsets in address order'''
         callee = returning_callee(argc = cls.CALLEE_ARGC)
         program = Program(main_function(caller), callee._replace(name = 'outer'), callee._replace(name = 'inner'))
         program.entries[0].debug_info = records
         parser = program.parser()
         parser.round_trip = True
-        return parser.disasm_all_functions()[0].call_debug_argc, program
+        func = parser.disasm_all_functions()[0]
+        return func.call_debug_argc, call_offsets(parser, func)
 
     @classmethod
     def push_inner_call(cls, caller: Asm, ret: str):
@@ -861,8 +911,8 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
         caller.call(self.OUTER_ID); caller.label('outer'); caller.ret()
         records = [self.record('outer', CallType.Local, [0, 0]), self.record('inner', CallType.Local, [LEFT_VALUE]),
                    self.record('inner', CallType.Local, [LEFT_VALUE, RIGHT_VALUE])]
-        debug_argc, program = self.call_debug_argc(caller, records)
-        self.assertEqual(debug_argc, {f'loc_{program.label("first"):X}': 1})
+        debug_argc, [_, first, _] = self.call_debug_argc(caller, records)  # address order: second, first, outer
+        self.assertEqual(debug_argc, {first: 1})
 
     def test_register_carried_tail_argument_pairs_after_the_previous_call(self):
         '''inner(..) keeping one argument, then a tail call whose constant argument waits in a register'''
@@ -875,8 +925,8 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
         caller.call_script_no_return(1)
         records = [self.record('inner', CallType.Local, [LEFT_VALUE]),
                    self.record(self.TAIL_NAME, CallType.ScriptNoReturn, [self.TAIL_NAME, self.TAIL_VALUE])]
-        debug_argc, program = self.call_debug_argc(caller, records)
-        self.assertEqual(debug_argc, {f'loc_{program.label("ret"):X}': 1})
+        debug_argc, [inner] = self.call_debug_argc(caller, records)
+        self.assertEqual(debug_argc, {inner: 1})
 
 
 class TestBlockSplits(unittest.TestCase):

@@ -162,17 +162,20 @@ class TestOpcodeFunctions(unittest.TestCase):
                 if inspect.isfunction(func) and func.__module__ == scp_writer_opcode_handler.__name__}
 
     def test_each_function_emits_its_own_opcode(self):
-        '''Every statement of the DSL hands the writer its opcode and operands; none returns before it'''
+        '''Every statement of the DSL hands the writer its opcode and operands; none returns before it. CALL's
+        debug_argc goes as a keyword, so the opcode callbacks never see it'''
         writer = body_writer()
         functions = self.opcode_functions()
         no_operands = {name: () for name in ED9Opcode.__members__ if name not in self.ARGS}
         args = {**no_operands, **self.ARGS}
         emitted = []
-        with mock.patch.object(writer, 'handle_opcode', lambda opcode, *operands: emitted.append((opcode, operands))):
+        with mock.patch.object(writer, 'handle_opcode',
+                               lambda opcode, *operands, **keywords: emitted.append((opcode, operands, keywords))):
             for name, func in functions.items():
                 func(*args[name])
 
-        self.assertEqual(emitted, [(ED9Opcode[name], args[name]) for name in functions])
+        self.assertEqual(emitted, [(ED9Opcode[name], args[name], {'debug_argc': None} if name == 'CALL' else {})
+                                   for name in functions])
 
     def test_each_function_checks_its_argument_types(self):
         '''Every argument of every opcode function is checked against its annotation'''
@@ -181,9 +184,12 @@ class TestOpcodeFunctions(unittest.TestCase):
             for number, param in enumerate(inspect.signature(func).parameters.values()):
                 with self.subTest(f'{name} {param.name}'):
                     args = list(self.ARGS[name])
-                    args[number] = object()
-                    if name == 'CALL':
+                    args[number:number + 1] = [object()]
+                    if name == 'CALL' and param.name == 'func':
                         message = r'CALL takes the function itself, not <object object at 0x\w+>'
+
+                    elif name == 'CALL':
+                        message = r'CALL debug_argc is <object object at 0x\w+> \(object\), not int'
 
                     else:
                         types = [kind.__name__ for kind in get_args(param.annotation) or (param.annotation,)]
