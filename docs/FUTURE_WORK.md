@@ -689,7 +689,8 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
 
 ## ED8 Support (`dc3/fileio.py`, `falcom/ed9/disasm/ed9_optable.py`)
 
-**Planned, not started** (user, 2026-10-12). Notes for when it starts, from decompiler2's ED8.x support:
+**Planned, not started** (user, 2026-10-12); unscheduled, much later (user, 2026-10-15). Notes for when it starts,
+from decompiler2's ED8.x support:
 - **Wider reads:** `FileStream` reads only 8/16/32-bit integers and float32. decompiler2's operand tables also have
   64-bit integers (`q`, `Q`) and float64 (`d`), so ED8 adds `ReadLong64`/`ReadULong64`/`ReadDouble` (their letters
   in `STRUCT_FORMATS`), tested against ED8 scripts, once it is known which ED8 instructions use them.
@@ -698,3 +699,30 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
   a two-way table (`ChrTable[id]`), and the generated script writes `ChrTable['name']`, evaluated back to the integer
   when it runs (decompiler2 `Falcom/ED83/InstructionTable/types.py`, `Falcom/ED83/Parser/scena_writer_helper.py`).
   decompiler2's ED9 table has these descriptors too, with the letters commented out: no ED9 instruction uses them.
+- **Feasibility study** (2026-10-15, user asked; report and scripts in `notes/ed85_mlil_feasibility/`; the only sample
+  is `decompiler2/Decompiler2/Falcom/ED85/btlcom.dat`): lifting ED85 straight into the generic MLIL, with no LLIL,
+  needs no `ir/` change. A hand-built ED85-shaped MLIL function went through `optimize_mlil`, the HLIL passes and the
+  TypeScript output with its loop and switch recovered. A whole-file prototype then lifted all 133 code functions of
+  `btlcom.dat` with no failures and no `goto` left (`btlcom_proto.py`). Its front end reads decompiler2's decoded
+  `btlcom.py` with `ast`, so a real ED85 decoder is still to be written.
+  - **Bytecode:** command-based; every operand is self-contained, with no operand stack across instructions.
+    Conditions are RPN programs ending in `Return`, and `Eval` embeds a command whose result the expression uses.
+    ED85 adds a debug word to each instruction (24-bit source line, size byte). A stdlib walker decodes all 133 code
+    functions (3,765 instructions, 830 branch targets).
+  - **Families:** ED83 -> ED84 -> ED85 are one engine, each game's opcode table the previous one plus changes
+    (decompiler2's `update()`). ED81 / ED82 (Cold Steel 1-2, not in decompiler2) are believed to be the same engine
+    with other opcodes (user, unverified). ED6 / ED62 are another engine that shares the RPN operator numbering.
+    Layout: one package per engine (`falcom/ed8/`, `falcom/ed6/`).
+  - **Registers:** built-in commands touch registers only through explicit register-index operands
+    (`BattleTargetsIterReset(regIndex, ..)` writes it), so they can be lifted with `clobbers_registers = False`. A
+    script `Call` can change registers: `AniCheckDeadTarget` sets reg 7, and four callers branch on reg 7 right after
+    calling it. Calls between script functions keep the clobbering default, or get a per-callee summary of the
+    registers they write (41 of the 133 functions write one, directly or through a call). Registers must be MLIL
+    globals, whose writes outlive the function: as register variables, the SSA dead-code pass deletes a write the
+    function never reads again, which lost `AniCheckDeadTarget`'s `reg7` in the prototype's first run.
+  - **SSA optimizer:** no stack slots to turn into variables, but across the whole file it propagates copies and
+    constants: `KISIN_SET_FIRST_CP` sets `reg2 = 0`, then tests `reg2 >= 3`, `reg2 == 2`, ..., which print as
+    `if (false)` - branches the script itself never reaches.
+  - **Risks:** 161 of the 214 ED85 opcodes are unnamed in decompiler2, some affecting data flow (`OP_0C` / `OP_0D` /
+    `OP_0E`, likely frame slots; `Expr24` / `Expr25`); one sample, with no dialogue text; the validators assume an
+    LLIL layer.
