@@ -9,7 +9,8 @@ from dc3 import fileio
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.types_parser import Function, FunctionParam
-from falcom.ed9.parser.types_scp import ScpFunctionEntry, ScpParamFlags, ScpValue, Value32
+from falcom.ed9.parser.types_scp import (ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry,
+                                         ScpParamFlags, ScpValue, Value32)
 from ir.llil.llil import WORD_SIZE
 
 
@@ -236,3 +237,30 @@ def returning_callee(argc: int = 0) -> Func:
 
     callee.ret()
     return Func(CALLEE_NAME, argc, callee)
+
+
+def debug_records(*records: tuple) -> tuple[bytes, list[ScpFunctionCallDebugInfo]]:
+    '''Raw call debug records and the bytes holding their args (a parser's data): each record is (call type, func_id,
+    args), each arg (arg type, value) - a constant's value an int, float or str, any other arg's NON_CONSTANT_VALUE.
+    The args come first, their strings after them.'''
+    arg_count = sum(len(args) for _, _, args in records)
+    args_bytes = bytearray()
+    strings = bytearray()
+    raw = []
+    for call_type, func_id, args in records:
+        record = ScpFunctionCallDebugInfo()
+        record.func_id, record.call_type, record.arg_count, record.info_offset = func_id, call_type, len(args), len(args_bytes)
+        for arg_type, value in args:
+            if isinstance(value, str):
+                offset = arg_count * ScpFunctionCallDebugInfoArg.SIZE + len(strings)
+                word = ScpValue.Type.String << ScpValue.TYPE_SHIFT | offset
+                strings += value.encode() + STRING_TERMINATOR
+
+            else:
+                word = ScpValue(value).to_word()
+
+            args_bytes += ScpFunctionCallDebugInfoArg.LAYOUT.pack(word, arg_type)
+
+        raw.append(record)
+
+    return bytes(args_bytes + strings), raw

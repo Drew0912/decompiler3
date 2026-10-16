@@ -5,7 +5,7 @@ from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
-from .call_debug_records import PUSH_CONSTANT_OPS, CallDebugInfoTracker, canonical_argc
+from .call_debug_records import PUSH_CONSTANT_OPS, canonical_argc, pair_records
 from .string_pool import string_offset
 from ..metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT,
                         SCP_WRITER_HELPER_IMPORT)
@@ -581,6 +581,7 @@ class ScpParser(StrictBase):
     global_vars     : list[GlobalVar]
     function_map    : dict[str, Function]
     defaults_by_func_id : list[list[ScpValue | None]] | None = None    # func_defaults(), once the table is read
+    data            : bytes | None = None   # round_trip: the file's bytes, which the call debug records pair against
 
     def __init__(self, fs: fileio.FileStream, name: str = ''):
         self.fs = fs
@@ -710,36 +711,14 @@ class ScpParser(StrictBase):
 
             functions.append(func)
 
-        # Call debug records only give each local CALL's explicit arg count (debug_argc), kept for a byte-exact round trip
+        # Call debug records only give each local CALL's explicit arg count (debug_argc), kept for a byte-exact round trip;
+        # paired with the calls against the file's bytes, as the listing and the validator do
         if not self.round_trip:
             return functions
 
-        for i, func in enumerate(functions):
-            entry = func_entries[i]
-            fs.Position = entry.debug_info_offset
-            debug_info_list = self.read_debug_info(fs, entry)
-
-            for dbg_info in debug_info_list:
-                info = FunctionCallDebugInfo()
-                info.call_type = dbg_info.call_type
-
-                if dbg_info.func_id != ScpFunctionCallDebugInfo.NO_FUNC_ID:
-                    if dbg_info.func_id >= len(functions):
-                        raise ValueError(f'debug info func_id out of range: {dbg_info.func_id} >= {len(functions)}')
-
-                    info.func_name = functions[dbg_info.func_id].name
-
-                else:
-                    info.func_name = f'{dbg_info.call_type}'
-
-                fs.Position = dbg_info.info_offset
-                for _ in range(dbg_info.arg_count):
-                    arg_value = ScpValue(fs = fs)
-                    arg_type = fs.ReadULong()
-
-                    info.args.append(FunctionCallDebugInfo.ArgInfo(arg_type, arg_value))
-
-                func.debug_info.append(info)
+        self.data = fs.ReadAll()
+        for func, entry in zip(functions, func_entries):
+            func.debug_info = self.read_debug_info(fs, entry)
 
         return functions
 
@@ -1040,13 +1019,15 @@ class ScpParser(StrictBase):
 
                 raise error from e
 
-            if self.round_trip:
-                self.pair_call_debug_info(func)
-
         self.require_disjoint_instructions(disassembled_functions)
 
         if self.keep_unreachable_code:
             self.find_unreachable_code(disassembled_functions, has_all_functions = filter_func is None)
+
+        # After the dead code is decoded: its calls have records too
+        if self.round_trip:
+            for func in disassembled_functions:
+                self.pair_call_debug_info(func)
 
         self.require_code_before_strings(disassembled_functions)
 
@@ -1069,22 +1050,24 @@ class ScpParser(StrictBase):
         return [inst for block in func.unreachable_blocks for inst in block.instructions]
 
     def pair_call_debug_info(self, func: Function):
-        """Recover the args each local CALL's debug record keeps, by CALL offset; where that isn't the compiler's rule
-        (canonical_argc) the .py writes it on the CALL"""
-        calls = CallDebugInfoTracker.replay(self.get_instructions(func), self.get_func_argc)
-        if len(calls) != len(func.debug_info):
-            log.warning(f'{func.name}: {len(calls)} call sites but {len(func.debug_info)} debug records, debug_argc not recovered')
+        """Recover the args each local CALL's debug record keeps, by CALL offset, from its calls in the code the .py
+        prints (reachable and decoded dead code); where that isn't the compiler's rule (canonical_argc) the .py writes
+        it on the CALL"""
+        pairing = pair_records(self.data, self.code_instructions(func), func.debug_info, self.get_func_argc,
+                               self.get_func_index)
+        if not pairing.paired:
+            log.warning(f'{func.name}: records not paired: {pairing.reason}; the .py writes no debug_argc')
             return
 
         defaults = self.func_defaults()
-        for (call, offset), info in zip(calls, func.debug_info):
-            if call.call_type != ScpFunctionCallDebugInfo.CallType.Local:
+        for match in pairing.matches:
+            if match.call.call_type != ScpFunctionCallDebugInfo.CallType.Local:
                 continue
 
-            written = len(info.args)
-            func.call_written_argc[offset] = written
-            if written != canonical_argc(call.args, defaults[call.target]):
-                func.call_debug_argc[offset] = written
+            written = match.record.arg_count
+            func.call_written_argc[match.offset] = written
+            if written != canonical_argc(match.call.args, defaults[match.call.target]):
+                func.call_debug_argc[match.offset] = written
 
     def func_defaults(self) -> list[list[ScpValue | None]]:
         """Each function's defaults by table index, one entry per parameter (None without a default); built once"""

@@ -12,7 +12,7 @@ from ir.llil.llil import default_label_for_addr
 from ..disasm import CommentOptions, ED9Opcode, Formatter, FormatterContext, Instruction, OperandType
 from ..disasm.ed9_optable import ED9OperandType
 from ..disasm.llil_dsl_comments import instruction_comments, label_comments
-from .call_debug_records import CallDebugInfoTracker, read_debug_records, record_args, record_mismatch
+from .call_debug_records import pair_records, read_debug_records, record_args
 from .code_layout import code_order, code_start, dropped_ranges, function_extents
 from .scp import OPCODE_SIZE, PUSH_ENCODED_OPS, ScpParser
 from .string_pool import StringPoolSection, collect_string_refs, pool_strings, read_text, read_u32, string_offset
@@ -269,17 +269,12 @@ class ScpListing:
 
     def pairing(self, func: Function) -> tuple[dict[int, int], str | None]:
         """Each record's call offset when every record holds what its call gets (content only), else why not"""
-        pairs = CallDebugInfoTracker.replay(self.parser.code_instructions(func), self.parser.get_func_argc)
-        records = self.records[func.index]
-        if len(pairs) != len(records):
-            return {}, f'records not paired: {len(pairs)} calls, {len(records)} records'
+        pairing = pair_records(self.data, self.parser.code_instructions(func), self.records[func.index],
+                               self.parser.get_func_argc, self.parser.get_func_index)
+        if not pairing.paired:
+            return {}, f'records not paired: {pairing.reason}'
 
-        for i, ((call, _), record) in enumerate(zip(pairs, records)):
-            problem = record_mismatch(self.data, call, record, self.parser.get_func_index)
-            if problem is not None:
-                return {}, f'records not paired: record {i} differs from its call ({problem})'
-
-        return {i: offset for i, (_, offset) in enumerate(pairs)}, None
+        return pairing.record_offsets, None
 
     def record_text(self, record: ScpFunctionCallDebugInfo) -> str:
         args = []

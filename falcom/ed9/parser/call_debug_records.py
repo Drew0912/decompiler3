@@ -2,7 +2,8 @@
 the parser, ScpWriter, the listing and tools/scp_roundtrip_validator.py); how many args a local call's record keeps by
 the compiler's rule (canonical_argc, shared by the writer and the parser); each function's raw records, each record's
 raw arguments, a script call's callee id and name (script_call_identity, shared by the writer and the check), a
-record's view for comparing two files, and whether a record holds what its call would get (content only)"""
+record's view for comparing two files, whether a record holds what its call would get (content only), and the
+pairing of a function's records with its calls (pair_records, shared by the parser, the listing and the validator)"""
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
@@ -267,7 +268,7 @@ def canonical_argc(args: list[TrackedValue], defaults: list[ScpValue | None]) ->
 
 
 def read_debug_records(parser: ScpParser, data: bytes) -> list[list[ScpFunctionCallDebugInfo]]:
-    """Each function's raw records in table order, read from the file's bytes (the parser keeps converted ones only)"""
+    """Each function's raw records in table order, read from the file's bytes (without a round-trip parse)"""
     fs = fileio.FileStream().OpenMemory(data)
     return [parser.read_debug_info(fs, entry) for entry in parser.function_entries]
 
@@ -315,6 +316,70 @@ def script_call_identity(call_type: ScpFunctionCallDebugInfo.CallType, module: s
         return (index if index is not None else ScpFunctionCallDebugInfo.NO_FUNC_ID), func
 
     return ScpFunctionCallDebugInfo.NO_FUNC_ID, f'{module}.{func}'
+
+
+@dataclass(frozen = True, slots = True)
+class RecordMatch:
+    """A record and the call it belongs to"""
+    record_index    : int
+    record          : ScpFunctionCallDebugInfo
+    call            : TrackedCall
+    offset          : int                           # the call instruction's offset
+
+
+@dataclass(frozen = True, slots = True)
+class RecordPairing:
+    """A function's records against its recorded calls (record order): the matches, the calls and records left
+    unmatched (indices) and every record that differs from the call it pairs with"""
+    matches             : list[RecordMatch]
+    unmatched_calls     : list[int]
+    unmatched_records   : list[int]
+    mismatches          : list[tuple[int, str]]     # (record index, how it differs from its call)
+    call_count          : int
+    record_count        : int
+
+    @property
+    def paired(self) -> bool:
+        return not (self.unmatched_calls or self.unmatched_records or self.mismatches)
+
+    @property
+    def record_offsets(self) -> dict[int, int]:
+        """Each matched record's call offset, by record index"""
+        return {match.record_index: match.offset for match in self.matches}
+
+    @property
+    def reason(self) -> str | None:
+        """Why the records aren't paired - the parser's warning and the listing's note - or None"""
+        if self.call_count != self.record_count:
+            return f'{self.call_count} calls, {self.record_count} records'
+
+        if self.mismatches:
+            index, problem = self.mismatches[0]
+            return f'record {index} differs from its call ({problem})'
+
+        return None
+
+
+def pair_records(data: bytes, instructions: list[Instruction], records: list[ScpFunctionCallDebugInfo],
+                 get_param_count: Callable[[Any], int], table_index: Callable[[str], int | None]) -> RecordPairing:
+    """A function's records (raw, read from data) against the recorded calls of its instructions (address order): with
+    equal counts each record pairs with the call at its index, content-checked (record_mismatch); otherwise nothing
+    is matched"""
+    calls = CallDebugInfoTracker.replay(instructions, get_param_count)
+    if len(calls) != len(records):
+        return RecordPairing([], list(range(len(calls))), list(range(len(records))), [], len(calls), len(records))
+
+    matches = []
+    mismatches = []
+    for index, ((call, offset), record) in enumerate(zip(calls, records)):
+        problem = record_mismatch(data, call, record, table_index)
+        if problem is None:
+            matches.append(RecordMatch(index, record, call, offset))
+
+        else:
+            mismatches.append((index, problem))
+
+    return RecordPairing(matches, [], [], mismatches, len(calls), len(records))
 
 
 def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebugInfo,

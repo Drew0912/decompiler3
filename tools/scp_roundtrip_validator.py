@@ -22,7 +22,7 @@ Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler l
     string pool     never deduplicated: code refs (code order, unreachable code included), names, default
                     strings, debug-only strings, global var names (index order, always last);
                     falcom/ed9/parser/string_pool.py
-    debug records   every record rebuilt from its call site with CallDebugInfoTracker
+    debug records   every record rebuilt from its call site, dead code included (call_debug_records.pair_records)
     round trip      (--round-trip) decompile into a work dir, delete the copy, run the generated .py,
                     byte-compare with the original; when they differ, also compare the two files' debug
                     records function by function (the first difference in each, see compare_file_records)
@@ -73,8 +73,7 @@ from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
 from falcom.ed9.metadata.fingerprint import function_fingerprint
-from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, RecordView, read_debug_records, record_mismatch,
-                                                  record_view)
+from falcom.ed9.parser.call_debug_records import RecordView, pair_records, read_debug_records, record_view
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.parser.crc32 import hash_func_Name
 from falcom.ed9.parser.scp import ScpParser
@@ -354,21 +353,16 @@ def check_debug_records(ctx: ScriptContext) -> CheckResult:
     dropped = 0
 
     for index, func in enumerate(ctx.parser.functions):
-        calls = [call for call, _ in CallDebugInfoTracker.replay(ctx.instructions[index], ctx.parser.get_func_argc)]
-        records = ctx.records[index]
-        if len(calls) != len(records):
-            failures.append(f'{func.name}: {len(calls)} call sites with line info, {len(records)} debug records')
+        # Dead calls have records too: pair over the code the .py prints, reachable and dead
+        pairing = pair_records(ctx.data, ctx.parser.code_instructions(func), ctx.records[index], ctx.parser.get_func_argc,
+                               ctx.parser.get_func_index)
+        if pairing.call_count != pairing.record_count:
+            failures.append(f'{func.name}: {pairing.call_count} call sites with line info, {pairing.record_count} debug records')
             continue
 
-        for i, (call, record) in enumerate(zip(calls, records)):
-            problem = record_mismatch(ctx.data, call, record, ctx.parser.get_func_index)
-            if problem is not None:
-                failures.append(f'{func.name} record {i}: {problem}')
-                continue
-
-            rebuilt += 1
-            if record.arg_count < len(call.args):
-                dropped += 1
+        failures += [f'{func.name} record {i}: {problem}' for i, problem in pairing.mismatches]
+        rebuilt += len(pairing.matches)
+        dropped += sum(match.record.arg_count < len(match.call.args) for match in pairing.matches)
 
     summary = f'{rebuilt} records rebuilt ({dropped} with dropped default args)'
     return CheckResult.build('debug records', summary, failures)
@@ -621,7 +615,7 @@ def file_record_views(data: bytes) -> dict[str, list[RecordView]]:
     """Each function's record views by name, in table order: the header, table and raw records only, no disassembly"""
     with fileio.FileStream(data) as fs:
         parser = ScpParser(fs)
-        parser.round_trip = False   # no converted records: they reject a func_id out of range, record_view shows it
+        parser.round_trip = False   # the table and names only: the raw records come from data
         parser.parse()
 
     names = [func.name for func in parser.functions]

@@ -19,16 +19,17 @@ from falcom.ed9.disasm import (
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblyError, ScpParser
-from falcom.ed9.parser.types_parser import Function, FunctionCallDebugInfo, SlotRef, StackLayout
+from falcom.ed9.parser.types_parser import Function, SlotRef, StackLayout
 from falcom.ed9.parser.types_scp import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
 from falcom.ed9.ir.llil import ED9VMLifter
 from ir.llil.llil import WORD_SIZE
 from tests.shared.scp_asm import (
     CALLEE_ID, CALLEE_NAME, CALLER_ID, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, PARAM_COUNT, REG_INDEX, RIGHT_VALUE,
-    STRINGS, SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm, Func, Program, main_function, returning_callee,
+    STRINGS, SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm, Func, Program, debug_records, main_function, returning_callee,
 )
 
-
+ArgType = ScpFunctionCallDebugInfoArg.Type
+CallType = ScpFunctionCallDebugInfo.CallType
 LOOP_LIMIT = 10
 OUTSIDE_OFFSET = 0x1000
 EARLIER_FUNCTION_START = 0                          # the first function's code, before the main one
@@ -779,7 +780,12 @@ class TestErrorWrapping(unittest.TestCase):
 
 
 def call_offsets(parser: ScpParser, func: Function) -> list[int]:
-    return [inst.offset for inst in parser.get_instructions(func) if inst.opcode == ED9Opcode.CALL]
+    '''Its CALLs' offsets, reachable and decoded dead code, in address order'''
+    return [inst.offset for inst in parser.code_instructions(func) if inst.opcode == ED9Opcode.CALL]
+
+
+def constants(*values) -> list:
+    return [(ArgType.Constant, value) for value in values]
 
 
 class TestDebugArgcRecovery(unittest.TestCase):
@@ -787,24 +793,33 @@ class TestDebugArgcRecovery(unittest.TestCase):
     CALL (call_debug_argc) only where it isn't the compiler's rule - trailing constants equal to the callee's defaults
     dropped. The call is callee(RIGHT_VALUE, LEFT_VALUE).'''
 
-    def program(self, explicit_args: int, last_default: int | None = None) -> Program:
+    @classmethod
+    def program(cls, last_default: int | None = None, dead_call: bool = False) -> Program:
+        '''Main calls the callee; dead_call: and again after its RETURN, as the compiler leaves dead code'''
         callee = returning_callee(argc = 2)
         caller = Asm()
         caller.debug_set_lineno(1)
-        caller.push_raw(CALLER_ID); caller.push_raw('ret')
-        caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE)
-        caller.call(CALLEE_ID); caller.label('ret'); caller.ret()
+        for ret in ('ret', 'dead_ret') if dead_call else ('ret',):
+            caller.push_raw(CALLER_ID); caller.push_raw(ret)
+            caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE)
+            caller.call(CALLEE_ID); caller.label(ret); caller.ret()
+
         program = Program(main_function(caller), callee)
         if last_default is not None:
             program.entries[CALLEE_ID].params[-1].default_value = ScpValue(last_default)
 
-        info = FunctionCallDebugInfo()
-        info.func_name = CALLEE_NAME
-        info.call_type = ScpFunctionCallDebugInfo.CallType.Local
-        info.args = [FunctionCallDebugInfo.ArgInfo(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(value))
-                     for value in (RIGHT_VALUE, LEFT_VALUE)[:explicit_args]]
-        program.entries[0].debug_info = [info]
         return program
+
+    @classmethod
+    def parser(cls, program: Program, *counts: int, keep_unreachable_code: bool = False) -> ScpParser:
+        '''A round_trip parser of program, main's records keeping counts args of the callee's'''
+        data, records = debug_records(*[(CallType.Local, CALLEE_ID, constants(RIGHT_VALUE, LEFT_VALUE)[:count])
+                                        for count in counts])
+        program.entries[0].debug_info = records
+        parser = program.parser(keep_unreachable_code)
+        parser.round_trip = True
+        parser.data = data
+        return parser
 
     def test_counts_by_call_offset(self):
         '''(recorded args, the callee's last default) -> whether the .py writes the count'''
@@ -817,8 +832,7 @@ class TestDebugArgcRecovery(unittest.TestCase):
         }
         for case, (explicit_args, last_default, written_on_the_call) in cases.items():
             with self.subTest(case):
-                parser = self.program(explicit_args, last_default).parser()
-                parser.round_trip = True
+                parser = self.parser(self.program(last_default), explicit_args)
                 func = parser.disasm_all_functions()[0]
                 [offset] = call_offsets(parser, func)
 
@@ -826,12 +840,54 @@ class TestDebugArgcRecovery(unittest.TestCase):
                 self.assertEqual(func.call_debug_argc, {offset: explicit_args} if written_on_the_call else {})
 
 
+class TestDeadCodeRecords(unittest.TestCase):
+    '''A call after an early RETURN has its record too: the parser pairs the records over the code the .py prints,
+    reachable and decoded dead code, after the dead-code pass. Main's live call keeps the rule's 1 arg, its dead call
+    both (the callee's last parameter defaults to LEFT_VALUE).'''
+
+    def load(self, keep_unreachable_code: bool = True, filter_func = None) -> tuple[ScpParser, list[Function]]:
+        program = TestDebugArgcRecovery.program(last_default = LEFT_VALUE, dead_call = True)
+        parser = TestDebugArgcRecovery.parser(program, 1, 2, keep_unreachable_code = keep_unreachable_code)
+        return parser, parser.disasm_all_functions(filter_func = filter_func)
+
+    def test_a_dead_call_gets_its_count(self):
+        parser, functions = self.load()
+        main = functions[0]
+        live, dead = call_offsets(parser, main)
+        self.assertEqual([inst.offset for inst in parser.unreachable_instructions(main) if inst.opcode == ED9Opcode.CALL],
+                         [dead])
+
+        self.assertEqual(main.call_written_argc, {live: 1, dead: 2})
+        self.assertEqual(main.call_debug_argc, {dead: 2})
+
+    def test_without_the_dead_code_the_function_is_not_paired(self):
+        '''It has more records than calls: no counts, and a warning'''
+        with self.assertLogs(log, 'WARNING') as logs:
+            _, functions = self.load(keep_unreachable_code = False)
+
+        self.assertEqual((functions[0].call_written_argc, functions[0].call_debug_argc), ({}, {}))
+        self.assertIn(f'{FUNC_NAME}: records not paired: 1 calls, 2 records; the .py writes no debug_argc',
+                      [record.getMessage() for record in logs.records])
+
+    def test_without_round_trip_nothing_is_paired(self):
+        for keep_unreachable_code in (True, False):
+            with self.subTest(keep_unreachable_code = keep_unreachable_code):
+                program = TestDebugArgcRecovery.program(LEFT_VALUE, dead_call = True)
+                main = program.parser(keep_unreachable_code).disasm_all_functions()[0]
+                self.assertEqual((main.call_written_argc, main.call_debug_argc), ({}, {}))
+
+    def test_a_filtered_function_is_not_paired(self):
+        _, functions = self.load(filter_func = lambda func: func.name != FUNC_NAME)
+        self.assertEqual([func.name for func in functions], [CALLEE_NAME])
+        self.assertEqual(functions[0].call_written_argc, {})
+
+
 class TestDebugArgcFormatting(unittest.TestCase):
     '''The .py writes a count on its CALL line, inside the parentheses; the decorator is always plain'''
 
     def disassemble(self) -> tuple[Function, int]:
         '''The main function of TestDebugArgcRecovery's program and its CALL's offset'''
-        parser = TestDebugArgcRecovery().program(explicit_args = 1).parser()
+        parser = TestDebugArgcRecovery.program().parser()
         func = parser.disasm_all_functions()[0]
         [offset] = call_offsets(parser, func)
         return func, offset
@@ -872,21 +928,12 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
     TAIL_NAME = '.'.join(STRINGS)
 
     @classmethod
-    def record(cls, func_name: str, call_type: ScpFunctionCallDebugInfo.CallType, values: list) -> FunctionCallDebugInfo:
-        info = FunctionCallDebugInfo()
-        info.func_name = func_name
-        info.call_type = call_type
-        info.args = [FunctionCallDebugInfo.ArgInfo(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(value))
-                     for value in values]
-        return info
-
-    @classmethod
-    def call_debug_argc(cls, caller: Asm, records: list[FunctionCallDebugInfo]) -> tuple[dict, list[int]]:
+    def call_debug_argc(cls, caller: Asm, *records: tuple) -> tuple[dict, list[int]]:
         '''Main's call_debug_argc and its CALL offsets in address order'''
         callee = returning_callee(argc = cls.CALLEE_ARGC)
         program = Program(main_function(caller), callee._replace(name = 'outer'), callee._replace(name = 'inner'))
-        program.entries[0].debug_info = records
         parser = program.parser()
+        parser.data, program.entries[0].debug_info = debug_records(*records)
         parser.round_trip = True
         func = parser.disasm_all_functions()[0]
         return func.call_debug_argc, call_offsets(parser, func)
@@ -900,7 +947,6 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
     def test_nested_calls_pair_in_parameter_order(self):
         '''outer(inner(..), inner(..)): arguments are pushed last first, so the second argument's call runs first; the
         first argument's call keeps one argument'''
-        CallType = ScpFunctionCallDebugInfo.CallType
         caller = Asm()
         caller.debug_set_lineno(1)
         caller.push_raw(CALLER_ID); caller.push_raw('outer')
@@ -909,23 +955,24 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
             caller.get_reg(REG_INDEX)
 
         caller.call(self.OUTER_ID); caller.label('outer'); caller.ret()
-        records = [self.record('outer', CallType.Local, [0, 0]), self.record('inner', CallType.Local, [LEFT_VALUE]),
-                   self.record('inner', CallType.Local, [LEFT_VALUE, RIGHT_VALUE])]
-        debug_argc, [_, first, _] = self.call_debug_argc(caller, records)  # address order: second, first, outer
+        call_result = (ArgType.CallResult, ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE)
+        debug_argc, [_, first, _] = self.call_debug_argc(       # address order: second, first, outer
+            caller, (CallType.Local, self.OUTER_ID, [call_result, call_result]),
+            (CallType.Local, self.INNER_ID, constants(LEFT_VALUE)),
+            (CallType.Local, self.INNER_ID, constants(LEFT_VALUE, RIGHT_VALUE)))
         self.assertEqual(debug_argc, {first: 1})
 
     def test_register_carried_tail_argument_pairs_after_the_previous_call(self):
         '''inner(..) keeping one argument, then a tail call whose constant argument waits in a register'''
-        CallType = ScpFunctionCallDebugInfo.CallType
         caller = Asm()
         caller.debug_set_lineno(1)
         self.push_inner_call(caller, 'ret')
         caller.debug_set_lineno(2)
         caller.push_int(self.TAIL_VALUE); caller.set_reg(self.TAIL_REG); caller.get_reg(self.TAIL_REG)
         caller.call_script_no_return(1)
-        records = [self.record('inner', CallType.Local, [LEFT_VALUE]),
-                   self.record(self.TAIL_NAME, CallType.ScriptNoReturn, [self.TAIL_NAME, self.TAIL_VALUE])]
-        debug_argc, [inner] = self.call_debug_argc(caller, records)
+        debug_argc, [inner] = self.call_debug_argc(
+            caller, (CallType.Local, self.INNER_ID, constants(LEFT_VALUE)),
+            (CallType.ScriptNoReturn, ScpFunctionCallDebugInfo.NO_FUNC_ID, constants(self.TAIL_NAME, self.TAIL_VALUE)))
         self.assertEqual(debug_argc, {inner: 1})
 
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 '''Unit tests for pairing call-site debug records with their calls: CallDebugInfoTracker (its call tree, registers and
 line gate; replay's record order and each call's instruction offset), falcom/ed9/parser/call_debug_records.py
-(canonical_argc, record_args, record_mismatch, script_call_identity), a local call's count on its CALL through a
-round trip, function_extents, and the round-trip validator's record comparison built on them.'''
+(canonical_argc, record_args, record_mismatch, script_call_identity, pair_records), a local call's count on its CALL
+through a round trip - a dead call's too, function_extents, and the round-trip validator's debug-records check and
+record comparison built on them.'''
 
 from pathlib import Path
 import copy
@@ -20,14 +21,14 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, RESULT_REGISTER
-from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, TrackedValue, canonical_argc, record_args,
-                                                  record_mismatch, script_call_identity)
+from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, TrackedValue, canonical_argc, pair_records,
+                                                  record_args, record_mismatch, script_call_identity)
 from falcom.ed9.parser.code_layout import function_extents
 from falcom.ed9.parser.string_pool import NUL, read_text, string_offset
 from falcom.ed9.parser.types_scp import RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_roundtrip_validator import (PUSH_VALUE_OFFSET, Status, check_round_trip, compare_file_records,
-                                     decompile_to_python, describe_difference, load_script)
+from scp_roundtrip_validator import (PUSH_VALUE_OFFSET, Status, check_debug_records, check_round_trip,
+                                     compare_file_records, decompile_to_python, describe_difference, load_script)
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
 
@@ -39,6 +40,10 @@ EXTRA_FUNCTION = 'AFirst'           # compile_script's extra function
 UNDEFINED_FUNCTION = 'Nowhere'
 # The smallest sora2_1.0 script with a tail call into itself; 37 of its records drop trailing default arguments
 SAME_SCRIPT_TAIL_CALL_FILE = SORA2_SCRIPTS / 'ani/mon5265_C.dat'
+# A function whose whole body sits behind an early RETURN: its records are all dead calls
+DEAD_BODY_FILE = SORA2_SCRIPTS / 'ani/chr0110.dat'
+DEAD_BODY_FUNCTION = 'AniBtlCraft01'
+DEAD_BODY_RECORD_COUNT = 29
 CALL_OPCODES = (ED9Opcode.CALL, ED9Opcode.CALL_SCRIPT, ED9Opcode.CALL_SCRIPT_NO_RETURN, ED9Opcode.SYSCALL)
 SYSCALL_SUBSYSTEM = 1
 SYSCALL_FUNC = 0x02
@@ -235,6 +240,32 @@ def compile_tail_calls(dat: Path):
     @writer.LLILCode()
     def Later():
         DEBUG_SET_LINENO(8)
+        RETURN()
+
+    writer.run({})
+
+
+def compile_dead_call(dat: Path):
+    '''A call behind an early RETURN, as the compiler leaves dead code, whose record keeps more than the rule (SetAuto(1,
+    0) written out: debug_argc = 2)'''
+    writer = fresh_writer(dat)
+    writer.warn_unreachable_code = False
+
+    @writer.LLILCode()
+    def SetAuto(arg1: Value32, arg2: Value32 = 0):
+        POP(2 * WORD_SIZE)
+        RETURN()
+
+    @writer.LLILCode()
+    def Main():
+        DEBUG_SET_LINENO(1)
+        RETURN()
+        PUSH_CURRENT_FUNC_ID()
+        PUSH_RET_ADDR('dead')
+        PUSH_INT(0)
+        PUSH_INT(1)
+        CALL(SetAuto, debug_argc = 2)
+        label('dead')
         RETURN()
 
     writer.run({})
@@ -899,7 +930,7 @@ class TestCountsOnTheCall(unittest.TestCase):
         self.assertEqual(main.call_written_argc, {first: 1, second: 2})
         self.assertEqual(main.call_debug_argc, {second: 2})
 
-        lines = [line.strip() for line in py_path.read_text().splitlines()]
+        lines = [line.strip() for line in py_path.read_text(encoding = 'utf-8').splitlines()]
         self.assertEqual([line for line in lines if line.startswith('CALL(')],
                          ['CALL(SetAuto)', 'CALL(SetAuto, debug_argc = 2)'])
         self.assertNotIn('debug_argc = {', '\n'.join(lines))
@@ -907,6 +938,104 @@ class TestCountsOnTheCall(unittest.TestCase):
     def test_rebuilds_identical(self):
         result = check_round_trip(self.dat, Path(self.enterContext(tempfile.TemporaryDirectory())))
         self.assertEqual(result.status, Status.PASS, '\n'.join([result.summary, *result.details]))
+
+
+def with_syscall_constant(data: bytes, records: dict, value: int) -> bytes:
+    '''data with Main's syscall record's constant argument (record 2, arg 3: Int(SYSCALL_CONSTANT)) changed to value'''
+    position = records['Main'][2].arg_offsets()[3]
+    return data[:position] + ScpValue(value).to_word().to_bytes(WORD_SIZE, default_endian()) + data[position + WORD_SIZE:]
+
+
+class TestPairRecords(CompiledScript):
+    '''pair_records: with equal counts each record pairs with the call at its index, content-checked; otherwise nothing
+    is matched'''
+
+    def pairing(self, data: bytes, records: list):
+        return pair_records(data, self.instructions['Main'], records, self.parser.get_func_argc, self.parser.get_func_index)
+
+    def test_every_record_matches(self):
+        pairing = self.pairing(self.data, self.records['Main'])
+        self.assertTrue(pairing.paired)
+        self.assertIsNone(pairing.reason)
+        self.assertEqual(pairing.record_offsets, dict(enumerate(offset for _, offset in self.replay('Main'))))
+        self.assertEqual([match.record for match in pairing.matches], self.records['Main'])
+
+    def test_a_differing_record_is_a_mismatch(self):
+        data = with_syscall_constant(self.data, self.records, SYSCALL_CONSTANT + 1)
+        pairing = self.pairing(data, self.records['Main'])
+        problem = f'arg 3: value 0x{ScpValue(SYSCALL_CONSTANT + 1).to_word():08X} != {SYSCALL_CONSTANT}'
+
+        self.assertFalse(pairing.paired)
+        self.assertEqual(pairing.mismatches, [(2, problem)])
+        self.assertEqual([match.record_index for match in pairing.matches], [0, 1, 3, 4])
+        self.assertEqual(pairing.reason, f'record 2 differs from its call ({problem})')
+
+    def test_different_counts_match_nothing(self):
+        pairing = self.pairing(self.data, self.records['Main'][:-1])
+        self.assertFalse(pairing.paired)
+        self.assertEqual((pairing.matches, pairing.unmatched_calls, pairing.unmatched_records, pairing.mismatches),
+                         ([], [0, 1, 2, 3, 4], [0, 1, 2, 3], []))
+        self.assertEqual(pairing.reason, '5 calls, 4 records')
+
+
+class TestValidatorDebugRecords(CompiledScript):
+    def test_one_differing_record(self):
+        '''Its own failure line; every other record still counts as rebuilt'''
+        data = with_syscall_constant(self.data, self.records, SYSCALL_CONSTANT + 1)
+        result = check_debug_records(dataclasses.replace(self.ctx, data = data))
+        word = ScpValue(SYSCALL_CONSTANT + 1).to_word()
+        total = sum(len(records) for records in self.records.values())
+
+        self.assertEqual(result.status, Status.FAIL)
+        self.assertEqual(result.details, [f'Main record 2: arg 3: value 0x{word:08X} != {SYSCALL_CONSTANT}'])
+        self.assertEqual(result.summary, f'{total - 1} records rebuilt (0 with dropped default args)')
+
+
+class TestDeadCallRecords(unittest.TestCase):
+    '''A dead call's record pairs too: its count rides on its CALL in the dead code and rebuilds byte-exact'''
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
+        cls.dat = cls.tmp / 'dead.dat'
+        compile_dead_call(cls.dat)
+
+    def test_round_trip_py_writes_the_count_in_the_dead_code(self):
+        py_path = self.tmp / 'dead.py'
+        decompile_to_python(self.dat, py_path)
+        lines = [line.strip() for line in py_path.read_text(encoding = 'utf-8').splitlines()]
+        dead_code = lines[lines.index('# --- unreachable code ---'):]
+        self.assertIn('CALL(SetAuto, debug_argc = 2)', dead_code)
+
+    def test_rebuilds_identical(self):
+        result = check_round_trip(self.dat, Path(self.enterContext(tempfile.TemporaryDirectory())))
+        self.assertEqual(result.status, Status.PASS, '\n'.join([result.summary, *result.details]))
+
+    def test_the_validator_pairs_it(self):
+        ctx = load_script(self.dat)
+        self.addCleanup(ctx.fs.Close)
+        result = check_debug_records(ctx)
+        self.assertEqual(result.status, Status.PASS, '\n'.join([result.summary, *result.details]))
+
+
+class TestRealDeadBody(unittest.TestCase):
+    def test_the_paired_calls_are_the_py_lines(self):
+        '''The CALLs the parser pairs (reachable and decoded dead code) are the CALL lines the round-trip .py prints, in
+        order: the writer's tracker sees the same calls'''
+        path = require(DEAD_BODY_FILE)
+        py_path = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'chr0110.py'
+        parser, functions = decompile_to_python(path, py_path)
+        func = next(func for func in functions if func.name == DEAD_BODY_FUNCTION)
+        offsets = [inst.offset for inst in parser.code_instructions(func) if inst.opcode == ED9Opcode.CALL]
+
+        lines = py_path.read_text(encoding = 'utf-8').splitlines()
+        start = lines.index(f'def {DEAD_BODY_FUNCTION}():')
+        end = next(i for i in range(start + 1, len(lines)) if lines[i].startswith('@scena.'))
+        call_lines = [line.strip() for line in lines[start:end] if line.strip().startswith('CALL(')]
+
+        self.assertEqual(len(call_lines), len(offsets))
+        self.assertEqual(sorted(func.call_written_argc), offsets)
+        self.assertEqual(len(func.debug_info), DEAD_BODY_RECORD_COUNT)
 
 
 class TestFunctionExtents(CompiledScript):

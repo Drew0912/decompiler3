@@ -23,32 +23,6 @@ class GlobalVar:
     __repr__ = __str__
 
 
-class FunctionCallDebugInfo:
-    class ArgInfo(StrictBase):
-        value : ScpValue
-        type  : int
-
-        def __init__(self, type: int, value: ScpValue):
-            self.type = type
-            self.value = value
-
-    func_name   : str
-    call_type   : ScpFunctionCallDebugInfo.CallType
-    args        : list[ArgInfo]
-
-    def __init__(self):
-        self.args = []
-
-    def __str__(self) -> str:
-        lines = [f'debug_info(func_name={self.func_name}, call_type={self.call_type})']
-        if self.args:
-            indent = default_indent()
-            for arg in self.args:
-                lines.append(f'{indent}arg(type={arg.type}, value={arg.value})')
-        return '\n'.join(lines)
-
-    __repr__ = __str__
-
 
 class FunctionParam:
     type            : ScpParamFlags
@@ -112,7 +86,7 @@ class Function(StrictBase):
     offset          : int
     params          : list[FunctionParam]
     is_common_func  : bool
-    debug_info      : list[FunctionCallDebugInfo]
+    debug_info      : list[ScpFunctionCallDebugInfo]    # round_trip: the raw call debug records, against the file's bytes
     call_written_argc : dict[int, int]  # local CALL offset -> args its debug record keeps, every paired local call
     call_debug_argc : dict[int, int]    # the same, only where that isn't the compiler's rule (canonical_argc)
     entry_block     : BasicBlock | None

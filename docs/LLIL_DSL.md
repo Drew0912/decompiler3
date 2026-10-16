@@ -148,7 +148,10 @@ up to the last one its author wrote, by the original compiler's rule: trailing c
 the callee's defaults (the same type and stored word, a string by its text; the callee's final signature,
 hooks included) are left out. A call whose original record breaks the rule carries its count on the `CALL`
 - `CALL(chr_allow_controll, debug_argc = 2)` - which the round-trip `.py` (`ScpParser(round_trip=True)`)
-writes. `debug_argc` must be an `int` (`CALL debug_argc is True (bool), not int`) and is used as given;
+writes, dead code included: the parser pairs a function's records with every call the `.py` prints
+(`call_debug_records.pair_records`, shared with the listing and the validator; each pair content-checked),
+and a function whose records don't pair gets no `debug_argc` and a warning (`records not paired: ...`).
+`debug_argc` must be an `int` (`CALL debug_argc is True (bool), not int`) and is used as given;
 opcode callbacks never see it, and it goes with its `CALL` when one drops it. An everyday `.py` (decompiled
 with `ScpParser.round_trip` off: no `debug_argc`) compiled with the writer's default gets rule-trimmed
 records; `ScpWriter.round_trip = False` writes no records at all. Records don't affect the logic. An older
@@ -284,7 +287,7 @@ labels get their own line with the depth. The listing loads the file itself, unr
 once: under the function whose range holds it (functions starting at the same offset share one range),
 or as raw bytes where no instruction covers it (`mp0090`'s 21 bytes before its first function). A call's
 debug record is printed under it when every record of the function holds what its call gets
-(`call_debug_records.record_mismatch`, content only); otherwise the function notes `records not paired: ...`,
+(`call_debug_records.pair_records`, content only); otherwise the function notes `records not paired: ...`,
 as for the `chr0000`-style files and calls without a record. `filter_func` and `include_common_functions`
 pick the functions listed; the listing is written after every other output.
 
