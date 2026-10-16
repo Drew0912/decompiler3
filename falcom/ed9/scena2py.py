@@ -110,7 +110,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
     ts_chunks: list[str] = []
 
     # From the whole function table (callees the output omits included): .ts leaves out a call's trailing arguments
-    # equal to these defaults
+    # equal to these defaults - in a round trip, never those the call's debug record keeps (call_written_argc)
     callee_defaults = callee_default_values(parser) if config.write_ts else None
 
     for func in functions:
@@ -150,7 +150,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
                 hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))
 
             if config.write_ts:
-                ts_chunks.append(generate_typescript(hlil_func, callee_defaults))
+                ts_chunks.append(generate_typescript(hlil_func, callee_defaults, func.call_written_argc))
 
         except Exception as e:
             # One bad function shouldn't lose the rest of the file's output

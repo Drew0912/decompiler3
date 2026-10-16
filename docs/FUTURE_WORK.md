@@ -241,7 +241,7 @@ The output was correct in every function traced; what it costs is readability.
 ### Trailing Default Arguments
 
 **(a) implemented 2026-10-14 in `.ts` only** (`docs/HLIL_GUIDE.md` Codegen; `.hlil.ts` keeps every argument).
-**(b)** is the last step of the debug-records plan (`notes/work_order.md` 3c), behind `round_trip`.
+**(b) implemented 2026-10-16** in `.ts`, round trip only (debug-records plan Step 6, `notes/work_order.md` 3c).
 
 Wanted (user, 2026-10-12): print `mes_set_auto(1)`, not `mes_set_auto(1, 0)`. A local call pushes every
 argument, defaults included, so both compile to the same bytes and the HLIL holds every call in full;
@@ -257,12 +257,18 @@ only: their callee's defaults are in this script's function table. Two ways:
   `mp0000_ev`'s 1,180 `camera_lookat` calls all keep the `3`, written `camera_lookat(63.153, 29.174,
   -63.103, 0, 3)`, which (a) prints as `camera_lookat(63.153, 29.174, -63.103, 0)`; its 36
   `mes_set_auto` calls match (a) exactly.
-- **(b) As written:** a local call's debug record keeps exactly the arguments the author wrote, so print
-  that many. The parser reads the records only when `round_trip` is on (`ScpParser._read_functions`), so
-  that gate becomes "`round_trip` or this option". Needs the debug-records plan's pairing fixes first
-  (`notes/debug_records_handoff.md`: of `sora2_1.0`'s 340,638 trims, 187 attach to the wrong call today
-  and 1,035 are lost). Calls
-  without a record (before the function's first `DEBUG_SET_LINENO`, or in dead code) fall back to (a).
+- **(b) As written:** a local call's debug record keeps the arguments the author wrote. In a round trip
+  (`ScpParser.round_trip`; the parser reads records only then) `.ts` prints `max(written, (a))`, the
+  written count found by `HLILCall.address` in the parser's `call_written_argc` (every paired local call,
+  not only the `.py`'s `debug_argc` exceptions: 138 calls fold an argument to a default-equal constant in
+  HLIL, so the bytecode rule and (a) differ there). `max`, not the written count: 232 records keep fewer
+  than (a), each passing an address-taken local HLIL shows as a variable (`btl_check_condition(arg1, 3,
+  *&var_s4)` after `var_s4 = -1`) - printing the record's count would leave the assignment dangling; the
+  cause, a call argument in a reused stack slot, is a work-order follow-up. A call with no written count
+  prints (a): functions without records (common functions), unpaired functions (the 4 differently built
+  `chr*` files, `chr5110`), calls before the first `DEBUG_SET_LINENO`, `debug_record = False` calls, and
+  every everyday decompile. Measured on `sora2_1.0`: 114,535 of 732,300 recorded calls print more than (a),
+  in 400 files. Dead code isn't in `.ts`.
 
 Either way only the HLIL/TypeScript side changes; the LLIL DSL keeps one line per push, and the HLIL
 DSL's lowering pushes the omitted defaults back, as Falcom's compiler did. Drop only constants, compared

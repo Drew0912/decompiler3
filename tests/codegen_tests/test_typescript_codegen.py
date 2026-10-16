@@ -266,7 +266,8 @@ def call(name: str, *args) -> HLILCall:
 
 class TestTrailingDefaultArguments(unittest.TestCase):
     '''.ts leaves out a local call's longest tail of constants that are the callee's defaults (compared as the IR
-    compares constants, constant_values_equal); the HLIL call and every other output keep them'''
+    compares constants, constant_values_equal); the HLIL call and every other output keep them. Without written counts
+    (TestWrittenArguments: a round trip's debug records)'''
 
     def render(self, statement, defaults = DEFAULTS) -> str:
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
@@ -357,6 +358,64 @@ class TestTrailingDefaultArguments(unittest.TestCase):
         self.assertEqual(len(statement.expr.args), 3)
         self.assertIn('g(a, 3, -1)', '\n'.join(HLILFormatter.format_function(func)))
         self.assertIn('g(a, 3, -1);', generate_typescript(func))
+
+
+FIRST_CALL = 0x100              # CALL offsets: HLILCall.address
+SECOND_CALL = 0x120
+UNMAPPED_CALL = 0x140
+
+
+def call_at(address: int, name: str, *args) -> HLILCall:
+    expr = call(name, *args)
+    expr.address = address
+    return expr
+
+
+class TestWrittenArguments(unittest.TestCase):
+    '''In a round trip a local call never leaves out an argument its author wrote: it prints the larger of the rule's
+    count and its debug record's (written_argc, by the CALL's offset)'''
+
+    def render(self, written_argc: dict[int, int] | None, *exprs: HLILExpression) -> str:
+        func = HighLevelILFunction(TEST_FUNCTION_NAME)
+        for expr in exprs:
+            func.add_statement(HLILExprStmt(expr))
+
+        return generate_typescript(func, DEFAULTS, written_argc)
+
+    def full_call(self, address: int) -> HLILCall:
+        return call_at(address, CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE)
+
+    def test_identical_calls_print_what_was_written(self):
+        '''mes_set_auto(1) and mes_set_auto(1, 0) compile to the same bytes'''
+        ts = self.render({FIRST_CALL: 1, SECOND_CALL: 2}, self.full_call(FIRST_CALL), self.full_call(SECOND_CALL))
+        self.assertIn('g(a);', ts)
+        self.assertIn('g(a, 3);', ts)
+
+    def test_counts(self):
+        rows = [
+            # (written, expected)
+            (1, 'g(a);'),               # the rule's count
+            (3, 'g(a, 3, -1);'),        # every argument
+        ]
+        for written, expected in rows:
+            with self.subTest(written = written):
+                self.assertIn(expected, self.render({FIRST_CALL: written}, self.full_call(FIRST_CALL)))
+
+    def test_fewer_written_keeps_the_rules_count(self):
+        '''A record keeps fewer where HLIL shows an address-taken local for the pushed default: printing the record's
+        count would drop that variable'''
+        expr = call_at(FIRST_CALL, CALLEE, var('a'), var('x'), DEFAULT_NEGATIVE)
+        self.assertIn('g(a, x);', self.render({FIRST_CALL: 1}, expr))
+
+    def test_no_count_prints_the_rule(self):
+        for case, written_argc in {'no map': None, 'another call': {UNMAPPED_CALL: 3}}.items():
+            with self.subTest(case):
+                self.assertIn('g(a);', self.render(written_argc, self.full_call(FIRST_CALL)))
+
+    def test_nested_calls_by_their_own_address(self):
+        '''The map lists the inner call first; the generator meets the outer call first'''
+        outer = call_at(SECOND_CALL, CALLEE, self.full_call(FIRST_CALL), DEFAULT_INT, DEFAULT_NEGATIVE)
+        self.assertIn('g(g(a, 3, -1));', self.render({FIRST_CALL: 3, SECOND_CALL: 1}, outer))
 
 
 if __name__ == '__main__':

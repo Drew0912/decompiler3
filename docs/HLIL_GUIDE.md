@@ -138,8 +138,13 @@ compiler's own rule, and the signature prints the defaults: `camera_lookat(63.15
 -1)` prints `camera_lookat(63.153, 29.174, -63.103, 0)`. Equal is `constant_values_equal`, as the HLIL
 passes compare constants: the same type (an Integer `0` is not a Raw `0` or `0.0`), floats by bits and
 spelling. `scena2py` passes `generate_typescript` every function's defaults as the lifter converts them
-(`ED9VMLifter.source_value`), from the whole function table. Syscalls, script calls and `.hlil.ts` print
-every argument.
+(`ED9VMLifter.source_value`), from the whole function table. In a round trip (`ScpParser.round_trip`) it
+also passes the function's `call_written_argc` - each paired local call's debug-record count by CALL offset -
+and a call never drops an argument its author wrote: it prints the larger of the two counts, found by
+`HLILCall.address` (`camera_lookat(63.153, 29.174, -63.103, 0, 3)`, the `3` written out). The larger, not the
+record's: a record that keeps fewer passes an address-taken local HLIL shows as a variable
+(`btl_check_condition(arg1, 3, *&var_s4)`). A call with no count (an unpaired function, a call without a
+record, an everyday decompile) prints the rule's. Syscalls, script calls and `.hlil.ts` print every argument.
 
 **Address-taken locals fold back to a plain variable, not a `deref` call.** MLIL SSA construction
 lowers every address-taken local/parameter `x` to explicit `*(&x)` memory form (see

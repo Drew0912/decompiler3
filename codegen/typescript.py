@@ -11,6 +11,7 @@ class TypeScriptGenerator:
     _current_func: 'HighLevelILFunction' = None
     _signature_db = None  # FormatSignatureDB for arg formatting
     _callee_defaults: dict[str, tuple] = {}  # local callee name -> each parameter's default (None: none)
+    _written_argc: dict[int, int] = {}       # local CALL offset -> args its debug record keeps (round trip)
 
     @classmethod
     def set_signature_db(cls, db):
@@ -61,9 +62,9 @@ class TypeScriptGenerator:
             raise TypeError(f'Unknown default value type: {type(value).__name__}')
 
     @classmethod
-    def _format_call_args(cls, func_name: str, args: list) -> str:
+    def _format_call_args(cls, func_name: str, args: list, address: int) -> str:
         '''Format call arguments, using signature hints if available'''
-        args = cls._without_trailing_defaults(func_name, args)
+        args = cls._without_trailing_defaults(func_name, args, address)
         if cls._signature_db:
             sig = cls._signature_db.get_function(func_name)
             if sig:
@@ -72,9 +73,11 @@ class TypeScriptGenerator:
         return ', '.join(cls._format_expr(arg) for arg in args)
 
     @classmethod
-    def _without_trailing_defaults(cls, func_name: str, args: list) -> list:
+    def _without_trailing_defaults(cls, func_name: str, args: list, address: int) -> list:
         '''args without the longest tail of constants that are the callee's defaults (the original compiler's own
-        rule; the signature prints them). A new list: the call keeps every argument'''
+        rule; the signature prints them), but never fewer than the call's debug record keeps (the author wrote them;
+        round trip only, by the CALL's offset). The larger count, not the record's: a record that keeps fewer passes
+        an address-taken local HLIL shows as a variable. A new list: the call keeps every argument'''
         defaults = cls._callee_defaults.get(func_name)
         if defaults is None or len(defaults) != len(args):
             return args
@@ -86,7 +89,7 @@ class TypeScriptGenerator:
 
             kept -= 1
 
-        return args[:kept]
+        return args[:max(kept, cls._written_argc.get(address, 0))]
 
     @classmethod
     def _format_call_args_with_sig(cls, args: list, params: list) -> str:
@@ -332,7 +335,7 @@ class TypeScriptGenerator:
             return f'deref({operand})'
 
         elif isinstance(expr, HLILCall):
-            args = cls._format_call_args(expr.func_name, expr.args)
+            args = cls._format_call_args(expr.func_name, expr.args, expr.address)
             return f'{expr.func_name}({args})'
 
         elif isinstance(expr, HLILSyscall):
@@ -629,14 +632,19 @@ def generate_syscall_wrappers(signature_db) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def generate_typescript(func: HighLevelILFunction, callee_defaults: dict[str, tuple] | None = None) -> str:
+def generate_typescript(func: HighLevelILFunction, callee_defaults: dict[str, tuple] | None = None,
+                        written_argc: dict[int, int] | None = None) -> str:
     '''func's TypeScript; with callee_defaults (local callee name -> each parameter's default as the lifter converts
-    it, None where there is none) a call leaves out its trailing arguments equal to them'''
+    it, None where there is none) a call leaves out its trailing arguments equal to them, but with written_argc
+    (local CALL offset -> args its debug record keeps: Function.call_written_argc, round trip only) never the ones its
+    author wrote'''
     TypeScriptGenerator._callee_defaults = callee_defaults or {}
+    TypeScriptGenerator._written_argc = written_argc or {}
     try:
         lines = TypeScriptGenerator.generate_function(func)
 
     finally:
         TypeScriptGenerator._callee_defaults = {}
+        TypeScriptGenerator._written_argc = {}
 
     return '\n'.join(lines)

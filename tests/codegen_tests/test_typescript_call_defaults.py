@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 '''End to end: scena2py's .ts leaves out a local call's trailing arguments equal to the callee's defaults, with the
 defaults converted as the lifter converts them (so a float default matches its argument), from the whole function
-table (a callee left out of the output still counts); a Raw argument is not an Integer default.'''
+table (a callee left out of the output still counts); a Raw argument is not an Integer default. In a round trip it
+keeps the arguments a call's debug record says its author wrote.'''
 
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -66,7 +68,53 @@ def decompile(filter_func = None) -> str:
         return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding = 'utf-8')
 
 
+def decompile_written(round_trip: bool) -> str:
+    '''The .ts of mp4000_ev EV_03_62_01's shape: SetAuto(1, 0) twice with identical bytes, the first as the compiler's
+    rule leaves its record (SetAuto(1)), the second written out in full (debug_argc = 2)'''
+    with tempfile.TemporaryDirectory() as tmp:
+        dat = Path(tmp) / 'written.dat'
+        writer = fresh_writer(dat)
+
+        @writer.LLILCode()
+        def SetAuto(arg1: Value32, arg2: Value32 = 0):
+            POP(2 * WORD_SIZE)
+            RETURN()
+
+        @writer.LLILCode()
+        def Main():
+            DEBUG_SET_LINENO(1)
+            for ret, keywords in (('by_rule', {}), ('written_out', {'debug_argc': 2})):
+                PUSH_CURRENT_FUNC_ID()
+                PUSH_RET_ADDR(ret)
+                PUSH_INT(0)
+                PUSH_INT(FIRST_ARG)
+                CALL(SetAuto, **keywords)
+                label(ret)
+
+            RETURN()
+
+        writer.run({})
+
+        config = ScenaDecompileConfig()
+        config.output_dir = Path(tmp) / 'out'
+        config.round_trip = round_trip
+        process_file(dat, config)
+        return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding = 'utf-8')
+
+
+def set_auto_calls(ts: str) -> list[str]:
+    '''Main's SetAuto calls, in order (the last one is returned)'''
+    return re.findall(r'SetAuto\([^)]*\)', ts[ts.index('function Main('):])
+
+
 class TestCallDefaultsEndToEnd(unittest.TestCase):
+    def test_round_trip_keeps_the_written_arguments(self):
+        self.assertEqual(set_auto_calls(decompile_written(round_trip = True)),
+                         [f'SetAuto({FIRST_ARG})', f'SetAuto({FIRST_ARG}, 0)'])
+
+    def test_everyday_decompile_prints_the_rule(self):
+        self.assertEqual(set_auto_calls(decompile_written(round_trip = False)), [f'SetAuto({FIRST_ARG})'] * 2)
+
     def test_trailing_defaults_left_out(self):
         ts = decompile()
 
