@@ -149,7 +149,7 @@ class TestOpcodeFunctions(unittest.TestCase):
     ARGS = {
         'PUSH': (1,), 'POP': (WORD_SIZE,), 'LOAD_STACK': (0,), 'LOAD_STACK_DEREF': (0,), 'PUSH_STACK_OFFSET': (0,),
         'POP_TO': (0,), 'POP_TO_DEREF': (0,), 'LOAD_GLOBAL': (0,), 'SET_GLOBAL': (0,), 'GET_REG': (0,),
-        'SET_REG': (0,), 'JMP': ('target',), 'CALL': (lambda: None,), 'POP_JMP_NOT_ZERO': ('target',),
+        'SET_REG': (0,), 'JMP': ('target',), 'CALL': (lambda: None, 2, False), 'POP_JMP_NOT_ZERO': ('target',),
         'POP_JMP_ZERO': ('target',), 'CALL_SCRIPT': ('this', 'func', 0), 'CALL_SCRIPT_NO_RETURN': ('this', 'func', 0),
         'SYSCALL': (1, 2, 3), 'PUSH_CALLER_FRAME': ('target',), 'DEBUG_SET_LINENO': (1,), 'DEBUG_LOG': (1,),
         'UNKNOWN_28': (b'',), 'PUSH_RET_ADDR': ('target',), 'PUSH_RAW': (RawInt(1),), 'PUSH_INT': (1,),
@@ -174,8 +174,10 @@ class TestOpcodeFunctions(unittest.TestCase):
             for name, func in functions.items():
                 func(*args[name])
 
-        self.assertEqual(emitted, [(ED9Opcode[name], args[name], {'debug_argc': None, 'debug_record': True} if name == 'CALL' else {})
-                                   for name in functions])
+        func, debug_argc, debug_record = self.ARGS['CALL']
+        expected = {name: (args[name], {}) for name in functions}
+        expected['CALL'] = ((func,), {'debug_argc': debug_argc, 'debug_record': debug_record})
+        self.assertEqual(emitted, [(ED9Opcode[name], *expected[name]) for name in functions])
 
     def test_each_function_checks_its_argument_types(self):
         '''Every argument of every opcode function is checked against its annotation'''
@@ -189,7 +191,8 @@ class TestOpcodeFunctions(unittest.TestCase):
                         message = r'CALL takes the function itself, not <object object at 0x\w+>'
 
                     elif name == 'CALL':
-                        message = r'CALL debug_argc is <object object at 0x\w+> \(object\), not int'
+                        expected = 'int' if param.name == 'debug_argc' else 'bool'
+                        message = rf'CALL {param.name} is <object object at 0x\w+> \(object\), not {expected}'
 
                     else:
                         types = [kind.__name__ for kind in get_args(param.annotation) or (param.annotation,)]

@@ -172,9 +172,6 @@ byte.
 - **`GLOBAL_VAR` and `label()` moved into `scp_writer_helper.py`** (item 13; Step 2b, done), next to
   `genLabel()`: they are DSL statements that emit no instruction. `GLOBAL_VAR` was the only non-opcode in
   the opcode handler, and `label()` sat at the end of `scp_writer.py`. No output change.
-- **Validate `debug_argc` keys** (found in Step 5's review; obsolete). The decorator's return-label keys
-  are gone: a count now rides on its own `CALL` (`CALL(f, debug_argc = N)`, debug records plan 3c Step 3),
-  so renaming a label can't detach it.
 - **Simpler Integer decode** (found in Step 5's review, not planned). `ScpValue.from_value` sign-extends
   an Integer by shifting through `0xC0000000`/`0x80000000` and a bytes round trip; with Step 5's
   `INTEGER_MAX` it is `value &= PAYLOAD_MASK`, then `value -= 1 << TYPE_SHIFT` past `INTEGER_MAX` (same
@@ -221,7 +218,8 @@ byte.
   code strings sit (`ScpParser.string_operand_positions`), and counts the strings only unreachable code uses as
   code strings: the validator had missed them and failed the pool check of `ani/chr5000` and others. Step 8c-a
   (done) moved the validator's record check into `falcom/ed9/parser/call_debug_records.py` (content only; the validator
-  keeps its return-label rule on top) and the tracker replay into `CallDebugInfoTracker.replay`, which gives each call's
+  kept a return-label rule on top until the debug-records plan 3c, whose Step 4 gave parser, listing and validator one
+  shared `pair_records`) and the tracker replay into `CallDebugInfoTracker.replay`, which gives each call's
   instruction offset, so the listing can print a record under its call. Step 8c-b counts each code string operand once
   by its file position: functions that share code (an empty one starting where the next does, a jump into another)
   had made the validator count it twice and fail the pool of such a writer-built file.

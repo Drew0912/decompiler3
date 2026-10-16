@@ -877,9 +877,14 @@ class TestDeadCodeRecords(unittest.TestCase):
                 self.assertEqual((main.call_written_argc, main.call_debug_argc), ({}, {}))
 
     def test_a_filtered_function_is_not_paired(self):
-        _, functions = self.load(filter_func = lambda func: func.name != FUNC_NAME)
+        '''Pairing runs over the disassembled functions only: the filtered-out one gets no counts and no warning'''
+        with self.assertNoLogs(log, 'WARNING'):
+            parser, functions = self.load(filter_func = lambda func: func.name != FUNC_NAME)
+
         self.assertEqual([func.name for func in functions], [CALLEE_NAME])
-        self.assertEqual(functions[0].call_written_argc, {})
+        filtered = parser.get_func_by_name(FUNC_NAME)
+        self.assertTrue(filtered.debug_info)
+        self.assertEqual((filtered.call_written_argc, filtered.call_debug_argc, filtered.call_unrecorded), ({}, {}, set()))
 
 
 class TestDebugArgcFormatting(unittest.TestCase):

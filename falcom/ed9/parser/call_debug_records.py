@@ -23,6 +23,7 @@ if TYPE_CHECKING:
 
 PUSH_CONSTANT_OPS = opcodes_of(InstructionKind.PUSH_CONST)
 SAME_SCRIPT_MODULE = ''     # a script call's module naming a function of the calling script
+ALIGNMENT_CAP = 2           # complete alignments counted up to: none, one or several is all the pairing needs
 
 
 @dataclass(slots = True)
@@ -340,7 +341,7 @@ class RecordPairing:
     mismatches          : list[tuple[int, str]]     # (record index, how it differs from its call)
     call_count          : int
     record_count        : int
-    alignments          : int = 0                   # complete alignments of more calls than records, capped at 2
+    alignments          : int = 0                   # complete alignments of more calls than records, ALIGNMENT_CAP at most
 
     @property
     def paired(self) -> bool:
@@ -410,7 +411,7 @@ def align_records(data: bytes, calls: list[tuple[TrackedCall, int]], records: li
 
         return content[i, j]
 
-    # ways[j][i - j]: the complete alignments of records j.. with calls i.., capped at 2 (none, one or more matters)
+    # ways[j][i - j]: the complete alignments of records j.. with calls i.., ALIGNMENT_CAP at most
     ways = [[0] * (slack + 1) for _ in range(record_count + 1)]
     ways[record_count][slack] = 1
     for skipped in reversed(range(slack)):
@@ -423,7 +424,7 @@ def align_records(data: bytes, calls: list[tuple[TrackedCall, int]], records: li
             if skipped < slack and is_local[i]:
                 total += ways[j][skipped + 1]
 
-            ways[j][skipped] = min(total, 2)
+            ways[j][skipped] = min(total, ALIGNMENT_CAP)
 
     alignments = ways[0][0]
     if alignments != 1:

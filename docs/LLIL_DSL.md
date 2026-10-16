@@ -143,7 +143,8 @@ global name - can't hold a NUL (the game ends the string there) or a lone surrog
 `def`. Errors raised while a body runs carry the `.py` line in their traceback.
 
 **Call-site debug records.** With `ScpWriter.round_trip` on (the default), every call made after a
-function's first `DEBUG_SET_LINENO` gets a debug record of its arguments. A local call's record keeps them
+function's first `DEBUG_SET_LINENO` gets a debug record of its arguments, unless its `CALL` says
+`debug_record = False` (below). A local call's record keeps them
 up to the last one its author wrote, by the original compiler's rule: trailing constant arguments equal to
 the callee's defaults (the same type and stored word, a string by its text; the callee's final signature,
 hooks included) are left out. A call whose original record breaks the rule carries its count on the `CALL`
@@ -159,7 +160,9 @@ beside it is unused. `debug_argc` must be an `int` (`CALL debug_argc is True (bo
 as given, `debug_record` a `bool`; opcode callbacks never see either, and they go with their `CALL` when one
 drops it. An everyday `.py` (decompiled with `ScpParser.round_trip` off: neither keyword) compiled with the
 writer's default gets rule-trimmed
-records; `ScpWriter.round_trip = False` writes no records at all. Records don't affect the logic. An older
+records; `ScpWriter.round_trip = False` writes no records at all. `ScpWriter.round_trip` covers the other
+half of a byte-exact file too: on, the string pool is never deduplicated and is written in section order,
+as the original compiler wrote it; off, equal strings share one entry. Neither half changes the logic. An older
 round-trip `.py` with `@scena.LLILCode(debug_argc = {...})` stops at Python's `TypeError` there: decompile
 the `.dat` again.
 
@@ -319,13 +322,16 @@ to `True`.
 **What's actually verified, and what isn't:** `--round-trip` is byte-identical on the validator's 5
 baseline samples (`sora2_1.0/script_en/scena/e0000.dat`, `e2000.dat`, `mp0000_ev.dat`, `system.dat`,
 and `sora2_1.0/script_en/ai/ai_chr0100_e00.dat`), and `--logic-round-trip` converges at round 2 on
-all 5 (2026-10-01). On a 300-file quota sample of `sora2_1.0` that includes them (2026-10-01; list
-and results in the gitignored `notes/validator300/`), 265 files are byte-identical
-and all 300 converge at round 2. The logic round trip is also measured corpus-wide (above), and so is
-the byte-exact one: 855 of 1,082 `sora2_1.0` files are byte-identical (2026-10-01,
-`notes/debug_records_handoff.md`). Nearly all of the others differ only in their rebuilt debug
-records, most of them `ani/` scripts, where records around `ScriptNoReturn` tail calls do not pair
-with their call sites.
+all 5 (2026-10-01). On a 300-file quota sample of `sora2_1.0` that includes them (list and results
+in the gitignored `notes/validator300/`), 298 files are byte-identical and all 300 converge at round 2
+(2026-10-16). The logic round trip is also measured corpus-wide (above), and so is the byte-exact one:
+1,076 of 1,082 `sora2_1.0` files are byte-identical (2026-10-16, after the debug-records plan; 855 on
+2026-10-01). The 6 left are known and out of that plan's scope: 4 differently built `chr*` files
+(`chr0000`, `chr5001`, `chr5003`, `chr5007`: records missing for some calls, record strings sharing pool
+entries), `chr5110` (dead code ranges the decompiler drops) and `mp0090` (bytes before its first
+function); `notes/debug_records_handoff.md` has the details. When a rebuilt file differs, `--round-trip`
+also compares the two files' debug records function by function and reports the first difference in each
+(`compare_file_records`, e.g. `AniDamage record 3: 1 args, original 2`).
 
 ## 3. Common-Function Shared Library — Implemented
 
