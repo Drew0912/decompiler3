@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 '''Unit tests for pairing call-site debug records with their calls: CallDebugInfoTracker (its call tree, registers and
 line gate; replay's record order and each call's instruction offset), falcom/ed9/parser/call_debug_records.py
-(canonical_argc, record_args, record_mismatch, script_call_identity, pair_records), a local call's count on its CALL
-through a round trip - a dead call's too, function_extents, and the round-trip validator's debug-records check and
-record comparison built on them.'''
+(canonical_argc, record_args, record_mismatch, script_call_identity, pair_records and its alignment of more calls than
+records), a local call's count on its CALL through a round trip - a dead call's too, and a call without a record
+(debug_record = False), function_extents, and the round-trip validator's debug-records check and record comparison
+built on them.'''
 
 from pathlib import Path
 import copy
@@ -44,6 +45,12 @@ SAME_SCRIPT_TAIL_CALL_FILE = SORA2_SCRIPTS / 'ani/mon5265_C.dat'
 DEAD_BODY_FILE = SORA2_SCRIPTS / 'ani/chr0110.dat'
 DEAD_BODY_FUNCTION = 'AniBtlCraft01'
 DEAD_BODY_RECORD_COUNT = 29
+# ai_chr5004p SkillTable: its first if-body call has no line marker of its own, so no record
+UNMARKED_CALL_FILE = SORA2_SCRIPTS / 'ai/ai_chr5004p.dat'
+UNMARKED_CALL_FUNCTION = 'SkillTable'
+UNMARKED_CALL_OFFSET = 0x10FC
+SKILL_IDS = (1, 2, 3, 4, 5, 6)
+TWIN_ID = 7
 CALL_OPCODES = (ED9Opcode.CALL, ED9Opcode.CALL_SCRIPT, ED9Opcode.CALL_SCRIPT_NO_RETURN, ED9Opcode.SYSCALL)
 SYSCALL_SUBSYSTEM = 1
 SYSCALL_FUNC = 0x02
@@ -292,6 +299,66 @@ def compile_counts(dat: Path):
             CALL(SetAuto, **keywords)
             label(ret)
 
+        RETURN()
+
+    writer.run({})
+
+
+def compile_skills(dat: Path):
+    '''Calls of Skill(n), told apart by n: Distinct (SKILL_IDS) and Twins (TWIN_ID twice) record every call;
+    OneUnrecorded, FourUnrecorded and Both have calls the compiler left without a record (ai_chr5004p's and
+    ai_chr5106p's SkillTable shapes; debug_record = False beside a debug_argc that keeps more than the rule)'''
+    writer = fresh_writer(dat)
+
+    @writer.LLILCode()
+    def Skill(arg1: Value32):
+        POP(WORD_SIZE)
+        RETURN()
+
+    @writer.LLILCode()
+    def SetAuto(arg1: Value32, arg2: Value32 = 0):
+        POP(2 * WORD_SIZE)
+        RETURN()
+
+    def skill_calls(prefix: str, *calls: tuple[int, bool]):
+        '''Skill(value) calls, recorded or not; labels prefix0, prefix1, ... (labels are script-wide)'''
+        DEBUG_SET_LINENO(1)
+        for index, (value, recorded) in enumerate(calls):
+            PUSH_CURRENT_FUNC_ID()
+            PUSH_RET_ADDR(f'{prefix}{index}')
+            PUSH_INT(value)
+            CALL(Skill, debug_record = recorded)
+            label(f'{prefix}{index}')
+
+    @writer.LLILCode()
+    def Distinct():
+        skill_calls('distinct', *[(value, True) for value in SKILL_IDS])
+        RETURN()
+
+    @writer.LLILCode()
+    def Twins():
+        skill_calls('twin', (TWIN_ID, True), (TWIN_ID, True))
+        RETURN()
+
+    @writer.LLILCode()
+    def OneUnrecorded():
+        skill_calls('one', (1, True), (2, False), (3, True))
+        RETURN()
+
+    @writer.LLILCode()
+    def FourUnrecorded():
+        skill_calls('four', (1, True), (2, False), (3, False), (4, False), (5, False), (6, True))
+        RETURN()
+
+    @writer.LLILCode()
+    def Both():
+        skill_calls('both', (1, True))
+        PUSH_CURRENT_FUNC_ID()
+        PUSH_RET_ADDR('set_auto')
+        PUSH_INT(0)
+        PUSH_INT(1)
+        CALL(SetAuto, debug_argc = 2, debug_record = False)
+        label('set_auto')
         RETURN()
 
     writer.run({})
@@ -905,6 +972,18 @@ class TestRealRoundTrip(unittest.TestCase):
         result = check_round_trip(path, Path(self.enterContext(tempfile.TemporaryDirectory())))
         self.assertEqual(result.status, Status.PASS, '\n'.join([result.summary, *result.details]))
 
+    def test_an_unmarked_call_rebuilds_identical(self):
+        '''The round-trip .py marks the one call the compiler left without a record'''
+        path = require(UNMARKED_CALL_FILE)
+        tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+        _, functions = decompile_to_python(path, tmp / 'unmarked.py')
+        self.assertEqual(next(func for func in functions if func.name == UNMARKED_CALL_FUNCTION).call_unrecorded,
+                         {UNMARKED_CALL_OFFSET})
+        self.assertEqual((tmp / 'unmarked.py').read_text(encoding = 'utf-8').count('debug_record = False'), 1)
+
+        result = check_round_trip(path, tmp)
+        self.assertEqual(result.status, Status.PASS, '\n'.join([result.summary, *result.details]))
+
 
 class TestCountsOnTheCall(unittest.TestCase):
     '''A local call's record count rides on its CALL, written only where it isn't the compiler's rule: two calls with
@@ -970,12 +1049,124 @@ class TestPairRecords(CompiledScript):
         self.assertEqual([match.record_index for match in pairing.matches], [0, 1, 3, 4])
         self.assertEqual(pairing.reason, f'record 2 differs from its call ({problem})')
 
-    def test_different_counts_match_nothing(self):
-        pairing = self.pairing(self.data, self.records['Main'][:-1])
+    def test_more_records_than_calls_match_nothing(self):
+        pairing = self.pairing(self.data, self.records['Main'] + self.records['Main'][:1])
         self.assertFalse(pairing.paired)
-        self.assertEqual((pairing.matches, pairing.unmatched_calls, pairing.unmatched_records, pairing.mismatches),
-                         ([], [0, 1, 2, 3, 4], [0, 1, 2, 3], []))
-        self.assertEqual(pairing.reason, '5 calls, 4 records')
+        self.assertEqual((pairing.matches, pairing.unrecorded, pairing.unmatched_calls, pairing.unmatched_records,
+                          pairing.mismatches), ([], [], [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 5], []))
+        self.assertEqual(pairing.reason, '5 calls, 6 records')
+
+
+class SkillScript(unittest.TestCase):
+    '''compile_skills' script, loaded as the validator loads it'''
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(cls.enterClassContext(tempfile.TemporaryDirectory()))
+        cls.dat = cls.tmp / 'skills.dat'
+        compile_skills(cls.dat)
+        cls.ctx = load_script(cls.dat)
+        cls.addClassCleanup(cls.ctx.fs.Close)
+        cls.parser = cls.ctx.parser
+        cls.data = cls.ctx.data
+        names = [func.name for func in cls.parser.functions]
+        cls.records = dict(zip(names, cls.ctx.records))
+        cls.instructions = dict(zip(names, cls.ctx.instructions))
+
+    def call_offsets(self, name: str) -> list[int]:
+        return [inst.offset for inst in self.instructions[name] if inst.opcode == ED9Opcode.CALL]
+
+
+class TestAlignRecords(SkillScript):
+    '''More calls than records: every record matches a call, in order, and the local calls left over have no record;
+    paired only when exactly one such alignment exists'''
+
+    def pairing(self, name: str, kept: list[int]):
+        '''name's calls against its records at the indices kept'''
+        return pair_records(self.data, self.instructions[name], [self.records[name][i] for i in kept],
+                            self.parser.get_func_argc, self.parser.get_func_index)
+
+    def assert_aligned(self, kept: list[int]):
+        pairing = self.pairing('Distinct', kept)
+        offsets = self.call_offsets('Distinct')
+        self.assertTrue(pairing.paired)
+        self.assertIsNone(pairing.reason)
+        self.assertEqual([(match.record_index, match.offset) for match in pairing.matches],
+                         list(enumerate(offsets[i] for i in kept)))
+        self.assertEqual(pairing.unrecorded, [offset for i, offset in enumerate(offsets) if i not in kept])
+
+    def test_one_in_the_middle(self):
+        self.assert_aligned([0, 1, 3, 4, 5])
+
+    def test_the_first(self):
+        self.assert_aligned([1, 2, 3, 4, 5])
+
+    def test_the_last(self):
+        self.assert_aligned([0, 1, 2, 3, 4])
+
+    def test_four_in_a_row(self):
+        self.assert_aligned([0, 5])
+
+    def test_no_records(self):
+        '''A function whose every call is marked debug_record = False'''
+        self.assert_aligned([])
+
+    def test_no_alignment(self):
+        pairing = self.pairing('Distinct', [1, 0])
+        self.assertFalse(pairing.paired)
+        self.assertEqual((pairing.matches, pairing.unrecorded), ([], []))
+        self.assertEqual(pairing.reason, f'{len(SKILL_IDS)} calls, 2 records, no alignment')
+
+    def test_identical_calls_are_ambiguous(self):
+        '''Either twin may be the one without a record: a wrong guess would shift every later record'''
+        pairing = self.pairing('Twins', [0])
+        self.assertFalse(pairing.paired)
+        self.assertEqual((pairing.matches, pairing.unrecorded), ([], []))
+        self.assertEqual(pairing.reason, '2 calls, 1 records, more than one alignment')
+
+
+class TestUnrecordedCalls(SkillScript):
+    '''CALL(f, debug_record = False): no record for that call; the round-trip .py writes it back and rebuilds identical'''
+
+    def record_values(self, name: str) -> list[tuple[int, list[int]]]:
+        '''Each raw record's callee and argument words'''
+        return [(record.func_id, [word for _, word in record_args(self.data, record)]) for record in self.records[name]]
+
+    def test_the_marked_calls_have_no_record(self):
+        skill = self.parser.get_func_index('Skill')
+        for name, values in {'OneUnrecorded': [1, 3], 'FourUnrecorded': [1, 6], 'Both': [1]}.items():
+            with self.subTest(name):
+                self.assertEqual(self.record_values(name), [(skill, [ScpValue(value).to_word()]) for value in values])
+
+    def test_round_trip_py_marks_them(self):
+        py_path = self.tmp / 'skills.py'
+        _, functions = decompile_to_python(self.dat, py_path)
+        func = next(func for func in functions if func.name == 'OneUnrecorded')
+        first, unrecorded, last = self.call_offsets('OneUnrecorded')
+        self.assertEqual((func.call_unrecorded, func.call_written_argc, func.call_debug_argc),
+                         ({unrecorded}, {first: 1, last: 1}, {}))
+
+        lines = [line.strip() for line in py_path.read_text(encoding = 'utf-8').splitlines()]
+        body = lines[lines.index('def OneUnrecorded():'):lines.index('def FourUnrecorded():')]
+        self.assertEqual([line for line in body if line.startswith('CALL(')],
+                         ['CALL(Skill)', 'CALL(Skill, debug_record = False)', 'CALL(Skill)'])
+        self.assertIn('CALL(SetAuto, debug_record = False)', lines)
+
+    def test_rebuilds_identical(self):
+        result = check_round_trip(self.dat, Path(self.enterContext(tempfile.TemporaryDirectory())))
+        self.assertEqual(result.status, Status.PASS, '\n'.join([result.summary, *result.details]))
+
+    def test_the_validator_warns_for_each(self):
+        '''One line per call left without a record (a new one may be a tracker regression), in table order'''
+        result = check_debug_records(self.ctx)
+        unrecorded = {'Both': self.call_offsets('Both')[1:], 'FourUnrecorded': self.call_offsets('FourUnrecorded')[1:-1],
+                      'OneUnrecorded': self.call_offsets('OneUnrecorded')[1:2]}
+        total = sum(len(records) for records in self.records.values())
+
+        self.assertEqual(result.status, Status.WARN)
+        self.assertEqual(result.details, [f'{name}: call @0x{offset:X} has no record'
+                                          for name, offsets in unrecorded.items() for offset in offsets])
+        self.assertEqual(result.summary, f'{total} records rebuilt (0 with dropped default args)')
 
 
 class TestValidatorDebugRecords(CompiledScript):

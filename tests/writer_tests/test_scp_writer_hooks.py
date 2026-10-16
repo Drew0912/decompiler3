@@ -1358,15 +1358,17 @@ class TestOpcodeCallbacks(HookTestCase):
                                  ([called], f'this.{called}'))
                 self.assertEqual(seen, [] if result is True else [('this', 'Old', 0)])
 
-    def test_debug_argc_reaches_only_its_own_call(self):
-        '''A CALL's debug_argc stays with it when a callback keeps it and goes when one drops it - never to the
-        callback (it sees (CALL, func) only), to a replacement CALL the callback emits, or to the next call'''
-        cases = {                                   # callback result, emits a replacement -> record counts
-            'kept': (None, False, [3, 1]),
-            'dropped': (True, False, [1]),
-            'replaced': (True, True, [1, 1]),
+    def test_call_keywords_reach_only_their_own_call(self):
+        '''A CALL's debug_argc / debug_record stay with it when a callback keeps it and go when one drops it - never to
+        the callback (it sees (CALL, func) only), to a replacement CALL the callback emits, or to the next call'''
+        cases = {                                   # keyword, callback result, emits a replacement -> record counts
+            'debug_argc kept': ({'debug_argc': 3}, None, False, [3, 1]),
+            'debug_argc dropped': ({'debug_argc': 3}, True, False, [1]),
+            'debug_argc replaced': ({'debug_argc': 3}, True, True, [1, 1]),
+            'debug_record kept': ({'debug_record': False}, None, False, [1]),
+            'debug_record replaced': ({'debug_record': False}, True, True, [1, 1]),
         }
-        for case, (result, replace, expected) in cases.items():
+        for case, (keywords, result, replace, expected) in cases.items():
             with self.subTest(case):
                 # A dropped CALL leaves its setup and args on the stack: the compile check would reject that
                 self.writer = self.fresh_writer(check = result is None or replace)
@@ -1379,7 +1381,7 @@ class TestOpcodeCallbacks(HookTestCase):
                 @self.writer.LLILCode()
                 def Main():
                     DEBUG_SET_LINENO(1)
-                    local_call(Callee, 'annotated', ((PUSH_INT, 2), (PUSH_INT, 1), (PUSH_INT, 5)), debug_argc = 3)
+                    local_call(Callee, 'annotated', ((PUSH_INT, 2), (PUSH_INT, 1), (PUSH_INT, 5)), **keywords)
                     local_call(Callee, 'next', ((PUSH_INT, 2), (PUSH_INT, 1), (PUSH_INT, 5)))
                     RETURN()
 

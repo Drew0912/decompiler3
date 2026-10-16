@@ -94,19 +94,24 @@ def JMP(target: str):
     return get_scp_writer().handle_opcode(ED9Opcode.JMP, target)
 
 
-def CALL(func: Callable, debug_argc: int | None = None):
+def CALL(func: Callable, debug_argc: int | None = None, debug_record: bool = True):
     """Call a script function, passed as the function itself - CALL(Foo), not CALL('Foo') (Opcode 0x0C). debug_argc:
     how many args the call's debug record keeps, where the original's differs from the compiler's rule (trailing
-    args equal to the callee's defaults dropped); the round-trip .py writes it"""
+    args equal to the callee's defaults dropped); debug_record = False: the call gets no record (the original's
+    statement had no line marker of its own), and debug_argc has nothing to apply to. The round-trip .py writes both"""
     if not callable(func):
         raise TypeError(get_scp_writer().at_statement(f'CALL takes the function itself, not {func!r}'))
 
-    # Exact type: bool is an int subclass, and handle_opcode's bool check sees the positional operands only
+    # Exact types: bool is an int subclass, and handle_opcode's bool check sees the positional operands only
     if debug_argc is not None and type(debug_argc) is not int:
         raise TypeError(get_scp_writer().at_statement(f'CALL debug_argc is {debug_argc!r} '
                                                       f'({type(debug_argc).__name__}), not int'))
 
-    return get_scp_writer().handle_opcode(ED9Opcode.CALL, func, debug_argc = debug_argc)
+    if type(debug_record) is not bool:
+        raise TypeError(get_scp_writer().at_statement(f'CALL debug_record is {debug_record!r} '
+                                                      f'({type(debug_record).__name__}), not bool'))
+
+    return get_scp_writer().handle_opcode(ED9Opcode.CALL, func, debug_argc = debug_argc, debug_record = debug_record)
 
 
 def RETURN():

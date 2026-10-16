@@ -163,7 +163,7 @@ class TestOpcodeFunctions(unittest.TestCase):
 
     def test_each_function_emits_its_own_opcode(self):
         '''Every statement of the DSL hands the writer its opcode and operands; none returns before it. CALL's
-        debug_argc goes as a keyword, so the opcode callbacks never see it'''
+        debug_argc and debug_record go as keywords, so the opcode callbacks never see them'''
         writer = body_writer()
         functions = self.opcode_functions()
         no_operands = {name: () for name in ED9Opcode.__members__ if name not in self.ARGS}
@@ -174,7 +174,7 @@ class TestOpcodeFunctions(unittest.TestCase):
             for name, func in functions.items():
                 func(*args[name])
 
-        self.assertEqual(emitted, [(ED9Opcode[name], args[name], {'debug_argc': None} if name == 'CALL' else {})
+        self.assertEqual(emitted, [(ED9Opcode[name], args[name], {'debug_argc': None, 'debug_record': True} if name == 'CALL' else {})
                                    for name in functions])
 
     def test_each_function_checks_its_argument_types(self):

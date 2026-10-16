@@ -22,7 +22,8 @@ Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler l
     string pool     never deduplicated: code refs (code order, unreachable code included), names, default
                     strings, debug-only strings, global var names (index order, always last);
                     falcom/ed9/parser/string_pool.py
-    debug records   every record rebuilt from its call site, dead code included (call_debug_records.pair_records)
+    debug records   every record rebuilt from its call site, dead code included (call_debug_records.pair_records);
+                    WARN: a call the compiler left without a record (aligned)
     round trip      (--round-trip) decompile into a work dir, delete the copy, run the generated .py,
                     byte-compare with the original; when they differ, also compare the two files' debug
                     records function by function (the first difference in each, see compare_file_records)
@@ -349,6 +350,7 @@ def check_string_pool(ctx: ScriptContext, refs: StringRefs) -> CheckResult:
 
 def check_debug_records(ctx: ScriptContext) -> CheckResult:
     failures = []
+    warnings = []
     rebuilt = 0
     dropped = 0
 
@@ -356,16 +358,18 @@ def check_debug_records(ctx: ScriptContext) -> CheckResult:
         # Dead calls have records too: pair over the code the .py prints, reachable and dead
         pairing = pair_records(ctx.data, ctx.parser.code_instructions(func), ctx.records[index], ctx.parser.get_func_argc,
                                ctx.parser.get_func_index)
-        if pairing.call_count != pairing.record_count:
+        if pairing.call_count != pairing.record_count and not pairing.paired:
             failures.append(f'{func.name}: {pairing.call_count} call sites with line info, {pairing.record_count} debug records')
             continue
 
+        # A call the compiler left without a record (aligned): a new one may be a tracker regression
+        warnings += [f'{func.name}: call @0x{offset:X} has no record' for offset in pairing.unrecorded]
         failures += [f'{func.name} record {i}: {problem}' for i, problem in pairing.mismatches]
         rebuilt += len(pairing.matches)
         dropped += sum(match.record.arg_count < len(match.call.args) for match in pairing.matches)
 
     summary = f'{rebuilt} records rebuilt ({dropped} with dropped default args)'
-    return CheckResult.build('debug records', summary, failures)
+    return CheckResult.build('debug records', summary, failures, warnings)
 
 
 def check_instruction_ranges(insts: list[Instruction], start: int, end: int) -> list[str]:

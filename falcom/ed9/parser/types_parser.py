@@ -89,6 +89,7 @@ class Function(StrictBase):
     debug_info      : list[ScpFunctionCallDebugInfo]    # round_trip: the raw call debug records, against the file's bytes
     call_written_argc : dict[int, int]  # local CALL offset -> args its debug record keeps, every paired local call
     call_debug_argc : dict[int, int]    # the same, only where that isn't the compiler's rule (canonical_argc)
+    call_unrecorded : set[int]          # local CALL offsets the compiler left without a record (align_records)
     entry_block     : BasicBlock | None
     unreachable_blocks : list[BasicBlock]   # code no branch reaches, linearly decoded (not linked into the CFG)
     stack_layout    : StackLayout | None    # set by the parser; a hand-built function has none
@@ -101,6 +102,7 @@ class Function(StrictBase):
         self.debug_info = []
         self.call_written_argc = {}
         self.call_debug_argc = {}
+        self.call_unrecorded = set()
         self.entry_block = None
         self.unreachable_blocks = []
         self.stack_layout = None

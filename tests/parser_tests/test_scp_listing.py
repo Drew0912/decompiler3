@@ -29,6 +29,9 @@ CHECK_ALGO_USE_FILE = SORA2_SCRIPTS / 'ai/ai_chr5122_e00.dat'
 DEAD_CODE_CALLS_FILE = SORA2_SCRIPTS / 'ani/chr0109.dat'
 CODE_BEFORE_FUNCTIONS_FILE = SORA2_SCRIPTS / 'scena/mp0090.dat'
 UNMARKED_CALL_FILE = SORA2_SCRIPTS / 'ai/ai_chr5004p.dat'
+UNMARKED_CALL_FUNCTION = 'SkillTable'
+UNMARKED_CALL_OFFSET = 0x10FC          # btl_ai_skill(1028, ...): no record
+UNMARKED_CALL_RECORDS = 4
 
 SPECIAL_TEXT = 'a, "b" \\ c\r\nd'      # a comma, quotes, a backslash, CR and LF
 POOL_HEADING = '=== String pool'
@@ -245,9 +248,9 @@ class TestListing(unittest.TestCase):
 
     def test_records_tagged_at_their_calls(self):
         main = self.functions['Main']
-        call_offsets, note = self.listing.pairing(main)
+        call_offsets, unrecorded, note = self.listing.pairing(main)
         records = self.listing.records[main.index]
-        self.assertIsNone(note)
+        self.assertEqual((unrecorded, note), ([], None))
         self.assertEqual(len(call_offsets), len(records))
         for i, offset in call_offsets.items():
             with self.subTest(record = i):
@@ -329,7 +332,7 @@ class TestSameScriptTailCalls(unittest.TestCase):
         listing = ScpListing(dat)
         for name in ('ToLoop', 'ToNowhere'):
             with self.subTest(function = name):
-                call_offsets, note = listing.pairing(listing.parser.get_func_by_name(name))
+                call_offsets, _, note = listing.pairing(listing.parser.get_func_by_name(name))
                 self.assertEqual((len(call_offsets), note), (1, None))
 
 
@@ -422,7 +425,7 @@ class TestRealScripts(unittest.TestCase):
 
     def test_dead_code_calls_tagged(self):
         listing = ScpListing(require(DEAD_CODE_CALLS_FILE))
-        call_offsets, note = listing.pairing(listing.parser.get_func_by_name('AniBtlCraft01'))
+        call_offsets, _, note = listing.pairing(listing.parser.get_func_by_name('AniBtlCraft01'))
         self.assertIsNone(note)
         self.assertTrue([offset for offset in call_offsets.values() if id(listing.decoded[offset][0][0]) in listing.unreachable])
 
@@ -435,9 +438,18 @@ class TestRealScripts(unittest.TestCase):
         self.assertEqual(code_area(listing, lines[block:first_function]), listing.data[0xA4:0xB9])
         self.assertEqual(code_area(listing, lines), whole_code_area(listing))
 
-    def test_unmarked_call_is_not_paired(self):
-        lines = ScpListing(require(UNMARKED_CALL_FILE)).lines(ListingSections(code = False))
-        self.assertTrue(any('records not paired:' in line and ' calls, ' in line for line in lines))
+    def test_unmarked_call_is_tagged(self):
+        '''SkillTable's first if-body call has no record (no line marker of its own): its records pair with the other
+        calls, and that CALL is tagged'''
+        listing = ScpListing(require(UNMARKED_CALL_FILE))
+        call_offsets, unrecorded, note = listing.pairing(listing.parser.get_func_by_name(UNMARKED_CALL_FUNCTION))
+        self.assertEqual((len(call_offsets), unrecorded, note), (UNMARKED_CALL_RECORDS, [UNMARKED_CALL_OFFSET], None))
+
+        lines = listing.lines(ListingSections(header = False, global_vars = False, function_entries = False,
+                                              string_pool = False))
+        line = next(i for i, text in enumerate(lines) if text.startswith(f'0x{UNMARKED_CALL_OFFSET:0{listing.offset_width}X}'))
+        self.assertTrue(lines[line].endswith('; btl_ai_skill'), lines[line])
+        self.assertEqual(lines[line + 1].strip(), ';   no record')
 
 
 if __name__ == '__main__':

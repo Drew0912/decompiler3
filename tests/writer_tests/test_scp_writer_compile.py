@@ -740,6 +740,27 @@ class TestArgumentTypes(WriterTestCase):
                 with self.assertRaisesRegex(TypeError, rf'^{at(__file__, "debug_argc")}Main: {message}$'):
                     self.writer.build({})
 
+    def test_debug_record_is_exactly_a_bool(self):
+        for case, value in {'int': 0, 'None': None}.items():
+            with self.subTest(case):
+                self.writer = self.fresh_writer()
+
+                @self.writer.LLILCode()
+                def Callee():
+                    RETURN()
+
+                @self.writer.LLILCode()
+                def Main():
+                    PUSH_CURRENT_FUNC_ID()
+                    PUSH_RET_ADDR('ret')
+                    CALL(Callee, debug_record = value)                  # line: debug_record
+                    label('ret')
+                    RETURN()
+
+                message = rf'CALL debug_record is {re.escape(repr(value))} \({type(value).__name__}\), not bool'
+                with self.assertRaisesRegex(TypeError, rf'^{at(__file__, "debug_record")}Main: {message}$'):
+                    self.writer.build({})
+
 
 class TestStrings(WriterTestCase):
     '''A string the pool can't store fails where it enters (a default at its def: test_scp_writer_hooks.py's parameter
@@ -829,10 +850,11 @@ class TestWriterWithoutRoundTrip(WriterTestCase):
         self.assertEqual(data.count(b'same\x00'), 2)
         self.assertEqual(self.pushed_strings(data), ['same', 'same'])
 
-    def test_debug_argc_compiles_to_the_same_bytes(self):
-        '''No call is tracked, so a CALL's debug_argc changes nothing: no records, the bytes of the call without it'''
+    def test_call_keywords_compile_to_the_same_bytes(self):
+        '''No call is tracked, so a CALL's debug_argc or debug_record changes nothing: no records, the bytes of the
+        call without it'''
         compiled = {}
-        for case, keywords in {'annotated': {'debug_argc': 2}, 'plain': {}}.items():
+        for case, keywords in {'debug_argc': {'debug_argc': 2}, 'debug_record': {'debug_record': False}, 'plain': {}}.items():
             self.writer = self.fresh_writer()
             self.writer.round_trip = False
 
@@ -850,7 +872,8 @@ class TestWriterWithoutRoundTrip(WriterTestCase):
             compiled[case] = self.writer.build({})
             self.assertEqual([f.debug_records for f in self.writer.functions], [[], []])
 
-        self.assertEqual(compiled['annotated'], compiled['plain'])
+        self.assertEqual(compiled['debug_argc'], compiled['plain'])
+        self.assertEqual(compiled['debug_record'], compiled['plain'])
 
 
 class TestCheckOffLocations(WriterTestCase):

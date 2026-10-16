@@ -45,17 +45,20 @@ class Formatter:
         self.referenced_offsets: set[int] = set()    # offsets real reachable-code operands point at - each needs a label
         self.layout: StackLayout | None = None       # the stack and argument comments' source
         self.call_debug_argc: dict[int, int] = {}    # CALL offset -> args its debug record keeps, off the compiler's rule
+        self.call_unrecorded: set[int] = set()       # CALL offsets without a debug record
 
     def format_entry_block(self, entry_block: 'BasicBlock', unreachable_blocks: 'list[BasicBlock]' = (), layout: 'StackLayout | None' = None,
-                           call_debug_argc: dict[int, int] | None = None) -> list[str]:
+                           call_debug_argc: dict[int, int] | None = None, call_unrecorded: set[int] | None = None) -> list[str]:
         """Format blocks starting from entry block (without function header), plus unreachable blocks in offset order;
-        layout gives the stack and argument comments, call_debug_argc the CALLs that write their debug_argc"""
+        layout gives the stack and argument comments, call_debug_argc the CALLs that write their debug_argc,
+        call_unrecorded those that write debug_record = False"""
         # Reset formatted tracking
         self.formatted_offsets.clear()
         self.formatted_labels.clear()
         self.unreachable_targets = {target for block in unreachable_blocks for target in self.branch_targets(block)}
         self.layout = layout
         self.call_debug_argc = call_debug_argc or {}
+        self.call_unrecorded = call_unrecorded or set()
 
         # Collect reachable blocks and every offset a real instruction's Offset operand points at -
         # only those offsets earn a label, so a JMP/POP_JMP_*/PUSH_RET_ADDR/PUSH_CALLER_FRAME target
@@ -107,7 +110,7 @@ class Formatter:
         lines.append(f'@scena.{decorator}()')
         lines.append(f'def {func.name}({param_str}):')
         lines.extend(self.format_entry_block(func.entry_block, func.unreachable_blocks, func.stack_layout,
-                                             func.call_debug_argc))
+                                             func.call_debug_argc, func.call_unrecorded))
 
         return lines
 
@@ -149,6 +152,9 @@ class Formatter:
             if debug_argc is not None:
                 # Inside the CALL's parentheses: CALL(f) -> CALL(f, debug_argc = 2)
                 formatted = f'{formatted[:-1]}, debug_argc = {debug_argc})'
+
+            elif inst.offset in self.call_unrecorded:
+                formatted = f'{formatted[:-1]}, debug_record = False)'
 
             lines.append(append_comment(formatted, instruction_comments(self.layout, inst, self.context.comments)))
 

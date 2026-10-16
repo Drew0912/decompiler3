@@ -1052,13 +1052,14 @@ class ScpParser(StrictBase):
     def pair_call_debug_info(self, func: Function):
         """Recover the args each local CALL's debug record keeps, by CALL offset, from its calls in the code the .py
         prints (reachable and decoded dead code); where that isn't the compiler's rule (canonical_argc) the .py writes
-        it on the CALL"""
+        it on the CALL, and on a call the compiler left without a record, debug_record = False"""
         pairing = pair_records(self.data, self.code_instructions(func), func.debug_info, self.get_func_argc,
                                self.get_func_index)
         if not pairing.paired:
             log.warning(f'{func.name}: records not paired: {pairing.reason}; the .py writes no debug_argc')
             return
 
+        func.call_unrecorded = set(pairing.unrecorded)
         defaults = self.func_defaults()
         for match in pairing.matches:
             if match.call.call_type != ScpFunctionCallDebugInfo.CallType.Local:

@@ -3,7 +3,8 @@ the parser, ScpWriter, the listing and tools/scp_roundtrip_validator.py); how ma
 the compiler's rule (canonical_argc, shared by the writer and the parser); each function's raw records, each record's
 raw arguments, a script call's callee id and name (script_call_identity, shared by the writer and the check), a
 record's view for comparing two files, whether a record holds what its call would get (content only), and the
-pairing of a function's records with its calls (pair_records, shared by the parser, the listing and the validator)"""
+pairing of a function's records with its calls (pair_records, shared by the parser, the listing and the validator;
+align_records when the compiler left calls without a record)"""
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable
@@ -40,7 +41,7 @@ class TrackedCall:
     target      : Any                               # CALL operand, (module, func) or (subsystem, cmd)
     ret_label   : Any                               # PUSH_RET_ADDR operand of a local CALL
     args        : list[TrackedValue]                # top of stack first (parameter order)
-    recorded    : bool                              # made after line info, so it has a debug record
+    recorded    : bool                              # has a debug record: made after line info, no debug_record = False
     children    : list['TrackedCall'] = field(default_factory = list)  # the calls nested in its args, parameter order
     parent      : 'TrackedCall | None' = None
     debug_argc  : int | None = None                 # the writer's CALL(f, debug_argc = N): args its record keeps
@@ -329,14 +330,17 @@ class RecordMatch:
 
 @dataclass(frozen = True, slots = True)
 class RecordPairing:
-    """A function's records against its recorded calls (record order): the matches, the calls and records left
-    unmatched (indices) and every record that differs from the call it pairs with"""
+    """A function's records against its recorded calls (record order): the matches, the local calls an alignment
+    leaves without a record (CALL offsets), the calls and records left unmatched (indices) and every record that
+    differs from the call it pairs with"""
     matches             : list[RecordMatch]
+    unrecorded          : list[int]
     unmatched_calls     : list[int]
     unmatched_records   : list[int]
     mismatches          : list[tuple[int, str]]     # (record index, how it differs from its call)
     call_count          : int
     record_count        : int
+    alignments          : int = 0                   # complete alignments of more calls than records, capped at 2
 
     @property
     def paired(self) -> bool:
@@ -350,24 +354,31 @@ class RecordPairing:
     @property
     def reason(self) -> str | None:
         """Why the records aren't paired - the parser's warning and the listing's note - or None"""
+        if self.paired:
+            return None
+
+        counts = f'{self.call_count} calls, {self.record_count} records'
+        if self.call_count > self.record_count:
+            return f'{counts}, {"no alignment" if self.alignments == 0 else "more than one alignment"}'
+
         if self.call_count != self.record_count:
-            return f'{self.call_count} calls, {self.record_count} records'
+            return counts
 
-        if self.mismatches:
-            index, problem = self.mismatches[0]
-            return f'record {index} differs from its call ({problem})'
-
-        return None
+        index, problem = self.mismatches[0]
+        return f'record {index} differs from its call ({problem})'
 
 
 def pair_records(data: bytes, instructions: list[Instruction], records: list[ScpFunctionCallDebugInfo],
                  get_param_count: Callable[[Any], int], table_index: Callable[[str], int | None]) -> RecordPairing:
-    """A function's records (raw, read from data) against the recorded calls of its instructions (address order): with
-    equal counts each record pairs with the call at its index, content-checked (record_mismatch); otherwise nothing
-    is matched"""
+    """A function's records (raw, read from data) against the recorded calls of its instructions (address order),
+    content-checked (record_mismatch): with equal counts each record pairs with the call at its index; with more calls
+    than records, by their unique alignment (align_records); with more records than calls nothing is matched"""
     calls = CallDebugInfoTracker.replay(instructions, get_param_count)
+    if len(calls) > len(records):
+        return align_records(data, calls, records, table_index)
+
     if len(calls) != len(records):
-        return RecordPairing([], list(range(len(calls))), list(range(len(records))), [], len(calls), len(records))
+        return RecordPairing([], [], list(range(len(calls))), list(range(len(records))), [], len(calls), len(records))
 
     matches = []
     mismatches = []
@@ -379,7 +390,57 @@ def pair_records(data: bytes, instructions: list[Instruction], records: list[Scp
         else:
             mismatches.append((index, problem))
 
-    return RecordPairing(matches, [], [], mismatches, len(calls), len(records))
+    return RecordPairing(matches, [], [], [], mismatches, len(calls), len(records))
+
+
+def align_records(data: bytes, calls: list[tuple[TrackedCall, int]], records: list[ScpFunctionCallDebugInfo],
+                  table_index: Callable[[str], int | None]) -> RecordPairing:
+    """More calls than records: the compiler gives no record to a call whose statement has no line marker of its own
+    (the first statement of an if body). Every record matches a call, in order, content-checked; the calls left over
+    must be local (only CALL takes debug_record = False). Paired only when exactly one such alignment exists: a wrong
+    skip would shift every later record."""
+    call_count, record_count = len(calls), len(records)
+    slack = call_count - record_count       # the calls left over: a record j matches a call in [j, j + slack]
+    is_local = [call.call_type == ScpFunctionCallDebugInfo.CallType.Local for call, _ in calls]
+    content = {}
+
+    def matches(i: int, j: int) -> bool:
+        if (i, j) not in content:
+            content[i, j] = record_mismatch(data, calls[i][0], records[j], table_index) is None
+
+        return content[i, j]
+
+    # ways[j][i - j]: the complete alignments of records j.. with calls i.., capped at 2 (none, one or more matters)
+    ways = [[0] * (slack + 1) for _ in range(record_count + 1)]
+    ways[record_count][slack] = 1
+    for skipped in reversed(range(slack)):
+        ways[record_count][skipped] = ways[record_count][skipped + 1] if is_local[record_count + skipped] else 0
+
+    for j in reversed(range(record_count)):
+        for skipped in reversed(range(slack + 1)):
+            i = j + skipped
+            total = ways[j + 1][skipped] if matches(i, j) else 0
+            if skipped < slack and is_local[i]:
+                total += ways[j][skipped + 1]
+
+            ways[j][skipped] = min(total, 2)
+
+    alignments = ways[0][0]
+    if alignments != 1:
+        return RecordPairing([], [], list(range(call_count)), list(range(record_count)), [], call_count, record_count,
+                             alignments)
+
+    aligned = []
+    unrecorded = []
+    for i, (call, offset) in enumerate(calls):
+        j = len(aligned)
+        if j < record_count and i - j <= slack and matches(i, j) and ways[j + 1][i - j]:
+            aligned.append(RecordMatch(j, records[j], call, offset))
+
+        else:
+            unrecorded.append(offset)
+
+    return RecordPairing(aligned, unrecorded, [], [], [], call_count, record_count, alignments)
 
 
 def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebugInfo,

@@ -155,13 +155,16 @@ class ScpListing:
 
         if sections.code:
             tags = {}
-            for func, call_offsets, _ in pairings:
+            for func, call_offsets, unrecorded, _ in pairings:
                 for i, offset in call_offsets.items():
                     tags.setdefault(offset, []).append(f'{owners[func.index]}record {i}: {self.record_text(self.records[func.index][i])}')
 
+                for offset in unrecorded:
+                    tags.setdefault(offset, []).append(f'{owners[func.index]}no record')
+
             lines += ['--- code ---', *self.code_lines(start, end, members, tags)]
 
-        for func, call_offsets, note in pairings:
+        for func, call_offsets, _, note in pairings:
             records = self.records[func.index]
             lines.append(f'--- {owners[func.index]}call records ({len(records)}) ---' + (f'  ; {note}' if note else ''))
             for i, record in enumerate(records):
@@ -267,14 +270,15 @@ class ScpListing:
 
         return f'Raw(0x{value.value:X})', None
 
-    def pairing(self, func: Function) -> tuple[dict[int, int], str | None]:
-        """Each record's call offset when every record holds what its call gets (content only), else why not"""
+    def pairing(self, func: Function) -> tuple[dict[int, int], list[int], str | None]:
+        """Each record's call offset and the calls left without a record when every record holds what its call gets
+        (content only), else why not"""
         pairing = pair_records(self.data, self.parser.code_instructions(func), self.records[func.index],
                                self.parser.get_func_argc, self.parser.get_func_index)
         if not pairing.paired:
-            return {}, f'records not paired: {pairing.reason}'
+            return {}, [], f'records not paired: {pairing.reason}'
 
-        return pairing.record_offsets, None
+        return pairing.record_offsets, pairing.unrecorded, None
 
     def record_text(self, record: ScpFunctionCallDebugInfo) -> str:
         args = []

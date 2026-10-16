@@ -685,9 +685,9 @@ class ScpWriter:
 
     # Opcode emission: operands, labels and strings
 
-    def handle_opcode(self, opcode: int, *args, debug_argc: int | None = None):
-        """Write one opcode a DSL opcode function emitted, unless an opcode callback drops it; a CALL's debug_argc goes
-        to its tracked call only, never to the callbacks"""
+    def handle_opcode(self, opcode: int, *args, debug_argc: int | None = None, debug_record: bool = True):
+        """Write one opcode a DSL opcode function emitted, unless an opcode callback drops it; a CALL's debug_argc and
+        debug_record go to its tracked call only, never to the callbacks"""
         if self.current_function is None:
             raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
@@ -743,6 +743,9 @@ class ScpWriter:
             self.call_tracker.on_opcode(opcode, args, value, string)
             if debug_argc is not None:
                 self.call_tracker.calls[-1].debug_argc = debug_argc
+
+            if not debug_record:
+                self.call_tracker.calls[-1].recorded = False
 
     def _opcode_site(self) -> SourceSite | None:
         """Where the opcode being compiled was emitted: the innermost frame running an opcode emitter or a function it

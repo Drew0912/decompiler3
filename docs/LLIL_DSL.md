@@ -151,9 +151,14 @@ hooks included) are left out. A call whose original record breaks the rule carri
 writes, dead code included: the parser pairs a function's records with every call the `.py` prints
 (`call_debug_records.pair_records`, shared with the listing and the validator; each pair content-checked),
 and a function whose records don't pair gets no `debug_argc` and a warning (`records not paired: ...`).
-`debug_argc` must be an `int` (`CALL debug_argc is True (bool), not int`) and is used as given;
-opcode callbacks never see it, and it goes with its `CALL` when one drops it. An everyday `.py` (decompiled
-with `ScpParser.round_trip` off: no `debug_argc`) compiled with the writer's default gets rule-trimmed
+The original compiler gives no record to a call whose statement has no line marker of its own (the first
+statement of an `if` body: `ai_chr5004p`, `ai_chr5106p`); with more calls than records the parser finds the
+one order-preserving alignment of records with calls (`align_records`; none or several: not paired), and
+each local call left over carries `CALL(btl_ai_skill, debug_record = False)` - no record, so a `debug_argc`
+beside it is unused. `debug_argc` must be an `int` (`CALL debug_argc is True (bool), not int`) and is used
+as given, `debug_record` a `bool`; opcode callbacks never see either, and they go with their `CALL` when one
+drops it. An everyday `.py` (decompiled with `ScpParser.round_trip` off: neither keyword) compiled with the
+writer's default gets rule-trimmed
 records; `ScpWriter.round_trip = False` writes no records at all. Records don't affect the logic. An older
 round-trip `.py` with `@scena.LLILCode(debug_argc = {...})` stops at Python's `TypeError` there: decompile
 the `.dat` again.
