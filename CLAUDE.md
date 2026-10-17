@@ -28,6 +28,9 @@ When a bug is found while editing `ir/` (LLIL/MLIL/HLIL structures and passes), 
 ### -0.03. Round-Trip Policy
 Required: logic round trip — decompile (`round_trip=False`) → recompile → decompile must keep the same game logic and reach a fixed point within a few rounds. Byte-exact round trip is a nice-to-have, low priority. Full rule: `docs/LLIL_DSL.md` §2.
 
+### -0.02. Hardening Policy
+Tests, guards, reviews and bug hunts follow `docs/HARDENING_POLICY.md` (read it first).
+
 ### 1. NO HARDCODED MAGIC NUMBERS
 Use named constants: `offset // WORD_SIZE` not `offset // 4`
 Common: `WORD_SIZE = 4` (in `ir/llil/llil.py`)

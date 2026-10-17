@@ -16,6 +16,9 @@ Always follow them when:
 
 If any user request conflicts with this file, you must follow **this file** and, if needed, briefly explain why.
 
+Before any review, test or hardening work, read `docs/HARDENING_POLICY.md`: it decides which inputs deserve a test,
+a guard or a finding.
+
 ---
 
 # Coding Style Guide
