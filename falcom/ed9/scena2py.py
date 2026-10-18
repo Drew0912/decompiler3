@@ -1,10 +1,11 @@
 """Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps.
 
 Usage:
-    python falcom/ed9/scena2py.py {file_path}
+    python falcom/ed9/scena2py.py {file_path} [-o {output_dir}]
 
-Flags live in scena2py_config.py, not on the command line - edit scena2py_config.py to
-change which outputs are written and which ScpParser/MLIL flags are used.
+Flags live in scena2py_config.py, not on the command line (only the output folder has an
+override, -o) - edit scena2py_config.py to change which outputs are written and which
+ScpParser/MLIL flags are used.
 """
 
 import argparse
@@ -171,10 +172,13 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
 def main() -> int:
     parser = argparse.ArgumentParser(description = 'Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
     parser.add_argument('paths', nargs = '+', help = '.dat files or directories (searched recursively)')
+    parser.add_argument('-o', '--output-dir', type = Path, help = "output folder (default: scena2py_config.py's output_dir)")
 
     args = parser.parse_args()
     files = collect_paths(args.paths)
     config = ScenaDecompileConfig()
+    if args.output_dir is not None:
+        config.output_dir = args.output_dir
 
     failures = 0
     for path in files:
