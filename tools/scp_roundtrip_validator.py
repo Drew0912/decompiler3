@@ -28,7 +28,7 @@ Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler l
                     byte-compare with the original; when they differ, also compare the two files' debug
                     records function by function (the first difference in each, see compare_file_records)
 
---logic-round-trip checks (decompile with round_trip=False, the everyday config; see docs/LLIL_DSL.md
+--logic-round-trip checks (decompile with round_trip=False, the everyday config; see docs/dsl/LLIL_DSL.md
 Sec.2 for the full policy - byte-exact fidelity is not required, preserved game logic and a byte-level
 fixed point within a few rounds are):
     source preconditions   fields the decompile normalizes away that no check on a recompiled file

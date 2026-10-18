@@ -2,7 +2,7 @@
 
 > Status: Implemented. Written 2026-09-28 against the real builder and lifter; it replaces the
 > old draft `falcom/ed9/spec/llil_spec.md` (deleted; git history keeps it), whose stack, frame and
-> call sections no longer matched the code. See `docs/MLIL_DESIGN.md` for the layer above.
+> call sections no longer matched the code. See `docs/mlil/MLIL_DESIGN.md` for the layer above.
 
 ## Role in the Pipeline
 
@@ -72,7 +72,7 @@ and `iter_instructions()` look them up. Each MLIL statement's `llil_index` is on
 **Slots.** The stack is a list of word-sized slots numbered from 0; a push writes slot `sp` and
 then increments `sp`. A function starts with `sp = num_params` and the frame base (`fp`) at slot
 0: slots `0 .. num_params - 1` hold the caller's arguments, and nothing is on the virtual stack yet
-(`_seed_entry_state`). MLIL names the parameters `arg1 .. argN` (`docs/MLIL_GUIDE.md`, Variable
+(`_seed_entry_state`). MLIL names the parameters `arg1 .. argN` (`docs/mlil/MLIL_GUIDE.md`, Variable
 Model).
 
 **Push and pop.** `push(value)` emits `StackStore(value, offset 0, slot sp)` then `SpAdd(+1)`, and

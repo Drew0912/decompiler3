@@ -1,6 +1,6 @@
 # High Level IL (HLIL) Guide
 
-> Status: Implemented, active development. Unlike MLIL (see `MLIL_GUIDE.md`), HLIL's structure —
+> Status: Implemented, active development. Unlike MLIL (see `docs/mlil/MLIL_GUIDE.md`), HLIL's structure —
 > which passes run, in what order, how arm-ordering and loop recovery are decided — is still being
 > tuned against real corpus output. Treat this document as accurate to current code, not as a
 > stable, finished spec.
@@ -68,7 +68,7 @@ args), `HLILExternCall` (`"module:func"` cross-script calls).
 `CallResultFolder` decides when an MLIL call's `output` can be inlined straight into its single
 reader instead of materializing as a `REG` assignment — turning `reg0 = f(); use(reg0)` into
 `use(f())` wherever safe. It never folds a call under the right side of a native VM logical op:
-the VM evaluates both sides, HLIL `&&`/`||` short-circuit (see `docs/HLIL_DESIGN.md`).
+the VM evaluates both sides, HLIL `&&`/`||` short-circuit (see `docs/hlil/HLIL_DESIGN.md`).
 
 ## Conversion Pipeline
 
@@ -148,7 +148,7 @@ record, an everyday decompile) prints the rule's. Syscalls, script calls and `.h
 
 **Address-taken locals fold back to a plain variable, not a `deref` call.** MLIL SSA construction
 lowers every address-taken local/parameter `x` to explicit `*(&x)` memory form (see
-`MLIL_DESIGN.md`'s Variable Model & SSA section); that form survives SSA deconstruction and MLIL-
+`docs/mlil/MLIL_DESIGN.md`'s Variable Model & SSA section); that form survives SSA deconstruction and MLIL-
 to-HLIL conversion unchanged, so it also reaches HLIL as `HLILDeref(HLILAddressOf(HLILVar(x)))` /
 an `HLILAssign` whose `dest` is that same shape. `*(&x) ≡ x` always holds for exactly this shape
 (never for a genuine runtime-computed pointer), so both printers special-case it before falling

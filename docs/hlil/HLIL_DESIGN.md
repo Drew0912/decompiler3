@@ -2,7 +2,7 @@
 
 > Status: Implemented, active development. This document was rewritten against the real
 > implementation on 2026-09-20 and is kept current by each change's doc correction (last full
-> review 2026-09-29). See `docs/HLIL_GUIDE.md` for practical usage and the current pass-by-pass behavior;
+> review 2026-09-29). See `docs/hlil/HLIL_GUIDE.md` for practical usage and the current pass-by-pass behavior;
 > this document focuses on the node model, structural-analysis boundary, and architectural reasons
 > behind the MLIL-to-HLIL conversion.
 
@@ -274,7 +274,7 @@ condition, swapped or nested arms); the code statements and their order are unch
 HLIL has no copy-propagation pass: copy propagation happens in MLIL SSA optimization (the disabled
 HLIL `CopyPropagationPass` was removed on 2026-09-27). `FalcomTypeInferencePass` only sets parameter
 types (see Variable Model); it is also the planned home of Falcom semantic types such as character
-IDs. See `docs/HLIL_GUIDE.md` for the detailed transformations
+IDs. See `docs/hlil/HLIL_GUIDE.md` for the detailed transformations
 performed by each active pass and why the copy-propagation pass was removed.
 
 ## Testing

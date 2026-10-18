@@ -9,7 +9,7 @@
 > HLIL-level ideas from the same review, including the HLIL DSL, are in `docs/FUTURE_WORK.md` (HLIL). As
 > there, each entry links back to the doc or code it extends.
 
-## LLIL DSL (`docs/LLIL_DSL.md`)
+## LLIL DSL (`docs/dsl/LLIL_DSL.md`)
 
 The LLIL DSL is the exact, recompilable stack view. It is used mostly for debugging and analysis and
 is easier to read than the `.llil.asm`, but it can still be edited. Keep it close to the stack: one
@@ -23,13 +23,13 @@ byte.
   printed the one with those bits zero, in full: `PUSH_FLOAT(0.2999999523162842)`. It now prints the
   shortest decimal that encodes to the same word, always as a float literal: `PUSH_FLOAT(0.3)`,
   `PUSH_FLOAT(1.0)`, `PUSH_FLOAT(-0.0)`, in `PUSH_FLOAT` operands and float parameter defaults
-  (`ScpValue.float_literal`, `docs/LLIL_DSL.md` §1). Step 4 gave the other outputs the same text: the
+  (`ScpValue.float_literal`, `docs/dsl/LLIL_DSL.md` §1). Step 4 gave the other outputs the same text: the
   Falcom lifter keeps the exact value in the IR as a `SourceFloat` (`ir/core/il_literals.py`) carrying that
   spelling, which every printer gets from `str()`. Before, `.ts`, `.hlil.ts` and `.mlil.asm` rounded to 3
   decimals, neither exact nor short: `0.033299997448921204` printed in full, `-2738.1494140625` as
   `-2738.149`, which encodes to a different word. The `.llil.asm` is under Listings. Step 3b (done)
   stopped SCCP folding floats and the algebraic identities firing on float constants, since the VM's
-  float arithmetic is unverified (`docs/MLIL_DESIGN.md`, Optimization Passes).
+  float arithmetic is unverified (`docs/mlil/MLIL_DESIGN.md`, Optimization Passes).
 - **Float bits comment, opt-in** (item 2; Step 8a, done). `PUSH_FLOAT(0.3)  # f32 0x3E999998, raw 0x8FA66666`:
   the float32 the VM computes with and the stored word a hex editor shows, in unreachable code too; not on
   float defaults in `def` lines (a line with several would get long). Off by default:
@@ -40,7 +40,7 @@ byte.
   (`docs/ARCHITECTURE.md`, Layer 2): the depth before every reachable instruction, and each offset
   opcode's slot with what may be in it at that point. Step 6b (done) comments the script `.py` from it
   and Step 7 (done) the library modules (always on), the way the `.llil.asm` shows the stack
-  (`docs/LLIL_DSL.md` §1, Comments):
+  (`docs/dsl/LLIL_DSL.md` §1, Comments):
   - the 5 offset opcodes with the absolute slot and what it holds (`POP_TO` and `POP_TO_DEREF` count
     their offset from sp after their pop);
   - `# sp = N` at each label, and the slot count on `POP(n)`;
@@ -145,7 +145,7 @@ byte.
   missing push or an extra argument used to compile into a `.dat` that only a decompile noticed; the
   compile check (`ScpWriter.check_compiled`, on by default) now parses and lifts the bytes again and
   fails the compile at the `.py` line - what it checks, its message and its limits are in
-  `docs/LLIL_DSL.md` §1. All 1,082 `sora2_1.0` scripts pass in both decompile modes. It replaced the
+  `docs/dsl/LLIL_DSL.md` §1. All 1,082 `sora2_1.0` scripts pass in both decompile modes. It replaced the
   earlier design of a writer-side walker over an effect table, a second stack model next to the
   parser's; the per-opcode stack effects have since moved into the opcode table (the opcode-table plan,
   `notes/plans/archive/opcode-table.md`). Checking an HLIL DSL `EmitLLIL` list before anything is written
@@ -159,7 +159,7 @@ byte.
   failures in it point at the hook's own line. The bare names come from
   `falcom/ed9/writer/scp_writer_hooks.py`; hooks reach the writer through `get_scp_writer()`, no
   `get_scena()`; `ScenaDecompileConfig.write_hook_template` writes a starting hook next to a decompiled
-  script. Full description: `docs/LLIL_DSL.md` §4. Tree hooks stay with the HLIL DSL
+  script. Full description: `docs/dsl/LLIL_DSL.md` §4. Tree hooks stay with the HLIL DSL
   (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).
 - **Clear errors for bad values** (item 12; Step 2b, done). `ScpValue(True)` failed with a bare
   `KeyError` (`bool` is not in its type map, `falcom/ed9/parser/types_scp.py`), and `POP(True)` compiled
@@ -197,7 +197,7 @@ byte.
   `REG[0]` with `SET_REG(0)`); `LOAD_STACK_DEREF`, `SYSCALL` (reads its arguments without popping) and
   `JMP` were vague. `tools/ir_semantic_validator.py`'s example variable name `"arg0"` is now `"arg1"`,
   since parameters are numbered from `arg1`.
-- **A readable `.dat` listing** (item 15; Steps 8b, 8c-a, 8c-b, done; `docs/LLIL_DSL.md` §2). The old
+- **A readable `.dat` listing** (item 15; Steps 8b, 8c-a, 8c-b, done; `docs/dsl/LLIL_DSL.md` §2). The old
   `.debug.txt` printed the header, each function's table entry and its debug records, with no code, so a
   record couldn't be matched to its call. It is now a read-only listing of the whole file as the VM sees it:
   `write_debug_info` turns it on and `debug_sections = ListingSections(...)` picks the sections (header,
@@ -241,7 +241,7 @@ Decided against on 2026-10-01 (reasons in the handoff):
 - `# fmt: off`, a `run_script` helper, and `# pyright: ignore[reportMissingImports]` on the hook import.
 - A single-import module for the generated header: it saves one line. Revisit with the HLIL DSL, whose
   scripts need more imports.
-- A hand-editing section in `docs/LLIL_DSL.md`, for now; the handoff keeps a draft of its contents.
+- A hand-editing section in `docs/dsl/LLIL_DSL.md`, for now; the handoff keeps a draft of its contents.
 - A provenance comment at the top of each script naming its source and the `round_trip` /
   `keep_unreachable_code` flags (item 17; user, 2026-10-02, after it was implemented in Step 2a): everyday
   scripts always use the same flags, fidelity output is recognizable without it (no library manifest,

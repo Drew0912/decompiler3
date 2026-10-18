@@ -30,7 +30,7 @@ def local_call(callee, ret: str, pushes, **keywords):
 
 def fresh_writer(dat: Path | None = None) -> scp_writer.ScpWriter:
     '''Replace the module-level writer singleton so a compile starts from a clean state (for dat, if given). The
-    writer supports only one compile per interpreter in production (docs/LLIL_DSL.md) - it has no reset - so tests
+    writer supports only one compile per interpreter in production (docs/dsl/LLIL_DSL.md) - it has no reset - so tests
     isolate this way instead.'''
     scp_writer._gScp = scp_writer.ScpWriter()
     return scp_writer.create_scp_writer(str(dat)) if dat is not None else scp_writer._gScp

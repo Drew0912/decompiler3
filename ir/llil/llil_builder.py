@@ -389,7 +389,7 @@ class LowLevelILBuilder:
             raise TypeError(f'Cannot convert {type(value)} to expression')
 
     def push(self, value: Union[LowLevelILExpr, int, float, str], *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
-        '''Push value onto stack: StackStore + SpAdd (see docs/LLIL_DESIGN.md)'''
+        '''Push value onto stack: StackStore + SpAdd (see docs/llil/LLIL_DESIGN.md)'''
         expr = self._to_expr(value)
         slot_index = self.sp_get()
         # 1. StackStore(sp+0, value)

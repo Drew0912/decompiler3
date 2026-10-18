@@ -1,17 +1,17 @@
 # Future Work
 
 > This file collects ideas that are speculative, not started, or only loosely sketched — things
-> that extend an implemented system rather than describe it. Topic docs (`LLIL_DSL.md`,
-> `HLIL_GUIDE.md`, etc.) describe what's actually built; this file is where "someday" ideas live
+> that extend an implemented system rather than describe it. Topic docs (`docs/dsl/LLIL_DSL.md`,
+> `docs/hlil/HLIL_GUIDE.md`, etc.) describe what's actually built; this file is where "someday" ideas live
 > instead of accumulating as a growing tail on top of those docs. Each entry links back to the
 > concrete doc/code it extends. LLIL-level ideas (the LLIL DSL, the writer) live in
-> `docs/FUTURE_WORK_LLIL.md`.
+> `docs/dsl/DSL_FUTURE_WORK.md`.
 
-## VM-Accurate DIV/MOD and Float Folding (`docs/MLIL_DESIGN.md`)
+## VM-Accurate DIV/MOD and Float Folding (`docs/mlil/MLIL_DESIGN.md`)
 
 SCCP (`ir/mlil/passes/pass_ssa_sccp.py`) deliberately does not fold `MLIL_DIV`/`MLIL_MOD`, or any
 op with a float operand, and no pass decides a branch from a float (LLIL DSL neatening plan, Step
-3b) - see the Optimization Passes section of `docs/MLIL_DESIGN.md`. The one live, corpus-confirmed
+3b) - see the Optimization Passes section of `docs/mlil/MLIL_DESIGN.md`. The one live, corpus-confirmed
 bad fold the DIV/MOD part closed: `sora2_1.0/script_en/scena/mp0000_ev.dat`'s `MayaEvented_22_test`
 used to print `13.0` for `400 / 30.0` (Python floor-division), which is wrong for VM float division
 no matter what the VM's exact answer turns out to be. The float part closed `chr0000`'s
@@ -50,7 +50,7 @@ no matter what the VM's exact answer turns out to be. The float part closed `chr
   in the IR rewrite, and typing resumes as its own plan; a fix would change types wherever an int
   and a float meet (e.g. `400 / 30.0`).
 
-## HLIL Nesting Depth (`docs/HLIL_GUIDE.md`)
+## HLIL Nesting Depth (`docs/hlil/HLIL_GUIDE.md`)
 
 A call whose result is read on the right side of the VM's eager `&&`/`||` stays its own statement,
 since HLIL `&&`/`||` short-circuit (`CallResultFolder` in `ir/hlil/mlil_to_hlil.py`). Inside an
@@ -75,7 +75,7 @@ levels on 2026-09-24 (only 3 files in the corpus got deeper). Accepted for now a
   10,000 for now; building cascades in a loop and walking the tree with explicit stacks would remove
   the dependence on it.
 
-## Recompilation Pipeline (`docs/LLIL_DSL.md`)
+## Recompilation Pipeline (`docs/dsl/LLIL_DSL.md`)
 
 ### 1. HLIL DSL — a Python `.py` output generated from HLIL
 
@@ -93,7 +93,7 @@ HLIL → HLIL DSL (.py) → exec() → lower → LLIL DSL (.py, exists today) �
   DSL-defined (`If`/`Elif`/`Else`, `While`/`DoWhile`, `Switch`/`Case`, `Break`/`Continue` with an
   optional loop label, `Return`) rather than native Python syntax.
 - **Lowers straight to the LLIL DSL** and through today's `ScpWriter` path — the backend that already
-  passes the logic round trip on the full corpus (`docs/LLIL_DSL.md` §2). No intermediate MLIL DSL; an
+  passes the logic round trip on the full corpus (`docs/dsl/LLIL_DSL.md` §2). No intermediate MLIL DSL; an
   MLIL-level DSL stays a separate idea, only worth building if MLIL output is wanted for its own sake.
 - **No renderer shared with the TypeScript generator.** Different syntax, and a different contract:
   `codegen/typescript.py` is readable pseudocode (it folds constant comparisons and rewrites boolean
@@ -119,7 +119,7 @@ Design rules for an executed DSL:
   replaces the earlier rule of lowering every HLIL `&&`/`||` as short-circuit and using the eager op only
   when the right side has no side effects.
 
-**Correctness** is the logic round trip of `docs/LLIL_DSL.md` §2 (game logic unchanged, fixed point
+**Correctness** is the logic round trip of `docs/dsl/LLIL_DSL.md` §2 (game logic unchanged, fixed point
 within a few rounds), but its per-function fingerprint check can't transfer — an HLIL recompile is
 not opcode-identical to its source — and a fixed point alone can't catch a decompiler bug that loses
 logic in the first decompilation (the loss repeats every round). The check is the static game-logic
@@ -128,13 +128,13 @@ bytecode emulator) was considered and deliberately not pursued.
 
 **Prerequisites.** Once HLIL compiles back, every HLIL pass must preserve game logic exactly, not just
 readability. Before starting: calls never folded under a native VM logical op (met 2026-09-24 - see
-`docs/HLIL_DESIGN.md`, Call Results as Expressions); copy propagation never
+`docs/hlil/HLIL_DESIGN.md`, Call Results as Expressions); copy propagation never
 forwarding a register/global past a redefinition (met 2026-09-24 - including clobbering calls whose
-record dead-code elimination drops; see `docs/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (met
+record dead-code elimination drops; see `docs/mlil/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (met
 2026-09-28 - a jump the tree cannot express is an `HLILUnstructured` node, which the DSL must refuse
 to compile, and `tools/hlil_path_check.py` finds 0 of 80,571 sora2_1.0 functions losing or inventing a
-path; see `docs/HLIL_DESIGN.md`, Open Items); common-return extraction only hoisting from an
-exhaustive switch (met 2026-09-24 - see `docs/HLIL_GUIDE.md`, Passes).
+path; see `docs/hlil/HLIL_DESIGN.md`, Open Items); common-return extraction only hoisting from an
+exhaustive switch (met 2026-09-24 - see `docs/hlil/HLIL_GUIDE.md`, Passes).
 
 ### 2. Mixed-IR-Level Compilation, Per Function
 
@@ -159,7 +159,7 @@ phase: each function lowers in place during the one `ScpWriter` run.
 
 ### 3. Knowledge-Driven Typing for Common Functions
 
-The common-function library (`docs/LLIL_DSL.md` §3) currently derives everything purely from raw
+The common-function library (`docs/dsl/LLIL_DSL.md` §3) currently derives everything purely from raw
 bytecode — params are always `arg1: Value32`, `arg2: Value32`, etc. There's a real precedent in
 this codebase for annotating that kind of gap externally instead of by hand-editing generated
 output: `falcom/ed9/signatures/format_signatures.py` + a YAML file, which does exactly this for
@@ -174,7 +174,7 @@ has to be a hook inside the generator, not a post-process edit of generated file
 just be overwritten on the next regeneration).
 
 Groundwork this would need, not yet done:
-- Knowledge entries keyed by the function's fingerprint digest (`docs/LLIL_DSL.md` §1), not just
+- Knowledge entries keyed by the function's fingerprint digest (`docs/dsl/LLIL_DSL.md` §1), not just
   its name — the digest *is* the function's identity in this system, so a name-only key (unlike
   `FormatSignatureDB`'s today) could silently apply stale knowledge after a corpus change.
   Generation should fail loudly if a knowledge entry's expected digest no longer matches.
@@ -195,7 +195,7 @@ that exists today and doesn't need the MLIL/HLIL DSL lowering work at all.
 Item 1 describes lowering an entire script from a higher IR level down to LLIL DSL; a natural
 extension, once that lowering exists and HLIL output is trusted, is generating a *second* common
 library at that level — canonical HLIL (or MLIL) bodies for shared functions, lowered to LLIL DSL
-only at the final compile step, mirroring `docs/LLIL_DSL.md` §3's design. The fingerprint/match/
+only at the final compile step, mirroring `docs/dsl/LLIL_DSL.md` §3's design. The fingerprint/match/
 render approach there doesn't assume LLIL specifically, so the concept should carry over with only
 the operand-normalization details needing rework for the higher IR's shape.
 
@@ -203,13 +203,13 @@ This has no independent risk or design work of its own beyond what item 1 alread
 gated entirely on item 1 landing and HLIL quality being trusted enough to compile back to bytecode,
 not a separate open question.
 
-## HLIL (`docs/HLIL_GUIDE.md`, Recompilation Pipeline §1)
+## HLIL (`docs/hlil/HLIL_GUIDE.md`, Recompilation Pipeline §1)
 
 Ideas from a review of the TypeScript output and a design discussion of the HLIL DSL (2026-09-30).
 Nothing here is started. The DSL work follows the IR rewrite, which already plans eager vs
 short-circuit nodes, a ternary node and a per-function fallback
 (`notes/rewrite/08_decision_and_checklist.md`). LLIL-level ideas from the same discussion (the LLIL
-DSL, the writer, the hook callbacks) are in `docs/FUTURE_WORK_LLIL.md`.
+DSL, the writer, the hook callbacks) are in `docs/dsl/DSL_FUTURE_WORK.md`.
 
 ### TypeScript Output
 
@@ -240,7 +240,7 @@ The output was correct in every function traced; what it costs is readability.
 
 ### Trailing Default Arguments
 
-**(a) implemented 2026-10-14 in `.ts` only** (`docs/HLIL_GUIDE.md` Codegen; `.hlil.ts` keeps every argument).
+**(a) implemented 2026-10-14 in `.ts` only** (`docs/hlil/HLIL_GUIDE.md` Codegen; `.hlil.ts` keeps every argument).
 **(b) implemented 2026-10-16** in `.ts`, round trip only (debug-records plan Step 6, `notes/work_order.md` 3c).
 
 Wanted (user, 2026-10-12): print `mes_set_auto(1)`, not `mes_set_auto(1, 0)`. A local call pushes every
@@ -286,7 +286,7 @@ stays.
   (Static Game-Logic Check, below) covers the rest. Measure the exact-match rate.
 - **Stack checks.** The lowering tracks the stack pointer itself; re-lifting the compiled output with
   the LLIL lifter checks stack discipline - the writer's compile check does this at the end of every
-  `build()` (`ScpWriter.check_compiled`, `docs/LLIL_DSL.md` §1), so lowered functions get it too. Its
+  `build()` (`ScpWriter.check_compiled`, `docs/dsl/LLIL_DSL.md` §1), so lowered functions get it too. Its
   `.py` lines come from walking up to the frame running the body, which only works while the body
   emits opcodes: an HLIL body has returned before its tree is lowered, so the lowering must set the
   writer's source site from each node's recorded file and line, or every error falls back to the `def`.
@@ -418,7 +418,7 @@ function at LLIL level only when it has to.
   strings and globals are writer-wide. An HLIL function lowers in place, at its turn, so `CALL` and
   `PUSH_CURRENT_FUNC_ID` resolve across levels without the link phase Recompilation Pipeline §2
   expected. HLIL labels are per function (Form), so the lowering prefixes them (the writer's labels stay
-  file-wide by decision, `docs/FUTURE_WORK_LLIL.md`, Writer).
+  file-wide by decision, `docs/dsl/DSL_FUTURE_WORK.md`, Writer).
 - **HLIL functions** register like LLIL ones (parameters, flags and defaults from the signature). At
   its turn the body runs with parameter nodes to build the tree, which is validated, passed to the tree
   hooks and lowered onto the writer. Both kinds of decorator return stubs, so the levels call each
@@ -475,7 +475,7 @@ If(btl_check_resist_condition(65507, 50, 0) == 0, [
 **Not started; after the HLIL DSL writer** (user, 2026-10-06). Hook files keep decompiler2's ED8.x layout:
 each script `<stem>.py` imports the `<stem>_hook.py` next to it, and a build script runs each `.py` (which
 compiles it) and moves the `.dat` into the game's patch folder. The hooks themselves already exist for LLIL
-DSL scripts (`docs/LLIL_DSL.md` §4): the raw callbacks, `@replace_function`, `@add_function`,
+DSL scripts (`docs/dsl/LLIL_DSL.md` §4): the raw callbacks, `@replace_function`, `@add_function`,
 `original.Name(...)` and `inline_original_func()`. An HLIL DSL writer keeps the same API.
 
 - **Inlining in the list form:** in an executed list-form replacement, `inline_original_func()` inlines
@@ -486,7 +486,7 @@ DSL scripts (`docs/LLIL_DSL.md` §4): the raw callbacks, `@replace_function`, `@
   `.value`), since DSL operators build nodes.
 - **Text patches:** keep addresses out of the printed text (labels by order), make the printer
   deterministic, and test that decompile → compile → decompile reproduces the file. After one recompile
-  the LLIL round trip already differs only in `loc_` label lines (`docs/LLIL_DSL.md` §2), so an
+  the LLIL round trip already differs only in `loc_` label lines (`docs/dsl/LLIL_DSL.md` §2), so an
   ordinary unified diff made against a decompiled script also applies to a recompiled one. Record the
   decompiler version a patch was made against. Anchoring patches to original bytecode addresses was
   rejected: it ties a patch to one `.dat`. Original source line numbers could later serve as anchors
@@ -592,7 +592,7 @@ falcom/ed9/dsl/         # what scripts and hook files import
   `inline_original_func()` does when the levels differ (an LLIL body can't go in an `EmitLLIL` list: it pops its
   own frame and returns).
 
-## Structuring the Remaining Reducible Shapes (`docs/HLIL_DESIGN.md`)
+## Structuring the Remaining Reducible Shapes (`docs/hlil/HLIL_DESIGN.md`)
 
 Since 2026-09-28 a jump the HLIL tree cannot express becomes an `HLILUnstructured` node: loud, but the
 path is lost to the reader (and to a future HLIL DSL). None remains on the sora2_1.0 corpus. On random

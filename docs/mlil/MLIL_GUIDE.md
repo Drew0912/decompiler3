@@ -3,7 +3,7 @@
 > Status: Implemented, including a full SSA-based optimizer pipeline. This guide was previously
 > mostly in Chinese and described MLIL as intentionally non-SSA with SSA/optimization/HLIL
 > integration listed as future work — all superseded by the real implementation. Rewritten in
-> English against current code (2026-09-20). See `docs/MLIL_DESIGN.md` for the node model and
+> English against current code (2026-09-20). See `docs/mlil/MLIL_DESIGN.md` for the node model and
 > pipeline shape in more detail; this guide focuses on what MLIL actually does and how the pieces
 > fit together.
 
@@ -39,7 +39,7 @@ instead of tracking a stack pointer — easier to read and to run further analys
 
 ## Module Layout
 
-See `docs/MLIL_DESIGN.md`'s Module Layout table for the full file-by-file breakdown. In short:
+See `docs/mlil/MLIL_DESIGN.md`'s Module Layout table for the full file-by-file breakdown. In short:
 `ir/mlil/` holds the generic engine (non-SSA node types, the SSA layer, the optimizer, the
 builder/formatter), `ir/mlil/passes/` holds the 14 pass modules, and
 `falcom/ed9/ir/mlil/` holds Falcom-specific wiring — `mlil_converter.py` is the real production
@@ -94,7 +94,7 @@ during SSA construction, every local or parameter whose address is taken anywher
 scalar (see `MLIL_DESIGN.md`'s Variable Model & SSA section for why). This is purely an SSA-layer
 representation choice, not a new opcode: outside SSA form (before construction, after
 deconstruction), `x` still prints and behaves like any other local. `*(&x) ≡ x` always holds for
-this shape, so every printer folds it back to plain `x` / `x = v` - see `HLIL_GUIDE.md`'s printing
+this shape, so every printer folds it back to plain `x` / `x = v` - see `docs/hlil/HLIL_GUIDE.md`'s printing
 convention.
 
 ## The Pipeline
@@ -140,5 +140,5 @@ debug dumps — analogous to `HLILFormatter` on the HLIL side.
 
 ## Testing
 
-`tests/mlil_tests/test_mlil_*.py` (and `tests/llil_tests/test_llil_deref.py`) - see `docs/MLIL_DESIGN.md`'s Testing
+`tests/mlil_tests/test_mlil_*.py` (and `tests/llil_tests/test_llil_deref.py`) - see `docs/mlil/MLIL_DESIGN.md`'s Testing
 section.

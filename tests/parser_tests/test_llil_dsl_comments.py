@@ -309,7 +309,7 @@ class TestRealScript(unittest.TestCase):
         require(CHECK_ALGO_USE_FILE)
 
     def test_check_algo_use(self):
-        '''The listing docs/FUTURE_WORK_LLIL.md item 8 shows'''
+        '''The listing docs/dsl/DSL_FUTURE_WORK.md item 8 shows'''
         parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip = False, keep_unreachable_code = False)
         lines = parser.gen_python_script(functions).split('\n')
         start = lines.index('def CheckAlgoUse(arg1: Value32, arg2: Value32, arg3: Value32):')

@@ -3,7 +3,7 @@
 > Status: Implemented. This document originally described a pre-implementation target
 > architecture; it has been rewritten against the real implementation (2026-09-20), including a
 > full SSA optimizer pipeline that predates this revision but was never documented. See
-> `docs/MLIL_GUIDE.md` for a practical usage guide; this document focuses on the node model and
+> `docs/mlil/MLIL_GUIDE.md` for a practical usage guide; this document focuses on the node model and
 > pipeline shape.
 
 ## Role in the Pipeline
@@ -126,7 +126,7 @@ pointer write has nothing stale to invalidate in the first place) applies to it 
 a fresh temporary first (`SSAConstructor._decompose_address_taken_call_outputs`), so the general
 rewrite never has to special-case call outputs. The memory form is kept through every IR layer and
 raised back to a plain variable only at print time (`x` / `x = v`, never `deref(addr_of(x))`) — see
-`HLIL_GUIDE.md`'s printing-convention section.
+`docs/hlil/HLIL_GUIDE.md`'s printing-convention section.
 
 ## Basic Blocks & Functions
 
@@ -249,5 +249,5 @@ said only one existed.
   only from the top level of an `if` condition, so a comparison nested under `&&`/`||` gives none; and
   types are keyed by pre-deconstruction names, so a split variable (`var_s11_v0`) finds no type (78
   locals in the corpus).
-- This document and `docs/MLIL_GUIDE.md` should be kept in sync with `ir/mlil/passes/` as passes
+- This document and `docs/mlil/MLIL_GUIDE.md` should be kept in sync with `ir/mlil/passes/` as passes
   are added, removed, or reordered — that directory is the actual source of truth for what runs.

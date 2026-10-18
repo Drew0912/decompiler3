@@ -11,8 +11,8 @@
 ## Overview
 
 Layered architecture with two directions: **decompilation** (bytecode → readable output) and
-**recompilation** (a Python DSL source file → bytecode). See `docs/LLIL_DESIGN.md` for LLIL,
-`docs/MLIL_DESIGN.md` / `docs/MLIL_GUIDE.md` for MLIL, `docs/HLIL_GUIDE.md` for HLIL, and `docs/LLIL_DSL.md` for the
+**recompilation** (a Python DSL source file → bytecode). See `docs/llil/LLIL_DESIGN.md` for LLIL,
+`docs/mlil/MLIL_DESIGN.md` / `docs/mlil/MLIL_GUIDE.md` for MLIL, `docs/hlil/HLIL_GUIDE.md` for HLIL, and `docs/dsl/LLIL_DSL.md` for the
 recompilation pipeline in detail.
 
 ```
@@ -98,7 +98,7 @@ assigns every instruction a global `inst_index` (see `get_instruction_by_index()
 `get_instruction_block_by_index()`, `iter_instructions()`); each MLIL statement records the one it
 comes from as its `llil_index`. Which opcodes are binary and how many arguments a local `CALL` pops
 come from the opcode table's kinds and stack effects. The stack model, slot lifetimes, call setups and
-per-edge stack state are in `docs/LLIL_DESIGN.md`.
+per-edge stack state are in `docs/llil/LLIL_DESIGN.md`.
 
 ## Layer 4: MLIL — Implemented
 
@@ -109,7 +109,7 @@ control/data flow suitable for SSA and optimizer passes, while retaining Falcom-
 (syscall IDs, `CALL_SCRIPT` metadata). Includes a full SSA optimizer pipeline — construction/
 deconstruction, critical-edge splitting, type inference, and further optimization passes
 (constant/copy propagation, dead-code elimination, register/global propagation). See
-`docs/MLIL_DESIGN.md` for the node model and pipeline shape, `docs/MLIL_GUIDE.md` for a practical
+`docs/mlil/MLIL_DESIGN.md` for the node model and pipeline shape, `docs/mlil/MLIL_GUIDE.md` for a practical
 usage guide.
 
 ## Layer 5: HLIL — Implemented, active development
@@ -121,7 +121,7 @@ Recovers high-level structure from MLIL — `if`/`else`, `while`/`do-while`, `sw
 normalization, loop recovery, dead-code elimination, and others). Substantially implemented with
 real tests, but still the layer under the most active structural iteration — pass order, arm
 ordering, and chain-flattening heuristics are expected to keep changing fastest here. See
-`docs/HLIL_GUIDE.md` for the full breakdown.
+`docs/hlil/HLIL_GUIDE.md` for the full breakdown.
 
 ## Codegen: TypeScript — Done
 
@@ -150,8 +150,8 @@ than default. A shared common-function library
 (`falcom/ed9/metadata/common/`, generated from the corpus) is implemented and active by
 default, so generated `.py` files import shared game functions instead of embedding full copies of
 them. A `<stem>_hook.py` next to a script can replace or add functions and rewrite opcodes when it
-compiles (`scp_writer_hooks.py`; `docs/LLIL_DSL.md` §4). Compiling from MLIL/HLIL DSL forms instead of
-just LLIL DSL is still future work, loosely sketched rather than fully designed. Full detail in `docs/LLIL_DSL.md`; not-yet-started extensions
+compiles (`scp_writer_hooks.py`; `docs/dsl/LLIL_DSL.md` §4). Compiling from MLIL/HLIL DSL forms instead of
+just LLIL DSL is still future work, loosely sketched rather than fully designed. Full detail in `docs/dsl/LLIL_DSL.md`; not-yet-started extensions
 (MLIL/HLIL DSL, mixed-IR-level compilation, knowledge-driven typing for common functions) are in
 `docs/FUTURE_WORK.md`.
 
@@ -195,6 +195,6 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
 4. Implemented — MLIL
 5. Implemented, active development — HLIL
 6. Done — Codegen (TypeScript)
-7. Core mechanism implemented, fidelity opt-in — Recompilation: LLIL DSL round trip, common-function shared library (`docs/LLIL_DSL.md`)
+7. Core mechanism implemented, fidelity opt-in — Recompilation: LLIL DSL round trip, common-function shared library (`docs/dsl/LLIL_DSL.md`)
 8. Future work, loosely sketched — Recompilation: MLIL/HLIL DSL, mixed-IR-level compilation
    (`docs/FUTURE_WORK.md`)
