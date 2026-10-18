@@ -1,5 +1,8 @@
 # HLIL DSL
 
+> Status: design, not started; the DSL work follows the IR rewrite. Overview and decisions:
+> `docs/dsl/DSL_FUTURE_WORK.md`, Recompilation Pipeline §1; its hooks: `docs/dsl/HOOKS.md`.
+
 ## HLIL DSL: Recompile Path
 
 - **Lower into the LLIL DSL.** HLIL lowers into the LLIL DSL's opcode API and `ScpWriter` writes the

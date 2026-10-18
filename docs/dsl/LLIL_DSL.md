@@ -1,10 +1,10 @@
 # LLIL DSL — Recompilation Pipeline
 
 > Status: Core mechanism implemented (a `.py` file can be executed to produce byte-exact
-> bytecode, and an automated round-trip check exists). Fidelity is opt-in, not default — see §2
-> for the round-trip policy this whole pipeline follows. The common-function shared library (§3)
-> is implemented and active by default, and hook files patch a script without editing it (`docs/dsl/HOOKS.md`).
-> Ideas beyond what's implemented here — multi-IR-level compilation, knowledge-driven typing for
+> bytecode, and an automated round-trip check exists). Fidelity is opt-in, not default —
+> see `docs/ROUND_TRIP_POLICY.md` for the round-trip policy this whole pipeline follows. The common-function
+> shared library (§3) is implemented and active by default, and hook files patch a script without editing it
+> (`docs/dsl/HOOKS.md`). Ideas beyond what's implemented here — multi-IR-level compilation, knowledge-driven typing for
 > common functions — live in `docs/dsl/DSL_FUTURE_WORK.md`, not in this document.
 
 ## Role in the Pipeline
@@ -227,24 +227,10 @@ then pop both parameters before `RETURN`. A tail call passes the copy through a 
 check costs about twice the compile itself (`mp0000_ev`, a 1.6 MB script: about 4 s on top of 1.7 s);
 while it is on, each opcode also records where it was emitted.
 
-## 2. Round-Trip Policy
+## 2. Round Trip: Generation, Measurements, Validation
 
-Two tiers, in priority order:
-
-1. **Logic round trip — required.** `source.dat → out1.py → c1.dat → out2.py → c2.dat → …`, with
-   every decompile using `round_trip=False, keep_unreachable_code=False` (the everyday
-   `scena2py_config.py` defaults). Every function in each recompiled `.dat` must match its source
-   counterpart: normalized body + signature (position-independent fingerprint, keyed by name —
-   `falcom/ed9/metadata/fingerprint.py`), `is_common_func`, the global table as ordered
-   `(name, type)` tuples, and header `dword_14`. Function order and label names may differ.
-   Dropping unreachable code only counts as logic-preserving where the reachability audit
-   (`tools/scp_roundtrip_validator.py`'s `check_reachability`) confirms the dropped bytes are
-   provably dead. Repeating decompile → recompile must reach a fixed point within a few rounds:
-   `outN.py == outN+1.py` and `cN.dat == cN+1.dat`.
-2. **Byte-exact round trip — nice to have, low priority.** `source.dat → out.py → c.dat` with
-   `c.dat == source.dat`. Needs `round_trip=True, keep_unreachable_code=True` — this also disables
-   the common-function library (§3), so this path behaves exactly as it did before the library
-   existed. The script it writes keeps the original's dead code, which its compile warns about (§1).
+The policy (what must hold) is `docs/ROUND_TRIP_POLICY.md`; this section is how the round trip is generated, run and
+measured.
 
 **Measured on the full sora2_1.0 corpus** (1082 files, `tools/scp_roundtrip_validator.py
 --logic-round-trip`, before the common-function library existed): all 1082 files reach the fixed
@@ -259,7 +245,7 @@ round 2, no logic regressions. **Full 1082-file re-run with the library active, 
 counts) against source when checked with `validate_file`'s format checks: common functions are now
 always registered before source functions (`@scena.CommonImports()` runs eagerly, ahead of the
 inline definitions), which reorders them relative to source and shifts debug-record layout — both
-explicitly excluded from the "game logic" definition above (function order, debug records,
+explicitly excluded from the "game logic" definition in `docs/ROUND_TRIP_POLICY.md` (function order, debug records,
 string-pool layout). This is the expected, designed consequence of pulling matched functions out of
 their original source position into the shared-library import path, not a regression. 127 files'
 worst status was an informational WARN (mostly pre-existing "N unreachable ranges" notes, same

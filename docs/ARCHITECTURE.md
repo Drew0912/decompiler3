@@ -25,9 +25,23 @@ Compilation (the actual recompilation direction — needs only a DSL file, not a
                  LLIL DSL (.py) → exec() → ScpWriter → SCP bytecode
 ```
 
-## Layers 1-2: Parser and Disassembler — Done
+## Layer 1: Parser — Done
 
-**Location:** `falcom/ed9/parser/`, `falcom/ed9/disasm/`. Described in `docs/falcom/ed9/ED9_FORMAT.md`.
+**Location:** `falcom/ed9/parser/`
+
+Reads the SCP file: the header, the function table with parameters and defaults, call-site debug records, global
+variables and the string pool (`ScpParser`). While the disassembler decodes a function, the parser simulates the VM
+stack to find each call's setup, and rejects code it cannot trust: overlapping instructions, a branch target inside an
+instruction, code running into the string pool, a join whose edges disagree on stack height. The layout the writer
+reproduces (table order, string pool, debug records) is checked by `tools/scp_roundtrip_validator.py`. Detail:
+`docs/falcom/ed9/ED9_FORMAT.md`.
+
+## Layer 2: Disassembler — Done
+
+**Location:** `falcom/ed9/disasm/`
+
+Decodes bytecode into instructions and basic blocks, driven by the opcode table, which also gives each opcode's kind
+and stack effect (`stack_effects.py`). Detail: `docs/falcom/ed9/ED9_FORMAT.md`.
 
 ## Layer 3: Lifter — Done
 
@@ -124,7 +138,8 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
 
 `ir/` and `dc3/` are meant to be generic, with game code under `falcom/`, and nothing generic imports
 `falcom/`. `codegen/` is game output (user, 2026-10-02): it reads only HLIL and nothing in `ir/` depends on it, so
-game knowledge there can't spread back into the IR.
+game knowledge there can't spread back into the IR. The opcode table (`falcom/ed9/disasm/`) holds no IR node classes:
+it gives opcode kinds and stack effects, and the LLIL lifter maps them to nodes.
 
 ## Key Design Principles
 

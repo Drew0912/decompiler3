@@ -1,5 +1,8 @@
 # ED9 Format: Parser and Disassembler
 
+> Status: current. How `falcom/ed9/parser/` and `falcom/ed9/disasm/` read an ED9 script (`.dat`), and how the
+> games on this format differ.
+
 ## Layer 1: Parser — Done
 
 **Location:** `falcom/ed9/parser/`
@@ -60,3 +63,16 @@ numbers each call's arguments (`arg_numbers`, the opt-in call-argument comments)
 stand in the call's top `argc` slots, solved the same way, `arg1` being the last push; the simulation
 and the numbering take `argc` from one rule (`call_argc`, from the call's stack effect: the callee's
 parameters for `CALL`, the count operand otherwise).
+
+## Games on This Format
+
+`sora2_1.0`, `sora1` and `kuro1` scripts share one format: all 45 decoded instruction forms of the opcode table (`PUSH`
+decodes into its typed forms; the unknown 0x28 never occurs), the same header (`dword_14` is 0, the function table at
+0x18), value encoding and table field values (a census of every file, 2026-10-18). They differ in:
+- **Call debug records:** `kuro1`'s older compiler writes each function's records twice and gives a call without a line
+  marker a record, so 26 of 634 `kuro1` files rebuild byte-identical (`docs/FUTURE_WORK.md`, "kuro1 Byte-Exact Debug
+  Records").
+- **Syscalls:** each game has its own command set: of the 991 `(subsystem, command)` pairs used, 540 occur in all three,
+  89 only in `sora2_1.0`, 12 only in `sora1` and 147 only in `kuro1`.
+
+`kuro1`'s `ani/mon9996_c00.dat` is a broken script (`byte06` 147 in its function table) and is not supported.

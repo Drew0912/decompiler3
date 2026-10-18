@@ -26,10 +26,16 @@ Read `notes/corpus_run_rules.md` before any corpus-wide run (census, regression 
 When a bug is found while editing `ir/` (LLIL/MLIL/HLIL structures and passes), prioritize fixing the root cause over patching just the reported symptom. If a genuine root-cause fix isn't achievable, fix the version that catches the most cases the underlying gap can produce — never the narrowest guard clause scoped to the one reported instance; that's the outcome to avoid even as a fallback, not a shortcut to take. This directory's passes tend to hand-roll their own tree traversal, and that produces two recurring shapes of the same problem: a walker missing a node type — not a one-off mistake at that call site, but a class of bug that recurs across every hand-rolled walker in the file, so prefer closing the class (e.g. a shared traversal helper every predicate/collector is built on) over a narrow guard clause that only fixes the specific finding; and two related walkers (a detector and a rewriter, e.g.) that must agree on traversal shape but are maintained independently — fixing one to produce the right output for the reported case without making it structurally match the other leaves the same asymmetry free to resurface the next time either is edited alone, so prefer making them share the same traversal shape, not just the same answer for one input. Not every `ir/` bug is a traversal-coverage bug — some are genuine logic gaps (wrong equality check, missing case) that a shared walker would not have caught either; for those, still ask what the underlying gap is before patching, rather than defaulting to the narrowest possible fix.
 
 ### -0.03. Round-Trip Policy
-Required: logic round trip — decompile (`round_trip=False`) → recompile → decompile must keep the same game logic and reach a fixed point within a few rounds. Byte-exact round trip is a nice-to-have, low priority. Full rule: `docs/dsl/LLIL_DSL.md` §2.
+Required: logic round trip — decompile (`round_trip=False`) → recompile → decompile must keep the same game logic and reach a fixed point within a few rounds. Byte-exact round trip: medium priority (wanted; never blocks a step or a logic fix). Full rule: `docs/ROUND_TRIP_POLICY.md`.
 
 ### -0.02. Hardening Policy
 Tests, guards, reviews and bug hunts follow `docs/HARDENING_POLICY.md` (read it first).
+
+### -0.01. Docs
+On a cold start, or when asked for an overview, read `docs/INDEX.md` first and follow its routing. Docs are the first stop, not ground truth: check a claim against the source before acting on it.
+
+### -0.005. Runs Write Nothing in the Repo
+A run of `scena2py.py`, the writer, a generated script or a validator writes nothing inside the repo: scratch output folders, absolute paths (how: `docs/INDEX.md`, Running the decompiler); `git status --ignored` shows nothing new afterwards (outputs are gitignored: plain `git status` misses them).
 
 ### 1. NO HARDCODED MAGIC NUMBERS
 Use named constants: `offset // WORD_SIZE` not `offset // 4`

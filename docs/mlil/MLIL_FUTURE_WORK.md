@@ -1,5 +1,8 @@
 # Future Work: MLIL
 
+> Ideas for MLIL (`ir/mlil/`, `falcom/ed9/ir/mlil/`), not started unless marked. Every future-work file:
+> `docs/FUTURE_WORK.md`.
+
 ## VM-Accurate DIV/MOD and Float Folding (`docs/mlil/MLIL_DESIGN.md`)
 
 SCCP (`ir/mlil/passes/pass_ssa_sccp.py`) deliberately does not fold `MLIL_DIV`/`MLIL_MOD`, or any

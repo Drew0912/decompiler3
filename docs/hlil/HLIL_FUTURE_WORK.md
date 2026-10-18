@@ -1,5 +1,8 @@
 # Future Work: HLIL
 
+> Ideas for HLIL (`ir/hlil/`, `falcom/ed9/ir/hlil/`, `codegen/`), not started unless marked. Every future-work
+> file: `docs/FUTURE_WORK.md`.
+
 ## HLIL Nesting Depth (`docs/hlil/HLIL_GUIDE.md`)
 
 A call whose result is read on the right side of the VM's eager `&&`/`||` stays its own statement,

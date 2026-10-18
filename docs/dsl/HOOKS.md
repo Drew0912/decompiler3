@@ -1,5 +1,8 @@
 # Hooks
 
+> Status: LLIL DSL hooks implemented; HLIL DSL hooks and line-anchored patches planned, after the HLIL DSL
+> writer.
+
 ## LLIL DSL Hooks — Implemented
 
 A hook file `<stem>_hook.py`, next to `<stem>.py`, patches a script without editing the generated file. The script
@@ -76,6 +79,13 @@ error.
 - `inline_original_func()`: in a replaced function's body, inlines that function's body from before any hook; an
   error anywhere else.
 - `get_scp_writer().globals`: the script's globals dict, once the compile starts.
+
+**Public names.** Generated scripts and hook files call these by name, so a rename breaks every one of them: it needs
+the user's OK. `create_scp_writer`, `get_scp_writer`, positional `run(globals())`, `@scena.LLILCode()`,
+`LLILCommonCode`, `CommonImports`, `GlobalVars`, the camelCase `register*` hook names, `replace_function`,
+`add_function`, `original`, `inline_original_func`, `label`, `GLOBAL_VAR`, `get_scp_writer().globals`, every opcode
+function and type the helper exports (it has no `__all__`, so every public name in it), and the import paths
+`falcom.ed9.writer.scp_writer_helper` and `falcom.ed9.metadata.common_all`. Documented here, not frozen.
 
 **What `build()` does, in order.** (1) Saves the script's globals. (2) Registers the queued `@add_function`s. (3) Sets
 the script's names in the hook modules (below). (4) Runs the run callbacks. (5) Runs every function through the function

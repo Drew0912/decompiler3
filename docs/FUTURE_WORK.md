@@ -4,13 +4,18 @@
 > that extend an implemented system rather than describe it. Topic docs (`docs/dsl/LLIL_DSL.md`,
 > `docs/hlil/HLIL_GUIDE.md`, etc.) describe what's actually built; this file is where "someday" ideas live
 > instead of accumulating as a growing tail on top of those docs. Each entry links back to the
-> concrete doc/code it extends. LLIL-level ideas (the LLIL DSL, the writer) live in
-> `docs/dsl/DSL_FUTURE_WORK.md`.
+> concrete doc/code it extends.
 
-Future work by folder: `docs/dsl/DSL_FUTURE_WORK.md` (LLIL DSL, writer, listings, recompilation
-pipeline), `docs/dsl/HLIL_DSL.md` (the HLIL DSL design), `docs/dsl/HOOKS.md` (HLIL DSL hooks, line-anchored
-patches), `docs/mlil/MLIL_FUTURE_WORK.md`, `docs/hlil/HLIL_FUTURE_WORK.md`. This file keeps the cross-cutting
-entries.
+## Index
+
+| File | Open items |
+|---|---|
+| `docs/dsl/DSL_FUTURE_WORK.md` | LLIL DSL, writer and listing ideas (most done; a Not Doing list); Recompilation Pipeline: the HLIL DSL overview and decisions, mixed-IR-level compilation, knowledge-driven typing for common functions, the common-function library at MLIL / HLIL DSL level |
+| `docs/dsl/HLIL_DSL.md` | the HLIL DSL design: recompile path, form, mixing LLIL and HLIL, script-facing modules, open questions |
+| `docs/dsl/HOOKS.md` | HLIL DSL hooks and line-anchored patches (after the HLIL DSL writer) |
+| `docs/mlil/MLIL_FUTURE_WORK.md` | VM-accurate DIV/MOD and float folding (needs an in-game oracle) |
+| `docs/hlil/HLIL_FUTURE_WORK.md` | HLIL nesting depth, TypeScript output readability, the remaining reducible shapes |
+| this file | the static game-logic check, generic / Falcom boundary leftovers, ED8 support, `kuro1` byte-exact debug records |
 
 ## Static Game-Logic Check (`tools/ir_semantic_validator.py`)
 
@@ -18,7 +23,7 @@ The validator already tracks game logic as *effect events* — engine/script cal
 returns — plus branch conditions, and matches them LLIL → MLIL → HLIL on the in-memory IR that the
 `.llil.asm`/`.mlil.asm` dumps are printed from (it should keep reading the IR objects; parsing the dump
 text back would be fragile). Its known-noise and real-signal categories are documented in
-`notes/validator_guide.md`, including its current limitations: it builds no LLIL/MLIL control-flow edges
+`docs/VALIDATOR_GUIDE.md`, including its current limitations: it builds no LLIL/MLIL control-flow edges
 and links only some HLIL ones (edges feed block matching only, never a pass/fail gate - fix all three
 builders together, since fixing one side alone makes block matching worse), and branch conditions
 carry no expression, so a changed condition is not detected. Global writes are matched on all three
@@ -137,7 +142,7 @@ from decompiler2's ED8.x support:
 
 **Planned, not started; much later, after the HLIL DSL is done** (user, 2026-10-18). A three-game census
 (2026-10-18, every file, `tools/scp_roundtrip_validator.py` checks plus `--round-trip`) found `sora2_1.0`, `sora1` and
-`kuro1` share one format: the same 46 instructions, header, value encoding and table field values; 2,505 of 2,506
+`kuro1` share one format: the same 45 instructions, header, value encoding and table field values; 2,505 of 2,506
 files parse (the one failure, `kuro1` `ani/mon9996_c00.dat`, is a broken script, never to be supported). Only the
 call debug records differ: `kuro1` rebuilds byte-identical in 26 of 634 files (`sora2_1.0` 1,076 of 1,082, `sora1`
 783 of 789). Its older compiler leaves two patterns the record tracker does not reproduce:

@@ -73,3 +73,8 @@ need goes in `tests/shared/`.
   imports a `tools/` script also adds `sys.path.insert(0, str(REPO_ROOT / 'tools'))` and imports the script by its
   plain module name.
 - A new folder needs an empty `__init__.py`; without one, `unittest` discovery skips it without an error.
+
+## Moving tests or the corpus path
+
+Gate the move on a diff of (test id, outcome) pairs before and after, never on a list of test names: a corpus path
+that no longer resolves turns passes into skips under the same names (`require(path)`, above).

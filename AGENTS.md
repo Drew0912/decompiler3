@@ -19,6 +19,10 @@ If any user request conflicts with this file, you must follow **this file** and,
 Before any review, test or hardening work, read `docs/HARDENING_POLICY.md`: it decides which inputs deserve a test,
 a guard or a finding.
 
+Also read, before the matching work: `docs/ROUND_TRIP_POLICY.md` (a change to the parser, the writer, an IR pass or
+an output), `docs/TESTS_GUIDE.md` (test work), `docs/VALIDATOR_GUIDE.md` (judging `tools/ir_semantic_validator.py`
+output), `docs/ARCHITECTURE.md` "Generic/Falcom Boundary" (an IR review's placement check).
+
 ---
 
 # Coding Style Guide

@@ -1,4 +1,4 @@
-# Future Work: LLIL
+# Future Work: DSLs and Writer
 
 > Ideas for the LLIL layer (the LLIL DSL `.py`, the writer and the `.llil.asm` listing) from a 2026-09-30 review of the
 > decompiled output, decided with the user on 2026-10-01: the plan `llil-dsl-neatening.md` (Steps 1-11, closed
@@ -6,7 +6,9 @@
 > decisions, with the evidence behind them, are in `notes/llil_dsl_neatening_handoff.md`. Both are local, gitignored
 > notes. Each entry names its handoff item and the plan step that did it; two found in the plan's reviews are recorded
 > but not planned. HLIL-level ideas from the same review, including the HLIL DSL, are in `docs/hlil/HLIL_FUTURE_WORK.md`
-> (HLIL) and `docs/dsl/HLIL_DSL.md`. As there, each entry links back to the doc or code it extends.
+> (HLIL) and `docs/dsl/HLIL_DSL.md`. As there, each entry links back to the doc or code it extends. The Recompilation
+> Pipeline section (the HLIL DSL overview, mixed-IR compilation, typing, the library at HLIL level) moved here from
+> `docs/FUTURE_WORK.md`.
 
 ## LLIL DSL (`docs/dsl/LLIL_DSL.md`)
 
@@ -267,7 +269,7 @@ Design rules for an executed DSL:
   the earlier rule of lowering every HLIL `&&`/`||` as short-circuit and using the eager op only when the right side has
   no side effects.
 
-**Correctness** is the logic round trip of `docs/dsl/LLIL_DSL.md` §2 (game logic unchanged, fixed point
+**Correctness** is the logic round trip of `docs/ROUND_TRIP_POLICY.md` (game logic unchanged, fixed point
 within a few rounds), but its per-function fingerprint check can't transfer — an HLIL recompile is
 not opcode-identical to its source — and a fixed point alone can't catch a decompiler bug that loses
 logic in the first decompilation (the loss repeats every round). The check is the static game-logic
