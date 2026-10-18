@@ -10,7 +10,7 @@ block (goto-only blocks too) change no run and no node.
 
 Irreducible CFGs may need nodes (HLIL has no goto). A reducible one could always be structured,
 so a node there is a gap the converter still has: the seeds that get one today are pinned below,
-and any other seed getting one fails (docs/FUTURE_WORK.md, Structuring the Remaining
+and any other seed getting one fails (docs/hlil/HLIL_FUTURE_WORK.md, Structuring the Remaining
 Reducible Shapes).
 '''
 

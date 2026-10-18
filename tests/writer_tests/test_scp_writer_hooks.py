@@ -1505,7 +1505,7 @@ class TestOpcodeCallbacks(HookTestCase):
         self.assertIs(type(seen[2][1][0]), int)
 
     def test_documented_writer_state(self):
-        '''docs/dsl/LLIL_DSL.md, Hooks: a run callback reads get_scp_writer().globals; an opcode callback acts in one
+        '''docs/dsl/HOOKS.md: a run callback reads get_scp_writer().globals; an opcode callback acts in one
         function by checking get_scp_writer().current_function.name'''
         self.define_target()
         self.define_helper()
@@ -1687,7 +1687,7 @@ class TestOpcodeCallbacks(HookTestCase):
             self.writer.build({})
 
     def test_code_emitted_after_an_emitted_call_warns(self):
-        '''docs/dsl/LLIL_DSL.md's pitfall: the call returns to the label after the triggering opcode, so what the callback
+        '''docs/dsl/HOOKS.md's pitfall: the call returns to the label after the triggering opcode, so what the callback
         emits after it never runs - warned about at the callback's line, naming the trigger'''
         hook = self.hook('''
             def call_then_more(opcode, *args):

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 '''Unit tests for SCCP constant folding - DIV/MOD and ops with a float operand must never fold.
 Python's arithmetic doesn't match the VM's actual number format (ScpValue: 30-bit int / float32),
-and the real semantics can't be verified without running the game (docs/FUTURE_WORK.md), so
+and the real semantics can't be verified without running the game (docs/mlil/MLIL_FUTURE_WORK.md), so
 folding them risked silently replacing one wrong constant with another. Confirmed live:
 mp0000_ev.MayaEvented_22_test folded 400 / 30.0 to 13.0 (Python floor-division) instead of
 leaving it unfolded.'''

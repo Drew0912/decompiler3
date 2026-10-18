@@ -1,13 +1,12 @@
 # Future Work: LLIL
 
-> Ideas for the LLIL layer (the LLIL DSL `.py`, the writer and the `.llil.asm` listing) from a
-> 2026-09-30 review of the decompiled output, decided with the user on 2026-10-01: the plan
-> `llil-dsl-neatening.md` (Steps 1-11, closed 2026-10-06, archived in `notes/plans/archive/`) did every
-> one taken on, the rest are under Not Doing, and the decisions, with the evidence behind them, are in
-> `notes/llil_dsl_neatening_handoff.md`. Both are local, gitignored notes. Each entry names its handoff
-> item and the plan step that did it; two found in the plan's reviews are recorded but not planned.
-> HLIL-level ideas from the same review, including the HLIL DSL, are in `docs/FUTURE_WORK.md` (HLIL). As
-> there, each entry links back to the doc or code it extends.
+> Ideas for the LLIL layer (the LLIL DSL `.py`, the writer and the `.llil.asm` listing) from a 2026-09-30 review of the
+> decompiled output, decided with the user on 2026-10-01: the plan `llil-dsl-neatening.md` (Steps 1-11, closed
+> 2026-10-06, archived in `notes/plans/archive/`) did every one taken on, the rest are under Not Doing, and the
+> decisions, with the evidence behind them, are in `notes/llil_dsl_neatening_handoff.md`. Both are local, gitignored
+> notes. Each entry names its handoff item and the plan step that did it; two found in the plan's reviews are recorded
+> but not planned. HLIL-level ideas from the same review, including the HLIL DSL, are in `docs/hlil/HLIL_FUTURE_WORK.md`
+> (HLIL) and `docs/dsl/HLIL_DSL.md`. As there, each entry links back to the doc or code it extends.
 
 ## LLIL DSL (`docs/dsl/LLIL_DSL.md`)
 
@@ -37,7 +36,7 @@ byte.
 - **Stack-slot comments, on by default** (item 8; Steps 6a, 6b, 7). The same variable gets a different
   offset as the stack moves: `LOAD_STACK(-16)` is `arg2` at `CheckAlgoUse`'s source line 162 and `arg3`
   at line 168. Step 6a (done) keeps the parser's simulated stack on `Function` as `stack_layout`
-  (`docs/ARCHITECTURE.md`, Layer 2): the depth before every reachable instruction, and each offset
+  (`docs/falcom/ed9/ED9_FORMAT.md`, Layer 2): the depth before every reachable instruction, and each offset
   opcode's slot with what may be in it at that point. Step 6b (done) comments the script `.py` from it
   and Step 7 (done) the library modules (always on), the way the `.llil.asm` shows the stack
   (`docs/dsl/LLIL_DSL.md` §1, Comments):
@@ -149,7 +148,7 @@ byte.
   earlier design of a writer-side walker over an effect table, a second stack model next to the
   parser's; the per-opcode stack effects have since moved into the opcode table (the opcode-table plan,
   `notes/plans/archive/opcode-table.md`). Checking an HLIL DSL `EmitLLIL` list before anything is written
-  stays with the HLIL DSL (`docs/FUTURE_WORK.md`, HLIL DSL: Mixing LLIL and HLIL).
+  stays with the HLIL DSL (`docs/dsl/HLIL_DSL.md`, HLIL DSL: Mixing LLIL and HLIL).
 - **Hook callbacks** (item 19; Step 10, done), moved here from the HLIL DSL work. Every generated script
   imports `<stem>_hook`, but the writer had nothing for a hook to register with. Now a hook can replace a
   function's body (`@replace_function('Name')`, or decompiler2's raw `registerFuncCallback`), add functions
@@ -159,8 +158,8 @@ byte.
   failures in it point at the hook's own line. The bare names come from
   `falcom/ed9/writer/scp_writer_hooks.py`; hooks reach the writer through `get_scp_writer()`, no
   `get_scena()`; `ScenaDecompileConfig.write_hook_template` writes a starting hook next to a decompiled
-  script. Full description: `docs/dsl/LLIL_DSL.md` §4. Tree hooks stay with the HLIL DSL
-  (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).
+  script. Full description: `docs/dsl/HOOKS.md`. Tree hooks stay with the HLIL DSL
+  (`docs/dsl/HOOKS.md`, HLIL DSL: Hooks and Patching).
 - **Clear errors for bad values** (item 12; Step 2b, done). `ScpValue(True)` failed with a bare
   `KeyError` (`bool` is not in its type map, `falcom/ed9/parser/types_scp.py`), and `POP(True)` compiled
   silently as `POP(1)`, since `bool` passes every `int` check. `ScpValue` now rejects any type it can't
@@ -223,6 +222,134 @@ byte.
   instruction offset, so the listing can print a record under its call. Step 8c-b counts each code string operand once
   by its file position: functions that share code (an empty one starting where the next does, a jump into another)
   had made the validator count it twice and fail the pool of such a writer-built file.
+
+## Recompilation Pipeline (`docs/dsl/LLIL_DSL.md`)
+
+### 1. HLIL DSL — a Python `.py` output generated from HLIL
+
+**Planned, not started.** A second output beside `.ts`: a Python DSL file generated from HLIL (not
+from bytecode) that compiles back to game bytecode. No reference to `ScpWriter`, `handle_opcode`, or
+any bytecode-emission path exists anywhere in `ir/mlil/`, `ir/hlil/`, or `codegen/` today. The form,
+the lowering and the hooks were worked out on 2026-09-30 (`docs/dsl/HLIL_DSL.md`, `docs/dsl/HOOKS.md`).
+Decisions already made (2026-09-23):
+
+```
+HLIL → HLIL DSL (.py) → exec() → lower → LLIL DSL (.py, exists today) → ScpWriter → bytecode
+```
+
+- **Executed, like the LLIL DSL.** The `.py` is run against a lowering writer, so control flow is
+  DSL-defined (`If`/`Elif`/`Else`, `While`/`DoWhile`, `Switch`/`Case`, `Break`/`Continue` with an
+  optional loop label, `Return`) rather than native Python syntax.
+- **Lowers straight to the LLIL DSL** and through today's `ScpWriter` path — the backend that already
+  passes the logic round trip on the full corpus (`docs/dsl/LLIL_DSL.md` §2). No intermediate MLIL DSL; an
+  MLIL-level DSL stays a separate idea, only worth building if MLIL output is wanted for its own sake.
+- **No renderer shared with the TypeScript generator.** Different syntax, and a different contract:
+  `codegen/typescript.py` is readable pseudocode (it folds constant comparisons and rewrites boolean
+  comparisons); this output must be exact. Its natural sibling is the LLIL `.py` formatter
+  (`falcom/ed9/disasm/`): exact float literals (`ScpValue.float_literal`),
+  `Formatter.format_param` signatures, decorators, common-function library conventions. With TS it
+  shares only HLIL-level structure helpers and language-neutral operator tables. Once it exists,
+  retire `HLILFormatter` / `.hlil.ts` (an unused debug dump) — this output is the faithful HLIL view.
+
+Design rules for an executed DSL:
+- Every DSL expression's `__bool__` raises, so an accidental Python `if`/`while`/`and`/`or`/`not` or
+  chained comparison fails loudly instead of being decided once, at build time.
+- Logical operators are functions (`And`/`Or`/`Not`): Python can't overload `and`/`or`/`not`, and
+  `&`/`|` are the VM's bitwise ops.
+- Never emit an operator applied only to Python literals — Python computes `7 / 2` as `3.5` while the
+  file runs, where the VM's integer DIV gives `3`. Wrap one side in a DSL constant.
+- Assignments and statement-level calls need DSL forms, since `x = ...` only rebinds a Python name
+  (e.g. `Set(x, e)`, or a namespace: `v.x = e`, `GLOBALS[n] = e`). A bare call statement is recorded
+  explicitly, or tracked as an unconsumed call node (guarding against one node used twice). Build
+  function bodies after all functions are registered, so calls to later functions resolve.
+- The VM's eager logical ops and short-circuit logic recovered from jumps are separate nodes: `And`/`Or` lower to the
+  VM's `LOGICAL_AND`/`LOGICAL_OR`, `AndThen`/`OrElse` to jumps (`docs/dsl/HLIL_DSL.md`, HLIL DSL: Form). This replaces
+  the earlier rule of lowering every HLIL `&&`/`||` as short-circuit and using the eager op only when the right side has
+  no side effects.
+
+**Correctness** is the logic round trip of `docs/dsl/LLIL_DSL.md` §2 (game logic unchanged, fixed point
+within a few rounds), but its per-function fingerprint check can't transfer — an HLIL recompile is
+not opcode-identical to its source — and a fixed point alone can't catch a decompiler bug that loses
+logic in the first decompilation (the loss repeats every round). The check is the static game-logic
+comparison (see `docs/FUTURE_WORK.md`, "Static Game-Logic Check") in cross-program mode. An execution-based oracle (a
+bytecode emulator) was considered and deliberately not pursued.
+
+**Prerequisites.** Once HLIL compiles back, every HLIL pass must preserve game logic exactly, not just
+readability. Before starting: calls never folded under a native VM logical op (met 2026-09-24 - see
+`docs/hlil/HLIL_DESIGN.md`, Call Results as Expressions); copy propagation never
+forwarding a register/global past a redefinition (met 2026-09-24 - including clobbering calls whose
+record dead-code elimination drops; see `docs/mlil/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (met
+2026-09-28 - a jump the tree cannot express is an `HLILUnstructured` node, which the DSL must refuse
+to compile, and `tools/hlil_path_check.py` finds 0 of 80,571 sora2_1.0 functions losing or inventing a
+path; see `docs/hlil/HLIL_DESIGN.md`, Open Items); common-return extraction only hoisting from an
+exhaustive switch (met 2026-09-24 - see `docs/hlil/HLIL_GUIDE.md`, Passes).
+
+### 2. Mixed-IR-Level Compilation, Per Function
+
+The idea: because jump opcodes don't cross function boundaries (confirmed 2026-10-03: no generated
+script has such a jump in either mode; since LLIL DSL Step 5 the writer warns on a hand-written
+one), a single output `.py` file could hold some functions written at the LLIL DSL level and others
+at HLIL DSL level (or MLIL DSL level, if one is ever built), each lowered independently down to LLIL
+DSL / bytecode.
+
+**This needs more than independent per-function lowering to actually work**, though — even with
+every jump inside its own function, functions still participate in several script-wide
+concerns that a per-function compile can't resolve alone: `CALL` operands and
+`PUSH_CURRENT_FUNC_ID` depend on the final function table; common-function source order affects
+byte layout; function offsets are assigned during whole-script compilation; labels/xrefs and
+string-pool relocation are writer-global; debug records and global-variable resolution are
+script-wide; per-function labels need collision-safe namespacing. A real version of this idea needs
+an explicit per-function intermediate object plus a separate link/finalization phase that stitches
+independently-lowered functions back into one script — not merely "lower each function on its own."
+
+The HLIL DSL design (`docs/dsl/HLIL_DSL.md`, HLIL DSL: Mixing LLIL and HLIL) mixes LLIL and HLIL functions without that
+phase: each function lowers in place during the one `ScpWriter` run.
+
+### 3. Knowledge-Driven Typing for Common Functions
+
+The common-function library (`docs/dsl/LLIL_DSL.md` §3) currently derives everything purely from raw
+bytecode — params are always `arg1: Value32`, `arg2: Value32`, etc. There's a real precedent in
+this codebase for annotating that kind of gap externally instead of by hand-editing generated
+output: `falcom/ed9/signatures/format_signatures.py` + a YAML file, which does exactly this for
+TypeScript codegen (`FormatSignatureDB` supplies per-function param names/types/enum formats,
+consulted by `codegen/typescript.py`).
+
+**The idea:** once a common function's arguments and their real meaning are identified (by hand,
+or by future analysis), that knowledge can be patched into the generated library the same way — a
+YAML-backed `CommonFunctionKnowledgeDB`, consulted by `gen_common_library.py` between
+extraction and rendering. Every generator run does a full rewrite of the output directory, so this
+has to be a hook inside the generator, not a post-process edit of generated files (which would
+just be overwritten on the next regeneration).
+
+Groundwork this would need, not yet done:
+- Knowledge entries keyed by the function's fingerprint digest (`docs/dsl/LLIL_DSL.md` §1), not just
+  its name — the digest *is* the function's identity in this system, so a name-only key (unlike
+  `FormatSignatureDB`'s today) could silently apply stale knowledge after a corpus change.
+  Generation should fail loudly if a knowledge entry's expected digest no longer matches.
+- The renderer's intermediate operand representation would need to preserve raw values alongside
+  formatted text (it currently flattens straight to source text), if the knowledge layer should
+  ever reformat a value (enum names, hex vs. decimal) rather than just rename a parameter.
+- A possible `scp_writer_types.py` for named parameter types the knowledge DB introduces (e.g. an
+  `ItemID` alias), distinct from the generic `Value32`/`NullableStr` aliases in
+  `falcom/ed9/parser/types_scp.py`, which stay tied to raw parsed value shape, not identified
+  meaning. Whether this is a new file or an extension of `types_scp.py` is an open call to make
+  when this is actually built.
+
+**Sequencing note:** this is independent of items 1-2 above — it applies to the LLIL DSL library
+that exists today and doesn't need the MLIL/HLIL DSL lowering work at all.
+
+### 4. Common-Function Library at MLIL/HLIL DSL Level
+
+Item 1 describes lowering an entire script from a higher IR level down to LLIL DSL; a natural
+extension, once that lowering exists and HLIL output is trusted, is generating a *second* common
+library at that level — canonical HLIL (or MLIL) bodies for shared functions, lowered to LLIL DSL
+only at the final compile step, mirroring `docs/dsl/LLIL_DSL.md` §3's design. The fingerprint/match/
+render approach there doesn't assume LLIL specifically, so the concept should carry over with only
+the operand-normalization details needing rework for the higher IR's shape.
+
+This has no independent risk or design work of its own beyond what item 1 already carries — it's
+gated entirely on item 1 landing and HLIL quality being trusted enough to compile back to bytecode,
+not a separate open question.
 
 ## Not Doing
 

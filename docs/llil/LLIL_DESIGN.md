@@ -160,7 +160,7 @@ tracked slots and, for ED9, the same pending setups with the same slots still in
 (`FalcomStackSnapshot.shape()`). Values may differ between edges: MLIL's SSA merges them. The entry
 state is seeded, not recorded from an edge, so a back edge into the entry must match it too. The
 parser's disassembly-time stack simulation checks the same stack heights earlier
-(`docs/ARCHITECTURE.md`, Layer 2).
+(`docs/falcom/ed9/ED9_FORMAT.md`, Layer 2).
 
 `FalcomVMBuilder.finalize()` then:
 1. `build_cfg()` - recomputes every edge from the terminals, checking everything before an edge

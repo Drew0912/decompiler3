@@ -207,7 +207,7 @@ comparison with zero into a truth test (condition simplification, boolean-temp i
 printer) accept only the int `0` (`is_int_zero`, `ir/core/il_literals.py`). `ExpressionSimplificationPass`'s
 identities likewise fire only on int constants (`0.0 * x` used to become the int `0`), but they still
 simplify an int DIV by 1, even a constant one (`10 / 1 → 10`), since that identity holds regardless of
-numeric semantics. See `docs/FUTURE_WORK.md` for what a verified SCCP fix would need.
+numeric semantics. See `docs/mlil/MLIL_FUTURE_WORK.md` for what a verified SCCP fix would need.
 
 A phi of constants folds to a constant only when `constant_values_equal` (`ir/core/il_literals.py`)
 says they are equal: same type (`1`, `1.0` and a `SourceFloat` all differ) and, for floats, same bits

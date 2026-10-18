@@ -174,7 +174,7 @@ logical op**. The converter's other `||` chains (funnel collapse) take in a late
 into it included, only when that test is entered from the previous one alone, so its calls run only
 when the earlier tests failed: a call on the right side of an HLIL `&&`/`||` really is conditional.
 The cost: a refused call sits between `else` and the next test, so such `else if` chains nest
-instead of printing flat (`docs/FUTURE_WORK.md`, "HLIL Nesting Depth").
+instead of printing flat (`docs/hlil/HLIL_FUTURE_WORK.md`, "HLIL Nesting Depth").
 
 This specialized folding belongs in conversion rather than a post-conversion tree pass: it
 uses MLIL instruction positions, CFG predecessor information, and call evaluation order before the
@@ -354,9 +354,9 @@ still have no dedicated test file of their own.
   pins each shape and the node's handling; `tests/hlil_tests/test_hlil_structuring_fuzz.py` runs 1,000 random
   CFGs through the pipeline against their MLIL for every parameter assignment; `tools/hlil_path_check.py`
   checks real scripts (0 of 80,571 sora2_1.0 functions lose or invent a path). Still open: 6 of the
-  1,000 random CFGs are reducible yet need a node (pinned in the fuzz test; `docs/FUTURE_WORK.md`,
+  1,000 random CFGs are reducible yet need a node (pinned in the fuzz test; `docs/hlil/HLIL_FUTURE_WORK.md`,
   Structuring the Remaining Reducible Shapes), and the path check does not see which way a condition
   sends control.
-- HLIL is the planned input of a Python DSL that compiles back to bytecode (`docs/FUTURE_WORK.md`,
+- HLIL is the planned input of a Python DSL that compiles back to bytecode (`docs/dsl/DSL_FUTURE_WORK.md`,
   Recompilation Pipeline §1). Once that exists, every HLIL pass must preserve game logic exactly -
   readable-but-approximate rendering is only acceptable in the TypeScript generator.

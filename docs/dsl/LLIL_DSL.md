@@ -3,9 +3,9 @@
 > Status: Core mechanism implemented (a `.py` file can be executed to produce byte-exact
 > bytecode, and an automated round-trip check exists). Fidelity is opt-in, not default — see §2
 > for the round-trip policy this whole pipeline follows. The common-function shared library (§3)
-> is implemented and active by default, and hook files patch a script without editing it (§4).
+> is implemented and active by default, and hook files patch a script without editing it (`docs/dsl/HOOKS.md`).
 > Ideas beyond what's implemented here — multi-IR-level compilation, knowledge-driven typing for
-> common functions — live in `docs/FUTURE_WORK.md`, not in this document.
+> common functions — live in `docs/dsl/DSL_FUTURE_WORK.md`, not in this document.
 
 ## Role in the Pipeline
 
@@ -19,7 +19,7 @@ pipeline (`ED9VMLifter`, `FalcomLLILFormatter`) is a separate, disjoint path tha
 (one opcode, one function call, stack-machine semantics), and the disassembly-sourced version is
 already correct and round-trip-capable, that there's no plan to switch its source — treat "LLIL
 DSL" as this level everywhere it's mentioned below, including in the MLIL/HLIL lowering chain
-sketched in `docs/FUTURE_WORK.md`.
+sketched in `docs/dsl/DSL_FUTURE_WORK.md`.
 
 **Compilation itself does not involve the Parser or Disassembler at all.** Those two layers only
 come into play when *generating* a `.py` DSL file from an existing `.dat` (either for inspection,
@@ -68,7 +68,7 @@ or type (`PUSH_INT Integer 600000000 is outside -536870912..536870911: ..`). An 
 takes two columns; a longer line gets 2 spaces), several on one line joined by `, `. Besides
 `# global var N` on `LOAD_GLOBAL`/`SET_GLOBAL` and the header's `GLOBAL_VAR` lines, the `.py` shows the
 stack the way the `.llil.asm` does, read from the parser's simulated stack (`Function.stack_layout`,
-`docs/ARCHITECTURE.md` Layer 2). Each of the 5 offset opcodes gets the absolute slot it addresses and
+`docs/falcom/ed9/ED9_FORMAT.md` Layer 2). Each of the 5 offset opcodes gets the absolute slot it addresses and
 what it holds, `*` marking a dereference and `&` an address (`POP_TO` and `POP_TO_DEREF` count their
 offset from sp after their pop); the instruction that opened a local the code addresses gets
 `(local)`; `POP(n)` gets its slot count; each label gets the depth there:
@@ -127,7 +127,7 @@ another function compiles, for a deliberate jump between functions, with a warni
 must be in their place: an opcode or `label()` outside a function body raises `PUSH_INT is outside a
 function body`, and `GLOBAL_VAR` inside a body raises (the header counts the globals before the bodies
 run). `GLOBAL_VAR` belongs in the script's one `@scena.GlobalVars()` block or a hook's run or function
-callback (§4): anywhere else it raises, and so do a second `@scena.GlobalVars()` and one before
+callback (`docs/dsl/HOOKS.md`): anywhere else it raises, and so do a second `@scena.GlobalVars()` and one before
 `create_scp_writer()`. Its type is stored as an unsigned word (`GLOBAL_VAR('x') type is -1, outside
 0..4294967295`); the games declare only 0 (Integer) and 1 (String), so another type compiles as written,
 with a warning (`GLOBAL_VAR('x') type is 2, not 0 (Integer) or 1 (String)`). Operand checks report first: `LOAD_GLOBAL('missing')` at module level reports the
@@ -278,7 +278,7 @@ checks that the stack comments reach the fixed point too. A generated script fir
 `falcom/ed9/parser/scp.py`, from `dc3.utils.PROJECT_ROOT`), so it runs from any folder without `PYTHONPATH`; moving the
 checkout means regenerating the script or editing that line. It then imports the helper, an
 optional `<stem>_hook` module for patches kept outside the generated file (only a missing hook is
-ignored; an import error inside the hook stops the compile; §4, which also covers the opt-in hook template), and the
+ignored; an import error inside the hook stops the compile; `docs/dsl/HOOKS.md`, which also covers the opt-in hook template), and the
 library (§3). Its footer calls `main()`, which compiles the script when it is run directly. Every generated text file is written
 with `\n` line endings.
 
@@ -428,198 +428,11 @@ reference modules that don't exist on disk yet, so the gate above keeps every fu
 
 ## 4. Hooks — Implemented
 
-A hook file `<stem>_hook.py`, next to `<stem>.py`, patches a script without editing the generated file. The
-script imports it before `create_scp_writer()` (§2: only a missing hook is ignored), so what a hook registers at
-import time is there when the script compiles (`scena.run(globals())` → `ScpWriter.build`). The hook API is
-`falcom/ed9/writer/scp_writer_hooks.py`; the helper star-imports it, so a hook needs only the helper's import. The
-example below compiles against `ai_chr5122_e00.py` with the compile check on:
-
-```python
-# pyright: basic
-# ai_chr5122_e00_hook.py  (next to ai_chr5122_e00.py)
-from typing import TYPE_CHECKING
-from falcom.ed9.writer.scp_writer_helper import *
-if TYPE_CHECKING:                                   # Pylance only - never imported at runtime
-    from ai_chr5122_e00 import *  # pyright: ignore[reportAssignmentType]
-    import ai_chr5122_e00 as original
-
-
-@replace_function('CheckAlgoUse')
-def CheckAlgoUse(arg1, arg2, arg3 = 5):             # types from the original; arg3 gains the default 5
-    PUSH_CURRENT_FUNC_ID()                          # a local call, as the decompiler prints one
-    PUSH_RET_ADDR('hook_skill_table_ret')
-    CALL(SkillTable)                                # a script function, by its plain name
-    label('hook_skill_table_ret')
-    inline_original_func()                          # then the original CheckAlgoUse's opcodes
-
-
-@add_function
-def HookExtra(arg1: Value32):                       # a new function, compiled after the script's own
-    POP(WORD_SIZE)
-    RETURN()
-
-
-def swap_clone(opcode, *args):
-    if opcode == ED9Opcode.CALL_SCRIPT and args[1] == 'GetCoolClone':
-        CALL_SCRIPT('chr5122', 'GetCoolClone', args[2])
-        return True                                 # drop the original opcode
-
-
-registerOpcodeCallback(swap_clone)
-```
-
-Compiled and decompiled again, `CheckAlgoUse` is the three-opcode call followed by the game's own opcodes, keeps its
-table index and reads `CheckAlgoUse(Value32, Value32, Value32 = 5)`; `HookExtra` is last in code order; the game's
-`CALL_SCRIPT("this", "GetCoolClone", 0)` became `("chr5122", "GetCoolClone", 0)`; every other function is
-unchanged.
-
-**The API.** Each `register*` call returns its argument, so it also works as a decorator. Hooks are plain functions
-(`def` or `lambda`), like every function `LLILCode()` / `LLILCommonCode()` register: anything else
-(`functools.partial`, a callable object, a bound method) is a `TypeError`. Functions and hooks
-register at hook import time or in a run callback; registering one from a function callback or from a body is an
-error.
-- `@replace_function('Name')`: the decorated function becomes `Name`'s body. `Name` may be a script function, a
-  library function or an added one; an unknown name fails the compile at the hook's line, and a second replacement
-  of the same name warns and wins.
-- `registerFuncCallback(cb)`: `cb(name, func)` for every function, in registration order (`@replace_function`
-  registers one too). Returning `None` (or `func` itself) keeps the body; returning a function replaces it, and a later
-  callback receives that replacement as `func`. For pattern rules (every function named `AniBtl*`). It may add global
-  vars (`GLOBAL_VAR`), not functions or hooks.
-- `registerRunCallback(cb)`: `cb(g)` with the script's globals, before the function callbacks. It may add functions
-  (`add_function(f)`, or `get_scp_writer().LLILCode()(f)`) and global vars (`GLOBAL_VAR`, appended after the script's,
-  so their indices stay; at a hook's top level `GLOBAL_VAR` is an error); the function callbacks then see the added
-  functions too.
-- `@add_function`: a new function, compiled after the script's own. Existing functions keep their code order and
-  their offsets from the code start; the function table is sorted by name, so a new name can shift other functions'
-  indices, and every `CALL` follows. Every parameter needs a type. A name the script already has is an error that names
-  both definitions: `@replace_function` replaces a function.
-- `registerOpcodeCallback(cb)`: see Opcode callbacks below.
-- `original.Name(...)`: inlines `Name`'s body from before any hook, at that point. Its arguments are checked like a
-  normal call to that original (`original.CheckAlgoUse(1)` is a `TypeError`: missing `arg2`); an LLIL body reads its
-  arguments from the VM stack, so the values themselves are never read. `CALL(original.Name)` is `CALL(Name)`: a call
-  by name, so it calls the replacement when there is one (inside `Name`'s own replacement, a call to itself).
-  `original` exists once the compile starts (in bodies and callbacks), not at hook import time.
-- `inline_original_func()`: in a replaced function's body, inlines that function's body from before any hook; an
-  error anywhere else.
-- `get_scp_writer().globals`: the script's globals dict, once the compile starts.
-
-**What `build()` does, in order.** (1) Saves the script's globals. (2) Registers the queued `@add_function`s. (3) Sets
-the script's names in the hook modules (below). (4) Runs the run callbacks. (5) Runs every function through the
-function callbacks, then merges each replaced function's signature (below). (6) Counts the header: nothing registers
-after this. (7) Compiles the bodies, running the opcode callbacks as opcodes are emitted. (8) The compile check (§1).
-
-**Script names in hooks.** Every module a hook function comes from - and the module of any function it wraps with
-`functools.wraps` - gets each script name it doesn't define itself: the script's functions, `scena`, the library. So a
-hook body writes `CALL(SkillTable)` like the script does. The names arrive when the compile starts, so code at a hook's
-top level can't use them: use a run callback. A body a callback merely passes on (`return func`) gets nothing; a
-`functools.wraps` wrapper of a library body does give the library's module the names (nothing in it is overwritten).
-
-**Signatures.** A replaced function keeps its position, table index and common flag; its signature merges per
-parameter: the replacement's type or default where it gives one, else the original's. The parameter count must match,
-and `*args`, keyword-only and `**kwargs` parameters are rejected (a wrapper keeps the replaced signature with
-`functools.wraps`). A default can change but never go: the engine can call a function by name with fewer arguments.
-Annotations are evaluated, so `from __future__ import annotations` works; a missing or wrong type on a new function, a
-`None` default, one the `.dat` can't store, or one of the wrong type (a string only on `str` / `NullableStr`, a number
-only on the others) is an error at the `def`, and so is an `*args`, keyword-only or `**kwargs` parameter on any
-function (the engine passes arguments by position). The merged signature is checked too: a replacement that changes a
-parameter's type gives it a default of the new type when the original has one.
-
-**Opcode callbacks.** `cb(opcode, *args)` runs for each opcode a body emits - library bodies included - before it is
-written, the callbacks in registration order. `True` drops the opcode, and the later callbacks don't see it; `None` or
-`False` keeps it; anything else is a `TypeError` at the callback's `def`. Opcodes a callback emits are written where
-it emits them (before the triggering opcode, if that is kept) and skip the callbacks. The operands are as the DSL
-function passed them: `LOAD_GLOBAL`/`SET_GLOBAL` an index (the name is already resolved), `CALL` the function object
-or an `original.Name` object (compare `CALL` operands by `__name__`), `CALL_SCRIPT` plain strings in generated scripts
-(a `str` or an `ScpValue`, as a hand-written script wrote it), the jumps, `PUSH_RET_ADDR` and `PUSH_CALLER_FRAME` a
-label name, the push pseudo-ops their own opcode (`ED9Opcode.PUSH_INT`) with the value as given (`PUSH_FLOAT(1)`
-shows the `int` 1). `label()` and `GLOBAL_VAR` aren't opcodes and never reach a callback. To act in one function
-only, check `get_scp_writer().current_function.name`. Pitfalls:
-- Emitting replacement opcodes without returning `True` writes both; the compile check notices only when that
-  breaks the stack.
-- Nothing a callback emits after a call opcode it emits runs: the call returns to the label after the triggering
-  opcode, so the rest is unreachable: the compile check doesn't simulate it, only warns that it never runs, at the
-  callback's line. To add code after a call, trigger on the first opcode after its return label (such as `GET_REG`).
-- A drop that breaks the stack is reported where the stack breaks, at a later kept opcode (often the `RETURN`), never
-  at the callback.
-- Labels a callback emits need fresh names (`genLabel()`): a fixed name fails on the callback's second hit, and that
-  error has no location.
-- In round-trip mode, dropping part of a call sequence (`PUSH_CALLER_FRAME`, `PUSH_RET_ADDR`, an argument push)
-  shifts the function's later debug records, and calls before the function's first kept `DEBUG_SET_LINENO` get none
-  (dropping every one loses them all). The records don't affect the logic.
-
-**Where errors point.** The writer's errors about a hook (a bad registration, a signature, an unknown name) and
-compile-check failures name the hook's own line: a replacement's opcode, a wrapper's own opcode, an inlined
-original's opcode (the script's line, or the library's file), each body of a callback chain. An opcode an opcode
-callback emits names the callback's line - a `functools.wraps`-decorated callback's own, not its wrapper's - and the
-opcode that triggered it:
-
-```
-ai_chr5122_e00_hook.py:27: (opcode callback swap_clone, triggered at ai_chr5122_e00.py:1110) CheckAlgoUse: ...
-```
-
-Errors Python raises inside a body (an unknown global, a `bool` operand) and a label defined twice have no such prefix:
-the traceback shows the line.
-
-**Decorators.** A registering decorator - `@replace_function`, `@add_function`, a `register*` call used as one - goes
-on top, above any other decorator: below one, it registers the undecorated function and that decorator's work is
-silently lost. Errors about the registered function (a replacement's signature, an opcode callback's return value)
-then name the decorator's wrapper `def`.
-
-**Inlining hazards** (not checked beyond what already fails):
-- The original ends with `RETURN`, so a hook's own opcodes go before `inline_original_func()`.
-- The stack must hold exactly the function's parameters when a body is inlined, or the inlined `LOAD_STACK` offsets
-  read the wrong slots. That is why `inline_original_func()` is the wrapping idiom: `original.Other(...)` of a
-  different function is only right when the stack matches `Other`'s frame. The compile check catches a stack that
-  breaks, not a slot that is valid but wrong.
-- Labels are file-wide: a body with literal labels can't be inlined twice, or inlined while it also compiles on its own
-  ("label already defined"). A label-free body, or one using `genLabel()` - the whole common library - is copied
-  silently, the second copy dead code after the first `RETURN`.
-- `inline_original_func()` skips every other replacement too: a raw callback's wrapper that should keep earlier
-  wrappers calls the `func` it was given (`func(*args)`, LLIL only).
-- In round-trip mode a replaced function loses the original's debug-record argument trimming, even when the
-  replacement only inlines the original: the bytes may differ, the logic doesn't.
-
-**Pylance.** Hooks see the script's names only at runtime. The `TYPE_CHECKING` lines in the example show them to
-Pylance: `from <stem> import *` for plain names, and `import <stem> as original` for `original.Name(...)` with the real
-signatures. They work only when the stem is a valid module name (not `mon5078+`) that no other module takes: Pylance
-finds a stdlib module or one of the checkout's top-level packages first - a script named `dc3.dat` gets the
-checkout's `dc3/`. `# pyright: basic` turns on Pylance's
-basic type checking for the hook file, without which Pylance reports no wrong argument counts or unknown attributes
-(`original.Nmae`). The
-ignore on the star-import line lets a replacement keep its function's name: basic mode otherwise reports the script's
-imported `CheckAlgoUse` as clashing with the hook's own `def`. A hook that assigns its own `original` hides the
-helper's. Importing the script for real from its hook would run it a second time ("duplicate function name").
-
-**Hook template.** `ScenaDecompileConfig.write_hook_template` (off by default; only with `write_py`) writes a
-starting `<stem>_hook.py` next to `<stem>.py` (`ScpParser.gen_hook_template`), never over an existing file (a log
-line instead). It holds the Pylance lines above, then three hooks with their `register*` lines commented out: a
-`run_hook(g)` that adds each function in its list (decompiler2's way of adding functions) and no-op `func_hook` and
-`opcode_hook` callbacks. With the list empty, the template compiles to the same bytes as no hook, registered or not.
-Adding a function:
-
-```python
-# Functions to add
-def run_hook(g):
-    for func in [
-        HookExtra,                                  # read at compile time: defined anywhere in this file
-    ]:
-        add_function(func)
-
-registerRunCallback(run_hook)
-```
-
-When no import can name the `.py`'s stem - it isn't a module name (`mon5078+`) or another module takes the name
-(`dc3`, see Pylance above) - the `TYPE_CHECKING` block holds a hint instead of the imports: rename the `.py` to the
-suggested name (`mon5078_.py`, `dc3_.py`; it still compiles to the same `.dat`, and the hook keeps its name) and
-uncomment the two imports it lists. Until then, Pylance reports the script's names in that hook as undefined, though
-they work when it compiles. A stem with a dot gets no template, only a warning.
-
-**Limits.** One compile per process (the writer has no reset); hooks can't be unregistered; hooks on HLIL-level
-scripts are future work (`docs/FUTURE_WORK.md`, HLIL DSL: Hooks and Patching).
+Moved to `docs/dsl/HOOKS.md`.
 
 ## 5. Future Work
 
 Ideas that extend this pipeline but haven't been started — MLIL/HLIL DSL lowering, mixed-IR-level
 compilation, knowledge-driven typing for common functions — are collected in
-`docs/FUTURE_WORK.md` rather than here, so this document stays a description of what's actually
+`docs/dsl/DSL_FUTURE_WORK.md` rather than here, so this document stays a description of what's actually
 implemented.

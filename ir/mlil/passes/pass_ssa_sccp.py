@@ -381,7 +381,7 @@ class SCCP:
                 # Not folded: Python's // is confirmed wrong for VM float division, and the rest
                 # of DIV/MOD (int width, overflow, MOD's sign) is unverified without running the
                 # game - ScpValue's 30-bit-int/float32 shape is the constant encoding, not proof
-                # of runtime arithmetic width. See docs/FUTURE_WORK.md. Folding wrong is worse
+                # of runtime arithmetic width. See docs/mlil/MLIL_FUTURE_WORK.md. Folding wrong is worse
                 # than not folding.
                 return LatticeValue.bottom()
 
