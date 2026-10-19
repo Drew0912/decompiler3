@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Disassemble all functions from"""
+# Overlaps falcom/ed9/scena2py.py; kept on purpose (user)
 
 import sys
 import os

@@ -84,7 +84,7 @@ class SSAOptimizer:
     def _structural_key(cls, value):
         '''Recursively reduce an instruction, or any attribute value reachable from one, to an
         exact and hashable key. One generic walk over each object's own attributes instead of a
-        per-node-type walker (CLAUDE.md -0.04), so a new instruction/operand type is covered
+        per-node-type walker (`.claude/rules/ir.md`), so a new instruction/operand type is covered
         without a change here. Every branch tags its result with the value's actual type object
         (not its name - two distinct classes can share a __name__), so values of different types
         can never collide even if their content normalizes to the same text (e.g. MLILConst(1.0)

@@ -8,9 +8,11 @@ def int_to_bytes(i, size) -> bytes:
 def str_to_bytes(s: str) -> bytes:
     return s.encode(default_encoding()) + b'\x00'
 
+# Unused: kept on purpose (user)
 def float_to_bytes(i) -> bytes:
     return fileio.struct_layout('f').pack(i)
 
+# Unused: kept on purpose (user)
 def double_to_bytes(i) -> bytes:
     return fileio.struct_layout('d').pack(i)
 
@@ -24,8 +26,10 @@ def float32_bits(value: float) -> int:
 def float32_from_bits(bits: int) -> float:
     return _FLOAT32.unpack(_UINT32.pack(bits))[0]
 
+# Unused: kept on purpose (user)
 def pad_string(s: str, padding: int) -> bytes:
     return s.encode(default_encoding()).ljust(padding, b'\x00')
 
+# Unused: kept on purpose (user)
 def read_fixed_string(fs: fileio.FileStream, size: int) -> str:
     return fs.Read(size).split(b'\x00', maxsplit = 1)[0].decode(default_encoding())

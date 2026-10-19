@@ -22,7 +22,7 @@ no matter what the VM's exact answer turns out to be. The float part closed `chr
 - Float32 rounding and int/float mixing are unverified too; a verified fold would compute in
   float32, not Python doubles.
 - decompiler2 may only be read **to verify** hypotheses already derived from this repo's own
-  source (`ScpValue`'s encoding), never as the source of the rules. Per `CLAUDE.md` -0.1, this
+  source (`ScpValue`'s encoding), never as the source of the rules. Per `CLAUDE.md` (decompiler2 Submodule Access), this
   needs the user's explicit go-ahead in whatever future request actually does it - a past
   planning session having scoped this permission for Step B doesn't carry forward as standing
   authorization; ask again before reading anything under `decompiler2/`.

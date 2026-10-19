@@ -769,7 +769,7 @@ def unwrap_address_taken_var(expr: 'HLILExpression') -> Optional['HLILVar']:
 def sub_blocks(stmt: 'HLILStatement') -> List['HLILBlock']:
     '''Blocks directly owned by a structured statement - HLILIf's arms, a loop's body, each
     HLILSwitch case's body. Shared so a new statement type needs one edit here, not one per
-    walker (CLAUDE.md -0.04).'''
+    walker (`.claude/rules/ir.md`).'''
     if isinstance(stmt, HLILIf):
         blocks = [stmt.true_block]
         if stmt.false_block is not None:

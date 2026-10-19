@@ -13,6 +13,7 @@ languages, touches the generic / Falcom boundary, or the pipeline is not known y
 | `ARCHITECTURE.md` | the pipeline and its data flow, one summary per layer, the generic / Falcom boundary, status | cross-layer work, boundary questions, a first look |
 | `ROUND_TRIP_POLICY.md` | what every change must keep: the logic round trip (required), byte-exact (medium), `round_trip` flags, every function stays | any change to the parser, the writer, an IR pass or an output |
 | `HARDENING_POLICY.md` | which inputs deserve a test, a guard or a finding (threat model) | tests, guards, reviews, bug hunts |
+| `CODING_STYLE.md` | the house style: code, line endings, commit messages (imported by `CLAUDE.md`) | all code |
 | `TESTS_GUIDE.md` | running the tests, layout, shared helpers, the corpus skip, moving tests | test work |
 | `VALIDATOR_GUIDE.md` | `tools/ir_semantic_validator.py` HARD_FAIL categories: known noise vs real signal | judging validator output |
 | `FUTURE_WORK.md` | the index of future work, and the ideas that span folders | proposing or planning new work |
@@ -27,7 +28,8 @@ languages, touches the generic / Falcom boundary, or the pipeline is not known y
 `python falcom/ed9/scena2py.py <file or folder>` decompiles `.dat` scripts (folders are searched recursively) with the
 settings in `falcom/ed9/scena2py_config.py` (`ScenaDecompileConfig`: which outputs, the parser flags) into
 `falcom/ed9/out/<stem>/`, or `<folder>/<stem>/` with `-o <folder>`. It runs the real pipeline, so it is the way to check
-a decompile: write the outputs before a change, again after it, and diff them.
+a decompile: write the outputs before a change, again after it, and diff them. Like the tests and generated scripts,
+`scena2py.py` and the `tools/` and `demos/` scripts put the repo root on `sys.path` themselves: no `PYTHONPATH`.
 
 A test or verification run writes nothing inside the repo:
 - `scena2py`: `python falcom/ed9/scena2py.py <file or folder> -o <scratch folder>`. A run that needs other settings
@@ -50,6 +52,10 @@ A test or verification run writes nothing inside the repo:
 - IR checks: `tools/ir_semantic_validator.py <dat> --export-regression <scratch folder>/before.json` before a change,
   `--compare-regression <scratch folder>/before.json` after; judge the output with `VALIDATOR_GUIDE.md`.
 - A generated script writes its `.dat` to a relative name: run it from a scratch folder.
+- `demos/disasm_all.py` writes `<stem>.py` next to each input: run it on a scratch copy of the scripts.
+- `demos/llil_demo.py` writes `cfg.dot` next to itself and imports through its `sys.path` line: run it from a scratch
+  copy of the repo's tracked files (`git ls-files`, layout kept; or just `demos/llil_demo.py` with the packages it
+  imports).
 - Use absolute paths; afterwards `git status --ignored` shows nothing new (the outputs' file types and `out/` are
   gitignored, so plain `git status` cannot see them). It cannot see new files inside an already-ignored folder such as
   `falcom/ed9/out/`.
