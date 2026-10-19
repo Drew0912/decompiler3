@@ -15,14 +15,11 @@ The same holds for every folder in `.gitmodules`. Grep from the repo root alread
 Glob, `find` and `grep -r` do not, so exclude it there.
 
 ## Codex (reviews only)
-Codex only reviews; it never edits or commits. Reviews in `notes/codex_rules.md` (read it before invoking):
+Codex only reviews; it never edits or commits. Its reviews, run by the `codex-review` skill (local to this machine):
 **IR change review** (correctness, condensability and generic/game-specific placement of `ir/` and `falcom/ed9/ir/`
 changes; required, and a plan touching those folders includes it as a step), **plan review** (adversarial, before a
 plan's first implementation step) and **user-asked review**. Ask before invoking any of them, and name the review
 when you do (e.g. "Invoking Codex - plan review"). Codex reads `AGENTS.md` itself: its hard rules and what to read.
-
-## Corpus Runs
-Read `notes/corpus_run_rules.md` before any corpus-wide run (census, regression dump, round-trip validator over many files).
 
 ## Round-Trip Policy
 Required: logic round trip — decompile (`round_trip=False`) → recompile → decompile must keep the same game logic and reach a fixed point within a few rounds. Byte-exact round trip: medium priority (wanted; never blocks a step or a logic fix). Full rule: `docs/ROUND_TRIP_POLICY.md`.
