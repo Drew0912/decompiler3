@@ -6,7 +6,9 @@
 .vscode
 
 openspec
-.claude
+.claude/*
+!.claude/rules/
+CLAUDE.local.md
 .gemini
 .codex
 
