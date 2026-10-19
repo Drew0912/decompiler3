@@ -7,10 +7,11 @@ any scratch repo (commits are signed, so even a scratch commit prompts the user)
 without asking; move files with plain `mv`.
 
 ## Code Modification Policy
-NEVER modify code during discussion. Only modify code AFTER user explicitly confirms the approach.
+Change code only after the user confirms the approach; while it is still being discussed, describe the change instead
+of making it.
 
 ## decompiler2 Submodule Access
-NEVER read, search, or reference files under the `decompiler2` submodule unless the user explicitly says to use it in the current request. If you think looking at `decompiler2` would help, ASK the user first and wait for confirmation before accessing it.
+Read, search or reference files under the `decompiler2` submodule only when the user's current request says to use it. If looking at it would help, ask first and wait for a yes.
 The same holds for every folder in `.gitmodules`. Grep from the repo root already skips `decompiler2` (gitignored);
 Glob, `find` and `grep -r` do not, so exclude it there.
 
