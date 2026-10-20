@@ -17,9 +17,6 @@ class _StderrHandler(logging.StreamHandler):
     def stream(self):
         return sys.stderr
 
-    def setStream(self, stream):
-        raise TypeError('_StderrHandler always writes to the current sys.stderr')
-
 
 # Registered via getLogger: a bare Logger() never has its level cache cleared, so setLevel/assertLogs go stale
 log = logging.getLogger('decompiler3')

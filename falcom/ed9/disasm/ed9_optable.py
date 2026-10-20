@@ -193,7 +193,6 @@ def _opcode(mnemonic: str) -> int:
     for entry in ED9_OPCODE_TABLE:
         if entry.mnemonic == mnemonic:
             return entry.opcode
-    raise ValueError(f'Unknown mnemonic: {mnemonic}')
 
 
 class ED9Opcode(IntEnum2):
@@ -279,8 +278,6 @@ def opcodes_of(*kinds: InstructionKind) -> tuple[ED9Opcode, ...]:
 class ED9InstructionDescriptor(InstructionDescriptor):
     """ED9-specific instruction descriptor with operand format and stack effect"""
 
-    _allow_creation = True
-
     def __init__(
         self,
         opcode: int,
@@ -290,8 +287,6 @@ class ED9InstructionDescriptor(InstructionDescriptor):
         *,
         kind: InstructionKind,
     ):
-        if not ED9InstructionDescriptor._allow_creation:
-            raise RuntimeError('Cannot create ED9InstructionDescriptor after ED9InstructionTable initialization')
         super().__init__(opcode, mnemonic, flags)
         self.operand_fmt = operand_fmt
         self.operand_descriptors = OperandDescriptor.from_format_string(operand_fmt, ED9_FORMAT_TABLE)
@@ -340,8 +335,6 @@ class ED9InstructionTable(InstructionTable):
     def __init__(self):
         self.descriptors: dict[int, ED9InstructionDescriptor] = {}
         self._init_table()
-        # Disable further descriptor creation
-        ED9InstructionDescriptor._allow_creation = False
 
     def _init_table(self):
         """Initialize instruction table from ED9_OPCODE_TABLE"""
@@ -379,9 +372,6 @@ class ED9InstructionTable(InstructionTable):
     ) -> list[Operand]:
         """Read operands according to format string"""
         descriptor = inst.descriptor
-        if not isinstance(descriptor, ED9InstructionDescriptor):
-            raise TypeError('Expected ED9InstructionDescriptor')
-
         if descriptor.opcode == ED9Opcode.PUSH:
             return self._decode_push(fs, inst)
 

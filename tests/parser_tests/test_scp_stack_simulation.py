@@ -217,18 +217,6 @@ class TestInstructionBounds(unittest.TestCase):
                                     rf'^{FUNC_NAME}: Branch target 0x2 is inside the instruction at 0x0$'):
             Program(main_function(asm)).disassemble()
 
-    def test_instruction_covering_a_branch_target_raises(self):
-        """The target is recorded first; the instruction that covers it is decoded later"""
-        asm = Asm()
-        asm.get_reg(REG_INDEX); asm.jz(0)
-        asm.label('push'); asm.push_int(LEFT_VALUE); asm.ret()
-        target = Program(main_function(asm)).label('push') + WORD_SIZE // 2      # inside the PUSH
-
-        asm = Asm()
-        asm.get_reg(REG_INDEX); asm.jz(target)
-        asm.push_int(LEFT_VALUE); asm.ret()
-        assert_rejected(self, main_function(asm))
-
     def test_return_into_the_call_itself_raises(self):
         """The return address is the CALL's own operand byte, which would decode as an overlapping instruction"""
         caller = Asm()

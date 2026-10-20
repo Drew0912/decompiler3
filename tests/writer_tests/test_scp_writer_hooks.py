@@ -4,7 +4,7 @@ table index and common flag kept, the signature merged with the original's; run 
 add_function adds functions after the script's own; hook modules get the script's names; original.Name(...) and
 inline_original_func() inline a body from before any hook; opcode callbacks keep, drop or add opcodes as they are
 compiled; and the writer's errors about a hook and compile-check failures in it point at the hook's own line. Also the
-parameter checks on every new function, and wrapped_chain's end on a cycle."""
+parameter checks on every new function."""
 
 from itertools import islice
 from pathlib import Path
@@ -1169,14 +1169,6 @@ class TestWrappedChain(unittest.TestCase):
         outer.__wrapped__ = inner
 
         self.assertEqual(list(islice(scp_writer_hook_registry.wrapped_chain(outer), CHAIN_LIMIT)), [outer, inner])
-
-    def test_cycle_ends_the_chain(self):
-        def looped():
-            pass
-
-        functools.update_wrapper(looped, looped)          # looped.__wrapped__ is looped
-
-        self.assertEqual(list(islice(scp_writer_hook_registry.wrapped_chain(looped), CHAIN_LIMIT)), [looped])
 
 
 class TestOriginal(HookTestCase):

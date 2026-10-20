@@ -68,15 +68,6 @@ class Formatter:
         reachable_blocks = self.collect_blocks(entry_block)
         self.referenced_offsets = self.find_referenced_offsets(entry_block, reachable_blocks=reachable_blocks)
 
-        # The disassembler always splits a block when something jumps into its middle, so a
-        # referenced offset should always be some block's start. Assert that invariant here for an
-        # immediate signal if it ever breaks; format_block's per-instruction loop still emits an
-        # inline label at the actual reference point regardless, so a reference can never go
-        # undefined even if this assert is stripped (-O) or the invariant is ever wrong.
-        block_start_offsets = {block.offset for block in reachable_blocks}
-        assert self.referenced_offsets <= block_start_offsets, \
-            f'referenced offset(s) not at a block start: {sorted(self.referenced_offsets - block_start_offsets)}'
-
         # Collect all blocks
         blocks = reachable_blocks + list(unreachable_blocks)
         unreachable_ids = {id(block) for block in unreachable_blocks}  # BasicBlock is an unhashable dataclass

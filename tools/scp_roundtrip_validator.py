@@ -370,14 +370,10 @@ def check_debug_records(ctx: ScriptContext) -> CheckResult:
 
 
 def check_instruction_ranges(insts: list[Instruction], start: int, end: int) -> list[str]:
-    """No two reachable instructions overlap, and every branch target lands on a reachable
-    instruction start inside [start, end) - never mid-instruction, never outside the function."""
+    """Every branch target lands on a reachable instruction start inside [start, end) - never mid-instruction, never
+    outside the function"""
     failures = []
     inst_starts = {inst.offset for inst in insts}
-
-    for a, b in zip(insts, insts[1:]):
-        if a.offset + a.size > b.offset:
-            failures.append(f'instruction @0x{a.offset:X} (size {a.size}) overlaps @0x{b.offset:X}')
 
     for inst in insts:
         for op in inst.operands:

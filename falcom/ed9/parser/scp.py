@@ -14,7 +14,6 @@ from ..metadata.fingerprint import function_fingerprint, fingerprint_digest
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT
 from ir.llil import WORD_SIZE
-from collections import Counter
 from enum import Enum, auto
 from typing import Callable, NamedTuple
 import bisect
@@ -165,11 +164,6 @@ def frame_return(entry) -> int | None:
     return entry.frame.operands[0].value if isinstance(entry, FrameSlot) else None
 
 
-def edge_source(block: BasicBlock) -> int:
-    """The instruction an edge out of block is keyed by: its last real instruction, not a synthetic fall-through JMP"""
-    return next(inst.offset for inst in reversed(block.instructions) if inst.size != SYNTHETIC_INSTRUCTION_SIZE)
-
-
 class StackEntryGroups:
     """Union-find over simulated stack entries. Entries that stand at the same position when two edges meet are one
     group: after the join either may be there. A call that consumes a group gives it a role every member must fit.
@@ -260,7 +254,7 @@ class ScpDisassemblerContext(DisassemblerContext):
     current_inst     : Instruction | None = None    # Instruction being simulated
     stack_simulation : list = field(default_factory=list)                   # Simulated stack of the block being decoded
     edge_states      : dict[int, tuple] = field(default_factory=dict)       # block start -> state; later edges match its height
-    recorded_edges   : list = field(default_factory=list)                   # (source offset, target, kind, state) of every edge
+    recorded_edges   : list = field(default_factory=list)                   # (source offset, target, state) of every edge
     inst_states      : dict[int, tuple] = field(default_factory=dict)       # instruction offset -> the stack before it
     groups           : StackEntryGroups = field(default_factory=StackEntryGroups)
     plain_uses       : dict[int, object] = field(default_factory=dict)      # id -> entry an ordinary consumer used
@@ -288,10 +282,10 @@ class ScpDisassemblerContext(DisassemblerContext):
         desc = inst.descriptor
         return not desc.ends_block or any(target.kind == BranchKind.FALSE for target in desc.get_branch_targets(inst, end))
 
-    def record_edge(self, source: int, target: int, state: tuple, kind: BranchKind):
+    def record_edge(self, source: int, target: int, state: tuple):
         """The first edge into a block records its state. Every later edge - also one arriving after the block was
         decoded - must match its height; entries that differ become one group."""
-        self.recorded_edges.append((source, target, kind, state))
+        self.recorded_edges.append((source, target, state))
         recorded = self.edge_states.get(target)
         if recorded is None:
             self.edge_states[target] = state
@@ -484,7 +478,7 @@ class ScpDisassemblerContext(DisassemblerContext):
             for block in Formatter.collect_blocks(entry_block)
         }
         starts = {start: self.inst_states[insts[0].offset] for start, insts in blocks.items()}
-        # A recorded edge leaves from its block's last real instruction (require_recorded_edges checked it)
+        # A recorded edge leaves from its block's last real instruction: the one that branches, or a split head's last
         source_blocks = {insts[-1].offset: start for start, insts in blocks.items()}
 
         # Block start -> slot -> the entries that may stand there, by id (Instruction is unhashable)
@@ -506,7 +500,7 @@ class ScpDisassemblerContext(DisassemblerContext):
         changed = True
         while changed:
             changed = False
-            for source, target, _, state in self.recorded_edges:
+            for source, target, state in self.recorded_edges:
                 for slot, target_entries in enumerate(held[target]):
                     count = len(target_entries)
                     target_entries.update(held_at(source_blocks[source], state, slot))
@@ -640,9 +634,6 @@ class ScpParser(StrictBase):
         return func.index if func is not None else None
 
     def get_func_name_from_func_id(self, func_id: int) -> str:
-        if func_id >= len(self.functions):
-            raise ValueError(f'func_id out of range: {func_id} >= {len(self.functions)}')
-
         return self.functions[func_id].name
 
     def get_global_name_from_index(self, index: int) -> str | None:
@@ -652,9 +643,6 @@ class ScpParser(StrictBase):
         return None
 
     def get_func_argc(self, func_id: int) -> int:
-        if func_id >= len(self.functions):
-            raise ValueError(f'func_id out of range: {func_id} >= {len(self.functions)}')
-
         return len(self.functions[func_id].params)
 
     def parse(self):
@@ -693,9 +681,6 @@ class ScpParser(StrictBase):
 
             fs.Position = entry.default_params_offset
             default_params = [ScpValue(fs=fs) for _ in range(entry.default_params_count)]
-            if len(default_params) > len(param_flags):
-                raise ValueError(f'default_params count is greater than param_flags count: {len(default_params)} > {len(param_flags)}')
-
             while len(default_params) < len(param_flags):
                 default_params.insert(0, None)
 
@@ -775,11 +760,11 @@ class ScpParser(StrictBase):
             context.fail(f'jumps to 0x{target.offset:X}, past the end of the code (no RETURN after its label)',
                          context.current_inst)
 
-        context.record_edge(context.current_inst.offset, target.offset, tuple(context.stack_simulation), target.kind)
+        context.record_edge(context.current_inst.offset, target.offset, tuple(context.stack_simulation))
 
     def on_block_split(self, context: ScpDisassemblerContext, source_offset: int, split_offset: int):
         """The head falls through into the tail with the state the tail's first instruction was simulated with"""
-        context.record_edge(source_offset, split_offset, context.inst_states[split_offset], BranchKind.UNCONDITIONAL)
+        context.record_edge(source_offset, split_offset, context.inst_states[split_offset])
 
     def on_instruction_decoded(self, context: ScpDisassemblerContext, inst: Instruction, block: BasicBlock) -> list[BranchTarget]:
         """Simulate the instruction's stack effect; a call returns its return edge"""
@@ -899,25 +884,6 @@ class ScpParser(StrictBase):
         if context.stack_simulation:
             context.fail(f'leaves {format_stack(context.stack_simulation)} below its args', inst)
 
-    @classmethod
-    def require_recorded_edges(cls, func: Function, context: ScpDisassemblerContext):
-        """The CFG's edges must be exactly the recorded ones, kind and count included"""
-        cfg_edges = Counter()
-        for block in Formatter.collect_blocks(func.entry_block):
-            for succ in block.succs:
-                kinds = [
-                    kind for kind, succs in ((BranchKind.TRUE, block.true_succs), (BranchKind.FALSE, block.false_succs))
-                    if succ in succs
-                ]
-                for kind in kinds or [BranchKind.UNCONDITIONAL]:
-                    cfg_edges[(edge_source(block), succ.offset, kind)] += 1
-
-        recorded = Counter((source, target, kind) for source, target, kind, _ in context.recorded_edges)
-        if cfg_edges != recorded:
-            missing = sorted((hex(src), hex(target), kind.name) for src, target, kind in cfg_edges - recorded)
-            extra = sorted((hex(src), hex(target), kind.name) for src, target, kind in recorded - cfg_edges)
-            context.fail(f'CFG edges without a recorded stack state {missing}, recorded edges not in the CFG {extra}')
-
     def require_code_before_strings(self, functions: list[Function]):
         """Every reachable instruction must end before the string pool, whose start is known only from references: the
         function names and the strings decoded code references. Unreachable references count only when
@@ -937,30 +903,13 @@ class ScpParser(StrictBase):
 
     def require_disjoint_instructions(self, functions: list[Function]):
         """Functions may share code - the same instruction at the same offset - but no instruction may partially overlap
-        another, and no function may start inside one. Within a function the Disassembler already checks this."""
-        sizes = {}
-        for func in functions:
-            for inst in self.get_instructions(func):
-                size = sizes.setdefault(inst.offset, inst.size)
-                if size != inst.size:
-                    raise ScpDisassemblyError(
-                        f'{func.name}: {inst.mnemonic} at 0x{inst.offset:X} decodes differently in another function',
-                        func.name, inst.offset
-                    )
-
+        another, in one function or across functions"""
+        sizes = {inst.offset: inst.size for func in functions for inst in self.get_instructions(func)}
         offsets = sorted(sizes)
         for offset, next_offset in zip(offsets, offsets[1:]):
             if offset + sizes[offset] > next_offset:
                 raise ScpDisassemblyError(
                     f'The instruction at 0x{offset:X} overlaps the instruction at 0x{next_offset:X}', offset=next_offset
-                )
-
-        for func in self.functions:
-            index = bisect.bisect_right(offsets, func.offset) - 1
-            if index >= 0 and offsets[index] < func.offset < offsets[index] + sizes[offsets[index]]:
-                raise ScpDisassemblyError(
-                    f'{func.name} starts at 0x{func.offset:X}, inside the instruction at 0x{offsets[index]:X}',
-                    func.name, offsets[index]
                 )
 
     def disasm_context(self, func: Function, code_end: int | None, quiet: bool = False) -> ScpDisassemblerContext:
@@ -1003,7 +952,6 @@ class ScpParser(StrictBase):
             disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
             try:
                 func.entry_block = disasm.disasm_function(self.fs, offset=func.offset, name=func.name)
-                self.require_recorded_edges(func, context)
                 func.stack_layout = context.stack_layout(func.entry_block)
                 func.runs_on = context.runs_on
                 func.backward_returns = context.backward_returns

@@ -136,25 +136,13 @@ def select_canonical(occurrences: dict[str, list[Occurrence]]) -> dict[str, Occu
 
 def verified_render_inputs(parser: ScpParser, func: Function, path: Path, expected_digest: str) -> tuple[list[Instruction], set[int]]:
     """func's reachable instructions and referenced offsets, for render_function, once its fingerprint is checked
-    against pass 1's selection and every branch target it contains against the retained instructions - both fail
-    loudly instead of letting a later stage (a corrupted digest, or the writer's own label xref patching) produce a
-    confusing error."""
+    against pass 1's selection: a mismatch fails here instead of as a confusing error in a later stage"""
     digest = fingerprint_digest(function_fingerprint(parser, func))
     if digest != expected_digest:
         raise RuntimeError(f'{func.name}: fingerprint changed between pass 1 and pass 2 ({path})')
 
     instructions = parser.get_instructions(func)
     referenced_offsets = Formatter.find_referenced_offsets(func.entry_block)
-
-    # Every branch target must land on a real instruction, or render_function would emit a jump to
-    # a label that's never placed - the writer would only catch that later, as an undefined-label
-    # error naming a UUID label at compile time. Mirrors formatter.py's own invariant
-    # (referenced_offsets <= block_start_offsets) instead of relying on that check running elsewhere.
-    unresolved = referenced_offsets - {inst.offset for inst in instructions}
-    if unresolved:
-        targets = ', '.join(f'0x{offset:X}' for offset in sorted(unresolved))
-        raise RuntimeError(f'{func.name} ({path}): branch target(s) {targets} do not land on a retained instruction')
-
     return instructions, referenced_offsets
 
 

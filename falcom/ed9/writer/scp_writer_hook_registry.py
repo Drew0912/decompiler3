@@ -256,9 +256,7 @@ def require_function(obj, what: str):
 
 
 def wrapped_chain(func: Callable):
-    """func, then each function it wraps (functools.wraps sets __wrapped__); a cycle ends the chain"""
-    seen = set()
-    while func is not None and id(func) not in seen:
-        seen.add(id(func))
+    """func, then each function it wraps (functools.wraps sets __wrapped__)"""
+    while func is not None:
         yield func
         func = getattr(func, '__wrapped__', None)

@@ -760,10 +760,6 @@ class ScpWriter:
     def _emit_described_opcode(self, opcode: int, args: tuple):
         descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
         operand_descriptors = descriptor.operand_descriptors
-
-        assert len(operand_descriptors) == len(args), \
-            f'{descriptor.mnemonic}: expected {len(operand_descriptors)} operands, got {len(args)}'
-
         self._check_operands(descriptor.mnemonic, operand_descriptors, args)
         self.fs.WriteByte(opcode)
 

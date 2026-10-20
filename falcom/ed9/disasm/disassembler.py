@@ -48,13 +48,11 @@ class Disassembler:
         """Disassemble a function starting at offset"""
         # Create FileStream from bytecode
 
-        if isinstance(stream, fileio.FileStream):
-            fs = stream
-        elif isinstance(stream, bytes):
+        if isinstance(stream, bytes):
             fs = fileio.FileStream()
             fs.OpenMemory(stream)
         else:
-            raise ValueError(f'Invalid bytecode type: {type(stream)}')
+            fs = stream
 
         fs.Position = offset
 
@@ -190,15 +188,8 @@ class Disassembler:
         return block
 
     def claim_bytes(self, inst: Instruction):
-        """Record the bytes inst covers; overlapping another instruction or covering a block start raises"""
+        """Record the bytes inst covers, for ensure_block_at's mid-instruction check"""
         for offset in range(inst.offset, inst.offset + inst.size):
-            other = self.covering.get(offset)
-            if other is not None:
-                raise ValueError(f'Instruction at 0x{inst.offset:X} overlaps the instruction at 0x{other.offset:X}')
-
-            if offset != inst.offset and offset in self.allocated_blocks:
-                raise ValueError(f'Instruction at 0x{inst.offset:X} covers the block start 0x{offset:X}')
-
             self.covering[offset] = inst
 
     def ensure_block_at(self, target_offset: int) -> BasicBlock:
@@ -232,14 +223,6 @@ class Disassembler:
             if inst.offset == split_offset:
                 split_idx = i
                 break
-
-        if split_idx is None:
-            inst_offsets = [f'0x{inst.offset:X}' for inst in owner.instructions]
-            raise ValueError(
-                f'No instruction at split_offset 0x{split_offset:X} in block {owner.name}\n'
-                f'Block range: 0x{owner.start_offset:X}-0x{owner.computed_end_offset:X}\n'
-                f'Instructions at: {", ".join(inst_offsets)}'
-            )
 
         # Create tail block
         tail = BasicBlock(

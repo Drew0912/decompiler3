@@ -92,9 +92,6 @@ class StackEffect:
     def pop_count(self, operand_values: Sequence, get_param_count: Callable[[Any], int] | None = None) -> int:
         """Values popped above any call setup; a local CALL's are its callee's parameters, from the walker's lookup"""
         if isinstance(self.pops, CalleeParamCount):
-            if get_param_count is None:
-                raise ValueError("a local CALL pops its callee's parameter count, which needs the walker's lookup")
-
             return get_param_count(operand_values[self.pops.index])
 
         return self.resolve_count(self.pops, operand_values)
