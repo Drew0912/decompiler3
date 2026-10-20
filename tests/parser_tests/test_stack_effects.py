@@ -204,12 +204,12 @@ class TracingLifter(ED9VMLifter):
         super().__init__(parser=parser)
         self.steps: list[Step] = []
 
-    def _translate_instruction(self, builder, inst, block, block_map, llil_blocks):
+    def _translate_instruction(self, builder, inst, block, llil_blocks):
         if inst.size == SYNTHETIC_INSTRUCTION_SIZE:         # a split block's fall-through JMP, not in the bytecode
-            return super()._translate_instruction(builder, inst, block, block_map, llil_blocks)
+            return super()._translate_instruction(builder, inst, block, llil_blocks)
 
         before, entries = builder.sp_get(), vstack_entries(builder)
-        super()._translate_instruction(builder, inst, block, block_map, llil_blocks)
+        super()._translate_instruction(builder, inst, block, llil_blocks)
         self.steps.append(Step(ED9Opcode(inst.opcode), operand_values(inst), inst.offset, before, builder.sp_get(),
                                entries_before=entries, entries_after=vstack_entries(builder)))
 

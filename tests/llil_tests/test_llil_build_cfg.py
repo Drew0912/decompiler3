@@ -79,7 +79,7 @@ class TestBlockLabels(unittest.TestCase):
 
 
 class TestFunctionLookups(unittest.TestCase):
-    """The function's lookups by instruction index, block address and label, and its block ownership test"""
+    """The function's lookups by instruction index, block address and label"""
 
     def make_function(self):
         builder = make_builder()
@@ -106,14 +106,6 @@ class TestFunctionLookups(unittest.TestCase):
         self.assertIs(builder.get_block_by_label(entry.label), entry)
         self.assertIsNone(builder.get_block_by_addr(entry.start + 1))
         self.assertIsNone(builder.get_block_by_label('missing'))
-
-    def test_a_function_owns_only_its_own_blocks(self):
-        _, entry, func = self.make_function()
-        _, other_entry, _ = self.make_function()
-
-        self.assertTrue(func.owns_block(entry))
-        self.assertFalse(func.owns_block(other_entry))
-        self.assertFalse(func.owns_block('block_0'))
 
 
 if __name__ == '__main__':

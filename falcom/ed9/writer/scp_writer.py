@@ -79,6 +79,14 @@ def require_type(statement: str, name: str, value, kind: type | UnionType):
                                                   f'not {expected}'))
 
 
+def require_script_name(statement: str, name: str, value: str | ScpValue):
+    """A script call's module or function name: a str, or an ScpValue holding one, else a TypeError at the
+    statement's line: 'CALL_SCRIPT module is ScpValue(7) (Integer), not a string'"""
+    if isinstance(value, ScpValue) and value.type != ScpValue.Type.String:
+        kind = value.type.name if value.type is not None else 'no value'
+        raise TypeError(get_scp_writer().at_statement(f'{statement} {name} is {value!r} ({kind}), not a string'))
+
+
 @dataclass
 class LabelSite:
     """A placed label, or an operand referring to one: the label's name, the position in the code buffer, the

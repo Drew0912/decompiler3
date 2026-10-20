@@ -2,7 +2,7 @@
 
 from typing import Callable
 
-from .scp_writer import get_scp_writer, require_type as _require_type
+from .scp_writer import get_scp_writer, require_script_name as _require_script_name, require_type as _require_type
 from ..disasm import ED9Opcode
 from ..parser.types_scp import *
 
@@ -227,6 +227,8 @@ def CALL_SCRIPT(module: str | ScpValue, func: str | ScpValue, argc: uint8):
     _require_type('CALL_SCRIPT', 'module', module, str | ScpValue)
     _require_type('CALL_SCRIPT', 'func', func, str | ScpValue)
     _require_type('CALL_SCRIPT', 'argc', argc, uint8)
+    _require_script_name('CALL_SCRIPT', 'module', module)
+    _require_script_name('CALL_SCRIPT', 'func', func)
     return get_scp_writer().handle_opcode(ED9Opcode.CALL_SCRIPT, module, func, argc)
 
 
@@ -235,6 +237,8 @@ def CALL_SCRIPT_NO_RETURN(module: str | ScpValue, func: str | ScpValue, argc: ui
     _require_type('CALL_SCRIPT_NO_RETURN', 'module', module, str | ScpValue)
     _require_type('CALL_SCRIPT_NO_RETURN', 'func', func, str | ScpValue)
     _require_type('CALL_SCRIPT_NO_RETURN', 'argc', argc, uint8)
+    _require_script_name('CALL_SCRIPT_NO_RETURN', 'module', module)
+    _require_script_name('CALL_SCRIPT_NO_RETURN', 'func', func)
     return get_scp_writer().handle_opcode(ED9Opcode.CALL_SCRIPT_NO_RETURN, module, func, argc)
 
 

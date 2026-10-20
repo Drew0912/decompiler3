@@ -67,6 +67,10 @@ class TestArgumentTypes(unittest.TestCase):
             ('PUSH', lambda: PUSH([1]), r'PUSH value is \[1\] \(list\), not int, float, str or RawInt'),
             ('PUSH_FLOAT', lambda: PUSH_FLOAT('x'), r"PUSH_FLOAT value is 'x' \(str\), not float or int"),
             ('CALL_SCRIPT', lambda: CALL_SCRIPT(1, 'f', 0), r'CALL_SCRIPT module is 1 \(int\), not str or ScpValue'),
+            ('CALL_SCRIPT ScpValue', lambda: CALL_SCRIPT(ScpValue(7), 'f', 0),
+             r'CALL_SCRIPT module is ScpValue\(7\) \(Integer\), not a string'),
+            ('CALL_SCRIPT_NO_RETURN ScpValue', lambda: CALL_SCRIPT_NO_RETURN('m', ScpValue(7), 0),
+             r'CALL_SCRIPT_NO_RETURN func is ScpValue\(7\) \(Integer\), not a string'),
         ):
             with self.subTest(statement):
                 with self.assertRaisesRegex(TypeError, f'^{message}$'):

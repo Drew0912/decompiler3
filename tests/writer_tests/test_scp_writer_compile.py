@@ -654,6 +654,7 @@ class TestArgumentTypes(WriterTestCase):
             'SET_REG type': r'SET_REG index is 1\.0 \(float\), not int',
             'label type': r'label name is 5 \(int\), not str',
             'CALL by name': r"CALL takes the function itself, not 'Foo'",
+            'script name type': r'CALL_SCRIPT module is ScpValue\(7\) \(Integer\), not a string',
         }
         for case, message in cases.items():
             with self.subTest(case):
@@ -669,6 +670,8 @@ class TestArgumentTypes(WriterTestCase):
                         SET_REG(1.0)                                        # line: SET_REG type
                     elif case == 'label type':
                         label(5)                                            # line: label type
+                    elif case == 'script name type':
+                        CALL_SCRIPT(ScpValue(7), 'f', 0)                    # line: script name type
                     else:
                         CALL('Foo')                                         # line: CALL by name
 

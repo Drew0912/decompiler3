@@ -580,18 +580,6 @@ class LowLevelILBasicBlock:
 
     def add_instruction(self, inst: LowLevelILInstruction):
         """Add instruction to this block"""
-        if self.has_terminal:
-            raise RuntimeError(
-                f'Cannot add instruction to {self.block_name}: '
-                f'block already has terminal instruction {self.instructions[-1]}'
-            )
-
-        if inst.inst_index != UNASSIGNED_INST_INDEX:
-            raise RuntimeError(
-                f'Instruction {inst} already registered (inst_index = {inst.inst_index}). '
-                f'Instructions should not be reused across blocks.'
-            )
-
         self.instructions.append(inst)
 
         if self.function is not None:
@@ -647,12 +635,6 @@ class LowLevelILFunction:
 
     def add_basic_block(self, block: LowLevelILBasicBlock):
         """Add basic block to function"""
-        if block.function is not None:
-            raise RuntimeError(f'Block {block.label} already belongs to function {block.function.name}')
-
-        if block.start in self._block_map:
-            raise RuntimeError(f'A block already starts at {block.start:#x}')
-
         if block.label in self._label_map:
             raise RuntimeError(f'A block is already labelled {block.label}')
 
@@ -702,28 +684,10 @@ class LowLevelILFunction:
         """Get block by label name (O(1) lookup using label map)"""
         return self._label_map.get(label)
 
-    def owns_block(self, block) -> bool:
-        """Whether block is one of this function's blocks - decided by the function's own block map, not by the
-        block's back-pointer"""
-        return isinstance(block, LowLevelILBasicBlock) and self._block_map.get(block.start) is block
-
     def build_cfg(self):
-        """Rebuild the control flow graph from terminal instructions, replacing the edges of any earlier build.
-        Everything is checked before an edge changes, so a failed rebuild keeps the previous graph."""
-        entry = self.get_block_by_addr(self.start_addr)
-        if entry is None:
-            raise RuntimeError(f'Function {self.name} has no block at its start address {self.start_addr:#x}')
-
+        """Rebuild the control flow graph from terminal instructions, replacing the edges of any earlier build. The
+        successors are found before an edge changes, so an unsupported terminal keeps the previous graph"""
         edges = [(block, target) for block in self.basic_blocks for target in self._successors(block)]
-
-        # An empty block has no terminal - control entering it would leave the function without passing an exit
-        targets = {target for _, target in edges}
-        for block in self.basic_blocks:
-            if not block.instructions and (block is entry or block in targets):
-                raise RuntimeError(
-                    f'{block.block_name} {block.label} is the entry or a CFG edge target but has no instructions'
-                )
-
         for block in self.basic_blocks:
             block.outgoing_edges.clear()
             block.incoming_edges.clear()
@@ -732,41 +696,23 @@ class LowLevelILFunction:
             block.add_outgoing_edge(target)
 
     def _successors(self, block: LowLevelILBasicBlock) -> List[LowLevelILBasicBlock]:
-        """Return the block's CFG successors; raise for an unsupported terminal or a foreign target."""
+        """Return the block's CFG successors; raise for an unsupported terminal"""
         if not block.instructions:
             return []
 
         last_inst = block.instructions[-1]
         if isinstance(last_inst, LowLevelILGoto):
-            targets = [last_inst.target]
+            return [last_inst.target]
         elif isinstance(last_inst, LowLevelILIf):
-            if last_inst.true_target is None or last_inst.false_target is None:
-                raise RuntimeError(f'{block.block_name} ends with an If without both a true and a false target')
-
-            targets = [last_inst.true_target, last_inst.false_target]
+            return [last_inst.true_target, last_inst.false_target]
         elif isinstance(last_inst, LowLevelILCall) and last_inst.returns:
-            if last_inst.return_target is None:
-                raise NotImplementedError('Fall through is not supported')
-
-            targets = [last_inst.return_target]
+            return [last_inst.return_target]
         elif isinstance(last_inst, LowLevelILCall):
-            if last_inst.return_target is not None:
-                raise RuntimeError(f'{block.block_name} ends with a call that never returns but has a return target')
-
-            targets = []   # tail call
+            return []   # tail call
         elif isinstance(last_inst, LowLevelILRet):
-            targets = []
+            return []
         else:
             raise RuntimeError(f'{block.block_name} {block.label} does not end with a supported terminal: {last_inst}')
-
-        for target in targets:
-            if not isinstance(target, LowLevelILBasicBlock):
-                raise TypeError(f'{block.block_name} targets {target!r}, which is not a basic block')
-
-            if not self.owns_block(target):
-                raise RuntimeError(f'{block.block_name} targets {target.label}, which is not a block of {self.name}')
-
-        return targets
 
     def __str__(self) -> str:
         result = f'; ---------- {self.name} ----------\n'

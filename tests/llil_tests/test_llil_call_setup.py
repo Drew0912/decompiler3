@@ -51,8 +51,7 @@ class TestLocalCallSetup(unittest.TestCase):
 
         self.assertIsInstance(last_instruction(builder), LowLevelILCall)
         self.assertEqual(last_instruction(builder).args, [arg_load])
-        builder.begin_block(ret_block)
-        builder.ret()   # no setup left pending
+        self.assertEqual(builder.save_stack_state().pending_setups, ())
 
     def test_push_ret_addr_after_balanced_push_pop_is_accepted(self):
         builder = make_builder()
@@ -91,13 +90,8 @@ class TestCallSetupInSnapshots(unittest.TestCase):
 
         builder.restore_stack_state(snapshot)
 
-        # The restored setup is still waiting for its return address (a restore keeping the completed setup would
-        # raise at its popped return-address slot instead)
-        with self.assertRaises(RuntimeError) as caught:
-            builder.call('f', NO_ARGS)
-
-        self.assertEqual(str(caught.exception),
-                         'LOCAL call, but the innermost pending call setup has no return address yet')
+        # The restored setup is still waiting for its return address
+        self.assertIsNone(builder.save_stack_state().pending_setups[-1].return_block)
 
     def test_finalize_accepts_setup_pending_at_last_lifted_block(self):
         builder = make_builder()
@@ -172,7 +166,7 @@ class TestNestedCallSetups(unittest.TestCase):
 
 
 class TestStoresBelowAPendingSetup(unittest.TestCase):
-    """An in-place store only invalidates the slot it writes, never the setup above it."""
+    """An in-place store below a pending setup leaves it callable"""
 
     def test_store_to_a_local_below_the_setup_leaves_it_callable(self):
         builder = make_builder()

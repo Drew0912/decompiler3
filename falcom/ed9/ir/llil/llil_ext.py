@@ -1,9 +1,11 @@
 """Falcom-specific LLIL Extensions"""
 
 from enum import IntEnum
-from typing import Optional, List
+from typing import Optional, List, TYPE_CHECKING
 from ir.llil import *
-from .constants import *
+
+if TYPE_CHECKING:
+    from .constants import *
 
 
 class LowLevelILFalcomOperation(IntEnum):
@@ -29,13 +31,8 @@ class LowLevelILPushCallerFrame(LowLevelILStatement):
     ):
         super().__init__(LowLevelILFalcomOperation.LLIL_PUSH_CALLER_FRAME)
 
-        if not isinstance(ret_addr, LowLevelILConstRetAddrBlock):
-            raise TypeError(
-                f'ret_addr must be LowLevelILConstRetAddrBlock, got {type(ret_addr).__name__}'
-            )
-
         self.func_id          = func_id                     # FalcomConstants.current_func_id()
-        self.ret_addr         = ret_addr                    # FalcomConstants.ret_addr() or ret_addr_block()
+        self.ret_addr         = ret_addr                    # FalcomConstants.ret_addr_block()
         self.script_ptr       = script_ptr                  # FalcomConstants.current_script()
         self.script_name      = script_name                 # FalcomConstants.current_script_name()
         self.slot_index       : Optional[int] = None        # Will be set by builder to track stack position

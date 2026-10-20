@@ -47,16 +47,11 @@ class ED9VMLifter:
         parser: ScpParser,
         spell_floats: bool = True,
     ) -> None:
-        if parser is None:
-            raise ValueError('ED9VMLifter requires a parser instance')
         self._parser = parser
         self.spell_floats = spell_floats    # False when nothing will print the LLIL (the compile check)
 
     # ----------------------------------------------------------------- public --
     def lift_function(self, func: Function) -> LowLevelILFunction:
-        if func.entry_block is None:
-            raise ValueError(f'Function {func.name} has no entry block')
-
         try:
             return self._lift(func)
         except ED9LiftError:
@@ -77,15 +72,13 @@ class ED9VMLifter:
         for block in layout_blocks:
             llil_blocks[block.offset] = builder.create_basic_block(block.offset, block.name)
 
-        block_map = {block.offset: block for block in layout_blocks}
-
         for block in lift_blocks:
             builder.begin_block(llil_blocks[block.offset])
             for inst in block.instructions:
                 # Set current SCP instruction address for LLIL address tracking
                 builder.set_current_address(inst.offset)
                 try:
-                    self._translate_instruction(builder, inst, block, block_map, llil_blocks)
+                    self._translate_instruction(builder, inst, block, llil_blocks)
                 except Exception as e:
                     raise ED9LiftError.at(func.name, e, inst) from e
 
@@ -147,7 +140,6 @@ class ED9VMLifter:
         builder: FalcomVMBuilder,
         inst: Instruction,
         block: BasicBlock,
-        block_map: Dict[int, BasicBlock],
         llil_blocks: Dict[int, LowLevelILBasicBlock],
     ) -> None:
         match inst.opcode:
@@ -168,12 +160,10 @@ class ED9VMLifter:
                 builder.push_func_id()
 
             case ED9Opcode.PUSH_RET_ADDR:
-                target = self._require_block(inst.operands[0].value, block_map, llil_blocks)
-                builder.push_ret_addr(target)
+                builder.push_ret_addr(llil_blocks[inst.operands[0].value])
 
             case ED9Opcode.PUSH_CALLER_FRAME:
-                target = self._require_block(inst.operands[0].value, block_map, llil_blocks)
-                builder.push_caller_frame(target)
+                builder.push_caller_frame(llil_blocks[inst.operands[0].value])
 
             case ED9Opcode.DEBUG_SET_LINENO:
                 builder.debug_line(int(inst.operands[0].value))
@@ -188,14 +178,14 @@ class ED9VMLifter:
                 builder.call(target, argc)
 
             case ED9Opcode.CALL_SCRIPT:
-                module = self._must_str(inst.operands[0].value)
-                func_name = self._must_str(inst.operands[1].value)
+                module = inst.operands[0].value.value           # each name operand is a String ScpValue
+                func_name = inst.operands[1].value.value
                 argc = int(inst.operands[2].value)
                 builder.call_script(module, func_name, argc)
 
             case ED9Opcode.CALL_SCRIPT_NO_RETURN:
-                module = self._must_str(inst.operands[0].value)
-                func_name = self._must_str(inst.operands[1].value)
+                module = inst.operands[0].value.value           # each name operand is a String ScpValue
+                func_name = inst.operands[1].value.value
                 argc = int(inst.operands[2].value)
                 builder.call_script_no_return(module, func_name, argc)
 
@@ -249,19 +239,16 @@ class ED9VMLifter:
                 builder.test_zero()
 
             case ED9Opcode.JMP:
-                target = self._require_block(inst.operands[0].value, block_map, llil_blocks)
-                builder.jmp(target)
+                builder.jmp(llil_blocks[inst.operands[0].value])
 
             case ED9Opcode.POP_JMP_ZERO:
-                true_block = self._branch_target(block.true_succs, llil_blocks)
-                false_block = self._branch_target(block.false_succs, llil_blocks)
-
+                true_block = llil_blocks[block.true_succs[0].offset]
+                false_block = llil_blocks[block.false_succs[0].offset]
                 builder.pop_jmp_zero(true_block, false_block)
 
             case ED9Opcode.POP_JMP_NOT_ZERO:
-                true_block = self._branch_target(block.true_succs, llil_blocks)
-                false_block = self._branch_target(block.false_succs, llil_blocks)
-
+                true_block = llil_blocks[block.true_succs[0].offset]
+                false_block = llil_blocks[block.false_succs[0].offset]
                 builder.pop_jmp_not_zero(true_block, false_block)
 
             case ED9Opcode.RETURN:
@@ -271,27 +258,6 @@ class ED9VMLifter:
                 opcode = ED9Opcode(inst.opcode)
                 raise NotImplementedError(f'Unhandled opcode: {opcode.name} (0x{opcode.value:02X})')
 
-    def _require_block(
-        self,
-        offset: int,
-        block_map: Dict[int, BasicBlock],
-        llil_blocks: Dict[int, LowLevelILBasicBlock],
-    ) -> LowLevelILBasicBlock:
-        block = block_map.get(offset)
-        if block is None:
-            raise KeyError(f'No basic block at offset 0x{offset:08X}')
-        return llil_blocks[block.offset]
-
-    def _branch_target(
-        self,
-        candidates: list[BasicBlock],
-        llil_blocks: Dict[int, LowLevelILBasicBlock],
-    ) -> LowLevelILFunction.BasicBlock:
-        if candidates:
-            return llil_blocks[candidates[0].offset]
-
-        raise RuntimeError('Missing branch target while lifting')
-
     def _resolve_call_target(self, func_id: int) -> str:
         return self._parser.get_func_name_from_func_id(func_id)
 
@@ -300,12 +266,3 @@ class ED9VMLifter:
         the CALL arm asks: the other calls take their count from their operand, every other opcode from its builder"""
         operand_values = [operand.value for operand in inst.operands]
         return inst.descriptor.effect.pop_count(operand_values, self._parser.get_func_argc)
-
-    def _must_str(self, value: ScpValue) -> str:
-        if not isinstance(value, ScpValue):
-            raise TypeError(f'Expected ScpValue, got {type(value)}')
-
-        if value.type != ScpValue.Type.String:
-            raise TypeError(f'CALL_SCRIPT expects string ScpValue, got {value.type}')
-
-        return str(value.value)

@@ -61,6 +61,3 @@ new guard's test is decided here, not under "Judging a finding": a guard against
 that expects its error and checks its message, in the same change, since its message is what a user sees; any other new
 guard is checked once, in the step that adds it (an input that reaches it raises its error with its message, shown in
 that step's report), and no test is saved.
-
-Some guards stay by decision where this rule would drop them: the LLIL builder's checks (kept 2026-10-13), until a
-planned guard cleanup revisits them.
