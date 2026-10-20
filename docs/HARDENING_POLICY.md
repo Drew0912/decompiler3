@@ -24,8 +24,10 @@ bug-hunt work, and put it in every brief for that work.
 - Misuse of internal APIs; IR objects that only tests build.
 - Constructs nothing in the repo uses: custom-equality or property-overriding subclasses, shallow copies, hostile
   containers, rewritten public fields.
-- Bugs in our own tools that an existing gate already catches (the test suite, the logic and byte-exact round trips,
-  `tools/ir_semantic_validator.py`, `tools/scp_roundtrip_validator.py`, the writer's compile check).
+- Bugs in our own tools that a gate catches, where that gate runs on every change to the code the bug is in: the
+  test suite and the writer's compile check. A gate run only when a plan names it (the logic and byte-exact round
+  trips, `tools/ir_semantic_validator.py`, a validator set) does not count. This is what "a gate catches it" means
+  throughout this doc.
 - The same condition checked again at a later layer. Keep the check where the input enters (the parser for game
   scripts, `ScpWriter`'s compile check for edits), which can name the byte offset or script line; a later layer
   repeats it only if some path reaches that layer without passing the first check.
@@ -49,3 +51,16 @@ our own code?
 - **A slip in the new code that a gate already catches**: no new test. Check it once in that step: run the gate, then
   run it against a deliberately broken copy (a mutant) to prove the gate catches it.
 - A test is redundant only if a mutation run shows another test already fails on the same mutant.
+
+## Guards
+
+A guard is a check that raises: a `raise` or an `assert`. Add one, or accept one a review proposes, only when an
+in-scope input can reach it and nothing under "Out of scope" covers it, such as a gate or an earlier layer that already
+catches the same condition. A guard against a plausible editing mistake names the script line, as "In scope" requires. A
+new guard's test is decided here, not under "Judging a finding": a guard against a plausible editing mistake gets a test
+that expects its error and checks its message, in the same change, since its message is what a user sees; any other new
+guard is checked once, in the step that adds it (an input that reaches it raises its error with its message, shown in
+that step's report), and no test is saved.
+
+Some guards stay by decision where this rule would drop them: the LLIL builder's checks (kept 2026-10-13), until a
+planned guard cleanup revisits them.
