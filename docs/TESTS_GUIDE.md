@@ -73,6 +73,12 @@ need goes in `tests/shared/`.
   imports a `tools/` script also adds `sys.path.insert(0, str(REPO_ROOT / 'tools'))` and imports the script by its
   plain module name.
 - A new folder needs an empty `__init__.py`; without one, `unittest` discovery skips it without an error.
+- A test that searches a whole HLIL or MLIL subtree uses the shared walkers (named in `docs/hlil/HLIL_DESIGN.md` and
+  `docs/mlil/MLIL_DESIGN.md`, "Operations & Node Types"), so it changes with them. A test that checks direct children
+  or top-level statements on purpose may index them directly. A test of a walker takes its expected answer from
+  reflection over every field (`vars(node)`), as the coverage tests' own helpers do (`held_nodes` in
+  `tests/hlil_tests/test_hlil_traversal.py`, `expression_fields` in `tests/mlil_tests/test_mlil_traversal.py`), never
+  from the walker under test.
 
 ## Moving tests or the corpus path
 

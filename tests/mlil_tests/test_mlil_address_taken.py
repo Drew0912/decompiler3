@@ -27,7 +27,7 @@ from ir.mlil.passes import SSATypeInferencePass, RegGlobalValuePropagationPass
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from ir.hlil.hlil import (
     HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock, HLILAddressOf,
-    HLILBinaryOp, BinaryOp, HighLevelILFunction, HLILIf, HLILCall, HLILExprStmt, HLILTypeKind,
+    HLILBinaryOp, BinaryOp, HighLevelILFunction, HLILIf, HLILCall, HLILExprStmt, HLILTypeKind, iter_tree,
 )
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
@@ -283,20 +283,7 @@ class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
 
         # f() must remain reachable as a statement in its own right somewhere in the
         # function - never re-inlined so that only y's assignment calls it
-        call_exprs = []
-
-        def collect_calls(node):
-            if isinstance(node, HLILCall):
-                call_exprs.append(node)
-            for attr in ('lhs', 'rhs', 'operand', 'src', 'dest', 'value', 'condition'):
-                child = getattr(node, attr, None)
-                if child is not None:
-                    collect_calls(child)
-
-        for stmt in hlil_func.body.statements:
-            collect_calls(stmt)
-
-        f_calls = [c for c in call_exprs if c.func_name == 'f']
+        f_calls = [node for node in iter_tree(hlil_func.body) if isinstance(node, HLILCall) and node.func_name == 'f']
         self.assertEqual(len(f_calls), 1)
 
         # y's own assignment source must NOT itself contain the call - it must read the
@@ -305,17 +292,8 @@ class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
                      if isinstance(s, HLILAssign) and isinstance(s.dest, HLILVar) and s.dest.var.name == 'y']
         self.assertEqual(len(y_assigns), 1)
 
-        def contains_call(node) -> bool:
-            if isinstance(node, HLILCall):
-                return True
-            for attr in ('lhs', 'rhs', 'operand'):
-                child = getattr(node, attr, None)
-                if child is not None and contains_call(child):
-                    return True
-            return False
-
-        self.assertFalse(contains_call(y_assigns[0].src),
-                          f'f() was re-inlined into y = ...: {y_assigns[0].src}')
+        self.assertFalse(any(isinstance(node, HLILCall) for node in iter_tree(y_assigns[0].src)),
+                         f'f() was re-inlined into y = ...: {y_assigns[0].src}')
 
 
 class TestCFORedundantElseAssignAddressTakenReload(unittest.TestCase):
