@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for FalcomTypeInferencePass: parameter types come from the script's declared flags.'''
+"""Unit tests for FalcomTypeInferencePass: parameter types come from the script's declared flags."""
 
 from pathlib import Path
 import sys
@@ -34,8 +34,8 @@ def make_scp_function(*params: FunctionParam) -> Function:
 
 
 def make_mlil_function(type_name: str, default_value) -> MediumLevelILFunction:
-    '''One-parameter function whose body only returns'''
-    func = MediumLevelILFunction(TEST_FUNCTION_NAME, params = [IRParameter('arg1', type_name, default_value)])
+    """One-parameter function whose body only returns"""
+    func = MediumLevelILFunction(TEST_FUNCTION_NAME, params=[IRParameter('arg1', type_name, default_value)])
     func.get_or_create_parameter(1, 'arg1')
     func.create_block().add_instruction(MLILRet())
     return optimize_mlil(func)
@@ -46,7 +46,7 @@ INT_FLOAT_VARIANT = MLILVariantType({MLILType.int_type(), MLILType.float_type()}
 
 
 class TestDeclaredParameterTypes(unittest.TestCase):
-    '''Each declared flag gives its parameter's HLIL type.'''
+    """Each declared flag gives its parameter's HLIL type."""
 
     def test_each_flag_maps_to_its_kind(self):
         scp_func = make_scp_function(
@@ -57,7 +57,7 @@ class TestDeclaredParameterTypes(unittest.TestCase):
             FunctionParam(ScpParamFlags(NullableStr), ScpValue(STRING_DEFAULT)),
         )
         hlil = HighLevelILFunction(TEST_FUNCTION_NAME)
-        hlil.parameters = [HLILVariable(f'arg{i + 1}', kind = VariableKind.PARAM) for i in range(len(scp_func.params))]
+        hlil.parameters = [HLILVariable(f'arg{i + 1}', kind=VariableKind.PARAM) for i in range(len(scp_func.params))]
 
         FalcomTypeInferencePass(scp_func).run(hlil)
 

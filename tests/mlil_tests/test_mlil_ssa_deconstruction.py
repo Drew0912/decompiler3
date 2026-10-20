@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for SSADeconstructor._allocate_variables: SSA deconstruction must reuse
+"""Unit tests for SSADeconstructor._allocate_variables: SSA deconstruction must reuse
 already-minted suffix classes instead of minting a fresh one on every conflict, must never let a
 defined-but-unused version fall back to an interference-unaware raw base name, must never let a
 minted suffix collide with an unrelated real variable, and must track every phi-elimination copy
-partner for a destination, not just the last one seen.'''
+partner for a destination, not just the last one seen."""
 
 from pathlib import Path
 import sys
@@ -23,10 +23,10 @@ def make_func(name: str) -> MediumLevelILFunction:
 
 
 class TestAllocateVariablesReusesSuffixClasses(unittest.TestCase):
-    '''Loop-counter shape from the plan: one long-lived version (i0) interferes with three later
+    """Loop-counter shape from the plan: one long-lived version (i0) interferes with three later
     versions that do NOT interfere with each other. All three should share a single suffix class -
     the pre-fix allocator only ever checked the base-name class, so each conflicting version minted
-    its own new suffix instead of reusing one already created for an earlier version.'''
+    its own new suffix instead of reusing one already created for an earlier version."""
 
     def test_three_non_interfering_versions_share_one_suffix_class(self):
         func = make_func('loop_counter')
@@ -66,11 +66,11 @@ class TestAllocateVariablesReusesSuffixClasses(unittest.TestCase):
 
 
 class TestAllocateVariablesKeepsSwapSafe(unittest.TestCase):
-    '''Two-variable swap shape from the plan (the sequentialised back-edge copies for i and j): each
+    """Two-variable swap shape from the plan (the sequentialised back-edge copies for i and j): each
     variable's own pre-swap and post-swap versions genuinely interfere (the pre-swap value is read
     by the OTHER variable's update, after its own update has already run), so they must keep separate
     names - confirms the new class-reuse logic still respects interference and never lets copy-affinity
-    preference override it.'''
+    preference override it."""
 
     def test_swap_halves_keep_distinct_names(self):
         func = make_func('swap')
@@ -106,10 +106,10 @@ class TestAllocateVariablesKeepsSwapSafe(unittest.TestCase):
 
 
 class TestAllocateVariablesProtectsDeadDefinitions(unittest.TestCase):
-    '''A defined-but-never-read SSA version must still get an interference-checked name. Excluding it
+    """A defined-but-never-read SSA version must still get an interference-checked name. Excluding it
     from allocation (the pre-fix behavior) left _apply_mapping_to_inst falling back to the raw,
     unversioned base variable with zero interference checking - silently clobbering a coalesced
-    version that is genuinely live under that same name at that point.'''
+    version that is genuinely live under that same name at that point."""
 
     def test_dead_store_does_not_clobber_a_live_value_under_the_base_name(self):
         func = make_func('dead_store')
@@ -136,8 +136,8 @@ class TestAllocateVariablesProtectsDeadDefinitions(unittest.TestCase):
 
 
 class TestAllocateVariablesAvoidsNameCollisions(unittest.TestCase):
-    '''A minted suffix must never reuse a name already bound to a different real variable -
-    MLILVariable equality is name-only, so a collision would silently merge the two.'''
+    """A minted suffix must never reuse a name already bound to a different real variable -
+    MLILVariable equality is name-only, so a collision would silently merge the two."""
 
     def test_minted_suffix_skips_a_name_already_used_by_an_unrelated_parameter(self):
         func = make_func('collision')
@@ -169,9 +169,9 @@ class TestAllocateVariablesAvoidsNameCollisions(unittest.TestCase):
 
 
 class TestCopyAffinityIsManyToMany(unittest.TestCase):
-    '''Phi elimination inserts one copy per predecessor edge, all targeting the same phi.dest - so a
+    """Phi elimination inserts one copy per predecessor edge, all targeting the same phi.dest - so a
     single destination can have several distinct copy-source partners. copy_affinity must record all
-    of them (a set), not silently retain only the last one seen (a plain dict would).'''
+    of them (a set), not silently retain only the last one seen (a plain dict would)."""
 
     def test_dest_written_by_two_predecessor_copies_keeps_both_partners(self):
         func = make_func('multi_partner')

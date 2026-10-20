@@ -56,6 +56,7 @@ crc32_table = [
     0x2D02EF8D,
 ]
 
+
 def hash_func_Name(s: str) -> int:
     s = s.encode(default_encoding())
     return binascii.crc32(s[1:], ~(crc32_table[~s[0]] ^ 0x00FFFFFF)) ^ 0xFFFFFFFF

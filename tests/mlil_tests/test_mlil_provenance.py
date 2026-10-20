@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for MLIL provenance: every statement's llil_index names the LLIL instruction it comes from, at the
-same address, and every statement of a finished MLIL function has a unique inst_index, 0..N-1 in block order.'''
+"""Unit tests for MLIL provenance: every statement's llil_index names the LLIL instruction it comes from, at the
+same address, and every statement of a finished MLIL function has a unique inst_index, 0..N-1 in block order."""
 
 from pathlib import Path
 import sys
@@ -37,10 +37,10 @@ DEAD_STORE_LLIL_INDEX = 4
 
 
 def build_call_function() -> LowLevelILFunction:
-    '''A call, then a return, one address per LLIL instruction - the call ends its LLIL block, so translation
-    leaves a goto to the return block that block merge removes'''
+    """A call, then a return, one address per LLIL instruction - the call ends its LLIL block, so translation
+    leaves a goto to the return block that block merge removes"""
     builder = FalcomVMBuilder()
-    builder.create_function('provenance_test', FUNC_START, num_params = 0)
+    builder.create_function('provenance_test', FUNC_START, num_params=0)
     builder.set_current_block(builder.create_basic_block(FUNC_START, 'entry'))
     ret_block = builder.create_basic_block(FUNC_START + BLOCK_STRIDE, 'ret')
     emits = (builder.push_func_id, lambda: builder.push_ret_addr(ret_block), lambda: builder.push_int(ARG_VALUE),
@@ -66,13 +66,13 @@ def stamp(inst, address: int, llil_index: int):
 
 
 class TestTranslatedProvenance(unittest.TestCase):
-    '''Through the production converter, with and without the optimizer'''
+    """Through the production converter, with and without the optimizer"""
 
     def check_contract(self, mlil: MediumLevelILFunction, llil: LowLevelILFunction):
         sources = llil_instructions(llil)
         mlil_statements = list(mlil.iter_instructions())
         for inst in mlil_statements:
-            with self.subTest(inst = str(inst)):
+            with self.subTest(inst=str(inst)):
                 self.assertIn(inst.llil_index, sources)
                 self.assertEqual(inst.address, sources[inst.llil_index].address)
 
@@ -80,15 +80,15 @@ class TestTranslatedProvenance(unittest.TestCase):
 
     def test_every_statement_names_its_llil_instruction(self):
         for optimize in (False, True):
-            with self.subTest(optimize = optimize):
+            with self.subTest(optimize=optimize):
                 llil = build_call_function()
-                mlil = convert_falcom_llil_to_mlil(llil, optimize = optimize)
+                mlil = convert_falcom_llil_to_mlil(llil, optimize=optimize)
                 self.assertIs(mlil.llil_function, llil)
                 self.check_contract(mlil, llil)
 
     def test_call_and_its_goto_share_the_call(self):
         llil = build_call_function()
-        mlil = convert_falcom_llil_to_mlil(llil, optimize = False)
+        mlil = convert_falcom_llil_to_mlil(llil, optimize=False)
         call_index = next(i for i, inst in llil_instructions(llil).items() if isinstance(inst, LowLevelILCall))
         ret_index = next(i for i, inst in llil_instructions(llil).items() if isinstance(inst, LowLevelILRet))
         entry, ret_block = mlil.basic_blocks
@@ -100,12 +100,12 @@ class TestTranslatedProvenance(unittest.TestCase):
 
     def test_optimize_mlil_numbers_statements_after_block_merge(self):
         llil = build_call_function()
-        mlil = optimize_mlil(convert_falcom_llil_to_mlil(llil, optimize = False))
+        mlil = optimize_mlil(convert_falcom_llil_to_mlil(llil, optimize=False))
         self.check_contract(mlil, llil)
 
 
 class TestEdgeStatementProvenance(unittest.TestCase):
-    '''Statements de-SSA places on a CFG edge take the branch that leaves along that edge'''
+    """Statements de-SSA places on a CFG edge take the branch that leaves along that edge"""
 
     def test_split_edge_copy_and_goto_take_the_branch(self):
         # join's phi reads x#2 over the other -> join edge, which is critical (other also goes to exit, join is
@@ -137,12 +137,12 @@ class TestEdgeStatementProvenance(unittest.TestCase):
         self.assertIs(other.instructions[-1].true_target, split)
         self.assertEqual([type(inst) for inst in split.instructions], [MLILSetVar, MLILGoto])
         for inst in split.instructions:
-            with self.subTest(inst = str(inst)):
+            with self.subTest(inst=str(inst)):
                 self.assertEqual((inst.address, inst.llil_index), (OTHER_BRANCH_ADDRESS, OTHER_BRANCH_LLIL_INDEX))
 
 
 class TestDebugNoteProvenance(unittest.TestCase):
-    '''A dead string assignment left as a debug note keeps the assignment's source'''
+    """A dead string assignment left as a debug note keeps the assignment's source"""
 
     def assert_note_keeps_source(self, block):
         note = next(inst for inst in block.instructions if isinstance(inst, MLILDebug))

@@ -1,4 +1,4 @@
-'''MLIL SSA Optimizer - orchestrates SSA optimization passes'''
+"""MLIL SSA Optimizer - orchestrates SSA optimization passes"""
 
 from enum import Enum
 
@@ -24,13 +24,13 @@ _SNAPSHOT_EXCLUDED_ATTRS = frozenset({'address', 'inst_index', 'llil_index', '_o
 
 
 class SSAOptimizer:
-    '''Orchestrates SSA optimization passes'''
+    """Orchestrates SSA optimization passes"""
 
     def __init__(self, function: MediumLevelILFunction):
         self.function = function
 
     def optimize(self) -> MediumLevelILFunction:
-        '''Run all optimization passes'''
+        """Run all optimization passes"""
         # Run SCCP first for aggressive constant propagation and unreachable code elimination
         sccp = SCCP(self.function)
         sccp.run()
@@ -43,8 +43,8 @@ class SSAOptimizer:
             NNFPass(),
             CopyPropagationPass(),
             ExpressionInliningPass(),
-            SSADeadCodeEliminationPass(sccp_replaced_vars = sccp.replaced_vars),
-            DeadPhiSourceEliminationPass(sccp_replaced_vars = sccp.replaced_vars),
+            SSADeadCodeEliminationPass(sccp_replaced_vars=sccp.replaced_vars),
+            DeadPhiSourceEliminationPass(sccp_replaced_vars=sccp.replaced_vars),
         ]
 
         # Iterative optimization until fixpoint
@@ -56,7 +56,6 @@ class SSAOptimizer:
             previous, snapshot = snapshot, self._snapshot()
             if snapshot == previous:
                 break
-
         else:
             log.warning(f'[optimizer] {self.function.name} did not converge after '
                         f'{SSA_OPTIMIZER_MAX_ITERATIONS} iterations')
@@ -64,7 +63,7 @@ class SSAOptimizer:
         return self.function
 
     def _snapshot(self) -> tuple:
-        '''Exact structural key of function state, for fixpoint change detection.
+        """Exact structural key of function state, for fixpoint change detection.
 
         repr(inst) is just "<ClassName OP>" - no MLIL class overrides __repr__ - so an
         operand-only rewrite (a constant folded, a variable substituted) looked identical to
@@ -72,7 +71,7 @@ class SSAOptimizer:
         exact either: MLILConst prints a SourceFloat as its source text and hex ints masked to
         32 bits, so distinct constants can render the same text. This walks each
         instruction's actual attributes instead.
-        '''
+        """
         blocks_key = []
         for block in self.function.basic_blocks:
             inst_keys = tuple(self._structural_key(inst) for inst in block.instructions)
@@ -82,14 +81,14 @@ class SSAOptimizer:
 
     @classmethod
     def _structural_key(cls, value):
-        '''Recursively reduce an instruction, or any attribute value reachable from one, to an
+        """Recursively reduce an instruction, or any attribute value reachable from one, to an
         exact and hashable key. One generic walk over each object's own attributes instead of a
         per-node-type walker (`.claude/rules/ir.md`), so a new instruction/operand type is covered
         without a change here. Every branch tags its result with the value's actual type object
         (not its name - two distinct classes can share a __name__), so values of different types
         can never collide even if their content normalizes to the same text (e.g. MLILConst(1.0)
         vs a string that happens to equal its hex form).
-        '''
+        """
         if isinstance(value, MediumLevelILBasicBlock):
             # Identity only - walking a target block's own attributes would inline its entire
             # instruction list into every jump/phi that names it, and blocks form cycles
@@ -115,7 +114,6 @@ class SSAOptimizer:
 
         try:
             hash(value)
-
         except TypeError:
             # No current construction path produces an unhashable attribute value (MLILDebug.value/
             # MLILConst.value are typed Any, but nothing populates them with a dict/set/etc.) -

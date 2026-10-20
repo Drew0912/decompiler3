@@ -1,4 +1,4 @@
-'''LLIL - Stack-based low-level IR'''
+"""LLIL - Stack-based low-level IR"""
 
 from typing import Any, List, Optional, Union, TYPE_CHECKING
 from dc3 import format_signed_hex, IntEnum2, quote_string
@@ -13,7 +13,7 @@ WORD_SIZE = 4  # 4 bytes per word
 
 
 class LowLevelILOperation(IntEnum2):
-    '''Atomic LLIL operations'''
+    """Atomic LLIL operations"""
 
     # Stack operations (atomic)
     LLIL_STACK_STORE        = 0     # STACK[sp + offset] = value
@@ -75,7 +75,7 @@ class LowLevelILOperation(IntEnum2):
 
 
 class LowLevelILInstruction(ILInstruction):
-    '''Base class for all LLIL instructions'''
+    """Base class for all LLIL instructions"""
 
     def __init__(self, operation: LowLevelILOperation):
         super().__init__()
@@ -85,7 +85,7 @@ class LowLevelILInstruction(ILInstruction):
 
     @property
     def operation_name(self) -> str:
-        '''Get operation name without LLIL_ prefix (e.g., 'LLIL_ADD' -> 'ADD')'''
+        """Get operation name without LLIL_ prefix (e.g., 'LLIL_ADD' -> 'ADD')"""
         return self.operation.name.replace('LLIL_', '')
 
     def __str__(self) -> str:
@@ -98,19 +98,21 @@ class LowLevelILInstruction(ILInstruction):
 # === Instruction Categories (following BinaryNinja design) ===
 
 class LowLevelILExpr(LowLevelILInstruction):
-    '''Base class for value expressions'''
+    """Base class for value expressions"""
+
     pass
 
 
 class LowLevelILStatement(LowLevelILInstruction):
-    '''Base class for statements'''
+    """Base class for statements"""
+
     pass
 
 
 # === Atomic Stack Operations ===
 
 class LowLevelILStackStore(LowLevelILStatement):
-    '''STACK[sp + offset] = value'''
+    """STACK[sp + offset] = value"""
 
     def __init__(self, value: Union['LowLevelILInstruction', int, str], offset: int = 0, slot_index: int = None):
         super().__init__(LowLevelILOperation.LLIL_STACK_STORE)
@@ -130,7 +132,7 @@ class LowLevelILStackStore(LowLevelILStatement):
 
 
 class LowLevelILStackLoad(LowLevelILExpr):
-    '''Load STACK[sp + offset]'''
+    """Load STACK[sp + offset]"""
 
     def __init__(self, offset: int, slot_index: int):
         super().__init__(LowLevelILOperation.LLIL_STACK_LOAD)
@@ -155,7 +157,7 @@ class LowLevelILStackLoad(LowLevelILExpr):
 
 
 class LowLevelILFrameLoad(LowLevelILExpr):
-    '''Load STACK[frame + offset]'''
+    """Load STACK[frame + offset]"""
 
     def __init__(self, offset: int = 0):
         super().__init__(LowLevelILOperation.LLIL_FRAME_LOAD)
@@ -172,7 +174,7 @@ class LowLevelILFrameLoad(LowLevelILExpr):
 
 
 class LowLevelILFrameStore(LowLevelILStatement):
-    '''STACK[frame + offset] = value'''
+    """STACK[frame + offset] = value"""
 
     def __init__(self, value: Union['LowLevelILInstruction', int, str], offset: int = 0):
         super().__init__(LowLevelILOperation.LLIL_FRAME_STORE)
@@ -190,8 +192,8 @@ class LowLevelILFrameStore(LowLevelILStatement):
 
 
 class LowLevelILLoad(LowLevelILExpr):
-    '''Load *src - generic pointer dereference (address computed at runtime, e.g. a parameter
-    that itself holds a pointer, unlike StackLoad/FrameLoad whose slot is known statically)'''
+    """Load *src - generic pointer dereference (address computed at runtime, e.g. a parameter
+    that itself holds a pointer, unlike StackLoad/FrameLoad whose slot is known statically)"""
 
     def __init__(self, src: 'LowLevelILExpr'):
         super().__init__(LowLevelILOperation.LLIL_LOAD)
@@ -202,7 +204,7 @@ class LowLevelILLoad(LowLevelILExpr):
 
 
 class LowLevelILStore(LowLevelILStatement):
-    '''*dest = value - generic pointer dereference store'''
+    """*dest = value - generic pointer dereference store"""
 
     def __init__(self, dest: 'LowLevelILExpr', value: 'LowLevelILExpr'):
         super().__init__(LowLevelILOperation.LLIL_STORE)
@@ -214,7 +216,7 @@ class LowLevelILStore(LowLevelILStatement):
 
 
 class LowLevelILSpAdd(LowLevelILStatement):
-    '''sp = sp + delta (statement)'''
+    """sp = sp + delta (statement)"""
 
     def __init__(self, delta: int):
         super().__init__(LowLevelILOperation.LLIL_SP_ADD)
@@ -234,7 +236,7 @@ class LowLevelILSpAdd(LowLevelILStatement):
 
 
 class LowLevelILStackAddr(LowLevelILExpr):
-    '''Address of stack slot (sp-independent)'''
+    """Address of stack slot (sp-independent)"""
 
     def __init__(self, slot_index: int):
         super().__init__(LowLevelILOperation.LLIL_STACK_ADDR)
@@ -245,8 +247,8 @@ class LowLevelILStackAddr(LowLevelILExpr):
 
 
 class LowLevelILFrameAddr(LowLevelILExpr):
-    '''Address of STACK[frame + offset] - the frame-relative sibling of StackAddr, for taking
-    the address of a parameter rather than a local (mirrors FrameLoad/FrameStore)'''
+    """Address of STACK[frame + offset] - the frame-relative sibling of StackAddr, for taking
+    the address of a parameter rather than a local (mirrors FrameLoad/FrameStore)"""
 
     def __init__(self, offset: int = 0):
         super().__init__(LowLevelILOperation.LLIL_FRAME_ADDR)
@@ -263,7 +265,7 @@ class LowLevelILFrameAddr(LowLevelILExpr):
 # === Register Operations ===
 
 class LowLevelILRegStore(LowLevelILStatement):
-    '''REG[index] = value (statement)'''
+    """REG[index] = value (statement)"""
 
     def __init__(self, reg_index: int, value: Union['LowLevelILInstruction', int]):
         super().__init__(LowLevelILOperation.LLIL_REG_STORE)
@@ -275,7 +277,7 @@ class LowLevelILRegStore(LowLevelILStatement):
 
 
 class LowLevelILRegLoad(LowLevelILExpr):
-    '''load REG[index] (expression)'''
+    """load REG[index] (expression)"""
 
     def __init__(self, reg_index: int):
         super().__init__(LowLevelILOperation.LLIL_REG_LOAD)
@@ -288,7 +290,7 @@ class LowLevelILRegLoad(LowLevelILExpr):
 # === Arithmetic Operations ===
 
 class LowLevelILBinaryOp(LowLevelILExpr, BinaryOperation):
-    '''Base for binary operations (expression)'''
+    """Base for binary operations (expression)"""
 
     def __init__(
         self,
@@ -362,25 +364,29 @@ class LowLevelILGe(LowLevelILBinaryOp):
 
 
 class LowLevelILAnd(LowLevelILBinaryOp):
-    '''Bitwise AND'''
+    """Bitwise AND"""
+
     def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
         super().__init__(LowLevelILOperation.LLIL_AND, lhs, rhs)
 
 
 class LowLevelILOr(LowLevelILBinaryOp):
-    '''Bitwise OR'''
+    """Bitwise OR"""
+
     def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
         super().__init__(LowLevelILOperation.LLIL_OR, lhs, rhs)
 
 
 class LowLevelILLogicalAnd(LowLevelILBinaryOp):
-    '''Logical AND (&&)'''
+    """Logical AND (&&)"""
+
     def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
         super().__init__(LowLevelILOperation.LLIL_LOGICAL_AND, lhs, rhs)
 
 
 class LowLevelILLogicalOr(LowLevelILBinaryOp):
-    '''Logical OR (||)'''
+    """Logical OR (||)"""
+
     def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
         super().__init__(LowLevelILOperation.LLIL_LOGICAL_OR, lhs, rhs)
 
@@ -388,7 +394,7 @@ class LowLevelILLogicalOr(LowLevelILBinaryOp):
 # === Unary Operations ===
 
 class LowLevelILUnaryOp(LowLevelILExpr, UnaryOperation):
-    '''Base class for unary operations (expression)'''
+    """Base class for unary operations (expression)"""
 
     def __init__(self, operation: LowLevelILOperation, operand: 'LowLevelILExpr' = None):
         super().__init__(operation)
@@ -401,19 +407,22 @@ class LowLevelILUnaryOp(LowLevelILExpr, UnaryOperation):
 
 
 class LowLevelILNeg(LowLevelILUnaryOp):
-    '''Arithmetic negation (-x)'''
+    """Arithmetic negation (-x)"""
+
     def __init__(self, operand: 'LowLevelILExpr' = None):
         super().__init__(LowLevelILOperation.LLIL_NEG, operand)
 
 
 class LowLevelILBitwiseNot(LowLevelILUnaryOp):
-    '''Bitwise NOT (~x)'''
+    """Bitwise NOT (~x)"""
+
     def __init__(self, operand: 'LowLevelILExpr' = None):
         super().__init__(LowLevelILOperation.LLIL_BITWISE_NOT, operand)
 
 
 class LowLevelILTestZero(LowLevelILUnaryOp):
-    '''Test if zero (x == 0)'''
+    """Test if zero (x == 0)"""
+
     def __init__(self, operand: 'LowLevelILExpr' = None):
         super().__init__(LowLevelILOperation.LLIL_TEST_ZERO, operand)
 
@@ -421,7 +430,7 @@ class LowLevelILTestZero(LowLevelILUnaryOp):
 # === Control Flow ===
 
 class LowLevelILGoto(LowLevelILStatement, Terminal):
-    '''Unconditional jump - target must be a BasicBlock (terminal)'''
+    """Unconditional jump - target must be a BasicBlock (terminal)"""
 
     def __init__(self, target: 'LowLevelILBasicBlock'):
         super().__init__(LowLevelILOperation.LLIL_JMP)
@@ -432,12 +441,13 @@ class LowLevelILGoto(LowLevelILStatement, Terminal):
 
 
 class LowLevelILJmp(LowLevelILGoto):
-    '''Alias for LowLevelILGoto for convenience'''
+    """Alias for LowLevelILGoto for convenience"""
+
     pass
 
 
 class LowLevelILIf(LowLevelILStatement, Terminal):
-    '''Conditional branch - targets must be BasicBlocks (terminal)'''
+    """Conditional branch - targets must be BasicBlocks (terminal)"""
 
     def __init__(self, condition: 'LowLevelILBinaryOp', true_target: 'LowLevelILBasicBlock',
                  false_target: Optional['LowLevelILBasicBlock'] = None):
@@ -456,7 +466,7 @@ class LowLevelILIf(LowLevelILStatement, Terminal):
 
 
 class LowLevelILCall(LowLevelILStatement, Terminal):
-    '''Function call (terminal)'''
+    """Function call (terminal)"""
 
     def __init__(
         self,
@@ -480,7 +490,7 @@ class LowLevelILCall(LowLevelILStatement, Terminal):
 
 
 class LowLevelILRet(LowLevelILStatement, Terminal):
-    '''Return from function (terminal)'''
+    """Return from function (terminal)"""
 
     def __init__(self):
         super().__init__(LowLevelILOperation.LLIL_RET)
@@ -492,7 +502,7 @@ class LowLevelILRet(LowLevelILStatement, Terminal):
 # === Constants and Special ===
 
 class LowLevelILConst(LowLevelILExpr, Constant):
-    '''Constant value (int, float, or string) (expression)'''
+    """Constant value (int, float, or string) (expression)"""
 
     def __init__(self, value: Union[int, float, str], is_hex: bool = False, is_raw: bool = False):
         super().__init__(LowLevelILOperation.LLIL_CONST)
@@ -512,7 +522,7 @@ class LowLevelILConst(LowLevelILExpr, Constant):
 
 
 class LowLevelILDebug(LowLevelILStatement):
-    '''Debug information (statement)'''
+    """Debug information (statement)"""
 
     def __init__(self, debug_type: str, value: Any):
         super().__init__(LowLevelILOperation.LLIL_DEBUG)
@@ -526,7 +536,7 @@ class LowLevelILDebug(LowLevelILStatement):
 # === VM Specific ===
 
 class LowLevelILSyscall(LowLevelILStatement):
-    '''System call (statement)'''
+    """System call (statement)"""
 
     def __init__(self, subsystem: int, cmd: int, argc: int, args: List['LowLevelILExpr'] = None):
         super().__init__(LowLevelILOperation.LLIL_SYSCALL)
@@ -546,14 +556,14 @@ class LowLevelILSyscall(LowLevelILStatement):
 # === Helper Functions ===
 
 def default_label_for_addr(addr: int) -> str:
-    '''Generate default label name from address'''
+    """Generate default label name from address"""
     return f'loc_{addr:X}'
 
 
 # === Container Classes ===
 
 class LowLevelILBasicBlock:
-    '''Basic block containing LLIL instructions (following BN design)'''
+    """Basic block containing LLIL instructions (following BN design)"""
 
     def __init__(self, start: int, index: int = 0, label: Optional[str] = None):
         self.start = start
@@ -569,7 +579,7 @@ class LowLevelILBasicBlock:
         self.incoming_edges: List['LowLevelILBasicBlock'] = []
 
     def add_instruction(self, inst: LowLevelILInstruction):
-        '''Add instruction to this block'''
+        """Add instruction to this block"""
         if self.has_terminal:
             raise RuntimeError(
                 f'Cannot add instruction to {self.block_name}: '
@@ -588,7 +598,7 @@ class LowLevelILBasicBlock:
             self.function._register_instruction(self, inst)
 
     def add_outgoing_edge(self, target: 'LowLevelILBasicBlock'):
-        '''Add outgoing edge to another block'''
+        """Add outgoing edge to another block"""
         if target not in self.outgoing_edges:
             self.outgoing_edges.append(target)
         if self not in target.incoming_edges:
@@ -596,14 +606,14 @@ class LowLevelILBasicBlock:
 
     @property
     def has_terminal(self) -> bool:
-        '''Check if block ends with a terminal instruction'''
+        """Check if block ends with a terminal instruction"""
         if not self.instructions:
             return False
         return isinstance(self.instructions[-1], Terminal)
 
     @property
     def block_name(self) -> str:
-        '''Get canonical block name for jump targets and references'''
+        """Get canonical block name for jump targets and references"""
         return f'block_{self.index}'
 
     def __str__(self) -> str:
@@ -615,7 +625,7 @@ class LowLevelILBasicBlock:
 
 
 class LowLevelILFunction:
-    '''Function containing LLIL basic blocks (following BN design)'''
+    """Function containing LLIL basic blocks (following BN design)"""
 
     def __init__(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None, *, is_common_func: bool = False):
         self.name = name
@@ -632,11 +642,11 @@ class LowLevelILFunction:
 
     @property
     def num_params(self) -> int:
-        '''Number of parameters (for backward compatibility)'''
+        """Number of parameters (for backward compatibility)"""
         return len(self.params)
 
     def add_basic_block(self, block: LowLevelILBasicBlock):
-        '''Add basic block to function'''
+        """Add basic block to function"""
         if block.function is not None:
             raise RuntimeError(f'Block {block.label} already belongs to function {block.function.name}')
 
@@ -653,15 +663,15 @@ class LowLevelILFunction:
         self._label_map[block.label] = block
 
     def _register_instruction(self, block: LowLevelILBasicBlock, inst: LowLevelILInstruction):
-        '''Assign a global instruction index and track block association'''
+        """Assign a global instruction index and track block association"""
         inst.inst_index = self._next_inst_index
         self._next_inst_index += 1
         self._instructions.append(inst)
         self._inst_block_map[inst.inst_index] = block
 
     def reindex_in_block_order(self):
-        '''Rebuild instruction indices and lookup tables in basic-block list order, regardless of
-        the order instructions were originally registered in.'''
+        """Rebuild instruction indices and lookup tables in basic-block list order, regardless of
+        the order instructions were originally registered in."""
         self._instructions = []
         self._inst_block_map = {}
         self._next_inst_index = 0
@@ -671,35 +681,35 @@ class LowLevelILFunction:
                 self._register_instruction(block, inst)
 
     def get_instruction_by_index(self, inst_index: int) -> Optional[LowLevelILInstruction]:
-        '''Get instruction by global inst_index'''
+        """Get instruction by global inst_index"""
         if inst_index < 0 or inst_index >= len(self._instructions):
             return None
         return self._instructions[inst_index]
 
     def get_instruction_block_by_index(self, inst_index: int) -> Optional[LowLevelILBasicBlock]:
-        '''Get the basic block containing the instruction with inst_index'''
+        """Get the basic block containing the instruction with inst_index"""
         return self._inst_block_map.get(inst_index)
 
     def iter_instructions(self):
-        '''Iterate over instructions in inst_index order'''
+        """Iterate over instructions in inst_index order"""
         return iter(self._instructions)
 
     def get_block_by_addr(self, addr: int) -> Optional[LowLevelILBasicBlock]:
-        '''Get basic block by start address'''
+        """Get basic block by start address"""
         return self._block_map.get(addr)
 
     def get_block_by_label(self, label: str) -> Optional[LowLevelILBasicBlock]:
-        '''Get block by label name (O(1) lookup using label map)'''
+        """Get block by label name (O(1) lookup using label map)"""
         return self._label_map.get(label)
 
     def owns_block(self, block) -> bool:
-        '''Whether block is one of this function's blocks - decided by the function's own block map, not by the
-        block's back-pointer'''
+        """Whether block is one of this function's blocks - decided by the function's own block map, not by the
+        block's back-pointer"""
         return isinstance(block, LowLevelILBasicBlock) and self._block_map.get(block.start) is block
 
     def build_cfg(self):
-        '''Rebuild the control flow graph from terminal instructions, replacing the edges of any earlier build.
-        Everything is checked before an edge changes, so a failed rebuild keeps the previous graph.'''
+        """Rebuild the control flow graph from terminal instructions, replacing the edges of any earlier build.
+        Everything is checked before an edge changes, so a failed rebuild keeps the previous graph."""
         entry = self.get_block_by_addr(self.start_addr)
         if entry is None:
             raise RuntimeError(f'Function {self.name} has no block at its start address {self.start_addr:#x}')
@@ -722,35 +732,30 @@ class LowLevelILFunction:
             block.add_outgoing_edge(target)
 
     def _successors(self, block: LowLevelILBasicBlock) -> List[LowLevelILBasicBlock]:
-        '''Return the block's CFG successors; raise for an unsupported terminal or a foreign target.'''
+        """Return the block's CFG successors; raise for an unsupported terminal or a foreign target."""
         if not block.instructions:
             return []
 
         last_inst = block.instructions[-1]
         if isinstance(last_inst, LowLevelILGoto):
             targets = [last_inst.target]
-
         elif isinstance(last_inst, LowLevelILIf):
             if last_inst.true_target is None or last_inst.false_target is None:
                 raise RuntimeError(f'{block.block_name} ends with an If without both a true and a false target')
 
             targets = [last_inst.true_target, last_inst.false_target]
-
         elif isinstance(last_inst, LowLevelILCall) and last_inst.returns:
             if last_inst.return_target is None:
                 raise NotImplementedError('Fall through is not supported')
 
             targets = [last_inst.return_target]
-
         elif isinstance(last_inst, LowLevelILCall):
             if last_inst.return_target is not None:
                 raise RuntimeError(f'{block.block_name} ends with a call that never returns but has a return target')
 
             targets = []   # tail call
-
         elif isinstance(last_inst, LowLevelILRet):
             targets = []
-
         else:
             raise RuntimeError(f'{block.block_name} {block.label} does not end with a supported terminal: {last_inst}')
 

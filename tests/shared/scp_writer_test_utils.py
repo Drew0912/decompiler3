@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Shared test helpers for compiling DSL scripts against a throwaway ScpWriter'''
+"""Shared test helpers for compiling DSL scripts against a throwaway ScpWriter"""
 
 from pathlib import Path
 from types import ModuleType
@@ -17,8 +17,8 @@ HEX = '0x[0-9A-F]+'     # an address in a writer message, as a regex
 
 
 def local_call(callee, ret: str, pushes, **keywords):
-    '''A local call of callee in a DSL body: pushes are (DSL push function, value) in push order - the last parameter
-    first; keywords go to the CALL'''
+    """A local call of callee in a DSL body: pushes are (DSL push function, value) in push order - the last parameter
+    first; keywords go to the CALL"""
     PUSH_CURRENT_FUNC_ID()
     PUSH_RET_ADDR(ret)
     for push, value in pushes:
@@ -29,33 +29,33 @@ def local_call(callee, ret: str, pushes, **keywords):
 
 
 def fresh_writer(dat: Path | None = None) -> scp_writer.ScpWriter:
-    '''Replace the module-level writer singleton so a compile starts from a clean state (for dat, if given). The
+    """Replace the module-level writer singleton so a compile starts from a clean state (for dat, if given). The
     writer supports only one compile per interpreter in production (docs/dsl/LLIL_DSL.md) - it has no reset - so tests
-    isolate this way instead.'''
+    isolate this way instead."""
     scp_writer._gScp = scp_writer.ScpWriter()
     return scp_writer.create_scp_writer(str(dat)) if dat is not None else scp_writer._gScp
 
 
 def marked_line(path: str | Path, marker: str) -> int:
-    '''The line of a file that ends with the comment # line: <marker>'''
-    lines = Path(path).read_text(encoding = 'utf-8').splitlines()
+    """The line of a file that ends with the comment # line: <marker>"""
+    lines = Path(path).read_text(encoding='utf-8').splitlines()
     [number] = [number for number, text in enumerate(lines, 1) if text.rstrip().endswith(f'# line: {marker}')]
     return number
 
 
 def location(path: str | Path, marker: str) -> str:
-    '''The location 'file:line' of a marked line of a file, as a regex'''
+    """The location 'file:line' of a marked line of a file, as a regex"""
     return re.escape(f'{path}:{marked_line(path, marker)}')
 
 
 def at(path: str | Path, marker: str) -> str:
-    '''A message prefix 'file:line: ' for a marked line of a file, as a regex'''
+    """A message prefix 'file:line: ' for a marked line of a file, as a regex"""
     return location(path, marker) + ': '
 
 
 def load_module(path: Path) -> ModuleType:
-    '''Run a .py file as a fresh module, kept out of sys.modules: a hook or library file whose globals no other test
-    sees. Run it after fresh_writer(): what it registers goes to the writer of that moment'''
+    """Run a .py file as a fresh module, kept out of sys.modules: a hook or library file whose globals no other test
+    sees. Run it after fresh_writer(): what it registers goes to the writer of that moment"""
     spec = importlib.util.spec_from_file_location(path.stem, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -63,7 +63,7 @@ def load_module(path: Path) -> ModuleType:
 
 
 def body_writer() -> scp_writer.ScpWriter:
-    '''A fresh writer inside a function body, so a test can emit opcodes one at a time; writer.fs holds the bytes'''
+    """A fresh writer inside a function body, so a test can emit opcodes one at a time; writer.fs holds the bytes"""
     writer = fresh_writer()
 
     def Body():
@@ -76,7 +76,7 @@ def body_writer() -> scp_writer.ScpWriter:
 
 
 class WriterTestCase(unittest.TestCase):
-    '''A fresh writer that compiles test.dat in a temp dir'''
+    """A fresh writer that compiles test.dat in a temp dir"""
 
     def setUp(self):
         self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
@@ -84,7 +84,7 @@ class WriterTestCase(unittest.TestCase):
         self.writer = self.fresh_writer()
 
     def fresh_writer(self, check: bool = True) -> scp_writer.ScpWriter:
-        '''A fresh writer for test.dat, with the compile check on or off'''
+        """A fresh writer for test.dat, with the compile check on or off"""
         writer = fresh_writer(self.dat)
         writer.check_compiled = check
         return writer

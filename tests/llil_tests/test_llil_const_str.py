@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''LowLevelILConst string text in the .llil.asm: escaped, so a quote or line break can't end the token or the line.'''
+"""LowLevelILConst string text in the .llil.asm: escaped, so a quote or line break can't end the token or the line."""
 
 from pathlib import Path
 import sys

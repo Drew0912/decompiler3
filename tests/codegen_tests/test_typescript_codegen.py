@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for the TypeScript code generator.'''
+"""Unit tests for the TypeScript code generator."""
 
 from pathlib import Path
 import sys
@@ -59,8 +59,8 @@ def make_scrutinee() -> HLILVar:
     return HLILVar(HLILVariable('selector'))
 
 
-def render_call(argument, parameters = ()) -> str:
-    '''The TypeScript of a function whose body is f(argument)'''
+def render_call(argument, parameters=()) -> str:
+    """The TypeScript of a function whose body is f(argument)"""
     func = HighLevelILFunction(TEST_FUNCTION_NAME)
     func.parameters = list(parameters)
     func.add_statement(HLILExprStmt(HLILCall('f', [argument])))
@@ -72,8 +72,8 @@ def var(name: str) -> HLILVar:
 
 
 class TestEmptyThenArm(unittest.TestCase):
-    '''An if whose then-arm is empty prints its else-arm under the negated condition, negated as the HLIL passes
-    negate (negate_condition: De Morgan, no double !), not wrapped in !(...)'''
+    """An if whose then-arm is empty prints its else-arm under the negated condition, negated as the HLIL passes
+    negate (negate_condition: De Morgan, no double !), not wrapped in !(...)"""
 
     def render_if(self, condition) -> str:
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
@@ -97,15 +97,15 @@ class TestEmptyThenArm(unittest.TestCase):
         ]
 
         for condition, line in rows:
-            with self.subTest(line = line):
+            with self.subTest(line=line):
                 ts = self.render_if(condition)
                 self.assertIn(f'    {line}\n        f();\n    }}', ts)
                 self.assertNotIn('else', ts)
 
 
 class TestZeroComparisonParentheses(unittest.TestCase):
-    '''A comparison with 0 that prints as another node's text ((a || b) != 0 prints a || b) is parenthesized by
-    that node: it printed f(a || b && c), read as a || (b && c)'''
+    """A comparison with 0 that prints as another node's text ((a || b) != 0 prints a || b) is parenthesized by
+    that node: it printed f(a || b && c), read as a || (b && c)"""
 
     def test_operand_is_parenthesized_by_what_it_prints(self):
         a_or_b = HLILBinaryOp(BinaryOp.OR, var('a'), var('b'))
@@ -123,12 +123,12 @@ class TestZeroComparisonParentheses(unittest.TestCase):
         ]
 
         for expr, text in rows:
-            with self.subTest(text = text):
+            with self.subTest(text=text):
                 self.assertIn(text, render_call(expr))
 
 
 class TestSwitchEmptyCase(unittest.TestCase):
-    '''An empty non-default case must not fall through into the next case.'''
+    """An empty non-default case must not fall through into the next case."""
 
     def test_empty_case_gets_a_break(self):
         empty_case = HLILSwitchCase([HLILConst(FIRST_CASE_VALUE)], HLILBlock())
@@ -151,10 +151,10 @@ class TestSwitchEmptyCase(unittest.TestCase):
 
 
 class TestPointerCodegen(unittest.TestCase):
-    '''A Pointer (out-parameter) keeps its own kind through MLIL and HLIL.'''
+    """A Pointer (out-parameter) keeps its own kind through MLIL and HLIL."""
 
     def test_pointer_parameter_renders_as_the_alias(self):
-        func = MediumLevelILFunction(TEST_FUNCTION_NAME, params = [IRParameter('arg1', 'Pointer')])
+        func = MediumLevelILFunction(TEST_FUNCTION_NAME, params=[IRParameter('arg1', 'Pointer')])
         func.get_or_create_parameter(1, 'arg1')
         func.create_block().add_instruction(MLILRet())
 
@@ -175,11 +175,11 @@ class TestPointerCodegen(unittest.TestCase):
 
 
 class TestNumberCodegen(unittest.TestCase):
-    '''NUMBER (int or float) renders as number and takes the int(...) coercion.'''
+    """NUMBER (int or float) renders as number and takes the int(...) coercion."""
 
     def test_number_parameter_renders_as_number(self):
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.parameters = [HLILVariable('arg1', HLILTypeKind.NUMBER, kind = VariableKind.PARAM)]
+        func.parameters = [HLILVariable('arg1', HLILTypeKind.NUMBER, kind=VariableKind.PARAM)]
 
         self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: number)', generate_typescript(func))
 
@@ -196,8 +196,8 @@ class TestNumberCodegen(unittest.TestCase):
 
 
 class TestConstantComparisonCodegen(unittest.TestCase):
-    '''A comparison of two constants prints its value only for ints: a float comparison in the VM is unverified.
-    Seen live: mon5265 printed if (2.0 > 0) as if (true).'''
+    """A comparison of two constants prints its value only for ints: a float comparison in the VM is unverified.
+    Seen live: mon5265 printed if (2.0 > 0) as if (true)."""
 
     def render(self, op: BinaryOp, lhs, rhs) -> str:
         return render_call(HLILBinaryOp(op, HLILConst(lhs), HLILConst(rhs)))
@@ -211,8 +211,8 @@ class TestConstantComparisonCodegen(unittest.TestCase):
 
 
 class TestUnaryMinusCodegen(unittest.TestCase):
-    '''A minus over an operand printed with a leading minus keeps its parentheses: --x is a decrement.
-    Reachable from the LLIL DSL: PUSH_FLOAT(-3.0) then NEG() printed f(--3.0).'''
+    """A minus over an operand printed with a leading minus keeps its parentheses: --x is a decrement.
+    Reachable from the LLIL DSL: PUSH_FLOAT(-3.0) then NEG() printed f(--3.0)."""
 
     def test_minus_over_a_leading_minus_keeps_its_parentheses(self):
         rows = [
@@ -222,16 +222,16 @@ class TestUnaryMinusCodegen(unittest.TestCase):
         ]
 
         for operand, text in rows:
-            with self.subTest(text = text):
+            with self.subTest(text=text):
                 self.assertIn(text, render_call(HLILUnaryOp(UnaryOp.NEG, operand)))
 
 
 class TestStringCodegen(unittest.TestCase):
-    '''An argument and a parameter default print the same quote_string literal (a default used to escape only
-    the backslash and the quote).'''
+    """An argument and a parameter default print the same quote_string literal (a default used to escape only
+    the backslash and the quote)."""
 
     def test_string_argument_and_default_are_escaped(self):
-        parameter = HLILVariable('arg1', HLILTypeKind.STRING, default_value = SPECIAL_TEXT, kind = VariableKind.PARAM)
+        parameter = HLILVariable('arg1', HLILTypeKind.STRING, default_value=SPECIAL_TEXT, kind=VariableKind.PARAM)
         ts = render_call(HLILConst(SPECIAL_TEXT), [parameter])
 
         self.assertIn(f'arg1: string = {SPECIAL_TEXT_LITERAL}', ts)
@@ -239,7 +239,7 @@ class TestStringCodegen(unittest.TestCase):
 
 
 class TestExternCallCodegen(unittest.TestCase):
-    '''A script call's target prints as a quote_string literal (it used to be wrapped in quotes unescaped).'''
+    """A script call's target prints as a quote_string literal (it used to be wrapped in quotes unescaped)."""
 
     def test_target_is_escaped(self):
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
@@ -260,16 +260,16 @@ DEFAULTS = {CALLEE: (None, DEFAULT_INT, DEFAULT_NEGATIVE)}
 
 
 def call(name: str, *args) -> HLILCall:
-    '''A call of name; a plain value argument becomes a constant'''
+    """A call of name; a plain value argument becomes a constant"""
     return HLILCall(name, [arg if isinstance(arg, HLILExpression) else HLILConst(arg) for arg in args])
 
 
 class TestTrailingDefaultArguments(unittest.TestCase):
-    '''.ts leaves out a local call's longest tail of constants that are the callee's defaults (compared as the IR
+    """.ts leaves out a local call's longest tail of constants that are the callee's defaults (compared as the IR
     compares constants, constant_values_equal); the HLIL call and every other output keep them. Without written counts
-    (TestWrittenArguments: a round trip's debug records)'''
+    (TestWrittenArguments: a round trip's debug records)"""
 
-    def render(self, statement, defaults = DEFAULTS) -> str:
+    def render(self, statement, defaults=DEFAULTS) -> str:
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
         func.add_statement(statement)
         return generate_typescript(func, defaults)
@@ -321,10 +321,10 @@ class TestTrailingDefaultArguments(unittest.TestCase):
             (SourceFloat(-1.0, '-1.0'), SourceFloat(-1.0, '-1.0'), True),
             (DEFAULT_NEGATIVE, DEFAULT_NEGATIVE, True),
             ('text', 'text', True),
-            (HLILConst(HEX_VALUE, is_hex = True), HEX_VALUE, True),
+            (HLILConst(HEX_VALUE, is_hex=True), HEX_VALUE, True),
         ]
         for argument, default, left_out in rows:
-            with self.subTest(argument = repr(argument), default = repr(default)):
+            with self.subTest(argument=repr(argument), default=repr(default)):
                 statement = HLILExprStmt(call(ONE_PARAM_CALLEE, argument))
                 with_defaults = self.render(statement, {ONE_PARAM_CALLEE: (default,)})
 
@@ -347,7 +347,7 @@ class TestTrailingDefaultArguments(unittest.TestCase):
                 self.assertIn(expected, self.render(HLILExprStmt(expr), defaults))
 
     def test_the_call_keeps_every_argument(self):
-        '''.hlil.ts is written from the same tree before .ts, then later outputs and callers see it'''
+        """.hlil.ts is written from the same tree before .ts, then later outputs and callers see it"""
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
         statement = HLILExprStmt(call(CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE))
         func.add_statement(statement)
@@ -372,8 +372,8 @@ def call_at(address: int, name: str, *args) -> HLILCall:
 
 
 class TestWrittenArguments(unittest.TestCase):
-    '''In a round trip a local call never leaves out an argument its author wrote: it prints the larger of the rule's
-    count and its debug record's (written_argc, by the CALL's offset)'''
+    """In a round trip a local call never leaves out an argument its author wrote: it prints the larger of the rule's
+    count and its debug record's (written_argc, by the CALL's offset)"""
 
     def render(self, written_argc: dict[int, int] | None, *exprs: HLILExpression) -> str:
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
@@ -386,7 +386,7 @@ class TestWrittenArguments(unittest.TestCase):
         return call_at(address, CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE)
 
     def test_identical_calls_print_what_was_written(self):
-        '''mes_set_auto(1) and mes_set_auto(1, 0) compile to the same bytes'''
+        """mes_set_auto(1) and mes_set_auto(1, 0) compile to the same bytes"""
         ts = self.render({FIRST_CALL: 1, SECOND_CALL: 2}, self.full_call(FIRST_CALL), self.full_call(SECOND_CALL))
         self.assertIn('g(a);', ts)
         self.assertIn('g(a, 3);', ts)
@@ -398,12 +398,12 @@ class TestWrittenArguments(unittest.TestCase):
             (3, 'g(a, 3, -1);'),        # every argument
         ]
         for written, expected in rows:
-            with self.subTest(written = written):
+            with self.subTest(written=written):
                 self.assertIn(expected, self.render({FIRST_CALL: written}, self.full_call(FIRST_CALL)))
 
     def test_fewer_written_keeps_the_rules_count(self):
-        '''A record keeps fewer where HLIL shows an address-taken local for the pushed default: printing the record's
-        count would drop that variable'''
+        """A record keeps fewer where HLIL shows an address-taken local for the pushed default: printing the record's
+        count would drop that variable"""
         expr = call_at(FIRST_CALL, CALLEE, var('a'), var('x'), DEFAULT_NEGATIVE)
         self.assertIn('g(a, x);', self.render({FIRST_CALL: 1}, expr))
 
@@ -413,7 +413,7 @@ class TestWrittenArguments(unittest.TestCase):
                 self.assertIn('g(a);', self.render(written_argc, self.full_call(FIRST_CALL)))
 
     def test_nested_calls_by_their_own_address(self):
-        '''The map lists the inner call first; the generator meets the outer call first'''
+        """The map lists the inner call first; the generator meets the outer call first"""
         outer = call_at(SECOND_CALL, CALLEE, self.full_call(FIRST_CALL), DEFAULT_INT, DEFAULT_NEGATIVE)
         self.assertIn('g(g(a, 3, -1));', self.render({FIRST_CALL: 3, SECOND_CALL: 1}, outer))
 

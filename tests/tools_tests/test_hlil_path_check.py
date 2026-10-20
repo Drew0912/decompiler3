@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for tools/hlil_path_check.py: correct HLIL passes, and each way of losing or
-inventing a path, deleting an effect or changing what a copy does is reported.'''
+"""Unit tests for tools/hlil_path_check.py: correct HLIL passes, and each way of losing or
+inventing a path, deleting an effect or changing what a copy does is reported."""
 
 from pathlib import Path
 import sys
@@ -21,12 +21,12 @@ from tests.shared.ir_utils import connect
 
 
 def calls_then_test(first: str, second: str) -> MediumLevelILFunction:
-    '''if (first()) body(); else if (second()) body(); - both results tested as they come back'''
+    """if (first()) body(); else if (second()) body(); - both results tested as they come back"""
     func = MediumLevelILFunction('f', 0)
     reg0 = func.get_or_create_local('reg0')
-    test1, test2, body, other = (func.create_block(label = label) for label in ('T1', 'T2', 'BODY', 'OTHER'))
-    test1.instructions = [MLILCall(first, [], output = reg0), MLILIf(MLILVar(reg0), body, test2)]
-    test2.instructions = [MLILCall(second, [], output = reg0), MLILIf(MLILVar(reg0), body, other)]
+    test1, test2, body, other = (func.create_block(label=label) for label in ('T1', 'T2', 'BODY', 'OTHER'))
+    test1.instructions = [MLILCall(first, [], output=reg0), MLILIf(MLILVar(reg0), body, test2)]
+    test2.instructions = [MLILCall(second, [], output=reg0), MLILIf(MLILVar(reg0), body, other)]
     body.instructions = [MLILCall('body', []), MLILRet(MLILConst(1))]
     other.instructions = [MLILRet(MLILConst(0))]
     return connect(func)
@@ -36,26 +36,26 @@ def returns_parameter() -> MediumLevelILFunction:
     func = MediumLevelILFunction('f', 0)
     p = func.get_or_create_parameter(1, 'p')
     func.get_or_create_parameter(2, 'q')
-    block = func.create_block(label = 'B')
+    block = func.create_block(label='B')
     block.instructions = [MLILCall('observable', []), MLILRet(MLILVar(p))]
     return connect(func)
 
 
 def returns_call_result() -> MediumLevelILFunction:
-    '''reg0 = value(); return reg0 - the call folds into the return'''
+    """reg0 = value(); return reg0 - the call folds into the return"""
     func = MediumLevelILFunction('f', 0)
     reg0 = func.get_or_create_local('reg0')
-    block = func.create_block(label = 'B')
-    block.instructions = [MLILCall('value', [], output = reg0), MLILRet(MLILVar(reg0))]
+    block = func.create_block(label='B')
+    block.instructions = [MLILCall('value', [], output=reg0), MLILRet(MLILVar(reg0))]
     return connect(func)
 
 
 def temporary_condition() -> MediumLevelILFunction:
-    '''tmp = p == 0; if (tmp != 0) ... - ControlFlowOptimizationPass folds tmp into the if'''
+    """tmp = p == 0; if (tmp != 0) ... - ControlFlowOptimizationPass folds tmp into the if"""
     func = MediumLevelILFunction('f', 0)
     p = func.get_or_create_parameter(1, 'p')
     tmp = func.get_or_create_local('tmp')
-    test, yes, no = (func.create_block(label = label) for label in ('T', 'Y', 'N'))
+    test, yes, no = (func.create_block(label=label) for label in ('T', 'Y', 'N'))
     test.instructions = [MLILSetVar(tmp, MLILEq(MLILVar(p), MLILConst(0))),
                          MLILIf(MLILNe(MLILVar(tmp), MLILConst(0)), yes, no)]
     yes.instructions = [MLILCall('yes', []), MLILRet(MLILConst(1))]
@@ -64,11 +64,11 @@ def temporary_condition() -> MediumLevelILFunction:
 
 
 def equality_chain() -> MediumLevelILFunction:
-    '''if (x == 1) one(); else if (x == 2) two(); else if (x == 3) three(); else other(); done()'''
+    """if (x == 1) one(); else if (x == 2) two(); else if (x == 3) three(); else other(); done()"""
     func = MediumLevelILFunction('f', 0)
     x = func.get_or_create_parameter(1, 'x')
     labels = ('T1', 'T2', 'T3', 'ONE', 'TWO', 'THREE', 'OTHER', 'DONE')
-    t1, t2, t3, one, two, three, other, done = (func.create_block(label = label) for label in labels)
+    t1, t2, t3, one, two, three, other, done = (func.create_block(label=label) for label in labels)
     for test, value, case, following in ((t1, 1, one, t2), (t2, 2, two, t3), (t3, 3, three, other)):
         test.instructions = [MLILIf(MLILEq(MLILVar(x), MLILConst(value)), case, following)]
 
@@ -84,8 +84,8 @@ def find(hlil, kind):
 
 
 def either_call_hlil(func: MediumLevelILFunction, op: BinaryOp) -> HighLevelILFunction:
-    '''if (first() != 0 <op> second() != 0) { body(); return 1; } return 0; - calls_then_test's HLIL
-    written by hand, with each call's provenance'''
+    """if (first() != 0 <op> second() != 0) { body(); return 1; } return 0; - calls_then_test's HLIL
+    written by hand, with each call's provenance"""
     index = {inst.target: inst.inst_index for block in func.basic_blocks for inst in block.instructions
              if isinstance(inst, MLILCall)}
 
@@ -105,7 +105,7 @@ def either_call_hlil(func: MediumLevelILFunction, op: BinaryOp) -> HighLevelILFu
 
 class TestCorrectOutputPasses(unittest.TestCase):
 
-    def assert_clean(self, func, hlil = None):
+    def assert_clean(self, func, hlil=None):
         result = check_function(func, hlil if hlil is not None else to_hlil(func))
         self.assertTrue(result.ok, (result.missing, result.extra, result.uncovered))
         self.assertEqual(result.unstructured, 0)

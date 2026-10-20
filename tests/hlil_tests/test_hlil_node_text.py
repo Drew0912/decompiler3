@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''The debug text of every HLIL node (str) and its repr, and the attributes every node starts with. Debug
+"""The debug text of every HLIL node (str) and its repr, and the attributes every node starts with. Debug
 text is what a failing test and a log line show, so a node that prints None or the wrong branch hides the
-real failure.'''
+real failure."""
 
 from pathlib import Path
 import sys
@@ -94,7 +94,7 @@ class TestNodeText(unittest.TestCase):
 
     def test_str_and_repr_of_every_node(self):
         for node, text, representation in NODE_TEXT:
-            with self.subTest(node = representation):
+            with self.subTest(node=representation):
                 self.assertEqual(str(node), text)
                 self.assertEqual(repr(node), representation)
 
@@ -106,7 +106,7 @@ class TestNodeAttributes(unittest.TestCase):
 
     def test_every_node_announces_its_operation_and_starts_without_a_source(self):
         for node, operation in NODE_OPERATIONS:
-            with self.subTest(node = type(node).__name__):
+            with self.subTest(node=type(node).__name__):
                 self.assertEqual(node.operation, operation)
                 self.assertEqual(node.address, 0)
                 self.assertEqual(node.mlil_index, UNASSIGNED_INST_INDEX)

@@ -1,4 +1,4 @@
-'''Block merge pass - splice single-predecessor goto targets into the block that jumps to them'''
+"""Block merge pass - splice single-predecessor goto targets into the block that jumps to them"""
 
 from typing import Optional, Set
 
@@ -9,7 +9,7 @@ from ..mlil_ssa import MLILPhi
 
 
 class BlockMergePass(Pass):
-    '''Merge every block whose only way in is another block's unconditional goto.
+    """Merge every block whose only way in is another block's unconditional goto.
 
     A LowLevelILCall is a block terminator, so the LLIL->MLIL translator ends every call block
     with `goto <return block>` - nearly every call site cuts straight-line code in two. This
@@ -18,7 +18,7 @@ class BlockMergePass(Pass):
 
     Must run on pre-SSA MLIL: Phi nodes name predecessor blocks by identity, and absorbing one
     of those blocks would leave a Phi's sources dangling.
-    '''
+    """
 
     def run(self, mlil_func: MediumLevelILFunction) -> MediumLevelILFunction:
         if not mlil_func.basic_blocks:
@@ -70,8 +70,8 @@ class BlockMergePass(Pass):
 
     def _check_edge_invariant(self, head: MediumLevelILBasicBlock, target: MediumLevelILBasicBlock,
                               block_set: Set[MediumLevelILBasicBlock]):
-        '''Fail loud on a broken CFG rather than merge on top of it - an inconsistency here is a
-        real bug upstream, not a case worth silently tolerating'''
+        """Fail loud on a broken CFG rather than merge on top of it - an inconsistency here is a
+        real bug upstream, not a case worth silently tolerating"""
         if target not in block_set:
             raise RuntimeError(f'{target.label}: not a block of this function')
 
@@ -95,7 +95,7 @@ class BlockMergePass(Pass):
                     f'{target.label} listing it as a successor')
 
     def _absorb(self, head: MediumLevelILBasicBlock, target: MediumLevelILBasicBlock):
-        '''Replace head's goto with target's body and take over target's edges'''
+        """Replace head's goto with target's body and take over target's edges"""
         head.instructions[-1:] = target.instructions
         head.outgoing_edges = list(target.outgoing_edges)
 
@@ -109,8 +109,8 @@ class BlockMergePass(Pass):
         target.outgoing_edges = []
 
     def _reject_phi_nodes(self, mlil_func: MediumLevelILFunction):
-        '''Phi sources name predecessor blocks by identity - absorbing one would leave them
-        dangling, so this pass only supports pre-SSA MLIL'''
+        """Phi sources name predecessor blocks by identity - absorbing one would leave them
+        dangling, so this pass only supports pre-SSA MLIL"""
         for block in mlil_func.basic_blocks:
             for inst in block.instructions:
                 if isinstance(inst, MLILPhi):

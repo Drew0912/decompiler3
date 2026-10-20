@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for HLIL control-flow optimization.'''
+"""Unit tests for HLIL control-flow optimization."""
 
 from pathlib import Path
 from typing import Optional
@@ -85,12 +85,12 @@ def make_ne_check(value: int, next_if: HLILIf) -> HLILIf:
 
 
 def line_comment(value: int) -> HLILComment:
-    '''The source-line comment of the test for value (its line number is the value, to tell them apart)'''
+    """The source-line comment of the test for value (its line number is the value, to tell them apart)"""
     return HLILComment(f'line({value})')
 
 
 def make_marked_chain(*values: int) -> HLILIf:
-    '''An == chain on selector; each later test's line comment sits before it in the else arm, as converted'''
+    """An == chain on selector; each later test's line comment sits before it in the else arm, as converted"""
     chain = HLILIf(make_condition(BinaryOp.EQ, values[-1]), make_case_body(values[-1]), HLILBlock())
     for value, next_value in reversed(list(zip(values, values[1:]))):
         chain = HLILIf(make_condition(BinaryOp.EQ, value), make_case_body(value),
@@ -114,7 +114,7 @@ def block_contains_call(block: HLILBlock, func_name: str) -> bool:
 
 
 def run_cfo(*statements: HLILStatement) -> HighLevelILFunction:
-    '''A function of these statements, after ControlFlowOptimizationPass'''
+    """A function of these statements, after ControlFlowOptimizationPass"""
     func = HighLevelILFunction(TEST_FUNCTION_NAME)
     for stmt in statements:
         func.add_statement(stmt)
@@ -123,7 +123,7 @@ def run_cfo(*statements: HLILStatement) -> HighLevelILFunction:
 
 
 class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
-    '''Tests for if-chain to switch conversion.'''
+    """Tests for if-chain to switch conversion."""
 
     def test_ne_chain_terminal_eq_becomes_final_switch_case(self):
         terminal_if = HLILIf(
@@ -275,7 +275,7 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
                          {FIRST_CASE_VALUE, SECOND_CASE_VALUE})
 
     def test_a_link_with_no_case_body_gets_an_empty_case(self):
-        '''if (selector != k) { rest } with no else: the case for k does nothing'''
+        """if (selector != k) { rest } with no else: the case for k does nothing"""
         rest = make_case_body(DEFAULT_BODY_VALUE)
         for value in (THIRD_CASE_VALUE, SECOND_CASE_VALUE, FIRST_CASE_VALUE):
             rest = HLILBlock([HLILIf(make_condition(BinaryOp.NE, value), rest, None)])
@@ -314,12 +314,12 @@ def make_less_than() -> HLILBinaryOp:
 
 
 def arm_calls(block: Optional[HLILBlock]) -> list:
-    '''The functions an arm calls, in order; an absent arm calls none'''
+    """The functions an arm calls, in order; an absent arm calls none"""
     return [stmt.expr.func_name for stmt in block.statements] if block else []
 
 
 class TestBooleanTempInlining(unittest.TestCase):
-    '''Tests for the [assign, if] -> [if(bool_expr)] boolean-temp inlining transform.'''
+    """Tests for the [assign, if] -> [if(bool_expr)] boolean-temp inlining transform."""
 
     def test_assignment_survives_when_var_is_read_by_a_later_statement(self):
         assign_stmt = make_flag_assign()
@@ -336,8 +336,8 @@ class TestBooleanTempInlining(unittest.TestCase):
         self.assertIsInstance(func.body.statements[2], HLILIf)
 
     def test_each_shape_gives_the_expression_and_arms(self):
-        '''flag = a < b; if (flag != 0 / == 0) {first} [else {second}]: the expression replaces the test, negated or
-        with the arms swapped for == 0, and no read of flag is left'''
+        """flag = a < b; if (flag != 0 / == 0) {first} [else {second}]: the expression replaces the test, negated or
+        with the arms swapped for == 0, and no read of flag is left"""
         shapes = [
             # (comparison with zero, with an else, condition, true arm, false arm)
             (BinaryOp.NE, False, 'a < b', [FIRST_CHECK_CALL], []),
@@ -346,7 +346,7 @@ class TestBooleanTempInlining(unittest.TestCase):
             (BinaryOp.EQ, True, 'a < b', [SECOND_CHECK_CALL], [FIRST_CHECK_CALL]),
         ]
         for op, with_else, condition, true_calls, false_calls in shapes:
-            with self.subTest(op = op.name, with_else = with_else):
+            with self.subTest(op=op.name, with_else=with_else):
                 second = [HLILExprStmt(HLILCall(SECOND_CHECK_CALL, []))] if with_else else []
                 check = HLILIf(HLILBinaryOp(op, make_flag_var(), HLILConst(0)),
                                HLILBlock([HLILExprStmt(HLILCall(FIRST_CHECK_CALL, []))]), HLILBlock(second))
@@ -366,8 +366,8 @@ def named(name: str) -> HLILVar:
 
 
 class TestNegatedConditions(unittest.TestCase):
-    '''Both places the pass negates a test - an empty then-arm inverted, flag == 0 inlined without an else - negate
-    as the other HLIL passes do (negate_condition: De Morgan, no double !), not as (cond) == 0'''
+    """Both places the pass negates a test - an empty then-arm inverted, flag == 0 inlined without an else - negate
+    as the other HLIL passes do (negate_condition: De Morgan, no double !), not as (cond) == 0"""
 
     def check_arm(self) -> HLILBlock:
         return HLILBlock([HLILExprStmt(HLILCall(FIRST_CHECK_CALL, []))])
@@ -379,7 +379,7 @@ class TestNegatedConditions(unittest.TestCase):
             (make_less_than(), 'a >= b'),
         ]
         for condition, text in rows:
-            with self.subTest(text = text):
+            with self.subTest(text=text):
                 [inverted] = run_cfo(HLILIf(condition, HLILBlock(), self.check_arm())).body.statements
 
                 self.assertEqual(HLILFormatter._format_expr(inverted.condition), text)
@@ -400,7 +400,7 @@ SOURCE_REG_NAME = 'source_reg'
 
 
 class TestRedundantElseAssignSideEffects(unittest.TestCase):
-    '''Tests for _remove_redundant_else_assign not discarding side effects.'''
+    """Tests for _remove_redundant_else_assign not discarding side effects."""
 
     def build_switch_case_if(self, source_expr) -> HLILIf:
         # if (selector == FIRST) { case_1 } else { selector = source_expr; if (selector == SECOND) { case_2 } }
@@ -454,12 +454,12 @@ class TestRedundantElseAssignSideEffects(unittest.TestCase):
 
 
 class TestBooleanTempInliningPreservesGlobals(unittest.TestCase):
-    '''A GLOBAL-kind boolean temp must never be deleted by inlining - unlike a local or
+    """A GLOBAL-kind boolean temp must never be deleted by inlining - unlike a local or
     register temp, the write itself is observable shared state regardless of whether
-    anything in this function reads it again.'''
+    anything in this function reads it again."""
 
     def test_global_assignment_survives_even_with_no_other_reads(self):
-        global_var = HLILVariable(None, kind = VariableKind.GLOBAL, index = 5)
+        global_var = HLILVariable(None, kind=VariableKind.GLOBAL, index=5)
         condition = HLILBinaryOp(BinaryOp.EQ, HLILConst(FLAG_COMPARE_LHS), HLILConst(FLAG_COMPARE_RHS))
         assign_stmt = HLILAssign(HLILVar(global_var), condition)
         if_stmt = HLILIf(
@@ -475,12 +475,12 @@ class TestBooleanTempInliningPreservesGlobals(unittest.TestCase):
 
 
 class TestRedundantElseAssignRejectsRegisterDiscriminants(unittest.TestCase):
-    '''_remove_redundant_else_assign rejects a REG-kind discriminant outright: a register still REG-kind at this layer
-    was never resolved to a value, so it is no safe reload source, and the else arm keeps its assignment.'''
+    """_remove_redundant_else_assign rejects a REG-kind discriminant outright: a register still REG-kind at this layer
+    was never resolved to a value, so it is no safe reload source, and the else arm keeps its assignment."""
 
     def test_else_arm_assignment_survives(self):
-        '''r = 2; if (r == 1) {...} else {r = 2; if (r == 2) {...}} - for a local the reload would go'''
-        reg = HLILVariable(None, kind = VariableKind.REG, index = 1)
+        """r = 2; if (r == 1) {...} else {r = 2; if (r == 2) {...}} - for a local the reload would go"""
+        reg = HLILVariable(None, kind=VariableKind.REG, index=1)
         reaching_assign = HLILAssign(HLILVar(reg), HLILConst(SECOND_CASE_VALUE))
         reload_assign = HLILAssign(HLILVar(reg), HLILConst(SECOND_CASE_VALUE))
         inner_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, HLILVar(reg), HLILConst(SECOND_CASE_VALUE)),
@@ -496,8 +496,8 @@ class TestRedundantElseAssignRejectsRegisterDiscriminants(unittest.TestCase):
 
 
 class TestBooleanTempInliningSwitchCaseLabelIsARead(unittest.TestCase):
-    '''A boolean temp referenced as a switch CASE LABEL (not just in a case body) must
-    count as a read - the walker has to scan case.values, not just case.body.'''
+    """A boolean temp referenced as a switch CASE LABEL (not just in a case body) must
+    count as a read - the walker has to scan case.values, not just case.body."""
 
     def test_var_read_as_a_switch_case_label_blocks_deletion(self):
         assign_stmt = make_flag_assign()
@@ -515,8 +515,8 @@ class TestBooleanTempInliningSwitchCaseLabelIsARead(unittest.TestCase):
 
 
 class TestBooleanTempInliningSwitchWithoutDefaultDoesNotHideAReadingPath(unittest.TestCase):
-    '''A switch with no default case has an implicit "nothing matched" path where var keeps
-    its original value - a read reachable after such a switch must still count as a read.'''
+    """A switch with no default case has an implicit "nothing matched" path where var keeps
+    its original value - a read reachable after such a switch must still count as a read."""
 
     def test_read_after_switch_with_no_default_blocks_deletion(self):
         assign_stmt = make_flag_assign()
@@ -539,10 +539,10 @@ class TestBooleanTempInliningSwitchWithoutDefaultDoesNotHideAReadingPath(unittes
 
 
 class TestBooleanTempInliningCaseLabelInsideTheIfItself(unittest.TestCase):
-    '''A switch case LABEL that reads the boolean temp, nested inside the very if being
+    """A switch case LABEL that reads the boolean temp, nested inside the very if being
     considered for inlining, must be seen by _can_read_original_value directly - it is not
     covered by _var_read_elsewhere, which deliberately excludes next_stmt entirely (its
-    branches are meant to already be fully checked by _can_read_original_value first).'''
+    branches are meant to already be fully checked by _can_read_original_value first)."""
 
     def test_case_label_read_inside_the_if_blocks_deletion(self):
         assign_stmt = make_flag_assign()
@@ -563,9 +563,9 @@ class TestBooleanTempInliningCaseLabelInsideTheIfItself(unittest.TestCase):
 
 
 class TestRedundantElseAssignRejectsSelfReference(unittest.TestCase):
-    '''x = x textually matches any earlier x = x, but re-evaluating a self-referential source
+    """x = x textually matches any earlier x = x, but re-evaluating a self-referential source
     does not prove the same value was ever produced twice - must always refuse, independent
-    of any reaching definition.'''
+    of any reaching definition."""
 
     def test_self_referential_source_is_not_removed(self):
         inner_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock())
@@ -581,10 +581,10 @@ class TestRedundantElseAssignRejectsSelfReference(unittest.TestCase):
 
 
 class TestRedundantElseAssignRejectsUnstableSourceKinds(unittest.TestCase):
-    '''A global can change across a call while still rendering under the identical name at
+    """A global can change across a call while still rendering under the identical name at
     this layer; a variable still REG-kind here means SSA never resolved it to a concrete
     value. Neither is a provably-stable reload source, regardless of any reaching assignment
-    that would otherwise look sufficient.'''
+    that would otherwise look sufficient."""
 
     def build_with_source(self, source_var: HLILVariable) -> tuple:
         reaching_load = HLILAssign(make_var(), HLILVar(source_var))
@@ -599,7 +599,7 @@ class TestRedundantElseAssignRejectsUnstableSourceKinds(unittest.TestCase):
         return func.body.statements[1].false_block.statements
 
     def test_global_source_is_not_removed_even_with_a_reaching_assignment(self):
-        global_var = HLILVariable(None, kind = VariableKind.GLOBAL, index = 7)
+        global_var = HLILVariable(None, kind=VariableKind.GLOBAL, index=7)
         reaching_load, first_if = self.build_with_source(global_var)
 
         else_stmts = self.run_and_get_else_stmts(reaching_load, first_if)
@@ -608,7 +608,7 @@ class TestRedundantElseAssignRejectsUnstableSourceKinds(unittest.TestCase):
         self.assertIsInstance(else_stmts[0], HLILAssign)
 
     def test_register_source_is_not_removed_even_with_a_reaching_assignment(self):
-        reg_var = HLILVariable(None, kind = VariableKind.REG, index = 3)
+        reg_var = HLILVariable(None, kind=VariableKind.REG, index=3)
         reaching_load, first_if = self.build_with_source(reg_var)
 
         else_stmts = self.run_and_get_else_stmts(reaching_load, first_if)
@@ -618,10 +618,10 @@ class TestRedundantElseAssignRejectsUnstableSourceKinds(unittest.TestCase):
 
 
 class TestRedundantElseAssignRequiresConstantConditions(unittest.TestCase):
-    '''The pattern only ever means something as a literal switch-style discriminant test - a
+    """The pattern only ever means something as a literal switch-style discriminant test - a
     call embedded in either condition's RHS (whose side effect could change the reload's
     source between the reaching assignment and the reload itself) must not be silently
-    assumed away.'''
+    assumed away."""
 
     def test_outer_condition_with_non_constant_rhs_is_not_removed(self):
         reaching_load = HLILAssign(make_var(), HLILConst(SECOND_CASE_VALUE))
@@ -653,8 +653,8 @@ class TestRedundantElseAssignRequiresConstantConditions(unittest.TestCase):
 
 
 class TestReachingAssignmentExistsModificationBarriers(unittest.TestCase):
-    '''Direct tests of _reaching_assignment_exists: a reaching candidate only counts if
-    nothing between it and the use point modifies the destination or the source.'''
+    """Direct tests of _reaching_assignment_exists: a reaching candidate only counts if
+    nothing between it and the use point modifies the destination or the source."""
 
     def test_outer_var_reassigned_after_the_candidate_blocks_the_match(self):
         selector = HLILVariable('selector')
@@ -691,9 +691,9 @@ class TestReachingAssignmentExistsModificationBarriers(unittest.TestCase):
 
 
 class TestSourceMatchesDistinguishesIntFromFloat(unittest.TestCase):
-    '''Mirrors pass_reg_global_propagation.py's established _expr_equal contract: int and
+    """Mirrors pass_reg_global_propagation.py's established _expr_equal contract: int and
     float constants are distinct representations even at equal numeric value, and NaN
-    compares equal to itself.'''
+    compares equal to itself."""
 
     def test_int_and_float_same_value_do_not_match(self):
         self.assertFalse(ControlFlowOptimizationPass()._source_matches(HLILConst(1), HLILConst(1.0)))
@@ -712,7 +712,7 @@ SOURCE_MARKER_VALUE = 42
 
 
 class TestRedundantElseAssignChainInteractionWithSwitchConversion(unittest.TestCase):
-    '''A genuine reload chain (each link reloads the scrutinee from the same constant source
+    """A genuine reload chain (each link reloads the scrutinee from the same constant source
     before testing the next value) is the actual motivating shape for this optimization.
     Exactly 3 links is the base case both this function and switch-conversion were designed
     around. A 4th link changes the outcome: _optimize_block recurses into false_block before
@@ -722,7 +722,7 @@ class TestRedundantElseAssignChainInteractionWithSwitchConversion(unittest.TestC
     HLILIf, so the pattern no longer matches and that one reload survives. This is a real,
     deliberate optimization-coverage tradeoff from scoping the reaching-definition search to
     the current block only (never crossing into an already-restructured continuation) - not a
-    correctness bug, but documented here rather than left silently unasserted.'''
+    correctness bug, but documented here rather than left silently unasserted."""
 
     def build_reload_chain(self, num_links: int) -> tuple:
         source = HLILConst(SOURCE_MARKER_VALUE)
@@ -786,16 +786,16 @@ def read_original(var: HLILVariable, node) -> tuple:
 
 
 class TestExitPathsSurviveAnAsymmetricBranch(unittest.TestCase):
-    '''A break/continue on one arm of an if rejoins at a real location further out, so it
+    """A break/continue on one arm of an if rejoins at a real location further out, so it
     must survive even when the other arm falls through instead. Collapsing the subtree into
     a single "did every path exit" answer discarded it, letting a kill on the falling-through
-    arm hide a read that the exiting path genuinely reaches with the original value.'''
+    arm hide a read that the exiting path genuinely reaches with the original value."""
 
     def _conditional_break_then_kill(self, break_stmt: HLILBreak, loop_label) -> HLILBlock:
         var = make_tracked()
         guarded_break = HLILIf(make_guard(), HLILBlock([break_stmt]), None)
         body = HLILBlock([guarded_break, make_kill(var)])
-        loop = HLILDoWhile(make_guard(), body, label = loop_label)
+        loop = HLILDoWhile(make_guard(), body, label=loop_label)
         return HLILBlock([loop, HLILReturn(HLILVar(var))])
 
     def test_bare_conditional_break_past_a_kill_keeps_the_later_read_visible(self):
@@ -804,15 +804,15 @@ class TestExitPathsSurviveAnAsymmetricBranch(unittest.TestCase):
         self.assertTrue(reads)
 
     def test_labeled_conditional_break_past_a_kill_keeps_the_later_read_visible(self):
-        block = self._conditional_break_then_kill(HLILBreak(label = OUTER_LABEL), OUTER_LABEL)
+        block = self._conditional_break_then_kill(HLILBreak(label=OUTER_LABEL), OUTER_LABEL)
         reads, _, _ = read_original(make_tracked(), block)
         self.assertTrue(reads)
 
     def test_labeled_conditional_continue_past_a_kill_keeps_the_later_read_visible(self):
         var = make_tracked()
-        guarded = HLILIf(make_guard(), HLILBlock([HLILContinue(label = OUTER_LABEL)]), None)
+        guarded = HLILIf(make_guard(), HLILBlock([HLILContinue(label=OUTER_LABEL)]), None)
         body = HLILBlock([guarded, make_kill(var)])
-        loop = HLILDoWhile(make_guard(), body, label = OUTER_LABEL)
+        loop = HLILDoWhile(make_guard(), body, label=OUTER_LABEL)
 
         reads, _, _ = read_original(var, HLILBlock([loop, HLILReturn(HLILVar(var))]))
 
@@ -822,16 +822,16 @@ class TestExitPathsSurviveAnAsymmetricBranch(unittest.TestCase):
 
 
 class TestExitPathsAreAbsorbedByTheConstructThatOwnsThem(unittest.TestCase):
-    '''A bare break belongs to the nearest enclosing loop or switch; a labeled one belongs
-    only to the loop carrying that label and passes through everything in between.'''
+    """A bare break belongs to the nearest enclosing loop or switch; a labeled one belongs
+    only to the loop carrying that label and passes through everything in between."""
 
     def test_labeled_break_passes_through_a_differently_labeled_inner_loop(self):
         var = make_tracked()
         mixed = HLILIf(make_guard(),
-                       HLILBlock([HLILBreak(label = OUTER_LABEL)]),
+                       HLILBlock([HLILBreak(label=OUTER_LABEL)]),
                        HLILBlock([HLILReturn(None)]))
-        inner = HLILDoWhile(make_guard(), HLILBlock([mixed]), label = INNER_LABEL)
-        outer = HLILDoWhile(make_guard(), HLILBlock([inner, make_kill(var)]), label = OUTER_LABEL)
+        inner = HLILDoWhile(make_guard(), HLILBlock([mixed]), label=INNER_LABEL)
+        outer = HLILDoWhile(make_guard(), HLILBlock([inner, make_kill(var)]), label=OUTER_LABEL)
 
         reads, _, _ = read_original(var, HLILBlock([outer, HLILReturn(HLILVar(var))]))
 
@@ -840,8 +840,8 @@ class TestExitPathsAreAbsorbedByTheConstructThatOwnsThem(unittest.TestCase):
 
     def test_labeled_break_passes_through_an_intervening_while(self):
         var = make_tracked()
-        inner = HLILWhile(make_guard(), HLILBlock([HLILBreak(label = OUTER_LABEL)]))
-        outer = HLILDoWhile(make_guard(), HLILBlock([inner, make_kill(var)]), label = OUTER_LABEL)
+        inner = HLILWhile(make_guard(), HLILBlock([HLILBreak(label=OUTER_LABEL)]))
+        outer = HLILDoWhile(make_guard(), HLILBlock([inner, make_kill(var)]), label=OUTER_LABEL)
 
         reads, _, _ = read_original(var, HLILBlock([outer, HLILReturn(HLILVar(var))]))
 
@@ -849,11 +849,11 @@ class TestExitPathsAreAbsorbedByTheConstructThatOwnsThem(unittest.TestCase):
 
     def test_labeled_break_crosses_three_nested_loops_to_its_own_owner(self):
         var = make_tracked()
-        innermost = HLILDoWhile(make_guard(), HLILBlock([HLILBreak(label = OUTER_LABEL)]),
-                                 label = INNER_LABEL)
+        innermost = HLILDoWhile(make_guard(), HLILBlock([HLILBreak(label=OUTER_LABEL)]),
+                                 label=INNER_LABEL)
         middle = HLILDoWhile(make_guard(), HLILBlock([innermost, make_kill(var)]),
-                              label = MIDDLE_LABEL)
-        outer = HLILDoWhile(make_guard(), HLILBlock([middle, make_kill(var)]), label = OUTER_LABEL)
+                              label=MIDDLE_LABEL)
+        outer = HLILDoWhile(make_guard(), HLILBlock([middle, make_kill(var)]), label=OUTER_LABEL)
 
         reads, _, _ = read_original(var, HLILBlock([outer, HLILReturn(HLILVar(var))]))
 
@@ -861,7 +861,7 @@ class TestExitPathsAreAbsorbedByTheConstructThatOwnsThem(unittest.TestCase):
 
     def test_a_label_matching_nothing_passes_all_the_way_out(self):
         var = make_tracked()
-        loop = HLILDoWhile(make_guard(), HLILBlock([HLILBreak(label = 'nowhere')]), label = INNER_LABEL)
+        loop = HLILDoWhile(make_guard(), HLILBlock([HLILBreak(label='nowhere')]), label=INNER_LABEL)
 
         _, fallthrough, exits = read_original(var, loop)
 
@@ -893,8 +893,8 @@ class TestExitPathsAreAbsorbedByTheConstructThatOwnsThem(unittest.TestCase):
 
 
 class TestSwitchFallthroughAccounting(unittest.TestCase):
-    '''A case that merely breaks reaches the code after the switch; only a case that
-    genuinely returns (or jumps further out) keeps that code unreachable.'''
+    """A case that merely breaks reaches the code after the switch; only a case that
+    genuinely returns (or jumps further out) keeps that code unreachable."""
 
     def test_switch_of_bare_breaks_does_not_hide_a_following_read(self):
         var = make_tracked()
@@ -922,10 +922,10 @@ class TestSwitchFallthroughAccounting(unittest.TestCase):
     def test_escaping_case_survives_alongside_a_killing_case(self):
         var = make_tracked()
         escaping = HLILSwitchCase([HLILConst(FIRST_LABEL_VALUE)],
-                                   HLILBlock([HLILBreak(label = OUTER_LABEL)]))
+                                   HLILBlock([HLILBreak(label=OUTER_LABEL)]))
         killing = HLILSwitchCase(None, HLILBlock([make_kill(var), HLILBreak()]))
         switch_stmt = HLILSwitch(make_guard(), [escaping, killing])
-        loop = HLILDoWhile(make_guard(), HLILBlock([switch_stmt]), label = OUTER_LABEL)
+        loop = HLILDoWhile(make_guard(), HLILBlock([switch_stmt]), label=OUTER_LABEL)
 
         reads, _, _ = read_original(var, HLILBlock([loop, HLILReturn(HLILVar(var))]))
 
@@ -945,8 +945,8 @@ class TestSwitchFallthroughAccounting(unittest.TestCase):
 
 
 class TestReturnValueIsStillARead(unittest.TestCase):
-    '''A return exits, but its value expression is evaluated first - dropping that read
-    would let the assignment feeding it be deleted while the reference stayed behind.'''
+    """A return exits, but its value expression is evaluated first - dropping that read
+    would let the assignment feeding it be deleted while the reference stayed behind."""
 
     def test_returned_variable_counts_as_a_read(self):
         var = make_tracked()
@@ -974,9 +974,9 @@ class TestReturnValueIsStillARead(unittest.TestCase):
 
 
 class TestFallthroughIsThreeValued(unittest.TestCase):
-    '''None (structurally cannot fall through), False (falls through, var intact) and True
+    """None (structurally cannot fall through), False (falls through, var intact) and True
     (falls through, var killed) are three distinct answers - a truthiness test would
-    conflate None with False and silently resurrect the discarding bug.'''
+    conflate None with False and silently resurrect the discarding bug."""
 
     def test_plain_statements_fall_through_without_killing(self):
         var = make_tracked()
@@ -1003,7 +1003,7 @@ class TestFallthroughIsThreeValued(unittest.TestCase):
 
     def test_a_loop_whose_every_path_exits_cannot_fall_through(self):
         var = make_tracked()
-        loop = HLILDoWhile(make_guard(), HLILBlock([HLILReturn(None)]), label = None)
+        loop = HLILDoWhile(make_guard(), HLILBlock([HLILReturn(None)]), label=None)
 
         _, fallthrough, _ = read_original(var, loop)
 
@@ -1011,7 +1011,7 @@ class TestFallthroughIsThreeValued(unittest.TestCase):
 
     def test_statements_after_a_non_falling_through_loop_are_not_scanned(self):
         var = make_tracked()
-        loop = HLILDoWhile(make_guard(), HLILBlock([HLILReturn(None)]), label = None)
+        loop = HLILDoWhile(make_guard(), HLILBlock([HLILReturn(None)]), label=None)
         block = HLILBlock([loop, HLILReturn(HLILVar(var))])
 
         reads, _, _ = read_original(var, block)
@@ -1030,9 +1030,9 @@ class TestFallthroughIsThreeValued(unittest.TestCase):
 
 
 class TestConservativeLoopFallthroughIsIntentional(unittest.TestCase):
-    '''Conditions are never interpreted, so a constant-true loop still reports a
+    """Conditions are never interpreted, so a constant-true loop still reports a
     fallthrough it can never really take. That only keeps an assignment alive needlessly -
-    it cannot hide a read - and avoiding it would mean proving loop termination here.'''
+    it cannot hide a read - and avoiding it would mean proving loop termination here."""
 
     def test_constant_true_while_still_reports_a_fallthrough(self):
         var = make_tracked()
@@ -1044,7 +1044,7 @@ class TestConservativeLoopFallthroughIsIntentional(unittest.TestCase):
 
     def test_constant_true_do_while_still_reports_a_fallthrough(self):
         var = make_tracked()
-        loop = HLILDoWhile(HLILConst(1), HLILBlock([HLILExprStmt(HLILCall('work', []))]), label = None)
+        loop = HLILDoWhile(HLILConst(1), HLILBlock([HLILExprStmt(HLILCall('work', []))]), label=None)
 
         _, fallthrough, _ = read_original(var, loop)
 
@@ -1052,7 +1052,7 @@ class TestConservativeLoopFallthroughIsIntentional(unittest.TestCase):
 
     def test_a_break_skipping_the_condition_is_not_treated_as_reading_it(self):
         var = make_tracked()
-        loop = HLILDoWhile(HLILVar(var), HLILBlock([HLILBreak()]), label = None)
+        loop = HLILDoWhile(HLILVar(var), HLILBlock([HLILBreak()]), label=None)
 
         reads, _, _ = read_original(var, loop)
 
@@ -1063,15 +1063,15 @@ class TestConservativeLoopFallthroughIsIntentional(unittest.TestCase):
 
 
 class TestLoopConditionSeesEveryArrivingState(unittest.TestCase):
-    '''A continue rejoins the bottom check carrying its own killed-state. If only the
+    """A continue rejoins the bottom check carrying its own killed-state. If only the
     falling-through state were used, a read in the condition reachable solely via the
-    continue would be missed.'''
+    continue would be missed."""
 
     def test_condition_read_reachable_only_through_a_continue_is_found(self):
         var = make_tracked()
         early_continue = HLILIf(make_guard(), HLILBlock([HLILContinue()]), None)
         body = HLILBlock([early_continue, make_kill(var)])
-        loop = HLILDoWhile(HLILVar(var), body, label = None)
+        loop = HLILDoWhile(HLILVar(var), body, label=None)
 
         reads, _, _ = read_original(var, loop)
 
@@ -1081,9 +1081,9 @@ class TestLoopConditionSeesEveryArrivingState(unittest.TestCase):
 
 
 class TestKilledStateIsMonotonic(unittest.TestCase):
-    '''Analyzing any node with killed=True must never produce a surviving killed=False
+    """Analyzing any node with killed=True must never produce a surviving killed=False
     state. The loop summary relies on this to close after a bounded number of rounds, so a
-    future node type that broke it would silently invalidate that reasoning.'''
+    future node type that broke it would silently invalidate that reasoning."""
 
     def _representative_nodes(self, var: HLILVariable) -> list:
         guarded_break = HLILIf(make_guard(), HLILBlock([HLILBreak()]), None)
@@ -1095,7 +1095,7 @@ class TestKilledStateIsMonotonic(unittest.TestCase):
             HLILBlock([make_kill(var), HLILExprStmt(HLILCall('work', []))]),
             HLILIf(make_guard(), HLILBlock([make_kill(var)]), HLILBlock()),
             HLILWhile(make_guard(), HLILBlock([guarded_break, make_kill(var)])),
-            HLILDoWhile(make_guard(), HLILBlock([guarded_break, make_kill(var)]), label = OUTER_LABEL),
+            HLILDoWhile(make_guard(), HLILBlock([guarded_break, make_kill(var)]), label=OUTER_LABEL),
             switch_stmt,
             HLILBlock([switch_stmt, HLILReturn(HLILVar(var))]),
         ]
@@ -1121,7 +1121,7 @@ STORED_THROUGH_ADDRESS = 7
 
 
 class TestBooleanTempStaysWhileTheBodyReadsItAfterAnInnerIf(unittest.TestCase):
-    '''flag = a < b; if (flag != 0) { if (g) { x(); } use(flag); } - use(flag) still reads flag'''
+    """flag = a < b; if (flag != 0) { if (g) { x(); } use(flag); } - use(flag) still reads flag"""
 
     def test_assignment_is_kept(self):
         flag = HLILVariable('flag')
@@ -1175,10 +1175,10 @@ class TestChainKeepsTheCommentsBeforeItsLinks(unittest.TestCase):
         self.assertEqual([[str(stmt) for stmt in case.body.statements] for case in switch_stmt.cases], expected)
 
     def test_a_comment_after_the_rest_of_the_chain_keeps_it_an_if(self):
-        '''The rest is still an if (2 more tests) or already a switch (3): either way the comment stays after it'''
+        """The rest is still an if (2 more tests) or already a switch (3): either way the comment stays after it"""
         for values in ((FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE),
                        (FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE, FOURTH_CASE_VALUE)):
-            with self.subTest(tests = len(values)):
+            with self.subTest(tests=len(values)):
                 first, second, *_ = values
                 after = line_comment(AFTER_CHAIN_LINE)
                 else_arm = HLILBlock([line_comment(second), make_marked_chain(*values[1:]), after])
@@ -1192,7 +1192,7 @@ class TestChainKeepsTheCommentsBeforeItsLinks(unittest.TestCase):
 
 
 class TestRedundantReloadStaysWhenAnAddressTakenWriteIntervenes(unittest.TestCase):
-    '''x = 5; *(&x) = 7; if (x == 1) {..} else { x = 5; if (x == 2) {..} }: x is no longer 5 in the else'''
+    """x = 5; *(&x) = 7; if (x == 1) {..} else { x = 5; if (x == 2) {..} }: x is no longer 5 in the else"""
 
     def test_reload_after_a_store_through_the_address_is_kept(self):
         x = HLILVariable('x')

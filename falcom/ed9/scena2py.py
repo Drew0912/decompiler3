@@ -37,9 +37,11 @@ COMMON_FUNCTIONS_OMITTED_COMMENT = (
     '# common function definitions that are not present in this file.'
 )
 
+
 def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *, comments: CommentOptions = CommentOptions(), common_functions_omitted: bool = False) -> None:
     preamble = [*COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines(), ''] if common_functions_omitted else []
-    write_text_lf(out_path, parser.gen_python_script(functions, preamble = preamble, comments = comments))
+    write_text_lf(out_path, parser.gen_python_script(functions, preamble=preamble, comments=comments))
+
 
 def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
     """A starting <stem>_hook.py next to the .py, never over an existing file"""
@@ -50,11 +52,11 @@ def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
 
     path = output_dir / f'{module}.py'
     try:
-        with open(path, 'x', encoding = 'utf-8', newline = '\n') as f:
+        with open(path, 'x', encoding='utf-8', newline='\n') as f:
             f.write(parser.gen_hook_template())
-
     except FileExistsError:
         log.info(f'{path} exists - not overwritten')
+
 
 @infrequent_gc()
 def process_file(path: Path, config: ScenaDecompileConfig) -> None:
@@ -63,23 +65,23 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     output_dir = config.output_dir / path.stem
     out = output_dir / path.name
 
-    parser, functions = ScpParser.load(path, round_trip = config.round_trip, keep_unreachable_code = config.keep_unreachable_code, filter_func = config.filter_func)
+    parser, functions = ScpParser.load(path, round_trip=config.round_trip, keep_unreachable_code=config.keep_unreachable_code, filter_func=config.filter_func)
 
     common_functions_omitted = not config.include_common_functions
     if common_functions_omitted:
         functions = [func for func in functions if not func.is_common_func]
 
     # Only create the output folder once parsing has actually produced something to write
-    output_dir.mkdir(parents = True, exist_ok = True)
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     if config.write_py:
         comments = CommentOptions(
-            stack_slots     = config.stack_slot_comments,
-            float_bits      = config.float_bits_comments,
-            function_ids    = config.function_id_comments,
-            call_args       = config.call_arg_comments,
+            stack_slots=config.stack_slot_comments,
+            float_bits=config.float_bits_comments,
+            function_ids=config.function_id_comments,
+            call_args=config.call_arg_comments,
         )
-        write_python_dsl(parser, functions, out.with_suffix('.py'), comments = comments, common_functions_omitted = common_functions_omitted)
+        write_python_dsl(parser, functions, out.with_suffix('.py'), comments=comments, common_functions_omitted=common_functions_omitted)
         if config.write_hook_template:
             write_hook_template(parser, output_dir)
 
@@ -89,13 +91,15 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     if config.write_debug_info:
         write_listing(path, out.with_suffix('.debug.txt'), config.debug_sections, {func.index for func in functions})
 
+
 def callee_default_values(parser: ScpParser) -> dict[str, tuple]:
     """Each function's parameter defaults (None: none) as the IR holds them, by name - the values its .ts signature
     prints; no type lookup, so a function the outputs skip can't fail it"""
-    lifter = ED9VMLifter(parser = parser)
+    lifter = ED9VMLifter(parser=parser)
     return {func.name: tuple(lifter.source_value(param.default_value.value) if param.default_value is not None else None
                              for param in func.params)
             for func in parser.functions}
+
 
 def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScenaDecompileConfig, out: Path) -> None:
     """The .llil.asm, .mlil.asm, .hlil.ts, .ts and .dot outputs the config asks for"""
@@ -116,7 +120,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
 
     for func in functions:
         try:
-            llil_func = ED9VMLifter(parser = parser).lift_function(func)
+            llil_func = ED9VMLifter(parser=parser).lift_function(func)
 
             if config.write_llil_asm:
                 llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
@@ -128,7 +132,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if not need_mlil:
                 continue
 
-            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = config.optimize_mlil, infer_types = config.infer_types)
+            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize=config.optimize_mlil, infer_types=config.infer_types)
 
             if config.write_mlil_asm:
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
@@ -139,7 +143,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if not (config.write_hlil_ts or config.write_ts):
                 continue
 
-            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func, line_markers = config.line_markers)
+            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func, line_markers=config.line_markers)
 
             unstructured_targets = [stmt.target for stmt in reachable_statements(hlil_func.body)
                                     if isinstance(stmt, HLILUnstructured)]
@@ -152,7 +156,6 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
 
             if config.write_ts:
                 ts_chunks.append(generate_typescript(hlil_func, callee_defaults, func.call_written_argc))
-
         except Exception as e:
             # One bad function shouldn't lose the rest of the file's output
             log.warning(f'{path} [{func.name}]: {type(e).__name__}: {e}')
@@ -169,10 +172,11 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
     if config.write_ts:
         write_text_lf(out.with_suffix('.ts'), generate_typescript_header() + '\n'.join(ts_chunks))
 
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description = 'Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
-    parser.add_argument('paths', nargs = '+', help = '.dat files or directories (searched recursively)')
-    parser.add_argument('-o', '--output-dir', type = Path, help = "output folder (default: scena2py_config.py's output_dir)")
+    parser = argparse.ArgumentParser(description='Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
+    parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
+    parser.add_argument('-o', '--output-dir', type=Path, help="output folder (default: scena2py_config.py's output_dir)")
 
     args = parser.parse_args()
     files = collect_paths(args.paths)
@@ -186,7 +190,6 @@ def main() -> int:
 
         try:
             process_file(path, config)
-
         except Exception as e:
             log.error(f'{path}: {type(e).__name__}: {e}')
             failures += 1

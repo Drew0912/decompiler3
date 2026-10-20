@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for the common-function fingerprint (falcom/ed9/metadata/fingerprint.py): real common functions,
-branch targets by where they land and relative to the function, global operands by name'''
+"""Unit tests for the common-function fingerprint (falcom/ed9/metadata/fingerprint.py): real common functions,
+branch targets by where they land and relative to the function, global operands by name"""
 
 from pathlib import Path
 import sys
@@ -23,18 +23,18 @@ OTHER_BASE = 0x40
 
 
 def load_function(relative_path: str, name: str):
-    '''(parser, function) for one common function of a local sora2_1.0 script, decompiled like scena2py.py'''
+    """(parser, function) for one common function of a local sora2_1.0 script, decompiled like scena2py.py"""
     path = require(SORA2_SCRIPTS / relative_path)
-    parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False,
-                                       filter_func = lambda f: f.name == name)
+    parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False,
+                                       filter_func=lambda f: f.name == name)
     return parser, functions[0]
 
 
 def reachable_instructions(bytecode: bytes, offset: int = 0) -> list[Instruction]:
-    '''Disassemble hand-coded bytecode from offset; reachable instructions in offset order, like
-    ScpParser.get_instructions'''
-    context = DisassemblerContext(create_fallthrough_jump = ed9_create_fallthrough_jump)
-    entry_block = Disassembler(ED9_INSTRUCTION_TABLE, context).disasm_function(bytecode, offset = offset, name = 'test')
+    """Disassemble hand-coded bytecode from offset; reachable instructions in offset order, like
+    ScpParser.get_instructions"""
+    context = DisassemblerContext(create_fallthrough_jump=ed9_create_fallthrough_jump)
+    entry_block = Disassembler(ED9_INSTRUCTION_TABLE, context).disasm_function(bytecode, offset=offset, name='test')
 
     return Formatter.reachable_instructions(entry_block)
 
@@ -48,7 +48,7 @@ def no_globals(index: int) -> None:
 
 
 def branch_bytecode(target: str) -> bytes:
-    '''Same instructions every time; only where POP_JMP_ZERO lands changes'''
+    """Same instructions every time; only where POP_JMP_ZERO lands changes"""
     asm = Asm()
     asm.get_reg(REG_INDEX); asm.jz(target)
     asm.push_int(1); asm.label('set_reg'); asm.set_reg(REG_INDEX)
@@ -57,7 +57,7 @@ def branch_bytecode(target: str) -> bytes:
 
 
 class TestCorpusFingerprints(unittest.TestCase):
-    '''Real common functions from sora2_1.0'''
+    """Real common functions from sora2_1.0"""
 
     def test_same_function_in_two_scripts_matches(self):
         # Branches and CALLs at different offsets: the raw bytes differ, the function doesn't
@@ -86,7 +86,7 @@ class TestCorpusFingerprints(unittest.TestCase):
 
 
 class TestBranchDestination(unittest.TestCase):
-    '''A branch target must be identified by where it lands, not just by which label it is'''
+    """A branch target must be identified by where it lands, not just by which label it is"""
 
     def test_branch_landing_one_instruction_later_differs(self):
         to_set_reg = reachable_instructions(branch_bytecode('set_reg'))
@@ -101,11 +101,11 @@ class TestBranchDestination(unittest.TestCase):
 
 
 class TestUnresolvedBranch(unittest.TestCase):
-    '''A target that is not a reachable instruction start is keyed relative to the function'''
+    """A target that is not a reachable instruction start is keyed relative to the function"""
 
     @classmethod
     def pruned(cls, base: int) -> list[Instruction]:
-        '''The jump's function at base, without the instruction the jump lands on'''
+        """The jump's function at base, without the instruction the jump lands on"""
         asm = Asm()
         asm.get_reg(REG_INDEX); asm.jz('landing')
         asm.push_int(1); asm.label('landing'); asm.set_reg(REG_INDEX)
@@ -114,7 +114,7 @@ class TestUnresolvedBranch(unittest.TestCase):
         return [inst for inst in reachable_instructions(bytes(base) + code, base) if inst.offset != labels['landing']]
 
     def test_target_is_relative_to_the_function(self):
-        '''One function at two offsets: the raw targets differ, the fingerprint doesn't'''
+        """One function at two offsets: the raw targets differ, the fingerprint doesn't"""
         at_zero = body_fingerprint(self.pruned(0), 0, no_calls, no_globals)
         at_offset = body_fingerprint(self.pruned(OTHER_BASE), OTHER_BASE, no_calls, no_globals)
 
@@ -130,7 +130,7 @@ class TestGlobalOperands(unittest.TestCase):
         return body_fingerprint(reachable_instructions(asm.assemble(0, {})[0]), 0, no_calls, global_name)
 
     def test_named_global_is_keyed_by_name_not_index(self):
-        '''The same function in two scripts that number the global differently has one fingerprint'''
+        """The same function in two scripts that number the global differently has one fingerprint"""
         keys = [self.fingerprint(index, lambda i: 'flag') for index in (GLOBAL_INDEX, OTHER_GLOBAL_INDEX)]
 
         self.assertEqual(keys[0], keys[1])

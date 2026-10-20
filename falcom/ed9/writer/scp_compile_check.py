@@ -26,6 +26,7 @@ STACK_ENTRY = re.compile(r'@0x([0-9A-F]+)\b')
 class SourceSite(NamedTuple):
     """Where a body emitted an opcode: the body's code and the bytecode offset of the call in it. An opcode an opcode
     callback emitted is the callback's, with the site of the opcode that triggered it"""
+
     code: CodeType
     lasti: int
     trigger: 'SourceSite | None' = None
@@ -37,6 +38,7 @@ class CompileCheckError(ValueError):
 
 class CheckedFunction(NamedTuple):
     """A compiled function as the check needs it"""
+
     name: str
     offset: int         # file offset of its code
     body: Callable      # for its def line, looked up only on a failure or warning
@@ -63,7 +65,6 @@ class CompileCheck:
         after it, and last, with warn_unreachable_code, a warning per range of code no path reaches."""
         try:
             parser, parsed_functions = require_decompilable(data, self.dat_name, code_end)
-
         except ScpFunctionError as e:
             notes = [self._run_on_note(e.function, e.runs_on)]
             notes += [self._failure_text(e.function, text, call)
@@ -71,7 +72,6 @@ class CompileCheck:
             text = self._with_entry_lines(str(e), e.function, e.offset)
             message = f'{self._failure_prefix(e.function, e.offset)}{text}'
             raise CompileCheckError('; '.join([message, *(note for note in notes if note)])) from e
-
         except Exception as e:
             raise CompileCheckError(f'{self.dat_name}: {e}') from e
 
@@ -123,11 +123,9 @@ class CompileCheck:
 
                 message = (f'reads {argc} {values}, but the POP after it pops {size // WORD_SIZE} (POP({size})) - '
                            'is its argc stale?')
-
             elif argc:
                 message = (f'reads {argc} {values}, but the next opcode is {follower.mnemonic}, '
                            f'not POP({argc * WORD_SIZE})')
-
             else:
                 continue
 
@@ -147,11 +145,10 @@ class CompileCheck:
             where = f'at 0x{start:X}..0x{end:X}'
             if count == 1:
                 message = f'1 opcode {where} never runs (no path reaches it); the everyday decompile drops it'
-
             else:
                 message = f'{count} opcodes {where} never run (no path reaches them); the everyday decompile drops them'
 
-            log.warning(self._failure_text(owner, message, offset = start))
+            log.warning(self._failure_text(owner, message, offset=start))
 
     def _run_on_note(self, function_name: str | None, inst: Instruction | None) -> str | None:
         """How the function runs on into the next function's code, located: it has no code at all, or inst runs past
@@ -187,7 +184,6 @@ class CompileCheck:
         f = self.functions_by_name.get(function_name)
         if site is not None:
             failing_file = site.code.co_filename
-
         else:
             failing_file = f.body.__code__.co_filename if f is not None else None
 
@@ -220,12 +216,11 @@ def require_decompilable(data: bytes, name: str, code_end: int) -> tuple[ScpPars
     """Raise the parser's or the lifter's error when data, whose code ends at code_end, doesn't decompile again; return
     the quiet parse, whose warnings (run-ons, unusual slots, backward returns) the caller reports. Unreachable code is
     not simulated, and a stack that balances but reads the wrong slot passes."""
-    parser, functions = ScpParser.load_bytes(data, name, round_trip = False, keep_unreachable_code = False, quiet = True,
-                                             reject_outside_stack = True, known_code_end = code_end)
+    parser, functions = ScpParser.load_bytes(data, name, round_trip=False, keep_unreachable_code=False, quiet=True,
+                                             reject_outside_stack=True, known_code_end=code_end)
     for func in functions:
         try:
-            ED9VMLifter(parser = parser, spell_floats = False).lift_function(func)
-
+            ED9VMLifter(parser=parser, spell_floats=False).lift_function(func)
         except ED9LiftError as e:
             e.runs_on = func.runs_on
             e.backward_returns = func.backward_returns
@@ -278,7 +273,6 @@ def definition_line(code: CodeType) -> int:
                     return code.co_firstlineno + token.start[0] - 1
 
                 break
-
     except (tokenize.TokenError, SyntaxError, StopIteration):
         pass
 

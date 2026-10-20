@@ -144,18 +144,18 @@ global name - can't hold a NUL (the game ends the string there) or a lone surrog
 
 **Call-site debug records.** With `ScpWriter.round_trip` on (the default), every call made after a
 function's first `DEBUG_SET_LINENO` gets a debug record of its arguments, unless its `CALL` says
-`debug_record = False` (below). A local call's record keeps them
+`debug_record=False` (below). A local call's record keeps them
 up to the last one its author wrote, by the original compiler's rule: trailing constant arguments equal to
 the callee's defaults (the same type and stored word, a string by its text; the callee's final signature,
 hooks included) are left out. A call whose original record breaks the rule carries its count on the `CALL`
-- `CALL(chr_allow_controll, debug_argc = 2)` - which the round-trip `.py` (`ScpParser(round_trip=True)`)
+- `CALL(chr_allow_controll, debug_argc=2)` - which the round-trip `.py` (`ScpParser(round_trip=True)`)
 writes, dead code included: the parser pairs a function's records with every call the `.py` prints
 (`call_debug_records.pair_records`, shared with the listing and the validator; each pair content-checked),
 and a function whose records don't pair gets no `debug_argc` and a warning (`records not paired: ...`).
 The original compiler gives no record to a call whose statement has no line marker of its own (the first
 statement of an `if` body: `ai_chr5004p`, `ai_chr5106p`); with more calls than records the parser finds the
 one order-preserving alignment of records with calls (`align_records`; none or several: not paired), and
-each local call left over carries `CALL(btl_ai_skill, debug_record = False)` - no record, so a `debug_argc`
+each local call left over carries `CALL(btl_ai_skill, debug_record=False)` - no record, so a `debug_argc`
 beside it is unused. `debug_argc` must be an `int` (`CALL debug_argc is True (bool), not int`) and is used
 as given, `debug_record` a `bool`; opcode callbacks never see either, and they go with their `CALL` when one
 drops it. An everyday `.py` (decompiled with `ScpParser.round_trip` off: neither keyword) compiled with the
@@ -163,7 +163,7 @@ writer's default gets rule-trimmed
 records; `ScpWriter.round_trip = False` writes no records at all. `ScpWriter.round_trip` covers the other
 half of a byte-exact file too: on, the string pool is never deduplicated and is written in section order,
 as the original compiler wrote it; off, equal strings share one entry. Neither half changes the logic. An older
-round-trip `.py` with `@scena.LLILCode(debug_argc = {...})` stops at Python's `TypeError` there: decompile
+round-trip `.py` with `@scena.LLILCode(debug_argc={...})` stops at Python's `TypeError` there: decompile
 the `.dat` again.
 
 **The compile check** (`ScpWriter.check_compiled`, on by default; a script turns it off with

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Floats in the IR outputs (.llil.asm, .mlil.asm, .hlil.ts, .ts) print the .py's spelling: the lifter keeps the
-exact decoded value as a SourceFloat carrying the text. A plain float prints its exact repr.'''
+"""Floats in the IR outputs (.llil.asm, .mlil.asm, .hlil.ts, .ts) print the .py's spelling: the lifter keeps the
+exact decoded value as a SourceFloat carrying the text. A plain float prints its exact repr."""
 
 import copy
 import math
@@ -33,7 +33,7 @@ STORED_0_3 = 0.2999999523162842     # what 0.3 decodes to
 WORD_0_3   = 0x8FA66666
 
 # source_value reads no parser state, so any non-None parser satisfies the constructor
-LIFTER = ED9VMLifter(parser = object())
+LIFTER = ED9VMLifter(parser=object())
 
 
 class TestSourceFloat(unittest.TestCase):
@@ -50,13 +50,13 @@ class TestSourceFloat(unittest.TestCase):
     def test_arithmetic_gives_a_plain_float(self):
         value = SourceFloat(STORED_0_3, '0.3')
         for result in (value * 2, -value, value + 0):
-            with self.subTest(result = result):
+            with self.subTest(result=result):
                 self.assertIs(type(result), float)
 
     def test_copies_keep_the_text(self):
         value = SourceFloat(STORED_0_3, '0.3')
         for result in (copy.copy(value), copy.deepcopy(value), pickle.loads(pickle.dumps(value))):
-            with self.subTest(result = result):
+            with self.subTest(result=result):
                 self.assertIs(type(result), SourceFloat)
                 self.assertEqual(str(result), '0.3')
 
@@ -71,16 +71,16 @@ class TestLiftedFloat(unittest.TestCase):
 
     def test_other_values_stay_as_they_are(self):
         for value in (1, math.inf):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 self.assertIs(LIFTER.source_value(value), value)
 
 
 class TestPlainFloatPrintsExactly(unittest.TestCase):
-    '''A float without source text prints its exact repr: no rounding, never int-looking'''
+    """A float without source text prints its exact repr: no rounding, never int-looking"""
 
     def test_llil_mlil_hlil_ts(self):
         for value, text in ((STORED_0_3, '0.2999999523162842'), (1.0, '1.0'), (1e-07, '1e-07')):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 self.assertEqual(str(LowLevelILConst(value)), text)
                 self.assertEqual(str(MLILConst(value)), text)
                 self.assertEqual(HLILFormatter._format_expr(HLILConst(value)), text)
@@ -90,7 +90,7 @@ class TestPlainFloatPrintsExactly(unittest.TestCase):
         # TS has no literal for them; .hlil.ts is a listing and keeps Python's spelling
         for value, ts, hlil in ((math.inf, 'Infinity', 'inf'), (-math.inf, '-Infinity', '-inf'),
                                 (math.nan, 'NaN', 'nan')):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 self.assertEqual(TypeScriptGenerator._format_expr(HLILConst(value)), ts)
                 self.assertEqual(TypeScriptGenerator._format_default_value(value), ts)
                 self.assertEqual(HLILFormatter._format_expr(HLILConst(value)), hlil)
@@ -112,14 +112,14 @@ class TestConstantIdentity(unittest.TestCase):
     def test_optimizer_sees_a_changed_text_as_a_change(self):
         key = SSAOptimizer._structural_key(SourceFloat(STORED_0_3, '0.3'))
         for other in (STORED_0_3, SourceFloat(STORED_0_3), SourceFloat(STORED_0_3, '0.30')):
-            with self.subTest(other = repr(other)):
+            with self.subTest(other=repr(other)):
                 self.assertNotEqual(key, SSAOptimizer._structural_key(other))
 
 
 class TestLLILBitsComment(unittest.TestCase):
     def test_only_a_source_float_shows_bits(self):
-        source = LowLevelILStackStore(LowLevelILConst(SourceFloat(27.199996948242188, '27.2')), slot_index = 5)
-        plain = LowLevelILStackStore(LowLevelILConst(27.199996948242188), slot_index = 5)
+        source = LowLevelILStackStore(LowLevelILConst(SourceFloat(27.199996948242188, '27.2')), slot_index=5)
+        plain = LowLevelILStackStore(LowLevelILConst(27.199996948242188), slot_index=5)
 
         self.assertEqual(FalcomLLILFormatter._format_simplified(source),
                          ['STACK[sp] = 27.2 ; [5] f32 0x41D99998, raw 0x90766666'])
@@ -127,7 +127,7 @@ class TestLLILBitsComment(unittest.TestCase):
 
 
 class TestDecompiledFloats(unittest.TestCase):
-    '''End to end: compiled floats come back in every IR output spelled as in the .py'''
+    """End to end: compiled floats come back in every IR output spelled as in the .py"""
 
     @classmethod
     def setUpClass(cls):
@@ -163,13 +163,13 @@ class TestDecompiledFloats(unittest.TestCase):
             config.write_hlil_ts = True
             process_file(dat, config)
             out = config.output_dir / dat.stem
-            cls.outputs = {suffix: (out / f'{dat.stem}{suffix}').read_text(encoding = 'utf-8')
+            cls.outputs = {suffix: (out / f'{dat.stem}{suffix}').read_text(encoding='utf-8')
                            for suffix in ('.llil.asm', '.mlil.asm', '.hlil.ts', '.ts')}
 
     def test_every_output_prints_the_py_text(self):
         for suffix, text in self.outputs.items():
             for literal in ('0.0333', '60.00003', '-2738.15'):
-                with self.subTest(output = suffix, literal = literal):
+                with self.subTest(output=suffix, literal=literal):
                     self.assertRegex(text, rf'(?<![\d.]){re.escape(literal)}(?![\d])')
 
     def test_default_prints_its_text(self):

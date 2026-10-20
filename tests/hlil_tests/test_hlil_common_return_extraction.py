@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for CommonReturnExtractionPass: a return shared by every arm is only hoisted when no
+"""Unit tests for CommonReturnExtractionPass: a return shared by every arm is only hoisted when no
 path can leave the construct without reaching one of those returns, and constants compare by the
-shared constant rule (int and float distinct, NaN equal to itself).'''
+shared constant rule (int and float distinct, NaN equal to itself)."""
 
 from pathlib import Path
 import sys
@@ -49,7 +49,7 @@ def make_call(name: str) -> HLILExprStmt:
     return HLILExprStmt(HLILCall(name, []))
 
 
-def make_return(value = RETURN_VALUE) -> HLILReturn:
+def make_return(value=RETURN_VALUE) -> HLILReturn:
     return HLILReturn(HLILConst(value))
 
 
@@ -245,7 +245,7 @@ class TestContainsBareBreak(unittest.TestCase):
         self.assertTrue(contains_bare_break(HLILBlock([branch])))
 
     def test_labelled_break_does_not_count(self):
-        self.assertFalse(contains_bare_break(HLILBlock([HLILBreak(label = LOOP_LABEL)])))
+        self.assertFalse(contains_bare_break(HLILBlock([HLILBreak(label=LOOP_LABEL)])))
 
     def test_loops_and_switches_own_their_bare_breaks(self):
         owners = [
@@ -254,7 +254,7 @@ class TestContainsBareBreak(unittest.TestCase):
             make_switch(make_case(FIRST_CASE_VALUE, HLILBreak())),
         ]
         for owner in owners:
-            with self.subTest(owner = type(owner).__name__):
+            with self.subTest(owner=type(owner).__name__):
                 self.assertFalse(contains_bare_break(HLILBlock([owner])))
 
     def test_bare_break_in_if_inside_loop_belongs_to_loop(self):
@@ -264,7 +264,7 @@ class TestContainsBareBreak(unittest.TestCase):
 
 
 class TestCommonReturnValues(unittest.TestCase):
-    '''A return is hoisted only when every arm returns the same thing: a bare return and `return 5` differ'''
+    """A return is hoisted only when every arm returns the same thing: a bare return and `return 5` differ"""
 
     def test_switch_cases_mixing_a_bare_return_and_a_value_keep_their_returns(self):
         switch = make_switch(

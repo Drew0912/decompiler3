@@ -1,4 +1,4 @@
-'''HLIL - Structured control flow (if/while/do-while) from unstructured MLIL (goto/label)'''
+"""HLIL - Structured control flow (if/while/do-while) from unstructured MLIL (goto/label)"""
 
 from typing import Callable, Iterator, List, Optional, Sequence, Tuple, Union
 from enum import auto
@@ -9,7 +9,8 @@ from ir.core import UNASSIGNED_INST_INDEX
 
 
 class HLILTypeKind(IntEnum2):
-    '''HLIL type kinds'''
+    """HLIL type kinds"""
+
     UNKNOWN = auto()
     INT     = auto()
     FLOAT   = auto()
@@ -21,7 +22,8 @@ class HLILTypeKind(IntEnum2):
 
 
 class BinaryOp(IntEnum2):
-    '''Binary operators'''
+    """Binary operators"""
+
     # Arithmetic
     ADD     = auto()
     SUB     = auto()
@@ -50,14 +52,16 @@ class BinaryOp(IntEnum2):
 
 
 class UnaryOp(IntEnum2):
-    '''Unary operators'''
+    """Unary operators"""
+
     NEG     = auto()
     NOT     = auto()
     BIT_NOT = auto()
 
 
 class HLILOperation(IntEnum2):
-    '''HLIL operation types'''
+    """HLIL operation types"""
+
     # Control flow statements
     HLIL_IF             = auto()
     HLIL_WHILE          = auto()
@@ -86,7 +90,7 @@ class HLILOperation(IntEnum2):
 
 
 class HLILInstruction:
-    '''Base class for all HLIL instructions'''
+    """Base class for all HLIL instructions"""
 
     def __init__(self, operation: HLILOperation):
         self.operation = operation
@@ -101,12 +105,14 @@ class HLILInstruction:
 
 
 class HLILStatement(HLILInstruction):
-    '''Base class for HLIL statements'''
+    """Base class for HLIL statements"""
+
     pass
 
 
 class HLILExpression(HLILInstruction):
-    '''Base class for HLIL expressions'''
+    """Base class for HLIL expressions"""
+
     pass
 
 
@@ -115,7 +121,8 @@ class HLILExpression(HLILInstruction):
 # ============================================================================
 
 class VariableKind(IntEnum2):
-    '''Variable storage kind'''
+    """Variable storage kind"""
+
     LOCAL   = auto()
     PARAM   = auto()
     GLOBAL  = auto()
@@ -123,7 +130,7 @@ class VariableKind(IntEnum2):
 
 
 class HLILVariable:
-    '''HLIL variable with optional type information'''
+    """HLIL variable with optional type information"""
 
     def __init__(self, name: Optional[str] = None, type_hint: Optional[HLILTypeKind] = None, default_value: Optional[str] = None,
                  kind: VariableKind = None, index: Optional[int] = None):
@@ -136,7 +143,6 @@ class HLILVariable:
     def __str__(self) -> str:
         if self.kind == VariableKind.GLOBAL:
             return f'GLOBALS[{self.index}]'
-
         elif self.kind == VariableKind.REG:
             return f'REGS[{self.index}]'
 
@@ -161,7 +167,7 @@ class HLILVariable:
 # ============================================================================
 
 class HLILVar(HLILExpression):
-    '''Variable reference'''
+    """Variable reference"""
 
     def __init__(self, var: HLILVariable):
         super().__init__(HLILOperation.HLIL_VAR)
@@ -175,7 +181,7 @@ class HLILVar(HLILExpression):
 
 
 class HLILConst(HLILExpression):
-    '''Constant value'''
+    """Constant value"""
 
     def __init__(self, value: Union[int, float, str, bool], is_hex: bool = False):
         super().__init__(HLILOperation.HLIL_CONST)
@@ -185,10 +191,8 @@ class HLILConst(HLILExpression):
     def __str__(self) -> str:
         if isinstance(self.value, str):
             return quote_string(self.value)
-
         elif isinstance(self.value, bool):
             return 'true' if self.value else 'false'
-
         elif isinstance(self.value, int) and self.is_hex:
             return format_uint32_hex(self.value)
 
@@ -293,7 +297,7 @@ NON_ASSOCIATIVE_OPS = frozenset({BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD})
 
 
 def needs_parentheses(child_op: BinaryOp, parent_op: BinaryOp, is_left: bool) -> bool:
-    '''Whether a binary child printed as parent_op's lhs (is_left) or rhs needs parentheses'''
+    """Whether a binary child printed as parent_op's lhs (is_left) or rhs needs parentheses"""
     child_precedence = BINARY_OP_PRECEDENCE[child_op]
     parent_precedence = BINARY_OP_PRECEDENCE[parent_op]
 
@@ -304,8 +308,8 @@ def needs_parentheses(child_op: BinaryOp, parent_op: BinaryOp, is_left: bool) ->
 
 
 def unary_operand_needs_parentheses(op: UnaryOp, operand: HLILExpression, operand_text: str) -> bool:
-    '''Whether operand, printed as operand_text after op, needs parentheses: a binary operand, or a minus whose operand
-    already starts with one (-(-a), -(-3.0) - never --, a decrement)'''
+    """Whether operand, printed as operand_text after op, needs parentheses: a binary operand, or a minus whose operand
+    already starts with one (-(-a), -(-3.0) - never --, a decrement)"""
     if isinstance(operand, HLILBinaryOp):
         return True
 
@@ -313,7 +317,7 @@ def unary_operand_needs_parentheses(op: UnaryOp, operand: HLILExpression, operan
 
 
 class HLILBinaryOp(HLILExpression):
-    '''Binary operation: lhs op rhs'''
+    """Binary operation: lhs op rhs"""
 
     def __init__(self, op: BinaryOp, lhs: HLILExpression, rhs: HLILExpression):
         super().__init__(HLILOperation.HLIL_BINARY_OP)
@@ -329,7 +333,7 @@ class HLILBinaryOp(HLILExpression):
 
 
 class HLILUnaryOp(HLILExpression):
-    '''Unary operation: op operand'''
+    """Unary operation: op operand"""
 
     def __init__(self, op: UnaryOp, operand: HLILExpression):
         super().__init__(HLILOperation.HLIL_UNARY_OP)
@@ -344,7 +348,7 @@ class HLILUnaryOp(HLILExpression):
 
 
 class HLILAddressOf(HLILExpression):
-    '''Address-of operation: &var'''
+    """Address-of operation: &var"""
 
     def __init__(self, operand: HLILExpression):
         super().__init__(HLILOperation.HLIL_ADDRESS_OF)
@@ -358,7 +362,7 @@ class HLILAddressOf(HLILExpression):
 
 
 class HLILDeref(HLILExpression):
-    '''Pointer dereference: *ptr'''
+    """Pointer dereference: *ptr"""
 
     def __init__(self, operand: HLILExpression):
         super().__init__(HLILOperation.HLIL_DEREF)
@@ -375,7 +379,7 @@ class HLILDeref(HLILExpression):
 
 
 class HLILCall(HLILExpression):
-    '''Function call'''
+    """Function call"""
 
     def __init__(self, func_name: str, args: List[HLILExpression]):
         super().__init__(HLILOperation.HLIL_CALL)
@@ -391,7 +395,7 @@ class HLILCall(HLILExpression):
 
 
 class HLILSyscall(HLILExpression):
-    '''System call'''
+    """System call"""
 
     def __init__(self, subsystem: str, cmd: str, args: List[HLILExpression]):
         super().__init__(HLILOperation.HLIL_SYSCALL)
@@ -408,7 +412,7 @@ class HLILSyscall(HLILExpression):
 
 
 class HLILExternCall(HLILExpression):
-    '''External module call (e.g., script call)'''
+    """External module call (e.g., script call)"""
 
     def __init__(self, target: str, args: List[HLILExpression]):
         super().__init__(HLILOperation.HLIL_CALL)
@@ -428,14 +432,14 @@ class HLILExternCall(HLILExpression):
 # ============================================================================
 
 class HLILBlock(HLILStatement):
-    '''Block of statements'''
+    """Block of statements"""
 
     def __init__(self, statements: Optional[List[HLILStatement]] = None):
         super().__init__(HLILOperation.HLIL_BLOCK)
         self.statements = statements or []
 
     def add_statement(self, stmt: HLILStatement):
-        '''Add a statement to the block'''
+        """Add a statement to the block"""
         self.statements.append(stmt)
 
     def __str__(self) -> str:
@@ -448,7 +452,7 @@ class HLILBlock(HLILStatement):
 
 
 class HLILIf(HLILStatement):
-    '''Conditional: if (cond) { ... } else { ... }'''
+    """Conditional: if (cond) { ... } else { ... }"""
 
     def __init__(self, condition: HLILExpression, true_block: 'HLILBlock', false_block: Optional['HLILBlock'] = None):
         super().__init__(HLILOperation.HLIL_IF)
@@ -466,7 +470,7 @@ class HLILIf(HLILStatement):
 
 
 class HLILWhile(HLILStatement):
-    '''While loop: while (cond) { ... }, optionally labeled for cross-level break/continue'''
+    """While loop: while (cond) { ... }, optionally labeled for cross-level break/continue"""
 
     def __init__(self, condition: HLILExpression, body: 'HLILBlock', label: Optional[str] = None):
         super().__init__(HLILOperation.HLIL_WHILE)
@@ -483,7 +487,7 @@ class HLILWhile(HLILStatement):
 
 
 class HLILDoWhile(HLILStatement):
-    '''Do-while loop: do { ... } while (cond);, optionally labeled for cross-level break/continue'''
+    """Do-while loop: do { ... } while (cond);, optionally labeled for cross-level break/continue"""
 
     def __init__(self, condition: HLILExpression, body: 'HLILBlock', label: Optional[str] = None):
         super().__init__(HLILOperation.HLIL_DO_WHILE)
@@ -500,18 +504,18 @@ class HLILDoWhile(HLILStatement):
 
 
 class HLILSwitchCase:
-    '''Switch case: one body, reached by one or more labels
+    """Switch case: one body, reached by one or more labels
 
     Several values share a body when the source tested them against one another
     with ||, which is what a fall-through group of case labels means.
-    '''
+    """
 
     def __init__(self, values: Optional[List[HLILExpression]], body: 'HLILBlock'):
         self.values = values  # None for default case
         self.body = body
 
     def is_default(self) -> bool:
-        '''Check if this is the default case'''
+        """Check if this is the default case"""
         return self.values is None
 
     def _label_str(self) -> str:
@@ -529,7 +533,7 @@ class HLILSwitchCase:
 
 
 class HLILSwitch(HLILStatement):
-    '''Switch statement: switch (scrutinee) { case ...: ... }'''
+    """Switch statement: switch (scrutinee) { case ...: ... }"""
 
     def __init__(self, scrutinee: HLILExpression, cases: List[HLILSwitchCase]):
         super().__init__(HLILOperation.HLIL_SWITCH)
@@ -544,7 +548,7 @@ class HLILSwitch(HLILStatement):
 
 
 class HLILBreak(HLILStatement):
-    '''Break statement, optionally labeled for breaking an outer loop'''
+    """Break statement, optionally labeled for breaking an outer loop"""
 
     def __init__(self, label: Optional[str] = None):
         super().__init__(HLILOperation.HLIL_BREAK)
@@ -558,7 +562,7 @@ class HLILBreak(HLILStatement):
 
 
 class HLILContinue(HLILStatement):
-    '''Continue statement, optionally labeled for continuing an outer loop'''
+    """Continue statement, optionally labeled for continuing an outer loop"""
 
     def __init__(self, label: Optional[str] = None):
         super().__init__(HLILOperation.HLIL_CONTINUE)
@@ -572,7 +576,7 @@ class HLILContinue(HLILStatement):
 
 
 class HLILReturn(HLILStatement):
-    '''Return statement'''
+    """Return statement"""
 
     def __init__(self, value: Optional[HLILExpression] = None):
         super().__init__(HLILOperation.HLIL_RETURN)
@@ -588,8 +592,8 @@ class HLILReturn(HLILStatement):
 
 
 class HLILUnstructured(HLILStatement):
-    '''A jump HLIL cannot express (HLIL has no goto): the path ends here, visibly, instead of
-    falling through to whatever follows'''
+    """A jump HLIL cannot express (HLIL has no goto): the path ends here, visibly, instead of
+    falling through to whatever follows"""
 
     def __init__(self, target: str, reason: str):
         super().__init__(HLILOperation.HLIL_UNSTRUCTURED)
@@ -612,7 +616,7 @@ TERMINAL_STATEMENTS = (HLILReturn, HLILBreak, HLILContinue, HLILUnstructured)
 # ============================================================================
 
 class HLILAssign(HLILStatement):
-    '''Assignment: dest = src'''
+    """Assignment: dest = src"""
 
     def __init__(self, dest: HLILExpression, src: HLILExpression):
         super().__init__(HLILOperation.HLIL_ASSIGN)
@@ -627,7 +631,7 @@ class HLILAssign(HLILStatement):
 
 
 class HLILExprStmt(HLILStatement):
-    '''Expression statement (for side effects)'''
+    """Expression statement (for side effects)"""
 
     def __init__(self, expr: HLILExpression):
         super().__init__(HLILOperation.HLIL_EXPR_STMT)
@@ -641,7 +645,7 @@ class HLILExprStmt(HLILStatement):
 
 
 class HLILComment(HLILStatement):
-    '''Comment statement (debug/annotations)'''
+    """Comment statement (debug/annotations)"""
 
     def __init__(self, text: str):
         super().__init__(HLILOperation.HLIL_COMMENT)
@@ -655,7 +659,7 @@ class HLILComment(HLILStatement):
 
 
 def is_boolean_expr(expr: HLILExpression) -> bool:
-    '''Whether expr's value is a boolean: a comparison, && / ||, or !'''
+    """Whether expr's value is a boolean: a comparison, && / ||, or !"""
     if isinstance(expr, HLILBinaryOp):
         return expr.op in BOOLEAN_BINARY_OPS
 
@@ -663,7 +667,7 @@ def is_boolean_expr(expr: HLILExpression) -> bool:
 
 
 def negate_condition(cond: HLILExpression) -> HLILExpression:
-    '''Negate a condition, distributing through && / || (De Morgan's) rather than wrapping them'''
+    """Negate a condition, distributing through && / || (De Morgan's) rather than wrapping them"""
     # Double negation: !!a -> a
     if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT:
         return cond.operand
@@ -681,8 +685,8 @@ def negate_condition(cond: HLILExpression) -> HLILExpression:
 
 
 def constant_truth(cond: HLILExpression) -> Optional[bool]:
-    '''The value a condition always has - an int constant, a comparison of two int constants, or !, &&
-    and || over such conditions - or None otherwise. Float truth and comparisons are unverified in the VM.'''
+    """The value a condition always has - an int constant, a comparison of two int constants, or !, &&
+    and || over such conditions - or None otherwise. Float truth and comparisons are unverified in the VM."""
     if isinstance(cond, HLILConst):
         return bool(cond.value) if isinstance(cond.value, int) else None
 
@@ -719,7 +723,7 @@ LINE_MARKER = re.compile(r'line\((\d+)\)')
 
 
 def line_marker_number(stmt: HLILStatement) -> Optional[int]:
-    '''N if stmt is a line(N) marker, else None. Shared by every reader that needs a marker's line'''
+    """N if stmt is a line(N) marker, else None. Shared by every reader that needs a marker's line"""
     if not isinstance(stmt, HLILComment):
         return None
 
@@ -728,12 +732,12 @@ def line_marker_number(stmt: HLILStatement) -> Optional[int]:
 
 
 def code_statements(block: HLILBlock) -> List[HLILStatement]:
-    '''block's statements without its comments'''
+    """block's statements without its comments"""
     return [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
 
 
 def sole_statement(block: Optional[HLILBlock]) -> Optional[HLILStatement]:
-    '''The one non-comment statement in block, or None when it has none or several'''
+    """The one non-comment statement in block, or None when it has none or several"""
     if block is None:
         return None
 
@@ -742,11 +746,11 @@ def sole_statement(block: Optional[HLILBlock]) -> Optional[HLILStatement]:
 
 
 def split_else_if_arm(block: HLILBlock) -> Optional[Tuple[List[HLILComment], HLILIf]]:
-    '''An else arm's comments and its single inner if, or None if it is not an else-if
+    """An else arm's comments and its single inner if, or None if it is not an else-if
 
     Comments annotate the inner if's test, so they belong before the `} else if` line
     rather than inside the arm. Shared so both renderers agree on the shape.
-    '''
+    """
     inner_if = sole_statement(block)
     if not isinstance(inner_if, HLILIf):
         return None
@@ -755,10 +759,10 @@ def split_else_if_arm(block: HLILBlock) -> Optional[Tuple[List[HLILComment], HLI
 
 
 def unwrap_address_taken_var(expr: 'HLILExpression') -> Optional['HLILVar']:
-    '''*(&x) - ir/mlil/mlil_ssa.py's memory-form lowering of address-taken local x -
+    """*(&x) - ir/mlil/mlil_ssa.py's memory-form lowering of address-taken local x -
     collapses to plain x. Returns the HLILVar, or None if expr is not that exact shape.
     Shared by every consumer of this shape (the TS codegen, the debug formatter, and CFO's
-    modifies-check) so they cannot independently drift on what counts as the canonical form.'''
+    modifies-check) so they cannot independently drift on what counts as the canonical form."""
     if (isinstance(expr, HLILDeref) and isinstance(expr.operand, HLILAddressOf)
             and isinstance(expr.operand.operand, HLILVar)):
         return expr.operand.operand
@@ -767,9 +771,9 @@ def unwrap_address_taken_var(expr: 'HLILExpression') -> Optional['HLILVar']:
 
 
 def sub_blocks(stmt: 'HLILStatement') -> List['HLILBlock']:
-    '''Blocks directly owned by a structured statement - HLILIf's arms, a loop's body, each
+    """Blocks directly owned by a structured statement - HLILIf's arms, a loop's body, each
     HLILSwitch case's body. Shared so a new statement type needs one edit here, not one per
-    walker (`.claude/rules/ir.md`).'''
+    walker (`.claude/rules/ir.md`)."""
     if isinstance(stmt, HLILIf):
         blocks = [stmt.true_block]
         if stmt.false_block is not None:
@@ -786,7 +790,7 @@ def sub_blocks(stmt: 'HLILStatement') -> List['HLILBlock']:
 
 
 def expr_children(node: HLILInstruction) -> Sequence[HLILExpression]:
-    '''Direct sub-expressions of an expression, in evaluation order - none for a leaf'''
+    """Direct sub-expressions of an expression, in evaluation order - none for a leaf"""
     if isinstance(node, HLILBinaryOp):
         return [node.lhs, node.rhs]
 
@@ -800,8 +804,8 @@ def expr_children(node: HLILInstruction) -> Sequence[HLILExpression]:
 
 
 def stmt_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
-    '''Every direct child of node - statements, blocks and expressions - in source order. A
-    switch contributes each case's labels, then that case's body.'''
+    """Every direct child of node - statements, blocks and expressions - in source order. A
+    switch contributes each case's labels, then that case's body."""
     if isinstance(node, HLILAssign):
         return [node.dest, node.src]
 
@@ -835,8 +839,8 @@ def stmt_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
 
 
 def read_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
-    '''stmt_children without a plain assignment target: writing x does not read it, while a
-    store through a pointer (*p = v) still reads p'''
+    """stmt_children without a plain assignment target: writing x does not read it, while a
+    store through a pointer (*p = v) still reads p"""
     if isinstance(node, HLILAssign) and not isinstance(node.dest, HLILDeref):
         return [node.src]
 
@@ -846,8 +850,8 @@ def read_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
 def iter_tree(node: Optional[HLILInstruction],
               children: Callable[[HLILInstruction], Sequence[HLILInstruction]] = stmt_children,
               exclude: Tuple[int, ...] = ()) -> Iterator[HLILInstruction]:
-    '''node and everything below it, pre-order in children's order, without recursion. A node
-    whose id() is in exclude is skipped together with everything below it.'''
+    """node and everything below it, pre-order in children's order, without recursion. A node
+    whose id() is in exclude is skipped together with everything below it."""
     pending = [node]
     while pending:
         current = pending.pop()
@@ -859,11 +863,11 @@ def iter_tree(node: Optional[HLILInstruction],
 
 
 def contains_escaping_exit(block: Optional[HLILBlock], exit_type: type, include_labeled: bool = False) -> bool:
-    '''Whether block holds an exit_type statement (HLILBreak or HLILContinue) that leaves it: a
+    """Whether block holds an exit_type statement (HLILBreak or HLILContinue) that leaves it: a
     bare one that no construct inside block owns - a loop owns both kinds, a switch only a
     break - or, with include_labeled, a labeled one anywhere, since its label may name a loop
-    outside block.'''
-    return _contains_escaping_exit(block, exit_type, include_labeled, owned = False)
+    outside block."""
+    return _contains_escaping_exit(block, exit_type, include_labeled, owned=False)
 
 
 def _contains_escaping_exit(block: Optional[HLILBlock], exit_type: type, include_labeled: bool, owned: bool) -> bool:
@@ -887,21 +891,21 @@ def _contains_escaping_exit(block: Optional[HLILBlock], exit_type: type, include
 
 
 def contains_bare_break(block: Optional[HLILBlock]) -> bool:
-    '''Whether block contains a bare break not owned by a nested loop or switch.'''
+    """Whether block contains a bare break not owned by a nested loop or switch."""
     return contains_escaping_exit(block, HLILBreak)
 
 
 def reachable_statements(block: HLILBlock) -> List[HLILStatement]:
-    '''Every statement control can reach from the start of block, nested ones included, in source
+    """Every statement control can reach from the start of block, nested ones included, in source
     order. Only constant conditions prune (constant_truth: the arm of if (0), the code after a
-    while (1) no break leaves), so a statement left out can never run.'''
+    while (1) no break leaves), so a statement left out can never run."""
     reached: List[HLILStatement] = []
     _reach_block(block, reached, [])
     return reached
 
 
 class _ExitTarget:
-    '''A loop or switch that a break inside it (for a loop, also a continue) can leave'''
+    """A loop or switch that a break inside it (for a loop, also a continue) can leave"""
 
     def __init__(self, stmt: HLILStatement):
         self.label = getattr(stmt, 'label', None)
@@ -911,14 +915,13 @@ class _ExitTarget:
 
 
 def resolve_exit_target(targets: Sequence, label: Optional[str], loop_only: bool):
-    '''The innermost of targets - records of the enclosing loops and switches, outermost first,
+    """The innermost of targets - records of the enclosing loops and switches, outermost first,
     each with a label and an is_switch - that a break (loop_only False) or a continue (True)
-    carrying label leaves'''
+    carrying label leaves"""
     for target in reversed(targets):
         if label is not None:
             if target.label == label and not target.is_switch:
                 return target
-
         elif not (loop_only and target.is_switch):
             return target
 
@@ -926,7 +929,7 @@ def resolve_exit_target(targets: Sequence, label: Optional[str], loop_only: bool
 
 
 def _reach_block(block: Optional[HLILBlock], reached: List[HLILStatement], targets: List[_ExitTarget]) -> bool:
-    '''Record block's reachable statements; whether control can fall out of its end'''
+    """Record block's reachable statements; whether control can fall out of its end"""
     if block is None:
         return True
 
@@ -939,12 +942,11 @@ def _reach_block(block: Optional[HLILBlock], reached: List[HLILStatement], targe
 
 
 def _reach_statement(stmt: HLILStatement, reached: List[HLILStatement], targets: List[_ExitTarget]) -> bool:
-    '''Record the reachable statements nested in stmt; whether control can fall through past it'''
+    """Record the reachable statements nested in stmt; whether control can fall through past it"""
     if isinstance(stmt, (HLILBreak, HLILContinue)):
-        target = resolve_exit_target(targets, stmt.label, loop_only = isinstance(stmt, HLILContinue))
+        target = resolve_exit_target(targets, stmt.label, loop_only=isinstance(stmt, HLILContinue))
         if target is not None and isinstance(stmt, HLILBreak):
             target.broken = True
-
         elif target is not None:
             target.continued = True
 
@@ -999,7 +1001,7 @@ def _reach_statement(stmt: HLILStatement, reached: List[HLILStatement], targets:
 # ============================================================================
 
 class HighLevelILFunction:
-    '''HLIL function container'''
+    """HLIL function container"""
 
     def __init__(self, name: str, start_addr: int = 0, *, is_common_func: bool = False):
         self.name = name
@@ -1010,7 +1012,7 @@ class HighLevelILFunction:
         self.is_common_func = is_common_func
 
     def add_statement(self, stmt: HLILStatement):
-        '''Add a statement to the function body'''
+        """Add a statement to the function body"""
         self.body.add_statement(stmt)
 
     def __str__(self) -> str:

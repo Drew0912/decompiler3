@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for HLIL loop recovery.'''
+"""Unit tests for HLIL loop recovery."""
 
 from pathlib import Path
 import sys
@@ -44,7 +44,7 @@ def make_var() -> HLILVar:
 
 
 def make_exit_condition() -> HLILBinaryOp:
-    '''remaining <= 0 - true when the loop should stop'''
+    """remaining <= 0 - true when the loop should stop"""
     return HLILBinaryOp(BinaryOp.LE, make_var(), HLILConst(EXIT_THRESHOLD))
 
 
@@ -53,7 +53,7 @@ def make_body_statement() -> HLILExprStmt:
 
 
 def make_guard(exit_stmt) -> HLILIf:
-    '''if (remaining <= 0) { <exit_stmt> }'''
+    """if (remaining <= 0) { <exit_stmt> }"""
     return HLILIf(make_exit_condition(), HLILBlock([exit_stmt]), None)
 
 
@@ -66,7 +66,7 @@ def make_call(name: str) -> HLILExprStmt:
 
 
 def call_names(block: HLILBlock) -> list:
-    '''The called functions among a block's top-level statements, in order'''
+    """The called functions among a block's top-level statements, in order"""
     return [stmt.expr.func_name for stmt in block.statements if isinstance(stmt, HLILExprStmt)]
 
 
@@ -77,7 +77,7 @@ def run_pass(loop: HLILWhile) -> HighLevelILFunction:
 
 
 class TestLoopRecoveryReturnGuard(unittest.TestCase):
-    '''while (1) { if (c) return x; body } -> while (!c) { body } return x'''
+    """while (1) { if (c) return x; body } -> while (!c) { body } return x"""
 
     def test_return_guard_becomes_loop_condition(self):
         guard = HLILIf(
@@ -150,7 +150,7 @@ class TestLoopRecoveryReturnGuard(unittest.TestCase):
 
 
 class TestLoopRecoveryBreakGuard(unittest.TestCase):
-    '''The pre-existing break-based rotations must keep working'''
+    """The pre-existing break-based rotations must keep working"""
 
     def test_leading_break_guard_becomes_loop_condition(self):
         guard = make_guard(HLILBreak())
@@ -175,11 +175,11 @@ class TestLoopRecoveryBreakGuard(unittest.TestCase):
 
 
 class TestLoopRecoveryFloatConditions(unittest.TestCase):
-    '''A float condition is never folded or taken as always true: its truth in the VM is unverified'''
+    """A float condition is never folded or taken as always true: its truth in the VM is unverified"""
 
     def test_float_condition_is_left_alone(self):
         for condition in (HLILConst(1.0), HLILBinaryOp(BinaryOp.EQ, HLILConst(0.5), HLILConst(0.5))):
-            with self.subTest(condition = str(condition)):
+            with self.subTest(condition=str(condition)):
                 loop = HLILWhile(condition, HLILBlock([make_guard(HLILBreak()), make_body_statement()]))
 
                 recovered = run_pass(loop).body.statements[0]
@@ -198,8 +198,8 @@ class TestLoopRecoveryFloatConditions(unittest.TestCase):
 
 
 class TestLoopRecoveryDoWhileRotation(unittest.TestCase):
-    '''while (1) { body; if (c) break; } -> do { body } while (!c) - the one recovery shape
-    with no existing test coverage before this step (do-whiles are latent in the real corpus).'''
+    """while (1) { body; if (c) break; } -> do { body } while (!c) - the one recovery shape
+    with no existing test coverage before this step (do-whiles are latent in the real corpus)."""
 
     def test_trailing_break_guard_becomes_do_while(self):
         guard = make_guard(HLILBreak())
@@ -229,9 +229,9 @@ class TestLoopRecoveryDoWhileRotation(unittest.TestCase):
 
 
 class TestLoopRecoveryContinueGuard(unittest.TestCase):
-    '''continue means something different in while(1) (always jumps to top, never exits) than
+    """continue means something different in while(1) (always jumps to top, never exits) than
     in do-while (jumps to the exit test, can exit) - so the trailing-exit rotation must refuse
-    when the body has a continue that targets this loop.'''
+    when the body has a continue that targets this loop."""
 
     def test_continue_in_body_refuses_do_while_rotation(self):
         guard = make_guard(HLILBreak())
@@ -275,10 +275,10 @@ class TestLoopRecoveryContinueGuard(unittest.TestCase):
     def test_labelled_continue_from_nested_construct_still_blocks_rotation(self):
         loop_label = 'loop_1'
         inner_switch = HLILSwitch(make_var(), [
-            HLILSwitchCase([HLILConst(SWITCH_CASE_VALUE)], HLILBlock([HLILContinue(label = loop_label)])),
+            HLILSwitchCase([HLILConst(SWITCH_CASE_VALUE)], HLILBlock([HLILContinue(label=loop_label)])),
         ])
         guard = make_guard(HLILBreak())
-        loop = HLILWhile(HLILConst(1), HLILBlock([inner_switch, make_body_statement(), guard]), label = loop_label)
+        loop = HLILWhile(HLILConst(1), HLILBlock([inner_switch, make_body_statement(), guard]), label=loop_label)
 
         func = run_pass(loop)
 
@@ -287,13 +287,13 @@ class TestLoopRecoveryContinueGuard(unittest.TestCase):
 
 
 class TestLoopRecoveryDoWhileLabel(unittest.TestCase):
-    '''A labelled while(1) loop must keep its label through the do-while rewrite - HLILDoWhile
-    previously had no way to carry one at all, leaving any continue/break naming it dangling.'''
+    """A labelled while(1) loop must keep its label through the do-while rewrite - HLILDoWhile
+    previously had no way to carry one at all, leaving any continue/break naming it dangling."""
 
     def test_labelled_loop_keeps_its_label_after_do_while_rotation(self):
         loop_label = 'loop_1'
         guard = make_guard(HLILBreak())
-        loop = HLILWhile(HLILConst(1), HLILBlock([make_body_statement(), guard]), label = loop_label)
+        loop = HLILWhile(HLILConst(1), HLILBlock([make_body_statement(), guard]), label=loop_label)
 
         func = run_pass(loop)
 
@@ -303,7 +303,7 @@ class TestLoopRecoveryDoWhileLabel(unittest.TestCase):
 
 
 class TestGuardedLoopKeepsItsBody(unittest.TestCase):
-    '''while (1) { if (c) { body } else { break } } is while (c) { body }'''
+    """while (1) { if (c) { body } else { break } } is while (c) { body }"""
 
     def test_break_in_the_else_arm(self):
         condition = make_flag('c')

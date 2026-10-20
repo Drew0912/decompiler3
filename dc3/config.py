@@ -1,4 +1,4 @@
-'''Project-wide byte order, text encoding and indent'''
+"""Project-wide byte order, text encoding and indent"""
 
 __all__ = (
     'default_endian',
@@ -12,12 +12,12 @@ INDENT      = '    '
 
 
 def default_endian() -> str:
-    '''Byte order of the script files (little/big)'''
+    """Byte order of the script files (little/big)"""
     return ENDIAN
 
 
 def default_encoding() -> str:
-    '''Text encoding of the script files'''
+    """Text encoding of the script files"""
     return ENCODING
 
 

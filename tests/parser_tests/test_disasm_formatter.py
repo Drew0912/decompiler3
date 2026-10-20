@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for .py label emission: only an offset something references gets a label; and the synthetic
-fall-through jump's place.'''
+"""Unit tests for .py label emission: only an offset something references gets a label; and the synthetic
+fall-through jump's place."""
 
 from pathlib import Path
 import sys
@@ -17,22 +17,22 @@ FALLTHROUGH_TARGET = 0x20
 
 
 def disasm_to_dsl(name: str, bytecode: bytes) -> list[str]:
-    '''Disassemble hand-coded bytecode and format it, same path scena2py.py uses for .py output'''
-    context = DisassemblerContext(create_fallthrough_jump = ed9_create_fallthrough_jump)
+    """Disassemble hand-coded bytecode and format it, same path scena2py.py uses for .py output"""
+    context = DisassemblerContext(create_fallthrough_jump=ed9_create_fallthrough_jump)
     disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
 
     func = Function()
     func.name = name
     func.offset = 0
     func.is_common_func = False
-    func.entry_block = disasm.disasm_function(bytecode, offset = 0, name = name)
+    func.entry_block = disasm.disasm_function(bytecode, offset=0, name=name)
 
     return Formatter(FormatterContext()).format_function(func)
 
 
 class TestDeadFallthroughLabelOmitted(unittest.TestCase):
-    '''The block right after a conditional branch exists only because the branch ends a basic
-    block - nothing actually jumps there, so it must get no label.'''
+    """The block right after a conditional branch exists only because the branch ends a basic
+    block - nothing actually jumps there, so it must get no label."""
 
     def test_fallthrough_after_pop_jmp_zero_gets_no_label(self):
         bytecode = bytes([
@@ -54,8 +54,8 @@ class TestDeadFallthroughLabelOmitted(unittest.TestCase):
 
 
 class TestReferencedEntryBlockGetsLabel(unittest.TestCase):
-    '''A backward branch to offset 0 makes the entry block itself a real jump target - it must
-    get a label too, even though the entry block previously never received one at all.'''
+    """A backward branch to offset 0 makes the entry block itself a real jump target - it must
+    get a label too, even though the entry block previously never received one at all."""
 
     def test_backward_jump_to_offset_zero_labels_the_entry_block(self):
         bytecode = bytes([
@@ -83,7 +83,7 @@ class TestReferencedEntryBlockGetsLabel(unittest.TestCase):
         self.assertIn("label('loc_1E')", lines)
 
     def test_spacer_after_each_label_is_empty(self):
-        '''Not indented: editors that trim trailing whitespace would change four spaces'''
+        """Not indented: editors that trim trailing whitespace would change four spaces"""
         bytecode = bytes([
             0x09, 0x00,                          # 0x00: GET_REG(0)
             0x0F, 0x0C, 0x00, 0x00, 0x00,        # 0x02: POP_JMP_ZERO('loc_C')
@@ -127,7 +127,7 @@ class TestOperandText(unittest.TestCase):
         self.assertIn('CALL_SCRIPT("this", "GetCoolClone", 0)', lines)
 
     def test_float_defaults_print_the_shortest_literal(self):
-        nullable = ScpParamFlags(typ = Nullable32)
+        nullable = ScpParamFlags(typ=Nullable32)
 
         def param_text(default) -> str:
             return Formatter.format_param(0, FunctionParam(nullable, ScpValue(default)))
@@ -141,7 +141,7 @@ class TestOperandText(unittest.TestCase):
 
 class TestFallthroughJump(unittest.TestCase):
     def test_synthetic_jump_sits_before_the_block_it_enters(self):
-        '''Its offset must not collide with an instruction of the block it enters'''
+        """Its offset must not collide with an instruction of the block it enters"""
         jump = ed9_create_fallthrough_jump(FALLTHROUGH_TARGET, FALLTHROUGH_TARGET, ED9_INSTRUCTION_TABLE)
 
         self.assertEqual(jump.offset, FALLTHROUGH_TARGET - 1)

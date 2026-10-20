@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for CopyPropagationPass and ExpressionInliningPass: copy propagation and expression
+"""Unit tests for CopyPropagationPass and ExpressionInliningPass: copy propagation and expression
 inlining must not forward a register/global SSA value past a point where that same storage gets
-redefined.'''
+redefined."""
 
 from pathlib import Path
 import sys
@@ -28,9 +28,9 @@ def make_func(name: str) -> MediumLevelILFunction:
 
 
 class TestCopyPropagationGlobalSaveRestore(unittest.TestCase):
-    '''tmp = GLOBAL[n]; GLOBAL[n] = x; ...; GLOBAL[n] = tmp must keep the restore - forwarding
+    """tmp = GLOBAL[n]; GLOBAL[n] = x; ...; GLOBAL[n] = tmp must keep the restore - forwarding
     GLOBAL[n]'s original value directly to the restore site would make de-SSA collapse it into
-    a no-op, since a global's SSA version identity is erased once it lowers back to GLOBALS[n].'''
+    a no-op, since a global's SSA version identity is erased once it lowers back to GLOBALS[n]."""
 
     def test_restore_survives_copy_propagation_and_deconstruction(self):
         func = make_func('save_restore')
@@ -61,8 +61,8 @@ class TestCopyPropagationGlobalSaveRestore(unittest.TestCase):
 
 
 class TestCopyPropagationSafeCases(unittest.TestCase):
-    '''Regression guards: the redefinition check must not make propagation over-conservative
-    for cases that were always safe.'''
+    """Regression guards: the redefinition check must not make propagation over-conservative
+    for cases that were always safe."""
 
     def test_simple_register_copy_with_no_redefinition_still_propagates(self):
         func = make_func('simple')
@@ -140,9 +140,9 @@ class TestCopyPropagationSafeCases(unittest.TestCase):
 
 
 class TestCopyPropagationLocalRootStopsAtUnsafeLink(unittest.TestCase):
-    '''t#1 = reg0#1; call (clobbers reg0); a#1 = t#1; use(a#1) must resolve to the LOCAL t#1,
+    """t#1 = reg0#1; call (clobbers reg0); a#1 = t#1; use(a#1) must resolve to the LOCAL t#1,
     not keep walking to reg0#1 - the plan calls this out explicitly as the shape where a naive
-    "always resolve to the ultimate root" implementation would reintroduce the bug.'''
+    "always resolve to the ultimate root" implementation would reintroduce the bug."""
 
     def test_chain_through_a_call_boundary_stops_at_the_local(self):
         func = make_func('chain_call_boundary')
@@ -161,7 +161,7 @@ class TestCopyPropagationLocalRootStopsAtUnsafeLink(unittest.TestCase):
         block.instructions = [
             MLILSetVarSSA(reg0_1, MLILConst(1)),
             MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),  # t#1 = reg0#1
-            MLILCall(0x1000, [], output = None),
+            MLILCall(0x1000, [], output=None),
             MLILSetVarSSA(reg0_2, MLILUndef()),      # reg0#2 = <undef>  (call's pseudo-def)
             MLILSetVarSSA(a1, MLILVarSSA(t1)),       # a#1 = t#1
             MLILSetVarSSA(u1, MLILVarSSA(a1)),       # use(a#1)
@@ -175,10 +175,10 @@ class TestCopyPropagationLocalRootStopsAtUnsafeLink(unittest.TestCase):
 
 
 class TestExpressionInliningRegisterReadAcrossCall(unittest.TestCase):
-    '''A register/global read wrapped in a compound expression must not inline across a call
+    """A register/global read wrapped in a compound expression must not inline across a call
     that clobbers that storage - the inliner's impure-read check previously looked for MLILLoadReg/
     MLILLoadGlobal, node shapes that never occur in SSA-form expressions (a register/global
-    read is MLILVarSSA at this layer), so the guard never fired at all.'''
+    read is MLILVarSSA at this layer), so the guard never fired at all."""
 
     def test_register_comparison_not_inlined_across_intervening_call(self):
         func = make_func('inline_across_call')
@@ -195,7 +195,7 @@ class TestExpressionInliningRegisterReadAcrossCall(unittest.TestCase):
         block = MediumLevelILBasicBlock(0)
         block.instructions = [
             MLILSetVarSSA(x1, MLILGt(MLILVarSSA(reg0_1), MLILConst(0))),  # x#1 = reg0#1 > 0
-            MLILCall(0x1234, [], output = None),
+            MLILCall(0x1234, [], output=None),
             MLILSetVarSSA(reg0_2, MLILUndef()),                            # call's pseudo-def
             MLILSetVarSSA(r1, MLILVarSSA(x1)),                             # r#1 = x#1
         ]
@@ -228,8 +228,8 @@ class TestExpressionInliningRegisterReadAcrossCall(unittest.TestCase):
         self.assertIn('reg0#1', str(block.instructions[-1]))
 
     def test_deref_read_still_requires_strict_adjacency(self):
-        '''MLILDeref has no trackable base variable for the reachability check, so it must
-        keep the original strict "must be the immediately next instruction" requirement.'''
+        """MLILDeref has no trackable base variable for the reachability check, so it must
+        keep the original strict "must be the immediately next instruction" requirement."""
         func = make_func('inline_deref')
         ptr = MLILVariable('ptr')
         func.locals['ptr'] = ptr
@@ -255,8 +255,8 @@ class TestExpressionInliningRegisterReadAcrossCall(unittest.TestCase):
         self.assertEqual(str(block.instructions[-1]), 'r#1 = x#1', 'a deref read must not inline across any intervening statement')
 
     def test_deref_read_still_inlines_when_adjacent(self):
-        '''Regression guard: falling back to strict adjacency for untrackable (deref) impure
-        reads must not turn into an unconditional refusal to ever inline them.'''
+        """Regression guard: falling back to strict adjacency for untrackable (deref) impure
+        reads must not turn into an unconditional refusal to ever inline them."""
         func = make_func('inline_deref_adjacent')
         func.locals['ptr'] = MLILVariable('ptr')
         func.locals['x'] = MLILVariable('x')
@@ -277,10 +277,10 @@ class TestExpressionInliningRegisterReadAcrossCall(unittest.TestCase):
 
 
 class TestCopyPropagationCallOutputCountsAsRedefinition(unittest.TestCase):
-    '''A call is not only a redefinition via its MLILUndef pseudo-defs for the registers/globals
+    """A call is not only a redefinition via its MLILUndef pseudo-defs for the registers/globals
     it clobbers - the ONE variable receiving its own result is also a redefinition, represented
     differently (the call instruction's own .output field, not a separate MLILSetVarSSA). Both
-    CopyPropagationPass and ExpressionInliningPass must recognize this shape too.'''
+    CopyPropagationPass and ExpressionInliningPass must recognize this shape too."""
 
     def test_copy_propagation_does_not_forward_past_a_calls_own_output(self):
         func = make_func('call_output_redefines')
@@ -332,10 +332,10 @@ class TestCopyPropagationCallOutputCountsAsRedefinition(unittest.TestCase):
 
 
 class TestCopyPropagationEntryVersionSource(unittest.TestCase):
-    '''A copy source seeded at function entry (a parameter, or a register/global read before
+    """A copy source seeded at function entry (a parameter, or a register/global read before
     any assignment in the function) has no MLILSetVarSSA/MLILPhi defining it - the reachability
     check must be anchored at the COPY's own definition, not the source's, or every such copy
-    would be conservatively (and incorrectly) treated as unsafe to propagate.'''
+    would be conservatively (and incorrectly) treated as unsafe to propagate."""
 
     def test_register_entry_version_with_no_recorded_definition_still_propagates(self):
         func = make_func('entry_version')
@@ -359,13 +359,13 @@ class TestCopyPropagationEntryVersionSource(unittest.TestCase):
 
 
 class TestExpressionInliningUnraisedGlobalRead(unittest.TestCase):
-    '''A global that is only ever READ (never stored) in this function is never raised into
+    """A global that is only ever READ (never stored) in this function is never raised into
     an SSA-tracked variable by SSA construction (mlil_ssa.py's _raise_globals leaves it alone)
     - it survives as a bare MLILLoadGlobal even in SSA form. Since it has no SSA base variable,
     reaches_without_redefinition cannot track it; it must be treated as untrackable (poisoned),
     like MLILDeref, not as pure - a prior rewrite of the inliner's impure-read check (switching to
     MLILVarSSA-based detection for the common raised case) dropped this case entirely, making
-    every such read freely movable with no adjacency check at all, not even the old strict one.'''
+    every such read freely movable with no adjacency check at all, not even the old strict one."""
 
     def test_unraised_global_read_not_inlined_across_call(self):
         func = make_func('unraised_global')
@@ -378,7 +378,7 @@ class TestExpressionInliningUnraisedGlobalRead(unittest.TestCase):
         block = MediumLevelILBasicBlock(0)
         block.instructions = [
             MLILSetVarSSA(x1, MLILGt(MLILLoadGlobal(7), MLILConst(0))),  # x#1 = GLOBAL[7] > 0 (never stored -> unraised)
-            MLILCall(0x1234, [], output = None),
+            MLILCall(0x1234, [], output=None),
             MLILSetVarSSA(r1, MLILVarSSA(x1)),
         ]
         func.basic_blocks = [block]
@@ -388,7 +388,7 @@ class TestExpressionInliningUnraisedGlobalRead(unittest.TestCase):
         self.assertEqual(str(block.instructions[-1]), 'r#1 = x#1', 'an unraised global read must not inline across a call')
 
     def test_unraised_global_read_still_inlines_when_adjacent(self):
-        '''Regression guard: the untrackable fallback must not become an unconditional refusal.'''
+        """Regression guard: the untrackable fallback must not become an unconditional refusal."""
         func = make_func('unraised_global_adjacent')
         func.locals['x'] = MLILVariable('x')
 
@@ -407,11 +407,11 @@ class TestExpressionInliningUnraisedGlobalRead(unittest.TestCase):
 
 
 class TestCopyPropagationMultiUseAppliesAtEveryHop(unittest.TestCase):
-    '''The "read more than once keeps its own name" rule must apply at every hop of a copy
+    """The "read more than once keeps its own name" rule must apply at every hop of a copy
     chain, not just the hop whose immediate source is the register/global itself:
     t#1 = reg0#1; a#1 = t#1; z1#1 = a#1; z2#1 = a#1 must stop at a#1 (used twice), even though
     t#1 - a#1's own direct source - is used only once, so the original single-hop check never
-    saw a#1's use count at all.'''
+    saw a#1's use count at all."""
 
     def test_multi_use_local_two_hops_from_register_keeps_its_name(self):
         func = make_func('multiuse_two_hop')
@@ -443,13 +443,13 @@ class TestCopyPropagationMultiUseAppliesAtEveryHop(unittest.TestCase):
 
 
 class TestCopyPropagationBackwardReachabilityAcrossBranch(unittest.TestCase):
-    '''reaches_without_redefinition walks backward from the use, so a def sitting in a block
+    """reaches_without_redefinition walks backward from the use, so a def sitting in a block
     that itself branches (e.g. ends in `if (cond) ...`) can still forward safely into whichever
     arm has that block as its SOLE predecessor - the block's OTHER successor is irrelevant to
     whether the one path actually taken is hazard-free. Found and sized against the real corpus
     before implementing (350-file capped census, per notes/corpus_run_rules.md): 12 distinct
     sites across 9 ai_* files, 0 soundness violations (no case the old forward-only walk
-    accepted was ever rejected by the backward walk).'''
+    accepted was ever rejected by the backward walk)."""
 
     def test_copy_forwards_through_a_branching_def_block_into_its_sole_successor(self):
         func = make_func('branch_then_safe_use')
@@ -486,12 +486,12 @@ class TestCopyPropagationBackwardReachabilityAcrossBranch(unittest.TestCase):
 
 
 class TestReachabilityScansUseBlockPrefix(unittest.TestCase):
-    '''reaches_without_redefinition must also scan the use block's own instructions before the
+    """reaches_without_redefinition must also scan the use block's own instructions before the
     use - a redefinition sitting there runs after every predecessor, so forwarding the old value
-    past it changes what the use reads.'''
+    past it changes what the use reads."""
 
     def build_branch(self, func, b0_tail, b1_instructions):
-        '''b0: ...b0_tail; if (c#1) b1 else b2 - b1 is the use block, b0 its sole predecessor'''
+        """b0: ...b0_tail; if (c#1) b1 else b2 - b1 is the use block, b0 its sole predecessor"""
         func.locals['c'] = MLILVariable('c')
         c1 = MLILVariableSSA(func.locals['c'], 1)
         b0 = MediumLevelILBasicBlock(0)
@@ -555,7 +555,7 @@ class TestReachabilityScansUseBlockPrefix(unittest.TestCase):
         _, b1 = self.build_branch(func, [
             MLILSetVarSSA(saved1, MLILVarSSA(reg0_entry)),  # saved#1 = reg0#0 (entry value)
         ], [
-            MLILCall(0x1234, [], output = None),
+            MLILCall(0x1234, [], output=None),
             MLILSetVarSSA(reg0_1, MLILUndef()),             # call's pseudo-def clobbers reg0
             MLILRet(MLILVarSSA(saved1)),
         ])
@@ -609,9 +609,9 @@ class TestReachabilityScansUseBlockPrefix(unittest.TestCase):
 
 
 class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
-    '''Dead-code elimination drops an unread call output and dead register pseudo-defs, so on the
+    """Dead-code elimination drops an unread call output and dead register pseudo-defs, so on the
     next optimizer round the call itself is the only evidence that it clobbered a register - the
-    reachability check must still treat it as a redefinition.'''
+    reachability check must still treat it as a redefinition."""
 
     def reg0_func(self, name):
         func = make_func(name)
@@ -621,7 +621,7 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         return func, reg0, MLILVariableSSA(func.locals['t'], 1)
 
     def optimize_rounds(self, func):
-        '''Two optimizer rounds with dead-code elimination in between, as SSAOptimizer runs them'''
+        """Two optimizer rounds with dead-code elimination in between, as SSAOptimizer runs them"""
         CopyPropagationPass().run(func)
         SSADeadCodeEliminationPass().run(func)
         CopyPropagationPass().run(func)
@@ -633,12 +633,12 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         c1 = MLILVariableSSA(func.locals['c'], 1)
         b0, b1, b2 = (MediumLevelILBasicBlock(n) for n in range(3))
         b0.instructions = [
-            MLILCall('produce', [], output = reg0_1),
+            MLILCall('produce', [], output=reg0_1),
             MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),                # t#1 = reg0#1        (save)
             MLILIf(MLILVarSSA(c1), b1, b2),
         ]
         b1.instructions = [
-            MLILCall('clobber', [], output = reg0_2),             # unread output - dead-code elimination drops it
+            MLILCall('clobber', [], output=reg0_2),               # unread output - dead-code elimination drops it
             MLILCall('consume', [MLILVarSSA(t1)]),
             MLILRet(MLILConst(0)),
         ]
@@ -657,7 +657,7 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         reg0_1, reg0_2 = MLILVariableSSA(reg0, 1), MLILVariableSSA(reg0, 2)
         block = MediumLevelILBasicBlock(0)
         block.instructions = [
-            MLILCall('produce', [], output = reg0_1),
+            MLILCall('produce', [], output=reg0_1),
             MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),                # t#1 = reg0#1        (save)
             MLILSyscall(6, 35, []),
             MLILSetVarSSA(reg0_2, MLILUndef()),                   # the syscall's dead pseudo-def
@@ -677,9 +677,9 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         reg0_1 = MLILVariableSSA(reg0, 1)
         block = MediumLevelILBasicBlock(0)
         block.instructions = [
-            MLILCall('produce', [], output = reg0_1),
+            MLILCall('produce', [], output=reg0_1),
             MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),
-            MLILCall('debug_print', [], clobbers_registers = False),
+            MLILCall('debug_print', [], clobbers_registers=False),
             MLILCall('consume', [MLILVarSSA(t1)]),
             MLILRet(MLILConst(0)),
         ]
@@ -690,12 +690,12 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         self.assertIn('consume(reg0#1)', [str(inst) for inst in block.instructions])
 
     def test_read_as_argument_of_the_clobbering_call_still_forwards(self):
-        '''Arguments are read before the call runs, so its own clobber does not apply to them'''
+        """Arguments are read before the call runs, so its own clobber does not apply to them"""
         func, reg0, t1 = self.reg0_func('argument_of_clobbering_call')
         reg0_1 = MLILVariableSSA(reg0, 1)
         block = MediumLevelILBasicBlock(0)
         block.instructions = [
-            MLILCall('produce', [], output = reg0_1),
+            MLILCall('produce', [], output=reg0_1),
             MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),
             MLILCall('consume', [MLILVarSSA(t1)]),
             MLILRet(MLILConst(0)),
@@ -715,19 +715,19 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         self.assertFalse(reaches_without_redefinition(func, reg0, block, 0, block, 2))
         self.assertFalse(reaches_without_redefinition(func, global5, block, 0, block, 2))
 
-        block.instructions[1] = MLILCall('debug_print', [], clobbers_registers = False)
+        block.instructions[1] = MLILCall('debug_print', [], clobbers_registers=False)
         self.assertTrue(reaches_without_redefinition(func, reg0, block, 0, block, 2))
 
 
 class TestDeadCodeGlobalCallOutput(unittest.TestCase):
-    '''Call results only land in the result register - a global call output would be a global
-    write that dropping an unread output silently loses, so it must fail loudly instead.'''
+    """Call results only land in the result register - a global call output would be a global
+    write that dropping an unread output silently loses, so it must fail loudly instead."""
 
     def test_unread_global_call_output_raises(self):
         func = make_func('global_call_output')
         global5 = func.get_or_create_global_var(5)
         block = MediumLevelILBasicBlock(0)
-        block.instructions = [MLILCall('produce', [], output = MLILVariableSSA(global5, 1)), MLILRet(MLILConst(0))]
+        block.instructions = [MLILCall('produce', [], output=MLILVariableSSA(global5, 1)), MLILRet(MLILConst(0))]
         func.basic_blocks = [block]
 
         with self.assertRaises(ValueError):
@@ -736,15 +736,15 @@ class TestDeadCodeGlobalCallOutput(unittest.TestCase):
 
 def optimized_corpus_mlil(dat_name: str, func_name: str) -> MediumLevelILFunction:
     path = require(SORA2_SCRIPTS / f'ani/{dat_name}')
-    parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
+    parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
     func = next(f for f in functions if f.name == func_name)
-    llil = ED9VMLifter(parser = parser).lift_function(func)
-    return convert_falcom_llil_to_mlil(llil, parser, optimize = True, infer_types = True)
+    llil = ED9VMLifter(parser=parser).lift_function(func)
+    return convert_falcom_llil_to_mlil(llil, parser, optimize=True, infer_types=True)
 
 
 class TestCorpusRegisterReadAfterClobberingCall(unittest.TestCase):
-    '''Real functions whose bytecode saves reg0 to a stack slot before a call and later reads the
-    saved slot - the decompiled call after the clobber must read the saved copy, not reg0.'''
+    """Real functions whose bytecode saves reg0 to a stack slot before a call and later reads the
+    saved slot - the decompiled call after the clobber must read the saved copy, not reg0."""
 
     def call_text(self, mlil: MediumLevelILFunction, target: str) -> str:
         return next(str(inst) for block in mlil.basic_blocks for inst in block.instructions

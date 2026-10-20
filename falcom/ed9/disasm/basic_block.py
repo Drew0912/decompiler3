@@ -10,6 +10,7 @@ if TYPE_CHECKING:
 
 class BranchKind(IntEnum2):
     """Type of control flow edge"""
+
     UNCONDITIONAL   = 0     # JMP, CALL return
     TRUE            = 1     # Conditional branch taken
     FALSE           = 2     # Conditional branch not taken
@@ -18,14 +19,15 @@ class BranchKind(IntEnum2):
 @dataclass
 class BasicBlock:
     """Basic block in control flow graph"""
+
     start_offset    : int                                                  # Starting offset
     name            : str                 = ''                              # Block label (e.g., 'loc_1234')
     end_offset      : int                 = 0                               # End offset (exclusive, 0 means unset)
-    instructions    : list['Instruction'] = field(default_factory = list)
-    succs           : list['BasicBlock']  = field(default_factory = list)   # All successors
-    true_succs      : list['BasicBlock']  = field(default_factory = list)   # True branch successors
-    false_succs     : list['BasicBlock']  = field(default_factory = list)   # False branch successors
-    preds           : list['BasicBlock']  = field(default_factory = list)   # All predecessors
+    instructions    : list['Instruction'] = field(default_factory=list)
+    succs           : list['BasicBlock']  = field(default_factory=list)     # All successors
+    true_succs      : list['BasicBlock']  = field(default_factory=list)     # True branch successors
+    false_succs     : list['BasicBlock']  = field(default_factory=list)     # False branch successors
+    preds           : list['BasicBlock']  = field(default_factory=list)     # All predecessors
 
     def __post_init__(self):
         if not self.name:
@@ -58,7 +60,6 @@ class BasicBlock:
 
         if kind == BranchKind.TRUE and target not in self.true_succs:
             self.true_succs.append(target)
-
         elif kind == BranchKind.FALSE and target not in self.false_succs:
             self.false_succs.append(target)
 

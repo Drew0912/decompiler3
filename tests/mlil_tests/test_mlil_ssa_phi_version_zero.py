@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for SSADeconstructor._eliminate_phi_nodes's version-0 skip: a parameter/register/
+"""Unit tests for SSADeconstructor._eliminate_phi_nodes's version-0 skip: a parameter/register/
 global's SSA version 0 is a real value already live at function entry, not an undefined initial
 value like a plain local's version 0 - skipping the phi-source copy for it can drop that value on
-the path where the variable was never reassigned.'''
+the path where the variable was never reassigned."""
 
 from pathlib import Path
 import sys
@@ -21,12 +21,12 @@ def make_func(name: str) -> MediumLevelILFunction:
 
 def build_if_no_else_merge(dest_var: MLILVariableSSA, then_source: MLILVariableSSA,
                            else_source: MLILVariableSSA):
-    '''then_block sets the variable and falls to merge_block; else_block leaves it untouched
+    """then_block sets the variable and falls to merge_block; else_block leaves it untouched
     and falls to merge_block too - both predecessors have a single outgoing edge each, so
-    _phi_copy_block inserts directly into them (no critical-edge split needed).'''
-    then_block = MediumLevelILBasicBlock(0, label = 'then_block')
-    else_block = MediumLevelILBasicBlock(1, label = 'else_block')
-    merge_block = MediumLevelILBasicBlock(2, label = 'merge_block')
+    _phi_copy_block inserts directly into them (no critical-edge split needed)."""
+    then_block = MediumLevelILBasicBlock(0, label='then_block')
+    else_block = MediumLevelILBasicBlock(1, label='else_block')
+    merge_block = MediumLevelILBasicBlock(2, label='merge_block')
 
     then_block.instructions = [
         MLILSetVarSSA(then_source, MLILConst(42)),
@@ -40,15 +40,15 @@ def build_if_no_else_merge(dest_var: MLILVariableSSA, then_source: MLILVariableS
     else_block.add_outgoing_edge(merge_block)
 
     merge_block.instructions = [
-        MLILPhi(dest = dest_var, sources = [(then_source, then_block), (else_source, else_block)]),
+        MLILPhi(dest=dest_var, sources=[(then_source, then_block), (else_source, else_block)]),
     ]
 
     return then_block, else_block, merge_block
 
 
 class TestEliminatePhiNodesRegisterVersionZero(unittest.TestCase):
-    '''A register's version 0 is the caller's real incoming value - the phi-source copy must
-    not be skipped just because the register was never reassigned on that path.'''
+    """A register's version 0 is the caller's real incoming value - the phi-source copy must
+    not be skipped just because the register was never reassigned on that path."""
 
     def test_register_phi_source_at_version_zero_gets_a_copy(self):
         func = make_func('reg_phi_test')
@@ -73,9 +73,9 @@ class TestEliminatePhiNodesRegisterVersionZero(unittest.TestCase):
 
 
 class TestEliminatePhiNodesGlobalVersionZero(unittest.TestCase):
-    '''Same defect, same fix, for a global - its version 0 is the persisted store's live value,
+    """Same defect, same fix, for a global - its version 0 is the persisted store's live value,
     not undefined (the SSA construction side already treats parameters and globals as
-    "defined at function entry" identically - see _rename_variables_iterative).'''
+    "defined at function entry" identically - see _rename_variables_iterative)."""
 
     def test_global_phi_source_at_version_zero_gets_a_copy(self):
         func = make_func('global_phi_test')
@@ -98,8 +98,8 @@ class TestEliminatePhiNodesGlobalVersionZero(unittest.TestCase):
 
 
 class TestEliminatePhiNodesLocalVersionZeroStillSkipped(unittest.TestCase):
-    '''A plain local's version 0 is genuinely undefined (unlike a parameter/register/global) -
-    this case must keep being skipped, unaffected by widening the exemption.'''
+    """A plain local's version 0 is genuinely undefined (unlike a parameter/register/global) -
+    this case must keep being skipped, unaffected by widening the exemption."""
 
     def test_local_phi_source_at_version_zero_still_skipped(self):
         func = make_func('local_phi_test')

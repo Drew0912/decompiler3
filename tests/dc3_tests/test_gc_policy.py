@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''dc3/gc_policy.py: infrequent_gc() spaces collections out for a block and restores the thresholds it found, and
-the decompile and compile entry points run under it.'''
+"""dc3/gc_policy.py: infrequent_gc() spaces collections out for a block and restores the thresholds it found, and
+the decompile and compile entry points run under it."""
 
 from pathlib import Path
 import gc
@@ -84,7 +84,7 @@ class TestEntryPoints(unittest.TestCase):
         raise Stop
 
     def test_decompile_runs_under_it(self):
-        with mock.patch.object(scena2py.ScpParser, 'load', side_effect = self.record_and_stop):
+        with mock.patch.object(scena2py.ScpParser, 'load', side_effect=self.record_and_stop):
             with self.assertRaises(Stop):
                 scena2py.process_file(Path('x.dat'), ScenaDecompileConfig())
 
@@ -93,7 +93,7 @@ class TestEntryPoints(unittest.TestCase):
 
     def test_compile_runs_under_it(self):
         writer = ScpWriter()
-        with mock.patch.object(writer, 'build', side_effect = self.record_and_stop):
+        with mock.patch.object(writer, 'build', side_effect=self.record_and_stop):
             with self.assertRaises(Stop):
                 writer.run({})
 

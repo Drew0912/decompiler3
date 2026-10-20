@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''What the lifter makes of an opcode: each operator its own node over the values pushed, translated to its own
-MLIL operation; DEBUG_LOG a debug-log node that MLIL keeps as a call; PUSH_RAW a RawInt constant through to HLIL.'''
+"""What the lifter makes of an opcode: each operator its own node over the values pushed, translated to its own
+MLIL operation; DEBUG_LOG a debug-log node that MLIL keeps as a call; PUSH_RAW a RawInt constant through to HLIL."""
 
 from pathlib import Path
 import sys
@@ -47,7 +47,7 @@ LOCAL_UNDER_CALL_SETUP = -(LOCAL_SETUP_SLOTS + 1) * WORD_SIZE
 
 
 class TestDebugLogIsLifted(unittest.TestCase):
-    '''DEBUG_LOG prints its arguments; the decompiled script must still print them'''
+    """DEBUG_LOG prints its arguments; the decompiled script must still print them"""
 
     def make_function(self):
         asm = Asm()
@@ -66,7 +66,7 @@ class TestDebugLogIsLifted(unittest.TestCase):
     def test_survives_as_a_debug_log_call_in_mlil(self):
         parser, llil_func = self.make_function()
 
-        mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = False)
+        mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize=False)
 
         calls = [inst for block in mlil_func.basic_blocks for inst in block.instructions
                  if isinstance(inst, MLILCall) and inst.target == DEBUG_LOG_CALL_TARGET]
@@ -100,13 +100,13 @@ UNARY_OPERATORS = (
 
 
 def stored_values(func) -> list:
-    '''The value of every instruction that has one (StackStore / SetVar ...), in order'''
+    """The value of every instruction that has one (StackStore / SetVar ...), in order"""
     return [inst.value for block in func.basic_blocks for inst in block.instructions if hasattr(inst, 'value')]
 
 
 class TestOperatorsKeepTheirOperands(unittest.TestCase):
-    '''Each arithmetic, comparison, bitwise and logical opcode lifts to its own node over the values pushed (first
-    push on the left) and translates to its own MLIL operation over the same variables'''
+    """Each arithmetic, comparison, bitwise and logical opcode lifts to its own node over the values pushed (first
+    push on the left) and translates to its own MLIL operation over the same variables"""
 
     def lift_and_translate(self, mnemonic: str, operand_count: int):
         asm = Asm()
@@ -117,7 +117,7 @@ class TestOperatorsKeepTheirOperands(unittest.TestCase):
         getattr(asm, mnemonic)()
         asm.set_reg(REG_INDEX); asm.ret()
         parser, llil_func = lift_asm(asm)
-        return llil_func, convert_falcom_llil_to_mlil(llil_func, parser, optimize = False)
+        return llil_func, convert_falcom_llil_to_mlil(llil_func, parser, optimize=False)
 
     def test_binary_operators(self):
         for mnemonic, llil_class, mlil_class, operation in BINARY_OPERATORS:
@@ -145,8 +145,8 @@ class TestOperatorsKeepTheirOperands(unittest.TestCase):
 
 
 class TestRawPushKeepsItsType(unittest.TestCase):
-    '''Past LLIL's is_raw only a constant's type tells Raw (PUSH_RAW) from Integer, and the lifter made it an int:
-    HLIL couldn't keep `.ts` from leaving out a Raw argument equal to an Integer default'''
+    """Past LLIL's is_raw only a constant's type tells Raw (PUSH_RAW) from Integer, and the lifter made it an int:
+    HLIL couldn't keep `.ts` from leaving out a Raw argument equal to an Integer default"""
 
     def test_reaches_hlil_as_a_raw_int_printed_as_a_number(self):
         asm = Asm()
@@ -166,14 +166,14 @@ class TestRawPushKeepsItsType(unittest.TestCase):
                 self.assertNotIn('RawInt', text)
 
     def hlil_call(self, asm: Asm, callee_argc: int) -> HLILCall:
-        '''The one call in asm's function, lifted to HLIL beside a callee taking callee_argc arguments'''
-        parser, llil_func = lift_asm(asm, others = (returning_callee(callee_argc),))
+        """The one call in asm's function, lifted to HLIL beside a callee taking callee_argc arguments"""
+        parser, llil_func = lift_asm(asm, others=(returning_callee(callee_argc),))
         hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil(llil_func, parser))
         [call] = [node for node in iter_tree(hlil_func.body) if isinstance(node, HLILCall)]
         return call
 
     def test_call_argument_stays_raw(self):
-        '''Pushed as the argument, or stored in a local first (SCCP substitutes the constant)'''
+        """Pushed as the argument, or stored in a local first (SCCP substitutes the constant)"""
         direct = Asm()
         direct.push_raw(CALLER_ID); direct.push_raw('back'); direct.push_raw(RAW_VALUE); direct.push_int(FIRST_VALUE)
         direct.call(CALLEE_ID); direct.label('back'); direct.ret()
@@ -191,7 +191,7 @@ class TestRawPushKeepsItsType(unittest.TestCase):
                 self.assertEqual({arg.value: type(arg.value) for arg in call.args}, expected)
 
     def test_raw_and_integer_constants_do_not_merge(self):
-        '''A Raw 0 and an Integer 0 are different words: where they meet the variable stays (two Raw 0s fold)'''
+        """A Raw 0 and an Integer 0 are different words: where they meet the variable stays (two Raw 0s fold)"""
         for case, else_push, folds in (('Raw and Integer', 'push_int', False), ('both Raw', 'push_raw', True)):
             with self.subTest(case):
                 asm = Asm()
@@ -207,23 +207,23 @@ class TestRawPushKeepsItsType(unittest.TestCase):
 
                 if folds:
                     self.assertIs(type(arg.value), RawInt)
-
                 else:
                     self.assertIsInstance(arg, HLILVar)
 
     def test_raw_parameter_default_prints_as_a_number(self):
-        '''It printed `= RawInt(0x00000005)` in .ts; the .py keeps that spelling, the one the writer takes'''
+        """It printed `= RawInt(0x00000005)` in .ts; the .py keeps that spelling, the one the writer takes"""
         main = Asm()
         main.ret()
         parser, functions = Program(main_function(main), returning_callee(1)).disassemble()
         [callee] = [func for func in functions if func.name == CALLEE_NAME]
         callee.params[0].default_value = ScpValue(RawInt(RAW_VALUE))
 
-        llil_func = ED9VMLifter(parser = parser).lift_function(callee)
+        llil_func = ED9VMLifter(parser=parser).lift_function(callee)
         hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil(llil_func, parser), callee)
 
         self.assertIn(f'(arg1: number = {RAW_VALUE})', generate_typescript(hlil_func))
         self.assertIn(f'= {RawInt(RAW_VALUE)!r}', Formatter.format_param(0, callee.params[0]))
+
 
 if __name__ == '__main__':
     unittest.main()

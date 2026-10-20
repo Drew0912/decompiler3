@@ -1,4 +1,4 @@
-'''Medium Level IL - Stack-free intermediate representation'''
+"""Medium Level IL - Stack-free intermediate representation"""
 
 from .mlil_builder import *
 from .llil_to_mlil import *

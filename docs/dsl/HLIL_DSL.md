@@ -92,7 +92,7 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   blocks in one function: structure what is clean, jump elsewhere. Labels are per function and named by
   order, not address. A jump must arrive with the same live locals; `Break`/`Continue` free inner
   locals first.
-- **Switch:** `Switch(value, [Case(k, [...]), ...], default = [...])` lowers to the compiler's own
+- **Switch:** `Switch(value, [Case(k, [...]), ...], default=[...])` lowers to the compiler's own
   pattern: `SET_REG 0`; per case `GET_REG 0; PUSH_INT k; EQ; POP_JMP_NOT_ZERO`; a jump past the cases;
   the bodies in order, each ending in a jump to the end. A list rather than a dict keeps `1` and `1.0`
   apart.

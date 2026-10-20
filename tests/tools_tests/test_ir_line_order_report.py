@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for tools/ir_line_order_report.py: MLIL line directives are read in address order, and
+"""Unit tests for tools/ir_line_order_report.py: MLIL line directives are read in address order, and
 analyse_file gives itself scena2py.py's recursion headroom. BlockMergePass splices a block onto its only
 predecessor wherever that sits in the block list, so reading MLIL in block order reports line
-reorders the bytecode does not have.'''
+reorders the bytecode does not have."""
 
 from pathlib import Path
 import sys
@@ -38,22 +38,22 @@ class TestMLILLinesInAddressOrder(unittest.TestCase):
 
     def test_block_spliced_onto_an_earlier_block_keeps_its_address_order(self):
         func = MediumLevelILFunction('merged')
-        entry = func.create_block(start = ENTRY_START, label = 'entry')
-        head = func.create_block(start = HEAD_START, label = 'head')
-        other = func.create_block(start = OTHER_START, label = 'other')
-        target = func.create_block(start = TARGET_START, label = 'target')
+        entry = func.create_block(start=ENTRY_START, label='entry')
+        head = func.create_block(start=HEAD_START, label='head')
+        other = func.create_block(start=OTHER_START, label='other')
+        target = func.create_block(start=TARGET_START, label='target')
         cond = MLILVar(func.get_or_create_local('cond'))
 
-        entry.add_instruction(MLILDebug('line', ENTRY_LINE, address = ENTRY_START))
+        entry.add_instruction(MLILDebug('line', ENTRY_LINE, address=ENTRY_START))
         entry.add_instruction(MLILIf(cond, head, other))
 
-        head.add_instruction(MLILDebug('line', HEAD_LINE, address = HEAD_START))
+        head.add_instruction(MLILDebug('line', HEAD_LINE, address=HEAD_START))
         head.add_instruction(MLILGoto(target))
 
-        other.add_instruction(MLILDebug('line', OTHER_LINE, address = OTHER_START))
+        other.add_instruction(MLILDebug('line', OTHER_LINE, address=OTHER_START))
         other.add_instruction(MLILRet(None))
 
-        target.add_instruction(MLILDebug('line', TARGET_LINE, address = TARGET_START))
+        target.add_instruction(MLILDebug('line', TARGET_LINE, address=TARGET_START))
         target.add_instruction(MLILRet(None))
 
         connect(func)
@@ -67,8 +67,8 @@ class TestMLILLinesInAddressOrder(unittest.TestCase):
 
 
 class TestAnalyseFileMatchesScena2py(unittest.TestCase):
-    '''The report describes the generated .ts only with scena2py's recursion headroom: the most deeply nested
-    scripts are not dropped'''
+    """The report describes the generated .ts only with scena2py's recursion headroom: the most deeply nested
+    scripts are not dropped"""
 
     def setUp(self):
         require(SMALL_SCRIPT)

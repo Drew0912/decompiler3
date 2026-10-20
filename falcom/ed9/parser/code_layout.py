@@ -11,7 +11,7 @@ def code_start(header: ScpHeader) -> int:
 
 def code_order(entries: list[ScpFunctionEntry]) -> list[int]:
     """Table indices sorted by code offset (the table is sorted by name, the code is in source order)"""
-    return sorted(range(len(entries)), key = lambda index: entries[index].offset)
+    return sorted(range(len(entries)), key=lambda index: entries[index].offset)
 
 
 def function_extents(entries: list[ScpFunctionEntry], code_end: int) -> dict[int, tuple[int, int]]:

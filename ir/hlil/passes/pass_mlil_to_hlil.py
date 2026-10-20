@@ -1,4 +1,4 @@
-'''MLIL to HLIL Conversion Pass'''
+"""MLIL to HLIL Conversion Pass"""
 
 from ir.pipeline import Pass
 from ir.mlil.mlil import MediumLevelILFunction
@@ -7,7 +7,7 @@ from ..mlil_to_hlil import MLILToHLILConverter
 
 
 class MLILToHLILPass(Pass):
-    '''MLIL to HLIL conversion pass'''
+    """MLIL to HLIL conversion pass"""
 
     def run(self, mlil_func: MediumLevelILFunction) -> HighLevelILFunction:
         converter = MLILToHLILConverter(mlil_func)

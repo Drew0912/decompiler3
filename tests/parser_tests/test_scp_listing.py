@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for the readable .dat listing (.debug.txt, falcom/ed9/parser/scp_listing.py): the sections, every code byte
-listed once, record tags at their calls, escaped text, and scena2py's write_debug_info / debug_sections.'''
+"""Unit tests for the readable .dat listing (.debug.txt, falcom/ed9/parser/scp_listing.py): the sections, every code byte
+listed once, record tags at their calls, escaped text, and scena2py's write_debug_info / debug_sections."""
 
 from dataclasses import fields
 from pathlib import Path
@@ -54,9 +54,9 @@ IR_OUTPUTS = ('write_py', 'write_ts', 'write_llil_asm', 'write_llil_dot', 'write
 
 
 def compile_main(dat: Path):
-    '''Global var types 1 and 2; Outer has a float and a string default; Main makes a call before any line info, pushes a
+    """Global var types 1 and 2; Outer has a float and a string default; Main makes a call before any line info, pushes a
     string with every character that needs escaping, nests Inner() in Outer's arguments (records in source order: Outer's
-    first), and calls Inner again in dead code after its RETURN'''
+    first), and calls Inner again in dead code after its RETURN"""
     writer = fresh_writer(dat)
 
     @writer.GlobalVars()
@@ -115,7 +115,7 @@ def compile_main(dat: Path):
 
 
 def compile_shared(dat: Path):
-    '''ZEmpty has no code, so it starts where ABody does; Jumper jumps into ABody (compiles with a warning for each)'''
+    """ZEmpty has no code, so it starts where ABody does; Jumper jumps into ABody (compiles with a warning for each)"""
     writer = fresh_writer(dat)
 
     @writer.LLILCode()
@@ -135,7 +135,7 @@ def compile_shared(dat: Path):
 
 
 def compile_common(dat: Path):
-    '''A common function (laid out first, with no line info) and two source functions'''
+    """A common function (laid out first, with no line info) and two source functions"""
     writer = fresh_writer(dat)
 
     @writer.LLILCommonCode()
@@ -158,7 +158,7 @@ def compile_common(dat: Path):
 
 
 def compile_tail_calls(dat: Path):
-    '''Tail calls into this script: to a function it defines (Loop) and to one it doesn't'''
+    """Tail calls into this script: to a function it defines (Loop) and to one it doesn't"""
     writer = fresh_writer(dat)
 
     @writer.LLILCode()
@@ -180,8 +180,8 @@ def compile_tail_calls(dat: Path):
 
 
 def code_area(listing: ScpListing, lines: list[str]) -> bytes:
-    '''The bytes of the code and raw lines before the string pool, in printed order; each line must start where the
-    previous one ended (from the code start), so a range listed twice or skipped fails'''
+    """The bytes of the code and raw lines before the string pool, in printed order; each line must start where the
+    previous one ended (from the code start), so a range listed twice or skipped fails"""
     lines = lines[:next((i for i, line in enumerate(lines) if line.startswith(POOL_HEADING)), len(lines))]
     bytes_column = len('0x') + listing.offset_width + COLUMN_GAP
     cursor = code_start(listing.parser.header)
@@ -203,19 +203,19 @@ def whole_code_area(listing: ScpListing) -> bytes:
 
 
 def group_lines(lines: list[str], name: str) -> list[str]:
-    '''The lines of the function group whose heading starts with name'''
+    """The lines of the function group whose heading starts with name"""
     start = next(i for i, line in enumerate(lines) if line.startswith(f'=== {name} '))
     end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith('===')), len(lines))
     return lines[start:end]
 
 
 def function_headings(lines: list[str]) -> list[str]:
-    '''Each function group's names'''
+    """Each function group's names"""
     return [line.split(' (')[0].removeprefix('=== ') for line in lines if line.startswith('=== ') and 'code 0x' in line]
 
 
 def record_offsets_and_tags(lines: list[str]) -> list[str]:
-    '''The lines that exist only for a paired function: a record's call offset, a tag under a call'''
+    """The lines that exist only for a paired function: a record's call offset, a tag under a call"""
     return [line for line in lines if ' @ 0x' in line or ';   record' in line]
 
 
@@ -237,7 +237,7 @@ class TestListing(unittest.TestCase):
 
     def test_each_section_alone(self):
         for field in fields(ListingSections):
-            with self.subTest(section = field.name):
+            with self.subTest(section=field.name):
                 sections = ListingSections(**{other.name: other.name == field.name for other in fields(ListingSections)})
                 lines = self.listing.lines(sections)
                 printed = {section for section, marker in SECTION_MARKERS.items() if any(line.startswith(marker) for line in lines)}
@@ -253,7 +253,7 @@ class TestListing(unittest.TestCase):
         self.assertEqual((unrecorded, note), ([], None))
         self.assertEqual(len(call_offsets), len(records))
         for i, offset in call_offsets.items():
-            with self.subTest(record = i):
+            with self.subTest(record=i):
                 [(inst, _)] = self.listing.decoded[offset]
                 self.assertEqual(inst.opcode, CALL_OPCODES[records[i].call_type])
                 if inst.opcode == ED9Opcode.CALL:
@@ -263,7 +263,7 @@ class TestListing(unittest.TestCase):
                 self.assertIn(f';   record {i}: ', self.lines[line + 1])
 
     def test_record_order_is_source_order(self):
-        '''Outer's record comes before the Inner call nested in its arguments, which sits earlier in the code'''
+        """Outer's record comes before the Inner call nested in its arguments, which sits earlier in the code"""
         records = [line for line in group_lines(self.lines, 'Main') if line.startswith('[')]
         self.assertEqual([line.split(' @ ')[0] for line in records[1:3]], ['[ 1] Local Outer(CallResult, "x")', '[ 2] Local Inner()'])
         self.assertLess(int(records[2].split(' @ ')[1], 16), int(records[1].split(' @ ')[1], 16))
@@ -287,7 +287,7 @@ class TestListing(unittest.TestCase):
         text = '\n'.join(self.lines)
         for expected in ('PUSH 4, Float(0.3)', 'f32 0x3E999998, raw 0x8FA66666', 'SYSCALL 1, 0x2F, 0x01', 'LOAD_GLOBAL 0',
                          '"flag", global var 0', 'PUSH 4, Raw(0x1)', 'func id: Main', 'CALL_SCRIPT Str(', '"this", "Inner"'):
-            with self.subTest(expected = expected):
+            with self.subTest(expected=expected):
                 self.assertIn(expected, text)
 
     def test_global_var_types(self):
@@ -308,7 +308,7 @@ class TestListing(unittest.TestCase):
         self.assertFalse(record_offsets_and_tags(lines))
 
     def test_undecoded_bytes_listed_raw(self):
-        '''Dead code that doesn't decode (an opcode the table lacks) is kept as raw bytes inside its function'''
+        """Dead code that doesn't decode (an opcode the table lacks) is kept as raw bytes inside its function"""
         dead_start = self.functions['Main'].unreachable_blocks[0].start_offset
         data = bytearray(self.listing.data)
         data[dead_start] = INVALID_OPCODE
@@ -323,15 +323,15 @@ class TestListing(unittest.TestCase):
 
 
 class TestSameScriptTailCalls(unittest.TestCase):
-    '''A tail call into the same script pairs with its record: the callee's table index and bare name, or NO_FUNC_ID
-    when the script doesn't define the callee'''
+    """A tail call into the same script pairs with its record: the callee's table index and bare name, or NO_FUNC_ID
+    when the script doesn't define the callee"""
 
     def test_records_pair(self):
         dat = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'tail_calls.dat'
         compile_tail_calls(dat)
         listing = ScpListing(dat)
         for name in ('ToLoop', 'ToNowhere'):
-            with self.subTest(function = name):
+            with self.subTest(function=name):
                 call_offsets, _, note = listing.pairing(listing.parser.get_func_by_name(name))
                 self.assertEqual((len(call_offsets), note), (1, None))
 
@@ -353,7 +353,7 @@ class TestSharedCode(unittest.TestCase):
 
     def test_any_member_selects_the_shared_range(self):
         for name in ('ABody', 'ZEmpty'):
-            with self.subTest(selected = name):
+            with self.subTest(selected=name):
                 self.assertEqual(function_headings(self.listing.lines(ListingSections(), {self.indices[name]})), ['ABody + ZEmpty'])
 
     def test_jump_into_another_function(self):
@@ -372,9 +372,9 @@ class TestProcessFile(unittest.TestCase):
         compile_common(cls.common)
 
     def listing_text(self, dat: Path, **settings) -> str:
-        '''dat's .debug.txt from process_file, every other output off, into an output folder of its own'''
+        """dat's .debug.txt from process_file, every other output off, into an output folder of its own"""
         config = ScenaDecompileConfig()
-        config.output_dir = Path(tempfile.mkdtemp(dir = self.tmp))
+        config.output_dir = Path(tempfile.mkdtemp(dir=self.tmp))
         for flag in IR_OUTPUTS:
             setattr(config, flag, False)
 
@@ -383,16 +383,16 @@ class TestProcessFile(unittest.TestCase):
             setattr(config, name, value)
 
         process_file(dat, config)
-        return (config.output_dir / dat.stem / f'{dat.stem}.debug.txt').read_text(encoding = 'utf-8')
+        return (config.output_dir / dat.stem / f'{dat.stem}.debug.txt').read_text(encoding='utf-8')
 
     def test_listing_alone_in_both_modes(self):
-        '''No other output asked for - the listing is still written, the same whatever the decompile mode'''
-        texts = [self.listing_text(self.main, round_trip = mode, keep_unreachable_code = mode) for mode in (False, True)]
+        """No other output asked for - the listing is still written, the same whatever the decompile mode"""
+        texts = [self.listing_text(self.main, round_trip=mode, keep_unreachable_code=mode) for mode in (False, True)]
         self.assertEqual(texts[0], texts[1])
         self.assertEqual(texts[0], '\n'.join(ScpListing(self.main).lines(ListingSections())) + '\n')
 
     def test_selected_functions_only(self):
-        lines = self.listing_text(self.main, filter_func = lambda func: func.name in ('Main', 'Inner')).splitlines()
+        lines = self.listing_text(self.main, filter_func=lambda func: func.name in ('Main', 'Inner')).splitlines()
         self.assertEqual(function_headings(lines), ['Inner', 'Main'])
         self.assertIn('0x1B1  name     "Outer"', lines)     # the pool lists an unselected function's name too
         self.assertFalse([line for line in lines if 'not decoded' in line])
@@ -403,7 +403,7 @@ class TestProcessFile(unittest.TestCase):
             ({'include_common_functions': False}, ['Main', 'Other']),
             ({'include_common_functions': False, 'filter_func': lambda func: func.name in ('CommonOne', 'Other')}, ['Other']),
         ):
-            with self.subTest(settings = sorted(settings)):
+            with self.subTest(settings=sorted(settings)):
                 lines = self.listing_text(self.common, **settings).splitlines()
                 self.assertEqual(function_headings(lines), expected)
                 self.assertTrue(any(line.endswith(' name     "CommonOne"') for line in lines))
@@ -411,7 +411,7 @@ class TestProcessFile(unittest.TestCase):
     def test_every_section_off(self):
         no_sections = ListingSections(**{field.name: False for field in fields(ListingSections)})
         with self.assertLogs(log, 'WARNING') as logs:
-            text = self.listing_text(self.main, debug_sections = no_sections)
+            text = self.listing_text(self.main, debug_sections=no_sections)
 
         self.assertEqual(text, '.debug.txt of main.dat\n')
         self.assertIn('every .debug.txt section is off', logs.output[0])
@@ -431,22 +431,22 @@ class TestRealScripts(unittest.TestCase):
 
     def test_code_before_the_first_function(self):
         listing = ScpListing(require(CODE_BEFORE_FUNCTIONS_FILE))
-        lines = listing.lines(ListingSections(header = False, global_vars = False, function_entries = False,
-                                              call_records = False, string_pool = False))
+        lines = listing.lines(ListingSections(header=False, global_vars=False, function_entries=False,
+                                              call_records=False, string_pool=False))
         block = lines.index('=== Outside every function: 0xA4..0xB9 ===')
         first_function = next(i for i in range(block + 1, len(lines)) if lines[i].startswith('==='))
         self.assertEqual(code_area(listing, lines[block:first_function]), listing.data[0xA4:0xB9])
         self.assertEqual(code_area(listing, lines), whole_code_area(listing))
 
     def test_unmarked_call_is_tagged(self):
-        '''SkillTable's first if-body call has no record (no line marker of its own): its records pair with the other
-        calls, and that CALL is tagged'''
+        """SkillTable's first if-body call has no record (no line marker of its own): its records pair with the other
+        calls, and that CALL is tagged"""
         listing = ScpListing(require(UNMARKED_CALL_FILE))
         call_offsets, unrecorded, note = listing.pairing(listing.parser.get_func_by_name(UNMARKED_CALL_FUNCTION))
         self.assertEqual((len(call_offsets), unrecorded, note), (UNMARKED_CALL_RECORDS, [UNMARKED_CALL_OFFSET], None))
 
-        lines = listing.lines(ListingSections(header = False, global_vars = False, function_entries = False,
-                                              string_pool = False))
+        lines = listing.lines(ListingSections(header=False, global_vars=False, function_entries=False,
+                                              string_pool=False))
         line = next(i for i, text in enumerate(lines) if text.startswith(f'0x{UNMARKED_CALL_OFFSET:0{listing.offset_width}X}'))
         self.assertTrue(lines[line].endswith('; btl_ai_skill'), lines[line])
         self.assertEqual(lines[line + 1].strip(), ';   no record')

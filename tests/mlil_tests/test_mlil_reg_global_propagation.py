@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for RegGlobalValuePropagator: the analysis reaches a real fixpoint over loops,
+"""Unit tests for RegGlobalValuePropagator: the analysis reaches a real fixpoint over loops,
 compares constants by representation (1 is not 1.0, NaN equals NaN), and caches only fully
 closed-form (constant) expressions under a REG/GLOBAL slot, so a cached value can never go stale
-after a write to whatever it was computed from.'''
+after a write to whatever it was computed from."""
 
 from pathlib import Path
 import sys
@@ -26,15 +26,15 @@ FUNC_START = 0x1000
 
 
 class TestWorklistFixpointRecordsInStateOnEveryVisit(unittest.TestCase):
-    '''_analyze records block_in on every visit, not only when out_state changes: a loop block
+    """_analyze records block_in on every visit, not only when out_state changes: a loop block
     whose out_state stabilizes early (a call clobbers state to unknown on every visit, whatever
-    flows in) must not keep an over-optimistic first-visit in_state.'''
+    flows in) must not keep an over-optimistic first-visit in_state."""
 
     def test_loop_global_is_not_folded_past_a_clobbering_call_on_the_back_edge(self):
         func = MediumLevelILFunction('worklist_test')
-        entry = func.create_block(start = FUNC_START, label = 'entry')
-        loop = func.create_block(start = FUNC_START + 4, label = 'loop')
-        exit_block = func.create_block(start = FUNC_START + 8, label = 'exit')
+        entry = func.create_block(start=FUNC_START, label='entry')
+        loop = func.create_block(start=FUNC_START + 4, label='loop')
+        exit_block = func.create_block(start=FUNC_START + 8, label='exit')
 
         entry.add_instruction(MLILStoreGlobal(7, MLILConst(0)))
         entry.add_instruction(MLILGoto(loop))
@@ -56,10 +56,10 @@ class TestWorklistFixpointRecordsInStateOnEveryVisit(unittest.TestCase):
 
 
 class TestConstantEqualityIsRepresentationSafe(unittest.TestCase):
-    '''_expr_equal compares MLILConst values by representation, not with bare `==`: int and
+    """_expr_equal compares MLILConst values by representation, not with bare `==`: int and
     float never match (1 vs 1.0), and NaN matches NaN - otherwise _analyze's fixpoint loop never
     converges for a function whose tracked state holds a NaN constant (ED9 floats decode straight
-    from binary data, so NaN is reachable).'''
+    from binary data, so NaN is reachable)."""
 
     def setUp(self):
         self.propagator = RegGlobalValuePropagator(MediumLevelILFunction('equality_test'))
@@ -72,8 +72,8 @@ class TestConstantEqualityIsRepresentationSafe(unittest.TestCase):
 
     def test_merge_states_widens_to_unknown_when_predecessors_disagree_on_representation(self):
         merged = self.propagator._merge_states([
-            RegGlobalState(global_ = {0: MLILConst(1)}),
-            RegGlobalState(global_ = {0: MLILConst(1.0)}),
+            RegGlobalState(global_={0: MLILConst(1)}),
+            RegGlobalState(global_={0: MLILConst(1.0)}),
         ])
 
         # Predecessors disagree on representation - must widen to unknown, not silently pick
@@ -81,16 +81,16 @@ class TestConstantEqualityIsRepresentationSafe(unittest.TestCase):
         self.assertIsNone(merged.global_[0])
 
     def test_state_equal_reaches_a_fixpoint_on_a_nan_valued_state(self):
-        left = RegGlobalState(global_ = {0: MLILConst(float('nan'))})
-        right = RegGlobalState(global_ = {0: MLILConst(float('nan'))})
+        left = RegGlobalState(global_={0: MLILConst(float('nan'))})
+        right = RegGlobalState(global_={0: MLILConst(float('nan'))})
 
         self.assertTrue(self.propagator._state_equal(left, right))
 
 
 class TestClosedFormCachingNeverGoesStale(unittest.TestCase):
-    '''Only a fully closed-form (constant) expression is ever cached under a
+    """Only a fully closed-form (constant) expression is ever cached under a
     REG/GLOBAL slot - a live reference to another slot, a local, or a pointer dereference is
-    never cached, so none of these can go stale.'''
+    never cached, so none of these can go stale."""
 
     def test_copy_of_an_unresolved_slot_is_not_cached_as_a_live_reference(self):
         func = MediumLevelILFunction('unresolved_slot_copy')
@@ -149,8 +149,8 @@ class TestClosedFormCachingNeverGoesStale(unittest.TestCase):
         self.assertIsInstance(final_ret.value, MLILLoadGlobal)
 
     def test_positive_control_constant_propagation_still_works(self):
-        '''The main case this pass exists for must still fold - closed-form caching should not
-        regress plain constant propagation.'''
+        """The main case this pass exists for must still fold - closed-form caching should not
+        regress plain constant propagation."""
         func = MediumLevelILFunction('positive_control')
         block = func.create_block()
         block.add_instruction(MLILStoreReg(0, MLILConst(5)))

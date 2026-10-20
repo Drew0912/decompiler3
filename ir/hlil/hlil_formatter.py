@@ -1,4 +1,4 @@
-'''HLIL Formatter - Format HLIL for debugging'''
+"""HLIL Formatter - Format HLIL for debugging"""
 
 from dc3 import default_indent
 from typing import List
@@ -6,18 +6,16 @@ from .hlil import *
 
 
 class HLILFormatter:
-    '''Format HLIL functions for debugging'''
+    """Format HLIL functions for debugging"""
 
     @classmethod
     def _format_expr(cls, expr: HLILExpression) -> str:
-        '''Format an HLIL expression'''
+        """Format an HLIL expression"""
         if isinstance(expr, HLILVar):
             return str(expr.var)  # Use __str__ to handle GLOBAL/REG properly
-
         elif isinstance(expr, HLILConst):
             # The constant's own text: quoted strings, true/false, hex constants unsigned as in the .ts
             return str(expr)
-
         elif isinstance(expr, HLILBinaryOp):
             lhs_str = cls._format_expr(expr.lhs)
             rhs_str = cls._format_expr(expr.rhs)
@@ -30,17 +28,14 @@ class HLILFormatter:
                 rhs_str = f'({rhs_str})'
 
             return f'{lhs_str} {BINARY_OP_STR[expr.op]} {rhs_str}'
-
         elif isinstance(expr, HLILUnaryOp):
             operand = cls._format_expr(expr.operand)
             if unary_operand_needs_parentheses(expr.op, expr.operand, operand):
                 operand = f'({operand})'
             return f'{UNARY_OP_STR[expr.op]}{operand}'
-
         elif isinstance(expr, HLILAddressOf):
             operand = cls._format_expr(expr.operand)
             return f'&{operand}'
-
         elif isinstance(expr, HLILDeref):
             # *(&x) - ir/mlil/mlil_ssa.py's memory-form lowering of address-taken local x -
             # folds back to plain x, same convention as codegen/typescript.py
@@ -52,11 +47,9 @@ class HLILFormatter:
             if isinstance(expr.operand, HLILBinaryOp):
                 operand = f'({operand})'
             return f'*{operand}'
-
         elif isinstance(expr, HLILCall):
             args = ', '.join(cls._format_expr(arg) for arg in expr.args)
             return f'{expr.func_name}({args})'
-
         elif isinstance(expr, HLILSyscall):
             args = [
                 f'{expr.subsystem}',
@@ -64,18 +57,16 @@ class HLILFormatter:
                 *[cls._format_expr(arg) for arg in expr.args],
             ]
             return f'syscall({', '.join(args)})'
-
         elif isinstance(expr, HLILExternCall):
             args = ', '.join(cls._format_expr(arg) for arg in expr.args)
             return f'{expr.target}({args})'
-
         else:
             # Fallback
             return str(expr)
 
     @classmethod
     def format_function(cls, func: HighLevelILFunction) -> List[str]:
-        '''Format an HLIL function for debugging'''
+        """Format an HLIL function for debugging"""
         lines = []
 
         # Function header (simple, no types)
@@ -89,7 +80,7 @@ class HLILFormatter:
             lines.append('')
 
         # Function body
-        body_lines = cls._format_block(func.body, indent = 1)
+        body_lines = cls._format_block(func.body, indent=1)
         lines.extend(body_lines)
 
         lines.append('}')
@@ -97,7 +88,7 @@ class HLILFormatter:
 
     @classmethod
     def _format_block(cls, block: HLILBlock, indent: int = 0) -> List[str]:
-        '''Format a block of statements'''
+        """Format a block of statements"""
         lines = []
 
         for stmt in block.statements:
@@ -108,7 +99,7 @@ class HLILFormatter:
 
     @classmethod
     def _format_if_chain(cls, if_stmt: HLILIf, indent: int) -> List[str]:
-        '''Format if / else-if / else chain'''
+        """Format if / else-if / else chain"""
         indent_str = default_indent() * indent
         lines = []
 
@@ -133,7 +124,6 @@ class HLILFormatter:
                 lines.append(f'{indent_str}}} else if ({cond_str}) {{')
                 lines.extend(cls._format_block(nested_if.true_block, indent + 1))
                 current_else = nested_if.false_block
-
             else:
                 # Final else block
                 lines.append(f'{indent_str}}} else {{')
@@ -145,14 +135,13 @@ class HLILFormatter:
 
     @classmethod
     def _format_statement(cls, stmt: HLILStatement, indent: int = 0) -> List[str]:
-        '''Format a statement'''
+        """Format a statement"""
         indent_str = default_indent() * indent
         lines = []
 
         if isinstance(stmt, HLILIf):
             # if (condition) { ... } [else if (...) { ... }]* [else { ... }]
             lines.extend(cls._format_if_chain(stmt, indent))
-
         elif isinstance(stmt, HLILWhile):
             # while (condition) { ... }, optionally labeled
             cond_str = cls._format_expr(stmt.condition)
@@ -160,7 +149,6 @@ class HLILFormatter:
             lines.append(f'{indent_str}{label_prefix}while ({cond_str}) {{')
             lines.extend(cls._format_block(stmt.body, indent + 1))
             lines.append(f'{indent_str}}}')
-
         elif isinstance(stmt, HLILDoWhile):
             # do { ... } while (condition);, optionally labeled
             cond_str = cls._format_expr(stmt.condition)
@@ -168,7 +156,6 @@ class HLILFormatter:
             lines.append(f'{indent_str}{label_prefix}do {{')
             lines.extend(cls._format_block(stmt.body, indent + 1))
             lines.append(f'{indent_str}}} while ({cond_str});')
-
         elif isinstance(stmt, HLILSwitch):
             # switch (scrutinee) { ... }
             scrutinee_str = cls._format_expr(stmt.scrutinee)
@@ -190,47 +177,38 @@ class HLILFormatter:
                     lines.append(f'{indent_str}{case_body_indent}break;')
 
             lines.append(f'{indent_str}}}')
-
         elif isinstance(stmt, HLILBreak):
             if stmt.label:
                 lines.append(f'{indent_str}break {stmt.label};')
             else:
                 lines.append(f'{indent_str}break;')
-
         elif isinstance(stmt, HLILContinue):
             if stmt.label:
                 lines.append(f'{indent_str}continue {stmt.label};')
             else:
                 lines.append(f'{indent_str}continue;')
-
         elif isinstance(stmt, HLILReturn):
             if stmt.value is not None:
                 value_str = cls._format_expr(stmt.value)
                 lines.append(f'{indent_str}return {value_str};')
             else:
                 lines.append(f'{indent_str}return;')
-
         elif isinstance(stmt, HLILUnstructured):
             lines.append(f'{indent_str}goto {stmt.target}; // unstructured ({stmt.reason})')
-
         elif isinstance(stmt, HLILAssign):
             dest_str = cls._format_expr(stmt.dest)
             src_str = cls._format_expr(stmt.src)
             lines.append(f'{indent_str}{dest_str} = {src_str};')
-
         elif isinstance(stmt, HLILExprStmt):
             expr_str = cls._format_expr(stmt.expr)
             lines.append(f'{indent_str}{expr_str};')
-
         elif isinstance(stmt, HLILComment):
             lines.append(f'{indent_str}// {stmt.text}')
-
         elif isinstance(stmt, HLILBlock):
             # Nested block
             lines.append(f'{indent_str}{{')
             lines.extend(cls._format_block(stmt, indent + 1))
             lines.append(f'{indent_str}}}')
-
         else:
             lines.append(f'{indent_str}// {stmt}')
 

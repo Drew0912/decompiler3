@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-'''The .hlil.ts text, line by line: the function header lists its parameters, a syscall and a script call print
+"""The .hlil.ts text, line by line: the function header lists its parameters, a syscall and a script call print
 their arguments (a string escaped and a hex constant written as the .ts writes them), an if / else-if / else chain
 and a nested block indent one level per nesting, and every statement comes back as lines. The future HLIL DSL starts
-from this text.'''
+from this text."""
 
 from pathlib import Path
 import sys
@@ -66,7 +66,7 @@ class TestFunctionText(unittest.TestCase):
 
     def make_function(self) -> HighLevelILFunction:
         func = HighLevelILFunction('Routine')
-        func.parameters = [HLILVariable(name, kind = VariableKind.PARAM) for name in ('arg1', 'arg2')]
+        func.parameters = [HLILVariable(name, kind=VariableKind.PARAM) for name in ('arg1', 'arg2')]
         func.variables = [HLILVariable('local')]
         syscall = HLILSyscall(SUBSYSTEM, COMMAND, [HLILConst(ARGUMENT_VALUE), HLILConst('text')])
         func.add_statement(HLILExprStmt(syscall))
@@ -120,7 +120,7 @@ class TestFunctionText(unittest.TestCase):
 
     def test_hex_constant_prints_unsigned_hex(self):
         func = HighLevelILFunction('Init')
-        func.add_statement(HLILExprStmt(HLILCall('show', [HLILConst(ALL_BITS_SET, is_hex = True)])))
+        func.add_statement(HLILExprStmt(HLILCall('show', [HLILConst(ALL_BITS_SET, is_hex=True)])))
 
         self.assertIn(indented(1, f'show({ALL_BITS_SET_HEX});'), HLILFormatter.format_function(func))
 

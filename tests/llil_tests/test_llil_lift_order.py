@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for LLIL lifting order and block state: instructions are indexed in block order, blocks
+"""Unit tests for LLIL lifting order and block state: instructions are indexed in block order, blocks
 lift in reverse post-order, every terminal records the stack state its edges carry, and a join whose arms
-hold different lifetimes in one slot raises.'''
+hold different lifetimes in one slot raises."""
 
 from dataclasses import replace
 from pathlib import Path
@@ -28,14 +28,14 @@ NO_ARGS = 0
 
 
 def make_rpo_lifter() -> ED9VMLifter:
-    '''_compute_rpo touches no lifter/parser state, so any non-None parser satisfies the
-    constructor.'''
-    return ED9VMLifter(parser = object())
+    """_compute_rpo touches no lifter/parser state, so any non-None parser satisfies the
+    constructor."""
+    return ED9VMLifter(parser=object())
 
 
 def make_diamond(num_params: int = 0):
-    '''entry tests a pushed constant and branches to left or right; join is created but not reached yet'''
-    builder = make_builder(num_params = num_params)
+    """entry tests a pushed constant and branches to left or right; join is created but not reached yet"""
+    builder = make_builder(num_params=num_params)
     left = builder.create_basic_block(SECOND_BLOCK_START, 'left')
     right = builder.create_basic_block(THIRD_BLOCK_START, 'right')
     join = builder.create_basic_block(FOURTH_BLOCK_START, 'join')
@@ -45,9 +45,9 @@ def make_diamond(num_params: int = 0):
 
 
 class TestReindexInBlockOrder(unittest.TestCase):
-    '''reindex_in_block_order() keeps inst_index/iter_instructions() ordered by basic_blocks list
+    """reindex_in_block_order() keeps inst_index/iter_instructions() ordered by basic_blocks list
     position, independent of the order instructions were actually registered in - needed once a
-    lifter translates blocks in a different order than it creates them.'''
+    lifter translates blocks in a different order than it creates them."""
 
     def test_noop_when_already_registered_in_block_order(self):
         builder = make_builder()
@@ -111,7 +111,7 @@ class TestReindexInBlockOrder(unittest.TestCase):
 
 
 class TestBlockLifecycle(unittest.TestCase):
-    '''begin_block opens a block with its recorded stack state, not the previous block's exit state.'''
+    """begin_block opens a block with its recorded stack state, not the previous block's exit state."""
 
     def test_begin_block_opens_the_block_with_its_saved_sp(self):
         builder = make_builder()
@@ -119,7 +119,7 @@ class TestBlockLifecycle(unittest.TestCase):
 
         builder.push_int(1)
         builder.saved_stacks[SECOND_BLOCK_START] = replace(
-            builder.save_stack_state(), sp = DELIBERATELY_DIFFERENT_SP, values = []
+            builder.save_stack_state(), sp=DELIBERATELY_DIFFERENT_SP, values=[]
         )
 
         builder.begin_block(other)
@@ -128,14 +128,14 @@ class TestBlockLifecycle(unittest.TestCase):
 
 
 class TestComputeRPO(unittest.TestCase):
-    '''_compute_rpo over the disassembler CFG (BasicBlock/succs), independent of the LLIL
-    builder entirely.'''
+    """_compute_rpo over the disassembler CFG (BasicBlock/succs), independent of the LLIL
+    builder entirely."""
 
     def test_diamond_places_join_after_both_arms(self):
-        entry = BasicBlock(start_offset = FUNC_START)
-        a = BasicBlock(start_offset = SECOND_BLOCK_START)
-        b = BasicBlock(start_offset = THIRD_BLOCK_START)
-        join = BasicBlock(start_offset = FOURTH_BLOCK_START)
+        entry = BasicBlock(start_offset=FUNC_START)
+        a = BasicBlock(start_offset=SECOND_BLOCK_START)
+        b = BasicBlock(start_offset=THIRD_BLOCK_START)
+        join = BasicBlock(start_offset=FOURTH_BLOCK_START)
         entry.add_branch(a)
         entry.add_branch(b)
         a.add_branch(join)
@@ -149,12 +149,12 @@ class TestComputeRPO(unittest.TestCase):
         self.assertLess(order.index(b), order.index(join))
 
     def test_loop_back_edge_places_body_after_header_and_exit(self):
-        '''The exact shape that broke finalize()'s old blanket check: header.succs=[body, exit],
+        """The exact shape that broke finalize()'s old blanket check: header.succs=[body, exit],
         body -> header. RPO must place header first; body (which can legitimately carry state
-        across the back edge) ends up last, not exit (the real RETURN path).'''
-        header = BasicBlock(start_offset = FUNC_START)
-        body = BasicBlock(start_offset = SECOND_BLOCK_START)
-        exit_block = BasicBlock(start_offset = THIRD_BLOCK_START)
+        across the back edge) ends up last, not exit (the real RETURN path)."""
+        header = BasicBlock(start_offset=FUNC_START)
+        body = BasicBlock(start_offset=SECOND_BLOCK_START)
+        exit_block = BasicBlock(start_offset=THIRD_BLOCK_START)
         header.add_branch(body)
         header.add_branch(exit_block)
         body.add_branch(header)
@@ -164,31 +164,31 @@ class TestComputeRPO(unittest.TestCase):
         self.assertEqual(order, [header, exit_block, body])
 
     def test_rpo_is_not_secretly_address_order(self):
-        '''entry -> higher-address block -> lower-address block (the original counterexample
+        """entry -> higher-address block -> lower-address block (the original counterexample
         shape). RPO must visit the lower-address block AFTER the higher-address one, proving it
-        isn't just re-deriving address order.'''
-        entry = BasicBlock(start_offset = FUNC_START)
-        higher = BasicBlock(start_offset = THIRD_BLOCK_START)
-        lower = BasicBlock(start_offset = SECOND_BLOCK_START)
+        isn't just re-deriving address order."""
+        entry = BasicBlock(start_offset=FUNC_START)
+        higher = BasicBlock(start_offset=THIRD_BLOCK_START)
+        lower = BasicBlock(start_offset=SECOND_BLOCK_START)
         entry.add_branch(higher)
         higher.add_branch(lower)
 
         order = make_rpo_lifter()._compute_rpo(entry)
 
         self.assertEqual(order, [entry, higher, lower])
-        self.assertEqual(sorted(order, key = lambda b: b.offset), [entry, lower, higher])
+        self.assertEqual(sorted(order, key=lambda b: b.offset), [entry, lower, higher])
 
 
 class TestRPOIntegration(unittest.TestCase):
-    '''The mechanisms RPO depends on for safety - real per-exit validation and call-return edge
-    saving - proven together at the builder level.'''
+    """The mechanisms RPO depends on for safety - real per-exit validation and call-return edge
+    saving - proven together at the builder level."""
 
     def test_loop_with_carried_state_does_not_confuse_the_exit_check(self):
-        '''header/body/exit, matching TestComputeRPO's own loop shape, with one parameter: body is
+        """header/body/exit, matching TestComputeRPO's own loop shape, with one parameter: body is
         lifted last and ends at sp 1 (the parameter is still on the stack) as it jumps back; exit pops
         the parameter and returns. Neither finalize() nor ret() should be confused by body being
-        lifted last.'''
-        builder = make_builder(num_params = 1)
+        lifted last."""
+        builder = make_builder(num_params=1)
         header = builder.function.basic_blocks[0]
         exit_block = builder.create_basic_block(SECOND_BLOCK_START, 'exit')
         body = builder.create_basic_block(THIRD_BLOCK_START, 'body')
@@ -206,9 +206,9 @@ class TestRPOIntegration(unittest.TestCase):
         builder.finalize()   # must not raise either
 
     def test_original_counterexample_lifts_without_raising(self):
-        '''entry -> JMP farther; farther: POP, JMP ret_block; ret_block: RETURN - the original
+        """entry -> JMP farther; farther: POP, JMP ret_block; ret_block: RETURN - the original
         hand-traced counterexample where address-order lifting would reach a RETURN block before
-        its true predecessor had run.'''
+        its true predecessor had run."""
         builder = make_builder()
         entry = builder.function.basic_blocks[0]
         farther = builder.create_basic_block(THIRD_BLOCK_START, 'farther')
@@ -227,8 +227,8 @@ class TestRPOIntegration(unittest.TestCase):
         builder.finalize()
 
     def test_call_return_state_correct_even_when_not_lift_order_adjacent(self):
-        '''call() records its own return edge, so the return block's state doesn't depend on
-        whatever happens to be lifted immediately before it.'''
+        """call() records its own return edge, so the return block's state doesn't depend on
+        whatever happens to be lifted immediately before it."""
         builder = make_builder()
         call_block = builder.create_basic_block(SECOND_BLOCK_START, 'call_block')
         other_branch = builder.create_basic_block(THIRD_BLOCK_START, 'other_branch')
@@ -254,17 +254,17 @@ class TestRPOIntegration(unittest.TestCase):
 
 
 class TestEntrySeed(unittest.TestCase):
-    '''create_function records the entry state: only the parameters on the stack, none tracked.'''
+    """create_function records the entry state: only the parameters on the stack, none tracked."""
 
     def test_entry_block_starts_with_only_the_parameters(self):
-        builder = make_builder(num_params = SEED_PARAM_COUNT)
+        builder = make_builder(num_params=SEED_PARAM_COUNT)
 
         self.assertEqual(builder.function.basic_blocks[0].sp_in, SEED_PARAM_COUNT)
         self.assertEqual(builder.vstack_size(), 0)
         self.assertEqual((builder.frame_base_sp, builder.function.frame_base_sp), (0, 0))
 
     def test_back_edge_into_entry_with_the_entry_state_is_accepted(self):
-        builder = make_builder(num_params = SEED_PARAM_COUNT)
+        builder = make_builder(num_params=SEED_PARAM_COUNT)
         entry = builder.function.basic_blocks[0]
         body = builder.create_basic_block(SECOND_BLOCK_START, 'body')
         builder.jmp(body)
@@ -274,7 +274,7 @@ class TestEntrySeed(unittest.TestCase):
 
 
 class TestStrictEdgeState(unittest.TestCase):
-    '''The first edge into a block records its state; every other edge must bring the same shape.'''
+    """The first edge into a block records its state; every other edge must bring the same shape."""
 
     def test_join_with_different_values_in_one_slot_is_accepted(self):
         builder, left, right, join = make_diamond()
@@ -290,9 +290,9 @@ class TestStrictEdgeState(unittest.TestCase):
         self.assertEqual(builder.vstack_peek().slot_index, 0)   # the join reads the slot, whichever arm wrote it
 
     def test_parameter_kept_on_one_arm_and_repushed_on_the_other_raises(self):
-        '''The arms hold different lifetimes in slot 0 - the caller's parameter (arg1) and a pushed value
-        (var_s0) - so no single name is right for a read after the join.'''
-        builder, left, right, join = make_diamond(num_params = 1)
+        """The arms hold different lifetimes in slot 0 - the caller's parameter (arg1) and a pushed value
+        (var_s0) - so no single name is right for a read after the join."""
+        builder, left, right, join = make_diamond(num_params=1)
         builder.begin_block(left)
         builder.pop_n(1)
         builder.push_int(LEFT_VALUE)
@@ -304,7 +304,7 @@ class TestStrictEdgeState(unittest.TestCase):
 
 
 class TestEdgeRecording(unittest.TestCase):
-    '''Each terminal records the stack state of its own edges.'''
+    """Each terminal records the stack state of its own edges."""
 
     def test_terminals_record_their_edges(self):
         builder, left, right, join = make_diamond()

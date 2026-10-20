@@ -1,4 +1,4 @@
-'''Falcom-specific LLIL Extensions'''
+"""Falcom-specific LLIL Extensions"""
 
 from enum import IntEnum
 from typing import Optional, List
@@ -7,7 +7,8 @@ from .constants import *
 
 
 class LowLevelILFalcomOperation(IntEnum):
-    '''Falcom-specific LLIL operations'''
+    """Falcom-specific LLIL operations"""
+
     LLIL_GLOBAL_LOAD           = LowLevelILOperation.LLIL_USER_DEFINED      # Load from global variable array
     LLIL_GLOBAL_STORE          = LowLevelILOperation.LLIL_USER_DEFINED + 1  # Store to global variable array
     LLIL_DEBUG_LOG             = LowLevelILOperation.LLIL_USER_DEFINED + 2  # Debug print of stack values
@@ -17,7 +18,7 @@ class LowLevelILFalcomOperation(IntEnum):
 
 
 class LowLevelILPushCallerFrame(LowLevelILStatement):
-    '''PUSH_CALLER_FRAME - Push caller frame to save call context (statement)'''
+    """PUSH_CALLER_FRAME - Push caller frame to save call context (statement)"""
 
     def __init__(
         self,
@@ -44,7 +45,7 @@ class LowLevelILPushCallerFrame(LowLevelILStatement):
 
 
 class LowLevelILCallScript(LowLevelILCall):
-    '''CALL_SCRIPT - Call a script function with automatic stack cleanup (statement)'''
+    """CALL_SCRIPT - Call a script function with automatic stack cleanup (statement)"""
 
     def __init__(
         self,
@@ -69,11 +70,11 @@ class LowLevelILCallScript(LowLevelILCall):
 
 
 class LowLevelILCallScriptNoReturn(LowLevelILCall):
-    '''CALL_SCRIPT_NO_RETURN - tail call to a script function; caller never regains control (statement)
+    """CALL_SCRIPT_NO_RETURN - tail call to a script function; caller never regains control (statement)
 
     Unlike CALL_SCRIPT, the bytecode emits no PUSH_CALLER_FRAME before this opcode - the compiler
     only pushes the arguments, since the callee's frame takes over instead of returning here.
-    '''
+    """
 
     def __init__(
         self,
@@ -82,7 +83,7 @@ class LowLevelILCallScriptNoReturn(LowLevelILCall):
         args: List['LowLevelILExpr'],
     ):
         target = f'{module}.{func}'
-        super().__init__(target, return_target = None, args = args, returns = False)
+        super().__init__(target, return_target=None, args=args, returns=False)
         self.operation    = LowLevelILFalcomOperation.LLIL_CALL_SCRIPT_NO_RETURN
         self.module       = module          # Script module name (e.g., 'system')
         self.func         = func            # Function name (e.g., 'OnTalkBegin')
@@ -94,7 +95,7 @@ class LowLevelILCallScriptNoReturn(LowLevelILCall):
 
 
 class LowLevelILGlobalLoad(LowLevelILExpr):
-    '''LOAD_GLOBAL - Load from global variable array (expression)'''
+    """LOAD_GLOBAL - Load from global variable array (expression)"""
 
     def __init__(self, index: int):
         super().__init__(LowLevelILFalcomOperation.LLIL_GLOBAL_LOAD)
@@ -105,7 +106,7 @@ class LowLevelILGlobalLoad(LowLevelILExpr):
 
 
 class LowLevelILGlobalStore(LowLevelILStatement):
-    '''SET_GLOBAL - Store to global variable array (statement)'''
+    """SET_GLOBAL - Store to global variable array (statement)"""
 
     def __init__(self, index: int, value: LowLevelILExpr):
         super().__init__(LowLevelILFalcomOperation.LLIL_GLOBAL_STORE)
@@ -117,7 +118,7 @@ class LowLevelILGlobalStore(LowLevelILStatement):
 
 
 class LowLevelILDebugLog(LowLevelILStatement):
-    '''DEBUG_LOG - Debug print of the top argc stack values, message first (statement)'''
+    """DEBUG_LOG - Debug print of the top argc stack values, message first (statement)"""
 
     def __init__(self, args: List['LowLevelILExpr']):
         super().__init__(LowLevelILFalcomOperation.LLIL_DEBUG_LOG)

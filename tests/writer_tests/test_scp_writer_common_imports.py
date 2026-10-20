@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for ScpWriter.CommonImports, a common function called by its name, the duplicate-name guard, and
-genLabel()'''
+"""Unit tests for ScpWriter.CommonImports, a common function called by its name, the duplicate-name guard, and
+genLabel()"""
 
 from pathlib import Path
 import sys
@@ -17,16 +17,16 @@ from tests.shared.scp_writer_test_utils import WriterTestCase
 
 class CompileTestCase(WriterTestCase):
     def compile_dsl(self, build) -> scp_writer.ScpWriter:
-        '''Run build(scena) against the test's fresh writer; returns the writer'''
+        """Run build(scena) against the test's fresh writer; returns the writer"""
         build(self.writer)
         self.writer.run(globals())
         return self.writer
 
 
 class TestCommonImportsRegistrationOrder(CompileTestCase):
-    '''CommonImports (library imports) registers before any @LLILCommonCode fallback or @LLILCode
+    """CommonImports (library imports) registers before any @LLILCommonCode fallback or @LLILCode
     source function textually below it, since all three register at decoration time and Python
-    decorators run top-to-bottom.'''
+    decorators run top-to-bottom."""
 
     def test_manifest_then_fallback_then_source(self):
         def imported_common(arg1: Value32):
@@ -77,8 +77,8 @@ class TestCommonImportsRegistrationOrder(CompileTestCase):
 
 
 class TestCallByName(WriterTestCase):
-    '''The decompiler emits @scena.LLILCommonCode() for a common function the library didn't match, and other
-    functions CALL it by its name: the decorator must give the name back'''
+    """The decompiler emits @scena.LLILCommonCode() for a common function the library didn't match, and other
+    functions CALL it by its name: the decorator must give the name back"""
 
     def test_common_function_is_called_by_its_name(self):
         @self.writer.LLILCommonCode()
@@ -94,8 +94,8 @@ class TestCallByName(WriterTestCase):
             RETURN()
 
         self.assertIsNotNone(Common)
-        _, functions = ScpParser.load_bytes(self.writer.build({}), 'test.dat', round_trip = False,
-                                            keep_unreachable_code = False, quiet = True)
+        _, functions = ScpParser.load_bytes(self.writer.build({}), 'test.dat', round_trip=False,
+                                            keep_unreachable_code=False, quiet=True)
 
         self.assertEqual({func.name: func.is_common_func for func in functions}, {'Common': 1, 'Caller': 0})
 
@@ -126,8 +126,8 @@ class TestDuplicateNameGuard(WriterTestCase):
 
 
 class TestGenLabel(CompileTestCase):
-    '''genLabel() names must never collide with a decompiled loc_XXXX label, and must let a
-    hand-written or generated function body resolve ordinary forward/backward jumps.'''
+    """genLabel() names must never collide with a decompiled loc_XXXX label, and must let a
+    hand-written or generated function body resolve ordinary forward/backward jumps."""
 
     def test_name_never_matches_the_decompiled_label_pattern(self):
         name = genLabel()

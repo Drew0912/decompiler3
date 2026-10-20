@@ -1,8 +1,8 @@
-'''IL Options - Generic options for all IL levels'''
+"""IL Options - Generic options for all IL levels"""
 
 
 class ILOptions:
-    '''Attributes:'''
+    """Attributes:"""
 
     __slots__ = ('hidden_for_formatter',)
 

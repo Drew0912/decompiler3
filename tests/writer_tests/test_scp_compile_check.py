@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''The writer's compile check (ScpWriter.check_compiled): compiled bytes must disassemble and lift again, and a failure
+"""The writer's compile check (ScpWriter.check_compiled): compiled bytes must disassemble and lift again, and a failure
 names the script line that emitted the failing opcode - or the failing function's def. Also the errors it maps
-(ScpDisassemblyError, ED9LiftError), the def-line finder, and ScpParser.load_bytes / quiet.'''
+(ScpDisassemblyError, ED9LiftError), the def-line finder, and ScpParser.load_bytes / quiet."""
 
 from pathlib import Path
 import re
@@ -22,12 +22,12 @@ from falcom.ed9.writer.scp_compile_check import CompileCheckError, definition_li
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_writer_test_utils import HEX, WriterTestCase, at, load_module, marked_line
 
-LIBRARY_SOURCE = '''from falcom.ed9.writer.scp_writer_helper import *
+LIBRARY_SOURCE = """from falcom.ed9.writer.scp_writer_helper import *
 
 
 def lib_unbalanced(arg1: Value32):
     RETURN()                                    # line: return
-'''
+"""
 
 
 def decorate(**kwargs):
@@ -39,7 +39,7 @@ def one_line_decorator():                   # line: one-line decorator
     pass
 
 
-@decorate(table = {
+@decorate(table={
     'a': 1,
     'b': 2,
 })
@@ -47,9 +47,9 @@ def multi_line_decorator():                 # line: multi-line decorator
     pass
 
 
-@decorate(text = '''
+@decorate(text="""
 def not_this(): pass
-''')
+""")
 def string_in_decorator():                  # line: string in decorator
     pass
 
@@ -84,14 +84,14 @@ def define_read_above(writer):
 
 class CheckTestCase(WriterTestCase):
     def assertCheckFails(self, message: str):
-        '''run() raises a CompileCheckError matching message from its start and writes no .dat'''
+        """run() raises a CompileCheckError matching message from its start and writes no .dat"""
         with self.assertRaisesRegex(CompileCheckError, f'^{message}'):
             self.writer.run({})
 
         self.assertFalse(self.dat.exists())
 
     def assert_warns(self, *patterns: str):
-        '''run() writes the .dat and logs one warning per pattern, each matching from its start'''
+        """run() writes the .dat and logs one warning per pattern, each matching from its start"""
         with self.assertLogs(log, 'WARNING') as logs:
             self.writer.run({})
 
@@ -103,13 +103,13 @@ class CheckTestCase(WriterTestCase):
         self.assertTrue(self.dat.exists())
 
     def compiled(self, define) -> bytes:
-        '''The bytes of a script compiled with the check off'''
-        writer = self.fresh_writer(check = False)
+        """The bytes of a script compiled with the check off"""
+        writer = self.fresh_writer(check=False)
         define(writer)
         return writer.build({})
 
     def load(self, data: bytes, **kwargs):
-        return ScpParser.load_bytes(data, 'test.dat', round_trip = False, keep_unreachable_code = False, **kwargs)
+        return ScpParser.load_bytes(data, 'test.dat', round_trip=False, keep_unreachable_code=False, **kwargs)
 
 
 class TestStackMistakes(CheckTestCase):
@@ -118,7 +118,7 @@ class TestStackMistakes(CheckTestCase):
         self.assertCheckFails(rf"{at(__file__, 'wrong pop')}WrongPop: RETURN at {HEX}: the stack is not empty: \[param_0\]$")
 
     def test_build_runs_the_check(self):
-        '''Every caller of build() gets the check, not only run()'''
+        """Every caller of build() gets the check, not only run()"""
         define_wrong_pop(self.writer)
         with self.assertRaisesRegex(CompileCheckError, rf"^{at(__file__, 'wrong pop')}WrongPop: "):
             self.writer.build({})
@@ -134,7 +134,7 @@ class TestStackMistakes(CheckTestCase):
         self.assertEqual(self.dat.read_bytes(), sentinel)
 
     def test_check_off_writes_the_dat(self):
-        writer = self.fresh_writer(check = False)
+        writer = self.fresh_writer(check=False)
         define_wrong_pop(writer)
         writer.run({})
 
@@ -160,7 +160,7 @@ class TestStackMistakes(CheckTestCase):
                               r"found 2 above its call setup \[")
 
     def test_missing_call_argument_names_the_count_and_the_setup(self):
-        '''With a value below the setup, which the checks after the count would read as the setup'''
+        """With a value below the setup, which the checks after the count would read as the setup"""
         @self.writer.LLILCode()
         def Callee(arg1: Value32, arg2: Value32):
             POP(2 * WORD_SIZE)
@@ -183,11 +183,11 @@ class TestStackMistakes(CheckTestCase):
                               rf"found 1 above its call setup {setup}$")
 
     def test_omitted_default_argument_says_defaults_need_a_call_by_name(self):
-        '''Only when every missing argument has a default'''
+        """Only when every missing argument has a default"""
         hint = ('; a local CALL passes every argument - defaults apply only when the engine calls the function by '
                 'name')
         for pushed, expected_hint in ((1, hint), (0, '')):
-            with self.subTest(pushed = pushed):
+            with self.subTest(pushed=pushed):
                 self.writer = self.fresh_writer()
 
                 @self.writer.LLILCode()
@@ -210,7 +210,7 @@ class TestStackMistakes(CheckTestCase):
                                       rf"arguments, found {pushed} above its call setup \[.*\]{expected_hint}$")
 
     def test_parameter_used_in_place_names_it_at_its_line(self):
-        '''Valid VM code the lift doesn't follow; consumed after a join, whose arms agree on the parameter'''
+        """Valid VM code the lift doesn't follow; consumed after a join, whose arms agree on the parameter"""
         cases = {
             'read': (lambda: SYSCALL(1, 2, 1), 'uses', 'in place'),
             'after a join': (lambda: SET_REG(0), 'uses', 'in place'),
@@ -244,7 +244,7 @@ class TestStackMistakes(CheckTestCase):
         self.assertCheckFails(rf"{at(__file__, 'above the stack')}Above: LOAD_STACK at {HEX}: addresses slot 0 \(above the stack\)$")
 
     def test_read_below_the_stack(self):
-        '''The parser fails right there, without first logging the warning decompiling gives'''
+        """The parser fails right there, without first logging the warning decompiling gives"""
         @self.writer.LLILCode()
         def Below(arg1: Value32):
             LOAD_STACK(-3 * WORD_SIZE)              # line: below the stack
@@ -255,7 +255,7 @@ class TestStackMistakes(CheckTestCase):
             self.assertCheckFails(rf"{at(__file__, 'below the stack')}Below: LOAD_STACK at {HEX}: addresses slot -2 \(below the stack\)$")
 
     def test_dead_store_is_rejected(self):
-        '''Decompiling keeps it as a dead store; the check treats it as the mistake it almost always is'''
+        """Decompiling keeps it as a dead store; the check treats it as the mistake it almost always is"""
         @self.writer.LLILCode()
         def SetArg(arg1: Value32):
             PUSH_INT(1)
@@ -268,7 +268,7 @@ class TestStackMistakes(CheckTestCase):
         self.assertCheckFails(rf"{at(__file__, 'dead store')}SetArg: POP_TO at {HEX}: addresses slot 1 \(above the stack\)$")
 
     def test_slot_offset_counted_in_slots_fails_at_its_line(self):
-        '''Offsets count bytes: one slot down is -WORD_SIZE, not -1'''
+        """Offsets count bytes: one slot down is -WORD_SIZE, not -1"""
         @self.writer.LLILCode()
         def Main(arg1: Value32):
             LOAD_STACK(-1)                          # line: offset in slots
@@ -280,7 +280,7 @@ class TestStackMistakes(CheckTestCase):
                               rf'not a whole slot \({WORD_SIZE} bytes each\)$')
 
     def test_value_the_if_arm_leaves_names_its_line(self):
-        '''Caught where the arms meet, at the else arm's last opcode; the entry it names gets the push's line'''
+        """Caught where the arms meet, at the else arm's last opcode; the entry it names gets the push's line"""
         @self.writer.LLILCode()
         def Main(arg1: Value32):
             LOAD_STACK(-WORD_SIZE)
@@ -319,7 +319,7 @@ class TestStackMistakes(CheckTestCase):
                               rf'into {HEX} recorded \[param_0\]$')
 
     def test_unreachable_code_is_not_stack_checked(self):
-        '''Only warned about (TestUnreachableCode)'''
+        """Only warned about (TestUnreachableCode)"""
         @self.writer.LLILCode()
         def Dead():
             JMP('dead_end')
@@ -345,8 +345,8 @@ class TestStackMistakes(CheckTestCase):
         self.assertCheckFails(rf"{at(__file__, 'reachable pop')}Live: POP at {HEX}: pops 1 entries, the stack has 0")
 
     def test_argument_count_past_the_pushes_reaching_a_parameter(self):
-        '''The missing arguments would be the function's own parameters: entries to the parser's stack simulation, so
-        only the lift notices'''
+        """The missing arguments would be the function's own parameters: entries to the parser's stack simulation, so
+        only the lift notices"""
         @self.writer.LLILCode()
         def Syscall(arg1: Value32):
             PUSH_INT(1)
@@ -357,7 +357,7 @@ class TestStackMistakes(CheckTestCase):
         self.assertCheckFails(rf"{at(__file__, 'syscall past the pushes')}Syscall: SYSCALL at {HEX}: ")
 
     def test_syscall_reading_past_the_stack_fails_at_its_line(self):
-        '''With POPs that match the real stack, only the lift noticed; the check names what the stack holds'''
+        """With POPs that match the real stack, only the lift noticed; the check names what the stack holds"""
         @self.writer.LLILCode()
         def Syscall():
             PUSH_INT(1)                             # line: push under a read past the stack
@@ -414,8 +414,8 @@ class TestStackMistakes(CheckTestCase):
 
 
 class TestRunOn(CheckTestCase):
-    '''A function without RETURN runs on into the next function's code: a warning while that decompiles, a note on the
-    error when it doesn't; the last function has nothing to run on into'''
+    """A function without RETURN runs on into the next function's code: a warning while that decompiles, a note on the
+    error when it doesn't; the last function has nothing to run on into"""
 
     def define_runs_on(self, writer):
         @writer.LLILCode()
@@ -424,7 +424,7 @@ class TestRunOn(CheckTestCase):
             SET_REG(0)                              # line: runs on
 
     def assertCompilesWithWarning(self, message: str):
-        '''run() writes the .dat and logs exactly one warning, matching message'''
+        """run() writes the .dat and logs exactly one warning, matching message"""
         with self.assertLogs(log, 'WARNING') as logs:
             self.writer.run({})
 
@@ -442,7 +442,7 @@ class TestRunOn(CheckTestCase):
         self.assertCompilesWithWarning(rf"{at(__file__, 'runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN")
 
     def test_syscall_ending_a_function_gets_only_the_run_on_warning(self):
-        '''Its next opcode is the next function's first, no POP: the run-on warning already says what is wrong'''
+        """Its next opcode is the next function's first, no POP: the run-on warning already says what is wrong"""
         @self.writer.LLILCode()
         def A():
             PUSH_INT(1)
@@ -546,7 +546,7 @@ class TestRunOn(CheckTestCase):
                               r"code \(no RETURN after its label\)$")
 
     def test_running_into_the_last_function_fails_where_the_code_ends(self):
-        '''No function's code may run past the end, not only the last function's own'''
+        """No function's code may run past the end, not only the last function's own"""
         self.define_runs_on(self.writer)
 
         @self.writer.LLILCode()
@@ -602,7 +602,7 @@ class TestRunOn(CheckTestCase):
 
         for define in (define_call, define_call_script):
             for last in (True, False):
-                with self.subTest(call = define.__name__, last = last):
+                with self.subTest(call=define.__name__, last=last):
                     writer = self.fresh_writer()
                     mnemonic, marker = define(writer)
                     if not last:
@@ -635,8 +635,8 @@ class TestRunOn(CheckTestCase):
 
 
 class TestBackwardReturn(CheckTestCase):
-    '''A call whose return label is at or before it loops back there: valid VM code (a loop that jumps out ends), so it
-    compiles, with a warning at the call's line - a copied call that kept the old label is the usual cause'''
+    """A call whose return label is at or before it loops back there: valid VM code (a loop that jumps out ends), so it
+    compiles, with a warning at the call's line - a copied call that kept the old label is the usual cause"""
 
     def test_copied_call_with_a_stale_label_warns_at_its_line(self):
         @self.writer.LLILCode()
@@ -665,7 +665,7 @@ class TestBackwardReturn(CheckTestCase):
         self.assertTrue(self.dat.exists())
 
     def test_warnings_follow_the_script_lines(self):
-        '''The parser decodes the later call first; the warnings still come in line order'''
+        """The parser decodes the later call first; the warnings still come in line order"""
         @self.writer.LLILCode()
         def Callee():
             RETURN()
@@ -699,7 +699,7 @@ class TestBackwardReturn(CheckTestCase):
             self.assertRegex(record.getMessage(), f'^{prefix}Caller: CALL at ')
 
     def test_failure_in_its_function_carries_the_warning(self):
-        '''A stale label with a value pushed in between also breaks the stack: the failure keeps the hint'''
+        """A stale label with a value pushed in between also breaks the stack: the failure keeps the hint"""
         @self.writer.LLILCode()
         def Callee():
             RETURN()
@@ -724,8 +724,8 @@ class TestBackwardReturn(CheckTestCase):
 
 
 class TestSyscallArgc(CheckTestCase):
-    '''A SYSCALL's argc must match its own POP right after it, the only form the game's compiler emits: nothing else
-    checks it while the stack balances, so a mismatch compiles with a warning at the SYSCALL's line'''
+    """A SYSCALL's argc must match its own POP right after it, the only form the game's compiler emits: nothing else
+    checks it while the stack balances, so a mismatch compiles with a warning at the SYSCALL's line"""
 
     def test_mismatch_warns_at_its_line(self):
         stale = r' - is its argc stale\?'
@@ -747,17 +747,14 @@ class TestSyscallArgc(CheckTestCase):
                         PUSH_INT(3)
                         SYSCALL(1, 2, 2)                    # line: push added, argc kept
                         POP(3 * WORD_SIZE)
-
                     elif case == 'argc raised over a local':
                         SYSCALL(1, 2, 2)                    # line: argc raised over a local
                         POP(WORD_SIZE)
                         POP(WORD_SIZE)
-
                     elif case == 'argument added, argc 0':
                         SYSCALL(1, 2, 0)                    # line: argument added, argc 0
                         POP(WORD_SIZE)
                         POP(WORD_SIZE)
-
                     else:
                         SYSCALL(1, 2, 1)                    # line: no POP after it
                         JMP('pop')
@@ -769,7 +766,7 @@ class TestSyscallArgc(CheckTestCase):
                 self.assert_warns(rf'{at(__file__, case)}Main: SYSCALL at {HEX}: {message}$')
 
     def test_own_pop_right_after_it_is_quiet(self):
-        '''The game's form, argc 0 with its result read, and a label on the POP (a label emits no opcode)'''
+        """The game's form, argc 0 with its result read, and a label on the POP (a label emits no opcode)"""
         for case in ('pop after it', 'argc 0, result read', 'label on the pop'):
             with self.subTest(case):
                 self.writer = self.fresh_writer()
@@ -780,7 +777,6 @@ class TestSyscallArgc(CheckTestCase):
                         SYSCALL(1, 2, 0)
                         GET_REG(0)
                         SET_REG(1)
-
                     else:
                         PUSH_INT(1)
                         SYSCALL(1, 2, 1)
@@ -809,7 +805,7 @@ class TestSyscallArgc(CheckTestCase):
                           r'after it pops 1 \(POP\(4\)\) - is its argc stale\?$')
 
     def test_warns_with_the_unreachable_code_warning_off(self):
-        '''On whenever the compile check is; the dead code after RETURN stays silent'''
+        """On whenever the compile check is; the dead code after RETURN stays silent"""
         self.writer.warn_unreachable_code = False
 
         @self.writer.LLILCode()
@@ -846,8 +842,8 @@ class TestSyscallArgc(CheckTestCase):
 
 
 class TestUnreachableCode(CheckTestCase):
-    '''Code no path reaches compiles with one warning per range, at its first opcode's line: it never runs, and the
-    everyday decompile drops it. A script can turn it off'''
+    """Code no path reaches compiles with one warning per range, at its first opcode's line: it never runs, and the
+    everyday decompile drops it. A script can turn it off"""
 
     def test_code_between_a_call_and_its_return_label_warns(self):
         @self.writer.LLILCode()
@@ -868,7 +864,7 @@ class TestUnreachableCode(CheckTestCase):
                           r'path reaches them\); the everyday decompile drops them$')
 
     def test_code_after_an_early_return_is_one_warning(self):
-        '''The rest of the body, branches and labels included, in a function that isn't the last'''
+        """The rest of the body, branches and labels included, in a function that isn't the last"""
         @self.writer.LLILCode()
         def First():
             RETURN()                                # an early return
@@ -886,7 +882,7 @@ class TestUnreachableCode(CheckTestCase):
         self.assert_warns(rf'{at(__file__, "old body")}First: 5 opcodes at {HEX}\.\.{HEX} never run ')
 
     def test_code_only_another_function_jumps_to_is_reached(self):
-        '''Pin: all functions' code at once, in offset order - B's tail is A's, and B's own RETURN comes before it'''
+        """Pin: all functions' code at once, in offset order - B's tail is A's, and B's own RETURN comes before it"""
         @self.writer.LLILCode()
         def A():
             JMP('shared')                           # line: jump into B
@@ -902,7 +898,7 @@ class TestUnreachableCode(CheckTestCase):
         self.assert_warns(rf"{at(__file__, 'jump into B')}A: jumps to label 'shared' in B \(another function\)$")
 
     def test_body_without_a_gap_logs_nothing(self):
-        '''Pin: both arms and the join are reached'''
+        """Pin: both arms and the join are reached"""
         @self.writer.LLILCode()
         def Main():
             GET_REG(0)
@@ -919,7 +915,7 @@ class TestUnreachableCode(CheckTestCase):
             self.writer.run({})
 
     def test_turned_off_logs_nothing(self):
-        '''Pin: scena.warn_unreachable_code = False'''
+        """Pin: scena.warn_unreachable_code = False"""
         self.writer.warn_unreachable_code = False
 
         @self.writer.LLILCode()
@@ -935,7 +931,7 @@ class TestUnreachableCode(CheckTestCase):
 
 class TestLocations(CheckTestCase):
     def test_unusual_slot_warning_has_its_line(self):
-        '''A valid script reading a caller-frame slot compiles; the parser's warning gets the line, once'''
+        """A valid script reading a caller-frame slot compiles; the parser's warning gets the line, once"""
         @self.writer.LLILCode()
         def Inner():
             RETURN()
@@ -958,7 +954,7 @@ class TestLocations(CheckTestCase):
 
     def test_library_body_points_at_its_own_file(self):
         library = self.tmp / 'step9_library.py'
-        library.write_text(LIBRARY_SOURCE, encoding = 'utf-8')
+        library.write_text(LIBRARY_SOURCE, encoding='utf-8')
         module = load_module(library)
 
         @self.writer.CommonImports()
@@ -1010,7 +1006,7 @@ class TestLocations(CheckTestCase):
         self.assertTrue(self.dat.exists())
 
     def test_equal_starts(self):
-        '''An empty function starts where the next one does: the failing opcode still maps to its own line'''
+        """An empty function starts where the next one does: the failing opcode still maps to its own line"""
         @self.writer.LLILCode()
         def AEmpty():
             pass
@@ -1049,7 +1045,7 @@ class TestLocations(CheckTestCase):
             return 'Calls', 'missing', 'undefined return'
 
         for define in (define_jump, define_return_address):
-            with self.subTest(encoding = define.__name__):
+            with self.subTest(encoding=define.__name__):
                 writer = self.fresh_writer()
                 function, name, marker = define(writer)
 
@@ -1066,11 +1062,11 @@ class TestDefinitionLine(unittest.TestCase):
             (async_function, 'async function'),
             (undecorated, 'undecorated'),
         ):
-            with self.subTest(function = func.__name__):
+            with self.subTest(function=func.__name__):
                 self.assertEqual(definition_line(func.__code__), marked_line(__file__, marker))
 
     def test_nested(self):
-        @decorate(table = {
+        @decorate(table={
             'a': 1,
         })
         def nested():                               # line: nested
@@ -1083,7 +1079,7 @@ class TestDefinitionLine(unittest.TestCase):
         exec(compile('def from_string():\n    pass\n', '<string>', 'exec'), namespace)
 
         for code in (LAMBDA.__code__, namespace['from_string'].__code__):
-            with self.subTest(function = code.co_name):
+            with self.subTest(function=code.co_name):
                 self.assertEqual(definition_line(code), code.co_firstlineno)
 
 
@@ -1091,7 +1087,7 @@ class TestErrors(CheckTestCase):
     def test_parser_error_names_the_function_and_offset(self):
         data = self.compiled(define_wrong_pop)
         with self.assertRaises(ScpDisassemblyError) as raised:
-            self.load(data, quiet = True)
+            self.load(data, quiet=True)
 
         error = raised.exception
         self.assertEqual((error.function, str(error)),
@@ -1105,7 +1101,7 @@ class TestErrors(CheckTestCase):
                 SET_REG(0)
 
         with self.assertRaises(ScpDisassemblyError) as raised:
-            self.load(self.compiled(define), quiet = True)
+            self.load(self.compiled(define), quiet=True)
 
         error = raised.exception
         self.assertEqual((error.function, error.offset), ('Last', None))
@@ -1118,7 +1114,7 @@ class TestErrors(CheckTestCase):
             parser, [func] = self.load(data)
 
         with self.assertRaises(ED9LiftError) as raised:
-            ED9VMLifter(parser = parser).lift_function(func)
+            ED9VMLifter(parser=parser).lift_function(func)
 
         error = raised.exception
         self.assertEqual((error.function, error.offset, error.mnemonic), ('Above', func.offset, 'LOAD_STACK'))
@@ -1127,8 +1123,8 @@ class TestErrors(CheckTestCase):
         self.assertIsInstance(error.__cause__, NotImplementedError)
 
     def test_decompiling_reports_the_new_types(self):
-        '''scena2py's main() logs type(e).__name__: a file the parser rejects (ERROR, exit code 1), and a function the
-        lifter rejects (WARNING, the file still decompiles)'''
+        """scena2py's main() logs type(e).__name__: a file the parser rejects (ERROR, exit code 1), and a function the
+        lifter rejects (WARNING, the file still decompiles)"""
         file_error = rf'^{re.escape(str(self.dat))}: ScpDisassemblyError: WrongPop: RETURN at {HEX}: the stack is not empty'
         lift_warning = rf'\[Above\]: ED9LiftError: Above: LOAD_STACK at {HEX}: Read of slot 0 at or above sp=0'
 
@@ -1136,7 +1132,7 @@ class TestErrors(CheckTestCase):
             (define_wrong_pop, 'ERROR', file_error, 1),
             (define_read_above, 'WARNING', lift_warning, 0),
         ):
-            with self.subTest(define = define.__name__):
+            with self.subTest(define=define.__name__):
                 self.dat.write_bytes(self.compiled(define))
                 with (
                     mock.patch.object(sys, 'argv', ['scena2py', str(self.dat)]),
@@ -1173,9 +1169,9 @@ class TestLoadBytes(CheckTestCase):
             return [(func.name, [(inst.offset, inst.mnemonic) for inst in parser.get_instructions(func)])
                     for func in functions]
 
-        from_path = ScpParser.load(self.dat, round_trip = True, keep_unreachable_code = True)
-        from_bytes = ScpParser.load_bytes(self.dat.read_bytes(), self.dat.name, round_trip = True,
-                                          keep_unreachable_code = True)
+        from_path = ScpParser.load(self.dat, round_trip=True, keep_unreachable_code=True)
+        from_bytes = ScpParser.load_bytes(self.dat.read_bytes(), self.dat.name, round_trip=True,
+                                          keep_unreachable_code=True)
         self.assertEqual(from_path[0].name, from_bytes[0].name)
         self.assertEqual(listing(from_path), listing(from_bytes))
 
@@ -1187,10 +1183,10 @@ class TestLoadBytes(CheckTestCase):
         data = self.compiled(define)
         lines = ['Disassembling Callee', 'Disassembling Caller', 'Disassembling WrongPop', 'Error disassembling WrongPop']
         for quiet, logged in ((False, lines), (True, [])):
-            with self.subTest(quiet = quiet):
+            with self.subTest(quiet=quiet):
                 # The load raises, so assertLogs only captures here (it checks nothing on an exception)
                 with self.assertRaises(ScpDisassemblyError), self.assertLogs(log, 'INFO') as logs:
-                    self.load(data, quiet = quiet)
+                    self.load(data, quiet=quiet)
 
                 self.assertEqual([record.getMessage().split(' @ ')[0] for record in logs.records], logged)
 

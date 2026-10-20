@@ -1,4 +1,4 @@
-'''Expression Simplification Pass
+"""Expression Simplification Pass
 
 Apply algebraic simplifications:
 - x + 0 → x
@@ -11,7 +11,7 @@ Apply algebraic simplifications:
 etc.
 
 Identities fire only on int constants.
-'''
+"""
 
 from typing import Optional
 from ir.pipeline import Pass
@@ -42,10 +42,10 @@ ALL_BITS_SET = -1   # every bit set at any int width: script ints are signed, an
 
 
 class ExpressionSimplificationPass(Pass):
-    '''Apply algebraic simplifications'''
+    """Apply algebraic simplifications"""
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
-        '''Apply simplification to all instructions'''
+        """Apply simplification to all instructions"""
         for block in func.basic_blocks:
             new_instructions = []
 
@@ -58,23 +58,20 @@ class ExpressionSimplificationPass(Pass):
         return func
 
     def _simplify_expr_in_inst(self, inst: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        '''Simplify expressions in a single instruction'''
+        """Simplify expressions in a single instruction"""
         if isinstance(inst, MLILSetVarSSA):
             new_value = self._simplify_expr(inst.value)
             if new_value is not inst.value:
-                return MLILSetVarSSA(inst.var, new_value, address = inst.address).copy_metadata_from(inst)
-
+                return MLILSetVarSSA(inst.var, new_value, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MLILIf):
             new_condition = self._simplify_expr(inst.condition)
             if new_condition is not inst.condition:
-                return MLILIf(new_condition, inst.true_target, inst.false_target, address = inst.address).copy_metadata_from(inst)
-
+                return MLILIf(new_condition, inst.true_target, inst.false_target, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MLILRet):
             if inst.value is not None:
                 new_value = self._simplify_expr(inst.value)
                 if new_value is not inst.value:
-                    return MLILRet(new_value, address = inst.address).copy_metadata_from(inst)
-
+                    return MLILRet(new_value, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MLILStoreDeref):
             new_dest = self._simplify_expr(inst.dest)
             new_value = self._simplify_expr(inst.value)
@@ -84,7 +81,7 @@ class ExpressionSimplificationPass(Pass):
         return inst
 
     def _simplify_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        '''Recursively apply algebraic simplifications'''
+        """Recursively apply algebraic simplifications"""
         if isinstance(expr, (MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod,
                              MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr)):
             lhs = self._simplify_expr(expr.lhs)
@@ -96,7 +93,6 @@ class ExpressionSimplificationPass(Pass):
 
             if lhs is not expr.lhs or rhs is not expr.rhs:
                 return expr.rebuild(lhs, rhs)
-
         elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILDeref)):
             operand = self._simplify_expr(expr.operand)
             if operand is not expr.operand:
@@ -105,7 +101,7 @@ class ExpressionSimplificationPass(Pass):
         return expr
 
     def _apply_algebraic_identity(self, op_type, lhs, rhs) -> Optional[MediumLevelILInstruction]:
-        '''Apply algebraic identity rules'''
+        """Apply algebraic identity rules"""
         # Int constants only: x * 0.0 isn't int 0, and the VM's int/float mixing is unverified
         # (SCCP doesn't fold floats either)
         if any(isinstance(operand, MLILConst) and isinstance(operand.value, float) for operand in (lhs, rhs)):
@@ -117,67 +113,54 @@ class ExpressionSimplificationPass(Pass):
 
             if isinstance(lhs, MLILConst) and lhs.value == 0:
                 return rhs
-
         elif op_type == MLILSub:
             if isinstance(rhs, MLILConst) and rhs.value == 0:
                 return lhs
-
         elif op_type == MLILMul:
             if isinstance(rhs, MLILConst):
                 if rhs.value == 0:
-                    return MLILConst(0, is_hex = False)
-
+                    return MLILConst(0, is_hex=False)
                 elif rhs.value == 1:
                     return lhs
 
             if isinstance(lhs, MLILConst):
                 if lhs.value == 0:
-                    return MLILConst(0, is_hex = False)
-
+                    return MLILConst(0, is_hex=False)
                 elif lhs.value == 1:
                     return rhs
-
         elif op_type == MLILDiv:
             if isinstance(rhs, MLILConst) and rhs.value == 1:
                 return lhs
-
         elif op_type == MLILAnd:
             if isinstance(rhs, MLILConst):
                 if rhs.value == 0:
-                    return MLILConst(0, is_hex = False)
-
+                    return MLILConst(0, is_hex=False)
                 elif rhs.value == ALL_BITS_SET:
                     return lhs
 
             if isinstance(lhs, MLILConst):
                 if lhs.value == 0:
-                    return MLILConst(0, is_hex = False)
-
+                    return MLILConst(0, is_hex=False)
                 elif lhs.value == ALL_BITS_SET:
                     return rhs
-
         elif op_type == MLILOr:
             if isinstance(rhs, MLILConst):
                 if rhs.value == 0:
                     return lhs
-
                 elif rhs.value == ALL_BITS_SET:
                     return rhs
 
             if isinstance(lhs, MLILConst):
                 if lhs.value == 0:
                     return rhs
-
                 elif lhs.value == ALL_BITS_SET:
                     return lhs
-
         elif op_type == MLILXor:
             if isinstance(rhs, MLILConst) and rhs.value == 0:
                 return lhs
 
             if isinstance(lhs, MLILConst) and lhs.value == 0:
                 return rhs
-
         elif op_type in (MLILShl, MLILShr):
             if isinstance(rhs, MLILConst) and rhs.value == 0:
                 return lhs

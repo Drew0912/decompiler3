@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''MLIL->HLIL structuring never silently loses or invents a path.
+"""MLIL->HLIL structuring never silently loses or invents a path.
 
 Each shape comes from a real loss in the sora2_1.0 corpus or is a constructed case of the same
 kind, and every test runs the result against its MLIL for every parameter assignment
@@ -19,7 +19,7 @@ kind, and every test runs the result against its MLIL for every parameter assign
 - line markers: a goto-only block's markers printed where its code runs, once (a loop exit's after the
   loop), and markers never count toward the clone budget; of two return arms, one whose return has a line
   marker of its own goes after the if (the later source line, chr0003).
-'''
+"""
 
 from pathlib import Path
 import sys
@@ -345,23 +345,23 @@ def function(*statements) -> HighLevelILFunction:
 
 
 def marker(line: int) -> str:
-    '''The comment text of the line marker line(line)'''
+    """The comment text of the line marker line(line)"""
     return f'line({line})'
 
 
 def outline(statements: list) -> list:
-    '''Each statement as its comment's text, or else its node type's name'''
+    """Each statement as its comment's text, or else its node type's name"""
     return [stmt.text if isinstance(stmt, HLILComment) else type(stmt).__name__ for stmt in statements]
 
 
 def blocks_holding(hlil: HighLevelILFunction, line: int) -> list:
-    '''The blocks holding the marker line(line) as one of their own statements'''
+    """The blocks holding the marker line(line) as one of their own statements"""
     return [node for node in iter_tree(hlil.body) if isinstance(node, HLILBlock) and
             marker(line) in outline(node.statements)]
 
 
 def marker_count(root, line: int) -> int:
-    '''How many times root and everything below it hold the marker line(line)'''
+    """How many times root and everything below it hold the marker line(line)"""
     return sum(1 for node in iter_tree(root) if isinstance(node, HLILComment) and node.text == marker(line))
 
 
@@ -379,7 +379,7 @@ class TestMergePoints(unittest.TestCase):
         func = build_function('f', blocks)
         hlil = to_hlil(func)
         self.assertEqual(classify(func, hlil), ('ok', None))
-        self.assertEqual(unstructured_nodes(hlil, reachable_only = False), [])
+        self.assertEqual(unstructured_nodes(hlil, reachable_only=False), [])
         self.assertEqual(calls_emitted(hlil, emitted_once), 1)
 
     def test_target_reached_conditionally_is_the_merge(self):
@@ -418,16 +418,16 @@ class TestLoopExitsAndHeaders(unittest.TestCase):
 
 
 class TestLoopExitsReachingAnOuterMerge(unittest.TestCase):
-    '''A loop with several exits to the merge of an if or a loop around it: every exit is structured'''
+    """A loop with several exits to the merge of an if or a loop around it: every exit is structured"""
 
     def test_each_shape_has_no_node(self):
         for name, blocks in [('in an if', LEADING_IF_LOOP_IN_IF), ('in a loop', LEADING_IF_LOOP_IN_LOOP),
                              ('exits with work', THREE_BREAKS_WITH_WORK_IN_IF)]:
-            with self.subTest(shape = name):
+            with self.subTest(shape=name):
                 func = build_function('f', blocks)
                 hlil = to_hlil(func)
                 self.assertEqual(classify(func, hlil), ('ok', None))
-                self.assertEqual(unstructured_nodes(hlil, reachable_only = False), [])
+                self.assertEqual(unstructured_nodes(hlil, reachable_only=False), [])
                 self.assertTrue(check_function(func, hlil).ok)
 
 
@@ -439,45 +439,45 @@ class TestUnstructuredNodes(unittest.TestCase):
         self.assertEqual(calls_emitted(hlil, 'A3'), 2)
 
     def test_budget_counts_nested_statements(self):
-        func, hlil = structure(SHARED_LOOP, clone_budget = SHARED_LOOP_COPY_STATEMENTS - 1)
+        func, hlil = structure(SHARED_LOOP, clone_budget=SHARED_LOOP_COPY_STATEMENTS - 1)
         self.assertEqual(classify(func, hlil)[0], 'loud')
         self.assertEqual([n.reason for n in unstructured_nodes(hlil)],
                          [f'{SHARED_LOOP_COPY_STATEMENTS} statements over budget'])
 
     def test_line_markers_cost_no_budget(self):
-        func, hlil = structure(with_markers(SHARED_LOOP), clone_budget = SHARED_LOOP_COPY_STATEMENTS)
+        func, hlil = structure(with_markers(SHARED_LOOP), clone_budget=SHARED_LOOP_COPY_STATEMENTS)
         self.assertEqual(classify(func, hlil), ('ok', None))
         self.assertEqual(calls_emitted(hlil, 'A3'), 2)
 
     def test_region_repeated_inside_another_is_charged_once(self):
-        func, hlil = structure(NESTED_REPEATS, clone_budget = NESTED_REPEATS_CHARGE)
+        func, hlil = structure(NESTED_REPEATS, clone_budget=NESTED_REPEATS_CHARGE)
         self.assertEqual(classify(func, hlil), ('ok', None))
 
-        func, hlil = structure(NESTED_REPEATS, clone_budget = NESTED_REPEATS_CHARGE - 1)
+        func, hlil = structure(NESTED_REPEATS, clone_budget=NESTED_REPEATS_CHARGE - 1)
         self.assertEqual(classify(func, hlil)[0], 'loud')
 
     def test_refused_copy_never_costs_the_merge_its_own_emission(self):
-        func, hlil = structure(BYPASS_TO_OUTER_MERGE, clone_budget = BYPASS_TO_OUTER_MERGE_CHARGE)
+        func, hlil = structure(BYPASS_TO_OUTER_MERGE, clone_budget=BYPASS_TO_OUTER_MERGE_CHARGE)
         self.assertEqual(classify(func, hlil), ('ok', None))
         self.assertEqual(calls_emitted(hlil, 'tail'), 2)
 
         for budget in range(BYPASS_TO_OUTER_MERGE_CHARGE):
-            with self.subTest(budget = budget):
-                func, hlil = structure(BYPASS_TO_OUTER_MERGE, clone_budget = budget)
+            with self.subTest(budget=budget):
+                func, hlil = structure(BYPASS_TO_OUTER_MERGE, clone_budget=budget)
                 self.assertEqual(classify(func, hlil)[0], 'loud')
                 self.assertEqual(check_function(func, hlil).uncovered, [])
 
     def test_region_over_the_block_cap(self):
-        func, hlil = structure(SHARED_LOOP, max_region_blocks = 0)
+        func, hlil = structure(SHARED_LOOP, max_region_blocks=0)
         self.assertEqual(classify(func, hlil)[0], 'loud')
         self.assertEqual([n.reason for n in unstructured_nodes(hlil)], ['region not repeatable'])
 
     def test_loop_entered_again_over_budget(self):
-        func, hlil = structure(LOOP_REENTERED, clone_budget = 0)
+        func, hlil = structure(LOOP_REENTERED, clone_budget=0)
         self.assertEqual(classify(func, hlil)[0], 'loud')
 
     def test_node_a_run_stops_at_is_reachable(self):
-        func, hlil = structure(FUNNEL_CONSTANT_FIRST, clone_budget = 0)
+        func, hlil = structure(FUNNEL_CONSTANT_FIRST, clone_budget=0)
         self.assertNotEqual(classify(func, hlil)[0], 'wrong')
 
         hit = set()
@@ -492,25 +492,25 @@ class TestUnstructuredNodes(unittest.TestCase):
         self.assertLessEqual(hit, {n.target for n in unstructured_nodes(hlil)})
 
     def test_node_under_a_constant_condition_is_unreachable(self):
-        func, hlil = structure(CONSTANT_COMPARE, clone_budget = 0)
+        func, hlil = structure(CONSTANT_COMPARE, clone_budget=0)
         self.assertEqual(classify(func, hlil), ('ok', None))
-        self.assertNotEqual(unstructured_nodes(hlil, reachable_only = False), [])
+        self.assertNotEqual(unstructured_nodes(hlil, reachable_only=False), [])
         self.assertEqual(unstructured_nodes(hlil), [])
 
 
 class TestSafetyNetWithoutMergeValidity(unittest.TestCase):
-    '''With merge points back to the bare heuristic, the converter's own checks - a fall-out only to
+    """With merge points back to the bare heuristic, the converter's own checks - a fall-out only to
     the innermost merge at the same loop depth, an arm starting at the enclosing stop falling out
-    too - keep every shape loud or correct'''
+    too - keep every shape loud or correct"""
 
     def test_heuristic_merges_never_give_a_wrong_run(self):
-        def heuristic_only(analyzer, cond_block, true_target, false_target, stop = None):
+        def heuristic_only(analyzer, cond_block, true_target, false_target, stop=None):
             return analyzer._heuristic_merge_point(cond_block, true_target, false_target)
 
         with mock.patch.object(StructuralAnalyzer, 'find_merge_point', heuristic_only):
             for name, blocks in (('case fall-through', CASE_FALLTHROUGH), ('merge in loop', MERGE_IN_LOOP),
                                  ('early exit', EARLY_EXIT)):
-                with self.subTest(shape = name):
+                with self.subTest(shape=name):
                     func = build_function('f', blocks)
                     self.assertNotEqual(classify(func, to_hlil(func))[0], 'wrong')
 
@@ -556,7 +556,7 @@ class TestNodeRendering(unittest.TestCase):
 class TestNodeReportedByTheValidator(unittest.TestCase):
 
     def hard_fails(self, blocks: dict) -> list:
-        func, hlil = structure(blocks, clone_budget = 0)
+        func, hlil = structure(blocks, clone_budget=0)
         return [v.explanation for v in compare_mlil_hlil(func, hlil).hard_fail_violations]
 
     def test_reachable_node_is_a_hard_fail(self):
@@ -634,7 +634,7 @@ class TestJoinAfterAnIf(unittest.TestCase):
         func, hlil = structure(JOIN_AFTER_IF)
 
         self.assertEqual(classify(func, hlil), ('ok', None))
-        self.assertEqual(unstructured_nodes(hlil, reachable_only = False), [])
+        self.assertEqual(unstructured_nodes(hlil, reachable_only=False), [])
         self.assertEqual(calls_emitted(hlil, 'm'), 1)
 
 
@@ -686,11 +686,11 @@ class TestLoopLabels(unittest.TestCase):
 
 
 class TestLogicalNot(unittest.TestCase):
-    '''A logical not and a test against zero both become `operand == 0`'''
+    """A logical not and a test against zero both become `operand == 0`"""
 
     def test_condition_is_compared_with_zero(self):
         for negation in (MLILLogicalNot, MLILTestZero):
-            with self.subTest(negation = negation.__name__):
+            with self.subTest(negation=negation.__name__):
                 func = MediumLevelILFunction('negated', START_ADDRESS)
                 arg1 = func.get_or_create_parameter(1, 'arg1')
                 entry, then, done = func.create_block(), func.create_block(), func.create_block()
@@ -721,7 +721,7 @@ class TestProvenance(unittest.TestCase):
 
     def test_statement_keeps_the_address_and_index_of_its_instruction(self):
         func = MediumLevelILFunction('source', START_ADDRESS)
-        call = MLILCall('work', [], address = CALL_ADDRESS)
+        call = MLILCall('work', [], address=CALL_ADDRESS)
         func.create_block().instructions = [MLILCall('first', []), call, MLILRet(MLILConst(0))]
         connect(func)
 
@@ -744,7 +744,7 @@ class TestProvenance(unittest.TestCase):
             last.inst_index = BRANCH_BASE_INDEX + number
             branches[last.address] = last.inst_index
 
-        hlil = MLILToHLILConverter(func, clone_budget = 0).convert()
+        hlil = MLILToHLILConverter(func, clone_budget=0).convert()
         nodes = unstructured_nodes(hlil)
 
         self.assertTrue(nodes)
@@ -754,7 +754,7 @@ class TestProvenance(unittest.TestCase):
 
 
 class TestLineMarkersInGotoOnlyBlocks(unittest.TestCase):
-    '''A block that only jumps on keeps its line markers, printed where its code runs, once'''
+    """A block that only jumps on keeps its line markers, printed where its code runs, once"""
 
     def structure_ok(self, blocks) -> HighLevelILFunction:
         func, hlil = structure(blocks)
@@ -807,7 +807,7 @@ class TestLineMarkersInGotoOnlyBlocks(unittest.TestCase):
 
 
 class TestEarlyReturnArms(unittest.TestCase):
-    '''Of two arms that both return, the shorter stays in the if - comments counted, on purpose'''
+    """Of two arms that both return, the shorter stays in the if - comments counted, on purpose"""
 
     def test_arm_whose_return_has_its_own_marker_goes_after_the_if(self):
         func, hlil = structure(MARKED_TRUE_RETURN_ARM)

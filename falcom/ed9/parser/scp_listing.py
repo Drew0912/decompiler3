@@ -24,15 +24,16 @@ BYTES_WIDTH         = len(bytes(BYTES_PER_LINE).hex(' '))
 COLUMN_GAP          = 2
 ASM_WIDTH           = len('CALL_SCRIPT_NO_RETURN Str(0xFFFFFF), Str(0xFFFFFF), 255')   # the longest, in a file under 16 MB
 SECTION_WIDTH       = max(len(section.name) for section in StringPoolSection)
-LISTING_COMMENTS    = CommentOptions(float_bits = True, call_args = True)
+LISTING_COMMENTS    = CommentOptions(float_bits=True, call_args=True)
 OPERAND_CONTEXT     = FormatterContext()    # no names: operands print as encoded
 ARG_TYPE_NAMES      = {arg_type.value: arg_type.name for arg_type in ScpFunctionCallDebugInfoArg.Type}
 GLOBAL_TYPE_NAMES   = {var_type.value: var_type.name for var_type in ScpGlobalVar.Type}
 
 
-@dataclass(frozen = True)
+@dataclass(frozen=True)
 class ListingSections:
     """Which sections .debug.txt prints (ScenaDecompileConfig.debug_sections)"""
+
     header              : bool = True
     global_vars         : bool = True
     function_entries    : bool = True
@@ -54,7 +55,6 @@ def write_listing(path: Path, out_path: Path, sections: ListingSections, selecte
     if sections.empty:
         log.warning(f'{path}: every .debug.txt section is off (ScenaDecompileConfig.debug_sections)')
         lines = [ScpListing.title(path)]
-
     else:
         lines = ScpListing(path).lines(sections, selected)
 
@@ -67,7 +67,7 @@ class ScpListing:
 
     def __init__(self, path: Path):
         self.path = path
-        self.parser, _ = ScpParser.load(path, round_trip = False, keep_unreachable_code = True)
+        self.parser, _ = ScpParser.load(path, round_trip=False, keep_unreachable_code=True)
         self.data = path.read_bytes()
         self.records = read_debug_records(self.parser, self.data)
         self.refs = collect_string_refs(self.data, self.parser, self.records)
@@ -132,7 +132,7 @@ class ScpListing:
 
         lines = []
         start = code_start(self.parser.header)
-        first_start = min(groups, default = self.refs.pool_start)
+        first_start = min(groups, default=self.refs.pool_start)
         if sections.code and start < first_start:
             lines += ['', f'=== Outside every function: 0x{start:X}..0x{first_start:X} ===', *self.raw_lines(start, first_start)]
 
@@ -224,7 +224,6 @@ class ScpListing:
             typed, text = self.value_text(word)
             if inst.opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
                 text = f'func id: {self.parser.get_func_name_from_func_id(word & ScpValue.PAYLOAD_MASK)}'
-
             elif inst.opcode == ED9Opcode.PUSH_RET_ADDR:
                 text = f'return address -> {default_label_for_addr(inst.operands[0].value)}'
 
@@ -237,16 +236,13 @@ class ScpListing:
             if kind == OperandType.Offset:
                 operands.append(f'0x{operand.value:X}')
                 notes.append(f'-> {default_label_for_addr(operand.value)}')
-
             elif kind == ED9OperandType.Func:
                 operands.append(str(operand.value))
                 notes.append(self.parser.get_func_name_from_func_id(operand.value))
-
             elif kind == ED9OperandType.Value:
                 typed, text = self.value_text(next(words))
                 operands.append(typed)
                 notes += [text] if text else []
-
             else:
                 operands.append(operand.descriptor.format_operand(operand, OPERAND_CONTEXT))
                 name = self.parser.get_global_name_from_index(operand.value) if kind == ED9OperandType.GlobalVar else None
@@ -286,7 +282,6 @@ class ScpListing:
             if arg_type == ScpFunctionCallDebugInfoArg.Type.Constant:
                 typed, text = self.value_text(word)
                 args.append(text or typed)
-
             else:
                 args.append(ARG_TYPE_NAMES.get(arg_type, f'type {arg_type}'))
 

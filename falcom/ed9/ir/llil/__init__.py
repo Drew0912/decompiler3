@@ -1,4 +1,4 @@
-'''Falcom ED9 LLIL: VM-specific constants, extensions, builder, and the VM bytecode lifter'''
+"""Falcom ED9 LLIL: VM-specific constants, extensions, builder, and the VM bytecode lifter"""
 
 from .constants import *
 from .llil_builder import *

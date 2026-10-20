@@ -1,4 +1,4 @@
-'''Falcom MLIL to HLIL Converter'''
+"""Falcom MLIL to HLIL Converter"""
 
 from typing import Optional
 from ir.mlil.mlil import MediumLevelILFunction
@@ -20,7 +20,7 @@ from ...parser.types_parser import Function
 def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Optional[Function] = None,
                                  normalize_branch_order: bool = True,
                                  line_markers: bool = True) -> HighLevelILFunction:
-    '''Convert MLIL function to HLIL with Falcom-specific type information
+    """Convert MLIL function to HLIL with Falcom-specific type information
 
     normalize_branch_order restores source order for if/else arms that structuring
     left reversed. It is the only step that departs from the order the bytecode was
@@ -29,7 +29,7 @@ def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Opti
     line_markers keeps the line(N) comments. Off, they go after every pass that reads
     them, so the code statements and their order stay; if arms left empty are tidied
     without changing what runs (a negated condition, swapped or nested arms).
-    '''
+    """
     pipeline = Pipeline()
     pipeline.add_pass(MLILToHLILPass())
 
@@ -50,4 +50,4 @@ def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Opti
     if not line_markers:
         pipeline.add_pass(LineMarkerRemovalPass())
 
-    return pipeline.run(mlil_func, debug = False)
+    return pipeline.run(mlil_func, debug=False)

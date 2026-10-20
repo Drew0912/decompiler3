@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for the shared HLIL tree walkers in ir/hlil/hlil.py - expr_children, stmt_children,
+"""Unit tests for the shared HLIL tree walkers in ir/hlil/hlil.py - expr_children, stmt_children,
 read_children, iter_tree, contains_escaping_exit and sole_statement - which the passes and the
-converter are built on instead of each hand-listing the node kinds.'''
+converter are built on instead of each hand-listing the node kinds."""
 
 from pathlib import Path
 import sys
@@ -68,7 +68,7 @@ def c(value) -> HLILConst:
 
 
 def samples() -> list:
-    '''One instance of every concrete HLIL node type, with distinct child nodes.'''
+    """One instance of every concrete HLIL node type, with distinct child nodes."""
     return [
         var('x'), c(FIRST_VALUE),
         HLILBinaryOp(BinaryOp.ADD, c(FIRST_VALUE), c(SECOND_VALUE)),
@@ -89,14 +89,13 @@ def samples() -> list:
 
 
 def held_nodes(node) -> list:
-    '''Every HLIL node a node holds in a field - lists, and switch cases' labels and bodies, included.'''
+    """Every HLIL node a node holds in a field - lists, and switch cases' labels and bodies, included."""
     found = []
     for value in vars(node).values():
         for item in (value if isinstance(value, list) else [value]):
             if isinstance(item, HLILSwitchCase):
                 found.extend(item.values or [])
                 found.append(item.body)
-
             elif isinstance(item, HLILInstruction):
                 found.append(item)
 
@@ -108,9 +107,9 @@ def ids(nodes) -> list:
 
 
 class TestChildrenCoverEveryNode(unittest.TestCase):
-    '''stmt_children is the one list of a node's children: every node type must return exactly the
+    """stmt_children is the one list of a node's children: every node type must return exactly the
     nodes it holds. A new node type fails here until it has a sample and an entry in stmt_children
-    (a statement) or expr_children (an expression).'''
+    (a statement) or expr_children (an expression)."""
 
     def test_every_node_type_has_a_sample(self):
         sampled = {type(node) for node in samples()}
@@ -119,12 +118,12 @@ class TestChildrenCoverEveryNode(unittest.TestCase):
 
     def test_stmt_children_are_exactly_the_held_nodes(self):
         for node in samples():
-            with self.subTest(node = type(node).__name__):
+            with self.subTest(node=type(node).__name__):
                 self.assertCountEqual(ids(stmt_children(node)), ids(held_nodes(node)))
 
     def test_read_children_drop_only_a_plain_assignment_target(self):
         for node in samples():
-            with self.subTest(node = type(node).__name__):
+            with self.subTest(node=type(node).__name__):
                 expected = [node.src] if isinstance(node, HLILAssign) else stmt_children(node)
                 self.assertEqual(ids(read_children(node)), ids(expected))
 
@@ -169,7 +168,7 @@ class TestIterTree(unittest.TestCase):
         outer = HLILExprStmt(var('y'))
         block = HLILBlock([inner, outer])
 
-        self.assertEqual(ids(iter_tree(block, exclude = (id(inner),))), ids([block, outer, outer.expr]))
+        self.assertEqual(ids(iter_tree(block, exclude=(id(inner),))), ids([block, outer, outer.expr]))
 
     def test_children_function_decides_what_is_visited(self):
         dest = var('x')
@@ -180,8 +179,8 @@ class TestIterTree(unittest.TestCase):
 
 
 class TestContainsEscapingExit(unittest.TestCase):
-    '''A loop owns a bare break and a bare continue, a switch only a bare break; a labeled exit
-    counts only with include_labeled.'''
+    """A loop owns a bare break and a bare continue, a switch only a bare break; a labeled exit
+    counts only with include_labeled."""
 
     def if_(self, *body) -> HLILIf:
         return HLILIf(c(TRUE_CONDITION), HLILBlock(list(body)))
@@ -218,7 +217,7 @@ class TestContainsEscapingExit(unittest.TestCase):
             with self.subTest(description):
                 self.assertEqual(contains_escaping_exit(HLILBlock([stmt]), exit_type, include_labeled), expected)
 
-        self.assertFalse(contains_escaping_exit(None, HLILBreak, include_labeled = True))
+        self.assertFalse(contains_escaping_exit(None, HLILBreak, include_labeled=True))
 
 
 class TestSoleStatement(unittest.TestCase):

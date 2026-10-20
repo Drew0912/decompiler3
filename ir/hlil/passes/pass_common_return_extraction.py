@@ -1,4 +1,4 @@
-'''Common Return Extraction Pass'''
+"""Common Return Extraction Pass"""
 
 from typing import Optional
 from ir.core import constant_values_equal
@@ -17,7 +17,7 @@ from ..hlil import (
 
 
 class CommonReturnExtractionPass(Pass):
-    '''Extract common return statements from branches'''
+    """Extract common return statements from branches"""
 
     def run(self, func: HighLevelILFunction) -> HighLevelILFunction:
         self._extract_common_returns(func.body)
@@ -44,7 +44,6 @@ class CommonReturnExtractionPass(Pass):
                         stmt.false_block.statements.pop()
 
                     block.statements.insert(i + 1, common_return)
-
             elif isinstance(stmt, HLILSwitch):
                 common_return = self._get_common_switch_return(stmt)
                 if common_return is not None:

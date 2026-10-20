@@ -1,4 +1,4 @@
-'''Small MLIL CFGs for HLIL structuring tests, and a trace oracle that runs MLIL and HLIL side by side.
+"""Small MLIL CFGs for HLIL structuring tests, and a trace oracle that runs MLIL and HLIL side by side.
 
 A block calls named functions, may carry line markers, and ends in a return, a goto, or an if
 testing a parameter or a constant. Run for one assignment of the parameters, a function gives the
@@ -7,7 +7,7 @@ unstructured-jump node may cut a run short, but only where the MLIL run jumps to
 
 Such a run is decided by its parameters alone, so it either ends within one visit per block or
 loops forever: with FUEL well above that, both levels run out of fuel exactly when they loop.
-'''
+"""
 from itertools import count, product
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
@@ -60,11 +60,11 @@ def _condition(cond, variables: Dict[str, object]):
 
 
 def build_function(name: str, blocks: Dict[str, BlockSpec]) -> MediumLevelILFunction:
-    '''An MLIL function from {label: (calls and markers, terminal)}; the first block is the entry'''
+    """An MLIL function from {label: (calls and markers, terminal)}; the first block is the entry"""
     func = MediumLevelILFunction(name, 0)
     params = sorted({t[1] for _, t in blocks.values() if t[0] == 'if' and isinstance(t[1], str)})
     variables = {p: func.get_or_create_parameter(i + 1, p) for i, p in enumerate(params)}
-    mlil_blocks = {label: func.create_block(label = label) for label in blocks}
+    mlil_blocks = {label: func.create_block(label=label) for label in blocks}
 
     for label, (items, terminal) in blocks.items():
         block = mlil_blocks[label]
@@ -72,10 +72,8 @@ def build_function(name: str, blocks: Dict[str, BlockSpec]) -> MediumLevelILFunc
 
         if terminal[0] == 'ret':
             instructions.append(MLILRet(MLILConst(terminal[1])))
-
         elif terminal[0] == 'goto':
             instructions.append(MLILGoto(mlil_blocks[terminal[1]]))
-
         else:
             _, cond, true_label, false_label = terminal
             instructions.append(MLILIf(_condition(cond, variables), mlil_blocks[true_label], mlil_blocks[false_label]))
@@ -86,12 +84,12 @@ def build_function(name: str, blocks: Dict[str, BlockSpec]) -> MediumLevelILFunc
 
 
 def to_hlil(func: MediumLevelILFunction, **flags) -> HighLevelILFunction:
-    '''The final HLIL, every pass included (flags as convert_falcom_mlil_to_hlil's)'''
+    """The final HLIL, every pass included (flags as convert_falcom_mlil_to_hlil's)"""
     return convert_falcom_mlil_to_hlil(func, **flags)
 
 
 def structure(blocks: Dict[str, BlockSpec], **limits) -> Tuple[MediumLevelILFunction, HighLevelILFunction]:
-    '''(MLIL, HLIL straight from the converter, with its clone limits overridden)'''
+    """(MLIL, HLIL straight from the converter, with its clone limits overridden)"""
     func = build_function('f', blocks)
     return func, MLILToHLILConverter(func, **limits).convert()
 
@@ -101,7 +99,7 @@ def parameters(func: MediumLevelILFunction) -> List[str]:
 
 
 def mlil_run(func: MediumLevelILFunction, env: Dict[str, bool]) -> Tuple[tuple, tuple, set]:
-    '''(calls, end, {(block label, calls made before entering it)})'''
+    """(calls, end, {(block label, calls made before entering it)})"""
     trace, entries, fuel = [], set(), FUEL
     block = func.basic_blocks[0]
 
@@ -129,7 +127,7 @@ def mlil_run(func: MediumLevelILFunction, env: Dict[str, bool]) -> Tuple[tuple, 
 
 
 class _Flow(Exception):
-    def __init__(self, kind: str, label: Optional[str] = None, value = None):
+    def __init__(self, kind: str, label: Optional[str] = None, value=None):
         super().__init__(kind)
         self.kind, self.label, self.value = kind, label, value
 
@@ -165,22 +163,19 @@ def _spend(state: dict):
 def _run_block(block: Optional[HLILBlock], env: Dict[str, bool], state: dict):
     for stmt in (block.statements if block is not None else []):
         if isinstance(stmt, HLILUnstructured):
-            raise _Flow('unstructured', value = stmt.target)
+            raise _Flow('unstructured', value=stmt.target)
 
         if isinstance(stmt, HLILExprStmt) and isinstance(stmt.expr, HLILCall):
             state['trace'].append(stmt.expr.func_name)
             _spend(state)
-
         elif isinstance(stmt, HLILIf):
             _run_block(stmt.true_block if _value(stmt.condition, env) else stmt.false_block, env, state)
-
         elif isinstance(stmt, (HLILWhile, HLILDoWhile)):
             is_while = isinstance(stmt, HLILWhile)
             while not is_while or _value(stmt.condition, env):
                 _spend(state)
                 try:
                     _run_block(stmt.body, env, state)
-
                 except _Flow as flow:
                     if flow.kind not in ('break', 'continue') or flow.label not in (None, stmt.label):
                         raise
@@ -191,30 +186,24 @@ def _run_block(block: Optional[HLILBlock], env: Dict[str, bool], state: dict):
                 # A do-while checks its condition once after each run of the body
                 if not is_while and not _value(stmt.condition, env):
                     break
-
         elif isinstance(stmt, HLILSwitch):
             raise TypeError('switch in a test CFG')
-
         elif isinstance(stmt, HLILBlock):
             _run_block(stmt, env, state)
-
         elif isinstance(stmt, HLILBreak):
             raise _Flow('break', stmt.label)
-
         elif isinstance(stmt, HLILContinue):
             raise _Flow('continue', stmt.label)
-
         elif isinstance(stmt, HLILReturn):
-            raise _Flow('ret', value = _value(stmt.value, env) if stmt.value is not None else None)
+            raise _Flow('ret', value=_value(stmt.value, env) if stmt.value is not None else None)
 
 
 def hlil_run(hlil: HighLevelILFunction, env: Dict[str, bool]) -> Tuple[tuple, tuple]:
-    '''(calls, end): ('ret', value), ('falloff',), ('fuel',), ('unstructured', target) or an escaping exit'''
+    """(calls, end): ('ret', value), ('falloff',), ('fuel',), ('unstructured', target) or an escaping exit"""
     state = {'trace': [], 'fuel': FUEL}
     try:
         _run_block(hlil.body, env, state)
         return tuple(state['trace']), ('falloff',)
-
     except _Flow as flow:
         if flow.kind == 'fuel':
             return tuple(state['trace']), ('fuel',)
@@ -223,14 +212,14 @@ def hlil_run(hlil: HighLevelILFunction, env: Dict[str, bool]) -> Tuple[tuple, tu
 
 
 def classify(func: MediumLevelILFunction, hlil: HighLevelILFunction) -> Tuple[str, Optional[dict]]:
-    '''('ok' | 'loud' | 'wrong', the first assignment a wrong run was found for)
+    """('ok' | 'loud' | 'wrong', the first assignment a wrong run was found for)
 
     ok: every run matches MLIL. loud: every run matches or stops at a node MLIL's run jumps to.
-    '''
+    """
     names = parameters(func)
     loud = False
 
-    for bits in product((False, True), repeat = len(names)):
+    for bits in product((False, True), repeat=len(names)):
         env = dict(zip(names, bits))
         m_trace, m_end, entries = mlil_run(func, env)
         h_trace, h_end = hlil_run(hlil, env)
@@ -239,12 +228,10 @@ def classify(func: MediumLevelILFunction, hlil: HighLevelILFunction) -> Tuple[st
             loud = True
             if m_trace[:len(h_trace)] != h_trace or (h_end[1], len(h_trace)) not in entries:
                 return 'wrong', env
-
         elif m_end == ('fuel',) or h_end == ('fuel',):
             common = min(len(m_trace), len(h_trace))
             if m_end != h_end or m_trace[:common] != h_trace[:common]:
                 return 'wrong', env
-
         elif (m_trace, m_end) != (h_trace, h_end):
             return 'wrong', env
 
@@ -257,7 +244,7 @@ def unstructured_nodes(hlil: HighLevelILFunction, reachable_only: bool = True) -
 
 
 def statements_in_two_places(hlil: HighLevelILFunction) -> List[str]:
-    '''Statements the tree reaches more than once: a pass that moved one left it behind too'''
+    """Statements the tree reaches more than once: a pass that moved one left it behind too"""
     reached = {}
     for node in iter_tree(hlil.body):
         if isinstance(node, HLILStatement):
@@ -267,13 +254,13 @@ def statements_in_two_places(hlil: HighLevelILFunction) -> List[str]:
 
 
 def calls_emitted(hlil: HighLevelILFunction, name: str) -> int:
-    '''How many times the HLIL text contains a call to name'''
+    """How many times the HLIL text contains a call to name"""
     return sum(1 for node in iter_tree(hlil.body) if isinstance(node, HLILCall) and node.func_name == name)
 
 
 def with_markers(blocks: Dict[str, BlockSpec], every_block: bool = False) -> Dict[str, BlockSpec]:
-    '''blocks with a line marker before each call; with every_block also one in each block making no call
-    (goto-only blocks, bare tests)'''
+    """blocks with a line marker before each call; with every_block also one in each block making no call
+    (goto-only blocks, bare tests)"""
     lines = count(MARKER_FIRST_LINE)
     marked = {}
     for label, (calls, terminal) in blocks.items():

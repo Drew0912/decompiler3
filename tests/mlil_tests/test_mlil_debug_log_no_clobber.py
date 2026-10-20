@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for MediumLevelILCall.clobbers_registers: a call proven to have no VM
+"""Unit tests for MediumLevelILCall.clobbers_registers: a call proven to have no VM
 register/global side effects at all (the Falcom debug.log translation) must not make generic SSA
 construction give every register, including reg0, a fresh undefined pseudo-definition - that
 contradicts the translator's own documented invariant that DEBUG_LOG leaves the result register
-alone.'''
+alone."""
 
 from pathlib import Path
 import sys
@@ -20,15 +20,15 @@ FUNC_START = 0x1000
 
 
 def build_read_call_read(*, clobbers_registers: bool) -> MediumLevelILFunction:
-    '''x = REG[0]; debug.log(REG[0]) [clobbers_registers flag under test]; y = REG[0]; return y'''
+    """x = REG[0]; debug.log(REG[0]) [clobbers_registers flag under test]; y = REG[0]; return y"""
     func = MediumLevelILFunction('debug_log_clobber_test')
-    block = func.create_block(start = FUNC_START)
+    block = func.create_block(start=FUNC_START)
     reg0 = func.get_or_create_register_var(0)
     x = func.get_or_create_local('x')
     y = func.get_or_create_local('y')
 
     block.add_instruction(MLILSetVar(x, MLILVar(reg0)))
-    block.add_instruction(MLILCall('debug.log', [MLILVar(reg0)], clobbers_registers = clobbers_registers))
+    block.add_instruction(MLILCall('debug.log', [MLILVar(reg0)], clobbers_registers=clobbers_registers))
     block.add_instruction(MLILSetVar(y, MLILVar(reg0)))
     block.add_instruction(MLILRet(MLILVar(y)))
 
@@ -45,7 +45,7 @@ def find_def(block, var) -> MLILSetVarSSA:
 
 class TestDebugLogDoesNotClobberRegisters(unittest.TestCase):
     def test_register_read_after_a_non_clobbering_call_keeps_the_same_ssa_version(self):
-        func = build_read_call_read(clobbers_registers = False)
+        func = build_read_call_read(clobbers_registers=False)
         SSAConstructor(func).construct()
 
         block = func.basic_blocks[0]
@@ -59,7 +59,7 @@ class TestDebugLogDoesNotClobberRegisters(unittest.TestCase):
     def test_ordinary_call_still_clobbers_the_register(self):
         # Regression guard: the default (clobbers_registers=True) must keep today's
         # conservative behavior for every other call.
-        func = build_read_call_read(clobbers_registers = True)
+        func = build_read_call_read(clobbers_registers=True)
         SSAConstructor(func).construct()
 
         block = func.basic_blocks[0]
@@ -74,7 +74,7 @@ class TestDebugLogDoesNotClobberRegisters(unittest.TestCase):
         # variable: reg0 = f() must define reg0 exactly once (its own output), never a
         # second time via the generic "every other register/global" clobber list.
         func = MediumLevelILFunction('call_output_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         reg0 = func.get_or_create_register_var(0)
 
         block.add_instruction(MLILCall('f', [], reg0))

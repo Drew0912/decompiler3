@@ -1,4 +1,4 @@
-'''Loop Recovery Pass
+"""Loop Recovery Pass
 
 Turn the while(1) shape that structuring produces back into a tested loop:
 
@@ -8,7 +8,7 @@ Turn the while(1) shape that structuring produces back into a tested loop:
 
 Also folds constant loop conditions and drops a trailing continue, which says
 nothing at the end of a loop body.
-'''
+"""
 
 from typing import List, Optional
 from ir.pipeline import Pass
@@ -38,7 +38,7 @@ from ..hlil import (
 
 
 class LoopRecoveryPass(Pass):
-    '''Recover loop conditions from while(1) bodies'''
+    """Recover loop conditions from while(1) bodies"""
 
     def run(self, func: HighLevelILFunction) -> HighLevelILFunction:
         self._process_block(func.body)
@@ -58,14 +58,13 @@ class LoopRecoveryPass(Pass):
 
             if isinstance(stmt, HLILWhile):
                 recovered.extend(self._recover_loop(stmt))
-
             else:
                 recovered.append(stmt)
 
         block.statements = recovered
 
     def _recover_loop(self, loop: HLILWhile) -> List[HLILStatement]:
-        '''Rewrite an unconditional loop whose body only guards its own exit'''
+        """Rewrite an unconditional loop whose body only guards its own exit"""
         # A jump HLIL could not express may leave or re-enter the loop: keep the loop as built
         if any(isinstance(node, HLILUnstructured) for node in iter_tree(loop.body)):
             return [loop]
@@ -95,12 +94,12 @@ class LoopRecoveryPass(Pass):
         # Checked before _trailing_exit_condition, which mutates loop.body - refusing after
         # that mutation would return a "left unchanged" while(1) loop that had already lost
         # its own trailing break
-        if contains_escaping_exit(loop.body, HLILContinue, include_labeled = True):
+        if contains_escaping_exit(loop.body, HLILContinue, include_labeled=True):
             return [loop]
 
         trailing_exit = self._trailing_exit_condition(loop.body)
         if trailing_exit is not None:
-            new_loop = HLILDoWhile(trailing_exit, loop.body, label = loop.label)
+            new_loop = HLILDoWhile(trailing_exit, loop.body, label=loop.label)
             new_loop.address = loop.address
             new_loop.mlil_index = loop.mlil_index
             return [new_loop]
@@ -108,7 +107,7 @@ class LoopRecoveryPass(Pass):
         return [loop]
 
     def _guarded_body(self, body: HLILBlock) -> Optional[tuple]:
-        '''while (1) { if (c) {...} else { break } } -> while (c) { ... }'''
+        """while (1) { if (c) {...} else { break } } -> while (c) { ... }"""
         index = self._first_real_statement(body)
         if index is None or index != len(body.statements) - 1:
             return None
@@ -120,11 +119,9 @@ class LoopRecoveryPass(Pass):
         if self._is_only_break(stmt.false_block):
             condition = stmt.condition
             new_body = stmt.true_block or HLILBlock()
-
         elif self._is_only_break(stmt.true_block) and stmt.false_block:
             condition = negate_condition(stmt.condition)
             new_body = stmt.false_block
-
         else:
             return None
 
@@ -135,12 +132,12 @@ class LoopRecoveryPass(Pass):
         return (condition, new_body)
 
     def _is_only_break(self, block: Optional[HLILBlock]) -> bool:
-        '''Check that a block does nothing but leave the loop'''
+        """Check that a block does nothing but leave the loop"""
         inner = sole_statement(block)
         return isinstance(inner, HLILBreak) and inner.label is None
 
     def _leading_exit_condition(self, body: HLILBlock) -> Optional[HLILExpression]:
-        '''Condition of a leading `if (c) break;`, negated to become the loop test'''
+        """Condition of a leading `if (c) break;`, negated to become the loop test"""
         index = self._first_real_statement(body)
         if index is None:
             return None
@@ -156,11 +153,11 @@ class LoopRecoveryPass(Pass):
         return negate_condition(stmt.condition)
 
     def _leading_exit_return(self, body: HLILBlock) -> Optional[tuple]:
-        '''Leading `if (c) { return x; }` becomes the test, with the return after the loop
+        """Leading `if (c) { return x; }` becomes the test, with the return after the loop
 
         Only sound while nothing in the body breaks out of this loop: a break leaves
         it without returning, and the hoisted return would then swallow that path.
-        '''
+        """
         index = self._first_real_statement(body)
         if index is None:
             return None
@@ -169,7 +166,7 @@ class LoopRecoveryPass(Pass):
         if not self._is_lone_return(stmt):
             return None
 
-        if contains_escaping_exit(body, HLILBreak, include_labeled = True):
+        if contains_escaping_exit(body, HLILBreak, include_labeled=True):
             return None
 
         # The guard's whole body moves out, comments included, so a line comment
@@ -180,7 +177,7 @@ class LoopRecoveryPass(Pass):
         return (negate_condition(stmt.condition), trailing)
 
     def _is_lone_return(self, stmt: HLILStatement) -> bool:
-        '''Check for `if (c) { return x; }` with no else branch'''
+        """Check for `if (c) { return x; }` with no else branch"""
         if not isinstance(stmt, HLILIf):
             return False
 
@@ -190,7 +187,7 @@ class LoopRecoveryPass(Pass):
         return isinstance(sole_statement(stmt.true_block), HLILReturn)
 
     def _trailing_exit_condition(self, body: HLILBlock) -> Optional[HLILExpression]:
-        '''Condition of a trailing `if (c) break;`, negated to become the loop test'''
+        """Condition of a trailing `if (c) break;`, negated to become the loop test"""
         if not body.statements:
             return None
 
@@ -208,7 +205,7 @@ class LoopRecoveryPass(Pass):
         return negate_condition(stmt.condition)
 
     def _is_lone_break(self, stmt: HLILStatement) -> bool:
-        '''Check for `if (c) break;` with no else branch'''
+        """Check for `if (c) break;` with no else branch"""
         if not isinstance(stmt, HLILIf):
             return False
 
@@ -218,7 +215,7 @@ class LoopRecoveryPass(Pass):
         return self._is_only_break(stmt.true_block)
 
     def _first_real_statement(self, body: HLILBlock) -> Optional[int]:
-        '''Index of the first statement that is not a comment'''
+        """Index of the first statement that is not a comment"""
         for index, stmt in enumerate(body.statements):
             if not isinstance(stmt, HLILComment):
                 return index
@@ -226,13 +223,13 @@ class LoopRecoveryPass(Pass):
         return None
 
     def _drop_trailing_continue(self, body: HLILBlock):
-        '''Remove a continue that only restates what the end of the body does'''
+        """Remove a continue that only restates what the end of the body does"""
         if body.statements and isinstance(body.statements[-1], HLILContinue):
             if body.statements[-1].label is None:
                 body.statements.pop()
 
     def _fold_constant_condition(self, condition: HLILExpression) -> HLILExpression:
-        '''Reduce an == or != between two constants to a single constant'''
+        """Reduce an == or != between two constants to a single constant"""
         if not isinstance(condition, HLILBinaryOp) or condition.op not in (BinaryOp.EQ, BinaryOp.NE):
             return condition
 

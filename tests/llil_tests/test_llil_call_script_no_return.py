@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for CALL_SCRIPT_NO_RETURN (opcode 0x23), a script tail call that never gives control
-back to the calling function, and the module and function names both script calls lift.'''
+"""Unit tests for CALL_SCRIPT_NO_RETURN (opcode 0x23), a script tail call that never gives control
+back to the calling function, and the module and function names both script calls lift."""
 
 from pathlib import Path
 import sys
@@ -27,7 +27,7 @@ SCRIPT_ARGC = 1
 
 
 def build_tail_call_function(arg_count: int):
-    '''Single-block function ending in CALL_SCRIPT_NO_RETURN, no preceding caller frame'''
+    """Single-block function ending in CALL_SCRIPT_NO_RETURN, no preceding caller frame"""
     builder = make_builder()
     entry = builder.current_block
 
@@ -40,7 +40,7 @@ def build_tail_call_function(arg_count: int):
 
 
 class TestCallScriptNoReturnLLIL(unittest.TestCase):
-    '''LLIL-level behavior of the tail-call opcode'''
+    """LLIL-level behavior of the tail-call opcode"""
 
     def test_zero_args_has_no_successors(self):
         _, entry = build_tail_call_function(0)
@@ -68,7 +68,7 @@ class TestCallScriptNoReturnLLIL(unittest.TestCase):
 
 
 class TestCallScriptNoReturnMLIL(unittest.TestCase):
-    '''MLIL-level shape: tail call becomes `return module.func(args)`'''
+    """MLIL-level shape: tail call becomes `return module.func(args)`"""
 
     def test_translates_to_call_then_return(self):
         llil_func, _ = build_tail_call_function(1)
@@ -95,13 +95,13 @@ class TestCallScriptNoReturnMLIL(unittest.TestCase):
 
 
 class TestCallScriptNoReturnDebugInfoTracker(unittest.TestCase):
-    '''CallDebugInfoTracker.on_opcode: a tail call whose own argument is the result of a nested
-    call must still sort before that nested call in source pre-order.'''
+    """CallDebugInfoTracker.on_opcode: a tail call whose own argument is the result of a nested
+    call must still sort before that nested call in source pre-order."""
 
     def test_nested_call_in_own_argument_sorts_after_tail_call(self):
         # return outer(inner()) - INNER is an ordinary local CALL, its result becomes the tail
         # call's sole argument via GET_REG(0).
-        tracker = CallDebugInfoTracker(get_param_count = lambda func_id: 0)
+        tracker = CallDebugInfoTracker(get_param_count=lambda func_id: 0)
 
         tracker.on_opcode(ED9Opcode.DEBUG_SET_LINENO, [1])  # enables debug-record recording
         tracker.on_opcode(ED9Opcode.PUSH_CURRENT_FUNC_ID, [])
@@ -119,7 +119,7 @@ class TestCallScriptNoReturnDebugInfoTracker(unittest.TestCase):
 
 
 class TestScriptCallNames(unittest.TestCase):
-    '''The module and function a CALL_SCRIPT / CALL_SCRIPT_NO_RETURN names come from its two string operands'''
+    """The module and function a CALL_SCRIPT / CALL_SCRIPT_NO_RETURN names come from its two string operands"""
 
     def test_call_script_keeps_module_and_function_names(self):
         asm = scp_asm.Asm()

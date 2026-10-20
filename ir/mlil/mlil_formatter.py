@@ -1,4 +1,4 @@
-'''MLIL Formatter - Format MLIL for display'''
+"""MLIL Formatter - Format MLIL for display"""
 
 from typing import List
 
@@ -17,23 +17,21 @@ STR_FORMATTED_INSTRUCTIONS = (
 
 
 class MLILFormatter:
-    '''Format MLIL functions for display'''
+    """Format MLIL functions for display"""
 
     @classmethod
     def _format_const(cls, const: MLILConst) -> str:
-        '''Format a constant value'''
+        """Format a constant value"""
         if isinstance(const.value, str):
             return str(const)   # MLILConst's own escaped literal
-
         elif isinstance(const.value, bool):
             return 'true' if const.value else 'false'
-
         else:
             return str(const.value)
 
     @classmethod
     def format_function(cls, func: MediumLevelILFunction) -> List[str]:
-        '''Format entire MLIL function'''
+        """Format entire MLIL function"""
         result = [
             f'; ===== MLIL Function {func.name} @ 0x{func.start_addr:X} =====',
             f'; Parameters: {len([p for p in func.parameters if p])}, Locals: {len(func.locals)}',
@@ -55,7 +53,6 @@ class MLILFormatter:
                 var = func.locals[var_name]
                 if var.slot_index != UNASSIGNED_SLOT_INDEX:
                     result.append(f';   {var.name} (slot {var.slot_index})')
-
                 else:
                     result.append(f';   {var.name}')
 
@@ -78,7 +75,7 @@ class MLILFormatter:
 
     @classmethod
     def format_block(cls, block: MediumLevelILBasicBlock) -> List[str]:
-        '''Format a single basic block'''
+        """Format a single basic block"""
         result = [f'{block.label}:']
 
         for inst in block.instructions:
@@ -93,16 +90,13 @@ class MLILFormatter:
 
     @classmethod
     def format_instruction(cls, inst: MediumLevelILInstruction) -> str:
-        '''Format a single instruction: its own str(), except a constant, a script call and a debug record'''
+        """Format a single instruction: its own str(), except a constant, a script call and a debug record"""
         if isinstance(inst, MLILConst):
             return cls._format_const(inst)
-
         elif isinstance(inst, MLILCallScript):
             return f'{inst}  ; MLILCallScript'
-
         elif isinstance(inst, MLILDebug):
             return f'; {inst}'
-
         elif isinstance(inst, STR_FORMATTED_INSTRUCTIONS):
             return str(inst)
 
@@ -110,7 +104,7 @@ class MLILFormatter:
 
     @classmethod
     def to_dot(cls, func: MediumLevelILFunction) -> str:
-        '''Generate Graphviz DOT format for CFG visualization'''
+        """Generate Graphviz DOT format for CFG visualization"""
         lines = []
         lines.append(f'digraph "{func.name}" {{')
         lines.append('    rankdir=TB;')
@@ -188,5 +182,5 @@ class MLILFormatter:
 
 
 def format_mlil_function(func: MediumLevelILFunction) -> List[str]:
-    '''Convenience function to format MLIL function'''
+    """Convenience function to format MLIL function"""
     return MLILFormatter.format_function(func)

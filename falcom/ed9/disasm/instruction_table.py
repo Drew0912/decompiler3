@@ -14,6 +14,7 @@ if TYPE_CHECKING:
 
 class OperandType(IntEnum2):
     """Operand types"""
+
     Empty       = 0
     SInt8       = 1
     SInt16      = 2
@@ -34,6 +35,7 @@ HEX_DIGITS_PER_BYTE     = 2
 
 class OperandFormat:
     """Operand format descriptor"""
+
     size_table: dict[OperandType, int] = {
         OperandType.SInt8   : 1,
         OperandType.SInt16  : 2,
@@ -76,6 +78,7 @@ class OperandFormat:
 
 class OperandDescriptor:
     """Operand descriptor with read/write/format methods"""
+
     format_table: dict[str, 'OperandDescriptor'] = {}
 
     @classmethod
@@ -136,23 +139,24 @@ class OperandDescriptor:
 
 # Initialize format table
 def _oprdesc(opr_type: OperandType, is_hex: bool = False):
-    return OperandDescriptor(OperandFormat(opr_type, is_hex = is_hex))
+    return OperandDescriptor(OperandFormat(opr_type, is_hex=is_hex))
+
 
 OperandDescriptor.format_table.update({
-    'c' : _oprdesc(OperandType.SInt8, is_hex = False),
-    'C' : _oprdesc(OperandType.UInt8, is_hex = False),
-    'b' : _oprdesc(OperandType.SInt8, is_hex = True),
-    'B' : _oprdesc(OperandType.UInt8, is_hex = True),
+    'c' : _oprdesc(OperandType.SInt8, is_hex=False),
+    'C' : _oprdesc(OperandType.UInt8, is_hex=False),
+    'b' : _oprdesc(OperandType.SInt8, is_hex=True),
+    'B' : _oprdesc(OperandType.UInt8, is_hex=True),
 
-    'h' : _oprdesc(OperandType.SInt16, is_hex = False),
-    'H' : _oprdesc(OperandType.UInt16, is_hex = False),
-    'w' : _oprdesc(OperandType.SInt16, is_hex = True),
-    'W' : _oprdesc(OperandType.UInt16, is_hex = True),
+    'h' : _oprdesc(OperandType.SInt16, is_hex=False),
+    'H' : _oprdesc(OperandType.UInt16, is_hex=False),
+    'w' : _oprdesc(OperandType.SInt16, is_hex=True),
+    'W' : _oprdesc(OperandType.UInt16, is_hex=True),
 
-    'i' : _oprdesc(OperandType.SInt32, is_hex = False),
-    'I' : _oprdesc(OperandType.UInt32, is_hex = False),
-    'l' : _oprdesc(OperandType.SInt32, is_hex = True),
-    'L' : _oprdesc(OperandType.UInt32, is_hex = True),
+    'i' : _oprdesc(OperandType.SInt32, is_hex=False),
+    'I' : _oprdesc(OperandType.UInt32, is_hex=False),
+    'l' : _oprdesc(OperandType.SInt32, is_hex=True),
+    'L' : _oprdesc(OperandType.UInt32, is_hex=True),
 
     'f' : _oprdesc(OperandType.Float32),
 
@@ -165,6 +169,7 @@ OperandDescriptor.format_table.update({
 @dataclass
 class BranchTarget:
     """Branch target information"""
+
     kind   : 'BranchKind'
     offset : int
 
@@ -186,6 +191,7 @@ class BranchTarget:
 
 class InstructionFlags(IntFlag2):
     """Instruction flags (can be combined with bitwise OR)"""
+
     NONE        = 0
     END_BLOCK   = 1 << 0  # Terminates a basic block
     START_BLOCK = 1 << 1  # Starts a new basic block at target
@@ -194,11 +200,12 @@ class InstructionFlags(IntFlag2):
 @dataclass
 class InstructionDescriptor:
     """Descriptor for an instruction in the instruction table"""
+
     opcode: int
     mnemonic: str
     flags: InstructionFlags = InstructionFlags.NONE
-    ends_block: bool = field(init = False, repr = False)
-    starts_block: bool = field(init = False, repr = False)
+    ends_block: bool = field(init=False, repr=False)
+    starts_block: bool = field(init=False, repr=False)
 
     def __post_init__(self):
         self.ends_block = bool(self.flags & InstructionFlags.END_BLOCK)
@@ -255,11 +262,11 @@ class InstructionTable(ABC):
 
         # Create instruction
         inst = Instruction(
-            offset      = offset,
-            opcode      = opcode,
-            descriptor  = descriptor,
-            operands    = [],
-            size        = 0
+            offset=offset,
+            opcode=opcode,
+            descriptor=descriptor,
+            operands=[],
+            size=0
         )
 
         # Read operands (may modify inst.opcode and inst.descriptor)

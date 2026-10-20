@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for slot lifetimes in the LLIL builder. A parameter slot is
+"""Unit tests for slot lifetimes in the LLIL builder. A parameter slot is
 frame storage (argN) only while it still holds the caller's parameter; once the function pops the parameter, a push
-into the slot starts a stack lifetime, and every access to the slot uses that storage.'''
+into the slot starts a stack lifetime, and every access to the slot uses that storage."""
 
 from pathlib import Path
 import sys
@@ -36,13 +36,13 @@ IN_PLACE = "in place, which the decompiler can't follow - work on a LOAD_STACK c
 
 
 def last_pushed_value(builder: LowLevelILBuilder):
-    '''The value the last push stored (a push emits its store, then its SpAdd)'''
+    """The value the last push stored (a push emits its store, then its SpAdd)"""
     return builder.current_block.instructions[-2].value
 
 
 def global_stores(builder: FalcomVMBuilder) -> dict:
-    '''GLOBAL index -> stored value, after the production MLIL pipeline'''
-    mlil = convert_falcom_llil_to_mlil(builder.finalize(), optimize = True)
+    """GLOBAL index -> stored value, after the production MLIL pipeline"""
+    mlil = convert_falcom_llil_to_mlil(builder.finalize(), optimize=True)
     return {
         inst.index: inst.value
         for block in mlil.basic_blocks for inst in block.instructions
@@ -51,15 +51,15 @@ def global_stores(builder: FalcomVMBuilder) -> dict:
 
 
 class TestRepushedParameterSlot(unittest.TestCase):
-    '''After the function pops a parameter and pushes into its slot, every access uses the push's stack storage.
-    Before, these accesses picked the parameter by slot number and read or wrote the popped parameter.'''
+    """After the function pops a parameter and pushes into its slot, every access uses the push's stack storage.
+    Before, these accesses picked the parameter by slot number and read or wrote the popped parameter."""
 
     def assert_const(self, value, expected):
         self.assertIsInstance(value, MLILConst)
         self.assertEqual(value.value, expected)
 
     def test_pop_to_writes_the_pushed_slot(self):
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         builder.pop_bytes(WORD_SIZE)            # the parameter is popped; sp 1->0
         builder.push_int(PUSHED_VALUE)          # slot 0 re-pushed; sp 0->1
         builder.push_int(STORED_VALUE)          # sp 1->2
@@ -74,7 +74,7 @@ class TestRepushedParameterSlot(unittest.TestCase):
         self.assert_const(global_stores(builder)[GLOBAL_INDEX], STORED_VALUE)
 
     def test_load_stack_reads_the_pushed_slot(self):
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         builder.pop_bytes(WORD_SIZE)
         builder.push_int(PUSHED_VALUE)
         builder.load_stack(-WORD_SIZE)          # slot 0
@@ -89,7 +89,7 @@ class TestRepushedParameterSlot(unittest.TestCase):
         self.assert_const(global_stores(builder)[GLOBAL_INDEX], PUSHED_VALUE)
 
     def test_address_is_the_pushed_slot(self):
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         builder.pop_bytes(WORD_SIZE)
         builder.push_int(PUSHED_VALUE)
         builder.push_stack_addr(-WORD_SIZE)     # slot 0
@@ -99,7 +99,7 @@ class TestRepushedParameterSlot(unittest.TestCase):
         self.assertEqual(address.slot_index, 0)
 
     def test_lower_parameter_stays_live_while_a_higher_one_is_repushed(self):
-        builder = make_builder(num_params = 2)
+        builder = make_builder(num_params=2)
         builder.pop_bytes(WORD_SIZE)            # slot 1 (arg1) popped; sp 2->1
         builder.push_int(PUSHED_VALUE)          # slot 1 re-pushed; sp 1->2
         builder.load_stack(-2 * WORD_SIZE)      # slot 0: still the caller's arg2; sp 2->3
@@ -117,8 +117,8 @@ class TestRepushedParameterSlot(unittest.TestCase):
         self.assertEqual(stores[GLOBAL_INDEX].var.name, 'arg2')
 
     def test_dereference_through_a_repushed_slot_raises(self):
-        '''The slot now holds a pushed pointer, which may point into this function's own frame.'''
-        builder = make_builder(num_params = 1)
+        """The slot now holds a pushed pointer, which may point into this function's own frame."""
+        builder = make_builder(num_params=1)
         builder.pop_bytes(WORD_SIZE)
         builder.push_int(PUSHED_VALUE)          # slot 0 re-pushed
 
@@ -131,12 +131,12 @@ class TestRepushedParameterSlot(unittest.TestCase):
 
 
 class TestAccessAtOrAboveSp(unittest.TestCase):
-    '''A slot at or above sp holds no live value: reads, addresses and dereferences raise instead of reviving a
-    popped parameter as argN, and a store there is a dead stack store.'''
+    """A slot at or above sp holds no live value: reads, addresses and dereferences raise instead of reviving a
+    popped parameter as argN, and a store there is a dead stack store."""
 
     def test_read_raises(self):
         for num_params in (0, 1):
-            with self.subTest(num_params = num_params):
+            with self.subTest(num_params=num_params):
                 builder = make_builder(num_params)
                 builder.pop_bytes(num_params * WORD_SIZE)   # sp 0: any parameter is popped
 
@@ -144,21 +144,21 @@ class TestAccessAtOrAboveSp(unittest.TestCase):
                     builder.load_stack(0)
 
     def test_address_raises(self):
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         builder.pop_bytes(WORD_SIZE)
 
         with self.assertRaises(NotImplementedError):
             builder.push_stack_addr(0)
 
     def test_dereference_raises(self):
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         builder.pop_bytes(WORD_SIZE)
 
         with self.assertRaises(NotImplementedError):
             builder.load_stack_deref(0)
 
     def test_pop_to_zero_is_a_dead_stack_store(self):
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         builder.pop_bytes(WORD_SIZE)            # the parameter is popped; sp 1->0
         builder.push_int(PUSHED_VALUE)          # sp 0->1
         builder.pop_to(0)                       # pops slot 0, then writes the slot it just popped
@@ -169,13 +169,13 @@ class TestAccessAtOrAboveSp(unittest.TestCase):
 
 
 class TestAccessBelowTheStack(unittest.TestCase):
-    '''A slot below the frame base is the caller's: reads and addresses raise (a store there fails in the parser
-    first)'''
+    """A slot below the frame base is the caller's: reads and addresses raise (a store there fails in the parser
+    first)"""
 
     BELOW_ONE_PARAMETER = -3 * WORD_SIZE    # with 1 parameter and 1 push (sp 2): slot -1
 
     def builder(self) -> FalcomVMBuilder:
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         builder.push_int(PUSHED_VALUE)
         return builder
 
@@ -184,7 +184,7 @@ class TestAccessBelowTheStack(unittest.TestCase):
             ('Read', lambda builder: builder.load_stack(self.BELOW_ONE_PARAMETER)),
             ('Address', lambda builder: builder.push_stack_addr(self.BELOW_ONE_PARAMETER)),
         ):
-            with self.subTest(access = access):
+            with self.subTest(access=access):
                 with self.assertRaisesRegex(NotImplementedError, rf'^{access} of slot -1 below the stack'):
                     emit(self.builder())
 
@@ -201,8 +201,8 @@ class TestAccessBelowTheStack(unittest.TestCase):
 
 
 class TestParameterUsedInPlace(unittest.TestCase):
-    '''The vstack never tracks a parameter, so an opcode consuming or reading one in place can't be lifted: it fails
-    naming the parameter's slot - parameters counted from the top, where arg1 is - instead of the vstack'''
+    """The vstack never tracks a parameter, so an opcode consuming or reading one in place can't be lifted: it fails
+    naming the parameter's slot - parameters counted from the top, where arg1 is - instead of the vstack"""
 
     def assert_in_place(self, emit, uses: str, num_params: int = 1):
         builder = make_builder(num_params)
@@ -225,28 +225,28 @@ class TestParameterUsedInPlace(unittest.TestCase):
             ('DEBUG_LOG', lambda builder: builder.debug_log(2)),
         ):
             with self.subTest(opcode):
-                self.assert_in_place(emit, r'the slots of parameters 1-2 \(arg1, arg2\)', num_params = 2)
+                self.assert_in_place(emit, r'the slots of parameters 1-2 \(arg1, arg2\)', num_params=2)
 
     def test_binary_op_names_both_parameters(self):
         self.assert_in_place(lambda builder: builder.add(), r'the slots of parameters 1-2 \(arg1, arg2\)',
-                             num_params = 2)
+                             num_params=2)
 
     def test_repushed_parameter_slot_is_not_named(self):
-        '''arg1 popped and its slot pushed again: the push is a value the function pushed, only arg2 is used in place'''
+        """arg1 popped and its slot pushed again: the push is a value the function pushed, only arg2 is used in place"""
         def emit(builder):
             builder.pop_bytes(WORD_SIZE)
             builder.push_int(PUSHED_VALUE)
             builder.add()
 
-        self.assert_in_place(emit, r'the slot of parameter 2 \(arg2\)', num_params = 2)
+        self.assert_in_place(emit, r'the slot of parameter 2 \(arg2\)', num_params=2)
 
     def test_lower_parameter_is_numbered_from_the_top(self):
-        '''Arguments are pushed right to left: with arg1 popped, the top slot is arg2'''
+        """Arguments are pushed right to left: with arg1 popped, the top slot is arg2"""
         def emit(builder):
             builder.pop_bytes(WORD_SIZE)
             builder.set_reg(REG_INDEX)
 
-        self.assert_in_place(emit, r'the slot of parameter 2 \(arg2\)', num_params = 2)
+        self.assert_in_place(emit, r'the slot of parameter 2 \(arg2\)', num_params=2)
 
     def test_overwritten_parameter_slot_is_still_its_slot(self):
         def emit(builder):
@@ -257,32 +257,32 @@ class TestParameterUsedInPlace(unittest.TestCase):
         self.assert_in_place(emit, r'the slot of parameter 1 \(arg1\)')
 
     def test_tail_call_forwarding_a_parameter(self):
-        '''A copy on the stack would sit above the parameter, which the tail call can't leave: it goes through a
-        register'''
-        builder = make_builder(num_params = 1)
+        """A copy on the stack would sit above the parameter, which the tail call can't leave: it goes through a
+        register"""
+        builder = make_builder(num_params=1)
         with self.assertRaisesRegex(RuntimeError, r"^forwards the slot of parameter 1 \(arg1\) to a tail call, which "
                                                   r"the decompiler can't follow - pass LOAD_STACK copies through "
                                                   r'registers \(SET_REG, pop the parameters, GET_REG\)$'):
             builder.call_script_no_return(MODULE_NAME, TAIL_FUNC_NAME, 1)
 
     def test_shortfall_below_the_parameters_keeps_the_vstack_error(self):
-        '''Not a parameter: a broken builder invariant, which the parser keeps a pop from reaching'''
+        """Not a parameter: a broken builder invariant, which the parser keeps a pop from reaching"""
         with self.assertRaisesRegex(RuntimeError, '^Vstack underflow'):
             make_builder().set_reg(REG_INDEX)
 
 
 class TestLiveParameterSlot(unittest.TestCase):
-    '''Guards: while the function still holds a parameter, its slot stays frame-relative, and a push that starts a
-    new lifetime keeps producing today's stack slots.'''
+    """Guards: while the function still holds a parameter, its slot stays frame-relative, and a push that starts a
+    new lifetime keeps producing today's stack slots."""
 
     def test_live_parameter_read_is_frame_relative(self):
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         builder.load_stack(-WORD_SIZE)              # slot 0
 
         self.assertIsInstance(last_pushed_value(builder), LowLevelILFrameLoad)
 
     def test_tail_call_argument_stays_a_stack_value(self):
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         builder.push(builder.const_float(TAIL_ARG_VALUE))
         builder.set_reg(TAIL_ARG_REG)
         builder.pop_bytes(WORD_SIZE)                # the whole frame, the parameter included
@@ -290,7 +290,7 @@ class TestLiveParameterSlot(unittest.TestCase):
         self.assertIsInstance(builder.current_block.instructions[-2], LowLevelILStackStore)
         builder.call_script_no_return(MODULE_NAME, TAIL_FUNC_NAME, 1)
 
-        mlil = convert_falcom_llil_to_mlil(builder.finalize(), optimize = True)
+        mlil = convert_falcom_llil_to_mlil(builder.finalize(), optimize=True)
         call = next(
             inst for block in mlil.basic_blocks for inst in block.instructions if isinstance(inst, MLILCallScript)
         )
@@ -298,7 +298,7 @@ class TestLiveParameterSlot(unittest.TestCase):
         self.assertEqual(call.args[0].value, TAIL_ARG_VALUE)
 
     def test_both_arms_repushing_a_parameter_slot_are_accepted(self):
-        builder = make_builder(num_params = 1)
+        builder = make_builder(num_params=1)
         left = builder.create_basic_block(SECOND_BLOCK_START, 'left')
         right = builder.create_basic_block(THIRD_BLOCK_START, 'right')
         join = builder.create_basic_block(FOURTH_BLOCK_START, 'join')

@@ -59,10 +59,8 @@ class ED9VMLifter:
 
         try:
             return self._lift(func)
-
         except ED9LiftError:
             raise
-
         except Exception as e:
             raise ED9LiftError.at(func.name, e) from e
 
@@ -70,10 +68,10 @@ class ED9VMLifter:
         """lift_function's body; a failing instruction raises an ED9LiftError naming it"""
         builder = FalcomVMBuilder()
         ir_params = self._convert_params(func.params)
-        builder.create_function(func.name, func.offset, ir_params, is_common_func = func.is_common_func)
+        builder.create_function(func.name, func.offset, ir_params, is_common_func=func.is_common_func)
 
         lift_blocks = self._compute_rpo(func.entry_block)
-        layout_blocks = sorted(lift_blocks, key = lambda b: b.offset)   # preserve address-order block indices
+        layout_blocks = sorted(lift_blocks, key=lambda b: b.offset)     # preserve address-order block indices
 
         llil_blocks: Dict[int, LowLevelILBasicBlock] = {}
         for block in layout_blocks:
@@ -88,7 +86,6 @@ class ED9VMLifter:
                 builder.set_current_address(inst.offset)
                 try:
                     self._translate_instruction(builder, inst, block, block_map, llil_blocks)
-
                 except Exception as e:
                     raise ED9LiftError.at(func.name, e, inst) from e
 
@@ -96,7 +93,7 @@ class ED9VMLifter:
 
     # --------------------------------------------------------------- helpers --
     def _convert_params(self, params: list[FunctionParam]) -> list[IRParameter]:
-        '''Convert Falcom FunctionParam to generic IRParameter'''
+        """Convert Falcom FunctionParam to generic IRParameter"""
         result = []
         for i, param in enumerate(params):
             name = f'arg{i + 1}'
@@ -106,22 +103,22 @@ class ED9VMLifter:
         return result
 
     def source_value(self, value):
-        '''A decoded value as the IR keeps it: a finite float carries the .py's spelling, so every output prints
+        """A decoded value as the IR keeps it: a finite float carries the .py's spelling, so every output prints
         it the same way (no spelling without spell_floats). Public: .ts compares call arguments with the callees'
-        defaults converted by it'''
+        defaults converted by it"""
         if isinstance(value, float) and math.isfinite(value):
             return SourceFloat(value, ScpValue.float_literal(value) if self.spell_floats else None)
 
         return value
 
     def _collect_blocks(self, entry: BasicBlock) -> list[BasicBlock]:
-        '''All blocks reachable from entry. Kept separate from lift_function's own traversal for
-        external callers (e.g. tools/ir_line_order_report.py) that just want the reachable set.'''
+        """All blocks reachable from entry. Kept separate from lift_function's own traversal for
+        external callers (e.g. tools/ir_line_order_report.py) that just want the reachable set."""
         return self._compute_rpo(entry)
 
     def _compute_rpo(self, entry: BasicBlock) -> list[BasicBlock]:
-        '''Reverse post-order over succs.
-        In the returned order, every non-entry block follows at least one predecessor.'''
+        """Reverse post-order over succs.
+        In the returned order, every non-entry block follows at least one predecessor."""
         visited: set[int] = set()
         postorder: list[BasicBlock] = []
         stack: list[tuple[BasicBlock, bool]] = [(entry, False)]
@@ -299,8 +296,8 @@ class ED9VMLifter:
         return self._parser.get_func_name_from_func_id(func_id)
 
     def _pop_count(self, inst: Instruction) -> int:
-        '''How many entries inst pops, by its stack effect; a local CALL's are its callee's declared parameters. Only
-        the CALL arm asks: the other calls take their count from their operand, every other opcode from its builder'''
+        """How many entries inst pops, by its stack effect; a local CALL's are its callee's declared parameters. Only
+        the CALL arm asks: the other calls take their count from their operand, every other opcode from its builder"""
         operand_values = [operand.value for operand in inst.operands]
         return inst.descriptor.effect.pop_count(operand_values, self._parser.get_func_argc)
 

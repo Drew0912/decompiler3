@@ -39,6 +39,7 @@ RESULT_REGISTER         = 0     # where a returning call leaves its result
 
 class InstructionKind(Enum):
     """What an instruction does to the stack; every opcode table row has one"""
+
     PUSH_CONST          = auto()    # PUSH and its constant pseudo-ops
     SLOT_ADDRESS        = auto()    # PUSH_STACK_OFFSET
     LOAD_SLOT           = auto()
@@ -66,22 +67,25 @@ class InstructionKind(Enum):
     DEBUG_LOG           = auto()
 
 
-@dataclass(frozen = True)
+@dataclass(frozen=True)
 class OperandCount:
     """A count read from an operand; unit = WORD_SIZE when the operand counts bytes (POP)"""
+
     index   : int
     unit    : int = 1
 
 
-@dataclass(frozen = True)
+@dataclass(frozen=True)
 class CalleeParamCount:
     """A local CALL's argument count: what its callee, the operand at index, declares - each walker looks it up"""
+
     index   : int
 
 
-@dataclass(frozen = True)
+@dataclass(frozen=True)
 class StackEffect:
     """In order: pops (operands, or a call's arguments), the call setup below them, pushes"""
+
     pops            : int | OperandCount | CalleeParamCount = 0
     setup_pops      : int = 0
     reads           : int | OperandCount = 0     # values read in place, not popped (SYSCALL's arguments)
@@ -112,30 +116,30 @@ class StackEffect:
 
 
 STACK_EFFECTS = {
-    InstructionKind.PUSH_CONST          : StackEffect(pushes = ONE_VALUE),
-    InstructionKind.SLOT_ADDRESS        : StackEffect(addresses_slot = True, pushes = ONE_VALUE),
-    InstructionKind.LOAD_SLOT           : StackEffect(addresses_slot = True, pushes = ONE_VALUE),
-    InstructionKind.LOAD_DEREF          : StackEffect(addresses_slot = True, pushes = ONE_VALUE),
-    InstructionKind.LOAD_GLOBAL         : StackEffect(pushes = ONE_VALUE),
-    InstructionKind.LOAD_REG            : StackEffect(pushes = ONE_VALUE),
-    InstructionKind.STORE_SLOT          : StackEffect(pops = ONE_VALUE, addresses_slot = True),
-    InstructionKind.STORE_DEREF         : StackEffect(pops = ONE_VALUE, addresses_slot = True),
-    InstructionKind.STORE_GLOBAL        : StackEffect(pops = ONE_VALUE),
-    InstructionKind.STORE_REG           : StackEffect(pops = ONE_VALUE),
-    InstructionKind.BINARY              : StackEffect(pops = BINARY_OPERAND_COUNT, pushes = ONE_VALUE),
-    InstructionKind.UNARY               : StackEffect(pops = ONE_VALUE, pushes = ONE_VALUE),
-    InstructionKind.POP                 : StackEffect(pops = OperandCount(POP_SIZE_OPERAND, unit = WORD_SIZE)),
+    InstructionKind.PUSH_CONST          : StackEffect(pushes=ONE_VALUE),
+    InstructionKind.SLOT_ADDRESS        : StackEffect(addresses_slot=True, pushes=ONE_VALUE),
+    InstructionKind.LOAD_SLOT           : StackEffect(addresses_slot=True, pushes=ONE_VALUE),
+    InstructionKind.LOAD_DEREF          : StackEffect(addresses_slot=True, pushes=ONE_VALUE),
+    InstructionKind.LOAD_GLOBAL         : StackEffect(pushes=ONE_VALUE),
+    InstructionKind.LOAD_REG            : StackEffect(pushes=ONE_VALUE),
+    InstructionKind.STORE_SLOT          : StackEffect(pops=ONE_VALUE, addresses_slot=True),
+    InstructionKind.STORE_DEREF         : StackEffect(pops=ONE_VALUE, addresses_slot=True),
+    InstructionKind.STORE_GLOBAL        : StackEffect(pops=ONE_VALUE),
+    InstructionKind.STORE_REG           : StackEffect(pops=ONE_VALUE),
+    InstructionKind.BINARY              : StackEffect(pops=BINARY_OPERAND_COUNT, pushes=ONE_VALUE),
+    InstructionKind.UNARY               : StackEffect(pops=ONE_VALUE, pushes=ONE_VALUE),
+    InstructionKind.POP                 : StackEffect(pops=OperandCount(POP_SIZE_OPERAND, unit=WORD_SIZE)),
     InstructionKind.JUMP                : StackEffect(),
-    InstructionKind.CONDITIONAL_JUMP    : StackEffect(pops = ONE_VALUE),
-    InstructionKind.PUSH_FUNC_ID        : StackEffect(pushes = ONE_VALUE),
-    InstructionKind.PUSH_RET_ADDR       : StackEffect(pushes = ONE_VALUE),
-    InstructionKind.PUSH_CALLER_FRAME   : StackEffect(pushes = CALLER_FRAME_SLOTS),
-    InstructionKind.CALL                : StackEffect(pops = CalleeParamCount(CALLEE_OPERAND),
-                                                      setup_pops = LOCAL_SETUP_SLOTS),
-    InstructionKind.CALL_SCRIPT         : StackEffect(pops = OperandCount(ARGC_OPERAND), setup_pops = CALLER_FRAME_SLOTS),
-    InstructionKind.TAIL_CALL           : StackEffect(pops = OperandCount(ARGC_OPERAND), exits = True),
-    InstructionKind.SYSCALL             : StackEffect(reads = OperandCount(ARGC_OPERAND)),     # a later POP removes them
-    InstructionKind.RETURN              : StackEffect(exits = True),
+    InstructionKind.CONDITIONAL_JUMP    : StackEffect(pops=ONE_VALUE),
+    InstructionKind.PUSH_FUNC_ID        : StackEffect(pushes=ONE_VALUE),
+    InstructionKind.PUSH_RET_ADDR       : StackEffect(pushes=ONE_VALUE),
+    InstructionKind.PUSH_CALLER_FRAME   : StackEffect(pushes=CALLER_FRAME_SLOTS),
+    InstructionKind.CALL                : StackEffect(pops=CalleeParamCount(CALLEE_OPERAND),
+                                                      setup_pops=LOCAL_SETUP_SLOTS),
+    InstructionKind.CALL_SCRIPT         : StackEffect(pops=OperandCount(ARGC_OPERAND), setup_pops=CALLER_FRAME_SLOTS),
+    InstructionKind.TAIL_CALL           : StackEffect(pops=OperandCount(ARGC_OPERAND), exits=True),
+    InstructionKind.SYSCALL             : StackEffect(reads=OperandCount(ARGC_OPERAND)),       # a later POP removes them
+    InstructionKind.RETURN              : StackEffect(exits=True),
     InstructionKind.DEBUG_LINE          : StackEffect(),
-    InstructionKind.DEBUG_LOG           : StackEffect(pops = OperandCount(DEBUG_LOG_ARGC_OPERAND)),
+    InstructionKind.DEBUG_LOG           : StackEffect(pops=OperandCount(DEBUG_LOG_ARGC_OPERAND)),
 }

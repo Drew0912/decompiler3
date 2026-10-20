@@ -1,4 +1,4 @@
-'''TypeScript Code Generator - HLIL to production TypeScript'''
+"""TypeScript Code Generator - HLIL to production TypeScript"""
 
 import math
 from dc3 import default_indent, format_uint32_hex, quote_string
@@ -15,12 +15,12 @@ class TypeScriptGenerator:
 
     @classmethod
     def set_signature_db(cls, db):
-        '''Set signature database for formatting'''
+        """Set signature database for formatting"""
         cls._signature_db = db
 
     @classmethod
     def _format_type(cls, type_hint) -> str:
-        '''Map HLIL type to TypeScript'''
+        """Map HLIL type to TypeScript"""
         type_map = {
             HLILTypeKind.INT: 'number',
             HLILTypeKind.FLOAT: 'number',
@@ -34,7 +34,7 @@ class TypeScriptGenerator:
 
     @classmethod
     def _format_float(cls, value: float) -> str:
-        '''A float as a TypeScript number: a non-finite value has no literal'''
+        """A float as a TypeScript number: a non-finite value has no literal"""
         if math.isnan(value):
             return 'NaN'
 
@@ -45,25 +45,21 @@ class TypeScriptGenerator:
 
     @classmethod
     def _format_default_value(cls, value) -> str:
-        '''Format default value as TypeScript literal'''
+        """Format default value as TypeScript literal"""
         if isinstance(value, str):
             return quote_string(value)
-
         elif isinstance(value, float):
             return cls._format_float(value)
-
         elif isinstance(value, int):
             return str(value)
-
         elif value is None:
             return 'null'
-
         else:
             raise TypeError(f'Unknown default value type: {type(value).__name__}')
 
     @classmethod
     def _format_call_args(cls, func_name: str, args: list, address: int) -> str:
-        '''Format call arguments, using signature hints if available'''
+        """Format call arguments, using signature hints if available"""
         args = cls._without_trailing_defaults(func_name, args, address)
         if cls._signature_db:
             sig = cls._signature_db.get_function(func_name)
@@ -74,10 +70,10 @@ class TypeScriptGenerator:
 
     @classmethod
     def _without_trailing_defaults(cls, func_name: str, args: list, address: int) -> list:
-        '''args without the longest tail of constants that are the callee's defaults (the original compiler's own
+        """args without the longest tail of constants that are the callee's defaults (the original compiler's own
         rule; the signature prints them), but never fewer than the call's debug record keeps (the author wrote them;
         round trip only, by the CALL's offset). The larger count, not the record's: a record that keeps fewer passes
-        an address-taken local HLIL shows as a variable. A new list: the call keeps every argument'''
+        an address-taken local HLIL shows as a variable. A new list: the call keeps every argument"""
         defaults = cls._callee_defaults.get(func_name)
         if defaults is None or len(defaults) != len(args):
             return args
@@ -93,7 +89,7 @@ class TypeScriptGenerator:
 
     @classmethod
     def _format_call_args_with_sig(cls, args: list, params: list) -> str:
-        '''Format call arguments with parameter hints'''
+        """Format call arguments with parameter hints"""
         formatted = []
         has_variadic = params and params[-1].variadic
         fixed_count = len(params) - 1 if has_variadic else len(params)
@@ -102,7 +98,6 @@ class TypeScriptGenerator:
             if i < fixed_count and params[i].format:
                 formatted_arg = cls._format_arg_with_hint(arg, params[i].format)
                 formatted.append(formatted_arg)
-
             else:
                 formatted.append(cls._format_expr(arg))
 
@@ -110,7 +105,7 @@ class TypeScriptGenerator:
 
     @classmethod
     def _format_arg_with_hint(cls, arg, format_hint: str) -> str:
-        '''Format argument with format hint (hex, enum, etc.)'''
+        """Format argument with format hint (hex, enum, etc.)"""
         if isinstance(arg, HLILConst) and isinstance(arg.value, int):
             formatted = cls._signature_db.format_value(arg.value, format_hint)
             if formatted:
@@ -120,14 +115,13 @@ class TypeScriptGenerator:
 
     @classmethod
     def _infer_return_type(cls, block: HLILBlock) -> str:
-        '''Infer return type from return statements'''
+        """Infer return type from return statements"""
         # Recursively search for return statements
         def find_returns(blk: HLILBlock) -> List[HLILReturn]:
             returns = []
             for stmt in blk.statements:
                 if isinstance(stmt, HLILReturn):
                     returns.append(stmt)
-
                 else:
                     for child in sub_blocks(stmt):
                         returns.extend(find_returns(child))
@@ -179,10 +173,10 @@ class TypeScriptGenerator:
 
     @classmethod
     def _format_var_assignment(cls, dest: HLILVar, src: HLILExpression, indent_str: str) -> str:
-        '''Format `dest = src;`, wrapping src in int(...) when assigning a boolean expression
+        """Format `dest = src;`, wrapping src in int(...) when assigning a boolean expression
         to a numeric variable. Shared by the ordinary HLILAssign path and the address-taken
         *(&x) = v fold-back path, so both get the same coercion instead of it being
-        reimplemented (and possibly missed) at a second call site.'''
+        reimplemented (and possibly missed) at a second call site."""
         dest_str = cls._format_expr(dest)
         src_str = cls._format_expr(src)
 
@@ -193,8 +187,8 @@ class TypeScriptGenerator:
 
     @classmethod
     def _zero_comparison(cls, expr: HLILExpression) -> tuple[bool, HLILExpression] | None:
-        '''How a comparison with 0 simplifies, if it does: (negated, node) - it prints node's text, after a ! when
-        negated. (bool) != 0 -> bool, (!x) == 0 -> x, (bool) == 0 -> !bool, !(x == 0) -> x, !(x != 0) -> !x'''
+        """How a comparison with 0 simplifies, if it does: (negated, node) - it prints node's text, after a ! when
+        negated. (bool) != 0 -> bool, (!x) == 0 -> x, (bool) == 0 -> !bool, !(x == 0) -> x, !(x != 0) -> !x"""
         if isinstance(expr, HLILBinaryOp):
             if not (isinstance(expr.rhs, HLILConst) and is_int_zero(expr.rhs.value) and is_boolean_expr(expr.lhs)):
                 return None
@@ -236,8 +230,8 @@ class TypeScriptGenerator:
 
     @classmethod
     def _printed_node(cls, expr: HLILExpression) -> HLILExpression:
-        '''The node whose operator heads expr's text: a comparison with 0 prints as another node's
-        ((a || b) != 0 prints a || b), and an operand is parenthesized by what it prints'''
+        """The node whose operator heads expr's text: a comparison with 0 prints as another node's
+        ((a || b) != 0 prints a || b), and an operand is parenthesized by what it prints"""
         simplified = cls._zero_comparison(expr)
         if simplified is None:
             return expr
@@ -247,13 +241,13 @@ class TypeScriptGenerator:
 
     @classmethod
     def _operand_needs_parentheses(cls, operand: HLILExpression, parent_op: BinaryOp, is_left: bool) -> bool:
-        '''By the operand and by the node it prints - today's parentheses all stay'''
+        """By the operand and by the node it prints - today's parentheses all stay"""
         return any(isinstance(node, HLILBinaryOp) and needs_parentheses(node.op, parent_op, is_left)
                    for node in (operand, cls._printed_node(operand)))
 
     @classmethod
     def _unary_operand_needs_parentheses(cls, op: UnaryOp, operand: HLILExpression, operand_text: str) -> bool:
-        '''By the operand and by the node it prints - today's parentheses all stay'''
+        """By the operand and by the node it prints - today's parentheses all stay"""
         return (unary_operand_needs_parentheses(op, operand, operand_text)
                 or isinstance(cls._printed_node(operand), HLILBinaryOp))
 
@@ -263,30 +257,22 @@ class TypeScriptGenerator:
             var = expr.var
             if var.kind == VariableKind.GLOBAL:
                 return f'GLOBALS[{var.index}]'
-
             elif var.kind == VariableKind.REG:
                 return f'REGS[{var.index}]'
-
             else:
                 return var.name
-
         elif isinstance(expr, HLILConst):
             # Handle different constant types
             if isinstance(expr.value, str):
                 return quote_string(expr.value)
-
             elif isinstance(expr.value, bool):
                 return 'true' if expr.value else 'false'
-
             elif isinstance(expr.value, float):
                 return cls._format_float(expr.value)
-
             elif isinstance(expr.value, int) and expr.is_hex:
                 return format_uint32_hex(expr.value)
-
             else:
                 return str(expr.value)
-
         elif isinstance(expr, HLILBinaryOp):
             # A comparison of two int constants prints its value, by the rule HLIL decides constant
             # conditions with (constant_truth: floats decide nothing). Any other op with two constant
@@ -311,7 +297,6 @@ class TypeScriptGenerator:
                 rhs_str = f'({rhs_str})'
 
             return f'{lhs_str} {BINARY_OP_STR[expr.op]} {rhs_str}'
-
         elif isinstance(expr, HLILUnaryOp):
             simplified = cls._zero_comparison(expr)
             if simplified is not None:
@@ -321,11 +306,9 @@ class TypeScriptGenerator:
             if cls._unary_operand_needs_parentheses(expr.op, expr.operand, operand):
                 operand = f'({operand})'
             return f'{UNARY_OP_STR[expr.op]}{operand}'
-
         elif isinstance(expr, HLILAddressOf):
             operand = cls._format_expr(expr.operand)
             return f'addr_of({operand})'
-
         elif isinstance(expr, HLILDeref):
             unwrapped = unwrap_address_taken_var(expr)
             if unwrapped is not None:
@@ -333,11 +316,9 @@ class TypeScriptGenerator:
 
             operand = cls._format_expr(expr.operand)
             return f'deref({operand})'
-
         elif isinstance(expr, HLILCall):
             args = cls._format_call_args(expr.func_name, expr.args, expr.address)
             return f'{expr.func_name}({args})'
-
         elif isinstance(expr, HLILSyscall):
             # Don't replace syscalls in common functions (they are the wrappers themselves)
             is_common = cls._current_func and cls._current_func.is_common_func
@@ -345,7 +326,6 @@ class TypeScriptGenerator:
             if sig:
                 args = cls._format_call_args_with_sig(expr.args, sig.params)
                 return f'{sig.name}({args})'
-
             else:
                 args = [
                     f'{expr.subsystem}',
@@ -353,14 +333,12 @@ class TypeScriptGenerator:
                     *[cls._format_expr(arg) for arg in expr.args],
                 ]
                 return f'syscall({", ".join(args)})'
-
         elif isinstance(expr, HLILExternCall):
             args = [
                 quote_string(expr.target, "'"),
                 *[cls._format_expr(arg) for arg in expr.args],
             ]
             return f'extern_call({', '.join(args)})'
-
         else:
             # Fallback
             return str(expr)
@@ -390,7 +368,7 @@ class TypeScriptGenerator:
             lines.append('')
 
         # Function body
-        body_lines = cls._generate_block(func.body, indent = 1)
+        body_lines = cls._generate_block(func.body, indent=1)
         lines.extend(body_lines)
 
         lines.append('}')
@@ -425,7 +403,6 @@ class TypeScriptGenerator:
             if true_empty and false_has_content:
                 cond_str = cls._format_expr(negate_condition(condition))
                 true_block, false_block = false_block, None
-
             else:
                 cond_str = cls._format_expr(condition)
 
@@ -446,14 +423,12 @@ class TypeScriptGenerator:
                     lines.append(f'{indent_str}}} else if ({inner_cond}) {{')
                     lines.extend(cls._generate_block(inner_if.true_block, indent + 1))
                     false_block = inner_if.false_block
-
                 else:
                     lines.append(f'{indent_str}}} else {{')
                     lines.extend(cls._generate_block(false_block, indent + 1))
                     break
 
             lines.append(f'{indent_str}}}')
-
         elif isinstance(stmt, HLILWhile):
             # while (condition) { ... }, optionally labeled
             cond_str = cls._format_expr(stmt.condition)
@@ -461,7 +436,6 @@ class TypeScriptGenerator:
             lines.append(f'{indent_str}{label_prefix}while ({cond_str}) {{')
             lines.extend(cls._generate_block(stmt.body, indent + 1))
             lines.append(f'{indent_str}}}')
-
         elif isinstance(stmt, HLILDoWhile):
             # do { ... } while (condition);, optionally labeled
             cond_str = cls._format_expr(stmt.condition)
@@ -469,7 +443,6 @@ class TypeScriptGenerator:
             lines.append(f'{indent_str}{label_prefix}do {{')
             lines.extend(cls._generate_block(stmt.body, indent + 1))
             lines.append(f'{indent_str}}} while ({cond_str});')
-
         elif isinstance(stmt, HLILSwitch):
             # switch (scrutinee) { ... }
             scrutinee_str = cls._format_expr(stmt.scrutinee)
@@ -497,31 +470,26 @@ class TypeScriptGenerator:
                 lines.append(f'{indent_str}{case_indent}}}')
 
             lines.append(f'{indent_str}}}')
-
         elif isinstance(stmt, HLILBreak):
             if stmt.label:
                 lines.append(f'{indent_str}break {stmt.label};')
             else:
                 lines.append(f'{indent_str}break;')
-
         elif isinstance(stmt, HLILContinue):
             if stmt.label:
                 lines.append(f'{indent_str}continue {stmt.label};')
             else:
                 lines.append(f'{indent_str}continue;')
-
         elif isinstance(stmt, HLILUnstructured):
             # A jump HLIL could not express: say so, and end this path instead of falling through
             lines.append(f'{indent_str}// {stmt}')
             lines.append(f'{indent_str}throw new Error("unstructured: {stmt.target}");')
-
         elif isinstance(stmt, HLILReturn):
             if stmt.value is not None:
                 value_str = cls._format_expr(stmt.value)
                 lines.append(f'{indent_str}return {value_str};')
             else:
                 lines.append(f'{indent_str}return;')
-
         elif isinstance(stmt, HLILAssign) and isinstance(stmt.dest, HLILDeref):
             # *(&x) = v - address-taken local x's own lowered write - folds back to plain
             # x = v, through the same _format_var_assignment ordinary assignment uses, so it
@@ -529,30 +497,24 @@ class TypeScriptGenerator:
             unwrapped = unwrap_address_taken_var(stmt.dest)
             if unwrapped is not None:
                 lines.append(cls._format_var_assignment(unwrapped, stmt.src, indent_str))
-
             else:
                 # A genuine store through some other pointer - TypeScript has no *ptr syntax,
                 # so this is a deref_set() call, matching the addr_of() convention for &var
                 ptr_str = cls._format_expr(stmt.dest.operand)
                 src_str = cls._format_expr(stmt.src)
                 lines.append(f'{indent_str}deref_set({ptr_str}, {src_str});')
-
         elif isinstance(stmt, HLILAssign):
             lines.append(cls._format_var_assignment(stmt.dest, stmt.src, indent_str))
-
         elif isinstance(stmt, HLILExprStmt):
             expr_str = cls._format_expr(stmt.expr)
             lines.append(f'{indent_str}{expr_str};')
-
         elif isinstance(stmt, HLILComment):
             lines.append(f'{indent_str}// {stmt.text}')
-
         elif isinstance(stmt, HLILBlock):
             # Nested block
             lines.append(f'{indent_str}{{')
             lines.extend(cls._generate_block(stmt, indent + 1))
             lines.append(f'{indent_str}}}')
-
         else:
             lines.append(f'{indent_str}// {stmt}')
 
@@ -560,7 +522,7 @@ class TypeScriptGenerator:
 
 
 def generate_typescript_header() -> str:
-    return '''// VM state
+    return """// VM state
 const GLOBALS: any[] = [];
 const REGS: any[] = new Array(16);
 
@@ -586,11 +548,11 @@ function syscall(subsystem: number, cmd: number, ...args: any[]): any { return u
 // Placeholder function: VM debug print (DEBUG_LOG opcode)
 const debug = { log(...args: any[]): void {} };
 
-'''
+"""
 
 
 def generate_syscall_wrappers(signature_db) -> str:
-    '''Generate TypeScript wrapper functions for syscalls'''
+    """Generate TypeScript wrapper functions for syscalls"""
     if not signature_db or not signature_db.syscalls:
         return ''
 
@@ -604,7 +566,6 @@ def generate_syscall_wrappers(signature_db) -> str:
             if p.variadic:
                 params.append(f'...{p.name}: ({p.type})[]')
                 args.append(f'...{p.name}')
-
             else:
                 params.append(f'{p.name}: {p.type}')
                 args.append(p.name)
@@ -617,11 +578,9 @@ def generate_syscall_wrappers(signature_db) -> str:
             if sig.return_hint.type == 'void':
                 return_type = 'void'
                 body = f'syscall({sig.subsystem}, {sig.cmd}, {args_str});' if args_str else f'syscall({sig.subsystem}, {sig.cmd});'
-
             else:
                 return_type = 'number'
                 body = f'return syscall({sig.subsystem}, {sig.cmd}, {args_str});' if args_str else f'return syscall({sig.subsystem}, {sig.cmd});'
-
         else:
             return_type = 'any'
             body = f'return syscall({sig.subsystem}, {sig.cmd}, {args_str});' if args_str else f'return syscall({sig.subsystem}, {sig.cmd});'
@@ -634,15 +593,14 @@ def generate_syscall_wrappers(signature_db) -> str:
 
 def generate_typescript(func: HighLevelILFunction, callee_defaults: dict[str, tuple] | None = None,
                         written_argc: dict[int, int] | None = None) -> str:
-    '''func's TypeScript; with callee_defaults (local callee name -> each parameter's default as the lifter converts
+    """func's TypeScript; with callee_defaults (local callee name -> each parameter's default as the lifter converts
     it, None where there is none) a call leaves out its trailing arguments equal to them, but with written_argc
     (local CALL offset -> args its debug record keeps: Function.call_written_argc, round trip only) never the ones its
-    author wrote'''
+    author wrote"""
     TypeScriptGenerator._callee_defaults = callee_defaults or {}
     TypeScriptGenerator._written_argc = written_argc or {}
     try:
         lines = TypeScriptGenerator.generate_function(func)
-
     finally:
         TypeScriptGenerator._callee_defaults = {}
         TypeScriptGenerator._written_argc = {}

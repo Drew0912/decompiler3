@@ -1,8 +1,8 @@
-'''Expression Inlining Pass
+"""Expression Inlining Pass
 
 Inline expressions that are only used once.
 Pattern: x#n = expr; ... use(x#n) -> ... use(expr)
-'''
+"""
 
 from typing import Dict, List, Optional, Tuple
 from ir.pipeline import Pass
@@ -39,7 +39,7 @@ from .pass_ssa_copy_propagation import reaches_without_redefinition
 
 
 class ExpressionInliningPass(Pass):
-    '''Inline single-use expressions'''
+    """Inline single-use expressions"""
 
     def __init__(self):
         self.ssa_defs: Dict[MLILVariableSSA, MLILSetVarSSA] = {}
@@ -48,7 +48,7 @@ class ExpressionInliningPass(Pass):
         self.use_positions: Dict[MLILVariableSSA, List[Tuple[MediumLevelILBasicBlock, int]]] = {}
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
-        '''Inline single-use expressions'''
+        """Inline single-use expressions"""
         changed = True
 
         while changed:
@@ -58,7 +58,7 @@ class ExpressionInliningPass(Pass):
         return func
 
     def _build_def_use_chains(self, func: MediumLevelILFunction):
-        '''Build SSA def-use chains, tracking each def's and use's (block, index) position'''
+        """Build SSA def-use chains, tracking each def's and use's (block, index) position"""
         self.ssa_defs = {}
         self.def_positions = {}
         self.ssa_uses = {}
@@ -69,7 +69,6 @@ class ExpressionInliningPass(Pass):
                 if isinstance(inst, MLILSetVarSSA):
                     self.ssa_defs[inst.var] = inst
                     self.def_positions[inst.var] = (block, idx)
-
                 elif isinstance(inst, MLILPhi):
                     self.ssa_defs[inst.dest] = inst
                     self.def_positions[inst.dest] = (block, idx)
@@ -83,7 +82,7 @@ class ExpressionInliningPass(Pass):
         self.use_positions.setdefault(var, []).append((block, idx))
 
     def _inline_once(self, func: MediumLevelILFunction) -> bool:
-        '''Single inlining pass'''
+        """Single inlining pass"""
         inlinable: Dict[MLILVariableSSA, MediumLevelILInstruction] = {}
 
         for ssa_var, defn in self.ssa_defs.items():
@@ -130,7 +129,6 @@ class ExpressionInliningPass(Pass):
                     # be the immediately next instruction instead of refusing to inline at all
                     if not self._is_immediate_use(def_pos, use_pos, use):
                         continue
-
                 else:
                     def_block, def_idx = def_pos
                     use_block, use_idx = use_pos
@@ -162,7 +160,7 @@ class ExpressionInliningPass(Pass):
         return changed
 
     def _impure_read_storages(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction) -> Optional[List]:
-        '''The register/global base variables expr reads, one entry per read in evaluation order;
+        """The register/global base variables expr reads, one entry per read in evaluation order;
         [] if it reads no mutable storage. `reg0 + global3` gives two: a hazard on either one alone
         makes forwarding the expression unsafe, so each needs its own reachability check.
 
@@ -170,7 +168,7 @@ class ExpressionInliningPass(Pass):
         has an SSA version reaches_without_redefinition can track, so one poisons the whole
         expression. (An MLILLoadGlobal survives into SSA form for a global this function only
         reads - mlil_ssa.py's _raise_globals never raises it into a variable.)
-        '''
+        """
         storages = []
         for node in walk(expr):
             if isinstance(node, (MLILLoadReg, MLILLoadGlobal, MLILDeref)):
@@ -186,7 +184,7 @@ class ExpressionInliningPass(Pass):
     def _is_immediate_use(self, def_pos: Tuple[MediumLevelILBasicBlock, int],
                           use_pos: Tuple[MediumLevelILBasicBlock, int],
                           use: MediumLevelILInstruction) -> bool:
-        '''Check if use immediately follows definition in the same block'''
+        """Check if use immediately follows definition in the same block"""
         def_block, def_idx = def_pos
         use_block, use_idx = use_pos
 
@@ -197,37 +195,31 @@ class ExpressionInliningPass(Pass):
 
     def _inline_in_inst(self, inst: MediumLevelILInstruction,
                         inlinable: Dict[MLILVariableSSA, MediumLevelILInstruction]) -> MediumLevelILInstruction:
-        '''Inline expressions in instruction'''
+        """Inline expressions in instruction"""
         if isinstance(inst, MLILSetVarSSA):
             new_value = self._inline_in_expr(inst.value, inlinable)
             if new_value is not inst.value:
-                return MLILSetVarSSA(inst.var, new_value, address = inst.address).copy_metadata_from(inst)
-
+                return MLILSetVarSSA(inst.var, new_value, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MLILIf):
             new_condition = self._inline_in_expr(inst.condition, inlinable)
             if new_condition is not inst.condition:
-                return MLILIf(new_condition, inst.true_target, inst.false_target, address = inst.address).copy_metadata_from(inst)
-
+                return MLILIf(new_condition, inst.true_target, inst.false_target, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MLILRet):
             if inst.value is not None:
                 new_value = self._inline_in_expr(inst.value, inlinable)
                 if new_value is not inst.value:
-                    return MLILRet(new_value, address = inst.address).copy_metadata_from(inst)
-
+                    return MLILRet(new_value, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MediumLevelILCall):
             new_args = [self._inline_in_expr(arg, inlinable) for arg in inst.args]
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
                 return inst.rebuild(new_args)
-
         elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
             new_value = self._inline_in_expr(inst.value, inlinable)
             if new_value is not inst.value:
                 if isinstance(inst, MLILStoreGlobal):
-                    return MLILStoreGlobal(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
-
+                    return MLILStoreGlobal(inst.index, new_value, address=inst.address).copy_metadata_from(inst)
                 else:
-                    return MLILStoreReg(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
-
+                    return MLILStoreReg(inst.index, new_value, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MLILStoreDeref):
             new_dest = self._inline_in_expr(inst.dest, inlinable)
             new_value = self._inline_in_expr(inst.value, inlinable)
@@ -238,17 +230,15 @@ class ExpressionInliningPass(Pass):
 
     def _inline_in_expr(self, expr: MediumLevelILInstruction,
                         inlinable: Dict[MLILVariableSSA, MediumLevelILInstruction]) -> MediumLevelILInstruction:
-        '''Inline single-use expressions'''
+        """Inline single-use expressions"""
         if isinstance(expr, MLILVarSSA):
             if expr.var in inlinable:
                 return inlinable[expr.var]
-
         elif isinstance(expr, MLILBinaryOp):
             lhs = self._inline_in_expr(expr.lhs, inlinable)
             rhs = self._inline_in_expr(expr.rhs, inlinable)
             if lhs is not expr.lhs or rhs is not expr.rhs:
                 return expr.rebuild(lhs, rhs)
-
         elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero, MLILDeref)):
             operand = self._inline_in_expr(expr.operand, inlinable)
             if operand is not expr.operand:

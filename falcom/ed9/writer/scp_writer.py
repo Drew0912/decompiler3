@@ -61,7 +61,6 @@ def string_problem(text: str) -> str | None:
 
     try:
         text.encode(default_encoding())
-
     except UnicodeEncodeError as e:
         return f"can't be encoded: {e.reason} at position {e.start}"
 
@@ -84,6 +83,7 @@ def require_type(statement: str, name: str, value, kind: type | UnionType):
 class LabelSite:
     """A placed label, or an operand referring to one: the label's name, the position in the code buffer, the
     function it is in and, for an operand while check_compiled is on, where its opcode was emitted"""
+
     name: str
     offset: int
     function_name: str
@@ -93,9 +93,10 @@ class LabelSite:
 @dataclass
 class PooledString:
     """String-pool entry; xref_offsets are final file offsets patched by _write_string_pool()"""
+
     text: str
     section: StringPoolSection
-    xref_offsets: list[int] = field(default_factory = list)
+    xref_offsets: list[int] = field(default_factory=list)
 
 
 @dataclass
@@ -115,15 +116,16 @@ class DebugRecord:
 @dataclass
 class ScpFunction:
     """A registered script function pending compilation, plus its pending table entry"""
+
     index: int
     name: str
     body: Callable
     original_body: Callable  # the body before any hook replaced it
     signature: inspect.Signature
     entry: ScpFunctionEntry
-    calls: list[TrackedCall] = field(default_factory = list)
-    debug_records: list[DebugRecord] = field(default_factory = list)
-    callback_bodies: list[Callable] = field(default_factory = list)  # from function callbacks, in chain order; may repeat or include the original
+    calls: list[TrackedCall] = field(default_factory=list)
+    debug_records: list[DebugRecord] = field(default_factory=list)
+    callback_bodies: list[Callable] = field(default_factory=list)  # from function callbacks, in chain order; may repeat or include the original
 
 
 class ScpWriter:
@@ -193,7 +195,7 @@ class ScpWriter:
 
     def LLILCommonCode(self):
         def wrapper(func):
-            self._register_function(func, is_common_func = True)
+            self._register_function(func, is_common_func=True)
             return func
 
         return wrapper
@@ -207,7 +209,7 @@ class ScpWriter:
         """
         def wrapper(func):
             for common_func in func():
-                self._register_function(common_func, is_common_func = True)
+                self._register_function(common_func, is_common_func=True)
 
             return func
 
@@ -234,7 +236,6 @@ class ScpWriter:
             self.in_global_vars_body = True
             try:
                 func()
-
             finally:
                 self.in_global_vars_body = False
 
@@ -291,8 +292,8 @@ class ScpWriter:
         self._check_parameters(func, name, signature)
 
         entry = self._new_function_entry(name, len(signature.parameters), is_common_func)
-        f = ScpFunction(index = UNRESOLVED_FUNC_INDEX, name = name, body = func, original_body = func,
-                        signature = signature, entry = entry)
+        f = ScpFunction(index=UNRESOLVED_FUNC_INDEX, name=name, body=func, original_body=func,
+                        signature=signature, entry=entry)
         self.functions.append(f)
         self.functions_by_name[name] = f
 
@@ -324,8 +325,7 @@ class ScpWriter:
         """func's signature with its annotations evaluated (under `from __future__ import annotations` they are
         strings); a misspelled type is an error at its def"""
         try:
-            return inspect.signature(func, eval_str = True)
-
+            return inspect.signature(func, eval_str=True)
         except (NameError, AttributeError, SyntaxError) as e:
             raise TypeError(f'{def_location(func)}: {name}: {e}') from e
 
@@ -342,7 +342,7 @@ class ScpWriter:
                 if param.annotation is param.empty or param.annotation is None:
                     raise TypeError('needs a type: Value32, Nullable32, str, NullableStr or Pointer')
 
-                flags = ScpParamFlags(typ = param.annotation)
+                flags = ScpParamFlags(typ=param.annotation)
                 if param.default is None:
                     raise TypeError('a default is an int, float or str, not None')
 
@@ -356,10 +356,8 @@ class ScpWriter:
                         problem = string_problem(param.default)
                         if problem is not None:
                             raise ValueError(f'default {param.default!r} {problem}')
-
                     else:
                         cls._value_bytes(value)
-
             except (NotImplementedError, TypeError, ValueError) as e:
                 raise TypeError(f'{def_location(func)}: parameter {param.name} of {name}: {e}') from e
 
@@ -384,10 +382,10 @@ class ScpWriter:
             raise TypeError(f'{def_location(body)}: {f.name} takes {f.entry.param_count} parameters, '
                             f'its replacement {len(params)}')
 
-        merged = [param.replace(annotation = original.annotation if param.annotation is param.empty else param.annotation,
-                                default = original.default if param.default is param.empty else param.default)
+        merged = [param.replace(annotation=original.annotation if param.annotation is param.empty else param.annotation,
+                                default=original.default if param.default is param.empty else param.default)
                   for param, original in zip(params, f.signature.parameters.values())]
-        merged_signature = signature.replace(parameters = merged)
+        merged_signature = signature.replace(parameters=merged)
         cls._check_parameters(body, f.name, merged_signature)
         return merged_signature
 
@@ -419,7 +417,7 @@ class ScpWriter:
         if self.check_compiled:
             functions = [CheckedFunction(f.name, f.entry.offset, f.body) for f in self.functions]
             CompileCheck(self.dat_name, functions, self.source_map, self.code_offset,
-                         warn_unreachable_code = self.warn_unreachable_code).run(data, code_end)
+                         warn_unreachable_code=self.warn_unreachable_code).run(data, code_end)
 
         return data
 
@@ -428,7 +426,7 @@ class ScpWriter:
     def _build_function_table(self):
         """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this index"""
         encoding = default_encoding()
-        self.function_table = sorted(self.functions, key = lambda f: f.name.encode(encoding))
+        self.function_table = sorted(self.functions, key=lambda f: f.name.encode(encoding))
 
         for index, f in enumerate(self.function_table):
             f.index = index
@@ -444,15 +442,14 @@ class ScpWriter:
         try:
             for f in self.functions:
                 self.current_function = f
-                self.call_tracker = CallDebugInfoTracker(get_param_count = self._get_param_count,
-                                                         warn = self._warn_at_opcode) if self.round_trip else None
+                self.call_tracker = CallDebugInfoTracker(get_param_count=self._get_param_count,
+                                                         warn=self._warn_at_opcode) if self.round_trip else None
                 f.entry.offset = code.Position
                 log.debug(f'{f.name} @ code+0x{f.entry.offset:08X}')
                 self._run_body(f, f.body)
 
                 if self.call_tracker is not None:
                     f.calls = self.call_tracker.ordered_calls()
-
         finally:
             # Also after a failed body: no statement compiles outside one
             self.current_function = None
@@ -542,13 +539,13 @@ class ScpWriter:
         compiler's rule on the callee's final defaults"""
         callee = self._find_function(call.target)
         count = call.debug_argc if call.debug_argc is not None else canonical_argc(call.args, defaults[callee.name])
-        return DebugRecord(call_type = call.call_type, func_id = callee.index, args = args[:count])
+        return DebugRecord(call_type=call.call_type, func_id=callee.index, args=args[:count])
 
     @classmethod
     def _syscall_record(cls, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
         """No callee id; the subsystem and the command lead the arguments"""
         args = [DebugArg(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(value)) for value in call.target] + args
-        return DebugRecord(call_type = call.call_type, func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID, args = args)
+        return DebugRecord(call_type=call.call_type, func_id=ScpFunctionCallDebugInfo.NO_FUNC_ID, args=args)
 
     def _script_call_record(self, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
         """The callee id and the pooled name script_call_identity gives; the name leads the arguments"""
@@ -556,7 +553,7 @@ class ScpWriter:
         func_id, text = script_call_identity(call.call_type, module, func, self._table_index)
         name = self._add_string(text, StringPoolSection.Debug)
         args = [DebugArg(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(name.text), name)] + args
-        return DebugRecord(call_type = call.call_type, func_id = func_id, args = args)
+        return DebugRecord(call_type=call.call_type, func_id=func_id, args=args)
 
     def _table_index(self, name: str) -> int | None:
         """A function's table index by its name, None when the script doesn't define it"""
@@ -612,7 +609,7 @@ class ScpWriter:
             f.entry.param_flags_offset = self.fs.Position
 
             for param in f.signature.parameters.values():
-                self.fs.Write(ScpParamFlags(typ = param.annotation).to_bytes())
+                self.fs.Write(ScpParamFlags(typ=param.annotation).to_bytes())
 
     def _write_debug_records(self):
         """Each function's records in table order, then every record's args in the same order; both sections are built
@@ -635,7 +632,6 @@ class ScpWriter:
                     if arg.string is not None:
                         arg.string.xref_offsets.append(args_start + len(args))
                         value = UNRESOLVED_STRING_OFFSET
-
                     else:
                         value = arg.value.to_word()
 
@@ -672,7 +668,7 @@ class ScpWriter:
             string.xref_offsets.append(offset + code_offset)
 
     def _write_string_pool(self):
-        strings = sorted(self.strings, key = lambda string: string.section) if self.round_trip else self.strings
+        strings = sorted(self.strings, key=lambda string: string.section) if self.round_trip else self.strings
 
         for string in strings:
             offset = self.fs.Position
@@ -708,7 +704,6 @@ class ScpWriter:
         # The value's Python type picks its encoding, so PUSH_FLOAT(1) would push an Integer, PUSH_INT(RawInt(5)) a Raw
         if opcode == ED9Opcode.PUSH_FLOAT:
             args = (float(args[0]),)
-
         elif opcode == ED9Opcode.PUSH_INT:
             args = (int(args[0]),)
 
@@ -720,22 +715,17 @@ class ScpWriter:
 
             try:
                 value, string = self._emit_push_constant(args[0])
-
             except (TypeError, ValueError) as e:
                 raise type(e)(self._at_opcode(f'{ED9Opcode(opcode).name} {e}')) from e
-
         elif opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
             self._write_push_value(ScpValue(RawInt(self.current_function.index)))
-
         elif opcode == ED9Opcode.PUSH_RET_ADDR:
             self._write_push_header()
             self._write_label_ref(args[0])
-
         elif opcode == ED9Opcode.UNKNOWN_28:
             # No descriptor - the operand format is unknown, so the operand bytes are written as given
             self.fs.WriteByte(opcode)
             self.fs.Write(args[0])
-
         else:
             self._emit_described_opcode(opcode, args)
 
@@ -898,12 +888,12 @@ class ScpWriter:
         if placed is not None:
             raise ValueError(f'{f.name}: label {name!r} is already defined in {placed.function_name}')
 
-        self.labels[name] = LabelSite(name = name, offset = self.fs.Position, function_name = f.name)
+        self.labels[name] = LabelSite(name=name, offset=self.fs.Position, function_name=f.name)
 
     def _write_label_ref(self, name: str):
         """Record the operand, then write a placeholder that _relocate_code() patches"""
-        self.label_refs.append(LabelSite(name = name, offset = self.fs.Position,
-                                         function_name = self.current_function.name, source_site = self.current_site))
+        self.label_refs.append(LabelSite(name=name, offset=self.fs.Position,
+                                         function_name=self.current_function.name, source_site=self.current_site))
         self.fs.WriteULong(UNRESOLVED_LABEL_OFFSET)
 
     def _write_string_ref(self, text: str, section: StringPoolSection) -> PooledString:
@@ -912,7 +902,6 @@ class ScpWriter:
 
         if section == StringPoolSection.Code:
             self.code_string_xrefs.append((string, self.fs.Position))  # code-relative until _relocate_code()
-
         else:
             string.xref_offsets.append(self.fs.Position)
 
@@ -924,7 +913,7 @@ class ScpWriter:
         if not self.round_trip and text in self.strings_by_text:
             return self.strings_by_text[text]
 
-        string = PooledString(text = text, section = section)
+        string = PooledString(text=text, section=section)
         self.strings.append(string)
         self.strings_by_text.setdefault(text, string)
         return string

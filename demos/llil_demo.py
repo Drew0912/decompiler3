@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''LLIL Demo - Expression-based Architecture'''
+"""LLIL Demo - Expression-based Architecture"""
 
 import sys
 import os
@@ -34,11 +34,10 @@ DECLARED_PARAMS = {
 
 
 def create_AV_04_0017():
-    '''AV_04_0017 - Strict 1:1 translation from real game bytecode'''
-
+    """AV_04_0017 - Strict 1:1 translation from real game bytecode"""
     # Create builder and function
     builder = FalcomVMBuilder()
-    builder.create_function('AV_04_0017', 0x243C5, num_params = 0)
+    builder.create_function('AV_04_0017', 0x243C5, num_params=0)
 
     # Create all blocks upfront with labels (automatically added to function)
     entry_block = builder.create_basic_block(0x243C5, 'AV_04_0017')
@@ -95,11 +94,10 @@ def create_AV_04_0017():
 
 
 def create_DOF_ON():
-    '''DOF_ON - Strict 1:1 translation from real game bytecode'''
-
+    """DOF_ON - Strict 1:1 translation from real game bytecode"""
     # Create builder and function
     builder = FalcomVMBuilder()
-    builder.create_function('DOF_ON', 0x1FFDB6, num_params = 2)
+    builder.create_function('DOF_ON', 0x1FFDB6, num_params=2)
 
     # Create all blocks upfront with labels (automatically added to function)
     entry_block = builder.create_basic_block(0x1FFDB6, 'DOF_ON')
@@ -215,11 +213,10 @@ def create_DOF_ON():
 
 
 def create_sound_play_se():
-    '''sound_play_se - Strict 1:1 translation from real game bytecode'''
-
+    """sound_play_se - Strict 1:1 translation from real game bytecode"""
     # Create builder and function
     builder = FalcomVMBuilder()
-    builder.create_function('sound_play_se', 0x149B2, num_params = 8)
+    builder.create_function('sound_play_se', 0x149B2, num_params=8)
 
     # Create single block with label (automatically added to function)
     entry_block = builder.create_basic_block(0x149B2, 'sound_play_se')
@@ -259,8 +256,7 @@ def create_sound_play_se():
 
 
 def create_Dummy_m3010_talk0():
-    '''Dummy_m3010_talk0 - Complex menu system with nested conditionals'''
-
+    """Dummy_m3010_talk0 - Complex menu system with nested conditionals"""
     # Create builder and function
     builder = FalcomVMBuilder()
     builder.create_function('Dummy_m3010_talk0', 0x8ACC7, num_params=0)
@@ -557,7 +553,7 @@ def create_Dummy_m3010_talk0():
 
 
 def test_AV_04_0017():
-    '''Test 1: AV_04_0017 - Simple linear function'''
+    """Test 1: AV_04_0017 - Simple linear function"""
     print('\n🧪 Test 1: AV_04_0017 - Simple Linear Function')
     print('-' * 60)
     print('Source: m4000.py (id: 0x0000 offset: 0x243C5)')
@@ -570,7 +566,7 @@ def test_AV_04_0017():
 
 
 def test_DOF_ON():
-    '''Test 2: DOF_ON - Complex control flow'''
+    """Test 2: DOF_ON - Complex control flow"""
     print('\n🧪 Test 2: DOF_ON - Complex Control Flow')
     print('-' * 60)
     print('Source: c0000.py (id: 0x003F offset: 0x1FFDB6)')
@@ -589,7 +585,7 @@ def test_DOF_ON():
 
 
 def test_sound_play_se():
-    '''Test 3: sound_play_se - SYSCALL with multiple parameters'''
+    """Test 3: sound_play_se - SYSCALL with multiple parameters"""
     print('\n🧪 Test 3: sound_play_se - SYSCALL with Multiple Parameters')
     print('-' * 60)
     print('Source: c0000.py (id: 0x008F offset: 0x149B2)')
@@ -600,7 +596,7 @@ def test_sound_play_se():
 
 
 def test_Dummy_m3010_talk0():
-    '''Test 4: Dummy_m3010_talk0 - Complex menu system'''
+    """Test 4: Dummy_m3010_talk0 - Complex menu system"""
     print('\n🧪 Test 4: Dummy_m3010_talk0 - Complex Menu System')
     print('-' * 60)
     print('Source: m3010.py (id: 0x0005 offset: 0x8ACC7)')
@@ -644,7 +640,7 @@ def create_EV_06_37_00():
 
 
 def create_test_conditional():
-    '''Test function - Conditional branches with POP_JMP_NOT_ZERO and POP_JMP_ZERO'''
+    """Test function - Conditional branches with POP_JMP_NOT_ZERO and POP_JMP_ZERO"""
     builder = FalcomVMBuilder()
     builder.create_function('test_conditional', 0x5BDA0, num_params=0)
 
@@ -683,9 +679,9 @@ def create_test_conditional():
 
 
 def create_TALK_BEGIN():
-    '''TALK_BEGIN - Function call with caller context and module call'''
+    """TALK_BEGIN - Function call with caller context and module call"""
     builder = FalcomVMBuilder()
-    builder.create_function('TALK_BEGIN', 0x54F50, num_params = 2)
+    builder.create_function('TALK_BEGIN', 0x54F50, num_params=2)
 
     # Create blocks
     entry = builder.create_basic_block(0x54F50, 'TALK_BEGIN')
@@ -711,7 +707,7 @@ def create_TALK_BEGIN():
     builder.set_current_block(loc_54F6B)
 
     # PUSH(0x00000000)
-    builder.push_int(0x00000000, is_hex = True)
+    builder.push_int(0x00000000, is_hex=True)
     # SET_REG(0)
     builder.set_reg(0)
     # POP(8)
@@ -724,7 +720,7 @@ def create_TALK_BEGIN():
 
 
 def test_TALK_BEGIN():
-    '''Test TALK_BEGIN function'''
+    """Test TALK_BEGIN function"""
     print('\n🧪 Test 5: TALK_BEGIN - Module Calls')
     print('-' * 60)
     print('Function demonstrating:')
@@ -742,7 +738,7 @@ def test_TALK_BEGIN():
 
 
 def test_conditional():
-    '''Test conditional branches'''
+    """Test conditional branches"""
     print('\n🧪 Test 6: Conditional Branches')
     print('-' * 60)
     print('Function demonstrating:')
@@ -760,7 +756,7 @@ def test_conditional():
 
 
 def test_EV_06_37_00():
-    '''Test EV_06_37_00 function'''
+    """Test EV_06_37_00 function"""
     print('\n🧪 Test 7: EV_06_37_00 - Global Variables')
     print('-' * 60)
     print('Function demonstrating:')

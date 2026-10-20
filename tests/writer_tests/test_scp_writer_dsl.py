@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''DSL argument checks (types, bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes, what
+"""DSL argument checks (types, bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes, what
 handle_opcode tracks, every opcode function handing the writer its own opcode, PUSH, and an int enum pushed as its
-value.'''
+value."""
 
 from enum import IntEnum, StrEnum
 import inspect
@@ -27,7 +27,7 @@ from tests.shared.scp_writer_test_utils import at, body_writer, fresh_writer
 
 
 class TestBoolRejected(unittest.TestCase):
-    '''bool is an int subclass, so isinstance checks alone let True/False through as 1/0'''
+    """bool is an int subclass, so isinstance checks alone let True/False through as 1/0"""
 
     def setUp(self):
         body_writer()
@@ -56,8 +56,8 @@ class TestBoolRejected(unittest.TestCase):
 
 
 class TestArgumentTypes(unittest.TestCase):
-    '''A wrong argument type is a TypeError naming the statement, the argument and the types it takes; outside a
-    function body it has no prefix (test_scp_writer_compile.py's TestArgumentTypes has the lines)'''
+    """A wrong argument type is a TypeError naming the statement, the argument and the types it takes; outside a
+    function body it has no prefix (test_scp_writer_compile.py's TestArgumentTypes has the lines)"""
 
     def setUp(self):
         fresh_writer()
@@ -105,7 +105,7 @@ class TestCall(unittest.TestCase):
 
 
 class TestHandleOpcode(unittest.TestCase):
-    '''handle_opcode itself: UNKNOWN_28's raw bytes, and what it hands the tracker'''
+    """handle_opcode itself: UNKNOWN_28's raw bytes, and what it hands the tracker"""
 
     def setUp(self):
         self.writer = body_writer()
@@ -113,17 +113,17 @@ class TestHandleOpcode(unittest.TestCase):
     def test_unknown_28_writes_its_operand_bytes_as_given(self):
         # No table row, so no operand format; tracked like any opcode (the real tracker ignores it, so a stub records)
         calls = []
-        self.writer.call_tracker = SimpleNamespace(on_opcode = lambda *call: calls.append(call))
+        self.writer.call_tracker = SimpleNamespace(on_opcode=lambda *call: calls.append(call))
         UNKNOWN_28(b'\x01\x02')
 
         self.assertEqual(self.writer.fs.ReadAll(), bytes.fromhex('28 01 02'))
         self.assertEqual(calls, [(ED9Opcode.UNKNOWN_28, (b'\x01\x02',), None, None)])
 
     def test_tracked_once_after_its_write(self):
-        '''Tracked once, after its write, with the normalized operands and a pushed constant's value and pooled string;
-        an opcode whose write raises is not tracked. UNKNOWN_28's branch: the test above'''
+        """Tracked once, after its write, with the normalized operands and a pushed constant's value and pooled string;
+        an opcode whose write raises is not tracked. UNKNOWN_28's branch: the test above"""
         calls = []
-        self.writer.call_tracker = SimpleNamespace(on_opcode = lambda *call: calls.append(call))
+        self.writer.call_tracker = SimpleNamespace(on_opcode=lambda *call: calls.append(call))
         self.writer._build_function_table()             # PUSH_CURRENT_FUNC_ID writes the function's table index
         PUSH_FLOAT(1)
         PUSH_STR('text')
@@ -162,8 +162,8 @@ class TestOpcodeFunctions(unittest.TestCase):
                 if inspect.isfunction(func) and func.__module__ == scp_writer_opcode_handler.__name__}
 
     def test_each_function_emits_its_own_opcode(self):
-        '''Every statement of the DSL hands the writer its opcode and operands; none returns before it. CALL's
-        debug_argc and debug_record go as keywords, so the opcode callbacks never see them'''
+        """Every statement of the DSL hands the writer its opcode and operands; none returns before it. CALL's
+        debug_argc and debug_record go as keywords, so the opcode callbacks never see them"""
         writer = body_writer()
         functions = self.opcode_functions()
         no_operands = {name: () for name in ED9Opcode.__members__ if name not in self.ARGS}
@@ -180,7 +180,7 @@ class TestOpcodeFunctions(unittest.TestCase):
         self.assertEqual(emitted, [(ED9Opcode[name], *expected[name]) for name in functions])
 
     def test_each_function_checks_its_argument_types(self):
-        '''Every argument of every opcode function is checked against its annotation'''
+        """Every argument of every opcode function is checked against its annotation"""
         body_writer()
         for name, func in self.opcode_functions().items():
             for number, param in enumerate(inspect.signature(func).parameters.values()):
@@ -189,11 +189,9 @@ class TestOpcodeFunctions(unittest.TestCase):
                     args[number:number + 1] = [object()]
                     if name == 'CALL' and param.name == 'func':
                         message = r'CALL takes the function itself, not <object object at 0x\w+>'
-
                     elif name == 'CALL':
                         expected = 'int' if param.name == 'debug_argc' else 'bool'
                         message = rf'CALL {param.name} is <object object at 0x\w+> \(object\), not {expected}'
-
                     else:
                         types = [kind.__name__ for kind in get_args(param.annotation) or (param.annotation,)]
                         expected = types[0] if len(types) == 1 else f'{", ".join(types[:-1])} or {types[-1]}'
@@ -228,7 +226,7 @@ class TestPushFloat(unittest.TestCase):
 
     def test_non_finite_float_does_not_compile(self):
         for value in (math.inf, -math.inf, math.nan):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 with self.assertRaisesRegex(ValueError, f"^Body: PUSH_FLOAT non-finite float {value}: the game can't "
                                                         "use it$"):
                     PUSH_FLOAT(value)
@@ -239,7 +237,7 @@ class TestPushFloat(unittest.TestCase):
             PUSH_FLOAT(3.5e38)
 
     def test_non_finite_default_does_not_compile(self):
-        '''Rejected at its def, with the line: defaults are written apart from the bodies'''
+        """Rejected at its def, with the line: defaults are written apart from the bodies"""
         writer = fresh_writer()
         with self.assertRaisesRegex(TypeError, rf"^{at(__file__, 'nan default')}parameter arg1 of NanDefault: "
                                                "non-finite float nan: the game can't use it$"):
@@ -284,7 +282,7 @@ class Kind(StrEnum):
 
 
 class TestPushEnum(unittest.TestCase):
-    '''An int enum pushes its value: ScpValue takes only its exact types, so it failed with a TypeError and no line'''
+    """An int enum pushes its value: ScpValue takes only its exact types, so it failed with a TypeError and no line"""
 
     def test_pushes_like_its_value(self):
         cases = {
@@ -307,7 +305,7 @@ class TestPushEnum(unittest.TestCase):
                 self.assertEqual(writer.fs.ReadAll(), expected)
 
     def test_raw_int_stays_raw(self):
-        '''RawInt is an int subclass ScpValue takes: Raw, not Integer (03 00 00 40)'''
+        """RawInt is an int subclass ScpValue takes: Raw, not Integer (03 00 00 40)"""
         writer = body_writer()
         PUSH(RawInt(3))
 
@@ -320,34 +318,34 @@ class TestPushEnum(unittest.TestCase):
             PUSH_INT(MoveFlags.TOO_BIG)
 
     def test_other_subclass_fails_naming_the_function(self):
-        '''Only an int enum converts: a str enum is still rejected, now in its function (at its line, with the check)'''
+        """Only an int enum converts: a str enum is still rejected, now in its function (at its line, with the check)"""
         body_writer()
         with self.assertRaisesRegex(TypeError, '^Body: PUSH_STR ScpValue takes int, float, str or RawInt, not Kind: '):
             PUSH_STR(Kind.A)
 
 
 class TestValueRanges(unittest.TestCase):
-    '''A value outside what its encoding holds would compile as a different value or type: a pushed value's payload
-    under the 2-bit type tag is 30 bits, and an opcode's integer operand is what its type reads back'''
+    """A value outside what its encoding holds would compile as a different value or type: a pushed value's payload
+    under the 2-bit type tag is 30 bits, and an opcode's integer operand is what its type reads back"""
 
     def test_integer_bounds(self):
         for value in (ScpValue.INTEGER_MIN, ScpValue.INTEGER_MAX):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 self.assertEqual(ScpValue().from_value(ScpValue(value).to_word()).value, value)
 
         for value in (ScpValue.INTEGER_MIN - 1, ScpValue.INTEGER_MAX + 1):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 with self.assertRaisesRegex(ValueError, '^' + re.escape(f'Integer {value} is outside -536870912..536870911')):
                     ScpValue(value).to_bytes()
 
     def test_raw_bounds(self):
         for value in (0, ScpValue.PAYLOAD_MASK):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 decoded = ScpValue().from_value(ScpValue(RawInt(value)).to_word())
                 self.assertEqual((decoded.type, decoded.value), (ScpValue.Type.Raw, value))
 
         for value, text in ((-1, '-0x1'), (ScpValue.PAYLOAD_MASK + 1, '0x40000000')):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 with self.assertRaisesRegex(ValueError, '^' + re.escape(f'RawInt {text} is outside 0..0x3fffffff')):
                     ScpValue(RawInt(value)).to_bytes()
 
@@ -368,12 +366,12 @@ class TestValueRanges(unittest.TestCase):
             ('PUSH_RAW RawInt 0x40000001 is outside', lambda: PUSH_RAW(RawInt(0x40000001))),
             ('PUSH Integer 600000000 is outside', lambda: PUSH(600000000)),
         ):
-            with self.subTest(message = message):
+            with self.subTest(message=message):
                 with self.assertRaisesRegex(ValueError, f'^Body: {message}'):
                     push()
 
     def test_last_operand_that_fits_reads_back_and_the_next_fails(self):
-        '''SET_REG(256) used to compile as SET_REG(0)'''
+        """SET_REG(256) used to compile as SET_REG(0)"""
         cases = [
             # (mnemonic, emit, operand number, last value that fits, first that doesn't, the range)
             ('SET_REG', SET_REG, 1, 255, 256, '0..255'),
@@ -386,19 +384,19 @@ class TestValueRanges(unittest.TestCase):
             ('LOAD_STACK', LOAD_STACK, 1, -2**31, -2**31 - 1, '-2147483648..2147483647'),
         ]
         for mnemonic, emit, number, fits, too_far, valid in cases:
-            with self.subTest(mnemonic, value = fits):
+            with self.subTest(mnemonic, value=fits):
                 writer = body_writer()
                 emit(fits)
                 self.assertEqual(self.first_operands(writer)[number - 1], fits)
 
-            with self.subTest(mnemonic, value = too_far):
+            with self.subTest(mnemonic, value=too_far):
                 body_writer()
                 with self.assertRaisesRegex(ValueError, rf'^Body: {mnemonic} operand {number} is {too_far}, outside '
                                                         rf'{re.escape(valid)}$'):
                     emit(too_far)
 
     def test_int_subclass_operand_is_compared_not_scanned(self):
-        '''Pin: `in` on a range scans it with == for an int subclass - an IntEnum slot offset took 91 s'''
+        """Pin: `in` on a range scans it with == for an int subclass - an IntEnum slot offset took 91 s"""
         class Slot(IntEnum):
             ARG1 = -WORD_SIZE
 
@@ -413,7 +411,7 @@ class TestValueRanges(unittest.TestCase):
 
     @classmethod
     def first_operands(cls, writer) -> list:
-        '''The operand values of the first opcode the body wrote'''
+        """The operand values of the first opcode the body wrote"""
         writer.fs.Position = 0
         return [operand.value for operand in ED9_INSTRUCTION_TABLE.decode_instruction(writer.fs, 0).operands]
 

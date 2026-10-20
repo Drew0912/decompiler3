@@ -1,4 +1,4 @@
-'''Falcom HLIL Passes'''
+"""Falcom HLIL Passes"""
 
 from ir.pipeline import Pass
 from ir.hlil import HighLevelILFunction, HLILTypeKind
@@ -16,14 +16,14 @@ PARAM_TYPE_KINDS = {
 
 
 class FalcomTypeInferencePass(Pass):
-    '''Falcom-specific types: each parameter's type comes from the flag the script declares for it,
-    not from inference. The home of future Falcom semantic types (e.g. character IDs).'''
+    """Falcom-specific types: each parameter's type comes from the flag the script declares for it,
+    not from inference. The home of future Falcom semantic types (e.g. character IDs)."""
 
     def __init__(self, scp_func: Function):
         self.scp_func = scp_func
 
     def run(self, hlil_func: HighLevelILFunction) -> HighLevelILFunction:
-        '''Set each parameter's type_hint from its declared flag'''
+        """Set each parameter's type_hint from its declared flag"""
         for param in hlil_func.parameters:
             # Parameters are named arg1..argN in declaration order
             if not param.name.startswith('arg'):

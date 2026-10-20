@@ -28,6 +28,7 @@ UNREACHABLE_CODE_END        = '# --- end unreachable code ---'
 @dataclass
 class FormatterContext:
     """Context for formatter with callbacks"""
+
     get_func_name_from_func_id: Callable[[int], str | None] | None = None  # func_id -> func_name
     get_global_name_from_index: Callable[[int], str | None] | None = None  # global var index -> name
     comments: CommentOptions = CommentOptions()                             # which optional comments the .py gets
@@ -51,7 +52,7 @@ class Formatter:
                            call_debug_argc: dict[int, int] | None = None, call_unrecorded: set[int] | None = None) -> list[str]:
         """Format blocks starting from entry block (without function header), plus unreachable blocks in offset order;
         layout gives the stack and argument comments, call_debug_argc the CALLs that write their debug_argc,
-        call_unrecorded those that write debug_record = False"""
+        call_unrecorded those that write debug_record=False"""
         # Reset formatted tracking
         self.formatted_offsets.clear()
         self.formatted_labels.clear()
@@ -65,7 +66,7 @@ class Formatter:
         # always resolves, and the synthetic fall-through block after a conditional branch (referenced by nothing)
         # does not.
         reachable_blocks = self.collect_blocks(entry_block)
-        self.referenced_offsets = self.find_referenced_offsets(entry_block, reachable_blocks = reachable_blocks)
+        self.referenced_offsets = self.find_referenced_offsets(entry_block, reachable_blocks=reachable_blocks)
 
         # The disassembler always splits a block when something jumps into its middle, so a
         # referenced offset should always be some block's start. Assert that invariant here for an
@@ -81,14 +82,13 @@ class Formatter:
         unreachable_ids = {id(block) for block in unreachable_blocks}  # BasicBlock is an unhashable dataclass
 
         # Sort by offset
-        blocks.sort(key = lambda b: b.offset)
+        blocks.sort(key=lambda b: b.offset)
 
         # Format all blocks
         lines = []
         for block in blocks:
             if id(block) in unreachable_ids:
-                block_lines = [UNREACHABLE_CODE_BEGIN, *self.format_block(block, unreachable = True), UNREACHABLE_CODE_END]
-
+                block_lines = [UNREACHABLE_CODE_BEGIN, *self.format_block(block, unreachable=True), UNREACHABLE_CODE_END]
             else:
                 block_lines = self.format_block(block)
 
@@ -150,11 +150,10 @@ class Formatter:
             formatted = inst.descriptor.format_instruction(inst, self.context)
             debug_argc = self.call_debug_argc.get(inst.offset)
             if debug_argc is not None:
-                # Inside the CALL's parentheses: CALL(f) -> CALL(f, debug_argc = 2)
-                formatted = f'{formatted[:-1]}, debug_argc = {debug_argc})'
-
+                # Inside the CALL's parentheses: CALL(f) -> CALL(f, debug_argc=2)
+                formatted = f'{formatted[:-1]}, debug_argc={debug_argc})'
             elif inst.offset in self.call_unrecorded:
-                formatted = f'{formatted[:-1]}, debug_record = False)'
+                formatted = f'{formatted[:-1]}, debug_record=False)'
 
             lines.append(append_comment(formatted, instruction_comments(self.layout, inst, self.context.comments)))
 
@@ -198,7 +197,7 @@ class Formatter:
         if reachable_blocks is None:
             reachable_blocks = cls.collect_blocks(entry_block)
 
-        return {target for block in reachable_blocks for target in cls.branch_targets(block, real_only = True)}
+        return {target for block in reachable_blocks for target in cls.branch_targets(block, real_only=True)}
 
     @classmethod
     def collect_blocks(cls, entry: 'BasicBlock') -> list['BasicBlock']:

@@ -26,6 +26,9 @@ import sys
 # First lines of every generated script: the generating checkout's root, so it runs without PYTHONPATH
 SYS_PATH_SETUP_LINES = ['import sys', f'sys.path.insert(0, {str(PROJECT_ROOT)!r})']
 
+# PEP 8's two blank lines after each top-level definition of a generated script, and after its header
+DEFINITION_SPACING = ['', '']
+
 # The generated library modules common_index.py names: the ones common_all.py imports
 COMMON_LIBRARY_MODULES = frozenset(module for module, _ in COMMON_FUNCTIONS.values())
 
@@ -88,15 +91,17 @@ ARGUMENT_CALL_KINDS = (
 )
 
 
-@dataclass(eq = False)
+@dataclass(eq=False)
 class ParamEntry:
     """Simulated stack entry for a parameter the caller pushed"""
+
     index : int
 
 
-@dataclass(eq = False)
+@dataclass(eq=False)
 class FrameSlot:
     """One of the CALLER_FRAME_SLOTS entries a PUSH_CALLER_FRAME pushes"""
+
     frame : Instruction
     index : int
 
@@ -109,6 +114,7 @@ class RoleKind(Enum):
 
 class Role(NamedTuple):
     """What a call consumes a group of stack entries as"""
+
     kind    : RoleKind
     target  : int | None = None     # return offset (RET_ADDR, FRAME)
     slot    : int | None = None     # caller frame slot (FRAME)
@@ -243,20 +249,21 @@ class ScpDisassemblyError(ScpFunctionError):
 @dataclass
 class ScpDisassemblerContext(DisassemblerContext):
     """ED9/SCP disassembler context: the simulated stack and the state recorded for every edge"""
+
     current_func     : 'Function | None' = None     # Function being disassembled
     code_end         : int | None = None            # Where the next function's code starts (None: last function)
     known_code_end   : int | None = None            # Where the code ends, when known: nothing may run or jump past it
     reject_outside_stack : bool = False             # fail on a slot outside the live stack, a read past it
     quiet            : bool = False                 # the caller reports the unusual-slot and backward-return warnings
     runs_on          : Instruction | None = None    # the first instruction that runs on past code_end
-    backward_returns : dict = field(default_factory = dict)                 # call offset -> (call, warning)
+    backward_returns : dict = field(default_factory=dict)                   # call offset -> (call, warning)
     current_inst     : Instruction | None = None    # Instruction being simulated
-    stack_simulation : list = field(default_factory = list)                 # Simulated stack of the block being decoded
-    edge_states      : dict[int, tuple] = field(default_factory = dict)     # block start -> state; later edges match its height
-    recorded_edges   : list = field(default_factory = list)                 # (source offset, target, kind, state) of every edge
-    inst_states      : dict[int, tuple] = field(default_factory = dict)     # instruction offset -> the stack before it
-    groups           : StackEntryGroups = field(default_factory = StackEntryGroups)
-    plain_uses       : dict[int, object] = field(default_factory = dict)    # id -> entry an ordinary consumer used
+    stack_simulation : list = field(default_factory=list)                   # Simulated stack of the block being decoded
+    edge_states      : dict[int, tuple] = field(default_factory=dict)       # block start -> state; later edges match its height
+    recorded_edges   : list = field(default_factory=list)                   # (source offset, target, kind, state) of every edge
+    inst_states      : dict[int, tuple] = field(default_factory=dict)       # instruction offset -> the stack before it
+    groups           : StackEntryGroups = field(default_factory=StackEntryGroups)
+    plain_uses       : dict[int, object] = field(default_factory=dict)      # id -> entry an ordinary consumer used
     declares_call_returns : bool = True             # CALL and CALL_SCRIPT return their own return edges
 
     def fail(self, message: str, inst: Instruction | None = None):
@@ -323,10 +330,8 @@ class ScpDisassemblerContext(DisassemblerContext):
 
         if role.kind == RoleKind.FRAME:
             fits = isinstance(member, FrameSlot) and member.index == role.slot and frame_return(member) == role.target
-
         elif role.kind == RoleKind.FUNC_ID:
             fits = self.is_function_id(member)
-
         else:
             fits = encoded_return(member) == role.target
 
@@ -338,7 +343,6 @@ class ScpDisassemblerContext(DisassemblerContext):
 
         if role.kind == RoleKind.FUNC_ID:
             self.retarget_push(member, ED9Opcode.PUSH_CURRENT_FUNC_ID)
-
         else:
             self.retarget_push(member, ED9Opcode.PUSH_RET_ADDR, member.operands[0].value)
 
@@ -370,7 +374,7 @@ class ScpDisassemblerContext(DisassemblerContext):
         """Turn a setup push into a pseudo-instruction with the given operand values"""
         push.opcode = opcode
         push.descriptor = self.instruction_table.get_descriptor(opcode)
-        push.operands = [Operand(descriptor = op_desc, value = value)
+        push.operands = [Operand(descriptor=op_desc, value=value)
                          for op_desc, value in zip(push.descriptor.operand_descriptors, values)]
 
     def return_target(self, entry, target: int | None) -> int:
@@ -545,13 +549,10 @@ class ScpDisassemblerContext(DisassemblerContext):
         for entry in entries.values():
             if isinstance(entry, ParamEntry):
                 params.append(len(self.current_func.params) - entry.index)
-
             elif isinstance(entry, FrameSlot):
                 caller_frame = True
-
             elif entry.opcode in (ED9Opcode.PUSH_CURRENT_FUNC_ID, ED9Opcode.PUSH_RET_ADDR):
                 call_setup = True
-
             else:
                 local = True
                 local_slots[entry.offset] = slot
@@ -600,8 +601,8 @@ class ScpParser(StrictBase):
         the common-function generator, the round-trip validator, tests) otherwise repeats by hand.
         The parser stays fully usable afterward (get_instructions, get_func_name_from_func_id, etc.
         are all in-memory)."""
-        return cls.load_bytes(path.read_bytes(), path.name, round_trip = round_trip,
-                              keep_unreachable_code = keep_unreachable_code, filter_func = filter_func)
+        return cls.load_bytes(path.read_bytes(), path.name, round_trip=round_trip,
+                              keep_unreachable_code=keep_unreachable_code, filter_func=filter_func)
 
     @classmethod
     def load_bytes(
@@ -626,7 +627,7 @@ class ScpParser(StrictBase):
             parser.reject_outside_stack = reject_outside_stack
             parser.known_code_end = known_code_end
             parser.parse()
-            functions = parser.disasm_all_functions(filter_func = filter_func, quiet = quiet)
+            functions = parser.disasm_all_functions(filter_func=filter_func, quiet=quiet)
 
         return parser, functions
 
@@ -661,7 +662,7 @@ class ScpParser(StrictBase):
 
     def _read_header(self):
         fs = self.fs
-        self.header = ScpHeader(fs = fs)
+        self.header = ScpHeader(fs=fs)
 
         self.function_entries   = self._read_function_entries(fs)
         self.functions          = self._read_functions(fs, self.function_entries)
@@ -670,7 +671,7 @@ class ScpParser(StrictBase):
         self.function_map = {func.name: func for func in self.functions}
 
     def _read_function_entries(self, fs: fileio.FileStream):
-        return [ScpFunctionEntry(fs = fs) for _ in range(self.header.function_count)]
+        return [ScpFunctionEntry(fs=fs) for _ in range(self.header.function_count)]
 
     def _read_functions(self, fs: fileio.FileStream, func_entries: list[ScpFunctionEntry]) -> list[Function]:
         functions: list[Function] = []
@@ -684,14 +685,14 @@ class ScpParser(StrictBase):
             func.is_common_func = entry.is_common_func == 1
             func.offset = entry.offset
 
-            func_name = ScpValue().from_value(entry.name_offset, fs = fs)
+            func_name = ScpValue().from_value(entry.name_offset, fs=fs)
             func.name = func_name.value
 
             fs.Position = entry.param_flags_offset
-            param_flags = [ScpParamFlags(fs = fs) for _ in range(entry.param_count)]
+            param_flags = [ScpParamFlags(fs=fs) for _ in range(entry.param_count)]
 
             fs.Position = entry.default_params_offset
-            default_params = [ScpValue(fs = fs) for _ in range(entry.default_params_count)]
+            default_params = [ScpValue(fs=fs) for _ in range(entry.default_params_count)]
             if len(default_params) > len(param_flags):
                 raise ValueError(f'default_params count is greater than param_flags count: {len(default_params)} > {len(param_flags)}')
 
@@ -699,7 +700,7 @@ class ScpParser(StrictBase):
                 default_params.insert(0, None)
 
             for i in range(entry.param_count):
-                param = FunctionParam(type = param_flags[i], default_value = default_params[i])
+                param = FunctionParam(type=param_flags[i], default_value=default_params[i])
                 default = param.default_value
                 if default is not None and (default.type == ScpValue.Type.String) != param.type.takes_string():
                     log.warning(f'{func.name}: parameter {i + 1} is {param.type.get_python_type()} but defaults to '
@@ -730,7 +731,7 @@ class ScpParser(StrictBase):
 
         fs.Position = func_entry.debug_info_offset
         for _ in range(func_entry.debug_info_count):
-            dbg_info = ScpFunctionCallDebugInfo(fs = fs)
+            dbg_info = ScpFunctionCallDebugInfo(fs=fs)
             debug_info_list.append(dbg_info)
 
         return debug_info_list
@@ -742,12 +743,12 @@ class ScpParser(StrictBase):
         global_vars: list[GlobalVar] = []
 
         for i in range(hdr.global_var_count):
-            gvar_info = ScpGlobalVar(fs = fs)
+            gvar_info = ScpGlobalVar(fs=fs)
 
             global_var = GlobalVar(
-                index = i,
-                name = gvar_info.name,
-                type = gvar_info.type,
+                index=i,
+                name=gvar_info.name,
+                type=gvar_info.type,
             )
 
             global_vars.append(global_var)
@@ -951,7 +952,7 @@ class ScpParser(StrictBase):
         for offset, next_offset in zip(offsets, offsets[1:]):
             if offset + sizes[offset] > next_offset:
                 raise ScpDisassemblyError(
-                    f'The instruction at 0x{offset:X} overlaps the instruction at 0x{next_offset:X}', offset = next_offset
+                    f'The instruction at 0x{offset:X} overlaps the instruction at 0x{next_offset:X}', offset=next_offset
                 )
 
         for func in self.functions:
@@ -965,21 +966,21 @@ class ScpParser(StrictBase):
     def disasm_context(self, func: Function, code_end: int | None, quiet: bool = False) -> ScpDisassemblerContext:
         """A fresh context for disassembling func, whose code ends at code_end"""
         return ScpDisassemblerContext(
-            get_func_argc           = self.get_func_argc,
-            on_disasm_function      = self.on_disasm_function,
-            on_block_start          = self.on_block_start,
-            on_instruction_decoded  = self.on_instruction_decoded,
-            on_pre_add_branch       = self.on_pre_add_branch,
-            on_block_split          = self.on_block_split,
-            create_fallthrough_jump = ed9_create_fallthrough_jump,
-            current_func            = func,
-            code_end                = code_end,
-            known_code_end          = self.known_code_end,
-            reject_outside_stack    = self.reject_outside_stack,
-            quiet                   = quiet,
+            get_func_argc=self.get_func_argc,
+            on_disasm_function=self.on_disasm_function,
+            on_block_start=self.on_block_start,
+            on_instruction_decoded=self.on_instruction_decoded,
+            on_pre_add_branch=self.on_pre_add_branch,
+            on_block_split=self.on_block_split,
+            create_fallthrough_jump=ed9_create_fallthrough_jump,
+            current_func=func,
+            code_end=code_end,
+            known_code_end=self.known_code_end,
+            reject_outside_stack=self.reject_outside_stack,
+            quiet=quiet,
         )
 
-    def disasm_all_functions(self, filter_func = None, quiet: bool = False) -> list[Function]:
+    def disasm_all_functions(self, filter_func=None, quiet: bool = False) -> list[Function]:
         """Disassemble all functions in the SCP file; quiet drops the per-function progress and error lines and the
         unusual-slot and backward-return warnings. A function's failure is raised as a ScpDisassemblyError naming it."""
         disassembled_functions = []
@@ -1001,7 +1002,7 @@ class ScpParser(StrictBase):
 
             disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
             try:
-                func.entry_block = disasm.disasm_function(self.fs, offset = func.offset, name = func.name)
+                func.entry_block = disasm.disasm_function(self.fs, offset=func.offset, name=func.name)
                 self.require_recorded_edges(func, context)
                 func.stack_layout = context.stack_layout(func.entry_block)
                 func.runs_on = context.runs_on
@@ -1022,7 +1023,7 @@ class ScpParser(StrictBase):
         self.require_disjoint_instructions(disassembled_functions)
 
         if self.keep_unreachable_code:
-            self.find_unreachable_code(disassembled_functions, has_all_functions = filter_func is None)
+            self.find_unreachable_code(disassembled_functions, has_all_functions=filter_func is None)
 
         # After the dead code is decoded: its calls have records too
         if self.round_trip:
@@ -1032,7 +1033,7 @@ class ScpParser(StrictBase):
         self.require_code_before_strings(disassembled_functions)
 
         # The table is sorted by name, but code is laid out in source order
-        disassembled_functions.sort(key = lambda func: func.offset)
+        disassembled_functions.sort(key=lambda func: func.offset)
 
         return disassembled_functions
 
@@ -1042,7 +1043,7 @@ class ScpParser(StrictBase):
 
     def code_instructions(self, func: Function) -> list[Instruction]:
         """Reachable instructions and the decoded unreachable code (keep_unreachable_code), in offset order"""
-        return sorted(self.get_instructions(func) + self.unreachable_instructions(func), key = lambda inst: inst.offset)
+        return sorted(self.get_instructions(func) + self.unreachable_instructions(func), key=lambda inst: inst.offset)
 
     @classmethod
     def unreachable_instructions(cls, func: Function) -> list[Instruction]:
@@ -1052,7 +1053,7 @@ class ScpParser(StrictBase):
     def pair_call_debug_info(self, func: Function):
         """Recover the args each local CALL's debug record keeps, by CALL offset, from its calls in the code the .py
         prints (reachable and decoded dead code); where that isn't the compiler's rule (canonical_argc) the .py writes
-        it on the CALL, and on a call the compiler left without a record, debug_record = False"""
+        it on the CALL, and on a call the compiler left without a record, debug_record=False"""
         pairing = pair_records(self.data, self.code_instructions(func), func.debug_info, self.get_func_argc,
                                self.get_func_index)
         if not pairing.paired:
@@ -1087,7 +1088,7 @@ class ScpParser(StrictBase):
         code_end = self.get_code_end(functions)
 
         # Code order, so strings used by earlier unreachable code can lower code_end before the last function's tail
-        for func in sorted(functions, key = lambda f: f.offset):
+        for func in sorted(functions, key=lambda f: f.offset):
             instructions = self.get_instructions(func)
             blocks = []
             cursor = func.offset
@@ -1148,7 +1149,7 @@ class ScpParser(StrictBase):
 
     def _decode_unreachable_block(self, func: Function, start: int, end: int) -> BasicBlock | None:
         """Linearly decode [start, end), or None (with a warning) when the bytes aren't whole instructions"""
-        block = BasicBlock(start_offset = start, end_offset = end)
+        block = BasicBlock(start_offset=start, end_offset=end)
         fs = self.fs
 
         with fs.PositionSaver:
@@ -1157,7 +1158,6 @@ class ScpParser(StrictBase):
             try:
                 while fs.Position < end:
                     block.instructions.append(ED9_INSTRUCTION_TABLE.decode_instruction(fs, fs.Position))
-
             except (ValueError, struct.error) as e:
                 log.warning(f'{func.name}: unreachable code 0x{start:X}..0x{end:X} not kept, decode failed: {e}')
                 return None
@@ -1188,9 +1188,9 @@ class ScpParser(StrictBase):
     def format_function(self, func: Function, comments: CommentOptions = CommentOptions()) -> list[str]:
         """Format a disassembled function"""
         formatter_context = FormatterContext(
-            get_func_name_from_func_id  = self.get_func_name_from_func_id,
-            get_global_name_from_index  = self.get_global_name_from_index,
-            comments                    = comments,
+            get_func_name_from_func_id=self.get_func_name_from_func_id,
+            get_global_name_from_index=self.get_global_name_from_index,
+            comments=comments,
         )
         formatter = Formatter(formatter_context)
         return formatter.format_function(func)
@@ -1204,12 +1204,12 @@ class ScpParser(StrictBase):
         decompile_to_python, which used to compute it separately in each half."""
         matched = self.match_library_functions(functions)
 
-        lines = self.gen_python_header(functions, matched = matched)
+        lines = self.gen_python_header(functions, matched=matched)
         lines.extend(preamble)
 
-        for func in self.get_inline_functions(functions, matched = matched):
+        for func in self.get_inline_functions(functions, matched=matched):
             lines.extend(self.format_function(func, comments))
-            lines.append('')
+            lines.extend(DEFINITION_SPACING)
 
         lines.extend(self.gen_python_footer())
         return '\n'.join(lines) + '\n'
@@ -1233,15 +1233,14 @@ class ScpParser(StrictBase):
         always succeeds even when the library behind it doesn't exist yet.
         """
         lines = [*SYS_PATH_SETUP_LINES]
-        lines += f'''\
+        lines += f"""\
 {SCP_WRITER_HELPER_IMPORT}
 {self.gen_hook_import()}
 
 {COMMON_LIBRARY_ALL_IMPORT}
 
-scena = create_scp_writer('{self.name}')
-
-'''.splitlines()
+scena = create_scp_writer('{self.name}')""".splitlines()
+        lines.extend(DEFINITION_SPACING)
 
         if self.global_vars:
             indent = default_indent()
@@ -1250,10 +1249,10 @@ scena = create_scp_writer('{self.name}')
             for var in self.global_vars:
                 declaration = f'GLOBAL_VAR({quote_string(var.name)}, {var.type})'
                 lines.append(indent + append_comment(declaration, [f'{GLOBAL_VAR_INDEX_COMMENT} {var.index}']))
-            lines.append('')
+            lines.extend(DEFINITION_SPACING)
 
         if functions is not None:
-            lines.extend(self.gen_common_imports(functions, matched = matched))
+            lines.extend(self.gen_common_imports(functions, matched=matched))
 
         return lines
 
@@ -1325,7 +1324,7 @@ scena = create_scp_writer('{self.name}')
             if func.name in matched:
                 lines.append(f'{indent * 2}{func.name},')
         lines.append(f'{indent}]')
-        lines.append('')
+        lines.extend(DEFINITION_SPACING)
 
         return lines
 
@@ -1341,23 +1340,21 @@ scena = create_scp_writer('{self.name}')
         parts = module.split('.')
         if all(is_module_name(part) for part in parts):
             statement = f'import {module}'
-
         else:
             statement = f'__import__({module!r})'
 
         if len(parts) == 1:
             check = f'e.name != {module!r}'
-
         else:
             prefixes = tuple('.'.join(parts[:end]) for end in range(1, len(parts) + 1))  # parents, then the hook
             check = f'e.name not in {prefixes!r}'
 
-        return f'''\
+        return f"""\
 try:
     {statement}
 except ModuleNotFoundError as e:
     if {check}:
-        raise'''
+        raise"""
 
     def gen_hook_template(self) -> str:
         """A starting <stem>_hook.py: every callback is a no-op even when registered, so it compiles to the same bytes as
@@ -1365,26 +1362,26 @@ except ModuleNotFoundError as e:
         a rename hint instead"""
         stem = pathlib.Path(self.name).stem
         if is_module_name(stem) and not shadows_another_module(stem):
-            type_checking = f'''\
+            type_checking = f"""\
     from {stem} import *  # pyright: ignore[reportAssignmentType]
-    import {stem} as original'''
-
+    import {stem} as original"""
         else:
             reason = 'is also the name of another module' if is_module_name(stem) else "isn't a valid module name"
             suggested = suggested_module_name(stem)
-            type_checking = f'''\
+            type_checking = f"""\
     # {stem!r} {reason}, so Pylance can't import the script's names. To get them, rename
     # {stem}.py to a valid name (it still compiles to {self.name}; keep this file's name) and uncomment:
     # from {suggested} import *  # pyright: ignore[reportAssignmentType]
     # import {suggested} as original
-    pass'''
+    pass"""
 
-        return f'''\
+        return f"""\
 # pyright: basic
 from typing import TYPE_CHECKING
 {SCP_WRITER_HELPER_IMPORT}
 if TYPE_CHECKING:
 {type_checking}
+
 
 # Functions to add
 def run_hook(g):
@@ -1392,10 +1389,12 @@ def run_hook(g):
     ]:
         add_function(func)
 
+
 # registerRunCallback(run_hook)
 
 def func_hook(name, func):
     return None
+
 
 # registerFuncCallback(func_hook)
 
@@ -1403,13 +1402,14 @@ def opcode_hook(opcode, *args):
     return None
 
 # registerOpcodeCallback(opcode_hook)
-'''
+"""
 
     def gen_python_footer(self) -> list[str]:
         """Generate Python footer lines for output script execution"""
-        return '''\
+        return """\
 def main():
     scena.run(globals())
 
+
 if __name__ == '__main__':
-    main()'''.splitlines()
+    main()""".splitlines()

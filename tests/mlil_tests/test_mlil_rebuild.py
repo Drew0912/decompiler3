@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for MLILBinaryOp.rebuild()/MLILUnaryOp.rebuild() - the one path for rebuilding a
-binary or unary op with new operands (previously 7 per-pass tables that had drifted apart).'''
+"""Unit tests for MLILBinaryOp.rebuild()/MLILUnaryOp.rebuild() - the one path for rebuilding a
+binary or unary op with new operands (previously 7 per-pass tables that had drifted apart)."""
 
 from pathlib import Path
 import inspect
@@ -41,24 +41,24 @@ def with_metadata(inst):
 
 
 def non_operand_state(inst) -> dict:
-    '''Every attribute except the operands. options is compared by content: a rebuilt node gets
+    """Every attribute except the operands. options is compared by content: a rebuilt node gets
     fresh default ILOptions, like every other MLIL rebuild (copy_metadata_from does not copy them),
-    and no MLIL code sets them on an expression.'''
+    and no MLIL code sets them on an expression."""
     state = {key: value for key, value in vars(inst).items() if key not in OPERAND_FIELDS}
     state['options'] = {name: getattr(inst.options, name) for name in ILOptions.__slots__}
     return state
 
 
 class TestRebuildEveryOp(unittest.TestCase):
-    '''Every concrete op rebuilds to the same type and operation with the new operands, and keeps
+    """Every concrete op rebuilds to the same type and operation with the new operands, and keeps
     its metadata and every other attribute. rebuild() calls type(self)(operands), so every
     constructor must take exactly the operands - a subclass with any extra parameter fails here
-    instead of silently losing that state.'''
+    instead of silently losing that state."""
 
     def test_every_op_constructor_takes_only_its_operands(self):
         for base, expected in [(MLILBinaryOp, BINARY_OP_PARAMETERS), (MLILUnaryOp, UNARY_OP_PARAMETERS)]:
             for cls in concrete_subclasses(base):
-                with self.subTest(op = cls.__name__):
+                with self.subTest(op=cls.__name__):
                     self.assertEqual(list(inspect.signature(cls.__init__).parameters), expected)
 
     def test_every_binary_op_rebuilds(self):
@@ -66,7 +66,7 @@ class TestRebuildEveryOp(unittest.TestCase):
         self.assertEqual(len(classes), BINARY_OP_COUNT, sorted(cls.__name__ for cls in classes))
 
         for cls in classes:
-            with self.subTest(op = cls.__name__):
+            with self.subTest(op=cls.__name__):
                 original = with_metadata(cls(MLILConst(1), MLILConst(2)))
                 new_lhs, new_rhs = MLILConst(3), MLILConst(4)
                 rebuilt = original.rebuild(new_lhs, new_rhs)
@@ -82,7 +82,7 @@ class TestRebuildEveryOp(unittest.TestCase):
         self.assertEqual(len(classes), UNARY_OP_COUNT, sorted(cls.__name__ for cls in classes))
 
         for cls in classes:
-            with self.subTest(op = cls.__name__):
+            with self.subTest(op=cls.__name__):
                 original = with_metadata(cls(MLILConst(1)))
                 new_operand = MLILConst(2)
                 rebuilt = original.rebuild(new_operand)
@@ -94,8 +94,8 @@ class TestRebuildEveryOp(unittest.TestCase):
 
 
 class TestPassRebuildKeepsMetadata(unittest.TestCase):
-    '''A pass that rewrites an operand keeps the rewritten expression's source metadata (six of
-    the seven old tables dropped it).'''
+    """A pass that rewrites an operand keeps the rewritten expression's source metadata (six of
+    the seven old tables dropped it)."""
 
     def test_constant_propagation_keeps_rebuilt_expression_metadata(self):
         # a = 5; b = a + arg1 -> b = 5 + arg1, and the rebuilt add keeps its address
@@ -139,9 +139,9 @@ class TestPassRebuildKeepsMetadata(unittest.TestCase):
 
 
 class TestSCCPNeverSubstitutesUnderAddressOf(unittest.TestCase):
-    '''&x names x's storage, not its value: SCCP must leave &x alone even when it knows x's
+    """&x names x's storage, not its value: SCCP must leave &x alone even when it knows x's
     value. Before rebuild() existed this held only because SCCP's own table had no AddressOf
-    entry; it is now an explicit leaf.'''
+    entry; it is now an explicit leaf."""
 
     def run_sccp(self, make_value):
         # x = 5; y = <make_value(x)>; return y - returns what y's value became
@@ -180,18 +180,18 @@ class TestSCCPNeverSubstitutesUnderAddressOf(unittest.TestCase):
 
 
 class TestCallRebuildKeepsClobberFlag(unittest.TestCase):
-    '''rebuild() of every call kind keeps clobbers_registers (Syscall/CallScript used to reset it
-    to the default True).'''
+    """rebuild() of every call kind keeps clobbers_registers (Syscall/CallScript used to reset it
+    to the default True)."""
 
     def test_every_call_kind_keeps_clobbers_registers(self):
         calls = [
-            MLILCall('f', [MLILConst(1)], clobbers_registers = False),
-            MLILSyscall(1, 2, [MLILConst(1)], clobbers_registers = False),
-            MLILCallScript('module', 'func', [MLILConst(1)], clobbers_registers = False),
+            MLILCall('f', [MLILConst(1)], clobbers_registers=False),
+            MLILSyscall(1, 2, [MLILConst(1)], clobbers_registers=False),
+            MLILCallScript('module', 'func', [MLILConst(1)], clobbers_registers=False),
         ]
 
         for call in calls:
-            with self.subTest(call = type(call).__name__):
+            with self.subTest(call=type(call).__name__):
                 rebuilt = call.rebuild([MLILConst(2)])
 
                 self.assertIs(type(rebuilt), type(call))

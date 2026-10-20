@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for the shared HLIL tables and helpers in ir/hlil/hlil.py - operator semantics and
-C-family syntax - and for HLILFormatter's operators and switch breaks.'''
+"""Unit tests for the shared HLIL tables and helpers in ir/hlil/hlil.py - operator semantics and
+C-family syntax - and for HLILFormatter's operators and switch breaks."""
 
 from pathlib import Path
 import operator
@@ -66,7 +66,7 @@ class TestSharedTables(unittest.TestCase):
             negated = PYTHON_COMPARISON[NEGATED_COMPARISON_OP[op]]
             for lhs in SAMPLE_OPERANDS:
                 for rhs in SAMPLE_OPERANDS:
-                    with self.subTest(op = op.name, lhs = lhs, rhs = rhs):
+                    with self.subTest(op=op.name, lhs=lhs, rhs=rhs):
                         self.assertEqual(negated(lhs, rhs), not PYTHON_COMPARISON[op](lhs, rhs))
 
 
@@ -83,16 +83,16 @@ class TestNeedsParentheses(unittest.TestCase):
         self.assertFalse(needs_parentheses(BinaryOp.SUB, BinaryOp.SUB, True))
 
         for op in (BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD):
-            with self.subTest(op = op.name):
+            with self.subTest(op=op.name):
                 self.assertTrue(needs_parentheses(op, op, False))
 
         for op in (BinaryOp.ADD, BinaryOp.MUL):
-            with self.subTest(op = op.name):
+            with self.subTest(op=op.name):
                 self.assertFalse(needs_parentheses(op, op, False))
 
 
 class TestUnaryOperandNeedsParentheses(unittest.TestCase):
-    '''Decided on the operand's printed text, which the .hlil.ts and .ts printers write differently for constants'''
+    """Decided on the operand's printed text, which the .hlil.ts and .ts printers write differently for constants"""
 
     def test_binary_operand_is_wrapped(self):
         operand = HLILBinaryOp(BinaryOp.LT, var('a'), var('b'))
@@ -107,7 +107,7 @@ class TestUnaryOperandNeedsParentheses(unittest.TestCase):
         self.assertFalse(unary_operand_needs_parentheses(UnaryOp.NEG, var('a'), 'a'))
 
         for op in (UnaryOp.NOT, UnaryOp.BIT_NOT):
-            with self.subTest(op = op.name):
+            with self.subTest(op=op.name):
                 self.assertFalse(unary_operand_needs_parentheses(op, negated, '-a'))
 
 
@@ -148,7 +148,7 @@ class TestIsBooleanExpr(unittest.TestCase):
         a, b = var('a'), var('b')
 
         for op in BOOLEAN_BINARY_OPS:
-            with self.subTest(op = op.name):
+            with self.subTest(op=op.name):
                 self.assertTrue(is_boolean_expr(HLILBinaryOp(op, a, b)))
 
         self.assertTrue(is_boolean_expr(HLILUnaryOp(UnaryOp.NOT, a)))
@@ -162,8 +162,8 @@ class TestIsBooleanExpr(unittest.TestCase):
 
 
 class TestFormatterOperators(unittest.TestCase):
-    '''The .hlil.ts debug dump prints operator symbols and precedence parentheses - it used to
-    print enum names (`a ADD b MUL 2`), and its string-keyed precedence lookup never matched.'''
+    """The .hlil.ts debug dump prints operator symbols and precedence parentheses - it used to
+    print enum names (`a ADD b MUL 2`), and its string-keyed precedence lookup never matched."""
 
     def format(self, expr) -> str:
         return HLILFormatter._format_expr(expr)
@@ -197,13 +197,13 @@ class TestFormatterOperators(unittest.TestCase):
         ]
 
         for expr, text in rows:
-            with self.subTest(text = text):
+            with self.subTest(text=text):
                 self.assertEqual(self.format(expr), text)
 
 
 class TestFormatterSwitchBreak(unittest.TestCase):
-    '''Every case that can fall through ends in `break;` - an empty case too, which otherwise
-    reads as a second label sharing the next case's body.'''
+    """Every case that can fall through ends in `break;` - an empty case too, which otherwise
+    reads as a second label sharing the next case's body."""
 
     def format_switch(self, first_body: HLILBlock) -> list:
         func = HighLevelILFunction('f')
@@ -221,7 +221,7 @@ class TestFormatterSwitchBreak(unittest.TestCase):
 
     def test_case_ending_in_a_terminal_statement_gets_no_extra_break(self):
         for terminal in (HLILReturn(), HLILBreak(), HLILContinue()):
-            with self.subTest(terminal = type(terminal).__name__):
+            with self.subTest(terminal=type(terminal).__name__):
                 lines = self.format_switch(HLILBlock([terminal]))
                 first = lines.index(f'case {FIRST_CASE_VALUE}:')
 

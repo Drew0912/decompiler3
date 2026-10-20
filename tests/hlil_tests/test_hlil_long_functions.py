@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for MLILToHLILConverter's recursion depth on long functions: the code after an if or
+"""Unit tests for MLILToHLILConverter's recursion depth on long functions: the code after an if or
 a loop is followed iteratively, so depth grows with nesting, not with how many statements run one
 after another. The deepest corpus function (sound.dat InitBGM) needed 989 of Python's default 1000
-frames before this, mostly from its long run of top-level tests.'''
+frames before this, mostly from its long run of top-level tests."""
 
 from pathlib import Path
 import sys
@@ -37,13 +37,12 @@ def convert_with_tight_limit(func: MediumLevelILFunction):
 
     try:
         return MLILToHLILConverter(func).convert()
-
     finally:
         sys.setrecursionlimit(saved)
 
 
 class TestLongRunOfIfs(unittest.TestCase):
-    '''if (arg1 == i) { do_x(i) } repeated CHAIN_LENGTH times, each merging into the next test'''
+    """if (arg1 == i) { do_x(i) } repeated CHAIN_LENGTH times, each merging into the next test"""
 
     def test_converts_without_recursing_per_if(self):
         func = MediumLevelILFunction('long_if_run', 0)
@@ -65,7 +64,7 @@ class TestLongRunOfIfs(unittest.TestCase):
 
 
 class TestLongRunOfLoops(unittest.TestCase):
-    '''while (arg1 < i) { do_x(i) } repeated CHAIN_LENGTH times, each exiting into the next loop'''
+    """while (arg1 < i) { do_x(i) } repeated CHAIN_LENGTH times, each exiting into the next loop"""
 
     def test_converts_without_recursing_per_loop(self):
         func = MediumLevelILFunction('long_loop_run', 0)

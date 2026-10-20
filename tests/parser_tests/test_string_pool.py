@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for the string pool's sections (falcom/ed9/parser/string_pool.py) - every section in pool order, code
-strings in code order with unreachable code - and the round-trip validator that checks them.'''
+"""Unit tests for the string pool's sections (falcom/ed9/parser/string_pool.py) - every section in pool order, code
+strings in code order with unreachable code - and the round-trip validator that checks them."""
 
 from pathlib import Path
 import sys
@@ -34,9 +34,9 @@ SCRIPT_SECTIONS = {
 
 
 def compile_script(dat: Path):
-    '''Zeta is defined first, so the code order (Zeta, Alpha, Mid) is not the table's (Alpha, Mid, Zeta). Zeta pushes a
+    """Zeta is defined first, so the code order (Zeta, Alpha, Mid) is not the table's (Alpha, Mid, Zeta). Zeta pushes a
     string in dead code after its RETURN; Alpha passes a pushed string to Zeta, so its debug record repeats a code string,
-    and its CALL_SCRIPT record names "this.Zeta", a debug-only string.'''
+    and its CALL_SCRIPT record names "this.Zeta", a debug-only string."""
     writer = fresh_writer(dat)
 
     @writer.GlobalVars()
@@ -76,7 +76,7 @@ def compile_script(dat: Path):
 
 
 def compile_shared_string(dat: Path):
-    '''AEmpty has no code, so it starts where ZBody does: both decode ZBody's PUSH_STR (compiles with a warning)'''
+    """AEmpty has no code, so it starts where ZBody does: both decode ZBody's PUSH_STR (compiles with a warning)"""
     writer = fresh_writer(dat)
 
     @writer.LLILCode()
@@ -93,8 +93,8 @@ def compile_shared_string(dat: Path):
 
 
 def load_string_refs(path: Path) -> tuple[bytes, StringRefs]:
-    '''The file's bytes and string refs, unreachable code decoded; the raw debug records are read from the bytes'''
-    parser, _ = ScpParser.load(path, round_trip = True, keep_unreachable_code = True)
+    """The file's bytes and string refs, unreachable code decoded; the raw debug records are read from the bytes"""
+    parser, _ = ScpParser.load(path, round_trip=True, keep_unreachable_code=True)
     data = path.read_bytes()
     return data, collect_string_refs(data, parser, read_debug_records(parser, data))
 
@@ -116,7 +116,7 @@ class TestCollectStringRefs(unittest.TestCase):
         self.assertEqual(self.refs.expected_pool, pool_strings(self.data, self.refs.pool_start))
 
     def test_shared_code_strings_counted_once(self):
-        '''Two functions decode ZBody's PUSH_STR; the pool holds its string once, and so do the code strings'''
+        """Two functions decode ZBody's PUSH_STR; the pool holds its string once, and so do the code strings"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             dat = Path(tmp_dir) / 'shared.dat'
             compile_shared_string(dat)
@@ -166,10 +166,10 @@ class TestValidator(unittest.TestCase):
             raise ValueError('bad code')
 
         # A leaked handle would also fail the cleanup on Windows; report the assertion instead
-        with tempfile.TemporaryDirectory(ignore_cleanup_errors = True) as tmp_dir:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp_dir:
             dat = Path(tmp_dir) / 'test.dat'
             compile_script(dat)
-            with mock.patch.object(ScpParser, 'disasm_all_functions', autospec = True, side_effect = fail):
+            with mock.patch.object(ScpParser, 'disasm_all_functions', autospec=True, side_effect=fail):
                 with self.assertRaisesRegex(ValueError, '^bad code$'):
                     load_script(dat)
 
@@ -177,7 +177,7 @@ class TestValidator(unittest.TestCase):
 
 
 class TestRealScript(unittest.TestCase):
-    '''Its table order is not its code order, and 5 of its 6 debug record strings repeat a code string'''
+    """Its table order is not its code order, and 5 of its 6 debug record strings repeat a code string"""
 
     def test_personal_template_sections(self):
         data, refs = load_string_refs(require(PERSONAL_TEMPLATE_FILE))

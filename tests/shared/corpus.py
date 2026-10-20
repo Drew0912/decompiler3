@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Paths into the game-script corpora, and the skip for a checkout without them'''
+"""Paths into the game-script corpora, and the skip for a checkout without them"""
 
 from pathlib import Path
 import unittest
@@ -10,7 +10,7 @@ SORA2_SCRIPTS = REPO_ROOT / 'sora2_1.0' / 'script_en'
 
 
 def require(path: Path) -> Path:
-    '''path, or skip the test when the file is missing (e.g. the corpus is not checked out)'''
+    """path, or skip the test when the file is missing (e.g. the corpus is not checked out)"""
     if not path.exists():
         raise unittest.SkipTest(f'corpus file not found: {path}')
 

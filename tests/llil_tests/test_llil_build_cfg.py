@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for LLIL CFG construction: the edges build_cfg() gives each terminal, a function's block labels
-are unique (a script function may be named like another block's loc_ label), and the function's lookups.'''
+"""Unit tests for LLIL CFG construction: the edges build_cfg() gives each terminal, a function's block labels
+are unique (a script function may be named like another block's loc_ label), and the function's lookups."""
 
 from pathlib import Path
 import sys
@@ -22,11 +22,11 @@ PUSHED_VALUE = 7
 
 
 def make_function(*labels: str):
-    '''A function with one registered, empty block per label, in order from FUNC_START'''
+    """A function with one registered, empty block per label, in order from FUNC_START"""
     function = LowLevelILFunction(FUNCTION_NAME, FUNC_START)
     blocks = []
     for position, label in enumerate(labels):
-        block = LowLevelILBasicBlock(FUNC_START + position * BLOCK_STRIDE, label = label)
+        block = LowLevelILBasicBlock(FUNC_START + position * BLOCK_STRIDE, label=label)
         function.add_basic_block(block)
         blocks.append(block)
 
@@ -38,7 +38,7 @@ def condition() -> LowLevelILEq:
 
 
 def edges(function: LowLevelILFunction) -> list:
-    '''Every block's outgoing and incoming edges, by label'''
+    """Every block's outgoing and incoming edges, by label"""
     return [
         ([target.label for target in block.outgoing_edges], [source.label for source in block.incoming_edges])
         for block in function.basic_blocks
@@ -46,7 +46,7 @@ def edges(function: LowLevelILFunction) -> list:
 
 
 class TestBuildCfgEdges(unittest.TestCase):
-    '''Which terminals give which edges.'''
+    """Which terminals give which edges."""
 
     def test_if_with_both_arms_on_one_block_gives_one_edge(self):
         function, (entry, target) = make_function('entry', 'target')
@@ -60,7 +60,7 @@ class TestBuildCfgEdges(unittest.TestCase):
     def test_return_and_tail_call_have_no_edges(self):
         function, (entry, tail) = make_function('entry', 'tail')
         entry.add_instruction(LowLevelILRet())
-        tail.add_instruction(LowLevelILCall('f', None, returns = False))
+        tail.add_instruction(LowLevelILCall('f', None, returns=False))
 
         function.build_cfg()
 
@@ -68,18 +68,18 @@ class TestBuildCfgEdges(unittest.TestCase):
 
 
 class TestBlockLabels(unittest.TestCase):
-    '''Block labels are unique within a function: the entry block takes the function's name, so a script function
-    named loc_1A0 meets the block at 0x1A0.'''
+    """Block labels are unique within a function: the entry block takes the function's name, so a script function
+    named loc_1A0 meets the block at 0x1A0."""
 
     def test_duplicate_label_cannot_be_added(self):
         function, _ = make_function('entry')
 
         with self.assertRaisesRegex(RuntimeError, 'already labelled'):
-            function.add_basic_block(LowLevelILBasicBlock(SECOND_BLOCK_START, label = 'entry'))
+            function.add_basic_block(LowLevelILBasicBlock(SECOND_BLOCK_START, label='entry'))
 
 
 class TestFunctionLookups(unittest.TestCase):
-    '''The function's lookups by instruction index, block address and label, and its block ownership test'''
+    """The function's lookups by instruction index, block address and label, and its block ownership test"""
 
     def make_function(self):
         builder = make_builder()

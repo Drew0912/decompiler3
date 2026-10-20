@@ -12,6 +12,7 @@ SYNTHETIC_INSTRUCTION_SIZE = 0  # Instruction.size for a disassembler-inserted i
 @dataclass
 class Operand:
     """Generic operand representation"""
+
     descriptor  : 'OperandDescriptor'
     value       : Any
 
@@ -19,10 +20,11 @@ class Operand:
 @dataclass
 class Instruction:
     """Generic instruction representation"""
+
     offset        : int                                             # Offset in bytecode
     opcode        : int                                             # Raw opcode value
     descriptor    : 'InstructionDescriptor'                         # Instruction descriptor from table
-    operands      : list[Operand] = field(default_factory = list)
+    operands      : list[Operand] = field(default_factory=list)
     size          : int = 0                                         # Instruction size in bytes
 
     @property

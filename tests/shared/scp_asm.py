@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Hand-coded ED9 bytecode for parser-level tests: Asm encodes mnemonics with labels and strings, Program lays out
-functions, a string pool and a function table for a real ScpParser. The constants are values the tests share.'''
+"""Hand-coded ED9 bytecode for parser-level tests: Asm encodes mnemonics with labels and strings, Program lays out
+functions, a string pool and a function table for a real ScpParser. The constants are values the tests share."""
 
 from typing import NamedTuple
 import struct
@@ -69,12 +69,12 @@ def scp_value(kind: ScpValue.Type, payload: int) -> bytes:
 
 
 def measuring(value) -> int:
-    '''Resolves any label or string to 0: only the encoded size matters when measuring'''
+    """Resolves any label or string to 0: only the encoded size matters when measuring"""
     return 0
 
 
 class Asm:
-    '''Hand-coded ED9 bytecode: labels resolve to offsets, strings to a pool after the code'''
+    """Hand-coded ED9 bytecode: labels resolve to offsets, strings to a pool after the code"""
 
     def __init__(self):
         self.items = []
@@ -160,11 +160,11 @@ class Func(NamedTuple):
 
 
 class Program:
-    '''Hand-coded functions for a real ScpParser: code, then a string pool (the call strings, then the function names,
-    as in a real script), then any trailing bytes. Labels are per function.'''
+    """Hand-coded functions for a real ScpParser: code, then a string pool (the call strings, then the function names,
+    as in a real script), then any trailing bytes. Labels are per function."""
 
     def __init__(self, *functions: Func, trailing: bytes = b'', pool: tuple = STRINGS, aliases: tuple = ()):
-        '''pool: the strings before the function names; aliases: (name, offset) function-table entries with no code'''
+        """pool: the strings before the function names; aliases: (name, offset) function-table entries with no code"""
         position = sum(func.asm.size() for func in functions)
         strings = {}
         names = (*(func.name for func in functions), *(name for name, _ in aliases))
@@ -193,7 +193,7 @@ class Program:
         self.code = bytes(code + trailing)
 
     def add_entry(self, name: str, offset: int, argc: int = 0):
-        '''A function-table entry, numbered in table order as ScpParser._read_functions numbers them'''
+        """A function-table entry, numbered in table order as ScpParser._read_functions numbers them"""
         entry = Function()
         entry.index = len(self.entries)
         entry.name = name
@@ -222,7 +222,7 @@ class Program:
         return parser, parser.disasm_all_functions()
 
     def label(self, name: str) -> int:
-        '''The address of a label in the function named FUNC_NAME'''
+        """The address of a label in the function named FUNC_NAME"""
         return self.labels[FUNC_NAME][name]
 
 
@@ -240,9 +240,9 @@ def returning_callee(argc: int = 0) -> Func:
 
 
 def debug_records(*records: tuple) -> tuple[bytes, list[ScpFunctionCallDebugInfo]]:
-    '''Raw call debug records and the bytes holding their args (a parser's data): each record is (call type, func_id,
+    """Raw call debug records and the bytes holding their args (a parser's data): each record is (call type, func_id,
     args), each arg (arg type, value) - a constant's value an int, float or str, any other arg's NON_CONSTANT_VALUE.
-    The args come first, their strings after them.'''
+    The args come first, their strings after them."""
     arg_count = sum(len(args) for _, _, args in records)
     args_bytes = bytearray()
     strings = bytearray()
@@ -255,7 +255,6 @@ def debug_records(*records: tuple) -> tuple[bytes, list[ScpFunctionCallDebugInfo
                 offset = arg_count * ScpFunctionCallDebugInfoArg.SIZE + len(strings)
                 word = ScpValue.Type.String << ScpValue.TYPE_SHIFT | offset
                 strings += value.encode() + STRING_TERMINATOR
-
             else:
                 word = ScpValue(value).to_word()
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Check that the final HLIL keeps every MLIL control path.
+"""Check that the final HLIL keeps every MLIL control path.
 
 HLIL has no goto: the converter restructures the MLIL CFG into ifs, loops and switches, and
 a structuring mistake either loses a path (code that stops running on some input) or invents
@@ -23,7 +23,7 @@ other than the return keys.
 
 Usage:
     python tools/hlil_path_check.py <scp file or directory> [--verbose]
-'''
+"""
 
 import argparse
 import contextlib
@@ -65,10 +65,11 @@ SHOWN_EDGES = 6
 
 @dataclass
 class PathCheckResult:
-    '''Differences between one function's MLIL and HLIL control paths'''
-    missing: List[Tuple] = field(default_factory = list)    # (anchor, next) MLIL has and an HLIL copy lacks
-    extra: List[Tuple] = field(default_factory = list)      # (anchor, next) an HLIL copy has and MLIL lacks
-    uncovered: List[int] = field(default_factory = list)    # reachable calls/stores with no reachable HLIL copy
+    """Differences between one function's MLIL and HLIL control paths"""
+
+    missing: List[Tuple] = field(default_factory=list)      # (anchor, next) MLIL has and an HLIL copy lacks
+    extra: List[Tuple] = field(default_factory=list)        # (anchor, next) an HLIL copy has and MLIL lacks
+    uncovered: List[int] = field(default_factory=list)      # reachable calls/stores with no reachable HLIL copy
     anchors: int = 0
     unstructured: int = 0                                   # reachable unstructured-jump nodes
 
@@ -78,12 +79,12 @@ class PathCheckResult:
 
 
 def is_mandatory_anchor(inst: MediumLevelILInstruction) -> bool:
-    '''Calls and stores have effects outside the function: the HLIL must keep every one'''
+    """Calls and stores have effects outside the function: the HLIL must keep every one"""
     return isinstance(inst, (MediumLevelILCall,) + MLIL_STORES)
 
 
 def is_optional_anchor(inst: MediumLevelILInstruction) -> bool:
-    '''Local assignments and other expression statements: checked where they survive'''
+    """Local assignments and other expression statements: checked where they survive"""
     if isinstance(inst, (MLILIf, MLILGoto, MLILRet, MLILDebug, MLILNop)) or is_mandatory_anchor(inst):
         return False
 
@@ -110,7 +111,8 @@ def mlil_value_key(value: Optional[MediumLevelILInstruction]) -> str:
 
 
 class _Copy:
-    '''One HLIL occurrence of an anchor: a statement, or a call inside one'''
+    """One HLIL occurrence of an anchor: a statement, or a call inside one"""
+
     __slots__ = ('anchor',)
 
     def __init__(self, anchor: int):
@@ -118,7 +120,8 @@ class _Copy:
 
 
 class _UnstructuredJump:
-    '''An unstructured-jump node as a successor'''
+    """An unstructured-jump node as a successor"""
+
     __slots__ = ('target',)
 
     def __init__(self, target: str):
@@ -126,7 +129,7 @@ class _UnstructuredJump:
 
 
 class _ExitTarget:
-    '''A loop or switch that break (for a loop, also continue) leaves: where each one goes'''
+    """A loop or switch that break (for a loop, also continue) leaves: where each one goes"""
 
     def __init__(self, label: Optional[str], is_switch: bool = False):
         self.label = label
@@ -136,7 +139,7 @@ class _ExitTarget:
 
 
 class PathChecker:
-    '''Compares one function's MLIL and final HLIL (see the module docstring)'''
+    """Compares one function's MLIL and final HLIL (see the module docstring)"""
 
     def __init__(self, mlil_func: MediumLevelILFunction, hlil_func: HighLevelILFunction):
         self.mlil_func = mlil_func
@@ -156,7 +159,7 @@ class PathChecker:
     # === MLIL ===
 
     def mlil_successors(self, anchors: Set[int]) -> Tuple[Set[int], Dict[object, Set]]:
-        '''(anchors reachable from the entry, START or anchor -> anchors / return keys run next)'''
+        """(anchors reachable from the entry, START or anchor -> anchors / return keys run next)"""
         blocks = self.mlil_func.basic_blocks
         if not blocks:
             return set(), {START: {'RET'}}
@@ -178,24 +181,19 @@ class PathChecker:
                 inst = block.instructions[j]
                 if inst.inst_index in anchors:
                     result.add(inst.inst_index)
-
                 elif isinstance(inst, MLILIf):
                     truth = constant_condition_truth(inst.condition)
                     if truth is None:
                         targets = [inst.true_target, inst.false_target]
-
                     else:
                         targets = [inst.true_target if truth else inst.false_target]
 
                     stack.extend((t.index, 0) for t in targets if t is not None)
-
                 elif isinstance(inst, MLILGoto):
                     if inst.target is not None:
                         stack.append((inst.target.index, 0))
-
                 elif isinstance(inst, MLILRet):
                     result.add(mlil_value_key(inst.value))
-
                 else:
                     stack.append((b, j + 1))
 
@@ -217,7 +215,7 @@ class PathChecker:
     # === HLIL ===
 
     def is_call_copy(self, node: HLILExpression) -> bool:
-        '''node is the HLIL call built from the MLIL call its provenance names'''
+        """node is the HLIL call built from the MLIL call its provenance names"""
         inst = self.instructions.get(node.mlil_index)
         if isinstance(inst, MLILCall):
             return isinstance(node, HLILCall) and node.func_name == str(inst.target)
@@ -231,7 +229,7 @@ class PathChecker:
         return False
 
     def is_statement_copy(self, stmt: HLILStatement) -> bool:
-        '''stmt writes what the MLIL store or assignment its provenance names writes'''
+        """stmt writes what the MLIL store or assignment its provenance names writes"""
         inst = self.instructions.get(stmt.mlil_index)
         if isinstance(stmt, HLILExprStmt):
             return is_optional_anchor(inst) and not isinstance(inst, MLILSetVar)
@@ -283,7 +281,7 @@ class PathChecker:
         return self.copies[key]
 
     def calls_in(self, expr: Optional[HLILExpression]) -> List[HLILExpression]:
-        '''The anchored calls expr evaluates, in evaluation order (arguments first)'''
+        """The anchored calls expr evaluates, in evaluation order (arguments first)"""
         found: List[HLILExpression] = []
 
         def walk(node: HLILExpression):
@@ -299,7 +297,7 @@ class PathChecker:
         return found
 
     def sequence(self, nodes: List[HLILInstruction], follow: FrozenSet) -> FrozenSet:
-        '''First of running nodes in order, then follow; records each node's successors'''
+        """First of running nodes in order, then follow; records each node's successors"""
         first = follow
         for node in reversed(nodes):
             copy = self.copy_of(node)
@@ -309,7 +307,7 @@ class PathChecker:
         return first
 
     def evaluate(self, expr: Optional[HLILExpression], follow: FrozenSet) -> FrozenSet:
-        '''First of evaluating expr for its value; && and || skip their right side'''
+        """First of evaluating expr for its value; && and || skip their right side"""
         if isinstance(expr, HLILBinaryOp) and expr.op in (BinaryOp.AND, BinaryOp.OR):
             decided = constant_truth(expr.lhs)
             skips_rhs = decided is (expr.op == BinaryOp.OR)
@@ -324,7 +322,7 @@ class PathChecker:
         return self.sequence(self.calls_in(expr), follow)
 
     def branch(self, cond: HLILExpression, on_true: FrozenSet, on_false: FrozenSet) -> FrozenSet:
-        '''First of evaluating a condition, then continuing at on_true or on_false'''
+        """First of evaluating a condition, then continuing at on_true or on_false"""
         truth = constant_truth(cond)
         if truth is not None:
             return self.evaluate(cond, on_true if truth else on_false)
@@ -348,7 +346,7 @@ class PathChecker:
         return first
 
     def statement(self, stmt: HLILStatement, follow: FrozenSet, targets: List[_ExitTarget]) -> FrozenSet:
-        '''First of running stmt, then follow'''
+        """First of running stmt, then follow"""
         if isinstance(stmt, HLILUnstructured):
             return frozenset((self.jumps.setdefault(id(stmt), _UnstructuredJump(stmt.target)),))
 
@@ -369,7 +367,7 @@ class PathChecker:
             return self.evaluate(stmt.value, frozenset((self.hlil_value_key(stmt.value),)))
 
         if isinstance(stmt, (HLILBreak, HLILContinue)):
-            target = resolve_exit_target(targets, stmt.label, loop_only = isinstance(stmt, HLILContinue))
+            target = resolve_exit_target(targets, stmt.label, loop_only=isinstance(stmt, HLILContinue))
             if target is None:
                 return frozenset((f'BAD {stmt}',))
 
@@ -391,7 +389,6 @@ class PathChecker:
                     loop.cont = start
                     body = self.block(stmt.body.statements, start, targets + [loop])
                     new_start = self.branch(stmt.condition, body, follow)
-
                 else:
                     loop.cont = self.branch(stmt.condition, start, follow)
                     new_start = self.block(stmt.body.statements, loop.cont, targets + [loop])
@@ -402,7 +399,7 @@ class PathChecker:
                 start = new_start
 
         if isinstance(stmt, HLILSwitch):
-            switch = _ExitTarget(None, is_switch = True)
+            switch = _ExitTarget(None, is_switch=True)
             switch.after = follow
             cases: FrozenSet = frozenset()
             for case in stmt.cases:
@@ -448,7 +445,7 @@ class PathChecker:
             seen.add(node)
             todo.extend(t for t in self.successors.get(node, ()) if isinstance(t, _Copy))
 
-        result = PathCheckResult(anchors = len(reachable))
+        result = PathCheckResult(anchors=len(reachable))
         covered: Set[int] = set()
         reached_jumps: Set[_UnstructuredJump] = set()
         for node in seen:
@@ -463,8 +460,8 @@ class PathChecker:
             result.missing.extend((anchor, t) for t in mlil_keys - hlil_keys)
             result.extra.extend((anchor, t) for t in hlil_keys - mlil_keys)
 
-        result.missing = sorted(set(result.missing), key = str)
-        result.extra = sorted(set(result.extra), key = str)
+        result.missing = sorted(set(result.missing), key=str)
+        result.extra = sorted(set(result.extra), key=str)
         result.uncovered = sorted((reachable & mandatory) - covered)
         result.unstructured = len(reached_jumps)
         return result
@@ -475,21 +472,20 @@ def check_function(mlil_func: MediumLevelILFunction, hlil_func: HighLevelILFunct
 
 
 def check_file(path: Path) -> List[Tuple[str, Optional[PathCheckResult], Optional[str]]]:
-    '''(function name, result or None, error or None) for every function in path'''
+    """(function name, result or None, error or None) for every function in path"""
     raise_recursion_limit()
     rows = []
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
+        parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
 
     for func in functions:
         try:
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-                llil_func = ED9VMLifter(parser = parser).lift_function(func)
-                mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = True, infer_types = True)
+                llil_func = ED9VMLifter(parser=parser).lift_function(func)
+                mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize=True, infer_types=True)
                 hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
 
             rows.append((func.name, check_function(mlil_func, hlil_func), None))
-
         except Exception as exc:
             rows.append((func.name, None, f'{type(exc).__name__}: {exc}'))
 
@@ -497,9 +493,9 @@ def check_file(path: Path) -> List[Tuple[str, Optional[PathCheckResult], Optiona
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description = 'Check that the final HLIL keeps every MLIL control path')
-    parser.add_argument('scp_file', help = 'Path to an SCP file, or a directory to walk')
-    parser.add_argument('--verbose', action = 'store_true', help = 'List the differing edges of each failing function')
+    parser = argparse.ArgumentParser(description='Check that the final HLIL keeps every MLIL control path')
+    parser.add_argument('scp_file', help='Path to an SCP file, or a directory to walk')
+    parser.add_argument('--verbose', action='store_true', help='List the differing edges of each failing function')
     args = parser.parse_args()
 
     # The pipeline logs every function it translates

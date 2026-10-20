@@ -41,8 +41,8 @@ def disasm_file(input_path: Path, output_path: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description = 'Disassemble .dat files to .py files')
-    parser.add_argument('path', help = 'Input file or directory')
+    parser = argparse.ArgumentParser(description='Disassemble .dat files to .py files')
+    parser.add_argument('path', help='Input file or directory')
     args = parser.parse_args()
 
     input_path = Path(args.path)
@@ -60,12 +60,10 @@ def main():
             return 1
 
         files.append(input_path)
-
     elif input_path.is_dir():
         # Directory
 
         files = [f for f in sorted(input_path.glob('*.dat')) if f.is_file()]
-
     else:
         print(f'Error: {input_path} is neither a file nor a directory')
         return 1

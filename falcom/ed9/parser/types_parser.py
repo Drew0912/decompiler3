@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..disasm import BasicBlock, Instruction
 
+
 class GlobalVar:
     index       : int
     name        : str
@@ -41,10 +42,11 @@ class FunctionParam:
     __repr__ = __str__
 
 
-@dataclass(frozen = True)
+@dataclass(frozen=True)
 class SlotRef:
     """The stack slot an offset opcode addresses, counted from the stack bottom, and what may be in it at that point.
     An empty one is outside the live stack: below it when slot < 0, else at or above sp"""
+
     slot            : int
     params          : tuple[int, ...] = ()  # parameter numbers; arg1 is the highest parameter slot
     local           : bool = False          # a value this function put there
@@ -74,10 +76,11 @@ class SlotRef:
 @dataclass
 class StackLayout:
     """The parser's simulated stack of a disassembled function, kept for comments; keyed by instruction offset"""
-    sp_before       : dict[int, int] = field(default_factory = dict)        # slots on the stack before each instruction
-    slot_refs       : dict[int, SlotRef] = field(default_factory = dict)    # the slot each offset opcode addresses
-    local_slots     : dict[int, int] = field(default_factory = dict)        # an addressed local's instruction -> slot
-    arg_numbers     : dict[int, tuple[int, ...]] = field(default_factory = dict)   # an argument's push -> argN per call
+
+    sp_before       : dict[int, int] = field(default_factory=dict)          # slots on the stack before each instruction
+    slot_refs       : dict[int, SlotRef] = field(default_factory=dict)      # the slot each offset opcode addresses
+    local_slots     : dict[int, int] = field(default_factory=dict)          # an addressed local's instruction -> slot
+    arg_numbers     : dict[int, tuple[int, ...]] = field(default_factory=dict)     # an argument's push -> argN per call
 
 
 class Function(StrictBase):

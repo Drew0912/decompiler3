@@ -1,4 +1,4 @@
-'''High Level Intermediate Language (HLIL)'''
+"""High Level Intermediate Language (HLIL)"""
 
 from .hlil import *
 from .hlil_formatter import *

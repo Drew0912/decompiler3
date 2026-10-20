@@ -77,6 +77,7 @@ EMITTED_SCRIPT_RESERVED_NAMES = {'scena', 'globalvars', 'commonImports', 'main'}
 @dataclass
 class FunctionFacts:
     """What decides a function's inclusion and module - the same for every copy with its fingerprint"""
+
     touches_global: bool        # the exclusion trigger
     call_targets: set[str]      # the closure input
     subsystem: int | None       # the module-grouping key: the first SYSCALL's subsystem
@@ -84,6 +85,7 @@ class FunctionFacts:
 
 class Occurrence(NamedTuple):
     """One is_common_func copy: its fingerprint digest and the corpus file holding it"""
+
     digest: str
     path: Path
 
@@ -91,10 +93,10 @@ class Occurrence(NamedTuple):
 def function_facts(parser: ScpParser, func: Function) -> FunctionFacts:
     instructions = parser.get_instructions(func)
     return FunctionFacts(
-        touches_global  = any(inst.opcode in (ED9Opcode.LOAD_GLOBAL, ED9Opcode.SET_GLOBAL) for inst in instructions),
-        call_targets    = {parser.get_func_name_from_func_id(op.value) for inst in instructions for op in inst.operands
+        touches_global=any(inst.opcode in (ED9Opcode.LOAD_GLOBAL, ED9Opcode.SET_GLOBAL) for inst in instructions),
+        call_targets={parser.get_func_name_from_func_id(op.value) for inst in instructions for op in inst.operands
                            if op.descriptor.type == ED9OperandType.Func},
-        subsystem       = next((inst.operands[0].value for inst in instructions if inst.opcode == ED9Opcode.SYSCALL), None),
+        subsystem=next((inst.operands[0].value for inst in instructions if inst.opcode == ED9Opcode.SYSCALL), None),
     )
 
 
@@ -105,7 +107,7 @@ def collect_occurrences(paths: list[Path]) -> tuple[dict[str, list[Occurrence]],
     facts_by_digest: dict[str, FunctionFacts] = {}
 
     for path in paths:
-        parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
+        parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
 
         for func in functions:
             if not func.is_common_func:
@@ -126,7 +128,7 @@ def select_canonical(occurrences: dict[str, list[Occurrence]]) -> dict[str, Occu
     for name, entries in occurrences.items():
         # Counter keeps first-seen order (entries follow the sorted paths) and max returns the first of equal counts
         counts = Counter(entry.digest for entry in entries)
-        best_digest = max(counts, key = counts.get)
+        best_digest = max(counts, key=counts.get)
         canonical[name] = next(entry for entry in entries if entry.digest == best_digest)
 
     return canonical
@@ -225,8 +227,8 @@ def render_function(parser: ScpParser, func: Function, path: Path, expected_dige
     every other operand its formatted text; the stack comments the scripts get (llil_dsl_comments), always on"""
     instructions, referenced_offsets = verified_render_inputs(parser, func, path, expected_digest)
     formatter_context = FormatterContext(
-        get_func_name_from_func_id = parser.get_func_name_from_func_id,
-        get_global_name_from_index = parser.get_global_name_from_index,
+        get_func_name_from_func_id=parser.get_func_name_from_func_id,
+        get_global_name_from_index=parser.get_global_name_from_index,
     )
     own_module = name_to_module[func.name]
     indent = default_indent()
@@ -248,12 +250,10 @@ def render_function(parser: ScpParser, func: Function, path: Path, expected_dige
         for op in inst.operands:
             if op.descriptor.type == OperandType.Offset:
                 args.append(offset_to_local[op.value])
-
             elif op.descriptor.type == ED9OperandType.Func:
                 callee = parser.get_func_name_from_func_id(op.value)
                 callee_module = name_to_module[callee]
                 args.append(callee if callee_module == own_module else f'{module_alias(callee_module)}.{callee}')
-
             else:
                 args.append(op.descriptor.format_operand(op, formatter_context))
 
@@ -278,7 +278,7 @@ def render_included_functions(canonical: dict[str, Occurrence], included: set[st
     rendered: dict[str, list[str]] = {}
 
     for path, names in names_by_path.items():
-        parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
+        parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
         functions_by_name = {func.name: func for func in functions}
 
         for name in names:
@@ -315,6 +315,7 @@ def render_module(module_key: str, names: list[str], rendered: dict[str, list[st
     lines.append('__all__ = (')
     lines.extend(f'    {name!r},' for name in ordered)
     lines.append(')')
+    lines.append('')
     lines.append('')
 
     for name in ordered:
@@ -372,7 +373,7 @@ def write_output(canonical: dict[str, Occurrence], facts: dict[str, FunctionFact
     for stale in OUTPUT_DIR.glob('*.py'):
         stale.unlink()
 
-    OUTPUT_DIR.mkdir(parents = True, exist_ok = True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     write_text_lf(OUTPUT_DIR / '__init__.py',
                   '"""Generated common-function library modules, one per syscall subsystem"""\n')
 
@@ -419,9 +420,9 @@ def generate(corpus_root: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description = __doc__)
-    parser.add_argument('corpus_root', type = Path,
-                        help = "a game's script folder (script or script_<lang>), e.g. sora2_1.0/script_en")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('corpus_root', type=Path,
+                        help="a game's script folder (script or script_<lang>), e.g. sora2_1.0/script_en")
     args = parser.parse_args()
 
     generate(args.corpus_root)

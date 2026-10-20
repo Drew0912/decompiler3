@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for line_marker_number, LineMarkerRemovalPass and convert_falcom_mlil_to_hlil's line_markers flag: off,
+"""Unit tests for line_marker_number, LineMarkerRemovalPass and convert_falcom_mlil_to_hlil's line_markers flag: off,
 the line(N) comments go once every pass that reads them has run, so the code statements and their order stay, and
-the if arms they leave empty are tidied. Any other comment stays.'''
+the if arms they leave empty are tidied. Any other comment stays."""
 
 from pathlib import Path
 import re
@@ -68,7 +68,7 @@ def condition() -> HLILBinaryOp:
 
 
 def remove_markers(*statements) -> list:
-    '''The body's statements after the pass'''
+    """The body's statements after the pass"""
     func = HighLevelILFunction('line_markers')
     func.body = HLILBlock(list(statements))
     return LineMarkerRemovalPass().run(func).body.statements
@@ -139,8 +139,8 @@ class TestLineMarkerRemoval(unittest.TestCase):
 
 
 class TestLineMarkersFlag(unittest.TestCase):
-    '''convert_falcom_mlil_to_hlil's line_markers: on by default; off, a function with no arm left empty loses only its
-    comments, also where the markers decide the arm order (so the pass must run after branch-order normalization)'''
+    """convert_falcom_mlil_to_hlil's line_markers: on by default; off, a function with no arm left empty loses only its
+    comments, also where the markers decide the arm order (so the pass must run after branch-order normalization)"""
 
     def text(self, **flags) -> list:
         func = build_function('f', with_markers(SOURCE_ORDER))
@@ -150,7 +150,7 @@ class TestLineMarkersFlag(unittest.TestCase):
         self.assertTrue(any(MARKER_LINE.match(line) for line in self.text()))
 
     def test_off_changes_only_the_comments(self):
-        self.assertEqual(self.text(line_markers = False),
+        self.assertEqual(self.text(line_markers=False),
                          [line for line in self.text() if not MARKER_LINE.match(line)])
 
 

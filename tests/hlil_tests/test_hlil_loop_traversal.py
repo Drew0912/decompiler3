@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for uniform HLIL child-block traversal: DeadCodeEliminationPass,
+"""Unit tests for uniform HLIL child-block traversal: DeadCodeEliminationPass,
 CommonReturnExtractionPass and TypeScriptGenerator._infer_return_type see into every loop body,
-a do-while's as well as a while's. Checked on hand-built cases.'''
+a do-while's as well as a while's. Checked on hand-built cases."""
 
 from pathlib import Path
 import sys

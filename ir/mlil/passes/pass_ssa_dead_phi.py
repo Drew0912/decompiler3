@@ -1,8 +1,8 @@
-'''Dead Phi Source Elimination Pass
+"""Dead Phi Source Elimination Pass
 
 Eliminate dead Phi nodes and their source definitions.
 A Phi node is "dead" if its result is never used except by other dead Phi nodes.
-'''
+"""
 
 from typing import Dict, List, Set
 from ir.pipeline import Pass
@@ -21,20 +21,20 @@ from ..mlil_ssa import (
 
 
 class DeadPhiSourceEliminationPass(Pass):
-    '''Eliminate dead Phi nodes and definitions feeding them'''
+    """Eliminate dead Phi nodes and definitions feeding them"""
 
     def __init__(self, sccp_replaced_vars: Set[MLILVariableSSA] = None):
         self.ssa_uses: Dict[MLILVariableSSA, List[MediumLevelILInstruction]] = {}
         self.sccp_replaced_vars = sccp_replaced_vars or set()
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
-        '''Run dead phi elimination'''
+        """Run dead phi elimination"""
         self._build_info(func)
         self._eliminate_dead_phis(func)
         return func
 
     def _build_info(self, func: MediumLevelILFunction):
-        '''Build SSA use chains'''
+        """Build SSA use chains"""
         self.ssa_uses = {}
 
         for block in func.basic_blocks:
@@ -43,7 +43,7 @@ class DeadPhiSourceEliminationPass(Pass):
                     self.ssa_uses.setdefault(var, []).append(inst)
 
     def _eliminate_dead_phis(self, func: MediumLevelILFunction):
-        '''Eliminate dead Phi nodes and definitions feeding them'''
+        """Eliminate dead Phi nodes and definitions feeding them"""
         # Find all Phi nodes with no real use
         dead_phis: Set[MLILPhi] = set()
         for block in func.basic_blocks:
@@ -93,7 +93,7 @@ class DeadPhiSourceEliminationPass(Pass):
             block.instructions = new_instructions
 
     def _has_real_use(self, start_var: MLILVariableSSA) -> bool:
-        '''Check if variable has any real (non-Phi) use through Phi chains'''
+        """Check if variable has any real (non-Phi) use through Phi chains"""
         visited = set()
         queue = [start_var]
 
@@ -108,7 +108,6 @@ class DeadPhiSourceEliminationPass(Pass):
                 if isinstance(use, MLILPhi):
                     # Follow Phi chain
                     queue.append(use.dest)
-
                 else:
                     # Found a real use
                     return True

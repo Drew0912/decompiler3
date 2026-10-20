@@ -22,7 +22,7 @@ if TYPE_CHECKING:                                   # Pylance only - never impor
 
 
 @replace_function('CheckAlgoUse')
-def CheckAlgoUse(arg1, arg2, arg3 = 5):             # types from the original; arg3 gains the default 5
+def CheckAlgoUse(arg1, arg2, arg3=5):               # types from the original; arg3 gains the default 5
     PUSH_CURRENT_FUNC_ID()                          # a local call, as the decompiler prints one
     PUSH_RET_ADDR('hook_skill_table_ret')
     CALL(SkillTable)                                # a script function, by its plain name
@@ -190,6 +190,7 @@ def run_hook(g):
     ]:
         add_function(func)
 
+
 registerRunCallback(run_hook)
 ```
 
@@ -228,10 +229,12 @@ DSL scripts (LLIL DSL Hooks, above): the raw callbacks, `@replace_function`, `@a
 # chr0000_hook.py
 from ed9_hlil import *
 
+
 @replace_function('AniBtlCraft05Main')
 def AniBtlCraft05Main(arg1: Value32 = 0):
     effect_load(65534, 5040, "battle/cr0000_50_9", 1)
     inline_original_func()
+
 
 @add_function
 def GiveAllItems():
@@ -239,9 +242,11 @@ def GiveAllItems():
         item_add(item, 1, 0)
     Return()
 
+
 def funcCallBack(name, func):
     if name.startswith('AniBtl'):
         ...
+
 
 registerFuncCallback(funcCallBack)
 ```

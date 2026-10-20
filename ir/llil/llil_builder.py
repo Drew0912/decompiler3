@@ -1,4 +1,4 @@
-'''LLIL Builder'''
+"""LLIL Builder"""
 
 from dataclasses import dataclass
 from typing import Union, Optional, List, NamedTuple, Tuple
@@ -8,7 +8,7 @@ from .llil import *
 
 
 class _VirtualStack:
-    '''Encapsulates the builder's virtual stack with save/restore support.'''
+    """Encapsulates the builder's virtual stack with save/restore support."""
 
     def __init__(self):
         self._items: List[LowLevelILExpr] = []
@@ -27,7 +27,7 @@ class _VirtualStack:
         return self._items[offset]
 
     def peek_many(self, count: int) -> List[LowLevelILExpr]:
-        '''Peek last count items (LIFO order)'''
+        """Peek last count items (LIFO order)"""
         if len(self._items) < count:
             raise RuntimeError(f'Vstack has only {len(self._items)} items, cannot peek {count}')
 
@@ -38,9 +38,9 @@ class _VirtualStack:
         return len(self._items)
 
     def index_of_slot(self, slot_index: int) -> Optional[int]:
-        '''List index of the entry tracking slot_index, or None if that slot is not tracked. The entries track
+        """List index of the entry tracking slot_index, or None if that slot is not tracked. The entries track
         consecutive slots ending at sp - 1 (push appends at sp, pops and _discard_vstack_to remove from the top), so
-        the index is the slot's distance from the bottom entry's'''
+        the index is the slot's distance from the bottom entry's"""
         items = self._items
         if not items:
             return None
@@ -65,8 +65,9 @@ class _VirtualStack:
 
 
 class StackShape(NamedTuple):
-    '''What code after an edge observes of a stack state apart from slot values: predecessors may push
-    different values into one slot (SSA merges them), but must agree on the stack layout.'''
+    """What code after an edge observes of a stack state apart from slot values: predecessors may push
+    different values into one slot (SSA merges them), but must agree on the stack layout."""
+
     sp: int
     slots: Tuple[int, ...]
 
@@ -81,7 +82,7 @@ class StackSnapshot:
 
 
 class LowLevelILBuilder:
-    '''Mid-level builder with convenience methods'''
+    """Mid-level builder with convenience methods"""
 
     PARAMETER_COPY_HINT = 'work on a copy instead'
 
@@ -101,43 +102,42 @@ class LowLevelILBuilder:
     # === Function and Block Creation ===
 
     def create_function(self, name: str, start_addr: int, params: Union[List[IRParameter], int] = None, *, num_params: int = None, is_common_func: bool = False):
-        '''Create function inside builder
+        """Create function inside builder
 
         Args:
             params: List of IRParameter, or int for backward compatibility (num_params)
             num_params: Deprecated, use params instead
             is_common_func: Whether this is a shared/included function (syscall wrapper)
-        '''
+        """
         if self.function is not None:
             raise RuntimeError('Function already created')
 
         # Handle backward compatibility: num_params keyword or int positional
         if num_params is not None:
             params = [IRParameter(f'arg{i + 1}') for i in range(num_params)]
-
         elif isinstance(params, int):
             params = [IRParameter(f'arg{i + 1}') for i in range(params)]
 
-        self.function = LowLevelILFunction(name, start_addr, params, is_common_func = is_common_func)
+        self.function = LowLevelILFunction(name, start_addr, params, is_common_func=is_common_func)
         self._seed_entry_state()
 
     def _seed_entry_state(self):
-        '''The entry block starts with only the parameters on the stack (fp = 0 points at the first one), none
-        of them tracked on the vstack. Recorded directly - it is the entry's state, not an edge.'''
+        """The entry block starts with only the parameters on the stack (fp = 0 points at the first one), none
+        of them tracked on the vstack. Recorded directly - it is the entry's state, not an edge."""
         self.__sp_set(self.function.num_params)
         self.frame_base_sp = 0
         self.function.frame_base_sp = 0
         self.saved_stacks[self.function.start_addr] = self.save_stack_state()
 
     def create_basic_block(self, start: int, label: str = None) -> LowLevelILBasicBlock:
-        '''Create basic block and automatically add to function'''
+        """Create basic block and automatically add to function"""
         if self.function is None:
             raise RuntimeError('No function created. Call create_function() first.')
 
         # Get next block index
         index = len(self.function.basic_blocks)
         # Create block
-        block = LowLevelILBasicBlock(start, index, label = label)
+        block = LowLevelILBasicBlock(start, index, label=label)
         # Automatically add to function
         self.function.add_basic_block(block)
         return block
@@ -155,20 +155,19 @@ class LowLevelILBuilder:
     # === Stack Pointer Management (Public Interface) ===
 
     def sp_get(self) -> int:
-        '''Get current stack pointer value'''
+        """Get current stack pointer value"""
         return self.__current_sp
 
     def __sp_set(self, value: int):
-        '''Set shadow SP to absolute value (does NOT emit IL) - PRIVATE'''
+        """Set shadow SP to absolute value (does NOT emit IL) - PRIVATE"""
         self.__current_sp = value
 
     def __sp_adjust(self, delta: int):
-        '''Adjust shadow SP by delta (does NOT emit IL) - PRIVATE'''
+        """Adjust shadow SP by delta (does NOT emit IL) - PRIVATE"""
         self.__current_sp += delta
 
     def _cleanup_stack(self, argc: int) -> list[LowLevelILExpr]:
-        '''Clean up stack and vstack without emitting IL - PRIVATE'''
-
+        """Clean up stack and vstack without emitting IL - PRIVATE"""
         popped_values = []
 
         if argc > 0:
@@ -180,7 +179,7 @@ class LowLevelILBuilder:
         return popped_values
 
     def emit_sp_add(self, delta: int, *, hidden_for_formatter: bool = False) -> LowLevelILSpAdd:
-        '''Emit SpAdd IL and sync shadow sp (single entry point for SP changes)'''
+        """Emit SpAdd IL and sync shadow sp (single entry point for SP changes)"""
         sp_add = LowLevelILSpAdd(delta)
         if hidden_for_formatter:
             sp_add.options.hidden_for_formatter = True
@@ -189,7 +188,7 @@ class LowLevelILBuilder:
         return sp_add
 
     def _discard_vstack_to(self, new_sp: int):
-        '''Sync the vstack after a bulk stack-pointer decrease.'''
+        """Sync the vstack after a bulk stack-pointer decrease."""
         while self.__vstack.size() and self.__vstack.peek().slot_index >= new_sp:
             self.__vstack_pop()
 
@@ -207,39 +206,38 @@ class LowLevelILBuilder:
     # === Virtual Stack Management (Public Interface) ===
 
     def __vstack_push(self, expr: LowLevelILExpr):
-        '''Push expression to vstack (only accepts LowLevelILExpr)'''
+        """Push expression to vstack (only accepts LowLevelILExpr)"""
         if not isinstance(expr, LowLevelILExpr):
             raise TypeError(f'vstack only accepts LowLevelILExpr, got {type(expr).__name__}')
         self.__vstack.push(expr)
 
     def __vstack_pop(self) -> LowLevelILExpr:
-        '''Pop expression from vstack (returns LowLevelILExpr)'''
+        """Pop expression from vstack (returns LowLevelILExpr)"""
         return self.__vstack.pop()
 
     def vstack_peek(self, offset: int = -1) -> LowLevelILExpr:
-        '''Peek at top of vstack without popping (returns LowLevelILExpr)'''
+        """Peek at top of vstack without popping (returns LowLevelILExpr)"""
         return self.__vstack.peek(offset)
 
     def vstack_peek_many(self, count: int) -> List[LowLevelILExpr]:
-        '''Peek at multiple items from vstack in LIFO order'''
+        """Peek at multiple items from vstack in LIFO order"""
         self._require_tracked(count)
         return self.__vstack.peek_many(count)
 
     def vstack_size(self) -> int:
-        '''Get current vstack size'''
+        """Get current vstack size"""
         return self.__vstack.size()
 
     def vstack_entry_at_slot(self, slot_index: int) -> Optional[LowLevelILExpr]:
-        '''The vstack entry tracking slot_index, or None if that slot is not on the vstack'''
+        """The vstack entry tracking slot_index, or None if that slot is not on the vstack"""
         index = self.__vstack.index_of_slot(slot_index)
         return None if index is None else self.__vstack.peek(index)
 
     def _refresh_stored_slot(self, store: Union[LowLevelILStackStore, LowLevelILFrameStore]):
-        '''An in-place store gives its slot a new value, so a vstack entry still tracking that slot
-        is replaced by a fresh StackLoad - identity checks on the old entry then see the overwrite.'''
+        """An in-place store gives its slot a new value, so a vstack entry still tracking that slot
+        is replaced by a fresh StackLoad - identity checks on the old entry then see the overwrite."""
         if isinstance(store, LowLevelILStackStore):
             slot_index = store.slot_index
-
         else:
             slot_index = self.frame_base_sp + store.offset // WORD_SIZE
 
@@ -247,42 +245,42 @@ class LowLevelILBuilder:
         if index is None:
             return
 
-        self.__vstack.replace(index, LowLevelILStackLoad(offset = 0, slot_index = slot_index))
+        self.__vstack.replace(index, LowLevelILStackLoad(offset=0, slot_index=slot_index))
 
     def _require_registered_block(self, block: LowLevelILBasicBlock):
-        '''Raise unless block belongs to this function.'''
+        """Raise unless block belongs to this function."""
         if not self.function.owns_block(block):
             name = block.label if isinstance(block, LowLevelILBasicBlock) else repr(block)
             raise RuntimeError(f'{name} is not a block of {self.function.name}')
 
     def _start_block(self, block: LowLevelILBasicBlock):
-        '''Start a registered block using the active stack state (create_function seeds the entry's).'''
+        """Start a registered block using the active stack state (create_function seeds the entry's)."""
         self.current_block = block
         block.sp_in = self.sp_get()
 
     def set_current_block(self, block: LowLevelILBasicBlock):
-        '''Set the current basic block for instruction insertion'''
+        """Set the current basic block for instruction insertion"""
         self._require_registered_block(block)
         self._start_block(block)
 
     def begin_block(self, block: LowLevelILBasicBlock):
-        '''Restore `block`'s recorded stack state and open it.'''
+        """Restore `block`'s recorded stack state and open it."""
         self._require_registered_block(block)
         self.restore_stack_for_offset(block.start)
         self._start_block(block)
 
     def save_stack_state(self) -> StackSnapshot:
-        '''Snapshot current stack pointer and virtual stack'''
+        """Snapshot current stack pointer and virtual stack"""
         return StackSnapshot(self.sp_get(), self.__vstack.snapshot())
 
     def restore_stack_state(self, snapshot: StackSnapshot):
-        '''Restore a trusted snapshot; its tracked slots determine slot storage.'''
+        """Restore a trusted snapshot; its tracked slots determine slot storage."""
         self.__sp_set(snapshot.sp)
         self.__vstack.restore(snapshot.values)
 
     def save_stack_for_offset(self, offset: int):
-        '''Merge the current stack state into `offset`'s: the first merge records it, every later one must
-        bring the same shape. Records no CFG edge - terminals record theirs via _record_edge_state.'''
+        """Merge the current stack state into `offset`'s: the first merge records it, every later one must
+        bring the same shape. Records no CFG edge - terminals record theirs via _record_edge_state."""
         snapshot = self.save_stack_state()
         recorded = self.saved_stacks.get(offset)
         if recorded is None:
@@ -298,7 +296,7 @@ class LowLevelILBuilder:
             )
 
     def restore_stack_for_offset(self, offset: int):
-        '''Restore the stack state recorded for `offset`'''
+        """Restore the stack state recorded for `offset`"""
         snapshot = self.saved_stacks.get(offset)
         if snapshot is None:
             raise RuntimeError(f'No stack state recorded for the block at {offset:#x} - no lifted edge reaches it')
@@ -306,8 +304,8 @@ class LowLevelILBuilder:
         self.restore_stack_state(snapshot)
 
     def _record_edge_state(self, terminal: LowLevelILInstruction, target: LowLevelILBasicBlock):
-        '''Record the CFG edge terminal -> target and merge the stack state it carries into target - only while
-        terminal still ends the current block, so the state is the one the edge carries.'''
+        """Record the CFG edge terminal -> target and merge the stack state it carries into target - only while
+        terminal still ends the current block, so the state is the one the edge carries."""
         self._require_registered_block(target)
         block = self.current_block
         if block is None or not block.instructions or block.instructions[-1] is not terminal:
@@ -319,8 +317,8 @@ class LowLevelILBuilder:
         self.save_stack_for_offset(target.start)
 
     def _require_recorded_edges(self):
-        '''After build_cfg: the recorded edges must be exactly the CFG's, so every real edge had its stack
-        state checked and no stale or manual record stands in for one.'''
+        """After build_cfg: the recorded edges must be exactly the CFG's, so every real edge had its stack
+        state checked and no stale or manual record stands in for one."""
         cfg_edges = {
             (block, block.instructions[-1], target)
             for block in self.function.basic_blocks
@@ -328,7 +326,7 @@ class LowLevelILBuilder:
         }
 
         def first(edges):
-            return min(edges, key = lambda edge: (edge[0].index, edge[2].index))
+            return min(edges, key=lambda edge: (edge[0].index, edge[2].index))
 
         missing = cfg_edges - self._recorded_edges
         if missing:
@@ -341,15 +339,15 @@ class LowLevelILBuilder:
             raise RuntimeError(f'Recorded edge {block.block_name} -> {target.block_name} is not a CFG edge')
 
     def get_block_by_addr(self, addr: int) -> Optional[LowLevelILBasicBlock]:
-        '''Get block by start address'''
+        """Get block by start address"""
         return self.function.get_block_by_addr(addr)
 
     def get_block_by_label(self, label: str) -> Optional[LowLevelILBasicBlock]:
-        '''Get block by label name'''
+        """Get block by label name"""
         return self.function.get_block_by_label(label)
 
     def add_instruction(self, inst: LowLevelILInstruction):
-        '''Add instruction to current block and update stack pointer tracking'''
+        """Add instruction to current block and update stack pointer tracking"""
         if self.current_block is None:
             raise RuntimeError('No current basic block set')
 
@@ -361,99 +359,93 @@ class LowLevelILBuilder:
         # Update stack pointer based on instruction type
         if isinstance(inst, LowLevelILSpAdd):
             self.__sp_adjust(inst.delta)
-
         elif isinstance(inst, (LowLevelILStackStore, LowLevelILFrameStore)):
             self._refresh_stored_slot(inst)
 
     # === Virtual Stack Management ===
 
     def _to_expr(self, value: Union[LowLevelILExpr, int, float, str]) -> LowLevelILExpr:
-        '''Convert value to expression (always returns LowLevelILExpr)'''
+        """Convert value to expression (always returns LowLevelILExpr)"""
         if isinstance(value, LowLevelILExpr):
             return value
-
         elif isinstance(value, LowLevelILInstruction):
             # Should not happen - only Expr should be passed
             raise TypeError(f'Expected LowLevelILExpr, got {type(value).__name__}. Statements cannot be used as expressions.')
-
         elif isinstance(value, int):
             return self.const_int(value)
-
         elif isinstance(value, float):
             return self.const_float(value)
-
         elif isinstance(value, str):
             return self.const_str(value)
-
         else:
             raise TypeError(f'Cannot convert {type(value)} to expression')
 
     def push(self, value: Union[LowLevelILExpr, int, float, str], *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
-        '''Push value onto stack: StackStore + SpAdd (see docs/llil/LLIL_DESIGN.md)'''
+        """Push value onto stack: StackStore + SpAdd (see docs/llil/LLIL_DESIGN.md)"""
         expr = self._to_expr(value)
         slot_index = self.sp_get()
         # 1. StackStore(sp+0, value)
-        self.add_instruction(LowLevelILStackStore(expr, offset = 0, slot_index = slot_index))
+        self.add_instruction(LowLevelILStackStore(expr, offset=0, slot_index=slot_index))
         # 2. SpAdd(+1)
-        self.emit_sp_add(1, hidden_for_formatter = hidden_for_formatter)
+        self.emit_sp_add(1, hidden_for_formatter=hidden_for_formatter)
         # Track on vstack: always use StackLoad reference
         # SCCP will propagate constants where needed
-        self.__vstack_push(LowLevelILStackLoad(offset = 0, slot_index = slot_index))
+        self.__vstack_push(LowLevelILStackLoad(offset=0, slot_index=slot_index))
 
         return expr
 
     def pop(self, *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
-        '''Pop value from stack and emit SpAdd'''
+        """Pop value from stack and emit SpAdd"""
         self._require_tracked(1)
-        self.emit_sp_add(-1, hidden_for_formatter = hidden_for_formatter)
+        self.emit_sp_add(-1, hidden_for_formatter=hidden_for_formatter)
         return self.__vstack_pop()
 
     # === Stack and Frame Operations ===
 
     def stack_load(self, offset: int, slot_index: int) -> LowLevelILStackLoad:
-        '''STACK[sp + offset] (no sp change) - returns expression'''
-        return LowLevelILStackLoad(offset = offset, slot_index = slot_index)
+        """STACK[sp + offset] (no sp change) - returns expression"""
+        return LowLevelILStackLoad(offset=offset, slot_index=slot_index)
 
     def stack_store(self, value: Union[LowLevelILExpr, int, str], offset: int):
-        '''STACK[sp + offset] = value (no sp change)'''
+        """STACK[sp + offset] = value (no sp change)"""
         self._store_slot(self._to_expr(value), self._slot_index(offset), offset)
 
     def frame_load(self, offset: int) -> 'LowLevelILFrameLoad':
-        '''STACK[frame + offset] - Frame-relative load (for function parameters)'''
+        """STACK[frame + offset] - Frame-relative load (for function parameters)"""
         return LowLevelILFrameLoad(offset)
 
     def frame_store(self, value: Union[LowLevelILExpr, int, str], offset: int):
-        '''STACK[frame + offset] = value - Frame-relative store (for function parameters)'''
+        """STACK[frame + offset] = value - Frame-relative store (for function parameters)"""
         expr = self._to_expr(value)
         self.add_instruction(LowLevelILFrameStore(expr, offset))
 
     def load_frame(self, offset: int):
-        '''Load from frame + offset and push to stack'''
+        """Load from frame + offset and push to stack"""
         frame_val = self.frame_load(offset)
         self.push(frame_val)
 
     def frame_addr(self, offset: int) -> 'LowLevelILFrameAddr':
-        '''&STACK[frame + offset] - Frame-relative address (for function parameters)'''
+        """&STACK[frame + offset] - Frame-relative address (for function parameters)"""
         return LowLevelILFrameAddr(offset)
 
     # === Slot Storage (one rule for every access by slot) ===
 
     def _slot_index(self, offset: int) -> int:
-        '''Absolute slot of the byte offset from sp'''
+        """Absolute slot of the byte offset from sp"""
         return self.sp_get() + offset // WORD_SIZE
 
     def _is_param_slot(self, slot_index: int) -> bool:
-        '''The caller pushed the arguments into the slots starting at the frame base'''
+        """The caller pushed the arguments into the slots starting at the frame base"""
         return self.frame_base_sp <= slot_index < self.frame_base_sp + self.function.num_params
 
     def _param_position(self, slot_index: int) -> int:
-        '''1-based position of the parameter in slot_index: arguments are pushed right to left, so the first parameter
-        is in the highest slot'''
+        """1-based position of the parameter in slot_index: arguments are pushed right to left, so the first parameter
+        is in the highest slot"""
         return self.function.num_params - (slot_index - self.frame_base_sp)
 
     def _untracked_parameters(self, count: int) -> Optional[str]:
-        '''The parameter slots among the top count slots, described ('the slot of parameter 1 (arg1)'), when the vstack
-        runs short of count only by them; None when it holds count entries or a missing slot isn't a parameter's'''
+        """The parameter slots among the top count slots, described ('the slot of parameter 1 (arg1)'), when the vstack
+        runs short of count only by them; None when it holds count entries or a missing slot isn't a parameter's"""
         sp = self.sp_get()
         missing = range(sp - count, sp - self.__vstack.size())
         if not missing or not all(self._is_param_slot(slot) for slot in missing):
@@ -467,9 +459,9 @@ class LowLevelILBuilder:
         return f'the slots of parameters {positions[0]}-{positions[-1]} ({names})'
 
     def _require_tracked(self, count: int):
-        '''The top count slots must be values the function pushed. The vstack tracks every push but no parameter, so
+        """The top count slots must be values the function pushed. The vstack tracks every push but no parameter, so
         running short there is an opcode using parameter slots in place, which the lift doesn't follow; any other
-        shortfall is left to the vstack's own error'''
+        shortfall is left to the vstack's own error"""
         parameters = self._untracked_parameters(count)
         if parameters is not None:
             raise RuntimeError(
@@ -477,9 +469,9 @@ class LowLevelILBuilder:
             )
 
     def _holds_parameter(self, slot_index: int) -> bool:
-        '''Whether slot_index still holds the caller's parameter, so accesses to it are frame-relative (argN).
+        """Whether slot_index still holds the caller's parameter, so accesses to it are frame-relative (argN).
         A push starts a new lifetime - in a parameter slot too - and the vstack tracks every pushed slot until
-        it is popped, never a parameter: a live parameter is a parameter slot below sp that no entry tracks.'''
+        it is popped, never a parameter: a live parameter is a parameter slot below sp that no entry tracks."""
         return (
             self._is_param_slot(slot_index)
             and slot_index < self.sp_get()
@@ -487,11 +479,11 @@ class LowLevelILBuilder:
         )
 
     def _frame_offset(self, slot_index: int) -> int:
-        '''Byte offset of slot_index from the frame base'''
+        """Byte offset of slot_index from the frame base"""
         return (slot_index - self.frame_base_sp) * WORD_SIZE
 
     def _require_slot_in_frame(self, slot_index: int, access: str):
-        '''A slot below the frame base is the caller's, so no access to it is modelled'''
+        """A slot below the frame base is the caller's, so no access to it is modelled"""
         if slot_index < self.frame_base_sp:
             raise NotImplementedError(
                 f'{access} of slot {slot_index} below the stack (frame base {self.frame_base_sp}) is not supported - '
@@ -499,8 +491,8 @@ class LowLevelILBuilder:
             )
 
     def _require_live_slot(self, slot_index: int, access: str):
-        '''Only a slot from the frame base up to sp holds a live value, so reading any other slot or taking its address
-        is not modelled'''
+        """Only a slot from the frame base up to sp holds a live value, so reading any other slot or taking its address
+        is not modelled"""
         self._require_slot_in_frame(slot_index, access)
         if slot_index >= self.sp_get():
             raise NotImplementedError(
@@ -509,7 +501,7 @@ class LowLevelILBuilder:
             )
 
     def _load_slot(self, slot_index: int, offset: int) -> LowLevelILExpr:
-        '''Read of a live slot (offset: its byte offset from sp)'''
+        """Read of a live slot (offset: its byte offset from sp)"""
         self._require_live_slot(slot_index, 'Read')
         if self._holds_parameter(slot_index):
             return self.frame_load(self._frame_offset(slot_index))
@@ -517,7 +509,7 @@ class LowLevelILBuilder:
         return self.stack_load(offset, slot_index)
 
     def _slot_address(self, slot_index: int) -> LowLevelILExpr:
-        '''Address of a live slot'''
+        """Address of a live slot"""
         self._require_live_slot(slot_index, 'Address')
         if self._holds_parameter(slot_index):
             return self.frame_addr(self._frame_offset(slot_index))
@@ -525,61 +517,60 @@ class LowLevelILBuilder:
         return LowLevelILStackAddr(slot_index)
 
     def _store_slot(self, value: LowLevelILExpr, slot_index: int, offset: int):
-        '''In-place store (offset: the slot's byte offset from sp); a slot at or above sp is a dead stack slot'''
+        """In-place store (offset: the slot's byte offset from sp); a slot at or above sp is a dead stack slot"""
         self._require_slot_in_frame(slot_index, 'Store')
         if self._holds_parameter(slot_index):
             self.frame_store(value, self._frame_offset(slot_index))
-
         else:
-            self.add_instruction(LowLevelILStackStore(value, offset = offset, slot_index = slot_index))
+            self.add_instruction(LowLevelILStackStore(value, offset=offset, slot_index=slot_index))
 
     def load_stack(self, offset: int):
-        '''Load from sp + offset and push to stack'''
+        """Load from sp + offset and push to stack"""
         self.push(self._load_slot(self._slot_index(offset), offset))
 
     def push_stack_addr(self, offset: int):
-        '''Push the address of stack location (sp + offset)'''
+        """Push the address of stack location (sp + offset)"""
         self.push(self._slot_address(self._slot_index(offset)))
 
     # === Register Operations ===
 
     def reg_store(self, reg_index: int, value: Union[LowLevelILExpr, int]):
-        '''R[index] = value (store expression to register)'''
+        """R[index] = value (store expression to register)"""
         expr = self._to_expr(value)
         self.add_instruction(LowLevelILRegStore(reg_index, expr))
 
     def reg_load(self, reg_index: int) -> LowLevelILRegLoad:
-        '''R[index]'''
+        """R[index]"""
         return LowLevelILRegLoad(reg_index)
 
     # === Constants ===
 
     def const_int(self, value: int, is_hex: bool = False) -> LowLevelILConst:
-        '''Integer constant'''
+        """Integer constant"""
         return LowLevelILConst(value, is_hex)
 
     def const_float(self, value: float) -> LowLevelILConst:
-        '''Float constant'''
+        """Float constant"""
         return LowLevelILConst(value, False)
 
     def const_str(self, value: str) -> LowLevelILConst:
-        '''String constant'''
+        """String constant"""
         return LowLevelILConst(value, False)
 
     def const_raw(self, value: int) -> LowLevelILConst:
-        '''Raw constant (type-less, displayed as hex)'''
-        return LowLevelILConst(value, is_hex = False, is_raw = True)
+        """Raw constant (type-less, displayed as hex)"""
+        return LowLevelILConst(value, is_hex=False, is_raw=True)
 
     # === Binary Operations ===
 
-    def _binary_op(self, op_class, lhs = None, rhs = None, *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
-        '''Generic binary operation handler'''
+    def _binary_op(self, op_class, lhs=None, rhs=None, *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
+        """Generic binary operation handler"""
         # Get operands - both must be None or both must be provided
         if lhs is None and rhs is None:
             # Implicit mode: pop both from vstack (emit SpAdd for each); checked together, to name both parameters
             self._require_tracked(2)
-            rhs = self.pop(hidden_for_formatter = hidden_for_formatter)  # First pop gets right operand (top of stack)
-            lhs = self.pop(hidden_for_formatter = hidden_for_formatter)  # Second pop gets left operand (below it)
+            rhs = self.pop(hidden_for_formatter=hidden_for_formatter)  # First pop gets right operand (top of stack)
+            lhs = self.pop(hidden_for_formatter=hidden_for_formatter)  # Second pop gets left operand (below it)
         elif lhs is not None and rhs is not None:
             # Explicit mode: both provided
             lhs = self._to_expr(lhs)
@@ -591,112 +582,112 @@ class LowLevelILBuilder:
         op = op_class(lhs, rhs)
 
         # Pushed as a statement: push() sets slot_index and maintains sp
-        self.push(op, hidden_for_formatter = hidden_for_formatter)
+        self.push(op, hidden_for_formatter=hidden_for_formatter)
 
         return op
 
-    def add(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''ADD operation - computes lhs + rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILAdd, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def add(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """ADD operation - computes lhs + rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILAdd, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def sub(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''SUB operation - computes lhs - rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILSub, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def sub(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """SUB operation - computes lhs - rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILSub, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def mul(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''MUL operation - computes lhs * rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILMul, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def mul(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """MUL operation - computes lhs * rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILMul, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def div(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''DIV operation - computes lhs / rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILDiv, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def div(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """DIV operation - computes lhs / rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILDiv, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def mod(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''MOD operation - computes lhs % rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILMod, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def mod(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """MOD operation - computes lhs % rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILMod, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
     # === Comparison Operations ===
 
-    def eq(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''EQ operation - computes lhs == rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILEq, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def eq(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """EQ operation - computes lhs == rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILEq, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def ne(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''NE operation - computes lhs != rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILNe, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def ne(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """NE operation - computes lhs != rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILNe, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def lt(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''LT operation - computes lhs < rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILLt, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def lt(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """LT operation - computes lhs < rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILLt, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def le(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''LE operation - computes lhs <= rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILLe, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def le(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """LE operation - computes lhs <= rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILLe, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def gt(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''GT operation - computes lhs > rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILGt, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def gt(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """GT operation - computes lhs > rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILGt, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def ge(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''GE operation - computes lhs >= rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILGe, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def ge(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """GE operation - computes lhs >= rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILGe, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
     # === Bitwise Operations ===
 
-    def bitwise_and(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''Bitwise AND operation - computes lhs & rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILAnd, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def bitwise_and(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """Bitwise AND operation - computes lhs & rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILAnd, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def bitwise_or(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''Bitwise OR operation - computes lhs | rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILOr, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def bitwise_or(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """Bitwise OR operation - computes lhs | rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILOr, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
     # === Logical Operations ===
 
-    def logical_and(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''Logical AND operation - computes lhs && rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILLogicalAnd, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def logical_and(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """Logical AND operation - computes lhs && rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILLogicalAnd, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
-    def logical_or(self, lhs = None, rhs = None, *, hidden_for_formatter: bool = True):
-        '''Logical OR operation - computes lhs || rhs (pops rhs first, then lhs)'''
-        return self._binary_op(LowLevelILLogicalOr, lhs, rhs, hidden_for_formatter = hidden_for_formatter)
+    def logical_or(self, lhs=None, rhs=None, *, hidden_for_formatter: bool = True):
+        """Logical OR operation - computes lhs || rhs (pops rhs first, then lhs)"""
+        return self._binary_op(LowLevelILLogicalOr, lhs, rhs, hidden_for_formatter=hidden_for_formatter)
 
     # === Unary Operations ===
 
-    def neg(self, operand = None, *, hidden_for_formatter: bool = True):
-        '''NEG operation - arithmetic negation -x (pops operand if not provided)'''
+    def neg(self, operand=None, *, hidden_for_formatter: bool = True):
+        """NEG operation - arithmetic negation -x (pops operand if not provided)"""
         if operand is None:
-            operand = self.pop(hidden_for_formatter = hidden_for_formatter)
+            operand = self.pop(hidden_for_formatter=hidden_for_formatter)
         else:
             operand = self._to_expr(operand)
         op = LowLevelILNeg(operand)
-        self.push(op, hidden_for_formatter = hidden_for_formatter)
+        self.push(op, hidden_for_formatter=hidden_for_formatter)
         return op
 
-    def bitwise_not(self, operand = None, *, hidden_for_formatter: bool = True):
-        '''NOT operation - bitwise NOT ~x (pops operand if not provided)'''
+    def bitwise_not(self, operand=None, *, hidden_for_formatter: bool = True):
+        """NOT operation - bitwise NOT ~x (pops operand if not provided)"""
         if operand is None:
-            operand = self.pop(hidden_for_formatter = hidden_for_formatter)
+            operand = self.pop(hidden_for_formatter=hidden_for_formatter)
         else:
             operand = self._to_expr(operand)
         op = LowLevelILBitwiseNot(operand)
-        self.push(op, hidden_for_formatter = hidden_for_formatter)
+        self.push(op, hidden_for_formatter=hidden_for_formatter)
         return op
 
-    def test_zero(self, operand = None, *, hidden_for_formatter: bool = True):
-        '''TEST_ZERO operation - test if x == 0 (pops operand if not provided)'''
+    def test_zero(self, operand=None, *, hidden_for_formatter: bool = True):
+        """TEST_ZERO operation - test if x == 0 (pops operand if not provided)"""
         if operand is None:
-            operand = self.pop(hidden_for_formatter = hidden_for_formatter)
+            operand = self.pop(hidden_for_formatter=hidden_for_formatter)
         else:
             operand = self._to_expr(operand)
         op = LowLevelILTestZero(operand)
-        self.push(op, hidden_for_formatter = hidden_for_formatter)
+        self.push(op, hidden_for_formatter=hidden_for_formatter)
         return op
 
     # === Control Flow ===
 
     def _resolve_block(self, target: Union[str, LowLevelILBasicBlock]) -> LowLevelILBasicBlock:
-        '''A jump target given as a block or a label name, checked to be one of this function's blocks'''
+        """A jump target given as a block or a label name, checked to be one of this function's blocks"""
         if not isinstance(target, str):
             self._require_registered_block(target)
             return target
@@ -708,7 +699,7 @@ class LowLevelILBuilder:
         return block
 
     def jmp(self, target: Union[str, LowLevelILBasicBlock]):
-        '''Unconditional jump - target can be label or block'''
+        """Unconditional jump - target can be label or block"""
         target = self._resolve_block(target)
         jmp_inst = LowLevelILJmp(target)
         self.add_instruction(jmp_inst)
@@ -717,7 +708,7 @@ class LowLevelILBuilder:
     def branch_if(self, condition: LowLevelILInstruction,
                   true_target: Union[str, LowLevelILBasicBlock],
                   false_target: Union[str, LowLevelILBasicBlock]):
-        '''Conditional branch - targets can be labels or blocks'''
+        """Conditional branch - targets can be labels or blocks"""
         true_target = self._resolve_block(true_target)
         false_target = self._resolve_block(false_target)
         if_inst = LowLevelILIf(condition, true_target, false_target)
@@ -728,35 +719,35 @@ class LowLevelILBuilder:
     def call(self, target: str,
              return_target: LowLevelILBasicBlock,
              args: List[LowLevelILExpr] = None) -> LowLevelILCall:
-        '''Function call (terminal instruction). Records no edge: the return edge's stack state is known only
-        after the callee's cleanup, so the caller records it.'''
+        """Function call (terminal instruction). Records no edge: the return edge's stack state is known only
+        after the callee's cleanup, so the caller records it."""
         self._require_registered_block(return_target)
         call_inst = LowLevelILCall(target, return_target, args)
         self.add_instruction(call_inst)
         return call_inst
 
     def ret(self):
-        '''Return'''
+        """Return"""
         self.add_instruction(LowLevelILRet())
 
     # === Special ===
 
     def debug_line(self, line_no: int):
-        '''Debug line number'''
+        """Debug line number"""
         self.add_instruction(LowLevelILDebug('line', line_no))
 
 
 class LLILFormatter:
-    '''Formatting layer for beautiful output'''
+    """Formatting layer for beautiful output"""
 
     @classmethod
     def indent_lines(cls, lines: List[str], indent: str) -> List[str]:
-        '''Add indentation to multiple lines'''
+        """Add indentation to multiple lines"""
         return [indent + line for line in lines]
 
     @classmethod
     def format_instruction(cls, inst: LowLevelILInstruction) -> str:
-        '''Format a single instruction - can be customized per instruction type'''
+        """Format a single instruction - can be customized per instruction type"""
         # For now, use the instruction's __str__ method
         # This can be extended with custom formatting logic for specific instruction types
         return str(inst)
@@ -786,10 +777,9 @@ class LLILFormatter:
 
     @classmethod
     def _format_binary_op_expanded(cls, binary_op: LowLevelILBinaryOp) -> List[str]:
-        '''Format binary operation with expanded pseudo-code'''
-
+        """Format binary operation with expanded pseudo-code"""
         template = cls.__expr_templates[binary_op.operation]
-        expr = template.format(lhs = 'lhs', rhs = 'rhs')
+        expr = template.format(lhs='lhs', rhs='rhs')
 
         lines = []
         lines.append(f'rhs = STACK[--sp]  ; {binary_op.rhs}')
@@ -800,10 +790,9 @@ class LLILFormatter:
 
     @classmethod
     def _format_unary_op_expanded(cls, unary_op: 'LowLevelILUnaryOp') -> List[str]:
-        '''Format unary operation with expanded pseudo-code'''
-
+        """Format unary operation with expanded pseudo-code"""
         template = cls.__expr_templates[unary_op.operation]
-        expr = template.format(operand = 'operand')
+        expr = template.format(operand='operand')
 
         lines = []
         lines.append(f'operand = STACK[--sp]  ; {unary_op.operand}')
@@ -813,7 +802,7 @@ class LLILFormatter:
 
     @classmethod
     def _format_simplified(cls, inst: LowLevelILInstruction) -> List[str]:
-        '''One line: the instruction's own text; a stack store / load also shows its slot'''
+        """One line: the instruction's own text; a stack store / load also shows its slot"""
         if isinstance(inst, (LowLevelILStackStore, LowLevelILStackLoad)):
             return [f'{inst} ; [{inst.slot_index}]']
 
@@ -821,8 +810,7 @@ class LLILFormatter:
 
     @classmethod
     def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> List[str]:
-        '''Format instruction with expanded stack operations (multi-line)'''
-
+        """Format instruction with expanded stack operations (multi-line)"""
         if isinstance(inst, LowLevelILStackStore) and inst.offset == 0:
             # StackStore containing a binary operation: expand the binary op
             if isinstance(inst.value, LowLevelILBinaryOp):
@@ -844,7 +832,7 @@ class LLILFormatter:
 
     @classmethod
     def format_instruction_sequence(cls, instructions: List[LowLevelILInstruction], indent: str = '  ') -> list[str]:
-        '''Format sequence of instructions - returns list of lines'''
+        """Format sequence of instructions - returns list of lines"""
         result = []
 
         for inst in instructions:
@@ -860,7 +848,6 @@ class LLILFormatter:
             if expanded:
                 # Multi-line instruction
                 result.extend(cls.indent_lines(expanded, indent))
-
             else:
                 lines = cls._format_simplified(inst)
                 result.extend(cls.indent_lines(lines, indent))
@@ -871,7 +858,7 @@ class LLILFormatter:
     def format_llil_function(cls, func: LowLevelILFunction) -> list[str]:
         assert isinstance(func, LowLevelILFunction)
 
-        '''Format entire LLIL function with beautiful output - returns list of lines'''
+        """Format entire LLIL function with beautiful output - returns list of lines"""
         result = [
             f'; ---------- {func.name} ----------',
         ]
@@ -901,7 +888,7 @@ class LLILFormatter:
 
     @classmethod
     def to_dot(cls, func: LowLevelILFunction) -> str:
-        '''Generate Graphviz DOT format for CFG visualization'''
+        """Generate Graphviz DOT format for CFG visualization"""
         lines = []
         lines.append(f'digraph "{func.name}" {{')
         lines.append('    rankdir=TB;')

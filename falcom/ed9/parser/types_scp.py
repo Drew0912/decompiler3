@@ -7,6 +7,7 @@ from . import utils
 
 UINT32_SIZE = fileio.struct_layout('L').size  # one u32 field of the .dat format
 
+
 class ScpParamFlags(IntEnum2):
     Pointer     = 0x04
     Nullable    = 0x08
@@ -36,19 +37,14 @@ class ScpParamFlags:
         if typ is not None:
             if typ == Value32:
                 self.flags = ScpParamType.Value
-
             elif typ == Nullable32:
                 self.flags = ScpParamType.NullableValue
-
             elif typ == str:
                 self.flags = ScpParamType.Offset
-
             elif typ == NullableStr:
                 self.flags = ScpParamType.NullableOffset
-
             elif typ == Pointer:
                 self.flags = ScpParamType.Pointer
-
             else:
                 raise NotImplementedError(f'unsupported type: {typ}')
 
@@ -100,6 +96,7 @@ class RawInt(int):
 
     def __repr__(self) -> str:
         return f'RawInt(0x{self:08X})'
+
 
 # Explicit aliases: Pylance takes a bare assignment star-imported along many paths (a hook's `from <script> import *`)
 # for a variable, and rejects it in an annotation
@@ -156,10 +153,10 @@ class ScpValue:
             return
 
         value = fs.ReadULong()
-        return self.from_value(value, fs = fs)
+        return self.from_value(value, fs=fs)
 
     def from_value(self, value: int, *, fs: fileio.FileStream = None):
-        self.type, self.value = self.decode_word(value, fs = fs)
+        self.type, self.value = self.decode_word(value, fs=fs)
         return self
 
     @classmethod
@@ -191,7 +188,7 @@ class ScpValue:
         return self.WORD.pack(self.to_word())
 
     def to_word(self) -> int:
-        '''The 32-bit word the value is stored as'''
+        """The 32-bit word the value is stored as"""
         match self.type:
             # A decoded value is always in range, so only a hand-written one can fail these checks
             case ScpValue.Type.Raw:
@@ -214,29 +211,28 @@ class ScpValue:
 
     @classmethod
     def word_float32_bits(cls, word: int) -> int:
-        '''The float32 bits a Float word stores, with the dropped bits zero'''
+        """The float32 bits a Float word stores, with the dropped bits zero"""
         return (word << cls.FLOAT_DROPPED_BITS) & UINT32_MASK
 
     @classmethod
     def encode_float(cls, value: float) -> int:
-        '''The Float word value is stored as: its float32 bits without the lowest FLOAT_DROPPED_BITS, under the Float
-        tag; OverflowError past float32's range'''
+        """The Float word value is stored as: its float32 bits without the lowest FLOAT_DROPPED_BITS, under the Float
+        tag; OverflowError past float32's range"""
         return (utils.float32_bits(value) >> cls.FLOAT_DROPPED_BITS) | (ScpValue.Type.Float << cls.TYPE_SHIFT)
 
     @classmethod
     def float_word(cls, value: float) -> int | None:
-        '''The word value is stored as, or None past float32's range'''
+        """The word value is stored as, or None past float32's range"""
         try:
             return cls.encode_float(value)
-
         except OverflowError:
             return None
 
     @classmethod
     def float_literal(cls, value: float) -> str:
-        '''Shortest Python float literal that stores the same word as value - PUSH_FLOAT(0.3), not
+        """Shortest Python float literal that stores the same word as value - PUSH_FLOAT(0.3), not
         PUSH_FLOAT(0.2999999523162842). Always a float literal ('1.0', never '1', which would encode an
-        Integer). Non-finite values, which the game can't use, print as a float() call.'''
+        Integer). Non-finite values, which the game can't use, print as a float() call."""
         if math.isnan(value):
             return "float('nan')"
 
@@ -270,7 +266,6 @@ class ScpValue:
                     # Every candidate's word has the Float tag, so the payload bits decide
                     if utils.float32_bits(candidate) >> cls.FLOAT_DROPPED_BITS == payload:
                         return repr(candidate)
-
                 except OverflowError:
                     continue    # past float32's range: no word, as float_word's None
 
@@ -278,7 +273,7 @@ class ScpValue:
 
     @classmethod
     def float_bits_text(cls, value: float) -> str:
-        '''The float32 bits the VM computes with and the stored word: 'f32 0x41D99998, raw 0x90766666'.'''
+        """The float32 bits the VM computes with and the stored word: 'f32 0x41D99998, raw 0x90766666'."""
         word = cls.encode_float(value)
         return f'f32 {format_uint32_hex(cls.word_float32_bits(word))}, raw {format_uint32_hex(word)}'
 
@@ -302,7 +297,7 @@ class ScpHeader(StrictBase):
 
     def __init__(self, *, fs: fileio.FileStream = None):
         self.from_stream(fs)
-        
+
     def from_stream(self, fs: fileio.FileStream):
         if fs is None:
             return
@@ -328,6 +323,7 @@ class ScpHeader(StrictBase):
         ])
 
     __repr__ = __str__
+
 
 class ScpFunctionEntry(StrictBase):
     # offset, param_count, is_common_func, byte06, default_params_count, default_params_offset, param_flags_offset,
@@ -407,6 +403,7 @@ class ScpFunctionCallDebugInfoArg(StrictBase):
 
     __repr__ = __str__
 
+
 class ScpFunctionCallDebugInfo(StrictBase):
     LAYOUT      = fileio.struct_layout('LHHL')      # func_id, call_type, arg_count, info_offset: 0x0C
     SIZE        = LAYOUT.size
@@ -456,6 +453,7 @@ class ScpFunctionCallDebugInfo(StrictBase):
 
     __repr__ = __str__
 
+
 class ScpGlobalVar(StrictBase):
     LAYOUT = fileio.struct_layout('LL')     # name (a String-tagged ScpValue word), type: 0x08
     SIZE = LAYOUT.size
@@ -478,4 +476,4 @@ class ScpGlobalVar(StrictBase):
 
         # name is a String-tagged ScpValue (pool ref), not a raw pool offset
         name_word, self.type = self.LAYOUT.unpack(fs.Read(self.SIZE))
-        _, self.name = ScpValue.decode_word(name_word, fs = fs)
+        _, self.name = ScpValue.decode_word(name_word, fs=fs)

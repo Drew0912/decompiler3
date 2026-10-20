@@ -1,4 +1,4 @@
-'''SCCP - Sparse Conditional Constant Propagation'''
+"""SCCP - Sparse Conditional Constant Propagation"""
 
 from typing import Dict, List, Set
 
@@ -52,7 +52,8 @@ from ..mlil_ssa import (
 
 
 class LatticeValue:
-    '''Lattice value for SCCP: TOP → CONSTANT → BOTTOM'''
+    """Lattice value for SCCP: TOP → CONSTANT → BOTTOM"""
+
     TOP = 'top'        # Undefined/unknown
     BOTTOM = 'bottom'  # Multiple possible values
 
@@ -82,7 +83,7 @@ class LatticeValue:
         return self.state == self.BOTTOM
 
     def meet(self, other: 'LatticeValue') -> 'LatticeValue':
-        '''Meet operation: combine two lattice values'''
+        """Meet operation: combine two lattice values"""
         # TOP meet x = x
         if self.is_top():
             return other
@@ -115,16 +116,14 @@ class LatticeValue:
     def __repr__(self) -> str:
         if self.is_top():
             return '⊤'
-
         elif self.is_bottom():
             return '⊥'
-
         else:
             return f'C({self.value})'
 
 
 class SCCP:
-    '''Sparse Conditional Constant Propagation'''
+    """Sparse Conditional Constant Propagation"""
 
     def __init__(self, function: MediumLevelILFunction, remove_unreachable: bool = False):
         self.function = function
@@ -154,13 +153,13 @@ class SCCP:
         self.inst_block: Dict[MediumLevelILInstruction, MediumLevelILBasicBlock] = {}
 
     def run(self) -> bool:
-        '''Run SCCP and return True if any changes were made'''
+        """Run SCCP and return True if any changes were made"""
         self._initialize()
         self._propagate()
         return self._apply_results()
 
     def _initialize(self):
-        '''Initialize SCCP state'''
+        """Initialize SCCP state"""
         # Build def-use chains and instruction-to-block mapping
         for block in self.function.basic_blocks:
             self.block_reachable[block] = False
@@ -170,7 +169,6 @@ class SCCP:
 
                 if isinstance(inst, MLILSetVarSSA):
                     self.ssa_defs[inst.var] = inst
-
                 elif isinstance(inst, MLILPhi):
                     self.ssa_defs[inst.dest] = inst
 
@@ -194,7 +192,7 @@ class SCCP:
             self._process_block(entry)
 
     def _propagate(self):
-        '''Main SCCP propagation loop'''
+        """Main SCCP propagation loop"""
         while self.ssa_worklist or self.cfg_worklist:
             # Process CFG edges first
             while self.cfg_worklist:
@@ -212,7 +210,6 @@ class SCCP:
                 if not was_reachable:
                     # First time visiting this block
                     self._process_block(to_block)
-
                 else:
                     # Block already reachable, just update Phis
                     self._update_phis(to_block)
@@ -228,33 +225,28 @@ class SCCP:
                         self._visit_instruction(user)
 
     def _process_block(self, block: MediumLevelILBasicBlock):
-        '''Process all instructions in a newly reachable block'''
+        """Process all instructions in a newly reachable block"""
         for inst in block.instructions:
             self._visit_instruction(inst)
 
     def _update_phis(self, block: MediumLevelILBasicBlock):
-        '''Update Phi nodes when a new edge becomes reachable'''
+        """Update Phi nodes when a new edge becomes reachable"""
         for inst in block.instructions:
             if isinstance(inst, MLILPhi):
                 self._visit_phi(inst)
 
     def _visit_instruction(self, inst: MediumLevelILInstruction):
-        '''Visit and evaluate an instruction'''
+        """Visit and evaluate an instruction"""
         if isinstance(inst, MLILSetVarSSA):
             self._visit_assignment(inst)
-
         elif isinstance(inst, MLILPhi):
             self._visit_phi(inst)
-
         elif isinstance(inst, MLILIf):
             self._visit_branch(inst)
-
         elif isinstance(inst, MLILGoto):
             self._visit_goto(inst)
-
         elif isinstance(inst, MLILRet):
             pass  # No successors
-
         else:
             # Other instructions: mark all successors reachable
             block = self.inst_block.get(inst)
@@ -263,12 +255,12 @@ class SCCP:
                     self._mark_edge_reachable(block, succ)
 
     def _visit_assignment(self, inst: MLILSetVarSSA):
-        '''Evaluate assignment instruction'''
+        """Evaluate assignment instruction"""
         new_value = self._evaluate_expr(inst.value)
         self._update_var_value(inst.var, new_value)
 
     def _visit_phi(self, inst: MLILPhi):
-        '''Evaluate Phi node'''
+        """Evaluate Phi node"""
         result = LatticeValue.top()
         block = self.inst_block.get(inst)
 
@@ -278,7 +270,6 @@ class SCCP:
                 # If source variable has no definition, it's uninitialized (BOTTOM)
                 if src_var not in self.ssa_defs:
                     src_value = LatticeValue.bottom()
-
                 else:
                     src_value = self.var_values.get(src_var, LatticeValue.top())
 
@@ -287,7 +278,7 @@ class SCCP:
         self._update_var_value(inst.dest, result)
 
     def _visit_branch(self, inst: MLILIf):
-        '''Evaluate conditional branch'''
+        """Evaluate conditional branch"""
         block = self.inst_block.get(inst)
         if not block:
             return
@@ -299,30 +290,26 @@ class SCCP:
             # Condition is constant, only one branch is reachable
             if cond_value.value:
                 self._mark_edge_reachable(block, inst.true_target)
-
             else:
                 self._mark_edge_reachable(block, inst.false_target)
-
         else:
             # Condition unknown, both branches reachable
             self._mark_edge_reachable(block, inst.true_target)
             self._mark_edge_reachable(block, inst.false_target)
 
     def _visit_goto(self, inst: MLILGoto):
-        '''Evaluate unconditional jump'''
+        """Evaluate unconditional jump"""
         block = self.inst_block.get(inst)
         if block and inst.target:
             self._mark_edge_reachable(block, inst.target)
 
     def _evaluate_expr(self, expr: MediumLevelILInstruction) -> LatticeValue:
-        '''Evaluate expression to lattice value'''
+        """Evaluate expression to lattice value"""
         if isinstance(expr, MLILConst):
             return LatticeValue.constant(expr.value)
-
         elif isinstance(expr, MLILUndef):
             # Undefined value - could be anything
             return LatticeValue.bottom()
-
         elif isinstance(expr, MLILVarSSA):
             # If variable has no definition, it's uninitialized - could be any value (BOTTOM)
             # This prevents incorrect constant propagation through Phi nodes
@@ -330,7 +317,6 @@ class SCCP:
                 return LatticeValue.bottom()
 
             return self.var_values.get(expr.var, LatticeValue.top())
-
         elif isinstance(expr, MLILBinaryOp):
             lhs = self._evaluate_expr(expr.lhs)
             rhs = self._evaluate_expr(expr.rhs)
@@ -345,7 +331,6 @@ class SCCP:
 
             # Both constants, evaluate
             return self._eval_binary_op(type(expr), lhs.value, rhs.value)
-
         elif isinstance(expr, MLILUnaryOp):
             operand = self._evaluate_expr(expr.operand)
 
@@ -356,13 +341,12 @@ class SCCP:
                 return LatticeValue.top()
 
             return self._eval_unary_op(type(expr), operand.value)
-
         else:
             # Unknown expression type
             return LatticeValue.bottom()
 
     def _eval_binary_op(self, op_type, lhs, rhs) -> LatticeValue:
-        '''Evaluate binary operation on constants'''
+        """Evaluate binary operation on constants"""
         # Floats never fold: VM float32 rounding and int/float mixing are unverified (like DIV/MOD below)
         if isinstance(lhs, float) or isinstance(rhs, float):
             return LatticeValue.bottom()
@@ -370,13 +354,10 @@ class SCCP:
         try:
             if op_type == MLILAdd:
                 return LatticeValue.constant(lhs + rhs)
-
             elif op_type == MLILSub:
                 return LatticeValue.constant(lhs - rhs)
-
             elif op_type == MLILMul:
                 return LatticeValue.constant(lhs * rhs)
-
             elif op_type in (MLILDiv, MLILMod):
                 # Not folded: Python's // is confirmed wrong for VM float division, and the rest
                 # of DIV/MOD (int width, overflow, MOD's sign) is unverified without running the
@@ -384,53 +365,39 @@ class SCCP:
                 # of runtime arithmetic width. See docs/mlil/MLIL_FUTURE_WORK.md. Folding wrong is worse
                 # than not folding.
                 return LatticeValue.bottom()
-
             elif op_type == MLILAnd:
                 return LatticeValue.constant(lhs & rhs)
-
             elif op_type == MLILOr:
                 return LatticeValue.constant(lhs | rhs)
-
             elif op_type == MLILXor:
                 return LatticeValue.constant(lhs ^ rhs)
-
             elif op_type == MLILShl:
                 return LatticeValue.constant(lhs << rhs)
-
             elif op_type == MLILShr:
                 return LatticeValue.constant(lhs >> rhs)
-
             elif op_type == MLILLogicalAnd:
                 return LatticeValue.constant(1 if (lhs and rhs) else 0)
-
             elif op_type == MLILLogicalOr:
                 return LatticeValue.constant(1 if (lhs or rhs) else 0)
-
             elif op_type == MLILEq:
                 return LatticeValue.constant(1 if lhs == rhs else 0)
-
             elif op_type == MLILNe:
                 return LatticeValue.constant(1 if lhs != rhs else 0)
-
             elif op_type == MLILLt:
                 return LatticeValue.constant(1 if lhs < rhs else 0)
-
             elif op_type == MLILLe:
                 return LatticeValue.constant(1 if lhs <= rhs else 0)
-
             elif op_type == MLILGt:
                 return LatticeValue.constant(1 if lhs > rhs else 0)
-
             elif op_type == MLILGe:
                 return LatticeValue.constant(1 if lhs >= rhs else 0)
-
         except (OverflowError, TypeError):
             pass
 
         return LatticeValue.bottom()
 
     def _eval_unary_op(self, op_type, operand) -> LatticeValue:
-        '''Evaluate unary operation on constant'''
+        """Evaluate unary operation on constant"""
         # Not folded, see _eval_binary_op
         if isinstance(operand, float):
             return LatticeValue.bottom()
@@ -438,23 +405,19 @@ class SCCP:
         try:
             if op_type == MLILNeg:
                 return LatticeValue.constant(-operand)
-
             elif op_type == MLILLogicalNot:
                 return LatticeValue.constant(1 if not operand else 0)
-
             elif op_type == MLILBitwiseNot:
                 return LatticeValue.constant(~operand)
-
             elif op_type == MLILTestZero:
                 return LatticeValue.constant(1 if operand == 0 else 0)
-
         except (OverflowError, TypeError):
             pass
 
         return LatticeValue.bottom()
 
     def _update_var_value(self, var: MLILVariableSSA, new_value: LatticeValue):
-        '''Update variable value and add to worklist if changed'''
+        """Update variable value and add to worklist if changed"""
         old_value = self.var_values.get(var, LatticeValue.top())
 
         if new_value != old_value:
@@ -463,12 +426,12 @@ class SCCP:
 
     def _mark_edge_reachable(self, from_block: MediumLevelILBasicBlock,
                               to_block: MediumLevelILBasicBlock):
-        '''Mark CFG edge as reachable'''
+        """Mark CFG edge as reachable"""
         if not self.edge_reachable.get((from_block, to_block), False):
             self.cfg_worklist.append((from_block, to_block))
 
     def _apply_results(self) -> bool:
-        '''Apply SCCP results: remove unreachable code, replace constants'''
+        """Apply SCCP results: remove unreachable code, replace constants"""
         changed = False
 
         # Optionally remove unreachable blocks
@@ -497,42 +460,36 @@ class SCCP:
         return changed
 
     def _replace_constants_in_inst(self, inst: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        '''Replace constant SSA variables in instruction'''
+        """Replace constant SSA variables in instruction"""
         if isinstance(inst, MLILSetVarSSA):
             new_value = self._replace_constants_in_expr(inst.value)
 
             if new_value is not inst.value:
-                return MLILSetVarSSA(inst.var, new_value, address = inst.address).copy_metadata_from(inst)
-
+                return MLILSetVarSSA(inst.var, new_value, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MLILIf):
             new_cond = self._replace_constants_in_expr(inst.condition)
 
             if new_cond is not inst.condition:
-                return MLILIf(new_cond, inst.true_target, inst.false_target, address = inst.address).copy_metadata_from(inst)
-
+                return MLILIf(new_cond, inst.true_target, inst.false_target, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MLILRet):
             if inst.value:
                 new_value = self._replace_constants_in_expr(inst.value)
 
                 if new_value is not inst.value:
-                    return MLILRet(new_value, address = inst.address).copy_metadata_from(inst)
-
+                    return MLILRet(new_value, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MediumLevelILCall):
             new_args = [self._replace_constants_in_expr(arg) for arg in inst.args]
 
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
                 return inst.rebuild(new_args)
-
         elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
             new_value = self._replace_constants_in_expr(inst.value)
 
             if new_value is not inst.value:
                 if isinstance(inst, MLILStoreGlobal):
-                    return MLILStoreGlobal(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
-
+                    return MLILStoreGlobal(inst.index, new_value, address=inst.address).copy_metadata_from(inst)
                 else:
-                    return MLILStoreReg(inst.index, new_value, address = inst.address).copy_metadata_from(inst)
-
+                    return MLILStoreReg(inst.index, new_value, address=inst.address).copy_metadata_from(inst)
         elif isinstance(inst, MLILStoreDeref):
             new_dest = self._replace_constants_in_expr(inst.dest)
             new_value = self._replace_constants_in_expr(inst.value)
@@ -543,23 +500,21 @@ class SCCP:
         return inst
 
     def _replace_constants_in_expr(self, expr: MediumLevelILInstruction, is_bitwise: bool = False) -> MediumLevelILInstruction:
-        '''Replace constant SSA variables with constants'''
+        """Replace constant SSA variables with constants"""
         if isinstance(expr, MLILVarSSA):
             val = self.var_values.get(expr.var, LatticeValue.bottom())
 
             if val.is_constant():
                 self.replaced_vars.add(expr.var)
-                return MLILConst(val.value, is_hex = is_bitwise)
+                return MLILConst(val.value, is_hex=is_bitwise)
 
             return expr
-
         elif isinstance(expr, MLILConst):
             # Update existing const to hex format if in bitwise context
             if is_bitwise and not expr.is_hex:
-                return MLILConst(expr.value, is_hex = True)
+                return MLILConst(expr.value, is_hex=True)
 
             return expr
-
         elif isinstance(expr, MLILBinaryOp):
             # Bitwise operations use hex format for constants
             child_is_bitwise = isinstance(expr, (MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr))
@@ -568,11 +523,9 @@ class SCCP:
 
             if new_lhs is not expr.lhs or new_rhs is not expr.rhs:
                 return expr.rebuild(new_lhs, new_rhs)
-
         elif isinstance(expr, MLILAddressOf):
             # &x names x's storage, not its value - never substitute a constant under it
             return expr
-
         elif isinstance(expr, MLILUnaryOp):
             child_is_bitwise = isinstance(expr, MLILBitwiseNot)
             new_operand = self._replace_constants_in_expr(expr.operand, child_is_bitwise)

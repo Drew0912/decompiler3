@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Random CFGs through the whole HLIL pipeline, checked against their MLIL run by run.
+"""Random CFGs through the whole HLIL pipeline, checked against their MLIL run by run.
 
 Each CFG has 4-10 blocks ending in a return, a goto or an if; most blocks make one call, some
 gotos only jump on (passthrough chains) and some ifs test a constant (dead arms). For every
@@ -12,7 +12,7 @@ Irreducible CFGs may need nodes (HLIL has no goto). A reducible one could always
 so a node there is a gap the converter still has: the seeds that get one today are pinned below,
 and any other seed getting one fails (docs/hlil/HLIL_FUTURE_WORK.md, Structuring the Remaining
 Reducible Shapes).
-'''
+"""
 
 from pathlib import Path
 import random
@@ -65,11 +65,9 @@ def random_cfg(seed: int) -> Dict[str, BlockSpec]:
             if draw < RETURN_SHARE:
                 kinds.append('ret')
                 successors.append(())
-
             elif draw < RETURN_SHARE + GOTO_SHARE:
                 kinds.append('goto')
                 successors.append((rng.randrange(count),))
-
             else:
                 kinds.append('if')
                 successors.append(tuple(rng.sample(range(count), 2)))
@@ -84,10 +82,8 @@ def random_cfg(seed: int) -> Dict[str, BlockSpec]:
 
         if kinds[i] == 'ret':
             terminal = ('ret', i)
-
         elif kinds[i] == 'goto':
             terminal = ('goto', f'B{successors[i][0]}')
-
         else:
             condition = rng.randrange(2) if rng.random() < CONSTANT_SHARE else f'p{i}'
             terminal = ('if', condition, f'B{successors[i][0]}', f'B{successors[i][1]}')
@@ -108,7 +104,7 @@ def terminal_targets(terminal: tuple) -> List[str]:
 
 
 def is_reducible(blocks: Dict[str, BlockSpec]) -> bool:
-    '''No cycle is left once every edge to a block dominating its source is removed'''
+    """No cycle is left once every edge to a block dominating its source is removed"""
     labels = list(blocks)
     successors = {label: terminal_targets(terminal) for label, (_, terminal) in blocks.items()}
 
@@ -151,7 +147,7 @@ class TestStructuringFuzz(unittest.TestCase):
             hlil = to_hlil(func)
             verdict, env = classify(func, hlil)
             cls.results.append((seed, blocks, verdict, env, check_function(func, hlil), unstructured_nodes(hlil)))
-            marked_func = build_function(f'fuzz_{seed}', with_markers(blocks, every_block = True))
+            marked_func = build_function(f'fuzz_{seed}', with_markers(blocks, every_block=True))
             marked = to_hlil(marked_func)
             cls.marked.append((marked_func, marked))
             if statements_in_two_places(hlil) or statements_in_two_places(marked):
@@ -173,8 +169,8 @@ class TestStructuringFuzz(unittest.TestCase):
         self.assertEqual(disagree, [])
 
     def test_no_statement_sits_in_two_places(self):
-        '''With markers or without: a pass that moves a statement leaves no copy behind (the switch conversion
-        once did)'''
+        """With markers or without: a pass that moves a statement leaves no copy behind (the switch conversion
+        once did)"""
         self.assertEqual(self.in_two_places, [])
 
     def test_nodes_on_reducible_cfgs_are_pinned(self):
@@ -182,11 +178,11 @@ class TestStructuringFuzz(unittest.TestCase):
         self.assertEqual(reducible_with_nodes, PINNED_REDUCIBLE_WITH_NODES)
 
     def test_markers_in_every_block_change_no_run(self):
-        '''Kept, or removed after every pass (line_markers off: arms left empty tidied, conditions negated)'''
+        """Kept, or removed after every pass (line_markers off: arms left empty tidied, conditions negated)"""
         changed = []
         for seed, _, verdict, env, _, nodes in self.results:
             func, marked = self.marked[seed]
-            for hlil in (marked, to_hlil(func, line_markers = False)):
+            for hlil in (marked, to_hlil(func, line_markers=False)):
                 if classify(func, hlil) != (verdict, env) or len(unstructured_nodes(hlil)) != len(nodes):
                     changed.append(seed)
 
@@ -233,7 +229,7 @@ def shape_of(seed: int) -> tuple:
 class TestPinnedSeedShapes(unittest.TestCase):
     def test_each_seed_keeps_its_shape(self):
         for seed, shape in SEED_SHAPES.items():
-            with self.subTest(seed = seed):
+            with self.subTest(seed=seed):
                 self.assertEqual(shape_of(seed), shape)
 
 
@@ -241,6 +237,5 @@ if __name__ == '__main__':
     if sys.argv[1:] == ['--print']:
         for seed in SEED_SHAPES:
             print(f'    {seed}: {shape_of(seed)!r},')
-
     else:
         unittest.main()

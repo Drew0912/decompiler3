@@ -39,7 +39,6 @@ class _OriginalFunction:
         signature = self.__signature__
         try:
             signature.bind(*args, **kwargs)
-
         except TypeError as e:
             raise TypeError(f'original.{f.name}(): {e}') from e
 
@@ -111,7 +110,6 @@ class HookRegistry:
         self._add_hook_function(func, 'add_function (used bare: @add_function)')
         if self.writer.compile_started:
             self._register_added(func)
-
         else:
             self.added_functions.append(func)
 
@@ -246,7 +244,6 @@ class HookRegistry:
                                     'True drops the opcode, None or False keeps it')
 
             return False
-
         finally:
             self.in_opcode_callback = False
             self.trigger_site = None

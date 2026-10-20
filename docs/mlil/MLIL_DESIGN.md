@@ -137,6 +137,7 @@ class MediumLevelILBasicBlock:
     incoming_edges: list[MediumLevelILBasicBlock]
     outgoing_edges: list[MediumLevelILBasicBlock]
 
+
 class MediumLevelILFunction:
     name: str
     start_addr: int

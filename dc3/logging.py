@@ -7,8 +7,8 @@ __all__ = (
 
 
 class _StderrHandler(logging.StreamHandler):
-    '''Writes to whatever sys.stderr is when a record is emitted (like logging's own last-resort handler), so
-    contextlib.redirect_stderr silences the log as it does print(file = sys.stderr)'''
+    """Writes to whatever sys.stderr is when a record is emitted (like logging's own last-resort handler), so
+    contextlib.redirect_stderr silences the log as it does print(file = sys.stderr)"""
 
     def __init__(self):
         logging.Handler.__init__(self)  # StreamHandler.__init__ would assign self.stream, a read-only property here
@@ -26,6 +26,6 @@ log = logging.getLogger('decompiler3')
 log.setLevel(logging.INFO)
 log.propagate = False
 handler = _StderrHandler()
-handler.setFormatter(logging.Formatter('[%(asctime)s][%(filename)s:%(lineno)d][%(levelname)s] %(message)s', datefmt = '%m-%d %H:%M:%S'))
+handler.setFormatter(logging.Formatter('[%(asctime)s][%(filename)s:%(lineno)d][%(levelname)s] %(message)s', datefmt='%m-%d %H:%M:%S'))
 
 log.addHandler(handler)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for dc3/fileio.py - the deliberate quirks of the ported ml FileStream that round trips rely on.'''
+"""Unit tests for dc3/fileio.py - the deliberate quirks of the ported ml FileStream that round trips rely on."""
 
 from pathlib import Path
 import struct
@@ -45,18 +45,18 @@ class TestFileStreamQuirks(unittest.TestCase):
             bits = size * fileio.BITS_PER_BYTE
             low, high = (-(1 << (bits - 1)), (1 << (bits - 1)) - 1) if signed else (0, (1 << bits) - 1)
             for value in (low, high):
-                with self.subTest(method = method, value = value):
+                with self.subTest(method=method, value=value):
                     fs = self.memory()
                     self.assertEqual(getattr(fs, method)(value), size)
-                    self.assertEqual(fs.ReadAll(), value.to_bytes(size, 'little', signed = signed))
+                    self.assertEqual(fs.ReadAll(), value.to_bytes(size, 'little', signed=signed))
 
             for value in (low - 1, high + 1):
-                with self.subTest(method = method, value = value):
+                with self.subTest(method=method, value=value):
                     with self.assertRaises(struct.error):
                         getattr(self.memory(), method)(value)
 
     def test_read_multibyte_drops_undecodable_bytes_with_a_warning(self):
-        fs = self.memory(b'a\xffb\x00rest', encoding = 'utf-8')
+        fs = self.memory(b'a\xffb\x00rest', encoding='utf-8')
         with self.assertLogs(log, 'WARNING') as logs:
             self.assertEqual(fs.ReadMultiByte(), 'ab')
 
@@ -72,7 +72,7 @@ class TestFileStreamQuirks(unittest.TestCase):
         ]
         for name, data, expected, position in cases:
             with self.subTest(name):
-                fs = self.memory(data, encoding = 'utf-8')
+                fs = self.memory(data, encoding='utf-8')
                 self.assertEqual(fs.ReadMultiByte(), expected)
                 self.assertEqual(fs.Position, position)
 

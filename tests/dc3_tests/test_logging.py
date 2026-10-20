@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''The shared logger (dc3.logging.log): a level change always takes effect, even after the level was cached, and it
-writes to the current sys.stderr.'''
+"""The shared logger (dc3.logging.log): a level change always takes effect, even after the level was cached, and it
+writes to the current sys.stderr."""
 
 from pathlib import Path
 import contextlib
@@ -37,7 +37,7 @@ class TestLogLevel(unittest.TestCase):
 
 
 class TestStderrRedirect(unittest.TestCase):
-    '''The shared handler writes to the current sys.stderr, so redirect_stderr captures the log as it does print'''
+    """The shared handler writes to the current sys.stderr, so redirect_stderr captures the log as it does print"""
 
     def test_redirect_stderr_captures_the_log(self):
         captured = io.StringIO()

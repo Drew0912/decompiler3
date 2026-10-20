@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''The writer's compile: built in memory and written only on success, file-wide labels whose errors and warnings
+"""The writer's compile: built in memory and written only on success, file-wide labels whose errors and warnings
 name their functions, DSL statements in the wrong place rejected, global vars declared once, in their block or a
 run callback, named right and typed as the games do (else a warning), the global opcodes by name or index (an index
 within the declared table), an operand or pushed value out of its range or of the wrong type failing at its line, a
-string the pool can't store failing where it enters, and the string pool without round_trip.'''
+string the pool can't store failing where it enters, and the string pool without round_trip."""
 
 from enum import StrEnum
 import logging
@@ -31,9 +31,9 @@ def read_uint32(data: bytes, offset: int) -> int:
 
 
 def parse(data: bytes) -> tuple:
-    '''(parser, {name: function}) of compiled bytes'''
-    parser, functions = ScpParser.load_bytes(data, 'test.dat', round_trip = False, keep_unreachable_code = False,
-                                             quiet = True)
+    """(parser, {name: function}) of compiled bytes"""
+    parser, functions = ScpParser.load_bytes(data, 'test.dat', round_trip=False, keep_unreachable_code=False,
+                                             quiet=True)
     return parser, {func.name: func for func in functions}
 
 
@@ -138,7 +138,7 @@ class TestLabels(WriterTestCase):
         for record, message in zip(logs.records, (
             "A: jumps to label 'in_b' in B (another function)",
             "B: jumps to label 'in_a' in A (another function)",
-        ), strict = True):
+        ), strict=True):
             self.assertRegex(record.getMessage(), any_line + re.escape(message) + '$')
 
         a, b = self.writer.functions
@@ -185,7 +185,7 @@ class TestLabels(WriterTestCase):
             RETURN()
 
         self.writer.run({})
-        parser, functions = ScpParser.load(self.dat, round_trip = True, keep_unreachable_code = True)
+        parser, functions = ScpParser.load(self.dat, round_trip=True, keep_unreachable_code=True)
         caller = next(f for f in functions if f.name == 'Caller')
         instructions = parser.get_instructions(caller)
         frame = next(i for i, inst in enumerate(instructions) if inst.opcode == ED9Opcode.PUSH_CALLER_FRAME)
@@ -195,8 +195,9 @@ class TestLabels(WriterTestCase):
 
 
 class TestDebugArgc(WriterTestCase):
-    '''A local call's record keeps its args up to the last one the author wrote: the CALL's debug_argc, else the
-    compiler's rule - trailing constants equal to the callee's defaults dropped'''
+    """A local call's record keeps its args up to the last one the author wrote: the CALL's debug_argc, else the
+    compiler's rule - trailing constants equal to the callee's defaults dropped"""
+
     ALL_DEFAULTS = ((PUSH_INT, 2), (PUSH_INT, 1), (PUSH_INT, 5))    # Callee(5, 1, 2): pushed last parameter first
 
     def define_callee(self):
@@ -208,7 +209,7 @@ class TestDebugArgc(WriterTestCase):
         return Callee
 
     def counts(self, name: str = 'Main') -> list[int]:
-        '''Each record's arg count, in record order'''
+        """Each record's arg count, in record order"""
         return [len(record.args) for record in self.writer.functions_by_name[name].debug_records]
 
     def test_records_keep_the_args_up_to_the_last_one_written(self):
@@ -242,8 +243,8 @@ class TestDebugArgc(WriterTestCase):
         self.assertEqual(dict(zip(cases, self.counts())), {case: count for case, (*_, count) in cases.items()})
 
     def test_default_vectors(self):
-        '''One entry per parameter, None without a default - the parser's shape; the file stores only the defaulted
-        suffix'''
+        """One entry per parameter, None without a default - the parser's shape; the file stores only the defaulted
+        suffix"""
         @self.writer.LLILCode()
         def OneDefault(arg1: Value32, arg2: Value32 = 0):
             POP(2 * WORD_SIZE)
@@ -271,7 +272,7 @@ class TestDebugArgc(WriterTestCase):
                 self.assertEqual(vector, typed(param.default_value for param in functions[name].params))
 
     def test_callee_defaults_from_its_registered_function(self):
-        '''A callee defined after its caller, and one imported as a common function'''
+        """A callee defined after its caller, and one imported as a common function"""
         def Imported(arg1: Value32, arg2: Value32 = 1, arg3: Nullable32 = 2):
             POP(3 * WORD_SIZE)
             RETURN()
@@ -296,7 +297,7 @@ class TestDebugArgc(WriterTestCase):
         self.assertEqual(self.counts(), [1, 1])
 
     def test_an_edit_changes_no_other_record(self):
-        '''Each count rides on its own CALL: renaming labels, deleting or inserting a call leaves the other records'''
+        """Each count rides on its own CALL: renaming labels, deleting or inserting a call leaves the other records"""
         annotated = {'debug_argc': 3}
         variants = {
             'as decompiled': ((('a', {}), ('b', annotated), ('c', {})), [1, 3, 1]),
@@ -321,7 +322,7 @@ class TestDebugArgc(WriterTestCase):
                 self.assertEqual(self.counts(), expected)
 
     def assert_warns_of_no_caller_frame(self, marker: str):
-        '''Main compiles, and the tracker warns once, at the CALL_SCRIPT, that its debug record is a guess'''
+        """Main compiles, and the tracker warns once, at the CALL_SCRIPT, that its debug record is a guess"""
         with self.assertLogs(log, 'WARNING') as logs:
             self.writer.build({})
 
@@ -331,7 +332,7 @@ class TestDebugArgc(WriterTestCase):
         self.assertRegex(message, '^' + at(__file__, marker) + re.escape(f'Main: {expected}') + '$')
 
     def test_script_call_in_unreachable_code_without_a_caller_frame_warns(self):
-        '''The compile check doesn't simulate unreachable code; its warning about it is off here'''
+        """The compile check doesn't simulate unreachable code; its warning about it is off here"""
         self.writer.warn_unreachable_code = False
 
         @self.writer.LLILCode()
@@ -345,7 +346,7 @@ class TestDebugArgc(WriterTestCase):
         self.assert_warns_of_no_caller_frame('unpaired')
 
     def test_branch_inside_a_script_calls_arguments_warns(self):
-        '''The tracker reads straight through both arms, so it holds an argument too many above the frame'''
+        """The tracker reads straight through both arms, so it holds an argument too many above the frame"""
         @self.writer.LLILCode()
         def Main():
             DEBUG_SET_LINENO(1)
@@ -371,7 +372,7 @@ class TestStatementsInTheWrongPlace(WriterTestCase):
             ('PUSH_CURRENT_FUNC_ID', PUSH_CURRENT_FUNC_ID),
             ("label('top')", lambda: label('top')),
         ):
-            with self.subTest(statement = statement):
+            with self.subTest(statement=statement):
                 with self.assertRaisesRegex(ValueError, rf'^{re.escape(statement)} is outside a function body$'):
                     emit()
 
@@ -440,7 +441,7 @@ class TestGlobalVarNames(WriterTestCase):
             self.writer.build({})
 
     def test_outside_the_block(self):
-        '''A script's top level, and a hook's (it runs before create_scp_writer())'''
+        """A script's top level, and a hook's (it runs before create_scp_writer())"""
         for case in ('script', 'before create_scp_writer'):
             with self.subTest(case):
                 if case == 'before create_scp_writer':
@@ -450,7 +451,7 @@ class TestGlobalVarNames(WriterTestCase):
                     GLOBAL_VAR('x', 1)
 
     def test_type_must_fit_an_unsigned_word(self):
-        '''The table stores the type as an unsigned word; one outside it failed the write with a bare struct.error'''
+        """The table stores the type as an unsigned word; one outside it failed the write with a bare struct.error"""
         for type in (-1, 2 ** 32):
             with self.subTest(type):
                 writer = self.fresh_writer()
@@ -469,10 +470,10 @@ class TestGlobalVarNames(WriterTestCase):
                          ["GLOBAL_VAR('x') type is 4294967295, not 0 (Integer) or 1 (String)"])
 
     def test_type_other_than_integer_or_string_warns(self):
-        '''The games declare only Integer and String globals; another type compiles as written, so a script that has
-        one still round-trips'''
+        """The games declare only Integer and String globals; another type compiles as written, so a script that has
+        one still round-trips"""
         for type in (0, 1, ScpGlobalVar.Type.Integer, ScpGlobalVar.Type.String):
-            with self.subTest(type = repr(type)):
+            with self.subTest(type=repr(type)):
                 with self.assertNoLogs(log, 'WARNING'):
                     parser = self.compile_global(type)
 
@@ -486,7 +487,7 @@ class TestGlobalVarNames(WriterTestCase):
                          ["GLOBAL_VAR('x') type is 2, not 0 (Integer) or 1 (String)"])
 
     def compile_global(self, global_type: int):
-        '''The parser of a compiled script whose one global var has global_type'''
+        """The parser of a compiled script whose one global var has global_type"""
         writer = self.fresh_writer()
 
         @writer.GlobalVars()
@@ -510,7 +511,7 @@ class TestGlobalVarNames(WriterTestCase):
                 GLOBAL_VAR('x', 1)
 
     def test_second_block(self):
-        '''It replaced the first table before'''
+        """It replaced the first table before"""
         @self.writer.GlobalVars()
         def first():                                        # line: first block
             GLOBAL_VAR('a', 1)
@@ -550,12 +551,12 @@ class TestGlobalVarOpcodes(WriterTestCase):
 
 
 class TestOperandRanges(WriterTestCase):
-    '''A global index must be in the declared table, and an operand out of its type's range (test_scp_writer_dsl.py's
-    TestValueRanges) fails at its line'''
+    """A global index must be in the declared table, and an operand out of its type's range (test_scp_writer_dsl.py's
+    TestValueRanges) fails at its line"""
 
     def test_global_index_past_the_table_fails(self):
         for index in (0, 1):
-            with self.subTest(index = index):
+            with self.subTest(index=index):
                 self.writer = self.fresh_writer()
 
                 @self.writer.GlobalVars()
@@ -591,7 +592,7 @@ class TestOperandRanges(WriterTestCase):
             self.writer.build({})
 
     def test_failure_names_its_line(self):
-        '''POP(256) used to pop 0 and fail later, at the RETURN'''
+        """POP(256) used to pop 0 and fail later, at the RETURN"""
         for case in ('SET_REG', 'POP', 'DEBUG_SET_LINENO'):
             with self.subTest(case):
                 self.writer = self.fresh_writer()
@@ -600,10 +601,8 @@ class TestOperandRanges(WriterTestCase):
                 def Main():
                     if case == 'SET_REG':
                         SET_REG(256)                # line: SET_REG
-
                     elif case == 'POP':
                         POP(256)                    # line: POP
-
                     else:
                         DEBUG_SET_LINENO(70000)     # line: DEBUG_SET_LINENO
 
@@ -613,7 +612,7 @@ class TestOperandRanges(WriterTestCase):
                     self.writer.build({})
 
     def test_pushed_value_failure_names_its_line(self):
-        '''A pushed value's encoding errors had no line, unlike an operand's'''
+        """A pushed value's encoding errors had no line, unlike an operand's"""
         class Kind(StrEnum):
             A = 'a'
 
@@ -646,8 +645,8 @@ class TestOperandRanges(WriterTestCase):
 
 
 class TestArgumentTypes(WriterTestCase):
-    '''A wrong argument type fails at its line (test_scp_writer_dsl.py's TestArgumentTypes has the texts); outside a
-    function body it comes before the body check, with no prefix'''
+    """A wrong argument type fails at its line (test_scp_writer_dsl.py's TestArgumentTypes has the texts); outside a
+    function body it comes before the body check, with no prefix"""
 
     def test_type_error_names_its_line(self):
         cases = {
@@ -666,13 +665,10 @@ class TestArgumentTypes(WriterTestCase):
                     PUSH_INT(0)
                     if case == 'PUSH_INT type':
                         PUSH_INT(5.0)                                       # line: PUSH_INT type
-
                     elif case == 'SET_REG type':
                         SET_REG(1.0)                                        # line: SET_REG type
-
                     elif case == 'label type':
                         label(5)                                            # line: label type
-
                     else:
                         CALL('Foo')                                         # line: CALL by name
 
@@ -709,7 +705,6 @@ class TestArgumentTypes(WriterTestCase):
                     PUSH_INT(0)
                     if case == 'bool':
                         PUSH_INT(True)                                      # line: bool
-
                     else:
                         CALL(Unregistered)                                  # line: unregistered
 
@@ -719,7 +714,7 @@ class TestArgumentTypes(WriterTestCase):
                     self.writer.build({})
 
     def test_debug_argc_is_exactly_an_int(self):
-        '''Checked in CALL itself: bool is an int subclass, and handle_opcode's bool check sees positional operands only'''
+        """Checked in CALL itself: bool is an int subclass, and handle_opcode's bool check sees positional operands only"""
         for case, value in {'bool': True, 'float': 2.0}.items():
             with self.subTest(case):
                 self.writer = self.fresh_writer()
@@ -732,7 +727,7 @@ class TestArgumentTypes(WriterTestCase):
                 def Main():
                     PUSH_CURRENT_FUNC_ID()
                     PUSH_RET_ADDR('ret')
-                    CALL(Callee, debug_argc = value)                    # line: debug_argc
+                    CALL(Callee, debug_argc=value)                      # line: debug_argc
                     label('ret')
                     RETURN()
 
@@ -753,7 +748,7 @@ class TestArgumentTypes(WriterTestCase):
                 def Main():
                     PUSH_CURRENT_FUNC_ID()
                     PUSH_RET_ADDR('ret')
-                    CALL(Callee, debug_record = value)                  # line: debug_record
+                    CALL(Callee, debug_record=value)                    # line: debug_record
                     label('ret')
                     RETURN()
 
@@ -763,9 +758,9 @@ class TestArgumentTypes(WriterTestCase):
 
 
 class TestStrings(WriterTestCase):
-    '''A string the pool can't store fails where it enters (a default at its def: test_scp_writer_hooks.py's parameter
+    """A string the pool can't store fails where it enters (a default at its def: test_scp_writer_hooks.py's parameter
     tests): the game reads a pooled string up to its first NUL, and a lone surrogate can't be encoded (it used to fail
-    writing the pool, after every body, with no script line)'''
+    writing the pool, after every body, with no script line)"""
 
     def test_code_string_fails_at_its_line(self):
         cases = {
@@ -787,16 +782,12 @@ class TestStrings(WriterTestCase):
                     PUSH_CALLER_FRAME('back')
                     if case == 'PUSH_STR NUL':
                         PUSH_STR('abc\x00def')                              # line: PUSH_STR NUL
-
                     elif case == 'PUSH_STR surrogate':
                         PUSH_STR('bad\ud800char')                           # line: PUSH_STR surrogate
-
                     elif case == 'PUSH NUL':
                         PUSH('a\x00')                                       # line: PUSH NUL
-
                     elif case == 'CALL_SCRIPT module NUL':
                         CALL_SCRIPT('mod\x00', 'f', 0)                      # line: CALL_SCRIPT module NUL
-
                     else:
                         CALL_SCRIPT('mod', ScpValue('f\udc80'), 0)          # line: CALL_SCRIPT function surrogate
 
@@ -811,7 +802,7 @@ class TestStrings(WriterTestCase):
             ('g\x00h', r"global var name 'g\x00h' contains a NUL, which ends a .dat string early"),
             ('g\ud800', r"global var name 'g\ud800' can't be encoded: surrogates not allowed at position 1"),
         ):
-            with self.subTest(name = name):
+            with self.subTest(name=name):
                 self.writer = self.fresh_writer()
                 with self.assertRaisesRegex(ValueError, f'^{re.escape(message)}$'):
                     @self.writer.GlobalVars()
@@ -820,7 +811,7 @@ class TestStrings(WriterTestCase):
 
 
 class TestWriterWithoutRoundTrip(WriterTestCase):
-    '''scena.round_trip = False: equal strings share one pool entry and no debug records are written'''
+    """scena.round_trip = False: equal strings share one pool entry and no debug records are written"""
 
     def define_repeating_strings(self):
         @self.writer.LLILCode()
@@ -851,8 +842,8 @@ class TestWriterWithoutRoundTrip(WriterTestCase):
         self.assertEqual(self.pushed_strings(data), ['same', 'same'])
 
     def test_call_keywords_compile_to_the_same_bytes(self):
-        '''No call is tracked, so a CALL's debug_argc or debug_record changes nothing: no records, the bytes of the
-        call without it'''
+        """No call is tracked, so a CALL's debug_argc or debug_record changes nothing: no records, the bytes of the
+        call without it"""
         compiled = {}
         for case, keywords in {'debug_argc': {'debug_argc': 2}, 'debug_record': {'debug_record': False}, 'plain': {}}.items():
             self.writer = self.fresh_writer()
@@ -877,10 +868,10 @@ class TestWriterWithoutRoundTrip(WriterTestCase):
 
 
 class TestCheckOffLocations(WriterTestCase):
-    '''With the compile check off there is no source map: messages name the function and nothing else'''
+    """With the compile check off there is no source map: messages name the function and nothing else"""
 
     def test_undefined_label_names_only_the_function(self):
-        writer = self.fresh_writer(check = False)
+        writer = self.fresh_writer(check=False)
 
         @writer.LLILCode()
         def Foo():
@@ -891,7 +882,7 @@ class TestCheckOffLocations(WriterTestCase):
             writer.build({})
 
     def test_jump_into_another_function_warns_with_the_function_only(self):
-        writer = self.fresh_writer(check = False)
+        writer = self.fresh_writer(check=False)
 
         @writer.LLILCode()
         def A():
@@ -911,7 +902,7 @@ class TestCheckOffLocations(WriterTestCase):
                          ["A: jumps to label 'in_b' in B (another function)"])
 
     def test_operand_out_of_range_names_only_the_function(self):
-        writer = self.fresh_writer(check = False)
+        writer = self.fresh_writer(check=False)
 
         @writer.LLILCode()
         def Main():
@@ -922,7 +913,7 @@ class TestCheckOffLocations(WriterTestCase):
             writer.build({})
 
     def test_pushed_value_out_of_range_names_only_the_function(self):
-        writer = self.fresh_writer(check = False)
+        writer = self.fresh_writer(check=False)
 
         @writer.LLILCode()
         def Main():
@@ -935,7 +926,7 @@ class TestCheckOffLocations(WriterTestCase):
             writer.build({})
 
     def test_string_with_a_nul_names_only_the_function(self):
-        writer = self.fresh_writer(check = False)
+        writer = self.fresh_writer(check=False)
 
         @writer.LLILCode()
         def Main():
@@ -948,7 +939,7 @@ class TestCheckOffLocations(WriterTestCase):
             writer.build({})
 
     def test_type_error_names_only_the_function(self):
-        writer = self.fresh_writer(check = False)
+        writer = self.fresh_writer(check=False)
 
         @writer.LLILCode()
         def Main():

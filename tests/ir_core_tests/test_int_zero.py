@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''is_int_zero: only the int constant 0 turns a comparison into a plain truth test. Every place that simplifies a
-comparison with zero leaves a float zero as written - a float's truth in the VM is unverified.'''
+"""is_int_zero: only the int constant 0 turns a comparison into a plain truth test. Every place that simplifies a
+comparison with zero leaves a float zero as written - a float's truth in the VM is unverified."""
 
 from pathlib import Path
 import sys
@@ -30,7 +30,7 @@ class TestIsIntZero(unittest.TestCase):
     def test_only_the_int_zero(self):
         self.assertTrue(is_int_zero(INT_ZERO))
         for value in (FLOAT_ZERO, -0.0, SourceFloat(FLOAT_ZERO, '0.0'), 1, '0'):
-            with self.subTest(value = repr(value)):
+            with self.subTest(value=repr(value)):
                 self.assertFalse(is_int_zero(value))
 
 
@@ -39,7 +39,7 @@ def read_x() -> MLILVarSSA:
 
 
 def simplify_mlil_condition(condition):
-    '''if (condition) - runs ConditionSimplificationPass, returns the condition it leaves'''
+    """if (condition) - runs ConditionSimplificationPass, returns the condition it leaves"""
     func = MediumLevelILFunction('condition_test')
     entry, true_block, false_block = (MediumLevelILBasicBlock(index) for index in range(3))
     entry.instructions = [MLILIf(condition, true_block, false_block)]
@@ -56,7 +56,7 @@ class TestMLILConditionSimplification(unittest.TestCase):
     def test_float_zero_is_left_alone(self):
         for condition in (MLILEq(read_x(), MLILConst(FLOAT_ZERO)),
                           MLILNe(MLILLt(read_x(), MLILConst(1)), MLILConst(FLOAT_ZERO))):
-            with self.subTest(condition = str(condition)):
+            with self.subTest(condition=str(condition)):
                 self.assertIs(simplify_mlil_condition(condition), condition)
 
     def test_int_zero_still_simplifies(self):
@@ -70,7 +70,7 @@ def less_than_one() -> HLILBinaryOp:
 
 
 class TestHLILConditionInlining(unittest.TestCase):
-    '''flag = a < 1; if (flag != zero) f() becomes if (a < 1) f() only for an int zero'''
+    """flag = a < 1; if (flag != zero) f() becomes if (a < 1) f() only for an int zero"""
 
     def statements_after_pass(self, zero) -> list:
         flag = HLILVariable('flag')

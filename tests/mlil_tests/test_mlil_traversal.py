@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for MLIL operand traversal - operands(), walk() and iter_ssa_reads(), the one
-shared answer to "what does this node read" that every use collector is built on.'''
+"""Unit tests for MLIL operand traversal - operands(), walk() and iter_ssa_reads(), the one
+shared answer to "what does this node read" that every use collector is built on."""
 
 from pathlib import Path
 import itertools
@@ -26,12 +26,12 @@ _const_values = itertools.count()
 
 
 def c() -> MLILConst:
-    '''A constant whose value no other c() call returns, so every operand is distinct'''
+    """A constant whose value no other c() call returns, so every operand is distinct"""
     return MLILConst(next(_const_values))
 
 
 def samples() -> list:
-    '''One instance of every concrete MLIL node type, with distinct expression operands.'''
+    """One instance of every concrete MLIL node type, with distinct expression operands."""
     block = MediumLevelILBasicBlock(0)
     var = MLILVariable('x')
     ssa_var = MLILVariableSSA(var, 1)
@@ -49,7 +49,7 @@ def samples() -> list:
 
 
 def expression_fields(node) -> list:
-    '''Every MLIL expression a node holds in a field, lists included.'''
+    """Every MLIL expression a node holds in a field, lists included."""
     found = []
     for value in vars(node).values():
         for item in (value if isinstance(value, (list, tuple)) else [value]):
@@ -60,9 +60,9 @@ def expression_fields(node) -> list:
 
 
 class TestOperandsCoverEveryExpressionField(unittest.TestCase):
-    '''operands() is the single list of a node's direct child expressions: every node type must
+    """operands() is the single list of a node's direct child expressions: every node type must
     return exactly the expressions it holds. A new node type fails here until it has a sample and
-    its own operands().'''
+    its own operands()."""
 
     def test_every_node_type_has_a_sample(self):
         sampled = {type(node) for node in samples()}
@@ -71,7 +71,7 @@ class TestOperandsCoverEveryExpressionField(unittest.TestCase):
 
     def test_operands_are_exactly_the_expression_fields(self):
         for node in samples():
-            with self.subTest(node = type(node).__name__):
+            with self.subTest(node=type(node).__name__):
                 self.assertCountEqual(map(id, node.operands()), map(id, expression_fields(node)))
 
     def test_operands_are_in_evaluation_order(self):
@@ -85,7 +85,7 @@ class TestOperandsCoverEveryExpressionField(unittest.TestCase):
 
 
 class TestWalk(unittest.TestCase):
-    '''walk() yields a node and everything below it, pre-order in evaluation order.'''
+    """walk() yields a node and everything below it, pre-order in evaluation order."""
 
     def test_pre_order_left_to_right(self):
         a, b, d = c(), c(), c()
@@ -101,12 +101,12 @@ class TestWalk(unittest.TestCase):
         address = MLILAddressOf(var)
         call = MLILCall('f', [address])
 
-        self.assertEqual(list(walk(call, skip = (MLILAddressOf,))), [call, address])
+        self.assertEqual(list(walk(call, skip=(MLILAddressOf,))), [call, address])
 
 
 class TestIterSSAReads(unittest.TestCase):
-    '''iter_ssa_reads() gives (variable, reader) in evaluation order: the reader is the
-    MLILVarSSA node itself (passes identity-search for it), or the phi for a phi source.'''
+    """iter_ssa_reads() gives (variable, reader) in evaluation order: the reader is the
+    MLILVarSSA node itself (passes identity-search for it), or the phi for a phi source."""
 
     def setUp(self):
         self.x = MLILVariable('x')
@@ -130,11 +130,11 @@ class TestIterSSAReads(unittest.TestCase):
         call = MLILCall('f', [plain, MLILAddressOf(taken)])
 
         self.assertEqual([var for var, _ in iter_ssa_reads(call)], [self.x1, self.x2])
-        self.assertEqual([var for var, _ in iter_ssa_reads(call, skip = (MLILAddressOf,))], [self.x1])
+        self.assertEqual([var for var, _ in iter_ssa_reads(call, skip=(MLILAddressOf,))], [self.x1])
 
 
 class TestWalkerRulesKept(unittest.TestCase):
-    '''Rules individual passes keep on top of the shared traversal.'''
+    """Rules individual passes keep on top of the shared traversal."""
 
     def test_copy_propagation_does_not_count_a_read_under_address_of(self):
         # it never rewrites the operand of &, so that read is not one of its uses

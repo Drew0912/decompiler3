@@ -18,6 +18,7 @@ NUL = b'\0'     # ends every pool string
 
 class StringPoolSection(IntEnum2):
     """Order of the original compiler's string pool"""
+
     Code    = 0
     Name    = 1
     Default = 2
@@ -28,6 +29,7 @@ class StringPoolSection(IntEnum2):
 @dataclass
 class StringRefs:
     """Pool offsets of every string reference, grouped in the original compiler's pool order"""
+
     code         : list[int]
     names        : list[int]
     defaults     : list[int]
@@ -48,7 +50,7 @@ def read_u32(data: bytes, offset: int) -> int:
 
 
 def read_text(data: bytes, offset: int) -> str:
-    return data[offset:data.find(NUL, offset)].decode(default_encoding(), errors = 'replace')
+    return data[offset:data.find(NUL, offset)].decode(default_encoding(), errors='replace')
 
 
 def string_offset(raw_value: int) -> int | None:
@@ -99,5 +101,5 @@ def collect_string_refs(data: bytes, parser: ScpParser, records: list[list[ScpFu
     header = parser.header
     global_names = string_offsets(data, (header.global_var_offset + i * ScpGlobalVar.SIZE for i in range(header.global_var_count)))
 
-    pool_start = min(code + names + defaults + debug + global_names, default = len(data))
-    return StringRefs(code = code, names = names, defaults = defaults, debug = debug, global_names = global_names, pool_start = pool_start)
+    pool_start = min(code + names + defaults + debug + global_names, default=len(data))
+    return StringRefs(code=code, names=names, defaults=defaults, debug=debug, global_names=global_names, pool_start=pool_start)

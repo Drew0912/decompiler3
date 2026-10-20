@@ -189,6 +189,7 @@ nested `HLILBlock`:
 class HLILBlock(HLILStatement):
     statements: list[HLILStatement]
 
+
 class HighLevelILFunction:
     name: str
     start_addr: int

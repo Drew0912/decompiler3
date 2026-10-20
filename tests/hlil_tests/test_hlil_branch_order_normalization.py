@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for HLIL branch order normalization.'''
+"""Unit tests for HLIL branch order normalization."""
 
 from pathlib import Path
 import sys
@@ -51,7 +51,7 @@ def make_condition(op: BinaryOp = BinaryOp.GT) -> HLILBinaryOp:
 
 
 def make_arm(line: int) -> HLILBlock:
-    '''A branch whose first printed line number is `line`'''
+    """A branch whose first printed line number is `line`"""
     return HLILBlock([
         HLILComment(f'line({line})'),
         HLILExprStmt(HLILCall(f'work_{line}', [])),
@@ -59,12 +59,12 @@ def make_arm(line: int) -> HLILBlock:
 
 
 def guarded_call(name: str) -> HLILIf:
-    '''if (selector > THRESHOLD) name(); - no else, no line number'''
+    """if (selector > THRESHOLD) name(); - no else, no line number"""
     return HLILIf(make_condition(), HLILBlock([HLILExprStmt(HLILCall(name, []))]), None)
 
 
 def run_pass(stmt) -> HLILIf:
-    '''stmt after BranchOrderNormalizationPass'''
+    """stmt after BranchOrderNormalizationPass"""
     func = HighLevelILFunction('test_branch_order')
     func.add_statement(stmt)
     return BranchOrderNormalizationPass().run(func).body.statements[0]
@@ -75,15 +75,15 @@ def first_comment(block: HLILBlock) -> str:
 
 
 def make_reversed_arms_mlil() -> MediumLevelILFunction:
-    '''if (arg1) {line LATE_LINE} else {line EARLY_LINE}, the arms rejoining: structuring keeps the bytecode's order'''
+    """if (arg1) {line LATE_LINE} else {line EARLY_LINE}, the arms rejoining: structuring keeps the bytecode's order"""
     func = MediumLevelILFunction('reversed_arms', ENTRY_START)
-    entry = func.create_block(start = ENTRY_START, label = 'entry')
-    late = func.create_block(start = LATE_START, label = 'late')
-    early = func.create_block(start = EARLY_START, label = 'early')
-    join = func.create_block(start = JOIN_START, label = 'join')
+    entry = func.create_block(start=ENTRY_START, label='entry')
+    late = func.create_block(start=LATE_START, label='late')
+    early = func.create_block(start=EARLY_START, label='early')
+    join = func.create_block(start=JOIN_START, label='join')
     entry.add_instruction(MLILIf(MLILVar(func.get_or_create_parameter(1, 'arg1')), late, early))
     for block, line in ((late, LATE_LINE), (early, EARLY_LINE)):
-        block.add_instruction(MLILDebug('line', line, address = block.start))
+        block.add_instruction(MLILDebug('line', line, address=block.start))
         block.add_instruction(MLILCall(f'work_{line}', []))
         block.add_instruction(MLILGoto(join))
 
@@ -240,7 +240,7 @@ class TestBranchOrderNormalization(unittest.TestCase):
 
 
 class TestNormalizeBranchOrderFlag(unittest.TestCase):
-    '''convert_falcom_mlil_to_hlil's normalize_branch_order: on by default, off keeps the bytecode's arm order'''
+    """convert_falcom_mlil_to_hlil's normalize_branch_order: on by default, off keeps the bytecode's arm order"""
 
     def test_on_by_default_puts_the_earlier_line_first(self):
         [result, _] = convert_falcom_mlil_to_hlil(make_reversed_arms_mlil()).body.statements
@@ -248,7 +248,7 @@ class TestNormalizeBranchOrderFlag(unittest.TestCase):
         self.assertEqual(first_comment(result.true_block), f'line({EARLY_LINE})')
 
     def test_off_keeps_the_bytecode_order(self):
-        hlil = convert_falcom_mlil_to_hlil(make_reversed_arms_mlil(), normalize_branch_order = False)
+        hlil = convert_falcom_mlil_to_hlil(make_reversed_arms_mlil(), normalize_branch_order=False)
         [result, _] = hlil.body.statements
 
         self.assertEqual(first_comment(result.true_block), f'line({LATE_LINE})')
@@ -259,7 +259,7 @@ def compare(operand) -> HLILBinaryOp:
 
 
 def lone_if_chain(*arms: HLILBlock) -> HLILBlock:
-    '''A block that is only an if whose else holds the next link: one link per arm'''
+    """A block that is only an if whose else holds the next link: one link per arm"""
     result = None
     for arm in reversed(arms):
         result = HLILBlock([HLILIf(make_condition(), arm, result)])
@@ -268,8 +268,8 @@ def lone_if_chain(*arms: HLILBlock) -> HLILBlock:
 
 
 class TestChainsAndScrutinees(unittest.TestCase):
-    '''The longer else-if chain goes in the else whatever the lines say; a chain testing the same variable stays;
-    one testing something else, or a test that examines no variable, is ordered by its lines'''
+    """The longer else-if chain goes in the else whatever the lines say; a chain testing the same variable stays;
+    one testing something else, or a test that examines no variable, is ordered by its lines"""
 
     def test_arm_without_a_line_number_never_fails_the_comparison(self):
         with_line = make_arm(EARLY_LINE)

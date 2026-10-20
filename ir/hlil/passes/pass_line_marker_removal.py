@@ -1,4 +1,4 @@
-'''Line Marker Removal Pass'''
+"""Line Marker Removal Pass"""
 
 from ir.pipeline import Pass
 from ..hlil import (
@@ -12,11 +12,11 @@ from ..hlil import (
 
 
 class LineMarkerRemovalPass(Pass):
-    '''Drop the line(N) comments, then tidy the if arms left empty.
+    """Drop the line(N) comments, then tidy the if arms left empty.
 
     Runs last: structuring and branch-order normalization read the markers, so
     dropping them earlier would change the code, not just hide the comments.
-    '''
+    """
 
     def run(self, func: HighLevelILFunction) -> HighLevelILFunction:
         self._remove_markers(func.body)
@@ -35,7 +35,7 @@ class LineMarkerRemovalPass(Pass):
 
     @classmethod
     def _tidy_arms(cls, stmt: HLILIf):
-        '''An else left empty goes; a then left empty takes the else, the condition negated'''
+        """An else left empty goes; a then left empty takes the else, the condition negated"""
         if stmt.false_block is not None and not stmt.false_block.statements:
             stmt.false_block = None
 

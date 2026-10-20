@@ -1,6 +1,24 @@
 # Coding Style
 
-The house style for all code in this repo. `CLAUDE.md` imports this file; `AGENTS.md` tells Codex to read it.
+PEP 8 (PEP 257 for docstrings) holds where it sets a rule; this file lists the house choices where it leaves one
+open, plus the project's own rules. `CLAUDE.md` imports this file; `AGENTS.md` tells Codex to read it.
+
+## Where the house departs from PEP 8 and PEP 257
+
+- **Lines** up to 120 columns, not 79; longer only where a wrap would hurt (a table row, a long message).
+- **Aligned columns** in a block of related assignments or annotations and in a table's rows (constants, a class's
+  attributes, the opcode table): `ENDIAN      = 'little'`.
+- **Star imports** are allowed: the DSL scripts and the IR packages are built on them.
+- **A `sys.path` line among the imports** in every test, tool, demo and decompiled script: after the
+  standard-library imports it needs, before the project imports. Each puts the repo root on `sys.path` itself; hook
+  templates and the common-function library have none.
+- **The DSL's names** follow the opcodes and decompiler2: `PUSH_INT`, `LLILCode`, `registerRunCallback`,
+  `fileio.Open`.
+- **Docstrings where they help:** a module, class or function whose name and signature say what it does needs none
+  (Readable code, below).
+- **Docstrings and comments are concise phrases** (Concise comments, below), not full sentences: no closing period;
+  a multi-line docstring may close on its last line of text, with no blank line after its first.
+- **Semicolons** may join a short assembler sequence in a test: `asm.get_reg(REG_INDEX); asm.jz('right')`.
 
 ## Code
 
@@ -11,13 +29,15 @@ The house style for all code in this repo. `CLAUDE.md` imports this file; `AGENT
 - **Comments name the constant, not its value:** `(offset // WORD_SIZE)`, not `(offset // 4)`.
 - **Imports at module top level.** Two exceptions: a proven circular import inside a function, with a comment
   saying so; imports used only in type hints, under `if TYPE_CHECKING:`.
-- **Spaces around every `=`:** assignments, default parameters (`def f(arg = 0)`), keyword arguments
-  (`f(key = value)`), annotated assignments (`x: int = 5`).
-- **A blank line between the blocks of a conditional:** `if` / `elif`, `elif` / `elif`, `elif` / `else`, `if` / `else`.
+- **`=` as in PEP 8:** spaces around an assignment's `=` and an annotated default's (`x: int = 5`,
+  `def f(x: int = 0)`); none around a keyword argument's or an unannotated default's (`f(key=value)`,
+  `def f(arg=0)`).
+- **A section comment** one blank line above a top-level definition heads it: the two blank lines go above the
+  comment.
 - **`@classmethod`, never `@staticmethod`:** through `cls` the method reaches the class's other methods and sees a
   subclass's overrides; a staticmethod would have to name its class, which skips them.
 - **Quotes:** single quotes for strings (`'text'`); double quotes only when the string contains a single quote
-  (`"it's"`). Docstrings: `"""` (PEP 257); a file still using `'''` keeps it until it is converted.
+  (`"it's"`). Triple-quoted strings, docstrings included: `"""` (PEP 8, PEP 257).
 - **English-only comments and docs.**
 - **Concise comments:** brief and meaningful; a self-explanatory name beats a comment; never state the obvious
   (`x = 5  # Set x to 5`).
@@ -33,7 +53,7 @@ The house style for all code in this repo. `CLAUDE.md` imports this file; `AGENT
 
 - **Line endings:** git stores every text file with LF except `CLAUDE.md` (CRLF); a Windows checkout with
   `core.autocrlf = true` also has CRLF files in its working tree. Keep each file's own ending: scripts write with
-  `write_bytes` or `write_text(..., newline = '\n')`; check with `git ls-files --eol` (`w/lf` / `w/crlf`).
+  `write_bytes` or `write_text(..., newline='\n')`; check with `git ls-files --eol` (`w/lf` / `w/crlf`).
 
 ## Commit Messages
 

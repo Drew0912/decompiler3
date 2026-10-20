@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-'''Unit tests for the common-function library generator (gen_common_library.py) and the library it
+"""Unit tests for the common-function library generator (gen_common_library.py) and the library it
 generates. Generator: the facts that decide a function's inclusion and module, a function rendered from hand-built
 bytecode with the scripts' stack comments, a module's imports, the closure check and the corpus-root check. Library:
 compiling a label-heavy generated function twice in one process, each time on a fresh writer against the same cached
 module, must fingerprint identically to the corpus canonical both times - proving genLabel() names are allocated per
-execution, not baked in once at module import time.'''
+execution, not baked in once at module import time."""
 
 import contextlib
 import importlib
@@ -41,21 +41,21 @@ SCRIPT_CALLEE = 'ScriptOnly'  # a script's own function: never in the library
 
 
 def disassemble(asm: Asm, argc: int = 0) -> tuple[ScpParser, dict[str, Function]]:
-    '''FUNC_NAME assembled from asm, calling a callee that returns at once'''
+    """FUNC_NAME assembled from asm, calling a callee that returns at once"""
     parser, functions = Program(Func(FUNC_NAME, argc, asm), returning_callee()).disassemble()
     return parser, {func.name: func for func in functions}
 
 
 def defined_functions(module) -> list:
-    '''Functions actually defined in module (not opcode primitives/genLabel/other common modules
-    reaching it through the helper star-import or a cross-module "import ... as common_N")'''
+    """Functions actually defined in module (not opcode primitives/genLabel/other common modules
+    reaching it through the helper star-import or a cross-module "import ... as common_N")"""
     return [obj for obj in vars(module).values() if inspect.isfunction(obj) and obj.__module__ == module.__name__]
 
 
 def compile_and_fingerprint(name: str) -> str:
-    '''Registers every generated common function through one CommonImports() manifest - the
+    """Registers every generated common function through one CommonImports() manifest - the
     generator already asserts every CALL target is included, so this always resolves - compiles to
-    a throwaway .dat, then re-disassembles it and fingerprints the requested function.'''
+    a throwaway .dat, then re-disassembles it and fingerprints the requested function."""
     module_keys = sorted({module_key for module_key, _digest in COMMON_FUNCTIONS.values()})
     modules = [importlib.import_module(f'{COMMON_LIBRARY_PACKAGE}.{key}') for key in module_keys]
     functions = [func for module in modules for func in defined_functions(module)]
@@ -71,7 +71,7 @@ def compile_and_fingerprint(name: str) -> str:
 
         writer.run(globals())
 
-        parser, disasm_functions = ScpParser.load(dat_path, round_trip = False, keep_unreachable_code = False)
+        parser, disasm_functions = ScpParser.load(dat_path, round_trip=False, keep_unreachable_code=False)
 
         func = next(f for f in disasm_functions if f.name == name)
         return fingerprint_digest(function_fingerprint(parser, func))
@@ -84,7 +84,7 @@ class TestGenerator(unittest.TestCase):
             'set_global'    : lambda asm: (asm.push_int(LEFT_VALUE), asm.set_global(GLOBAL_INDEX)),
         }
         for use, emit in global_uses.items():
-            with self.subTest(use = use):
+            with self.subTest(use=use):
                 asm = Asm()
                 asm.syscall(SUBSYSTEM, SYSCALL_FUNC, SYSCALL_ARGC)
                 asm.syscall(SUBSYSTEM + 1, SYSCALL_FUNC, SYSCALL_ARGC)
@@ -94,9 +94,9 @@ class TestGenerator(unittest.TestCase):
 
                 facts = {name: gen.function_facts(parser, func) for name, func in functions.items()}
                 self.assertEqual(facts, {
-                    FUNC_NAME   : gen.FunctionFacts(touches_global = True, call_targets = {CALLEE_NAME},
-                                                    subsystem = SUBSYSTEM),
-                    CALLEE_NAME : gen.FunctionFacts(touches_global = False, call_targets = set(), subsystem = None),
+                    FUNC_NAME   : gen.FunctionFacts(touches_global=True, call_targets={CALLEE_NAME},
+                                                    subsystem=SUBSYSTEM),
+                    CALLEE_NAME : gen.FunctionFacts(touches_global=False, call_targets=set(), subsystem=None),
                 })
 
     def render(self, callee_module: str) -> list[str]:
@@ -107,7 +107,7 @@ class TestGenerator(unittest.TestCase):
         asm.push_raw(0)                                                                 # opens slot 1
         asm.push_int(LEFT_VALUE); asm.pop_to(-WORD_SIZE); asm.pop(WORD_SIZE)            # sp 2 after its pop: slot 1
         asm.label('skip'); asm.pop(WORD_SIZE); asm.ret()
-        parser, functions = disassemble(asm, argc = 1)
+        parser, functions = disassemble(asm, argc=1)
 
         func = functions[FUNC_NAME]
         digest = fingerprint_digest(function_fingerprint(parser, func))
@@ -115,8 +115,8 @@ class TestGenerator(unittest.TestCase):
         return gen.render_function(parser, func, Path('test.dat'), digest, name_to_module)
 
     def test_function_rendered_from_its_instructions_with_stack_comments(self):
-        '''The stack comments only: a float SYSCALL argument gets neither the float bits nor its argument number'''
-        self.assertEqual(self.render(callee_module = OWN_MODULE), [
+        """The stack comments only: a float SYSCALL argument gets neither the float bits nor its argument number"""
+        self.assertEqual(self.render(callee_module=OWN_MODULE), [
             f'def {FUNC_NAME}(arg1: Value32):',
             '    L0 = genLabel()',
             '    L1 = genLabel()',
@@ -139,35 +139,35 @@ class TestGenerator(unittest.TestCase):
         ])
 
     def test_callee_in_another_module_is_qualified(self):
-        lines = self.render(callee_module = gen.NO_SYSCALL_MODULE)
+        lines = self.render(callee_module=gen.NO_SYSCALL_MODULE)
         self.assertIn(f'    CALL({gen.module_alias(gen.NO_SYSCALL_MODULE)}.{CALLEE_NAME})', lines)
 
     def test_module_imports_only_the_other_modules_it_calls(self):
-        facts = {FUNC_NAME: gen.FunctionFacts(touches_global = False, call_targets = {CALLEE_NAME},
-                                              subsystem = SUBSYSTEM)}
+        facts = {FUNC_NAME: gen.FunctionFacts(touches_global=False, call_targets={CALLEE_NAME},
+                                              subsystem=SUBSYSTEM)}
         rendered = {FUNC_NAME: [f'def {FUNC_NAME}():', '    pass']}
         other_module = gen.NO_SYSCALL_MODULE
         other_import = f'import {COMMON_LIBRARY_PACKAGE}.{other_module} as {gen.module_alias(other_module)}'
         for callee_module, imports in ((OWN_MODULE, []), (other_module, [other_import])):
-            with self.subTest(callee_module = callee_module):
+            with self.subTest(callee_module=callee_module):
                 name_to_module = {FUNC_NAME: OWN_MODULE, CALLEE_NAME: callee_module}
                 text = gen.render_module(OWN_MODULE, [FUNC_NAME], rendered, facts, name_to_module)
                 self.assertEqual([line for line in text.split('\n') if line.startswith('import ')], imports)
 
     def test_included_functions_call_only_included_ones(self):
-        '''require_closed_calls: a callee left out of the library, excluded or not a common function at all, stops
-        generation; a closed set passes'''
+        """require_closed_calls: a callee left out of the library, excluded or not a common function at all, stops
+        generation; a closed set passes"""
         facts = {
-            FUNC_NAME   : gen.FunctionFacts(touches_global = False, call_targets = {CALLEE_NAME}, subsystem = None),
-            CALLEE_NAME : gen.FunctionFacts(touches_global = False, call_targets = set(), subsystem = None),
+            FUNC_NAME   : gen.FunctionFacts(touches_global=False, call_targets={CALLEE_NAME}, subsystem=None),
+            CALLEE_NAME : gen.FunctionFacts(touches_global=False, call_targets=set(), subsystem=None),
         }
         gen.require_closed_calls({FUNC_NAME, CALLEE_NAME}, facts)
 
-        calls_script = {FUNC_NAME: gen.FunctionFacts(touches_global = False, call_targets = {SCRIPT_CALLEE},
-                                                     subsystem = None)}
+        calls_script = {FUNC_NAME: gen.FunctionFacts(touches_global=False, call_targets={SCRIPT_CALLEE},
+                                                     subsystem=None)}
         for case, included, case_facts, target in (('excluded', {FUNC_NAME}, facts, CALLEE_NAME),
                                                    ('not common', {FUNC_NAME}, calls_script, SCRIPT_CALLEE)):
-            with self.subTest(case = case):
+            with self.subTest(case=case):
                 with self.assertRaises(RuntimeError) as raised:
                     gen.require_closed_calls(included, case_facts)
 
@@ -175,36 +175,36 @@ class TestGenerator(unittest.TestCase):
                                  f'{FUNC_NAME}: CALL target {target!r} is excluded or not a common function')
 
     def test_wrong_corpus_root_writes_nothing(self):
-        '''generate() replaces the whole library: anything but a game's script folder of .dat scripts (a file, a
+        """generate() replaces the whole library: anything but a game's script folder of .dat scripts (a file, a
         missing path, the game folder, one of the script folder's subfolders, a script folder with no .dat) must
-        stop it first. Parsing is stubbed out, so only the input checks can stop it'''
+        stop it first. Parsing is stubbed out, so only the input checks can stop it"""
         with tempfile.TemporaryDirectory() as tmp, \
-             mock.patch.object(gen, 'collect_occurrences', return_value = ({}, {})), \
+             mock.patch.object(gen, 'collect_occurrences', return_value=({}, {})), \
              mock.patch.object(gen, 'write_output') as write_output:
             game = Path(tmp) / 'game'
             subfolder = game / 'script_en' / 'ai'
-            subfolder.mkdir(parents = True)
+            subfolder.mkdir(parents=True)
             script = subfolder / 'script.dat'
             script.write_bytes(b'')
             empty = Path(tmp) / 'script_fr'
             empty.mkdir()
             for corpus_root, error in ((script, NotADirectoryError), (Path(tmp) / 'missing', NotADirectoryError),
                                        (game, ValueError), (subfolder, ValueError), (empty, FileNotFoundError)):
-                with self.subTest(corpus_root = corpus_root.name):
+                with self.subTest(corpus_root=corpus_root.name):
                     with self.assertRaises(error):
                         gen.generate(corpus_root)
 
                     write_output.assert_not_called()
 
     def test_script_folder_of_any_language_is_accepted(self):
-        '''The language in script_<lang> is not fixed (script_en today), and a bare script folder passes too'''
+        """The language in script_<lang> is not fixed (script_en today), and a bare script folder passes too"""
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()), \
-             mock.patch.object(gen, 'collect_occurrences', return_value = ({}, {})), \
+             mock.patch.object(gen, 'collect_occurrences', return_value=({}, {})), \
              mock.patch.object(gen, 'write_output') as write_output:
             for folder_name in ('script_en', 'script_sc', 'script'):
-                with self.subTest(folder_name = folder_name):
+                with self.subTest(folder_name=folder_name):
                     script_folder = Path(tmp) / folder_name
-                    (script_folder / 'ai').mkdir(parents = True)
+                    (script_folder / 'ai').mkdir(parents=True)
                     (script_folder / 'ai' / 'script.dat').write_bytes(b'')
                     write_output.reset_mock()
                     gen.generate(script_folder)

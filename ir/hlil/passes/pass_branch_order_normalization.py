@@ -1,4 +1,4 @@
-'''Branch Order Normalization Pass
+"""Branch Order Normalization Pass
 
 Structuring picks which arm of an `if` becomes the body based on control-flow
 shape, which regularly puts the later-written arm first:
@@ -17,7 +17,7 @@ decides.
 This is the one pass that deliberately diverges from the order the bytecode was
 emitted in, so it is optional - see `normalize_branch_order` in
 falcom/ed9/ir/hlil/hlil_converter.py.
-'''
+"""
 
 from typing import Optional
 
@@ -43,7 +43,7 @@ from ..hlil import (
 
 
 class BranchOrderNormalizationPass(Pass):
-    '''Swap if/else arms that structuring left in reverse source order'''
+    """Swap if/else arms that structuring left in reverse source order"""
 
     def run(self, func: HighLevelILFunction) -> HighLevelILFunction:
         self._process_block(func.body)
@@ -63,7 +63,7 @@ class BranchOrderNormalizationPass(Pass):
                 self._normalize(stmt)
 
     def _normalize(self, stmt: HLILIf):
-        '''Swap this if's arms when the other order reads better'''
+        """Swap this if's arms when the other order reads better"""
         if not self._has_statements(stmt.true_block) or not self._has_statements(stmt.false_block):
             return
 
@@ -113,7 +113,7 @@ class BranchOrderNormalizationPass(Pass):
 
     @classmethod
     def _chain_length(cls, block: Optional[HLILBlock]) -> int:
-        '''How many further else-if links follow from this lone-if block'''
+        """How many further else-if links follow from this lone-if block"""
         inner_if = sole_statement(block)
         if not isinstance(inner_if, HLILIf):
             return 0
@@ -122,12 +122,12 @@ class BranchOrderNormalizationPass(Pass):
 
     @classmethod
     def _looks_like_same_chain(cls, condition, chain_block: HLILBlock) -> bool:
-        '''Whether a lone-if chain block continues testing the same thing as `condition`
+        """Whether a lone-if chain block continues testing the same thing as `condition`
 
         Conservative by design: stays True (protect the chain) whenever either side's
         scrutinee can't be identified, since the cost of a missed swap is just a less
         tidy chain, while wrongly reordering a real dispatch chain would bury it again.
-        '''
+        """
         inner_if = sole_statement(chain_block)
         if not isinstance(inner_if, HLILIf):
             return True
@@ -142,11 +142,11 @@ class BranchOrderNormalizationPass(Pass):
 
     @classmethod
     def _chain_head(cls, condition):
-        '''Identity of what a condition tests, ignoring the literal it's compared against -
+        """Identity of what a condition tests, ignoring the literal it's compared against -
         e.g. `global_work(12) == 1` and `global_work(12) == 2` share a head, `flag(9023) == 0`
         and `flag(9017) == 0` share a head (same call, different constant argument), but
         `menu_is_canceled(1) != 0` and `var_s1 == 0` do not (unrelated things being tested)
-        '''
+        """
         scrutinee = cls._scrutinee(condition)
 
         if isinstance(scrutinee, HLILCall):
@@ -165,7 +165,7 @@ class BranchOrderNormalizationPass(Pass):
 
     @classmethod
     def _scrutinee(cls, condition):
-        '''The thing a condition is testing, unwrapping negation and comparison operators'''
+        """The thing a condition is testing, unwrapping negation and comparison operators"""
         if isinstance(condition, HLILUnaryOp) and condition.op == UnaryOp.NOT:
             return cls._scrutinee(condition.operand)
 
@@ -184,12 +184,12 @@ class BranchOrderNormalizationPass(Pass):
         stmt.true_block, stmt.false_block = stmt.false_block, stmt.true_block
 
     def _should_swap(self, stmt: HLILIf) -> bool:
-        '''Whether the false arm belongs first
+        """Whether the false arm belongs first
 
         Source order decides when both arms carry distinct line numbers; corpus
         measurements favor it over nesting depth by 146 cases to 7. Depth is the
         tie-break for the rest.
-        '''
+        """
         true_line = self._first_line(stmt.true_block)
         false_line = self._first_line(stmt.false_block)
 
@@ -202,7 +202,7 @@ class BranchOrderNormalizationPass(Pass):
 
     @classmethod
     def _if_depth(cls, block: Optional[HLILBlock]) -> int:
-        '''Maximum if nesting depth inside a block, ifs inside loops and switches included'''
+        """Maximum if nesting depth inside a block, ifs inside loops and switches included"""
         max_depth = 0
         stack = [(block, 0)]
 
@@ -229,11 +229,11 @@ class BranchOrderNormalizationPass(Pass):
 
     @classmethod
     def _is_else_if_chain(cls, block: Optional[HLILBlock]) -> bool:
-        '''An else branch that is nothing but the next test in a chain'''
+        """An else branch that is nothing but the next test in a chain"""
         return isinstance(sole_statement(block), HLILIf)
 
     def _first_line(self, block: Optional[HLILBlock]) -> Optional[int]:
-        '''First line number this block prints, nested statements included'''
+        """First line number this block prints, nested statements included"""
         if not block or not block.statements:
             return None
 

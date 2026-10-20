@@ -45,6 +45,7 @@ from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 
 class OperationKind(Enum):
     """Normalized operation categories for semantic comparison"""
+
     ARITHMETIC = auto()     # ADD, SUB, MUL, DIV, MOD, NEG
     COMPARISON = auto()     # EQ, NE, LT, LE, GT, GE
     LOGICAL = auto()        # AND, OR, NOT (logical)
@@ -61,6 +62,7 @@ class OperationKind(Enum):
 
 class ComparisonStatus(Enum):
     """Result of comparing two operations across IR layers"""
+
     EQUIVALENT = auto()     # Semantically identical
     TRANSFORMED = auto()    # Expected transformation (e.g., STACK_LOAD -> VAR)
     DIFFERENT = auto()      # Semantic difference (potential bug)
@@ -70,12 +72,14 @@ class ComparisonStatus(Enum):
 
 class ViolationSeverity(Enum):
     """Severity for semantic validation results"""
+
     HARD_FAIL = auto()
     SOFT_SIGNAL = auto()
 
 
 class IRLayer(Enum):
     """IR layer identifier"""
+
     LLIL = auto()
     MLIL = auto()
     HLIL = auto()
@@ -101,6 +105,7 @@ ProvenanceKey = Tuple[str, int]  # (layer name, instruction index in that layer)
 @dataclass
 class SourceLocation:
     """Maps IR instruction to original SCP bytecode offset"""
+
     scp_offset: int = 0
     llil_index: int = UNASSIGNED_INST_INDEX
     mlil_index: int = UNASSIGNED_INST_INDEX
@@ -122,6 +127,7 @@ class SourceLocation:
 @dataclass
 class SemanticOperand:
     """Normalized operand representation for comparison"""
+
     kind: str               # 'const', 'var', 'reg', 'global', 'expr'
     value: Any = None       # Actual value or identifier
     type_hint: Optional[str] = None
@@ -135,10 +141,8 @@ class SemanticOperand:
     def __str__(self) -> str:
         if self.kind == 'const':
             return repr(self.value)
-
         elif self.kind == 'var':
             return str(self.value)
-
         else:
             return f"{self.kind}:{self.value}"
 
@@ -146,11 +150,12 @@ class SemanticOperand:
 @dataclass
 class SemanticOperation:
     """Normalized operation for cross-layer comparison"""
+
     kind: OperationKind
     operator: str           # Specific operator (ADD, SUB, EQ, etc.)
-    operands: List[SemanticOperand] = field(default_factory = list)
+    operands: List[SemanticOperand] = field(default_factory=list)
     result: Optional[SemanticOperand] = None
-    source_location: SourceLocation = field(default_factory = SourceLocation)
+    source_location: SourceLocation = field(default_factory=SourceLocation)
 
     @property
     def provenance_keys(self) -> List[ProvenanceKey]:
@@ -165,6 +170,7 @@ class SemanticOperation:
 @dataclass
 class ComparisonResult:
     """Result of comparing two operations"""
+
     status: ComparisonStatus
     source_layer: IRLayer
     target_layer: IRLayer
@@ -181,6 +187,7 @@ class ComparisonResult:
 @dataclass
 class MatchStatistics:
     """Match statistics for a comparison report"""
+
     total_source_blocks: int = 0
     matched_blocks: int = 0
     total_source_ops: int = 0
@@ -247,6 +254,7 @@ class MatchStatistics:
 @dataclass
 class BlockComparisonResult:
     """Result for a single matched block pair"""
+
     source_block_id: int
     target_block_id: int
     similarity: float
@@ -258,28 +266,30 @@ class BlockComparisonResult:
 @dataclass
 class ComparisonReport:
     """Full comparison report for a layer pair"""
+
     source_layer: IRLayer
     target_layer: IRLayer
     function_name: str = ""
-    block_results: List[BlockComparisonResult] = field(default_factory = list)
-    unmatched_source_blocks: List[int] = field(default_factory = list)
-    unmatched_target_blocks: List[int] = field(default_factory = list)
-    side_effect_violations: List[ComparisonResult] = field(default_factory = list)
-    hard_fail_violations: List[ComparisonResult] = field(default_factory = list)
-    soft_signal_warnings: List[ComparisonResult] = field(default_factory = list)
-    quality_metrics: Dict[str, Union[int, float, Dict[str, int]]] = field(default_factory = dict)
-    statistics: MatchStatistics = field(default_factory = MatchStatistics)
+    block_results: List[BlockComparisonResult] = field(default_factory=list)
+    unmatched_source_blocks: List[int] = field(default_factory=list)
+    unmatched_target_blocks: List[int] = field(default_factory=list)
+    side_effect_violations: List[ComparisonResult] = field(default_factory=list)
+    hard_fail_violations: List[ComparisonResult] = field(default_factory=list)
+    soft_signal_warnings: List[ComparisonResult] = field(default_factory=list)
+    quality_metrics: Dict[str, Union[int, float, Dict[str, int]]] = field(default_factory=dict)
+    statistics: MatchStatistics = field(default_factory=MatchStatistics)
     passed: bool = True
 
 
 @dataclass
 class SemanticAtom:
     """Comparison unit used by provenance-first matching"""
+
     kind: OperationKind
     operator: str
-    operands: List[SemanticOperand] = field(default_factory = list)
-    source_location: SourceLocation = field(default_factory = SourceLocation)
-    provenance_keys: List[ProvenanceKey] = field(default_factory = list)
+    operands: List[SemanticOperand] = field(default_factory=list)
+    source_location: SourceLocation = field(default_factory=SourceLocation)
+    provenance_keys: List[ProvenanceKey] = field(default_factory=list)
     fingerprint: str = ""
     critical: bool = False
 
@@ -287,17 +297,19 @@ class SemanticAtom:
 @dataclass
 class EffectEvent:
     """Observable side-effect event for behavior validation"""
+
     category: str  # call, write_global, write_reg, return
     signature: str
     family: str = ""
     target_key: str = ""
-    source_location: SourceLocation = field(default_factory = SourceLocation)
-    provenance_keys: List[ProvenanceKey] = field(default_factory = list)
+    source_location: SourceLocation = field(default_factory=SourceLocation)
+    provenance_keys: List[ProvenanceKey] = field(default_factory=list)
 
 
 @dataclass
 class MatchedEffectEvent:
     """One matched source/target critical effect pair"""
+
     source_index: int
     target_index: int
     score: int
@@ -307,6 +319,7 @@ class MatchedEffectEvent:
 @dataclass
 class FunctionReport:
     """Report for all layer comparisons of a single function"""
+
     function_name: str
     llil_mlil: Optional[ComparisonReport] = None
     mlil_hlil: Optional[ComparisonReport] = None
@@ -315,6 +328,7 @@ class FunctionReport:
 @dataclass
 class BatchReport:
     """Report for batch validation of all functions"""
+
     scp_path: str = ""
     function_reports: List[FunctionReport] = field(default_factory=list)
     total_functions: int = 0
@@ -324,6 +338,7 @@ class BatchReport:
 @dataclass
 class VariableMapping:
     """Tracks variable correspondence across IR layers"""
+
     llil_storage: str       # e.g., "Stack[0]", "Frame[0]", "Reg[0]"
     mlil_var: str           # e.g., "var_s0", "arg1"
     hlil_var: str = ""      # e.g., "local_count", "param_target"
@@ -344,6 +359,7 @@ class VariableMapping:
 
 class IRErrorKind(Enum):
     """Types of IR processing errors"""
+
     SCP_PARSE = auto()
     LLIL_BUILD = auto()
     MLIL_CONVERT = auto()
@@ -354,6 +370,7 @@ class IRErrorKind(Enum):
 @dataclass
 class IRError:
     """Error information for IR processing failures"""
+
     kind: IRErrorKind
     function_name: str
     message: str
@@ -533,7 +550,6 @@ class IRPipeline:
             parser.parse()
             self.scp = parser
             return True
-
         except Exception as e:
             self.error_handler.handle_scp_parse_error(str(e))
             print(f"Error parsing SCP file: {e}", file=sys.stderr)
@@ -562,7 +578,6 @@ class IRPipeline:
 
                 try:
                     llil_func = lifter.lift_function(func)
-
                 except Exception as e:
                     self.error_handler.handle_llil_build_error(
                         func.name, "LLIL build failed", e
@@ -571,7 +586,6 @@ class IRPipeline:
 
                 try:
                     mlil_func = convert_falcom_llil_to_mlil(llil_func)
-
                 except Exception as e:
                     self.error_handler.handle_mlil_convert_error(
                         func.name, "MLIL conversion failed", e
@@ -580,7 +594,6 @@ class IRPipeline:
 
                 try:
                     hlil_func = convert_falcom_mlil_to_hlil(mlil_func)
-
                 except Exception as e:
                     self.error_handler.handle_hlil_convert_error(
                         func.name, "HLIL conversion failed", e
@@ -589,7 +602,6 @@ class IRPipeline:
 
                 self.functions.append((func.name, llil_func, mlil_func, hlil_func))
                 self._collect_scp_instructions(func)
-
         finally:
             self.close()
 
@@ -678,7 +690,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_NEG:
         return SemanticOperation(
             kind=OperationKind.ARITHMETIC,
@@ -697,7 +708,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_TEST_ZERO:
         return SemanticOperation(
             kind=OperationKind.COMPARISON,
@@ -723,7 +733,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_BITWISE_NOT:
         return SemanticOperation(
             kind=OperationKind.BITWISE,
@@ -740,7 +749,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_BRANCH:
         return SemanticOperation(
             kind=OperationKind.BRANCH,
@@ -748,7 +756,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_CALL:
         return SemanticOperation(
             kind=OperationKind.CALL,
@@ -756,7 +763,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_SYSCALL:
         return SemanticOperation(
             kind=OperationKind.CALL,
@@ -764,7 +770,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILFalcomOperation.LLIL_CALL_SCRIPT:
         return SemanticOperation(
             kind=OperationKind.CALL,
@@ -772,7 +777,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_RET:
         return SemanticOperation(
             kind=OperationKind.RETURN,
@@ -789,7 +793,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_STACK_STORE:
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
@@ -797,7 +800,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_FRAME_LOAD:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -805,7 +807,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_FRAME_STORE:
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
@@ -813,7 +814,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_LOAD:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -821,7 +821,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_STORE:
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
@@ -829,7 +828,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_REG_LOAD:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -837,7 +835,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_REG_STORE:
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
@@ -850,7 +847,7 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
     elif op.name == 'LLIL_GLOBAL_STORE':
         result = None
         if hasattr(instr, 'index'):
-            result = SemanticOperand(kind = 'global', value = f"GLOBALS[{instr.index}]")
+            result = SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]")
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
             operator='GLOBAL_STORE',
@@ -858,7 +855,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             result=result,
             source_location=loc
         )
-
     elif op.name == 'LLIL_GLOBAL_LOAD':
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -875,7 +871,6 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
             operands=_extract_llil_operands(instr),
             source_location=loc
         )
-
     elif op == LowLevelILOperation.LLIL_CONST:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -927,19 +922,16 @@ def _extract_llil_operands(instr: LowLevelILInstruction) -> List[SemanticOperand
     if hasattr(instr, 'left') and hasattr(instr, 'right'):
         if isinstance(instr.left, LowLevelILInstruction):
             operands.append(SemanticOperand(kind='expr', value=str(instr.left)))
-
         else:
             operands.append(SemanticOperand(kind='const', value=instr.left))
         if isinstance(instr.right, LowLevelILInstruction):
             operands.append(SemanticOperand(kind='expr', value=str(instr.right)))
-
         else:
             operands.append(SemanticOperand(kind='const', value=instr.right))
 
     if hasattr(instr, 'operand'):
         if isinstance(instr.operand, LowLevelILInstruction):
             operands.append(SemanticOperand(kind='expr', value=str(instr.operand)))
-
         else:
             operands.append(SemanticOperand(kind='const', value=instr.operand))
 
@@ -970,9 +962,9 @@ def normalize_mlil_operation(
     op = instr.operation
     scp_offset = instr.address if hasattr(instr, 'address') else 0
     loc = SourceLocation(
-        scp_offset = scp_offset,
-        llil_index = _get_instruction_index(instr, LLIL_INDEX_ATTRIBUTES),
-        mlil_index = _get_instruction_index(instr, MLIL_INDEX_ATTRIBUTES),
+        scp_offset=scp_offset,
+        llil_index=_get_instruction_index(instr, LLIL_INDEX_ATTRIBUTES),
+        mlil_index=_get_instruction_index(instr, MLIL_INDEX_ATTRIBUTES),
     )
 
     # Arithmetic operations
@@ -985,7 +977,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_NEG:
         return SemanticOperation(
             kind=OperationKind.ARITHMETIC,
@@ -1004,7 +995,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_TEST_ZERO:
         return SemanticOperation(
             kind=OperationKind.COMPARISON,
@@ -1021,7 +1011,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_LOGICAL_NOT:
         return SemanticOperation(
             kind=OperationKind.LOGICAL,
@@ -1040,7 +1029,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_BITWISE_NOT:
         return SemanticOperation(
             kind=OperationKind.BITWISE,
@@ -1057,7 +1045,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_IF:
         return SemanticOperation(
             kind=OperationKind.BRANCH,
@@ -1065,7 +1052,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_CALL:
         return SemanticOperation(
             kind=OperationKind.CALL,
@@ -1073,7 +1059,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_SYSCALL:
         return SemanticOperation(
             kind=OperationKind.CALL,
@@ -1081,7 +1066,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_CALL_SCRIPT:
         return SemanticOperation(
             kind=OperationKind.CALL,
@@ -1089,7 +1073,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_RET:
         return SemanticOperation(
             kind=OperationKind.RETURN,
@@ -1108,7 +1091,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_SET_VAR:
         result = None
         is_register = False
@@ -1117,10 +1099,9 @@ def normalize_mlil_operation(
             is_register = var_name in register_names
 
             if is_register:
-                result = SemanticOperand(kind = 'reg', value = f"REGS[{register_names[var_name]}]")
-
+                result = SemanticOperand(kind='reg', value=f"REGS[{register_names[var_name]}]")
             else:
-                result = SemanticOperand(kind = 'var', value = var_name)
+                result = SemanticOperand(kind='var', value=var_name)
 
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
@@ -1129,7 +1110,6 @@ def normalize_mlil_operation(
             result=result,
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_CONST:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -1146,11 +1126,10 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_STORE_GLOBAL:
         result = None
         if hasattr(instr, 'index'):
-            result = SemanticOperand(kind = 'global', value = f"GLOBALS[{instr.index}]")
+            result = SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]")
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
             operator='STORE_GLOBAL',
@@ -1158,7 +1137,6 @@ def normalize_mlil_operation(
             result=result,
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_LOAD_REG:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -1166,11 +1144,10 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_STORE_REG:
         result = None
         if hasattr(instr, 'index'):
-            result = SemanticOperand(kind = 'reg', value = f"REGS[{instr.index}]")
+            result = SemanticOperand(kind='reg', value=f"REGS[{instr.index}]")
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
             operator='STORE_REG',
@@ -1187,7 +1164,6 @@ def normalize_mlil_operation(
             operands=_extract_mlil_operands(instr),
             source_location=loc,
         )
-
     elif op == MediumLevelILOperation.MLIL_STORE_DEREF:
         return SemanticOperation(
             kind=OperationKind.ASSIGN,
@@ -1218,14 +1194,14 @@ def _extract_mlil_operands(instr: MediumLevelILInstruction) -> List[SemanticOper
     operands = []
 
     if hasattr(instr, 'target'):
-        operands.append(SemanticOperand(kind = 'var', value = str(instr.target)))
+        operands.append(SemanticOperand(kind='var', value=str(instr.target)))
 
     if hasattr(instr, 'module') and hasattr(instr, 'func'):
         # Same spelling as the HLIL extern call target, so the two match up
-        operands.append(SemanticOperand(kind = 'var', value = f"{instr.module}:{instr.func}"))
+        operands.append(SemanticOperand(kind='var', value=f"{instr.module}:{instr.func}"))
 
     if hasattr(instr, 'subsystem') and hasattr(instr, 'cmd'):
-        operands.append(SemanticOperand(kind = 'var', value = f"{instr.subsystem}:{instr.cmd}"))
+        operands.append(SemanticOperand(kind='var', value=f"{instr.subsystem}:{instr.cmd}"))
 
     if hasattr(instr, 'value'):
         operands.append(SemanticOperand(kind='const', value=instr.value))
@@ -1242,24 +1218,21 @@ def _extract_mlil_operands(instr: MediumLevelILInstruction) -> List[SemanticOper
 
     if hasattr(instr, 'args') and instr.args is not None:
         for arg in instr.args:
-            operands.append(SemanticOperand(kind = 'expr', value = str(arg)))
+            operands.append(SemanticOperand(kind='expr', value=str(arg)))
 
     if hasattr(instr, 'left') and hasattr(instr, 'right'):
         if isinstance(instr.left, MediumLevelILInstruction):
             operands.append(SemanticOperand(kind='expr', value=str(instr.left)))
-
         else:
             operands.append(SemanticOperand(kind='const', value=instr.left))
         if isinstance(instr.right, MediumLevelILInstruction):
             operands.append(SemanticOperand(kind='expr', value=str(instr.right)))
-
         else:
             operands.append(SemanticOperand(kind='const', value=instr.right))
 
     if hasattr(instr, 'operand'):
         if isinstance(instr.operand, MediumLevelILInstruction):
             operands.append(SemanticOperand(kind='expr', value=str(instr.operand)))
-
         else:
             operands.append(SemanticOperand(kind='const', value=instr.operand))
 
@@ -1271,7 +1244,7 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
     op = instr.operation
     scp_offset = instr.address if hasattr(instr, 'address') else 0
     mlil_index = _get_instruction_index(instr, HLIL_INDEX_ATTRIBUTES)
-    loc = SourceLocation(scp_offset = scp_offset, mlil_index = mlil_index)
+    loc = SourceLocation(scp_offset=scp_offset, mlil_index=mlil_index)
 
     # Control flow statements
     if op == HLILOperation.HLIL_IF:
@@ -1281,7 +1254,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_WHILE:
         return SemanticOperation(
             kind=OperationKind.CONTROL_FLOW,
@@ -1289,7 +1261,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_DO_WHILE:
         return SemanticOperation(
             kind=OperationKind.CONTROL_FLOW,
@@ -1297,7 +1268,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_SWITCH:
         return SemanticOperation(
             kind=OperationKind.CONTROL_FLOW,
@@ -1305,21 +1275,18 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_BREAK:
         return SemanticOperation(
             kind=OperationKind.CONTROL_FLOW,
             operator='BREAK',
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_CONTINUE:
         return SemanticOperation(
             kind=OperationKind.CONTROL_FLOW,
             operator='CONTINUE',
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_RETURN:
         return SemanticOperation(
             kind=OperationKind.RETURN,
@@ -1327,12 +1294,11 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_UNSTRUCTURED:
         return SemanticOperation(
-            kind = OperationKind.CONTROL_FLOW,
-            operator = 'UNSTRUCTURED',
-            source_location = loc,
+            kind=OperationKind.CONTROL_FLOW,
+            operator='UNSTRUCTURED',
+            source_location=loc,
         )
 
     # Assignment
@@ -1346,7 +1312,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
                     operands=_extract_hlil_operands(instr.src),
                     source_location=loc,
                 )
-
             elif src_op == HLILOperation.HLIL_SYSCALL:
                 return SemanticOperation(
                     kind=OperationKind.CALL,
@@ -1402,7 +1367,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_CONST:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -1410,7 +1374,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_BINARY_OP:
         bin_op = instr.op if hasattr(instr, 'op') else None
         return SemanticOperation(
@@ -1419,7 +1382,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_UNARY_OP:
         unary_op = instr.op if hasattr(instr, 'op') else None
         return SemanticOperation(
@@ -1428,7 +1390,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_CALL:
         return SemanticOperation(
             kind=OperationKind.CALL,
@@ -1436,7 +1397,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_SYSCALL:
         return SemanticOperation(
             kind=OperationKind.CALL,
@@ -1444,7 +1404,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-
     elif op == HLILOperation.HLIL_DEREF:
         return SemanticOperation(
             kind=OperationKind.LOAD,
@@ -1466,15 +1425,15 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
 def _hlil_var_operand(var: Any) -> SemanticOperand:
     """Operand for an HLIL variable; globals and registers have no name, only a slot"""
     if not isinstance(var, HLILVariable):
-        return SemanticOperand(kind = 'var', value = str(var))
+        return SemanticOperand(kind='var', value=str(var))
 
     if var.kind == VariableKind.GLOBAL:
-        return SemanticOperand(kind = 'global', value = str(var))
+        return SemanticOperand(kind='global', value=str(var))
 
     if var.kind == VariableKind.REG:
-        return SemanticOperand(kind = 'reg', value = str(var))
+        return SemanticOperand(kind='reg', value=str(var))
 
-    return SemanticOperand(kind = 'var', value = var.name)
+    return SemanticOperand(kind='var', value=var.name)
 
 
 def _extract_hlil_operands(instr: HLILInstruction) -> List[SemanticOperand]:
@@ -1482,13 +1441,13 @@ def _extract_hlil_operands(instr: HLILInstruction) -> List[SemanticOperand]:
     operands = []
 
     if hasattr(instr, 'func_name'):
-        operands.append(SemanticOperand(kind = 'var', value = str(instr.func_name)))
+        operands.append(SemanticOperand(kind='var', value=str(instr.func_name)))
 
     if hasattr(instr, 'target'):
-        operands.append(SemanticOperand(kind = 'var', value = str(instr.target)))
+        operands.append(SemanticOperand(kind='var', value=str(instr.target)))
 
     if hasattr(instr, 'subsystem') and hasattr(instr, 'cmd'):
-        operands.append(SemanticOperand(kind = 'var', value = f"{instr.subsystem}:{instr.cmd}"))
+        operands.append(SemanticOperand(kind='var', value=f"{instr.subsystem}:{instr.cmd}"))
 
     if hasattr(instr, 'value'):
         operands.append(SemanticOperand(kind='const', value=instr.value))
@@ -1504,24 +1463,21 @@ def _extract_hlil_operands(instr: HLILInstruction) -> List[SemanticOperand]:
 
     if hasattr(instr, 'args') and instr.args is not None:
         for arg in instr.args:
-            operands.append(SemanticOperand(kind = 'expr', value = str(arg)))
+            operands.append(SemanticOperand(kind='expr', value=str(arg)))
 
     if hasattr(instr, 'left') and hasattr(instr, 'right'):
         if isinstance(instr.left, HLILInstruction):
             operands.append(SemanticOperand(kind='expr', value=str(instr.left)))
-
         else:
             operands.append(SemanticOperand(kind='const', value=instr.left))
         if isinstance(instr.right, HLILInstruction):
             operands.append(SemanticOperand(kind='expr', value=str(instr.right)))
-
         else:
             operands.append(SemanticOperand(kind='const', value=instr.right))
 
     if hasattr(instr, 'operand'):
         if isinstance(instr.operand, HLILInstruction):
             operands.append(SemanticOperand(kind='expr', value=str(instr.operand)))
-
         else:
             operands.append(SemanticOperand(kind='const', value=instr.operand))
 
@@ -1535,13 +1491,10 @@ def _get_binary_op_kind(op: Optional[BinaryOp]) -> OperationKind:
 
     if op in (BinaryOp.ADD, BinaryOp.SUB, BinaryOp.MUL, BinaryOp.DIV, BinaryOp.MOD):
         return OperationKind.ARITHMETIC
-
     elif op in (BinaryOp.EQ, BinaryOp.NE, BinaryOp.LT, BinaryOp.LE, BinaryOp.GT, BinaryOp.GE):
         return OperationKind.COMPARISON
-
     elif op in (BinaryOp.AND, BinaryOp.OR):
         return OperationKind.LOGICAL
-
     elif op in (BinaryOp.BIT_AND, BinaryOp.BIT_OR, BinaryOp.BIT_XOR, BinaryOp.SHL, BinaryOp.SHR):
         return OperationKind.BITWISE
 
@@ -1555,10 +1508,8 @@ def _get_unary_op_kind(op: Optional[UnaryOp]) -> OperationKind:
 
     if op == UnaryOp.NEG:
         return OperationKind.ARITHMETIC
-
     elif op == UnaryOp.NOT:
         return OperationKind.LOGICAL
-
     elif op == UnaryOp.BIT_NOT:
         return OperationKind.BITWISE
 
@@ -1572,6 +1523,7 @@ def _get_unary_op_kind(op: Optional[UnaryOp]) -> OperationKind:
 @dataclass
 class CFGNode:
     """Basic block node in CFG"""
+
     id: int
     address: int = 0
     operations: List[SemanticOperation] = field(default_factory=list)
@@ -1766,7 +1718,7 @@ def _folded_call_operations(instr: HLILInstruction) -> List[SemanticOperation]:
 
     scp_offset = instr.address if hasattr(instr, 'address') else 0
     mlil_index = _get_instruction_index(instr, HLIL_INDEX_ATTRIBUTES)
-    loc = SourceLocation(scp_offset = scp_offset, mlil_index = mlil_index)
+    loc = SourceLocation(scp_offset=scp_offset, mlil_index=mlil_index)
 
     return [
         _apply_location_fallback(normalize_hlil_operation(call), loc)
@@ -1836,7 +1788,6 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                         exits.extend(case_exits)
 
                     continue
-
                 elif stmt.operation == HLILOperation.HLIL_IF:
                     current_ops.extend(folded_ops)
 
@@ -1860,7 +1811,6 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                         then_id, then_exits = flatten_statements(then_stmts, current_id)
                         current_id = max(then_id, current_id)
                         cfg.add_edge(cond_id, then_start)
-
                     else:
                         then_exits = []
 
@@ -1877,7 +1827,6 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     exits.extend(then_exits)
                     exits.extend(else_exits)
                     continue
-
                 elif stmt.operation == HLILOperation.HLIL_WHILE:
                     # Save current block
                     if current_ops:
@@ -1908,11 +1857,10 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
 
                     exits.append(header_id)  # Loop exit
                     continue
-
                 elif stmt.operation == HLILOperation.HLIL_DO_WHILE:
                     # Save current block
                     if current_ops:
-                        node = CFGNode(id = current_id, address = current_ops[0].source_location.scp_offset, operations = current_ops)
+                        node = CFGNode(id=current_id, address=current_ops[0].source_location.scp_offset, operations=current_ops)
                         cfg.add_node(node)
                         current_id += 1
                         current_ops = []
@@ -1926,7 +1874,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                         current_id = max(body_id, current_id)
 
                     # Condition block (condition calls run after the body on each iteration)
-                    cond_node = CFGNode(id = current_id, address = op.source_location.scp_offset, operations = folded_ops + [op])
+                    cond_node = CFGNode(id=current_id, address=op.source_location.scp_offset, operations=folded_ops + [op])
                     cfg.add_node(cond_node)
                     cond_id = current_id
                     current_id += 1
@@ -1960,10 +1908,8 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
         body = hlil_func.body
         if hasattr(body, 'statements'):
             stmts = list(body.statements)
-
         elif hasattr(body, 'body'):
             stmts = [body]
-
     elif hasattr(hlil_func, 'statements') and hlil_func.statements:
         stmts = list(hlil_func.statements)
 
@@ -1995,6 +1941,7 @@ def compute_block_signature(node: CFGNode) -> str:
 @dataclass
 class BlockSimilarity:
     """Similarity score between two blocks"""
+
     source_block: int
     target_block: int
     score: float
@@ -2015,7 +1962,6 @@ def compute_operation_similarity(op1: SemanticOperation, op2: SemanticOperation)
     # Operator match (40%)
     if op1.operator == op2.operator:
         score += 0.4
-
     elif _is_transform_pair(op1.operator, op2.operator):
         score += 0.3
 
@@ -2077,10 +2023,8 @@ def compute_block_content_similarity(
             matches.append((i - 1, j - 1))
             i -= 1
             j -= 1
-
         elif dp[i][j] == dp[i - 1][j]:
             i -= 1
-
         else:
             j -= 1
 
@@ -2226,7 +2170,6 @@ def propagate_similarity(
                 if neighbor_count > 0:
                     neighbor_sim /= neighbor_count
                     new_sim = (1 - alpha) * content_sim + alpha * neighbor_sim
-
                 else:
                     new_sim = content_sim
 
@@ -2404,7 +2347,6 @@ class OperationMatcher:
             if i > 0 and dp[i][j] == dp[i - 1][j] + GAP_PENALTY:
                 aligned.append((source_ops[i - 1], None))
                 i -= 1
-
             elif j > 0:
                 aligned.append((None, target_ops[j - 1]))
                 j -= 1
@@ -2426,12 +2368,10 @@ def compare_operands(
         if a.kind == 'const' and b.kind == 'const':
             if a.value != b.value:
                 return False
-
         elif a.kind == 'var' and b.kind == 'var':
             mapped = var_mapping.get(str(a.value))
             if mapped and mapped != str(b.value):
                 return False
-
         elif a.kind != b.kind:
             if not (a.kind == 'var' and b.kind == 'var'):
                 return False
@@ -2479,6 +2419,7 @@ def compare_expression_trees(
 @dataclass
 class TransformationRule:
     """Describes an expected transformation between IR layers"""
+
     source_pattern: str
     target_pattern: str
     description: str
@@ -2600,13 +2541,13 @@ def semantic_operation_to_atom(op: SemanticOperation) -> SemanticAtom:
     )
 
     return SemanticAtom(
-        kind = op.kind,
-        operator = op.operator,
-        operands = list(op.operands),
-        source_location = op.source_location,
-        provenance_keys = sorted(set(op.provenance_keys)),
-        fingerprint = _semantic_fingerprint(op),
-        critical = critical,
+        kind=op.kind,
+        operator=op.operator,
+        operands=list(op.operands),
+        source_location=op.source_location,
+        provenance_keys=sorted(set(op.provenance_keys)),
+        fingerprint=_semantic_fingerprint(op),
+        critical=critical,
     )
 
 
@@ -2753,12 +2694,12 @@ def _apply_location_fallback(
 
 def _build_effect_event(op: SemanticOperation, category: str, family: str, target_key: str) -> EffectEvent:
     return EffectEvent(
-        category = category,
-        signature = f"{family}:{target_key}",
-        family = family,
-        target_key = target_key,
-        source_location = op.source_location,
-        provenance_keys = op.provenance_keys,
+        category=category,
+        signature=f"{family}:{target_key}",
+        family=family,
+        target_key=target_key,
+        source_location=op.source_location,
+        provenance_keys=op.provenance_keys,
     )
 
 
@@ -2848,7 +2789,7 @@ def _match_effect_events(
             if score >= MIN_EFFECT_MATCH_SCORE:
                 candidates.append((score, source_index, target_index))
 
-    candidates.sort(key = lambda item: (-item[0], abs(item[1] - item[2])))
+    candidates.sort(key=lambda item: (-item[0], abs(item[1] - item[2])))
 
     matches: List[MatchedEffectEvent] = []
     used_source_indices: set[int] = set()
@@ -2860,10 +2801,10 @@ def _match_effect_events(
         source_event = source_events[source_index]
         target_event = target_events[target_index]
         matches.append(MatchedEffectEvent(
-            source_index = source_index,
-            target_index = target_index,
-            score = score,
-            match_kind = _effect_match_kind(source_event, target_event),
+            source_index=source_index,
+            target_index=target_index,
+            score=score,
+            match_kind=_effect_match_kind(source_event, target_event),
         ))
         used_source_indices.add(source_index)
         used_target_indices.add(target_index)
@@ -2884,7 +2825,7 @@ def _match_effect_events(
                 and source_events[index].signature in matched_return_signatures)
     ]
 
-    matches.sort(key = lambda match: match.source_index)
+    matches.sort(key=lambda match: match.source_index)
     return matches, unmatched_source, unmatched_target
 
 
@@ -2944,7 +2885,7 @@ def _match_condition_operations(
             if score >= MIN_CONDITION_MATCH_SCORE:
                 candidates.append((score, source_index, target_index))
 
-    candidates.sort(key = lambda item: (-item[0], abs(item[1] - item[2])))
+    candidates.sort(key=lambda item: (-item[0], abs(item[1] - item[2])))
     matches: List[Tuple[int, int]] = []
     used_source_indices: set[int] = set()
     used_target_indices: set[int] = set()
@@ -2978,13 +2919,13 @@ def _build_hard_fail(
     target_op: Optional[SemanticOperation] = None,
 ) -> ComparisonResult:
     return ComparisonResult(
-        status = ComparisonStatus.DIFFERENT,
-        source_layer = source_layer,
-        target_layer = target_layer,
-        source_op = source_op,
-        target_op = target_op,
-        explanation = f"HARD_FAIL: {category}: {explanation}",
-        source_location = source_location,
+        status=ComparisonStatus.DIFFERENT,
+        source_layer=source_layer,
+        target_layer=target_layer,
+        source_op=source_op,
+        target_op=target_op,
+        explanation=f"HARD_FAIL: {category}: {explanation}",
+        source_location=source_location,
     )
 
 
@@ -3005,7 +2946,7 @@ def validate_hard_fail_semantics(
     for source_index in unmatched_source_indices:
         event = source_events[source_index]
         violations.append(_build_hard_fail(
-            _hard_fail_category_for_event(event, missing_target = True),
+            _hard_fail_category_for_event(event, missing_target=True),
             source_layer,
             target_layer,
             f"Missing target effect {event.signature}",
@@ -3015,7 +2956,7 @@ def validate_hard_fail_semantics(
     for target_index in unmatched_target_indices:
         event = target_events[target_index]
         violations.append(_build_hard_fail(
-            _hard_fail_category_for_event(event, missing_target = False),
+            _hard_fail_category_for_event(event, missing_target=False),
             source_layer,
             target_layer,
             f"Added target effect {event.signature}",
@@ -3054,8 +2995,8 @@ def validate_hard_fail_semantics(
                 target_layer,
                 f"Control condition mismatch: {source_condition.operator} vs {target_condition.operator}",
                 source_condition.source_location,
-                source_op = source_condition,
-                target_op = target_condition,
+                source_op=source_condition,
+                target_op=target_condition,
             ))
 
     return violations
@@ -3296,7 +3237,6 @@ def _find_assign_call_pairs(
             dest = _get_assign_dest(op, var_mapping)
             if dest:
                 assigned_vars[dest] = idx
-
         elif op.kind == OperationKind.CALL:
             for operand in op.operands:
                 var = str(operand.value)
@@ -3439,7 +3379,6 @@ class IRLayerComparator:
                         source_location=tgt_op.source_location,
                     )
                     stats.transformed += 1
-
                 elif src_op is not None and tgt_op is None:
                     # Source-only operation (eliminated)
                     result = ComparisonResult(
@@ -3452,7 +3391,6 @@ class IRLayerComparator:
                         source_location=src_op.source_location,
                     )
                     stats.eliminated += 1
-
                 else:
                     # Both present - classify
                     status = classify_difference(
@@ -3460,10 +3398,8 @@ class IRLayerComparator:
                     )
                     if status == ComparisonStatus.EQUIVALENT:
                         explanation = f"{src_op.operator} == {tgt_op.operator}"
-
                     elif status == ComparisonStatus.TRANSFORMED:
                         explanation = f"{src_op.operator} -> {tgt_op.operator}"
-
                     else:
                         explanation = f"Mismatch: {src_op.operator} vs {tgt_op.operator}"
 
@@ -3479,10 +3415,8 @@ class IRLayerComparator:
 
                     if status == ComparisonStatus.EQUIVALENT:
                         stats.equivalent += 1
-
                     elif status == ComparisonStatus.TRANSFORMED:
                         stats.transformed += 1
-
                     else:
                         stats.different += 1
 
@@ -3565,10 +3499,10 @@ class IRLayerComparator:
         unmatched_critical = int(report.quality_metrics.get("unmatched_critical", 0))
         if provenance_coverage < self.min_provenance_coverage:
             report.soft_signal_warnings.append(ComparisonResult(
-                status = ComparisonStatus.TRANSFORMED,
-                source_layer = self.source_layer,
-                target_layer = self.target_layer,
-                explanation = (
+                status=ComparisonStatus.TRANSFORMED,
+                source_layer=self.source_layer,
+                target_layer=self.target_layer,
+                explanation=(
                     f"SOFT_SIGNAL: Provenance coverage {provenance_coverage:.1f}% below "
                     f"threshold {self.min_provenance_coverage:.1f}%"
                 ),
@@ -3576,10 +3510,10 @@ class IRLayerComparator:
 
         if self.max_unmatched_critical >= 0 and unmatched_critical > self.max_unmatched_critical:
             report.hard_fail_violations.append(ComparisonResult(
-                status = ComparisonStatus.DIFFERENT,
-                source_layer = self.source_layer,
-                target_layer = self.target_layer,
-                explanation = (
+                status=ComparisonStatus.DIFFERENT,
+                source_layer=self.source_layer,
+                target_layer=self.target_layer,
+                explanation=(
                     f"HARD_FAIL: unmatched critical atoms {unmatched_critical} exceeds "
                     f"threshold {self.max_unmatched_critical}"
                 ),
@@ -3662,7 +3596,7 @@ def _unstructured_jump_failures(hlil_func: HighLevelILFunction) -> List[Comparis
             IRLayer.MLIL,
             IRLayer.HLIL,
             f"Unstructured jump to {stmt.target} ({stmt.reason})",
-            SourceLocation(scp_offset = stmt.address, mlil_index = stmt.mlil_index),
+            SourceLocation(scp_offset=stmt.address, mlil_index=stmt.mlil_index),
         )
         for stmt in reachable_statements(hlil_func.body)
         if isinstance(stmt, HLILUnstructured)
@@ -3682,15 +3616,15 @@ def compare_mlil_hlil(
     var_mapping = _build_mlil_hlil_var_mapping(mlil_func)
 
     comparator = IRLayerComparator(
-        source_cfg = mlil_cfg,
-        target_cfg = hlil_cfg,
-        source_layer = IRLayer.MLIL,
-        target_layer = IRLayer.HLIL,
-        transform_rules = MLIL_HLIL_TRANSFORMATIONS,
-        var_mapping = var_mapping,
-        min_provenance_coverage = min_provenance_coverage,
-        max_unmatched_critical = max_unmatched_critical,
-        target_hard_fails = _unstructured_jump_failures(hlil_func),
+        source_cfg=mlil_cfg,
+        target_cfg=hlil_cfg,
+        source_layer=IRLayer.MLIL,
+        target_layer=IRLayer.HLIL,
+        transform_rules=MLIL_HLIL_TRANSFORMATIONS,
+        var_mapping=var_mapping,
+        min_provenance_coverage=min_provenance_coverage,
+        max_unmatched_critical=max_unmatched_critical,
+        target_hard_fails=_unstructured_jump_failures(hlil_func),
     )
     report = comparator.compare()
     report.function_name = func_name
@@ -3728,13 +3662,10 @@ class Formatter:
     def _status_color(self, status: ComparisonStatus) -> str:
         if status == ComparisonStatus.EQUIVALENT:
             return self.green
-
         elif status == ComparisonStatus.TRANSFORMED:
             return self.yellow
-
         elif status == ComparisonStatus.ELIMINATED:
             return self.dim
-
         else:
             return self.red
 
@@ -3747,7 +3678,6 @@ class Formatter:
 
         if report.function_name:
             lines.append(f"{self.cyan}=== {report.function_name}: {src_name} -> {tgt_name} ==={self.reset}")
-
         else:
             lines.append(f"{self.cyan}=== {src_name} -> {tgt_name} ==={self.reset}")
 
@@ -3759,12 +3689,10 @@ class Formatter:
                 lines.append(
                     f"{src_name} Block {block.source_block_id} [0x{block.source_offset:X}] -> (eliminated)"
                 )
-
             elif block.source_block_id == -1:
                 lines.append(
                     f"{tgt_name} Block {block.target_block_id} [0x{block.target_offset:X}] (added)"
                 )
-
             else:
                 lines.append(
                     f"Block {block.source_block_id} [0x{block.source_offset:X}] <-> "
@@ -3783,7 +3711,6 @@ class Formatter:
 
                 if result.status == ComparisonStatus.ELIMINATED:
                     lines.append(f"  {color}{scp_offset} {symbol} {src_text} -> {tgt_text}{self.reset}")
-
                 else:
                     lines.append(f"  {color}{scp_offset} {symbol} {src_text} <-> {tgt_text}{self.reset}")
 
@@ -4006,10 +3933,9 @@ class Validator:
                     llil,
                     mlil,
                     func_name,
-                    min_provenance_coverage = self.min_provenance_coverage,
-                    max_unmatched_critical = self.max_unmatched_critical,
+                    min_provenance_coverage=self.min_provenance_coverage,
+                    max_unmatched_critical=self.max_unmatched_critical,
                 )
-
             elif layer1 == "mlil" and layer2 == "hlil":
                 if not self.pipeline.can_compare_mlil_hlil(func_name):
                     continue
@@ -4017,10 +3943,9 @@ class Validator:
                     mlil,
                     hlil,
                     func_name,
-                    min_provenance_coverage = self.min_provenance_coverage,
-                    max_unmatched_critical = self.max_unmatched_critical,
+                    min_provenance_coverage=self.min_provenance_coverage,
+                    max_unmatched_critical=self.max_unmatched_critical,
                 )
-
             else:
                 print(f"Unsupported layer pair: {layer1} -> {layer2}", file=sys.stderr)
                 return 1
@@ -4036,7 +3961,6 @@ class Validator:
         if self.as_json:
             json_output = [Formatter.report_to_json(r) for r in all_reports]
             self._print(json.dumps(json_output, indent=2))
-
         else:
             self._print(f"\n{self.fmt.layer_summary(label, all_reports)}")
 
@@ -4063,8 +3987,8 @@ class Validator:
                     llil,
                     mlil,
                     func_name,
-                    min_provenance_coverage = self.min_provenance_coverage,
-                    max_unmatched_critical = self.max_unmatched_critical,
+                    min_provenance_coverage=self.min_provenance_coverage,
+                    max_unmatched_critical=self.max_unmatched_critical,
                 )
 
             if self.pipeline.can_compare_mlil_hlil(func_name):
@@ -4072,8 +3996,8 @@ class Validator:
                     mlil,
                     hlil,
                     func_name,
-                    min_provenance_coverage = self.min_provenance_coverage,
-                    max_unmatched_critical = self.max_unmatched_critical,
+                    min_provenance_coverage=self.min_provenance_coverage,
+                    max_unmatched_critical=self.max_unmatched_critical,
                 )
 
             llil_ok = func_report.llil_mlil.passed if func_report.llil_mlil else True
@@ -4103,7 +4027,6 @@ class Validator:
                 "functions": [Formatter.function_report_to_json(fr) for fr in all_func_reports],
             }
             self._print(json.dumps(json_output, indent=2))
-
         else:
             self._print(f"\n{self.fmt.layer_summary('LLIL->MLIL', llil_mlil_reports)}")
             self._print(f"\n{self.fmt.layer_summary('MLIL->HLIL', mlil_hlil_reports)}")
@@ -4127,8 +4050,8 @@ class Validator:
                 self.progress,
                 f,
                 self.as_json,
-                min_provenance_coverage = self.min_provenance_coverage,
-                max_unmatched_critical = self.max_unmatched_critical,
+                min_provenance_coverage=self.min_provenance_coverage,
+                max_unmatched_critical=self.max_unmatched_critical,
             )
             file_validator.compare("llil", "mlil")
         print(f"LLIL->MLIL: {llil_mlil_file}", file=sys.stderr)
@@ -4141,8 +4064,8 @@ class Validator:
                 self.progress,
                 f,
                 self.as_json,
-                min_provenance_coverage = self.min_provenance_coverage,
-                max_unmatched_critical = self.max_unmatched_critical,
+                min_provenance_coverage=self.min_provenance_coverage,
+                max_unmatched_critical=self.max_unmatched_critical,
             )
             file_validator.compare("mlil", "hlil")
         print(f"MLIL->HLIL: {mlil_hlil_file}", file=sys.stderr)
@@ -4220,7 +4143,6 @@ class RegressionTester:
             with open(output_file, 'w', encoding='utf-8') as f:
                 json.dump(baseline, f, indent=2)
             return True
-
         except Exception as e:
             print(f"Error exporting baseline: {e}", file=sys.stderr)
             return False
@@ -4230,7 +4152,6 @@ class RegressionTester:
         try:
             with open(baseline_file, 'r', encoding='utf-8') as f:
                 baseline = json.load(f)
-
         except Exception as e:
             print(f"Error loading baseline: {e}", file=sys.stderr)
             return 1
@@ -4278,7 +4199,6 @@ class RegressionTester:
                             "function": func_name, "layer": layer_label,
                             "baseline_diff": base_diff, "current_diff": cur_diff,
                         })
-
                     elif cur_diff < base_diff:
                         improvements.append({
                             "function": func_name, "layer": layer_label,
@@ -4348,9 +4268,9 @@ def main() -> int:
         pipeline,
         formatter,
         progress,
-        as_json = args.json,
-        min_provenance_coverage = args.min_provenance_coverage,
-        max_unmatched_critical = args.max_unmatched_critical,
+        as_json=args.json,
+        min_provenance_coverage=args.min_provenance_coverage,
+        max_unmatched_critical=args.max_unmatched_critical,
     )
 
     # Dispatch

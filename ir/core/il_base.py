@@ -1,4 +1,4 @@
-'''Base IL traits for LLIL, MLIL, HLIL'''
+"""Base IL traits for LLIL, MLIL, HLIL"""
 
 from .il_options import ILOptions
 
@@ -7,13 +7,13 @@ UNASSIGNED_INST_INDEX = -1   # Index before one is assigned (inst_index, llil_in
 
 
 class ILInstruction:
-    '''Base class for all IL instructions'''
+    """Base class for all IL instructions"""
 
     _options = None
 
     @property
     def options(self) -> ILOptions:
-        '''Formatting and processing options: created on first use, since only the formatters read them'''
+        """Formatting and processing options: created on first use, since only the formatters read them"""
         if self._options is None:
             self._options = ILOptions()
 
@@ -21,34 +21,39 @@ class ILInstruction:
 
 
 class ControlFlow(ILInstruction):
-    '''Control flow instruction trait'''
+    """Control flow instruction trait"""
+
     pass
 
 
 class Terminal(ControlFlow):
-    '''Terminal control flow instruction trait'''
+    """Terminal control flow instruction trait"""
+
     pass
 
 
 class Constant(ILInstruction):
-    '''Constant value expression trait'''
+    """Constant value expression trait"""
+
     pass
 
 
 class BinaryOperation(ILInstruction):
-    '''Binary operation trait'''
+    """Binary operation trait"""
+
     pass
 
 
 class UnaryOperation(ILInstruction):
-    '''Unary operation trait'''
+    """Unary operation trait"""
+
     pass
 
 
 class IRParameter:
-    '''Function parameter with type and default value'''
+    """Function parameter with type and default value"""
 
-    def __init__(self, name: str, type_name: str = None, default_value = None):
+    def __init__(self, name: str, type_name: str = None, default_value=None):
         self.name = name
         self.type_name = type_name  # Type as string (e.g. 'int', 'str', 'float')
         self.default_value = default_value

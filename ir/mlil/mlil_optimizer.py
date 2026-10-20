@@ -1,4 +1,4 @@
-'''MLIL Optimizer - the one pass list that runs after LLIL->MLIL translation'''
+"""MLIL Optimizer - the one pass list that runs after LLIL->MLIL translation"""
 
 from typing import List, Optional
 
@@ -17,7 +17,7 @@ from .passes import (
 
 def mlil_optimization_passes(infer_types: bool = True,
                              signature_db: Optional[FunctionSignatureDB] = None) -> List[Pass]:
-    '''The MLIL passes that run after LLIL->MLIL translation, in production order'''
+    """The MLIL passes that run after LLIL->MLIL translation, in production order"""
     # A LowLevelILCall is a block terminator, so nearly every call site is one goto away from its return
     # block - undo that split before any SSA analysis runs, so every later pass sees the smaller CFG
     passes: List[Pass] = [BlockMergePass(), SSAConversionPass(), SSAOptimizationPass()]
@@ -34,7 +34,7 @@ def mlil_optimization_passes(infer_types: bool = True,
 def optimize_mlil(function: MediumLevelILFunction,
                   infer_types_enabled: bool = True,
                   signature_db: Optional[FunctionSignatureDB] = None) -> MediumLevelILFunction:
-    '''Run the production MLIL passes on an already translated function'''
+    """Run the production MLIL passes on an already translated function"""
     function = Pipeline(mlil_optimization_passes(infer_types_enabled, signature_db)).run(function)
     function.renumber_instructions()
     return function

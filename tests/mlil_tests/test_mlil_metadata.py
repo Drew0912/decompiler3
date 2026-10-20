@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for MLIL metadata preservation.'''
+"""Unit tests for MLIL metadata preservation."""
 
 from pathlib import Path
 import sys
@@ -54,7 +54,7 @@ def set_metadata(inst, address: int, inst_index: int, llil_index: int):
 
 
 class TestMLILMetadataPreservation(unittest.TestCase):
-    '''Tests for MLIL source metadata propagation.'''
+    """Tests for MLIL source metadata propagation."""
 
     def assert_metadata(self, inst, address: int, inst_index: int, llil_index: int):
         self.assertEqual(inst.address, address)
@@ -72,10 +72,10 @@ class TestMLILMetadataPreservation(unittest.TestCase):
 
     def test_ssa_conversion_and_deconstruction_preserve_metadata(self):
         func = MediumLevelILFunction(TEST_FUNCTION_NAME)
-        block = func.create_block(start = SOURCE_ADDRESS)
+        block = func.create_block(start=SOURCE_ADDRESS)
         source_var = MLILVariable(TEST_VAR_NAME)
         source_inst = set_metadata(
-            MLILSetVar(source_var, MLILConst(SOURCE_VALUE), address = SOURCE_ADDRESS),
+            MLILSetVar(source_var, MLILConst(SOURCE_VALUE), address=SOURCE_ADDRESS),
             SOURCE_ADDRESS,
             SOURCE_INST_INDEX,
             SOURCE_LLIL_INDEX,
@@ -96,12 +96,12 @@ class TestMLILMetadataPreservation(unittest.TestCase):
 
     def test_condition_simplification_preserves_metadata(self):
         func = MediumLevelILFunction(TEST_FUNCTION_NAME)
-        entry_block = func.create_block(start = SOURCE_ADDRESS)
-        true_block = func.create_block(start = OTHER_ADDRESS)
-        false_block = func.create_block(start = OTHER_ADDRESS)
+        entry_block = func.create_block(start=SOURCE_ADDRESS)
+        true_block = func.create_block(start=OTHER_ADDRESS)
+        false_block = func.create_block(start=OTHER_ADDRESS)
         condition = MLILNe(MLILEq(MLILConst(LEFT_VALUE), MLILConst(RIGHT_VALUE)), MLILConst(ZERO_VALUE))
         if_inst = set_metadata(
-            MLILIf(condition, true_block, false_block, address = SOURCE_ADDRESS),
+            MLILIf(condition, true_block, false_block, address=SOURCE_ADDRESS),
             SOURCE_ADDRESS,
             SOURCE_INST_INDEX,
             SOURCE_LLIL_INDEX,
@@ -116,18 +116,18 @@ class TestMLILMetadataPreservation(unittest.TestCase):
 
     def test_copy_propagation_preserves_rewritten_instruction_metadata(self):
         func = MediumLevelILFunction(TEST_FUNCTION_NAME)
-        block = func.create_block(start = SOURCE_ADDRESS)
+        block = func.create_block(start=SOURCE_ADDRESS)
         base_var = MLILVariable(TEST_VAR_NAME)
         source_var = MLILVariableSSA(base_var, SOURCE_VERSION)
         copy_var = MLILVariableSSA(base_var, COPY_VERSION)
         copy_inst = set_metadata(
-            MLILSetVarSSA(copy_var, MLILVarSSA(source_var), address = SOURCE_ADDRESS),
+            MLILSetVarSSA(copy_var, MLILVarSSA(source_var), address=SOURCE_ADDRESS),
             SOURCE_ADDRESS,
             SOURCE_INST_INDEX,
             SOURCE_LLIL_INDEX,
         )
         ret_inst = set_metadata(
-            MLILRet(MLILVarSSA(copy_var), address = OTHER_ADDRESS),
+            MLILRet(MLILVarSSA(copy_var), address=OTHER_ADDRESS),
             OTHER_ADDRESS,
             OTHER_INST_INDEX,
             OTHER_LLIL_INDEX,

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-'''End to end: scena2py's .ts leaves out a local call's trailing arguments equal to the callee's defaults, with the
+"""End to end: scena2py's .ts leaves out a local call's trailing arguments equal to the callee's defaults, with the
 defaults converted as the lifter converts them (so a float default matches its argument), from the whole function
 table (a callee left out of the output still counts); a Raw argument is not an Integer default. In a round trip it
-keeps the arguments a call's debug record says its author wrote.'''
+keeps the arguments a call's debug record says its author wrote."""
 
 from pathlib import Path
 import re
@@ -28,7 +28,7 @@ FOLDED_RIGHT = DEFAULT_INT - FOLDED_LEFT
 
 
 def call_callee(callee, ret: str, arg2_push):
-    '''Callee(FIRST_ARG, <arg2_push>, DEFAULT_FLOAT, DEFAULT_TEXT): the last argument is pushed first'''
+    """Callee(FIRST_ARG, <arg2_push>, DEFAULT_FLOAT, DEFAULT_TEXT): the last argument is pushed first"""
     PUSH_CURRENT_FUNC_ID()
     PUSH_RET_ADDR(ret)
     PUSH_STR(DEFAULT_TEXT)
@@ -39,9 +39,9 @@ def call_callee(callee, ret: str, arg2_push):
     label(ret)
 
 
-def decompile(filter_func = None) -> str:
-    '''The .ts of a script whose Main calls Callee(arg1, arg2 = 3, arg3 = 0.3, arg4 = 'x') three times: arg2 pushed
-    as an Integer 3, as a Raw 3, and as 1 + 2 (folded)'''
+def decompile(filter_func=None) -> str:
+    """The .ts of a script whose Main calls Callee(arg1, arg2 = 3, arg3 = 0.3, arg4 = 'x') three times: arg2 pushed
+    as an Integer 3, as a Raw 3, and as 1 + 2 (folded)"""
     with tempfile.TemporaryDirectory() as tmp:
         dat = Path(tmp) / 'defaults.dat'
         writer = fresh_writer(dat)
@@ -65,12 +65,12 @@ def decompile(filter_func = None) -> str:
         config.output_dir = Path(tmp) / 'out'
         config.filter_func = filter_func
         process_file(dat, config)
-        return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding = 'utf-8')
+        return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding='utf-8')
 
 
 def decompile_written(round_trip: bool) -> str:
-    '''The .ts of mp4000_ev EV_03_62_01's shape: SetAuto(1, 0) twice with identical bytes, the first as the compiler's
-    rule leaves its record (SetAuto(1)), the second written out in full (debug_argc = 2)'''
+    """The .ts of mp4000_ev EV_03_62_01's shape: SetAuto(1, 0) twice with identical bytes, the first as the compiler's
+    rule leaves its record (SetAuto(1)), the second written out in full (debug_argc=2)"""
     with tempfile.TemporaryDirectory() as tmp:
         dat = Path(tmp) / 'written.dat'
         writer = fresh_writer(dat)
@@ -99,21 +99,21 @@ def decompile_written(round_trip: bool) -> str:
         config.output_dir = Path(tmp) / 'out'
         config.round_trip = round_trip
         process_file(dat, config)
-        return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding = 'utf-8')
+        return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding='utf-8')
 
 
 def set_auto_calls(ts: str) -> list[str]:
-    '''Main's SetAuto calls, in order (the last one is returned)'''
+    """Main's SetAuto calls, in order (the last one is returned)"""
     return re.findall(r'SetAuto\([^)]*\)', ts[ts.index('function Main('):])
 
 
 class TestCallDefaultsEndToEnd(unittest.TestCase):
     def test_round_trip_keeps_the_written_arguments(self):
-        self.assertEqual(set_auto_calls(decompile_written(round_trip = True)),
+        self.assertEqual(set_auto_calls(decompile_written(round_trip=True)),
                          [f'SetAuto({FIRST_ARG})', f'SetAuto({FIRST_ARG}, 0)'])
 
     def test_everyday_decompile_prints_the_rule(self):
-        self.assertEqual(set_auto_calls(decompile_written(round_trip = False)), [f'SetAuto({FIRST_ARG})'] * 2)
+        self.assertEqual(set_auto_calls(decompile_written(round_trip=False)), [f'SetAuto({FIRST_ARG})'] * 2)
 
     def test_trailing_defaults_left_out(self):
         ts = decompile()
@@ -125,7 +125,7 @@ class TestCallDefaultsEndToEnd(unittest.TestCase):
         self.assertIn(f'Callee({FIRST_ARG}, {DEFAULT_INT});', ts)
 
     def test_callee_left_out_of_the_output_still_counts(self):
-        ts = decompile(filter_func = lambda func: func.name != 'Callee')
+        ts = decompile(filter_func=lambda func: func.name != 'Callee')
 
         self.assertNotIn('function Callee(', ts)
         self.assertEqual(ts.count(f'Callee({FIRST_ARG});'), 2)

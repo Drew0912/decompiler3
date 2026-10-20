@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for ScpParser's selection-to-emission contract: match_library_functions,
+"""Unit tests for ScpParser's selection-to-emission contract: match_library_functions,
 get_inline_functions, gen_common_imports and gen_python_script must all agree on which functions got
 matched to the shared library, in the script's own code order, and only outside strict round-trip
 mode. Uses a real corpus file (TEST_FILE) rather than a fake index,
-since its common/source split is already exercised (and known) elsewhere in this test suite.'''
+since its common/source split is already exercised (and known) elsewhere in this test suite."""
 
 from pathlib import Path
 import sys
@@ -22,7 +22,7 @@ SOURCE_FUNC = 'SkillTable'         # this script's own function - always inlined
 
 
 def load() -> tuple[ScpParser, list]:
-    return ScpParser.load(require(TEST_FILE), round_trip = False, keep_unreachable_code = False)
+    return ScpParser.load(require(TEST_FILE), round_trip=False, keep_unreachable_code=False)
 
 
 class TestLibraryMatching(unittest.TestCase):
@@ -45,9 +45,9 @@ class TestLibraryMatching(unittest.TestCase):
         self.assertEqual(parser.match_library_functions(functions), {})
 
     def test_keep_unreachable_code_also_disables_matching(self):
-        '''The library was generated with unreachable code dropped - importing it under
+        """The library was generated with unreachable code dropped - importing it under
         keep_unreachable_code=True would silently drop a script's own dead bytes even though that
-        flag asked to keep them, so this must gate matching exactly like round_trip does.'''
+        flag asked to keep them, so this must gate matching exactly like round_trip does."""
         parser, functions = load()
         parser.keep_unreachable_code = True
 
@@ -67,7 +67,7 @@ class TestEmissionContract(unittest.TestCase):
         matched = parser.match_library_functions(functions)
         self.assertTrue(matched, 'expected at least one matched function for this fixture')
 
-        manifest_lines = parser.gen_common_imports(functions, matched = matched)
+        manifest_lines = parser.gen_common_imports(functions, matched=matched)
         return_block_start = manifest_lines.index('    return [')
         return_block_end = manifest_lines.index('    ]', return_block_start)
         listed = [line.strip().rstrip(',') for line in manifest_lines[return_block_start + 1:return_block_end]]
@@ -76,10 +76,10 @@ class TestEmissionContract(unittest.TestCase):
         self.assertEqual(listed, expected_order)
 
     def test_header_and_inline_set_agree_on_the_same_precomputed_match(self):
-        '''gen_python_script computes match_library_functions exactly once and threads it through
+        """gen_python_script computes match_library_functions exactly once and threads it through
         both halves - the header's manifest and the inline-function loop can never disagree about
         which functions got imported, unlike calling gen_python_header/get_inline_functions
-        separately (each would recompute the match independently).'''
+        separately (each would recompute the match independently)."""
         parser, functions = load()
         script = parser.gen_python_script(functions)
         header = script.split('\n@scena.CommonImports()')[0]

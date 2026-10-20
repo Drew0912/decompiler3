@@ -1,4 +1,4 @@
-'''Falcom ED9 Type Signatures - Extract signatures from ScpParser'''
+"""Falcom ED9 Type Signatures - Extract signatures from ScpParser"""
 
 from typing import Optional
 from ir.mlil.mlil_types import MLILType, FunctionSignatureDB
@@ -6,7 +6,7 @@ from ...parser.scp import ScpParser
 
 
 class ED9TypeSignatures(FunctionSignatureDB):
-    '''ED9 function signature database with ScpParser integration'''
+    """ED9 function signature database with ScpParser integration"""
 
     def __init__(self, parser: ScpParser):
         self.parser = parser
@@ -54,7 +54,7 @@ class ED9TypeSignatures(FunctionSignatureDB):
         return None
 
     def _infer_function_return_type(self, func) -> MLILType:
-        '''Heuristic: infer type from function name patterns'''
+        """Heuristic: infer type from function name patterns"""
         name_lower = func.name.lower()
 
         # Event handlers -> void

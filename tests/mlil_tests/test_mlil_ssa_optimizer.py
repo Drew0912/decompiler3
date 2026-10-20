@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for SSAOptimizer: the fixpoint loop's _snapshot must compare instruction structure,
+"""Unit tests for SSAOptimizer: the fixpoint loop's _snapshot must compare instruction structure,
 not repr() (which no MLIL class overrides), or an operand-only rewrite can look unchanged and stop
-the loop one iteration early.'''
+the loop one iteration early."""
 
 from pathlib import Path
 import itertools
@@ -23,7 +23,7 @@ def make_func(name: str) -> MediumLevelILFunction:
 
 
 def make_double_negation_func(name: str) -> tuple:
-    '''if (!(reg0#0 != 0)) goto true_block else false_block'''
+    """if (!(reg0#0 != 0)) goto true_block else false_block"""
     func = make_func(name)
     x = MLILVariable('reg0')
     func.register_vars[0] = x
@@ -45,13 +45,13 @@ def make_double_negation_func(name: str) -> tuple:
 
 
 class TestFixpointReachesTrueConvergence(unittest.TestCase):
-    '''Minimized from the real corpus bug (ai_chr5106p.CheckAlgoUse, sora2_1.0/script_en/ai,
+    """Minimized from the real corpus bug (ai_chr5106p.CheckAlgoUse, sora2_1.0/script_en/ai,
     confirmed by instrumenting the production pass order): `if (!(reg0#19 != 0))` only reaches
     its fully-simplified form (`if (!reg0#19)`) because ConditionSimplificationPass rewrites it
     to `(reg0#19 == 0)` on one outer iteration, then to `!reg0#19` on the next. The old
     repr()-based _snapshot saw the same "<MLILIf IF>" text before and after the first
     iteration's rewrite and stopped the loop there - this was the one function in a
-    2,897-function sample that this actually hit.'''
+    2,897-function sample that this actually hit."""
 
     def test_double_negation_chain_reaches_final_simplified_form(self):
         func, entry = make_double_negation_func('CheckAlgoUse_min')
@@ -66,7 +66,7 @@ class TestFixpointReachesTrueConvergence(unittest.TestCase):
 
 
 class TestIdempotence(unittest.TestCase):
-    '''Optimizing an already-optimized function must be a true no-op.'''
+    """Optimizing an already-optimized function must be a true no-op."""
 
     def test_reoptimizing_an_already_optimized_function_changes_nothing(self):
         func, _ = make_double_negation_func('idempotent')
@@ -84,14 +84,14 @@ class TestIdempotence(unittest.TestCase):
 
 
 class TestSnapshotSchedule(unittest.TestCase):
-    '''A round's after-snapshot is reused as the next round's before-snapshot, so k rounds take k + 1 snapshots,
-    not 2k. _snapshot is faked so the counts don't depend on how many rounds the passes need.'''
+    """A round's after-snapshot is reused as the next round's before-snapshot, so k rounds take k + 1 snapshots,
+    not 2k. _snapshot is faked so the counts don't depend on how many rounds the passes need."""
 
     def test_after_snapshot_is_reused(self):
         func, _ = make_double_negation_func('reuse')
         rounds = 2      # the first changes A -> B, the second confirms B
 
-        with mock.patch.object(SSAOptimizer, '_snapshot', side_effect = itertools.chain(['A'], itertools.repeat('B'))) as snapshot:
+        with mock.patch.object(SSAOptimizer, '_snapshot', side_effect=itertools.chain(['A'], itertools.repeat('B'))) as snapshot:
             SSAOptimizer(func).optimize()
 
         self.assertEqual(snapshot.call_count, rounds + 1)
@@ -100,7 +100,7 @@ class TestSnapshotSchedule(unittest.TestCase):
         func, _ = make_double_negation_func('never_settles')
 
         with (
-            mock.patch.object(SSAOptimizer, '_snapshot', side_effect = itertools.count()) as snapshot,
+            mock.patch.object(SSAOptimizer, '_snapshot', side_effect=itertools.count()) as snapshot,
             self.assertLogs(log, 'WARNING') as logs,
         ):
             SSAOptimizer(func).optimize()
@@ -111,9 +111,9 @@ class TestSnapshotSchedule(unittest.TestCase):
 
 
 class TestStructuralKeyExactness(unittest.TestCase):
-    '''Direct tests of _structural_key/_snapshot: distinct types never share a key (e.g. a float
+    """Direct tests of _structural_key/_snapshot: distinct types never share a key (e.g. a float
     and a string holding the float's hex text), and a dict-valued attribute raises instead of
-    becoming an unfrozen, potentially unsound key.'''
+    becoming an unfrozen, potentially unsound key."""
 
     def test_float_and_matching_hex_string_do_not_collide(self):
         float_key = SSAOptimizer._structural_key(1.0)

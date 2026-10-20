@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for the parser's disassembly-time stack simulation. Every edge into a
+"""Unit tests for the parser's disassembly-time stack simulation. Every edge into a
 block must carry the same stack height; entries that meet at one position on a join form one group, and a call checks
 and rewrites every push of the groups it consumes. Calls declare their own return edges. A push an ordinary consumer
 uses or overwrites cannot also be a call setup, no instruction may overlap another (in any function), and code must end
-before the string pool. Each function keeps the simulated stack's layout for comments; an unusual slot is logged.'''
+before the string pool. Each function keeps the simulated stack's layout for comments; an unusual slot is logged."""
 
 from pathlib import Path
 import sys
@@ -43,7 +43,7 @@ def assert_rejected(test: unittest.TestCase, *functions: Func):
 
 
 def assert_fails_at(test: unittest.TestCase, program: Program, offset: int, mnemonic: str, text: str):
-    '''Disassembly fails in the main function at the instruction at offset, with exactly this text'''
+    """Disassembly fails in the main function at the instruction at offset, with exactly this text"""
     with test.assertRaises(ScpDisassemblyError) as caught:
         program.disassemble()
 
@@ -54,8 +54,8 @@ def assert_fails_at(test: unittest.TestCase, program: Program, offset: int, mnem
 
 def assert_warns_backward_return(test: unittest.TestCase, program: Program, call: str, mnemonic: str,
                                  target: int) -> tuple[ScpParser, list[Function]]:
-    '''Disassembly succeeds, logging exactly the warning for the main function's call at label call returning to
-    target; (parser, functions)'''
+    """Disassembly succeeds, logging exactly the warning for the main function's call at label call returning to
+    target; (parser, functions)"""
     with test.assertLogs(log, 'WARNING') as logs:
         parser, functions = program.disassemble()
 
@@ -78,11 +78,11 @@ def successors(block) -> list[int]:
 
 def lift_all(parser: ScpParser, functions: list[Function]):
     for func in functions:
-        ED9VMLifter(parser = parser).lift_function(func)
+        ED9VMLifter(parser=parser).lift_function(func)
 
 
 class TestEdgeStates(unittest.TestCase):
-    '''Every edge into a block carries the same stack height'''
+    """Every edge into a block carries the same stack height"""
 
     def test_join_with_different_heights_raises(self):
         asm = Asm()
@@ -94,8 +94,8 @@ class TestEdgeStates(unittest.TestCase):
                         'the stack on the edge 0x12 -> 0x17 is [], but an earlier edge into 0x17 recorded [PUSH_INT@0x7]')
 
     def test_value_the_first_arm_leaves_is_caught_where_the_arms_meet(self):
-        '''The join is decoded after both arms (lowest offset first), so the second arm's edge finds the leftover -
-        not the RETURN, after the join's POP took it for the parameter'''
+        """The join is decoded after both arms (lowest offset first), so the second arm's edge finds the leftover -
+        not the RETURN, after the join's POP took it for the parameter"""
         asm = Asm()
         asm.load_stack(-WORD_SIZE); asm.jz('else')
         asm.push_int(LEFT_VALUE); asm.jmp('join')         # left on the stack
@@ -124,7 +124,7 @@ class TestEdgeStates(unittest.TestCase):
                         '[PUSH_INT@0xB, PUSH_INT@0x11]')
 
     def test_back_edge_into_the_entry_with_a_different_height_raises(self):
-        '''The entry's state is recorded before decoding - only the parameters - so a back edge meets it'''
+        """The entry's state is recorded before decoding - only the parameters - so a back edge meets it"""
         asm = Asm()
         asm.label('head'); asm.get_reg(REG_INDEX); asm.jz('end')
         asm.push_int(LEFT_VALUE); asm.jmp('head')
@@ -156,8 +156,8 @@ class TestEdgeStates(unittest.TestCase):
         assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP', 'pops 1 entries, the stack has 0: []')
 
     def test_syscall_reading_past_the_stack_raises_in_the_compile_check(self):
-        '''With the POP matching the real stack, only the lift noticed. A decompile still parses it - a parse failure
-        would lose the whole file, the lift fails the one function'''
+        """With the POP matching the real stack, only the lift noticed. A decompile still parses it - a parse failure
+        would lose the whole file, the lift fails the one function"""
         asm = Asm()
         asm.push_int(LEFT_VALUE); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2); asm.pop(WORD_SIZE); asm.ret()
         program = Program(main_function(asm))
@@ -177,13 +177,13 @@ class TestEdgeStates(unittest.TestCase):
         assert_fails_at(self, Program(main_function(asm)), 0x6, 'POP', 'pops 2 bytes, not whole slots')
 
     def test_slot_offset_that_is_not_a_whole_slot_raises(self):
-        '''Every slot-addressing opcode, before anything rounds the offset down to a slot; a positive offset too, which
-        would otherwise be above the stack'''
+        """Every slot-addressing opcode, before anything rounds the offset down to a slot; a positive offset too, which
+        would otherwise be above the stack"""
         pops_a_value = {'LOAD_STACK': False, 'LOAD_STACK_DEREF': False, 'PUSH_STACK_OFFSET': False, 'POP_TO': True,
                         'POP_TO_DEREF': True}
         for mnemonic, pops in pops_a_value.items():
             for offset in (-1, WORD_SIZE // 2):
-                with self.subTest(mnemonic, offset = offset):
+                with self.subTest(mnemonic, offset=offset):
                     asm = Asm()
                     asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE)
                     if pops:
@@ -207,7 +207,7 @@ class TestEdgeStates(unittest.TestCase):
 
 
 class TestInstructionBounds(unittest.TestCase):
-    '''No instruction may overlap another, no target may land inside one, and code must end before the string pool'''
+    """No instruction may overlap another, no target may land inside one, and code must end before the string pool"""
 
     def test_branch_into_the_middle_of_an_instruction_raises(self):
         asm = Asm()
@@ -218,7 +218,7 @@ class TestInstructionBounds(unittest.TestCase):
             Program(main_function(asm)).disassemble()
 
     def test_instruction_covering_a_branch_target_raises(self):
-        '''The target is recorded first; the instruction that covers it is decoded later'''
+        """The target is recorded first; the instruction that covers it is decoded later"""
         asm = Asm()
         asm.get_reg(REG_INDEX); asm.jz(0)
         asm.label('push'); asm.push_int(LEFT_VALUE); asm.ret()
@@ -230,7 +230,7 @@ class TestInstructionBounds(unittest.TestCase):
         assert_rejected(self, main_function(asm))
 
     def test_return_into_the_call_itself_raises(self):
-        '''The return address is the CALL's own operand byte, which would decode as an overlapping instruction'''
+        """The return address is the CALL's own operand byte, which would decode as an overlapping instruction"""
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('call'); caller.label('call'); caller.call(CALLEE_ID); caller.ret()
         program = Program(main_function(caller), returning_callee())
@@ -241,7 +241,7 @@ class TestInstructionBounds(unittest.TestCase):
         assert_rejected(self, main_function(caller), returning_callee())
 
     def test_return_past_the_end_of_the_code_raises(self):
-        '''The last function has no next function to bound it: the string pool does'''
+        """The last function has no next function to bound it: the string pool does"""
         callee_id, last_id = 0, 1
         callee = Asm()
         callee.ret()
@@ -250,7 +250,7 @@ class TestInstructionBounds(unittest.TestCase):
             last = Asm()
             last.push_raw(last_id); last.push_raw(target); last.call(callee_id)
             trailing = bytes([ED9Opcode.RETURN])            # decodes, but lies after the string pool
-            return Program(Func(CALLEE_NAME, 0, callee), Func(FUNC_NAME, 0, last), trailing = trailing)
+            return Program(Func(CALLEE_NAME, 0, callee), Func(FUNC_NAME, 0, last), trailing=trailing)
 
         program = program_returning_to(program_returning_to(0).trailing_offset)
         with self.assertRaises(ValueError):
@@ -258,21 +258,21 @@ class TestInstructionBounds(unittest.TestCase):
 
 
     def test_function_starting_inside_another_functions_instruction_raises(self):
-        '''Each function has its own Disassembler, so this is checked across functions afterwards'''
+        """Each function has its own Disassembler, so this is checked across functions afterwards"""
         asm = Asm()
         asm.push_raw(ED9Opcode.RETURN); asm.pop(WORD_SIZE); asm.ret()
         inside = WORD_SIZE // 2                             # the PUSH's operand, whose first byte decodes as RETURN
         with self.assertRaises(ValueError):
-            Program(main_function(asm), aliases = (('inner', inside),)).disassemble()
+            Program(main_function(asm), aliases=(('inner', inside),)).disassemble()
 
     def test_function_sharing_another_functions_start_is_accepted(self):
         asm = Asm()
         asm.push_int(LEFT_VALUE); asm.pop(WORD_SIZE); asm.ret()
-        parser, functions = Program(main_function(asm), aliases = (('alias', 0),)).disassemble()
+        parser, functions = Program(main_function(asm), aliases=(('alias', 0),)).disassemble()
         lift_all(parser, functions)
 
     def test_return_into_a_string_only_dead_code_references(self):
-        '''The pool is known only from references: kept unreachable code bounds it, undecoded dead code cannot'''
+        """The pool is known only from references: kept unreachable code bounds it, undecoded dead code cannot"""
         callee_id, last_id = 0, 1
         pool = (RETURN_STRING, *STRINGS)                    # the pool's first string starts with a RETURN byte
         callee = Asm()
@@ -282,23 +282,23 @@ class TestInstructionBounds(unittest.TestCase):
             last = Asm()
             last.push_raw(last_id); last.push_raw(target); last.call(callee_id)
             last.push_str(RETURN_STRING); last.ret()        # dead: the only reference to that string
-            return Program(Func(CALLEE_NAME, 0, callee), Func(FUNC_NAME, 0, last), pool = pool)
+            return Program(Func(CALLEE_NAME, 0, callee), Func(FUNC_NAME, 0, last), pool=pool)
 
         target = program_returning_to(0).strings[RETURN_STRING]
-        with self.subTest(keep_unreachable_code = True):
+        with self.subTest(keep_unreachable_code=True):
             with self.assertRaises(ValueError):
-                program_returning_to(target).disassemble(keep_unreachable_code = True)
+                program_returning_to(target).disassemble(keep_unreachable_code=True)
 
-        with self.subTest(keep_unreachable_code = False):
+        with self.subTest(keep_unreachable_code=False):
             program_returning_to(target).disassemble()      # documented gap: the dead reference is never decoded
 
 
 class TestPlainUses(unittest.TestCase):
-    '''A push an ordinary consumer reads or discards on any path cannot be a call setup or caller frame'''
+    """A push an ordinary consumer reads or discards on any path cannot be a call setup or caller frame"""
 
     def test_push_used_plainly_and_as_a_setup_raises_in_either_decode_order(self):
         for plain_arm_first in (True, False):
-            with self.subTest(plain_arm_first = plain_arm_first):
+            with self.subTest(plain_arm_first=plain_arm_first):
                 caller = Asm()
                 caller.push_raw(CALLER_ID); caller.get_reg(REG_INDEX); caller.jz('second')
                 arms = [
@@ -314,7 +314,6 @@ class TestPlainUses(unittest.TestCase):
                 if plain_arm_first:
                     assert_fails_at(self, program, 0x19, 'CALL',
                                     'expects the function ID, but PUSH_RAW@0x0 is also used as a plain value')
-
                 else:
                     assert_fails_at(self, program, 0x17, 'SET_GLOBAL',
                                     'uses PUSH_CURRENT_FUNC_ID@0x0 as a plain value, but a call consumes it as the '
@@ -346,7 +345,7 @@ class TestPlainUses(unittest.TestCase):
 
     def test_setup_overwritten_on_the_branch_that_does_not_call_raises_in_either_decode_order(self):
         for overwrite_arm_first in (True, False):
-            with self.subTest(overwrite_arm_first = overwrite_arm_first):
+            with self.subTest(overwrite_arm_first=overwrite_arm_first):
                 caller = Asm()
                 caller.push_raw(CALLER_ID); caller.push_raw('return'); caller.get_reg(REG_INDEX); caller.jz('second')
                 arms = [
@@ -365,7 +364,6 @@ class TestPlainUses(unittest.TestCase):
                 if overwrite_arm_first:
                     assert_fails_at(self, program, 0x21, 'CALL',
                                     'expects the function ID, but PUSH_RAW@0x0 is also used as a plain value')
-
                 else:
                     assert_fails_at(self, program, 0x1D, 'POP_TO',
                                     'uses PUSH_RET_ADDR@0x6 as a plain value, but a call consumes it as the return '
@@ -373,7 +371,7 @@ class TestPlainUses(unittest.TestCase):
 
 
 class TestLocalCalls(unittest.TestCase):
-    '''PUSH(func_id) PUSH(ret_addr) args... CALL'''
+    """PUSH(func_id) PUSH(ret_addr) args... CALL"""
 
     def call_program(self, setup) -> Program:
         caller = Asm()
@@ -395,21 +393,21 @@ class TestLocalCalls(unittest.TestCase):
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('return'); caller.call(CALLEE_ID)    # the callee takes one arg
         caller.label('return'); caller.ret()
-        assert_fails_at(self, Program(main_function(caller), returning_callee(argc = 1)), 0xC, 'CALL',
+        assert_fails_at(self, Program(main_function(caller), returning_callee(argc=1)), 0xC, 'CALL',
                         f'{CALLEE_NAME} takes 1 argument, found 0 above its call setup [PUSH_RAW@0x0, PUSH_RAW@0x6]')
 
     def test_wrong_count_with_the_return_label_elsewhere_is_not_a_count(self):
-        '''Only a setup returning right after the call is counted from; this one returns past dead code'''
+        """Only a setup returning right after the call is counted from; this one returns past dead code"""
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('resume'); caller.call(CALLEE_ID)    # the callee takes one arg
         caller.ret()                                        # dead
         caller.label('resume'); caller.ret()
-        assert_fails_at(self, Program(main_function(caller), returning_callee(argc = 1)), 0xC, 'CALL',
+        assert_fails_at(self, Program(main_function(caller), returning_callee(argc=1)), 0xC, 'CALL',
                         'pops 2 entries, the stack has 1: [PUSH_RAW@0x0]')
 
     def test_broken_setup_under_an_outer_calls_setup_is_not_a_count(self):
-        '''The outer call's pending setup returns elsewhere, and a plain value isn't a function ID, so the inner call
-        isn't counted from either: the message says what stands where the inner setup should be'''
+        """The outer call's pending setup returns elsewhere, and a plain value isn't a function ID, so the inner call
+        isn't counted from either: the message says what stands where the inner setup should be"""
         cases = [
             # (case, the inner setup's return labels, the inner args, the message, the label of the push it names)
             ('function ID forgotten', ['inner'], 1, 'expects the function ID', 'outer_arg'),
@@ -431,7 +429,7 @@ class TestLocalCalls(unittest.TestCase):
                 caller.label('call'); caller.call(CALLEE_ID)
                 caller.label('inner'); caller.get_reg(REG_INDEX); caller.call(CALLEE_ID)
                 caller.label('outer'); caller.ret()
-                program = Program(main_function(caller), returning_callee(argc = 1))
+                program = Program(main_function(caller), returning_callee(argc=1))
                 assert_fails_at(self, program, program.label('call'), 'CALL',
                                 f'{message}, found PUSH_INT@0x{program.label(named):X}')
 
@@ -444,7 +442,7 @@ class TestLocalCalls(unittest.TestCase):
         assert_fails_at(self, program, 0x8, 'CALL', 'expects the function ID, found GET_REG@0x0')
 
     def test_typed_return_address_push_raises(self):
-        '''Rewriting a PUSH_INT to PUSH_RET_ADDR would change its bytes on recompile'''
+        """Rewriting a PUSH_INT to PUSH_RET_ADDR would change its bytes on recompile"""
         program = self.call_program(lambda asm: (asm.push_raw(CALLER_ID), asm.push_int(0)))
         assert_fails_at(self, program, 0xC, 'CALL', 'expects a return address, found PUSH_INT@0x6')
 
@@ -456,8 +454,8 @@ class TestLocalCalls(unittest.TestCase):
         assert_fails_at(self, self.call_program(setup), 0x17, 'CALL', 'expects a return address, found POP_TO@0x12')
 
     def test_return_address_consumed_again_as_a_function_id_raises(self):
-        '''The fall-through arm's call consumes the push as its return address; the other arm's call, one slot higher,
-        as its function ID'''
+        """The fall-through arm's call consumes the push as its return address; the other arm's call, one slot higher,
+        as its function ID"""
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('first'); caller.get_reg(REG_INDEX); caller.jz('second')
         caller.call(CALLEE_ID); caller.label('first'); caller.ret()
@@ -467,8 +465,8 @@ class TestLocalCalls(unittest.TestCase):
                         'PUSH_RET_ADDR@0x6 is consumed as the function ID and as the return address 0x16')
 
     def test_return_addresses_meeting_at_a_join_must_match(self):
-        '''Both arms reach the join before its code is decoded (lowest offset first), so the call finds the second
-        arm's value where the return address must be'''
+        """Both arms reach the join before its code is decoded (lowest offset first), so the call finds the second
+        arm's value where the return address must be"""
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.get_reg(REG_INDEX); caller.jz('right')
         caller.push_raw('return'); caller.jmp('join')
@@ -502,7 +500,7 @@ class TestLocalCalls(unittest.TestCase):
                         f'return offset 0x{OUTSIDE_OFFSET:X} is outside the function')
 
     def test_return_address_in_an_earlier_function_is_outside(self):
-        '''The callee laid out first, so the two function IDs swap'''
+        """The callee laid out first, so the two function IDs swap"""
         caller = Asm()
         caller.push_raw(CALLEE_ID); caller.push_raw(EARLIER_FUNCTION_START)
         caller.label('call'); caller.call(CALLER_ID); caller.ret()
@@ -521,7 +519,7 @@ class TestLocalCalls(unittest.TestCase):
         lift_all(parser, functions)
 
     def test_return_label_on_the_call_warns_then_fails(self):
-        '''The call pops its setup, so the edge back to itself never matches: the warning, then the stack failure'''
+        """The call pops its setup, so the edge back to itself never matches: the warning, then the stack failure"""
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('call'); caller.label('call'); caller.call(CALLEE_ID); caller.ret()
         program = Program(main_function(caller), returning_callee())
@@ -549,7 +547,7 @@ class TestLocalCalls(unittest.TestCase):
         assert_warns_backward_return(self, program, 'call', 'CALL', program.label('first'))
 
     def test_call_looping_back_with_an_exit_only_warns(self):
-        '''while (REG) callee() with the return as the back edge is valid: a warning, not a failure'''
+        """while (REG) callee() with the return as the back edge is valid: a warning, not a failure"""
         caller = Asm()
         caller.label('top'); caller.get_reg(REG_INDEX); caller.jz('done')
         caller.label('body'); caller.push_raw(CALLER_ID); caller.push_raw('top'); caller.label('call')
@@ -578,10 +576,10 @@ class TestLocalCalls(unittest.TestCase):
         lift_all(parser, functions)
 
     def test_setup_meeting_plain_values_raises_in_either_decode_order(self):
-        '''Both arms reach the join before its call is decoded, so the call fails on whichever arm brings the plain
-        values'''
+        """Both arms reach the join before its call is decoded, so the call fails on whichever arm brings the plain
+        values"""
         for setup_arm_first in (True, False):
-            with self.subTest(setup_arm_first = setup_arm_first):
+            with self.subTest(setup_arm_first=setup_arm_first):
                 caller = Asm()
                 caller.get_reg(REG_INDEX); caller.jz('second')
                 arms = [
@@ -597,16 +595,15 @@ class TestLocalCalls(unittest.TestCase):
                 program = Program(main_function(caller), returning_callee())
                 if setup_arm_first:
                     assert_fails_at(self, program, 0x29, 'CALL', 'expects the function ID, found PUSH_INT@0x18')
-
                 else:
                     assert_fails_at(self, program, 0x29, 'CALL', 'expects a return address, found PUSH_INT@0xD')
 
 
 class TestScriptCalls(unittest.TestCase):
-    '''PUSH_CALLER_FRAME(return) args... CALL_SCRIPT'''
+    """PUSH_CALLER_FRAME(return) args... CALL_SCRIPT"""
 
     def test_return_edge_leaves_the_call_script_block(self):
-        '''A local call among the args ends the frame's block before CALL_SCRIPT'''
+        """A local call among the args ends the frame's block before CALL_SCRIPT"""
         caller = Asm()
         caller.frame('return')
         caller.push_raw(CALLER_ID); caller.push_raw('arg_ready'); caller.call(CALLEE_ID)
@@ -648,7 +645,7 @@ class TestScriptCalls(unittest.TestCase):
                         'expects a return address, found PUSH_INT@0x0')
 
     def test_one_argument_more_than_its_count_raises(self):
-        '''The extra argument shifts the frame down a slot: the call finds the wrong frame slot where it expects one'''
+        """The extra argument shifts the frame down a slot: the call finds the wrong frame slot where it expects one"""
         caller = Asm()
         caller.frame('return'); caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE); caller.call_script(1)
         caller.label('return'); caller.ret()
@@ -656,8 +653,8 @@ class TestScriptCalls(unittest.TestCase):
                         'expects caller frame slot 0 returning to 0x1B, found frame_1@0x0')
 
     def test_frames_meeting_other_values_at_a_join_raises(self):
-        '''Both arms reach the join before its code is decoded, so CALL_SCRIPT finds the second arm's plain values
-        where the frame must be'''
+        """Both arms reach the join before its code is decoded, so CALL_SCRIPT finds the second arm's plain values
+        where the frame must be"""
         caller = Asm()
         caller.get_reg(REG_INDEX); caller.jz('right')
         caller.frame('return'); caller.jmp('join')
@@ -686,22 +683,22 @@ class TestScriptCalls(unittest.TestCase):
                         'leaves [PUSH_INT@0x0] below its args')
 
     def test_plain_disassembler_keeps_the_frame_edge(self):
-        '''Without the parser nothing simulates calls, so PUSH_CALLER_FRAME still declares its return block'''
+        """Without the parser nothing simulates calls, so PUSH_CALLER_FRAME still declares its return block"""
         caller = Asm()
         caller.frame('return'); caller.call_script(0)
         caller.label('return'); caller.ret()
         program = Program(main_function(caller))
 
-        context = DisassemblerContext(create_fallthrough_jump = ed9_create_fallthrough_jump)
+        context = DisassemblerContext(create_fallthrough_jump=ed9_create_fallthrough_jump)
         func = program.entries[0]
-        func.entry_block = Disassembler(ED9_INSTRUCTION_TABLE, context).disasm_function(program.code, name = FUNC_NAME)
+        func.entry_block = Disassembler(ED9_INSTRUCTION_TABLE, context).disasm_function(program.code, name=FUNC_NAME)
 
         self.assertIn(program.label('return'), blocks_by_offset(func))
         Formatter(FormatterContext()).format_function(func)
 
     def test_call_script_with_too_few_arguments_names_the_frame_slot_it_found(self):
-        '''Four pushes stand above the frame: the call takes the frame's last slot and the four pushes as its frame. Its
-        first entry is a frame slot of the right frame, so the error is the wrong slot, not a missing return address'''
+        """Four pushes stand above the frame: the call takes the frame's last slot and the four pushes as its frame. Its
+        first entry is a frame slot of the right frame, so the error is the wrong slot, not a missing return address"""
         caller = Asm()
         caller.frame('return')
         for _ in range(CALLER_FRAME_SLOTS - 1):
@@ -714,7 +711,7 @@ class TestScriptCalls(unittest.TestCase):
 
 
 class TestCheckOrder(unittest.TestCase):
-    '''An instruction that breaks two rules is reported by the check the parser makes first'''
+    """An instruction that breaks two rules is reported by the check the parser makes first"""
 
     def test_call_checks_the_return_address_before_the_function_id(self):
         caller = Asm()
@@ -723,8 +720,8 @@ class TestCheckOrder(unittest.TestCase):
                         'expects a return address, found PUSH_INT@0x6')
 
     def test_call_checks_its_argument_count_first(self):
-        '''One argument too many: counted from the setup returning right after the call, before the entry where the
-        setup should be is checked'''
+        """One argument too many: counted from the setup returning right after the call, before the entry where the
+        setup should be is checked"""
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('return'); caller.push_int(LEFT_VALUE); caller.call(CALLEE_ID)
         caller.label('return'); caller.ret()
@@ -732,10 +729,10 @@ class TestCheckOrder(unittest.TestCase):
                         f'{CALLEE_NAME} takes 0 arguments, found 1 above its call setup [PUSH_RAW@0x0, PUSH_RAW@0x6]')
 
     def test_call_checks_its_arguments_before_its_setup(self):
-        '''With no setup returning here, the args are popped first'''
+        """With no setup returning here, the args are popped first"""
         caller = Asm()
         caller.push_int(LEFT_VALUE); caller.call(CALLEE_ID); caller.ret()               # no setup, the callee takes 3
-        assert_fails_at(self, Program(main_function(caller), returning_callee(argc = PARAM_COUNT)), 0x6, 'CALL',
+        assert_fails_at(self, Program(main_function(caller), returning_callee(argc=PARAM_COUNT)), 0x6, 'CALL',
                         'pops 3 entries, the stack has 1: [PUSH_INT@0x0]')
 
     def test_call_script_checks_its_arguments_before_its_frame(self):
@@ -770,7 +767,7 @@ class TestCheckOrder(unittest.TestCase):
 
 class TestErrorWrapping(unittest.TestCase):
     def test_a_rejection_the_parser_words_itself_is_not_chained_to_itself(self):
-        '''disasm_all_functions wraps other errors in ScpDisassemblyError, but re-raises its own as they are'''
+        """disasm_all_functions wraps other errors in ScpDisassemblyError, but re-raises its own as they are"""
         asm = Asm()
         asm.pop(WORD_SIZE); asm.ret()
         with self.assertRaises(ScpDisassemblyError) as caught:
@@ -780,7 +777,7 @@ class TestErrorWrapping(unittest.TestCase):
 
 
 def call_offsets(parser: ScpParser, func: Function) -> list[int]:
-    '''Its CALLs' offsets, reachable and decoded dead code, in address order'''
+    """Its CALLs' offsets, reachable and decoded dead code, in address order"""
     return [inst.offset for inst in parser.code_instructions(func) if inst.opcode == ED9Opcode.CALL]
 
 
@@ -789,14 +786,14 @@ def constants(*values) -> list:
 
 
 class TestDebugArgcRecovery(unittest.TestCase):
-    '''round_trip: a paired local CALL's recorded arg count by its offset (call_written_argc); the .py writes it on the
+    """round_trip: a paired local CALL's recorded arg count by its offset (call_written_argc); the .py writes it on the
     CALL (call_debug_argc) only where it isn't the compiler's rule - trailing constants equal to the callee's defaults
-    dropped. The call is callee(RIGHT_VALUE, LEFT_VALUE).'''
+    dropped. The call is callee(RIGHT_VALUE, LEFT_VALUE)."""
 
     @classmethod
     def program(cls, last_default: int | None = None, dead_call: bool = False) -> Program:
-        '''Main calls the callee; dead_call: and again after its RETURN, as the compiler leaves dead code'''
-        callee = returning_callee(argc = 2)
+        """Main calls the callee; dead_call: and again after its RETURN, as the compiler leaves dead code"""
+        callee = returning_callee(argc=2)
         caller = Asm()
         caller.debug_set_lineno(1)
         for ret in ('ret', 'dead_ret') if dead_call else ('ret',):
@@ -812,7 +809,7 @@ class TestDebugArgcRecovery(unittest.TestCase):
 
     @classmethod
     def parser(cls, program: Program, *counts: int, keep_unreachable_code: bool = False) -> ScpParser:
-        '''A round_trip parser of program, main's records keeping counts args of the callee's'''
+        """A round_trip parser of program, main's records keeping counts args of the callee's"""
         data, records = debug_records(*[(CallType.Local, CALLEE_ID, constants(RIGHT_VALUE, LEFT_VALUE)[:count])
                                         for count in counts])
         program.entries[0].debug_info = records
@@ -822,7 +819,7 @@ class TestDebugArgcRecovery(unittest.TestCase):
         return parser
 
     def test_counts_by_call_offset(self):
-        '''(recorded args, the callee's last default) -> whether the .py writes the count'''
+        """(recorded args, the callee's last default) -> whether the .py writes the count"""
         cases = {
             'fewer than the parameters, no default': (1, None, True),
             'all, no default': (2, None, False),
@@ -841,14 +838,14 @@ class TestDebugArgcRecovery(unittest.TestCase):
 
 
 class TestDeadCodeRecords(unittest.TestCase):
-    '''A call after an early RETURN has its record too: the parser pairs the records over the code the .py prints,
+    """A call after an early RETURN has its record too: the parser pairs the records over the code the .py prints,
     reachable and decoded dead code, after the dead-code pass. Main's live call keeps the rule's 1 arg, its dead call
-    both (the callee's last parameter defaults to LEFT_VALUE).'''
+    both (the callee's last parameter defaults to LEFT_VALUE)."""
 
-    def load(self, keep_unreachable_code: bool = True, filter_func = None) -> tuple[ScpParser, list[Function]]:
-        program = TestDebugArgcRecovery.program(last_default = LEFT_VALUE, dead_call = True)
-        parser = TestDebugArgcRecovery.parser(program, 1, 2, keep_unreachable_code = keep_unreachable_code)
-        return parser, parser.disasm_all_functions(filter_func = filter_func)
+    def load(self, keep_unreachable_code: bool = True, filter_func=None) -> tuple[ScpParser, list[Function]]:
+        program = TestDebugArgcRecovery.program(last_default=LEFT_VALUE, dead_call=True)
+        parser = TestDebugArgcRecovery.parser(program, 1, 2, keep_unreachable_code=keep_unreachable_code)
+        return parser, parser.disasm_all_functions(filter_func=filter_func)
 
     def test_a_dead_call_gets_its_count(self):
         parser, functions = self.load()
@@ -861,9 +858,9 @@ class TestDeadCodeRecords(unittest.TestCase):
         self.assertEqual(main.call_debug_argc, {dead: 2})
 
     def test_without_the_dead_code_the_function_is_not_paired(self):
-        '''It has more records than calls: no counts, and a warning'''
+        """It has more records than calls: no counts, and a warning"""
         with self.assertLogs(log, 'WARNING') as logs:
-            _, functions = self.load(keep_unreachable_code = False)
+            _, functions = self.load(keep_unreachable_code=False)
 
         self.assertEqual((functions[0].call_written_argc, functions[0].call_debug_argc), ({}, {}))
         self.assertIn(f'{FUNC_NAME}: records not paired: 1 calls, 2 records; the .py writes no debug_argc',
@@ -871,15 +868,15 @@ class TestDeadCodeRecords(unittest.TestCase):
 
     def test_without_round_trip_nothing_is_paired(self):
         for keep_unreachable_code in (True, False):
-            with self.subTest(keep_unreachable_code = keep_unreachable_code):
-                program = TestDebugArgcRecovery.program(LEFT_VALUE, dead_call = True)
+            with self.subTest(keep_unreachable_code=keep_unreachable_code):
+                program = TestDebugArgcRecovery.program(LEFT_VALUE, dead_call=True)
                 main = program.parser(keep_unreachable_code).disasm_all_functions()[0]
                 self.assertEqual((main.call_written_argc, main.call_debug_argc), ({}, {}))
 
     def test_a_filtered_function_is_not_paired(self):
-        '''Pairing runs over the disassembled functions only: the filtered-out one gets no counts and no warning'''
+        """Pairing runs over the disassembled functions only: the filtered-out one gets no counts and no warning"""
         with self.assertNoLogs(log, 'WARNING'):
-            parser, functions = self.load(filter_func = lambda func: func.name != FUNC_NAME)
+            parser, functions = self.load(filter_func=lambda func: func.name != FUNC_NAME)
 
         self.assertEqual([func.name for func in functions], [CALLEE_NAME])
         filtered = parser.get_func_by_name(FUNC_NAME)
@@ -888,10 +885,10 @@ class TestDeadCodeRecords(unittest.TestCase):
 
 
 class TestDebugArgcFormatting(unittest.TestCase):
-    '''The .py writes a count on its CALL line, inside the parentheses; the decorator is always plain'''
+    """The .py writes a count on its CALL line, inside the parentheses; the decorator is always plain"""
 
     def disassemble(self) -> tuple[Function, int]:
-        '''The main function of TestDebugArgcRecovery's program and its CALL's offset'''
+        """The main function of TestDebugArgcRecovery's program and its CALL's offset"""
         parser = TestDebugArgcRecovery.program().parser()
         func = parser.disasm_all_functions()[0]
         [offset] = call_offsets(parser, func)
@@ -904,10 +901,10 @@ class TestDebugArgcFormatting(unittest.TestCase):
 
         self.assertIn('@scena.LLILCode()', lines)
         [call] = [line for line in lines if line.startswith('CALL(')]
-        self.assertTrue(call.endswith(', debug_argc = 1)'), call)
+        self.assertTrue(call.endswith(', debug_argc=1)'), call)
 
     def test_a_reused_formatter_keeps_no_count(self):
-        '''A later function with a CALL at the same offset, and a block formatted on its own'''
+        """A later function with a CALL at the same offset, and a block formatted on its own"""
         annotated, offset = self.disassemble()
         annotated.call_debug_argc = {offset: 1}
         plain, same_offset = self.disassemble()
@@ -922,9 +919,10 @@ class TestDebugArgcFormatting(unittest.TestCase):
 
 
 class TestDebugArgcRecoveryOrder(unittest.TestCase):
-    '''round_trip: each record pairs with its own call in the compiler's record order - nested calls in parameter order,
+    """round_trip: each record pairs with its own call in the compiler's record order - nested calls in parameter order,
     a tail call's argument parked in a register after the previous statement's call - so a trimmed count reaches the
-    call it belongs to. The records are written here in the compiler's order, not by the tracker under test.'''
+    call it belongs to. The records are written here in the compiler's order, not by the tracker under test."""
+
     OUTER_ID = 1
     INNER_ID = 2
     CALLEE_ARGC = 2
@@ -934,9 +932,9 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
 
     @classmethod
     def call_debug_argc(cls, caller: Asm, *records: tuple) -> tuple[dict, list[int]]:
-        '''Main's call_debug_argc and its CALL offsets in address order'''
-        callee = returning_callee(argc = cls.CALLEE_ARGC)
-        program = Program(main_function(caller), callee._replace(name = 'outer'), callee._replace(name = 'inner'))
+        """Main's call_debug_argc and its CALL offsets in address order"""
+        callee = returning_callee(argc=cls.CALLEE_ARGC)
+        program = Program(main_function(caller), callee._replace(name='outer'), callee._replace(name='inner'))
         parser = program.parser()
         parser.data, program.entries[0].debug_info = debug_records(*records)
         parser.round_trip = True
@@ -950,8 +948,8 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
         caller.call(cls.INNER_ID); caller.label(ret)
 
     def test_nested_calls_pair_in_parameter_order(self):
-        '''outer(inner(..), inner(..)): arguments are pushed last first, so the second argument's call runs first; the
-        first argument's call keeps one argument'''
+        """outer(inner(..), inner(..)): arguments are pushed last first, so the second argument's call runs first; the
+        first argument's call keeps one argument"""
         caller = Asm()
         caller.debug_set_lineno(1)
         caller.push_raw(CALLER_ID); caller.push_raw('outer')
@@ -968,7 +966,7 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
         self.assertEqual(debug_argc, {first: 1})
 
     def test_register_carried_tail_argument_pairs_after_the_previous_call(self):
-        '''inner(..) keeping one argument, then a tail call whose constant argument waits in a register'''
+        """inner(..) keeping one argument, then a tail call whose constant argument waits in a register"""
         caller = Asm()
         caller.debug_set_lineno(1)
         self.push_inner_call(caller, 'ret')
@@ -982,10 +980,10 @@ class TestDebugArgcRecoveryOrder(unittest.TestCase):
 
 
 class TestBlockSplits(unittest.TestCase):
-    '''A branch into a decoded block splits it; the tail takes the terminator and its edges'''
+    """A branch into a decoded block splits it; the tail takes the terminator and its edges"""
 
     def self_split_program(self) -> Program:
-        '''A do-while starting inside the entry block: its back edge splits the block being decoded'''
+        """A do-while starting inside the entry block: its back edge splits the block being decoded"""
         asm = Asm()
         asm.push_int(0); asm.set_reg(REG_INDEX)
         asm.label('loop'); asm.get_reg(REG_INDEX); asm.push_int(1); asm.add(); asm.set_reg(REG_INDEX)
@@ -1003,15 +1001,15 @@ class TestBlockSplits(unittest.TestCase):
         lift_all(parser, functions)
 
     def test_plain_backward_frame_target_keeps_the_call_in_the_tail(self):
-        '''Plain context: a caller frame returning into its own block splits it while it is decoded; the instructions
-        after the split belong to the tail, not after the head's synthetic JMP'''
+        """Plain context: a caller frame returning into its own block splits it while it is decoded; the instructions
+        after the split belong to the tail, not after the head's synthetic JMP"""
         caller = Asm()
         caller.push_int(0)
         caller.label('back'); caller.set_reg(REG_INDEX); caller.frame('back'); caller.call_script(0)
         program = Program(main_function(caller))
 
-        context = DisassemblerContext(create_fallthrough_jump = ed9_create_fallthrough_jump)
-        entry = Disassembler(ED9_INSTRUCTION_TABLE, context).disasm_function(program.code, name = FUNC_NAME)
+        context = DisassemblerContext(create_fallthrough_jump=ed9_create_fallthrough_jump)
+        entry = Disassembler(ED9_INSTRUCTION_TABLE, context).disasm_function(program.code, name=FUNC_NAME)
         tail = blocks_by_offset_of(entry)[program.label('back')]
 
         self.assertEqual(entry.instructions[-1].opcode, ED9Opcode.JMP)
@@ -1029,18 +1027,18 @@ class TestBlockSplits(unittest.TestCase):
 
 
 class TestStackLayout(unittest.TestCase):
-    '''The layout the parser keeps on each function: the depth before every instruction, and the slot each offset
-    opcode addresses with what may stand there at that point'''
+    """The layout the parser keeps on each function: the depth before every instruction, and the slot each offset
+    opcode addresses with what may stand there at that point"""
 
     @classmethod
     def layout_of(cls, asm: Asm, argc: int = 0, *others: Func) -> tuple[Program, StackLayout]:
-        '''The layout of the function asm assembles, with argc parameters, laid out before the others'''
+        """The layout of the function asm assembles, with argc parameters, laid out before the others"""
         program = Program(Func(FUNC_NAME, argc, asm), *others)
         _, functions = program.disassemble()
         return program, functions[0].stack_layout
 
     def layout_warning(self, expected: tuple[tuple[str, str, str], ...], asm: Asm, argc: int = 0, *others: Func) -> tuple[Program, StackLayout]:
-        '''layout_of, which must log exactly the expected warnings: (label, mnemonic, slot text) each'''
+        """layout_of, which must log exactly the expected warnings: (label, mnemonic, slot text) each"""
         with self.assertLogs(log, 'WARNING') as logs:
             program, layout = self.layout_of(asm, argc, *others)
 
@@ -1061,7 +1059,7 @@ class TestStackLayout(unittest.TestCase):
 
         refs = {name: layout.slot_refs[program.label(name)] for name in ('read', 'address', 'deref')}
         self.assertEqual(refs, {
-            'read': SlotRef(2, params = (1,)), 'address': SlotRef(1, params = (2,)), 'deref': SlotRef(0, params = (3,)),
+            'read': SlotRef(2, params=(1,)), 'address': SlotRef(1, params=(2,)), 'deref': SlotRef(0, params=(3,)),
         })
 
     def test_pop_to_counts_from_sp_after_its_pop(self):
@@ -1072,14 +1070,14 @@ class TestStackLayout(unittest.TestCase):
         asm.pop(WORD_SIZE); asm.ret()
         program, layout = self.layout_of(asm)
 
-        self.assertEqual(layout.slot_refs[program.label('write')], SlotRef(0, local = True))
+        self.assertEqual(layout.slot_refs[program.label('write')], SlotRef(0, local=True))
         self.assertEqual(layout.local_slots, {program.label('open'): 0})     # not the PUSH_INT it popped
 
     def test_parameter_reassigned_by_pop_to_stays_the_parameter_in_either_decode_order(self):
-        '''Decoded first, the writing arm leaves its POP_TO in the read's state; decoded second, its POP_TO reaches the
-        read through the join's solved block start'''
+        """Decoded first, the writing arm leaves its POP_TO in the read's state; decoded second, its POP_TO reaches the
+        read through the join's solved block start"""
         for write_arm_first in (True, False):
-            with self.subTest(write_arm_first = write_arm_first):
+            with self.subTest(write_arm_first=write_arm_first):
                 asm = Asm()
                 asm.get_reg(REG_INDEX); asm.jz('second')
                 arms = [lambda: (asm.push_int(LEFT_VALUE), asm.pop_to(-WORD_SIZE)), lambda: ()]
@@ -1092,7 +1090,7 @@ class TestStackLayout(unittest.TestCase):
                 asm.pop(2 * WORD_SIZE); asm.ret()
                 program, layout = self.layout_of(asm, 1)
 
-                self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, params = (1,)))
+                self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, params=(1,)))
                 self.assertEqual(layout.local_slots, {})
 
     def test_parameter_slot_popped_and_pushed_again_is_a_local(self):
@@ -1103,7 +1101,7 @@ class TestStackLayout(unittest.TestCase):
         asm.pop(2 * WORD_SIZE); asm.ret()
         program, layout = self.layout_of(asm, 1)
 
-        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local = True))
+        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local=True))
         self.assertEqual(layout.local_slots, {program.label('open'): 0})
 
     def test_writes_on_both_arms_resolve_to_the_one_opening_push(self):
@@ -1116,7 +1114,7 @@ class TestStackLayout(unittest.TestCase):
         asm.pop(2 * WORD_SIZE); asm.ret()
         program, layout = self.layout_of(asm)
 
-        self.assertEqual(set(layout.slot_refs.values()), {SlotRef(0, local = True)})
+        self.assertEqual(set(layout.slot_refs.values()), {SlotRef(0, local=True)})
         self.assertEqual(layout.local_slots, {program.label('open'): 0})
 
     def test_join_of_two_pushes_keeps_both_openers(self):
@@ -1128,12 +1126,12 @@ class TestStackLayout(unittest.TestCase):
         asm.pop(2 * WORD_SIZE); asm.ret()
         program, layout = self.layout_of(asm)
 
-        self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, local = True))
+        self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, local=True))
         self.assertEqual(layout.local_slots, {program.label('left'): 0, program.label('right'): 0})
 
     def test_back_edge_into_a_split_block_brings_its_value(self):
-        '''The back edge is recorded before the split it causes, so the loop head's first recorded state is the back
-        edge's, while the head's instructions were simulated with the fall-through's'''
+        """The back edge is recorded before the split it causes, so the loop head's first recorded state is the back
+        edge's, while the head's instructions were simulated with the fall-through's"""
         asm = Asm()
         asm.label('open'); asm.push_int(LEFT_VALUE)
         asm.label('head'); asm.load_stack(-WORD_SIZE); asm.pop(WORD_SIZE)
@@ -1142,11 +1140,11 @@ class TestStackLayout(unittest.TestCase):
         asm.label('end'); asm.pop(WORD_SIZE); asm.ret()
         program, layout = self.layout_of(asm)
 
-        self.assertEqual(layout.slot_refs[program.label('head')], SlotRef(0, local = True))
+        self.assertEqual(layout.slot_refs[program.label('head')], SlotRef(0, local=True))
         self.assertEqual(layout.local_slots, {program.label('open'): 0, program.label('new'): 0})
 
     def test_value_meeting_a_slot_at_a_later_join_does_not_count_for_an_earlier_read(self):
-        '''The parser's join groups span the whole function; what a read may see is solved per program point'''
+        """The parser's join groups span the whole function; what a read may see is solved per program point"""
         asm = Asm()
         asm.label('open'); asm.push_int(LEFT_VALUE)
         asm.label('read'); asm.load_stack(-WORD_SIZE); asm.pop(WORD_SIZE)
@@ -1155,7 +1153,7 @@ class TestStackLayout(unittest.TestCase):
         asm.label('join'); asm.pop(WORD_SIZE); asm.ret()
         program, layout = self.layout_of(asm)
 
-        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local = True))
+        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local=True))
         self.assertEqual(layout.local_slots, {program.label('open'): 0})
 
     def test_pop_to_in_a_loop_resolves_to_the_opening_push(self):
@@ -1169,14 +1167,14 @@ class TestStackLayout(unittest.TestCase):
             asm.load_stack(-WORD_SIZE); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jnz('body')    # splits the entry block
 
         for loop in (while_loop, do_while_loop):
-            with self.subTest(loop = loop.__name__):
+            with self.subTest(loop=loop.__name__):
                 asm = Asm()
                 asm.label('open'); asm.push_raw(0)
                 loop(asm)
                 asm.load_stack(-WORD_SIZE); asm.pop(2 * WORD_SIZE); asm.ret()
                 program, layout = self.layout_of(asm)
 
-                self.assertEqual(set(layout.slot_refs.values()), {SlotRef(0, local = True)})
+                self.assertEqual(set(layout.slot_refs.values()), {SlotRef(0, local=True)})
                 self.assertEqual(layout.local_slots, {program.label('open'): 0})
 
     def test_pop_to_deref_counts_from_sp_after_its_pop_and_keeps_the_slot(self):
@@ -1188,7 +1186,7 @@ class TestStackLayout(unittest.TestCase):
         program, layout = self.layout_of(asm, 1)
 
         refs = [layout.slot_refs[program.label(name)] for name in ('store', 'read')]
-        self.assertEqual(refs, [SlotRef(0, params = (1,))] * 2)
+        self.assertEqual(refs, [SlotRef(0, params=(1,))] * 2)
 
     def test_local_put_by_an_instruction_that_is_not_a_push(self):
         asm = Asm()
@@ -1197,7 +1195,7 @@ class TestStackLayout(unittest.TestCase):
         asm.pop(2 * WORD_SIZE); asm.ret()
         program, layout = self.layout_of(asm)
 
-        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local = True))
+        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local=True))
         self.assertEqual(layout.local_slots, {program.label('open'): 0})
 
     def test_slot_opened_twice_keeps_both_openers(self):
@@ -1234,14 +1232,14 @@ class TestStackLayout(unittest.TestCase):
             ('read_id', 'LOAD_STACK', 'slot 0 = call setup'), ('read_return', 'LOAD_STACK', 'slot 1 = call setup'),
         ), setup, 0, returning_callee())
         refs = [layout.slot_refs[program.label(name)] for name in ('read_id', 'read_return')]
-        self.assertEqual(refs, [SlotRef(0, call_setup = True), SlotRef(1, call_setup = True)])
+        self.assertEqual(refs, [SlotRef(0, call_setup=True), SlotRef(1, call_setup=True)])
 
         frame = Asm()
         frame.frame('return')
         frame.label('read'); frame.load_stack(-WORD_SIZE); frame.pop(WORD_SIZE)      # the frame's top slot
         frame.call_script(0); frame.label('return'); frame.ret()
         program, layout = self.layout_warning((('read', 'LOAD_STACK', f'slot {CALLER_FRAME_SLOTS - 1} = caller frame'),), frame)
-        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(CALLER_FRAME_SLOTS - 1, caller_frame = True))
+        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(CALLER_FRAME_SLOTS - 1, caller_frame=True))
 
     def test_slot_that_may_hold_a_parameter_or_a_local(self):
         asm = Asm()
@@ -1250,11 +1248,11 @@ class TestStackLayout(unittest.TestCase):
         asm.label('join'); asm.load_stack(-WORD_SIZE)
         asm.pop(2 * WORD_SIZE); asm.ret()
         program, layout = self.layout_warning((('join', 'LOAD_STACK', 'slot 0 = arg1 or local'),), asm, 1)
-        self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, params = (1,), local = True))
+        self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, params=(1,), local=True))
 
     def test_depth_before_every_instruction(self):
-        '''A label's depth too. The fall-through into 'next' gets a synthetic JMP one byte before the ADD, inside the
-        PUSH_INT, with no recorded state: it gets no entry'''
+        """A label's depth too. The fall-through into 'next' gets a synthetic JMP one byte before the ADD, inside the
+        PUSH_INT, with no recorded state: it gets no entry"""
         asm = Asm()
         asm.label('push'); asm.push_int(LEFT_VALUE)
         asm.label('reg'); asm.get_reg(REG_INDEX)
@@ -1269,8 +1267,8 @@ class TestStackLayout(unittest.TestCase):
         self.assertEqual(layout.sp_before, {program.label(name): depth for name, depth in depths.items()})
 
     def test_arguments_of_every_kind_of_call_are_numbered(self):
-        '''arg1 is a call's last push: a local call, a script call, a SYSCALL (whose arguments a POP removes later) and a
-        tail call; a POP or DEBUG_LOG numbers nothing'''
+        """arg1 is a call's last push: a local call, a script call, a SYSCALL (whose arguments a POP removes later) and a
+        tail call; a POP or DEBUG_LOG numbers nothing"""
         asm = Asm()
         asm.push_raw(CALLER_ID); asm.push_raw('local_return')
         asm.label('local_arg'); asm.push_int(LEFT_VALUE); asm.call(CALLEE_ID)
@@ -1281,7 +1279,7 @@ class TestStackLayout(unittest.TestCase):
         asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2); asm.pop(2 * WORD_SIZE)
         asm.push_int(LEFT_VALUE); asm.debug_log(1)
         asm.label('tail_arg'); asm.push_int(LEFT_VALUE); asm.call_script_no_return(1)
-        program, layout = self.layout_of(asm, 0, returning_callee(argc = 1))
+        program, layout = self.layout_of(asm, 0, returning_callee(argc=1))
 
         numbers = {'local_arg': (1,), 'script_arg': (1,), 'syscall_arg2': (2,), 'syscall_arg1': (1,), 'tail_arg': (1,)}
         self.assertEqual(layout.arg_numbers, {program.label(name): number for name, number in numbers.items()})

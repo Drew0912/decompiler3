@@ -13,12 +13,15 @@ from ..parser.types_scp import *
 if TYPE_CHECKING:
     from .formatter import FormatterContext
 
+
 # ED9-specific operand types
 class ED9OperandType(IntEnum2):
     """ED9-specific operand types extending base OperandType"""
+
     Func      = OperandType.UserDefined + 1  # Function ID
     Value     = OperandType.UserDefined + 2  # ScpValue
     GlobalVar = OperandType.UserDefined + 3  # Global var table index (LOAD_GLOBAL/SET_GLOBAL)
+
 
 # ED9 operand descriptor with extended functionality
 class ED9OperandDescriptor(OperandDescriptor):
@@ -31,7 +34,7 @@ class ED9OperandDescriptor(OperandDescriptor):
                 return fs.ReadUShort()
 
             case ED9OperandType.Value:
-                return ScpValue(fs = fs)
+                return ScpValue(fs=fs)
 
             case ED9OperandType.GlobalVar:
                 return fs.ReadLong()
@@ -78,9 +81,11 @@ class ED9OperandDescriptor(OperandDescriptor):
             case _:
                 return super().format_operand(operand, context)
 
+
 # ED9 operand descriptor factory
 def _ed9_oprdesc(opr_type: OperandType | ED9OperandType, is_hex: bool = False):
-    return ED9OperandDescriptor(OperandFormat(opr_type, is_hex = is_hex))
+    return ED9OperandDescriptor(OperandFormat(opr_type, is_hex=is_hex))
+
 
 # Extend format table with ED9-specific types
 ED9_FORMAT_TABLE = OperandDescriptor.format_table.copy()
@@ -102,84 +107,86 @@ if TYPE_CHECKING:
 @dataclass
 class InstructionEntry:
     """Single instruction table entry"""
+
     opcode: int
     mnemonic: str
     operand_fmt: str = ''
     flags: InstructionFlags = InstructionFlags.NONE
-    kind: InstructionKind = field(kw_only = True)     # what it does to the stack (STACK_EFFECTS)
+    kind: InstructionKind = field(kw_only=True)       # what it does to the stack (STACK_EFFECTS)
 
 
 # ED9 Instruction Table
 ED9_OPCODE_TABLE = [
     # Stack operations
     # Special: decoded to PUSH_INT/PUSH_FLOAT/PUSH_STR
-    InstructionEntry(0x00, 'PUSH',                    'CV',                                kind = InstructionKind.PUSH_CONST),
-    InstructionEntry(0x01, 'POP',                     'C',                                 kind = InstructionKind.POP),
-    InstructionEntry(0x02, 'LOAD_STACK',              'i',                                 kind = InstructionKind.LOAD_SLOT),
-    InstructionEntry(0x03, 'LOAD_STACK_DEREF',        'i',                                 kind = InstructionKind.LOAD_DEREF),
-    InstructionEntry(0x04, 'PUSH_STACK_OFFSET',       'i',                                 kind = InstructionKind.SLOT_ADDRESS),
-    InstructionEntry(0x05, 'POP_TO',                  'i',                                 kind = InstructionKind.STORE_SLOT),
-    InstructionEntry(0x06, 'POP_TO_DEREF',            'i',                                 kind = InstructionKind.STORE_DEREF),
+    InstructionEntry(0x00, 'PUSH',                    'CV',                                kind=InstructionKind.PUSH_CONST),
+    InstructionEntry(0x01, 'POP',                     'C',                                 kind=InstructionKind.POP),
+    InstructionEntry(0x02, 'LOAD_STACK',              'i',                                 kind=InstructionKind.LOAD_SLOT),
+    InstructionEntry(0x03, 'LOAD_STACK_DEREF',        'i',                                 kind=InstructionKind.LOAD_DEREF),
+    InstructionEntry(0x04, 'PUSH_STACK_OFFSET',       'i',                                 kind=InstructionKind.SLOT_ADDRESS),
+    InstructionEntry(0x05, 'POP_TO',                  'i',                                 kind=InstructionKind.STORE_SLOT),
+    InstructionEntry(0x06, 'POP_TO_DEREF',            'i',                                 kind=InstructionKind.STORE_DEREF),
 
     # Global variables
-    InstructionEntry(0x07, 'LOAD_GLOBAL',             'G',                                 kind = InstructionKind.LOAD_GLOBAL),
-    InstructionEntry(0x08, 'SET_GLOBAL',              'G',                                 kind = InstructionKind.STORE_GLOBAL),
+    InstructionEntry(0x07, 'LOAD_GLOBAL',             'G',                                 kind=InstructionKind.LOAD_GLOBAL),
+    InstructionEntry(0x08, 'SET_GLOBAL',              'G',                                 kind=InstructionKind.STORE_GLOBAL),
 
     # Registers
-    InstructionEntry(0x09, 'GET_REG',                 'C',                                 kind = InstructionKind.LOAD_REG),
-    InstructionEntry(0x0A, 'SET_REG',                 'C',                                 kind = InstructionKind.STORE_REG),
+    InstructionEntry(0x09, 'GET_REG',                 'C',                                 kind=InstructionKind.LOAD_REG),
+    InstructionEntry(0x0A, 'SET_REG',                 'C',                                 kind=InstructionKind.STORE_REG),
 
     # Control flow
-    InstructionEntry(0x0B, 'JMP',                     'O',   InstructionFlags.END_BLOCK,   kind = InstructionKind.JUMP),
-    InstructionEntry(0x0C, 'CALL',                    'F',   InstructionFlags.END_BLOCK,   kind = InstructionKind.CALL),
-    InstructionEntry(0x0D, 'RETURN',                  '',    InstructionFlags.END_BLOCK,   kind = InstructionKind.RETURN),
-    InstructionEntry(0x0E, 'POP_JMP_NOT_ZERO',        'O',   InstructionFlags.END_BLOCK,   kind = InstructionKind.CONDITIONAL_JUMP),
-    InstructionEntry(0x0F, 'POP_JMP_ZERO',            'O',   InstructionFlags.END_BLOCK,   kind = InstructionKind.CONDITIONAL_JUMP),
+    InstructionEntry(0x0B, 'JMP',                     'O',   InstructionFlags.END_BLOCK,   kind=InstructionKind.JUMP),
+    InstructionEntry(0x0C, 'CALL',                    'F',   InstructionFlags.END_BLOCK,   kind=InstructionKind.CALL),
+    InstructionEntry(0x0D, 'RETURN',                  '',    InstructionFlags.END_BLOCK,   kind=InstructionKind.RETURN),
+    InstructionEntry(0x0E, 'POP_JMP_NOT_ZERO',        'O',   InstructionFlags.END_BLOCK,   kind=InstructionKind.CONDITIONAL_JUMP),
+    InstructionEntry(0x0F, 'POP_JMP_ZERO',            'O',   InstructionFlags.END_BLOCK,   kind=InstructionKind.CONDITIONAL_JUMP),
 
     # Arithmetic
-    InstructionEntry(0x10, 'ADD',                                                          kind = InstructionKind.BINARY),
-    InstructionEntry(0x11, 'SUB',                                                          kind = InstructionKind.BINARY),
-    InstructionEntry(0x12, 'MUL',                                                          kind = InstructionKind.BINARY),
-    InstructionEntry(0x13, 'DIV',                                                          kind = InstructionKind.BINARY),
-    InstructionEntry(0x14, 'MOD',                                                          kind = InstructionKind.BINARY),
+    InstructionEntry(0x10, 'ADD',                                                          kind=InstructionKind.BINARY),
+    InstructionEntry(0x11, 'SUB',                                                          kind=InstructionKind.BINARY),
+    InstructionEntry(0x12, 'MUL',                                                          kind=InstructionKind.BINARY),
+    InstructionEntry(0x13, 'DIV',                                                          kind=InstructionKind.BINARY),
+    InstructionEntry(0x14, 'MOD',                                                          kind=InstructionKind.BINARY),
 
     # Comparison
-    InstructionEntry(0x15, 'EQ',                                                           kind = InstructionKind.BINARY),
-    InstructionEntry(0x16, 'NE',                                                           kind = InstructionKind.BINARY),
-    InstructionEntry(0x17, 'GT',                                                           kind = InstructionKind.BINARY),
-    InstructionEntry(0x18, 'GE',                                                           kind = InstructionKind.BINARY),
-    InstructionEntry(0x19, 'LT',                                                           kind = InstructionKind.BINARY),
-    InstructionEntry(0x1A, 'LE',                                                           kind = InstructionKind.BINARY),
+    InstructionEntry(0x15, 'EQ',                                                           kind=InstructionKind.BINARY),
+    InstructionEntry(0x16, 'NE',                                                           kind=InstructionKind.BINARY),
+    InstructionEntry(0x17, 'GT',                                                           kind=InstructionKind.BINARY),
+    InstructionEntry(0x18, 'GE',                                                           kind=InstructionKind.BINARY),
+    InstructionEntry(0x19, 'LT',                                                           kind=InstructionKind.BINARY),
+    InstructionEntry(0x1A, 'LE',                                                           kind=InstructionKind.BINARY),
 
     # Bitwise & Logical
-    InstructionEntry(0x1B, 'BITWISE_AND',                                                  kind = InstructionKind.BINARY),
-    InstructionEntry(0x1C, 'BITWISE_OR',                                                   kind = InstructionKind.BINARY),
-    InstructionEntry(0x1D, 'LOGICAL_AND',                                                  kind = InstructionKind.BINARY),
-    InstructionEntry(0x1E, 'LOGICAL_OR',                                                   kind = InstructionKind.BINARY),
+    InstructionEntry(0x1B, 'BITWISE_AND',                                                  kind=InstructionKind.BINARY),
+    InstructionEntry(0x1C, 'BITWISE_OR',                                                   kind=InstructionKind.BINARY),
+    InstructionEntry(0x1D, 'LOGICAL_AND',                                                  kind=InstructionKind.BINARY),
+    InstructionEntry(0x1E, 'LOGICAL_OR',                                                   kind=InstructionKind.BINARY),
 
     # Unary
-    InstructionEntry(0x1F, 'NEG',                                                          kind = InstructionKind.UNARY),
-    InstructionEntry(0x20, 'EZ',                                                           kind = InstructionKind.UNARY),
-    InstructionEntry(0x21, 'NOT',                                                          kind = InstructionKind.UNARY),
+    InstructionEntry(0x1F, 'NEG',                                                          kind=InstructionKind.UNARY),
+    InstructionEntry(0x20, 'EZ',                                                           kind=InstructionKind.UNARY),
+    InstructionEntry(0x21, 'NOT',                                                          kind=InstructionKind.UNARY),
 
     # Script calls
-    InstructionEntry(0x22, 'CALL_SCRIPT',             'VVC', InstructionFlags.END_BLOCK,   kind = InstructionKind.CALL_SCRIPT),
-    InstructionEntry(0x23, 'CALL_SCRIPT_NO_RETURN',   'VVC', InstructionFlags.END_BLOCK,   kind = InstructionKind.TAIL_CALL),
+    InstructionEntry(0x22, 'CALL_SCRIPT',             'VVC', InstructionFlags.END_BLOCK,   kind=InstructionKind.CALL_SCRIPT),
+    InstructionEntry(0x23, 'CALL_SCRIPT_NO_RETURN',   'VVC', InstructionFlags.END_BLOCK,   kind=InstructionKind.TAIL_CALL),
 
     # System
-    InstructionEntry(0x24, 'SYSCALL',                 'CBB',                               kind = InstructionKind.SYSCALL),
-    InstructionEntry(0x25, 'PUSH_CALLER_FRAME',       'O',   InstructionFlags.START_BLOCK, kind = InstructionKind.PUSH_CALLER_FRAME),
-    InstructionEntry(0x26, 'DEBUG_SET_LINENO',        'H',                                 kind = InstructionKind.DEBUG_LINE),
-    InstructionEntry(0x27, 'DEBUG_LOG',               'C',                                 kind = InstructionKind.DEBUG_LOG),
+    InstructionEntry(0x24, 'SYSCALL',                 'CBB',                               kind=InstructionKind.SYSCALL),
+    InstructionEntry(0x25, 'PUSH_CALLER_FRAME',       'O',   InstructionFlags.START_BLOCK, kind=InstructionKind.PUSH_CALLER_FRAME),
+    InstructionEntry(0x26, 'DEBUG_SET_LINENO',        'H',                                 kind=InstructionKind.DEBUG_LINE),
+    InstructionEntry(0x27, 'DEBUG_LOG',               'C',                                 kind=InstructionKind.DEBUG_LOG),
 
     # Pseudo-instructions (optimized from other instructions)
-    InstructionEntry(0x1000, 'PUSH_CURRENT_FUNC_ID',  '',                                  kind = InstructionKind.PUSH_FUNC_ID),
-    InstructionEntry(0x1001, 'PUSH_RET_ADDR',         'O',                                 kind = InstructionKind.PUSH_RET_ADDR),
-    InstructionEntry(0x1002, 'PUSH_RAW',              'I',                                 kind = InstructionKind.PUSH_CONST),
-    InstructionEntry(0x1003, 'PUSH_INT',              'I',                                 kind = InstructionKind.PUSH_CONST),
-    InstructionEntry(0x1004, 'PUSH_FLOAT',            'f',                                 kind = InstructionKind.PUSH_CONST),
-    InstructionEntry(0x1005, 'PUSH_STR',              'S',                                 kind = InstructionKind.PUSH_CONST),
+    InstructionEntry(0x1000, 'PUSH_CURRENT_FUNC_ID',  '',                                  kind=InstructionKind.PUSH_FUNC_ID),
+    InstructionEntry(0x1001, 'PUSH_RET_ADDR',         'O',                                 kind=InstructionKind.PUSH_RET_ADDR),
+    InstructionEntry(0x1002, 'PUSH_RAW',              'I',                                 kind=InstructionKind.PUSH_CONST),
+    InstructionEntry(0x1003, 'PUSH_INT',              'I',                                 kind=InstructionKind.PUSH_CONST),
+    InstructionEntry(0x1004, 'PUSH_FLOAT',            'f',                                 kind=InstructionKind.PUSH_CONST),
+    InstructionEntry(0x1005, 'PUSH_STR',              'S',                                 kind=InstructionKind.PUSH_CONST),
 ]
+
 
 # Helper to lookup opcode from table
 def _opcode(mnemonic: str) -> int:
@@ -188,8 +195,10 @@ def _opcode(mnemonic: str) -> int:
             return entry.opcode
     raise ValueError(f'Unknown mnemonic: {mnemonic}')
 
+
 class ED9Opcode(IntEnum2):
     """ED9 VM Opcodes"""
+
     # Stack operations
     PUSH                    = _opcode('PUSH')
     POP                     = _opcode('POP')
@@ -269,6 +278,7 @@ def opcodes_of(*kinds: InstructionKind) -> tuple[ED9Opcode, ...]:
 
 class ED9InstructionDescriptor(InstructionDescriptor):
     """ED9-specific instruction descriptor with operand format and stack effect"""
+
     _allow_creation = True
 
     def __init__(
@@ -301,14 +311,12 @@ class ED9InstructionDescriptor(InstructionDescriptor):
             target = self._get_offset_operand(inst)
             if target is not None:
                 targets.append(BranchTarget.unconditional(target))
-
         elif self.opcode in (ED9Opcode.POP_JMP_ZERO, ED9Opcode.POP_JMP_NOT_ZERO):
             # Conditional jump
             target = self._get_offset_operand(inst)
             if target is not None:
                 targets.append(BranchTarget.true_branch(target))
                 targets.append(BranchTarget.false_branch(current_pos))
-
         elif self.opcode == ED9Opcode.PUSH_CALLER_FRAME:
             # Return address
             target = self._get_offset_operand(inst)
@@ -339,11 +347,11 @@ class ED9InstructionTable(InstructionTable):
         """Initialize instruction table from ED9_OPCODE_TABLE"""
         for entry in ED9_OPCODE_TABLE:
             desc = ED9InstructionDescriptor(
-                opcode       = entry.opcode,
-                mnemonic     = entry.mnemonic,
-                operand_fmt  = entry.operand_fmt,
-                flags        = entry.flags,
-                kind         = entry.kind,
+                opcode=entry.opcode,
+                mnemonic=entry.mnemonic,
+                operand_fmt=entry.operand_fmt,
+                flags=entry.flags,
+                kind=entry.kind,
             )
             self.descriptors[entry.opcode] = desc
 
@@ -355,7 +363,6 @@ class ED9InstructionTable(InstructionTable):
         """Get instruction descriptor; the row is looked up first, as every walker calls this per instruction"""
         try:
             return self.descriptors[opcode]
-
         except KeyError:
             pass        # no row: the errors are raised below, outside the handler, so they carry no KeyError context
 
@@ -381,7 +388,7 @@ class ED9InstructionTable(InstructionTable):
         operands = []
         for op_desc in descriptor.operand_descriptors:
             value = op_desc.read_value(fs)
-            operands.append(Operand(descriptor = op_desc, value = value))
+            operands.append(Operand(descriptor=op_desc, value=value))
 
         return operands
 
@@ -396,28 +403,27 @@ class ED9InstructionTable(InstructionTable):
         """PUSH becomes the pseudo-op for its value's type (PUSH_INT, ...), with the plain value as its one operand,
         read straight from the stream rather than as PUSH's own operands"""
         fs.ReadByte()   # PUSH's size byte (its 'C' operand), not kept
-        value_type, value = ScpValue.decode_word(fs.ReadULong(), fs = fs)
+        value_type, value = ScpValue.decode_word(fs.ReadULong(), fs=fs)
         inst.opcode = self.PSEUDO_PUSH_BY_TYPE[value_type]
         inst.descriptor = self.get_descriptor(inst.opcode)
-        return [Operand(descriptor = inst.descriptor.operand_descriptors[0], value = value)]
+        return [Operand(descriptor=inst.descriptor.operand_descriptors[0], value=value)]
 
 
 def ed9_create_fallthrough_jump(offset: int, target: int, inst_table: 'InstructionTable') -> Instruction:
     """Create a synthetic JMP instruction for split blocks"""
-
     # Get JMP descriptor from instruction table
     jmp_descriptor = inst_table.get_descriptor(ED9Opcode.JMP)
 
-    operand = Operand(descriptor = jmp_descriptor.operand_descriptors[0], value = target)
+    operand = Operand(descriptor=jmp_descriptor.operand_descriptors[0], value=target)
 
     # Create synthetic instruction
     # Use offset - 1 to avoid collision with tail block's first instruction
     synthetic_inst = Instruction(
-        offset     = offset - 1,
-        opcode     = jmp_descriptor.opcode,
-        descriptor = jmp_descriptor,
-        operands   = [operand],
-        size       = SYNTHETIC_INSTRUCTION_SIZE
+        offset=offset - 1,
+        opcode=jmp_descriptor.opcode,
+        descriptor=jmp_descriptor,
+        operands=[operand],
+        size=SYNTHETIC_INSTRUCTION_SIZE
     )
 
     return synthetic_inst

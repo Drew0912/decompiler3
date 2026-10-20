@@ -1,11 +1,12 @@
-'''MLIL Type System - Type definitions for type inference'''
+"""MLIL Type System - Type definitions for type inference"""
 
 from typing import AbstractSet, Optional
 from enum import Enum, auto
 
 
 class MLILTypeKind(Enum):
-    '''Type kinds for MLIL variables'''
+    """Type kinds for MLIL variables"""
+
     UNKNOWN = auto()    # Type not yet determined
     INT = auto()        # Integer (32-bit)
     BOOL = auto()       # Boolean (0 or 1)
@@ -17,7 +18,7 @@ class MLILTypeKind(Enum):
 
 
 class MLILType:
-    '''Base class for MLIL types'''
+    """Base class for MLIL types"""
 
     def __init__(self, kind: MLILTypeKind):
         self.kind = kind
@@ -37,55 +38,55 @@ class MLILType:
         return f'MLILType({self.kind.name})'
 
     def is_unknown(self) -> bool:
-        '''Check if type is unknown'''
+        """Check if type is unknown"""
         return self.kind == MLILTypeKind.UNKNOWN
 
     def is_numeric(self) -> bool:
-        '''Check if type is numeric (int, float, bool)'''
+        """Check if type is numeric (int, float, bool)"""
         return self.kind in (MLILTypeKind.INT, MLILTypeKind.FLOAT, MLILTypeKind.BOOL)
 
     def is_pointer(self) -> bool:
-        '''Check if type is pointer (string, pointer)'''
+        """Check if type is pointer (string, pointer)"""
         return self.kind in (MLILTypeKind.STRING, MLILTypeKind.POINTER)
 
     @classmethod
     def unknown(cls) -> 'MLILType':
-        '''Create unknown type'''
+        """Create unknown type"""
         return MLILType(MLILTypeKind.UNKNOWN)
 
     @classmethod
     def int_type(cls) -> 'MLILType':
-        '''Create int type'''
+        """Create int type"""
         return MLILType(MLILTypeKind.INT)
 
     @classmethod
     def bool_type(cls) -> 'MLILType':
-        '''Create bool type'''
+        """Create bool type"""
         return MLILType(MLILTypeKind.BOOL)
 
     @classmethod
     def string_type(cls) -> 'MLILType':
-        '''Create string type'''
+        """Create string type"""
         return MLILType(MLILTypeKind.STRING)
 
     @classmethod
     def float_type(cls) -> 'MLILType':
-        '''Create float type'''
+        """Create float type"""
         return MLILType(MLILTypeKind.FLOAT)
 
     @classmethod
     def pointer_type(cls) -> 'MLILType':
-        '''Create generic pointer type'''
+        """Create generic pointer type"""
         return MLILType(MLILTypeKind.POINTER)
 
     @classmethod
     def void_type(cls) -> 'MLILType':
-        '''Create void type'''
+        """Create void type"""
         return MLILType(MLILTypeKind.VOID)
 
 
 class MLILVariantType(MLILType):
-    '''Variant type (a type conflict), identified by its member types'''
+    """Variant type (a type conflict), identified by its member types"""
 
     def __init__(self, types: AbstractSet[MLILType]):
         super().__init__(MLILTypeKind.VARIANT)
@@ -98,7 +99,7 @@ class MLILVariantType(MLILType):
         return hash((self.kind, self.types))
 
     def __str__(self) -> str:
-        type_names = ', '.join(str(t) for t in sorted(self.types, key = lambda t: t.kind.value))
+        type_names = ', '.join(str(t) for t in sorted(self.types, key=lambda t: t.kind.value))
         return f'variant<{type_names}>'
 
     def __repr__(self) -> str:
@@ -106,7 +107,7 @@ class MLILVariantType(MLILType):
 
 
 def unify_types(t1: MLILType, t2: MLILType) -> MLILType:
-    '''Unify two types, returning the most specific common type'''
+    """Unify two types, returning the most specific common type"""
     # Same type
     if t1 == t2:
         return t1
@@ -144,16 +145,16 @@ def unify_types(t1: MLILType, t2: MLILType) -> MLILType:
 # ============================================================================
 
 class FunctionSignatureDB:
-    '''Interface for platform-specific function signature databases'''
+    """Interface for platform-specific function signature databases"""
 
     def get_call_return_type(self, target) -> Optional[MLILType]:
-        '''Get return type for function call (target can be any type)'''
+        """Get return type for function call (target can be any type)"""
         return None
 
     def get_syscall_return_type(self, subsystem: int, cmd: int) -> Optional[MLILType]:
-        '''Get return type for syscall (subsystem, cmd)'''
+        """Get return type for syscall (subsystem, cmd)"""
         return None
 
     def get_script_call_return_type(self, module: str, func: str) -> Optional[MLILType]:
-        '''Get return type for script call (module, func)'''
+        """Get return type for script call (module, func)"""
         return None

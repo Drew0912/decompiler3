@@ -1,4 +1,4 @@
-'''MLIL to HLIL Converter - SSA-based Graph Rewriting'''
+"""MLIL to HLIL Converter - SSA-based Graph Rewriting"""
 
 from collections import deque
 from dataclasses import dataclass
@@ -60,13 +60,13 @@ def _mlil_type_to_hlil(mlil_type: MLILType) -> HLILTypeKind:
 
 
 def constant_condition_truth(condition: MediumLevelILInstruction) -> Optional[bool]:
-    '''constant_truth of an MLIL branch condition, read with the converter's own operator tables'''
+    """constant_truth of an MLIL branch condition, read with the converter's own operator tables"""
     return constant_truth(_constant_expr(condition))
 
 
 def _constant_expr(expr: MediumLevelILInstruction) -> HLILExpression:
-    '''expr in HLIL where it is built from constants and operators alone; anything else becomes
-    an opaque variable'''
+    """expr in HLIL where it is built from constants and operators alone; anything else becomes
+    an opaque variable"""
     if isinstance(expr, MLILConst):
         return HLILConst(expr.value, expr.is_hex)
 
@@ -85,7 +85,7 @@ def _constant_expr(expr: MediumLevelILInstruction) -> HLILExpression:
 
 
 class CallResultFolder:
-    '''Decides which call results can be folded into the instruction that reads them.
+    """Decides which call results can be folded into the instruction that reads them.
 
     MLIL calls are statements writing an output variable, so a result reaches its
     reader as a separate variable read. HLIL has call expressions, so a result that
@@ -104,7 +104,7 @@ class CallResultFolder:
 
     That makes the expression's operand order the calls' execution order, so a
     chain is only folded while the two agree.
-    '''
+    """
 
     def __init__(self, mlil_func: MediumLevelILFunction, block_successors: Dict[int, List[int]]):
         self.mlil_func = mlil_func
@@ -121,17 +121,17 @@ class CallResultFolder:
         self.folded_use: Dict[Tuple[int, int, str], Tuple[int, int]] = {}
 
     def analyze(self):
-        '''Find every call result that can be folded into its reader'''
+        """Find every call result that can be folded into its reader"""
         self._build_predecessors()
         self._compute_liveness()
         self._find_foldable_calls()
 
     def is_folded(self, block_idx: int, instr_idx: int) -> bool:
-        '''Check whether this call is emitted as part of its reader instead'''
+        """Check whether this call is emitted as part of its reader instead"""
         return (block_idx, instr_idx) in self.folded_call
 
     def folded_call_at(self, block_idx: int, instr_idx: int, var_name: str) -> Optional[Tuple[int, int]]:
-        '''Position of the call whose result this variable read stands for'''
+        """Position of the call whose result this variable read stands for"""
         return self.folded_use.get((block_idx, instr_idx, var_name))
 
     def _build_predecessors(self):
@@ -144,7 +144,7 @@ class CallResultFolder:
                     self.predecessors[succ].append(block_idx)
 
     def _compute_liveness(self):
-        '''Backward dataflow over variable names (non-SSA MLIL)'''
+        """Backward dataflow over variable names (non-SSA MLIL)"""
         block_uses: Dict[int, Set[str]] = {}
         block_defs: Dict[int, Set[str]] = {}
         block_count = len(self.mlil_func.basic_blocks)
@@ -221,13 +221,13 @@ class CallResultFolder:
 
     def _resolve_reader(self, block_idx: int, instr_idx: int,
                         var_name: str) -> Optional[Tuple[int, int]]:
-        '''Reader for this call result, seeing through calls that fold away
+        """Reader for this call result, seeing through calls that fold away
 
         A call whose own result is folded into a later reader does not really
         separate this call from that reader - both end up in the same expression.
         Stepping over it turns a run of `reg = f()` statements into one nested
         expression, which is what the bytecode was written as.
-        '''
+        """
         position = self._find_reader(block_idx, instr_idx)
         if position is None:
             return None
@@ -263,12 +263,12 @@ class CallResultFolder:
         return reader
 
     def _find_reader(self, block_idx: int, instr_idx: int) -> Optional[Tuple[int, int]]:
-        '''Next real instruction after this call, or None
+        """Next real instruction after this call, or None
 
         Only nops and unconditional jumps may be skipped, and a following block
         must be entered from this call alone. Whether that instruction is the
         reader or merely folds away too is left to `_resolve_reader`.
-        '''
+        """
         block = self.mlil_func.basic_blocks[block_idx]
 
         for idx in range(instr_idx + 1, len(block.instructions)):
@@ -302,7 +302,7 @@ class CallResultFolder:
         return None
 
     def _is_dead_after(self, block_idx: int, instr_idx: int, var_name: str) -> bool:
-        '''Check that nothing reads var_name after the reader before it is rewritten'''
+        """Check that nothing reads var_name after the reader before it is rewritten"""
         block = self.mlil_func.basic_blocks[block_idx]
 
         for idx in range(instr_idx + 1, len(block.instructions)):
@@ -317,7 +317,7 @@ class CallResultFolder:
         return var_name not in self.live_out[block_idx]
 
     def _written_name(self, instr: MediumLevelILInstruction) -> Optional[str]:
-        '''Variable this instruction assigns, if any'''
+        """Variable this instruction assigns, if any"""
         if isinstance(instr, MLILSetVar):
             return instr.var.name
 
@@ -327,15 +327,15 @@ class CallResultFolder:
         return None
 
     def _read_names(self, instr: MediumLevelILInstruction) -> Set[str]:
-        '''Variable names this instruction reads'''
+        """Variable names this instruction reads"""
         return set(self._read_order(instr))
 
     def _read_order(self, instr: MediumLevelILInstruction) -> List[str]:
-        '''Variable names this instruction reads, in evaluation order
+        """Variable names this instruction reads, in evaluation order
 
         Folding several calls into one expression makes that expression's
         operand order their execution order, so the two have to agree.
-        '''
+        """
         names: List[str] = []
         self._collect_read_names(instr, names)
         return names
@@ -343,37 +343,29 @@ class CallResultFolder:
     def _collect_read_names(self, node: MediumLevelILInstruction, names: List[str]):
         if isinstance(node, MLILVar):
             names.append(node.var.name)
-
         elif isinstance(node, MLILBinaryOp):
             self._collect_read_names(node.lhs, names)
             self._collect_read_names(node.rhs, names)
-
         elif isinstance(node, MLILUnaryOp):
             self._collect_read_names(node.operand, names)
-
         elif isinstance(node, MediumLevelILCall):
             for arg in node.args:
                 self._collect_read_names(arg, names)
-
         elif isinstance(node, MLILSetVar):
             self._collect_read_names(node.value, names)
-
         elif isinstance(node, (MLILStoreReg, MLILStoreGlobal)):
             self._collect_read_names(node.value, names)
-
         elif isinstance(node, MLILStoreDeref):
             self._collect_read_names(node.dest, names)
             self._collect_read_names(node.value, names)
-
         elif isinstance(node, MLILIf):
             self._collect_read_names(node.condition, names)
-
         elif isinstance(node, MLILRet):
             if node.value is not None:
                 self._collect_read_names(node.value, names)
 
     def _count_reads(self, node: MediumLevelILInstruction, var_name: str) -> int:
-        '''How often an instruction reads a variable'''
+        """How often an instruction reads a variable"""
         if isinstance(node, MLILVar):
             return 1 if node.var.name == var_name else 0
 
@@ -404,12 +396,12 @@ class CallResultFolder:
         return 0
 
     def _contains_impure_read(self, node: MediumLevelILInstruction) -> bool:
-        '''Whether node reads through a pointer, or reads REG[]/GLOBAL[], anywhere in its tree.
+        """Whether node reads through a pointer, or reads REG[]/GLOBAL[], anywhere in its tree.
 
         Both are impure the same way: not SSA-tracked variables, and a call is conservatively
         assumed able to write either (see e.g. pass_reg_global_propagation.py's MLILCall
         handling, which drops every cached REG/GLOBAL value on a call).
-        '''
+        """
         if isinstance(node, (MLILDeref, MLILLoadReg, MLILLoadGlobal)):
             return True
 
@@ -425,7 +417,7 @@ class CallResultFolder:
         return False
 
     def _read_unsafe_to_fold(self, node: MediumLevelILInstruction, var_name: str, gated: bool = False) -> bool:
-        '''Whether replacing var_name's read inside node with its call changes what the call does.
+        """Whether replacing var_name's read inside node with its call changes what the call does.
 
         Folding moves the call to the read's position, and that position differs from the
         statement's when:
@@ -435,7 +427,7 @@ class CallResultFolder:
         - it is under the rhs of MLILLogicalAnd/Or (gated) - the VM evaluates both operands, but
           HLIL's && / || short-circuit, so the call would only run sometimes
         - it is under MLILAddressOf - &var names the variable's storage, which a call has not got
-        '''
+        """
         if isinstance(node, MLILVar):
             return gated and node.var.name == var_name
 
@@ -494,7 +486,8 @@ class CallResultFolder:
 
 @dataclass
 class LoopStackEntry:
-    '''Active loop context for break/continue generation'''
+    """Active loop context for break/continue generation"""
+
     header: int
     exit: Optional[int]
     exit_target: Optional[int] = None  # exit after its goto-only blocks, where a jump through them lands
@@ -504,7 +497,8 @@ class LoopStackEntry:
 
 @dataclass
 class FollowOn:
-    '''Block to carry on at after an if or a loop, in the same target block and stop point'''
+    """Block to carry on at after an if or a loop, in the same target block and stop point"""
+
     block_idx: int
     jump_source: Optional[MediumLevelILInstruction] = None
     force_plain: bool = False
@@ -512,7 +506,8 @@ class FollowOn:
 
 @dataclass
 class PendingMerge:
-    '''A merge point an enclosing if emits after itself, and the loop depth that if sits at'''
+    """A merge point an enclosing if emits after itself, and the loop depth that if sits at"""
+
     block_idx: int
     loop_depth: int
 
@@ -522,7 +517,7 @@ class MLILToHLILConverter:
     def __init__(self, mlil_func: MediumLevelILFunction, clone_budget: int = CLONE_STATEMENT_BUDGET,
                  max_region_blocks: int = CLONE_MAX_REGION_BLOCKS):
         self.mlil_func = mlil_func
-        self.hlil_func = HighLevelILFunction(mlil_func.name, mlil_func.start_addr, is_common_func = mlil_func.is_common_func)
+        self.hlil_func = HighLevelILFunction(mlil_func.name, mlil_func.start_addr, is_common_func=mlil_func.is_common_func)
 
         self.block_successors: Dict[int, List[int]] = {}
         self.visited_blocks: Set[int] = set()
@@ -576,7 +571,7 @@ class MLILToHLILConverter:
         return self.hlil_func
 
     def _convert_parameters(self):
-        '''Build the HLIL parameter list from the MLIL one'''
+        """Build the HLIL parameter list from the MLIL one"""
         for i, mlil_var in enumerate(self.mlil_func.parameters):
             if mlil_var is None:
                 continue
@@ -588,12 +583,12 @@ class MLILToHLILConverter:
             if i < len(self.mlil_func.source_params):
                 default_value = self.mlil_func.source_params[i].default_value
 
-            hlil_var = HLILVariable(mlil_var.name, type_hint = type_hint,
-                                    default_value = default_value, kind = VariableKind.PARAM)
+            hlil_var = HLILVariable(mlil_var.name, type_hint=type_hint,
+                                    default_value=default_value, kind=VariableKind.PARAM)
             self.hlil_func.parameters.append(hlil_var)
 
     def _declare_used_variables(self):
-        '''Declare every local the emitted body mentions, in first-use order'''
+        """Declare every local the emitted body mentions, in first-use order"""
         param_names = {param.name for param in self.hlil_func.parameters}
         declared: Set[str] = set()
 
@@ -602,12 +597,12 @@ class MLILToHLILConverter:
                 continue
 
             declared.add(name)
-            self.hlil_func.variables.append(HLILVariable(name, type_hint = self._get_type_hint(name)))
+            self.hlil_func.variables.append(HLILVariable(name, type_hint=self._get_type_hint(name)))
 
     @classmethod
     def _collect_used_var_names(cls, node) -> List[str]:
-        '''Local variable names appearing in an HLIL subtree, in source order - an assignment
-        target included'''
+        """Local variable names appearing in an HLIL subtree, in source order - an assignment
+        target included"""
         return [n.var.name for n in iter_tree(node) if isinstance(n, HLILVar) and n.var.kind == VariableKind.LOCAL]
 
     def _get_type_hint(self, var_name: str) -> Optional[HLILTypeKind]:
@@ -632,11 +627,9 @@ class MLILToHLILConverter:
 
                     if last_instr.false_target is not None:
                         successors.append(last_instr.false_target.index)
-
                 elif isinstance(last_instr, MLILGoto):
                     if last_instr.target is not None:
                         successors.append(last_instr.target.index)
-
                 elif not isinstance(last_instr, MLILRet):
                     if i + 1 < num_blocks:
                         successors.append(i + 1)
@@ -648,7 +641,7 @@ class MLILToHLILConverter:
             self.structural_analyzer = StructuralAnalyzer(num_blocks, self.block_successors)
 
     def _detect_loops(self):
-        '''Record the loop headers the structural analyzer found'''
+        """Record the loop headers the structural analyzer found"""
         if not self.mlil_func.basic_blocks or self.structural_analyzer is None:
             return
 
@@ -656,7 +649,7 @@ class MLILToHLILConverter:
 
     def _find_merge_block(self, cond_block_idx: int, true_target_idx: int, false_target_idx: int,
                           stop_at: Optional[int]) -> Optional[int]:
-        '''Find merge point for if-else using structural analyzer; its arms stop at stop_at'''
+        """Find merge point for if-else using structural analyzer; its arms stop at stop_at"""
         if true_target_idx == false_target_idx:
             return true_target_idx
 
@@ -681,11 +674,11 @@ class MLILToHLILConverter:
     def _skip_passthrough_blocks(self, block_idx: int, stop_at: Optional[int] = None,
                                  markers_into: Optional[HLILBlock] = None,
                                  chain_into: Optional[Set[int]] = None) -> int:
-        '''Follow a chain of blocks that only jump onward, to the first real block. A loop header
+        """Follow a chain of blocks that only jump onward, to the first real block. A loop header
         is never skipped: it has to start its loop, or be recognized as a continue.
 
         Every skipped block goes to chain_into; its line markers go to markers_into unless it is on
-        an open loop's exit chain, whose markers the code after that loop prints, once for every way out.'''
+        an open loop's exit chain, whose markers the code after that loop prints, once for every way out."""
         seen: Set[int] = set()
 
         while (self._is_passthrough_block(block_idx) and
@@ -715,14 +708,14 @@ class MLILToHLILConverter:
         return bool(instructions) and isinstance(instructions[-1], MLILRet)
 
     def _find_loop_break_target(self, loop_info) -> Optional[int]:
-        '''Break target for a while(1) loop: its single non-returning exit.
+        """Break target for a while(1) loop: its single non-returning exit.
 
         Exits that return are emitted inline as return statements and need no break.
         With several non-returning exits there is no single place to continue, so the
         loop keeps no break target. Exits whose goto-only chains end at the same block are
         one exit; the raw block is returned, so the code after the loop still stops where
         its caller's stop point lies inside that chain.
-        '''
+        """
         raw_exits: Dict[int, int] = {}
 
         for exit_idx in sorted(loop_info.exits):
@@ -744,7 +737,7 @@ class MLILToHLILConverter:
 
     def _process_loop(self, header_idx: int, target_block: HLILBlock,
                       stop_at: Optional[int]) -> Optional[FollowOn]:
-        '''Process a loop starting at header_idx'''
+        """Process a loop starting at header_idx"""
         mlil_block = self.mlil_func.basic_blocks[header_idx]
         header_label = mlil_block.label
 
@@ -752,7 +745,7 @@ class MLILToHLILConverter:
 
         if loop_info is None:
             log.warning(f'[loop] no LoopInfo for header {header_label} in {self.mlil_func.name}')
-            return FollowOn(header_idx, force_plain = True)
+            return FollowOn(header_idx, force_plain=True)
 
         last_instr = mlil_block.instructions[-1] if mlil_block.instructions else None
 
@@ -776,46 +769,40 @@ class MLILToHLILConverter:
                 exit_block_idx = false_target if true_in_body else true_target
                 condition = HLILConst(1)
                 header_if_into_body = True
-
             elif true_in_body and not false_in_body:
                 loop_body_start = true_target
                 exit_block_idx = false_target
                 condition = self._convert_expr(last_instr.condition)
-
             elif false_in_body and not true_in_body:
                 loop_body_start = false_target
                 exit_block_idx = true_target
                 condition = negate_condition(self._convert_expr(last_instr.condition))
-
             elif true_in_body and false_in_body:
                 # Loop condition is not at the header: while(1) with the if inside the body
                 condition = HLILConst(1)
                 header_if_into_body = True
                 exit_block_idx = self._find_loop_break_target(loop_info)
-
             else:
                 log.warning(f'[loop] cannot decide loop body at header {header_label} in {self.mlil_func.name} '
                             '(treated as non-loop)')
-                return FollowOn(header_idx, force_plain = True)
-
+                return FollowOn(header_idx, force_plain=True)
         elif isinstance(last_instr, MLILGoto) and last_instr.target is not None and last_instr.target.index in loop_info.body:
             loop_body_start = last_instr.target.index
             condition = HLILConst(1)
             exit_block_idx = self._find_loop_break_target(loop_info)
-
         else:
             log.warning(f'[loop] cannot decide loop body at header {header_label} in {self.mlil_func.name} '
                         '(treated as non-loop)')
-            return FollowOn(header_idx, force_plain = True)
+            return FollowOn(header_idx, force_plain=True)
 
         self.visited_blocks.add(header_idx)
         self.globally_processed.add(header_idx)
 
         exit_chain: Set[int] = set()
-        exit_target = (self._skip_passthrough_blocks(exit_block_idx, chain_into = exit_chain)
+        exit_target = (self._skip_passthrough_blocks(exit_block_idx, chain_into=exit_chain)
                        if exit_block_idx is not None else None)
-        stack_entry = LoopStackEntry(header = header_idx, exit = exit_block_idx, exit_target = exit_target,
-                                     exit_chain = frozenset(exit_chain))
+        stack_entry = LoopStackEntry(header=header_idx, exit=exit_block_idx, exit_target=exit_target,
+                                     exit_chain=frozenset(exit_chain))
         self.loop_stack.append(stack_entry)
 
         loop_body = HLILBlock()
@@ -824,14 +811,13 @@ class MLILToHLILConverter:
         self._convert_body(header_idx, loop_body)
 
         if header_if_into_body:
-            follow_on = self._process_if_statement(last_instr, header_idx, loop_body, stop_at = header_idx)
+            follow_on = self._process_if_statement(last_instr, header_idx, loop_body, stop_at=header_idx)
 
             if follow_on is not None:
-                self._reconstruct_control_flow(follow_on.block_idx, loop_body, stop_at = header_idx,
-                                               jump_source = follow_on.jump_source)
-
+                self._reconstruct_control_flow(follow_on.block_idx, loop_body, stop_at=header_idx,
+                                               jump_source=follow_on.jump_source)
         elif loop_body_start is not None:
-            self._reconstruct_control_flow(loop_body_start, loop_body, stop_at = header_idx, jump_source = last_instr)
+            self._reconstruct_control_flow(loop_body_start, loop_body, stop_at=header_idx, jump_source=last_instr)
 
         # Drop the redundant trailing continue of this loop's own body
         if loop_body.statements:
@@ -842,19 +828,19 @@ class MLILToHLILConverter:
 
         self.loop_stack.pop()
 
-        while_stmt = HLILWhile(condition, loop_body, label = stack_entry.label)
+        while_stmt = HLILWhile(condition, loop_body, label=stack_entry.label)
         target_block.add_statement(while_stmt)
 
         # The caller carries on after the loop (outside the popped loop context)
         if exit_block_idx is not None:
             self.visited_blocks.discard(exit_block_idx)
-            return FollowOn(exit_block_idx, jump_source = last_instr)
+            return FollowOn(exit_block_idx, jump_source=last_instr)
 
         return None
 
     def _process_if_statement(self, if_instr: MLILIf, block_idx: int,
                                target_block: HLILBlock, stop_at: Optional[int]) -> Optional[FollowOn]:
-        '''Process an if statement, detecting and handling else-if chains'''
+        """Process an if statement, detecting and handling else-if chains"""
         condition = self._convert_expr(if_instr.condition)
         true_target_idx = if_instr.true_target.index if if_instr.true_target else None
         false_target_idx = if_instr.false_target.index if if_instr.false_target else None
@@ -865,7 +851,7 @@ class MLILToHLILConverter:
         if true_target_idx == false_target_idx and true_target_idx is not None:
             always_true = HLILBinaryOp(BinaryOp.OR, condition, HLILConst(1))
             body = HLILBlock()
-            self._reconstruct_control_flow(true_target_idx, body, stop_at = stop_at, jump_source = if_instr)
+            self._reconstruct_control_flow(true_target_idx, body, stop_at=stop_at, jump_source=if_instr)
             if_stmt = HLILIf(always_true, body, None)
             target_block.add_statement(HLILComment(f'if (C || true) {{ A }}'))
             target_block.add_statement(if_stmt)
@@ -957,25 +943,21 @@ class MLILToHLILConverter:
                 target_block.add_statement(if_stmt)
                 for stmt in false_block.statements:
                     target_block.add_statement(stmt)
-
             else:
                 if_stmt = HLILIf(negate_condition(condition), false_block, None)
                 target_block.add_statement(if_stmt)
                 for stmt in true_block.statements:
                     target_block.add_statement(stmt)
-
         elif true_ends_with_return:
             if_stmt = HLILIf(condition, true_block, None)
             target_block.add_statement(if_stmt)
             for stmt in false_block.statements:
                 target_block.add_statement(stmt)
-
         elif false_ends_with_return:
             if_stmt = HLILIf(negate_condition(condition), false_block, None)
             target_block.add_statement(if_stmt)
             for stmt in true_block.statements:
                 target_block.add_statement(stmt)
-
         else:
             # MLIL: if (C) goto true_target else false_target
             # HLIL: if (C) { true_block } else { false_block }
@@ -983,11 +965,9 @@ class MLILToHLILConverter:
             if not true_block.statements and false_block.statements:
                 # true branch is empty, negate and use false as body
                 if_stmt = HLILIf(negate_condition(condition), false_block, None)
-
             elif true_block.statements and not false_block.statements:
                 # false branch is empty, use true as body
                 if_stmt = HLILIf(condition, true_block, None)
-
             else:
                 if_stmt = HLILIf(condition, true_block, false_block if false_block.statements else None)
 
@@ -996,13 +976,13 @@ class MLILToHLILConverter:
         # The caller carries on at the merge block
         if merge_block_idx is not None and merge_block_idx != stop_at:
             self.visited_blocks.discard(merge_block_idx)
-            return FollowOn(merge_block_idx, jump_source = if_instr)
+            return FollowOn(merge_block_idx, jump_source=if_instr)
 
         return None
 
     def _emit_branch(self, target_idx: int, saved_visited: Set[int], stop_at: Optional[int],
                      merge_block_idx: Optional[int], branch_stop: Optional[int], if_instr: MLILIf) -> HLILBlock:
-        '''Build one branch of an if, starting from the blocks visited before the if'''
+        """Build one branch of an if, starting from the blocks visited before the if"""
         block = HLILBlock()
         self.visited_blocks = saved_visited.copy()
 
@@ -1012,18 +992,18 @@ class MLILToHLILConverter:
         if stop_at is not None and stop_at != merge_block_idx:
             self.visited_blocks.add(stop_at)
 
-        self._reconstruct_control_flow(target_idx, block, stop_at = branch_stop, jump_source = if_instr)
+        self._reconstruct_control_flow(target_idx, block, stop_at=branch_stop, jump_source=if_instr)
         return block
 
     def _chain_link(self, block_idx: int, shared: int) -> Optional[Tuple[MLILIf, int, int]]:
-        '''The test and its targets, if block_idx is a bare 2-way test targeting shared.
+        """The test and its targets, if block_idx is a bare 2-way test targeting shared.
 
         Bare means it holds only the test and the calls folded into it, and is
         entered only from the previous link, so folding it into a condition
         loses no other work and steals it from no other path. A line marker
         makes it a statement of its own (a nested if in the source), and its
         comment would have nowhere to go inside a condition.
-        '''
+        """
         if block_idx is None or block_idx >= len(self.mlil_func.basic_blocks):
             return None
 
@@ -1050,14 +1030,14 @@ class MLILToHLILConverter:
 
     def _collapse_funnel_chain(self, if_instr: MLILIf, true_idx: Optional[int],
                                false_idx: Optional[int]):
-        '''Merge consecutive tests that all branch to one block into one || condition.
+        """Merge consecutive tests that all branch to one block into one || condition.
 
         Tests sharing a body are a switch case carrying several labels, or a
         short-circuit || written with jumps. Left as nested ifs the body has to be
         repeated once per test, so folding them here keeps it emitted once. A later
         test's calls run only when the earlier tests failed, as on the right of ||.
         Returns (condition, shared_target, else_target).
-        '''
+        """
         if true_idx is None or false_idx is None:
             return None
 
@@ -1082,7 +1062,6 @@ class MLILToHLILConverter:
                 try:
                     self._convert_body(current, HLILBlock())
                     cond = self._convert_expr(instr.condition)
-
                 finally:
                     self.current_block_idx, self.current_instr_idx = saved_block, saved_instr
 
@@ -1103,8 +1082,8 @@ class MLILToHLILConverter:
 
     def _unstructured(self, block_idx: int, reason: str,
                       jump_source: Optional[MediumLevelILInstruction]) -> HLILUnstructured:
-        '''The node for a jump to block_idx that cannot be expressed here. Not reported here: one
-        made inside a re-emission that is later refused never reaches the output.'''
+        """The node for a jump to block_idx that cannot be expressed here. Not reported here: one
+        made inside a re-emission that is later refused never reaches the output."""
         stmt = HLILUnstructured(self.mlil_func.basic_blocks[block_idx].label, reason)
 
         if jump_source is not None:
@@ -1114,22 +1093,22 @@ class MLILToHLILConverter:
 
     @classmethod
     def _statement_count(cls, block: HLILBlock) -> int:
-        '''Statements in block, nested ones included and comments left out'''
+        """Statements in block, nested ones included and comments left out"""
         return sum(1 + sum(cls._statement_count(sub) for sub in sub_blocks(stmt)) for stmt in code_statements(block))
 
     def _falls_out_to(self, block_idx: int) -> bool:
-        '''Whether falling out of the current branch reaches pending merge block_idx: it has to be
-        the innermost pending merge, pushed at the current loop depth'''
+        """Whether falling out of the current branch reaches pending merge block_idx: it has to be
+        the innermost pending merge, pushed at the current loop depth"""
         innermost = self.pending_merges[-1]
         return innermost.block_idx == block_idx and innermost.loop_depth == len(self.loop_stack)
 
     def _clone_region_blocks(self, block_idx: int, stop_at: Optional[int]) -> Optional[Set[int]]:
-        '''Blocks reachable from block_idx up to stop_at, or None if unsafe to repeat.
+        """Blocks reachable from block_idx up to stop_at, or None if unsafe to repeat.
 
         A loop we are currently inside is refused: re-entering its header would
         rebuild that loop underneath itself. A self-contained loop further down
         is fine - it gets rebuilt whole.
-        '''
+        """
         active_headers = {entry.header for entry in self.loop_stack}
         region: Set[int] = set()
         queue = deque([block_idx])
@@ -1158,12 +1137,12 @@ class MLILToHLILConverter:
     def _clone_processed_region(self, block_idx: int, target_block: HLILBlock,
                                 stop_at: Optional[int],
                                 jump_source: Optional[MediumLevelILInstruction]) -> None:
-        '''Re-emit a region already emitted on another path into target_block, or an
+        """Re-emit a region already emitted on another path into target_block, or an
         unstructured-jump node when it cannot be repeated.
 
         Rebuilds it rather than deep-copying so nested structuring, merge detection
         and break/continue all resolve against this path's context.
-        '''
+        """
         if block_idx in self.cloning_blocks:
             target_block.add_statement(self._unstructured(block_idx, 'already being re-emitted', jump_source))
             return
@@ -1184,9 +1163,8 @@ class MLILToHLILConverter:
         self.cloning_blocks.add(block_idx)
 
         try:
-            self._reconstruct_control_flow(block_idx, scratch, stop_at = stop_at,
-                                           jump_source = jump_source)
-
+            self._reconstruct_control_flow(block_idx, scratch, stop_at=stop_at,
+                                           jump_source=jump_source)
         finally:
             self.cloning_blocks.discard(block_idx)
             self.visited_blocks = saved_visited
@@ -1211,14 +1189,14 @@ class MLILToHLILConverter:
                                    stop_at: Optional[int] = None,
                                    jump_source: Optional[MediumLevelILInstruction] = None,
                                    force_plain: bool = False) -> None:
-        '''Reconstruct structured statements starting at block_idx.
+        """Reconstruct structured statements starting at block_idx.
 
         Sequential block chains, including the code after an if or a loop
         (FollowOn), are followed iteratively, so recursion depth grows with
         control structure nesting, not with function length.
         force_plain skips the loop-header dispatch for the first block only
         (used by _process_loop fallbacks to avoid bouncing back).
-        '''
+        """
         while True:
             block_idx = self._skip_passthrough_blocks(block_idx, stop_at, target_block)
 
@@ -1237,14 +1215,12 @@ class MLILToHLILConverter:
                     label = entry.label if depth > 0 else None
 
                     if is_exit:
-                        stmt = HLILBreak(label = label)
-
+                        stmt = HLILBreak(label=label)
                     else:
-                        stmt = HLILContinue(label = label)
+                        stmt = HLILContinue(label=label)
 
                     if jump_source is not None:
                         self._set_hlil_source_info(stmt, jump_source)
-
                     else:
                         first_instrs = self.mlil_func.basic_blocks[block_idx].instructions
                         stmt.address = first_instrs[0].address if first_instrs else 0
@@ -1303,7 +1279,6 @@ class MLILToHLILConverter:
 
                 block_idx, jump_source = follow_on.block_idx, follow_on.jump_source
                 continue
-
             elif isinstance(last_instr, MLILGoto):
                 if last_instr.target is None:
                     return None
@@ -1311,13 +1286,11 @@ class MLILToHLILConverter:
                 block_idx = last_instr.target.index
                 jump_source = last_instr
                 continue
-
             elif isinstance(last_instr, MLILRet):
                 stmts = self._convert_instruction(last_instr, block_idx, last_instr_idx)
                 for stmt in stmts:
                     target_block.add_statement(stmt)
                 return None
-
             else:
                 stmts = self._convert_instruction(last_instr, block_idx, last_instr_idx)
                 for stmt in stmts:
@@ -1332,13 +1305,13 @@ class MLILToHLILConverter:
 
     @classmethod
     def _set_hlil_source_info(cls, hlil_instr: HLILInstruction, mlil_instr: MediumLevelILInstruction) -> None:
-        '''Propagate source address info from MLIL to HLIL'''
+        """Propagate source address info from MLIL to HLIL"""
         hlil_instr.address = mlil_instr.address
         hlil_instr.mlil_index = mlil_instr.inst_index
 
     def _convert_body(self, block_idx: int, target_block: HLILBlock) -> None:
-        '''Convert block_idx's instructions before its last one into target_block, in that block's context,
-        and leave the context at its last instruction'''
+        """Convert block_idx's instructions before its last one into target_block, in that block's context,
+        and leave the context at its last instruction"""
         self.current_block_idx = block_idx
         instructions = self.mlil_func.basic_blocks[block_idx].instructions
 
@@ -1351,7 +1324,7 @@ class MLILToHLILConverter:
 
     def _convert_instruction(self, instr: MediumLevelILInstruction,
                               block_idx: int, instr_idx: int) -> List[HLILStatement]:
-        '''Convert instruction, may return multiple statements for temp vars'''
+        """Convert instruction, may return multiple statements for temp vars"""
         key = (block_idx, instr_idx)
         result = []
 
@@ -1359,20 +1332,16 @@ class MLILToHLILConverter:
             stmt = HLILComment(f'{instr.debug_type}({instr.value})')
             self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
-
         elif isinstance(instr, MLILNop):
             pass
-
         elif isinstance(instr, MLILRet):
             if instr.value:
                 stmt = HLILReturn(self._convert_expr(instr.value))
-
             else:
                 stmt = HLILReturn()
 
             self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
-
         elif isinstance(instr, MLILSetVar):
             stmt = HLILAssign(
                 HLILVar(HLILVariable(instr.var.name, None)),
@@ -1380,21 +1349,18 @@ class MLILToHLILConverter:
             )
             self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
-
         elif isinstance(instr, (MLILStoreReg, MLILStoreGlobal)):
             # Registers and globals outside the variable model are shared state:
             # always emit the literal array write
             kind = VariableKind.REG if isinstance(instr, MLILStoreReg) else VariableKind.GLOBAL
-            var = HLILVariable(kind = kind, index = instr.index)
+            var = HLILVariable(kind=kind, index=instr.index)
             stmt = HLILAssign(HLILVar(var), self._convert_expr(instr.value))
             self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
-
         elif isinstance(instr, MLILStoreDeref):
             stmt = HLILAssign(HLILDeref(self._convert_expr(instr.dest)), self._convert_expr(instr.value))
             self._set_hlil_source_info(stmt, instr)
             result.append(stmt)
-
         elif isinstance(instr, MediumLevelILCall):
             # The call keeps its own provenance, also where it folds into the instruction reading it
             call_expr = self._convert_expr(instr)
@@ -1403,22 +1369,18 @@ class MLILToHLILConverter:
             if self.folder.is_folded(block_idx, instr_idx):
                 # The instruction reading the result emits this call
                 self.expr_cache[key] = call_expr
-
             elif instr.output is None:
                 # Result unused: keep the call for its side effects
                 stmt = HLILExprStmt(call_expr)
                 self._set_hlil_source_info(stmt, instr)
                 result.append(stmt)
-
             else:
                 var = HLILVariable(instr.output.name, None)
                 stmt = HLILAssign(HLILVar(var), call_expr)
                 self._set_hlil_source_info(stmt, instr)
                 result.append(stmt)
-
         elif isinstance(instr, (MLILIf, MLILGoto)):
             pass
-
         elif isinstance(instr, MediumLevelILExpr):
             stmt = HLILExprStmt(self._convert_expr(instr))
             self._set_hlil_source_info(stmt, instr)
@@ -1439,24 +1401,19 @@ class MLILToHLILConverter:
                     return folded
 
             return HLILVar(HLILVariable(expr.var.name, None))
-
         elif isinstance(expr, MLILConst):
             return HLILConst(expr.value, expr.is_hex)
-
         elif isinstance(expr, MLILBinaryOp):
             op = _BINARY_OP_MAP.get(expr.operation)
             if op is None:
                 raise ValueError(f'Unknown binary op: {expr.operation}')
             return HLILBinaryOp(op, self._convert_expr(expr.lhs), self._convert_expr(expr.rhs))
-
         elif isinstance(expr, MLILAddressOf):
             operand = self._convert_expr(expr.operand)
             return HLILAddressOf(operand)
-
         elif isinstance(expr, MLILDeref):
             operand = self._convert_expr(expr.operand)
             return HLILDeref(operand)
-
         elif isinstance(expr, MLILUnaryOp):
             if expr.operation in (MediumLevelILOperation.MLIL_LOGICAL_NOT, MediumLevelILOperation.MLIL_TEST_ZERO):
                 operand = self._convert_expr(expr.operand)
@@ -1465,29 +1422,23 @@ class MLILToHLILConverter:
             if op is None:
                 raise ValueError(f'Unknown unary op: {expr.operation}')
             return HLILUnaryOp(op, self._convert_expr(expr.operand))
-
         elif isinstance(expr, MLILLoadReg):
             # A register outside the variable model holds a value from elsewhere
-            var = HLILVariable(kind = VariableKind.REG, index = expr.index)
+            var = HLILVariable(kind=VariableKind.REG, index=expr.index)
             return HLILVar(var)
-
         elif isinstance(expr, MLILLoadGlobal):
             # Globals are shared state: always read the literal array slot
-            var = HLILVariable(kind = VariableKind.GLOBAL, index = expr.index)
+            var = HLILVariable(kind=VariableKind.GLOBAL, index=expr.index)
             return HLILVar(var)
-
         elif isinstance(expr, MLILCall):
             args = [self._convert_expr(arg) for arg in expr.args]
             return HLILCall(str(expr.target), args)
-
         elif isinstance(expr, MLILSyscall):
             args = [self._convert_expr(arg) for arg in expr.args]
             return HLILSyscall(expr.subsystem, expr.cmd, args)
-
         elif isinstance(expr, MLILCallScript):
             args = [self._convert_expr(arg) for arg in expr.args]
             return HLILExternCall(f'{expr.module}:{expr.func}', args)
-
         else:
             return HLILConst(f'<{type(expr).__name__}>')
 

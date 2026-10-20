@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for BlockMergePass. A LowLevelILCall is
+"""Unit tests for BlockMergePass. A LowLevelILCall is
 a block terminator, so the LLIL->MLIL translator ends every call block with a plain `goto` to its
 return block; this pass splices any block whose only way in is another block's unconditional
 goto into that block, undoing the split (and any real bytecode JMP that happens to land on a
-single-predecessor target).'''
+single-predecessor target)."""
 
 from pathlib import Path
 import sys
@@ -23,12 +23,12 @@ FUNC_START = 0x1000
 
 
 class TestStraightChainMerge(unittest.TestCase):
-    '''The base case: a call-return split collapses back into one block.'''
+    """The base case: a call-return split collapses back into one block."""
 
     def test_call_return_split_merges_into_one_block(self):
         func = MediumLevelILFunction('straight_chain')
-        head = func.create_block(start = FUNC_START, label = 'head')
-        tail = func.create_block(start = FUNC_START + 4, label = 'tail')
+        head = func.create_block(start=FUNC_START, label='head')
+        tail = func.create_block(start=FUNC_START + 4, label='tail')
 
         head.add_instruction(MLILCall('Foo', []))
         head.add_instruction(MLILGoto(tail))
@@ -46,13 +46,13 @@ class TestStraightChainMerge(unittest.TestCase):
 
 
 class TestMultiHopCascade(unittest.TestCase):
-    '''A chain of more than two blocks must fully drain in one pass, not just one hop.'''
+    """A chain of more than two blocks must fully drain in one pass, not just one hop."""
 
     def test_three_block_chain_drains_in_one_sweep(self):
         func = MediumLevelILFunction('chain3')
-        a = func.create_block(start = FUNC_START, label = 'a')
-        b = func.create_block(start = FUNC_START + 4, label = 'b')
-        c = func.create_block(start = FUNC_START + 8, label = 'c')
+        a = func.create_block(start=FUNC_START, label='a')
+        b = func.create_block(start=FUNC_START + 4, label='b')
+        c = func.create_block(start=FUNC_START + 8, label='c')
 
         a.add_instruction(MLILCall('A', []))
         a.add_instruction(MLILGoto(b))
@@ -72,12 +72,12 @@ class TestMultiHopCascade(unittest.TestCase):
 
 
 class TestSelfLoopGuard(unittest.TestCase):
-    '''A block whose own terminal is a self-goto must never be merged into itself.'''
+    """A block whose own terminal is a self-goto must never be merged into itself."""
 
     def test_self_goto_is_not_merged(self):
         func = MediumLevelILFunction('self_loop')
-        entry = func.create_block(start = FUNC_START, label = 'entry')
-        loop = func.create_block(start = FUNC_START + 4, label = 'loop')
+        entry = func.create_block(start=FUNC_START, label='entry')
+        loop = func.create_block(start=FUNC_START + 4, label='loop')
 
         entry.add_instruction(MLILCall('Setup', []))
         entry.add_instruction(MLILGoto(loop))
@@ -96,12 +96,12 @@ class TestSelfLoopGuard(unittest.TestCase):
 
 
 class TestEntryGuard(unittest.TestCase):
-    '''The entry block must never be absorbed as someone else's merge target.'''
+    """The entry block must never be absorbed as someone else's merge target."""
 
     def test_goto_into_entry_does_not_absorb_it(self):
         func = MediumLevelILFunction('loop_into_entry')
-        entry = func.create_block(start = FUNC_START, label = 'entry')
-        tail = func.create_block(start = FUNC_START + 4, label = 'tail')
+        entry = func.create_block(start=FUNC_START, label='entry')
+        tail = func.create_block(start=FUNC_START + 4, label='tail')
 
         entry.add_instruction(MLILRet(None))
 
@@ -118,14 +118,14 @@ class TestEntryGuard(unittest.TestCase):
 
 
 class TestDiamondJoinPoint(unittest.TestCase):
-    '''A block reachable from two arms of a branch must never be merged into either arm.'''
+    """A block reachable from two arms of a branch must never be merged into either arm."""
 
     def test_join_block_with_two_predecessors_is_not_merged(self):
         func = MediumLevelILFunction('diamond')
-        entry = func.create_block(start = FUNC_START, label = 'entry')
-        true_arm = func.create_block(start = FUNC_START + 4, label = 'true_arm')
-        false_arm = func.create_block(start = FUNC_START + 8, label = 'false_arm')
-        join = func.create_block(start = FUNC_START + 12, label = 'join')
+        entry = func.create_block(start=FUNC_START, label='entry')
+        true_arm = func.create_block(start=FUNC_START + 4, label='true_arm')
+        false_arm = func.create_block(start=FUNC_START + 8, label='false_arm')
+        join = func.create_block(start=FUNC_START + 12, label='join')
 
         entry.add_instruction(MLILIf(MLILConst(1), true_arm, false_arm))
         entry.add_outgoing_edge(true_arm)
@@ -149,14 +149,14 @@ class TestDiamondJoinPoint(unittest.TestCase):
 
 
 class TestBackEdgeIntoHead(unittest.TestCase):
-    '''Absorbing a block whose own branch loops back to the (merged) head must repoint the
-    head's own incoming edge to itself, not leave it pointing at the removed block.'''
+    """Absorbing a block whose own branch loops back to the (merged) head must repoint the
+    head's own incoming edge to itself, not leave it pointing at the removed block."""
 
     def test_loop_header_absorbing_its_own_back_edge_source(self):
         func = MediumLevelILFunction('back_edge')
-        head = func.create_block(start = FUNC_START, label = 'head')
-        body = func.create_block(start = FUNC_START + 4, label = 'body')
-        exit_block = func.create_block(start = FUNC_START + 8, label = 'exit')
+        head = func.create_block(start=FUNC_START, label='head')
+        body = func.create_block(start=FUNC_START + 4, label='body')
+        exit_block = func.create_block(start=FUNC_START + 8, label='exit')
 
         head.add_instruction(MLILCall('Setup', []))
         head.add_instruction(MLILGoto(body))
@@ -178,15 +178,15 @@ class TestBackEdgeIntoHead(unittest.TestCase):
 
 
 class TestBackwardListPosition(unittest.TestCase):
-    '''Merging must not depend on list order - a target sitting earlier in basic_blocks than
-    the head that absorbs it must still merge correctly.'''
+    """Merging must not depend on list order - a target sitting earlier in basic_blocks than
+    the head that absorbs it must still merge correctly."""
 
     def test_target_appearing_earlier_in_block_list_still_merges(self):
         func = MediumLevelILFunction('backward')
-        entry = func.create_block(start = FUNC_START, label = 'entry')
-        target = func.create_block(start = FUNC_START + 4, label = 'target')
-        head = func.create_block(start = FUNC_START + 8, label = 'head')
-        other_arm = func.create_block(start = FUNC_START + 12, label = 'other_arm')
+        entry = func.create_block(start=FUNC_START, label='entry')
+        target = func.create_block(start=FUNC_START + 4, label='target')
+        head = func.create_block(start=FUNC_START + 8, label='head')
+        other_arm = func.create_block(start=FUNC_START + 12, label='other_arm')
 
         entry.add_instruction(MLILIf(MLILConst(1), head, other_arm))
         entry.add_outgoing_edge(head)
@@ -208,12 +208,12 @@ class TestBackwardListPosition(unittest.TestCase):
 
 
 class TestIdempotence(unittest.TestCase):
-    '''Running the pass again once nothing is left to merge must be a true no-op.'''
+    """Running the pass again once nothing is left to merge must be a true no-op."""
 
     def test_second_run_is_a_no_op(self):
         func = MediumLevelILFunction('idempotent')
-        head = func.create_block(start = FUNC_START, label = 'head')
-        tail = func.create_block(start = FUNC_START + 4, label = 'tail')
+        head = func.create_block(start=FUNC_START, label='head')
+        tail = func.create_block(start=FUNC_START + 4, label='tail')
 
         head.add_instruction(MLILCall('Foo', []))
         head.add_instruction(MLILGoto(tail))
@@ -231,13 +231,13 @@ class TestIdempotence(unittest.TestCase):
 
 
 class TestUnreachableCycleTermination(unittest.TestCase):
-    '''A 2-block cycle with no other predecessors must terminate as a self-loop, not hang.'''
+    """A 2-block cycle with no other predecessors must terminate as a self-loop, not hang."""
 
     def test_two_block_cycle_terminates_as_a_self_loop(self):
         func = MediumLevelILFunction('cycle')
-        entry = func.create_block(start = FUNC_START, label = 'entry')
-        x = func.create_block(start = FUNC_START + 4, label = 'x')
-        y = func.create_block(start = FUNC_START + 8, label = 'y')
+        entry = func.create_block(start=FUNC_START, label='entry')
+        x = func.create_block(start=FUNC_START + 4, label='x')
+        y = func.create_block(start=FUNC_START + 8, label='y')
 
         entry.add_instruction(MLILRet(None))
 
@@ -254,12 +254,12 @@ class TestUnreachableCycleTermination(unittest.TestCase):
 
 
 class TestPhiGuard(unittest.TestCase):
-    '''This pass only supports pre-SSA MLIL - a Phi node must make it fail loud, not silently
-    drop a predecessor's copy.'''
+    """This pass only supports pre-SSA MLIL - a Phi node must make it fail loud, not silently
+    drop a predecessor's copy."""
 
     def test_phi_node_present_raises(self):
         func = MediumLevelILFunction('phi_guard')
-        block = func.create_block(start = FUNC_START, label = 'entry')
+        block = func.create_block(start=FUNC_START, label='entry')
         var = func.get_or_create_local('var_s0')
 
         block.add_instruction(MLILPhi(MLILVariableSSA(var, 1), []))
@@ -270,14 +270,14 @@ class TestPhiGuard(unittest.TestCase):
 
 
 class TestInconsistentEdgeInvariant(unittest.TestCase):
-    '''A corrupted edge list is a real upstream bug - the pass must fail loud, never merge on
-    top of it.'''
+    """A corrupted edge list is a real upstream bug - the pass must fail loud, never merge on
+    top of it."""
 
     def test_target_with_wrong_recorded_predecessor_raises(self):
         func = MediumLevelILFunction('bad_edges')
-        head = func.create_block(start = FUNC_START, label = 'head')
-        other = func.create_block(start = FUNC_START + 4, label = 'other')
-        target = func.create_block(start = FUNC_START + 8, label = 'target')
+        head = func.create_block(start=FUNC_START, label='head')
+        other = func.create_block(start=FUNC_START + 4, label='other')
+        target = func.create_block(start=FUNC_START + 8, label='target')
 
         head.add_instruction(MLILGoto(target))
         head.add_outgoing_edge(target)

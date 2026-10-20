@@ -1,11 +1,11 @@
-'''Binary stream over a file or an in-memory buffer
+"""Binary stream over a file or an in-memory buffer
 
 Ported from the external ml (Ouroboros PyLibs) FileStream; round trips rely on these deliberate quirks
 (tests/dc3_tests/test_fileio.py checks each one but WriteFloat's: no opcode writes a float through it):
 - Write(*bufs) writes a FileStream buffer's whole content, whatever its position
 - WriteFloat turns an out-of-range float into inf instead of raising
 - ReadMultiByte drops undecodable bytes (errors = 'ignore'), with a warning
-'''
+"""
 
 import io
 import struct
@@ -24,13 +24,13 @@ _ENDIAN_NAMES = {
 
 
 def struct_layout(fmt: str, endian: str = None) -> struct.Struct:
-    '''fmt as a struct in endian's byte order (default_endian() when None), to pack or unpack many values at once'''
+    """fmt as a struct in endian's byte order (default_endian() when None), to pack or unpack many values at once"""
     endian = endian or default_endian()
     return struct.Struct(_ENDIAN_NAMES.get(endian, endian) + fmt)
 
 
 class _PositionSaver:
-    '''Restores the stream position on exit'''
+    """Restores the stream position on exit"""
 
     def __init__(self, fs: 'FileStream'):
         self.fs = fs
@@ -44,7 +44,7 @@ class _PositionSaver:
 
 
 class FileStream:
-    '''Typed reads/writes at the current position; endian/encoding None means default_endian()/default_encoding()'''
+    """Typed reads/writes at the current position; endian/encoding None means default_endian()/default_encoding()"""
 
     STRUCT_FORMATS = 'bBhHlLf'
 
@@ -113,7 +113,7 @@ class FileStream:
         return self.Read()
 
     def Write(self, *bufs: 'bytes | bytearray | FileStream') -> int:
-        '''Write each buffer (a FileStream contributes its whole content)'''
+        """Write each buffer (a FileStream contributes its whole content)"""
         written = 0
         for buf in bufs:
             if isinstance(buf, FileStream):
@@ -129,7 +129,7 @@ class FileStream:
         return layout.unpack(self._stream.read(layout.size))[0]
 
     def _write_int(self, fmt: str, values: tuple) -> int:
-        '''Write each value in fmt's format; a value outside its range raises struct.error'''
+        """Write each value in fmt's format; a value outside its range raises struct.error"""
         layout = self._structs[fmt]
         written = 0
         for v in values:
@@ -161,7 +161,7 @@ class FileStream:
     STRING_CHUNK_SIZE = 64    # bytes read at a time while looking for a string's terminating NUL
 
     def ReadMultiByte(self, cp: str = None) -> str:
-        '''Null-terminated string, leaving the stream after its NUL; undecodable bytes are dropped with a warning'''
+        """Null-terminated string, leaving the stream after its NUL; undecodable bytes are dropped with a warning"""
         start = self._stream.tell()
         s = bytearray()
         while True:
@@ -179,10 +179,9 @@ class FileStream:
         encoding = cp or self._encoding
         try:
             return s.decode(encoding)
-
         except UnicodeDecodeError as e:
             log.warning(f'string at 0x{start:X}: {e.reason} at byte {e.start}; undecodable bytes dropped')
-            return s.decode(encoding, errors = 'ignore')
+            return s.decode(encoding, errors='ignore')
 
     def WriteChar(self, *values: int) -> int:
         return self._write_int('b', values)

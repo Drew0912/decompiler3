@@ -26,14 +26,14 @@ def format_hex_dump(bytecode: bytes) -> list[str]:
 
 
 def disasm_to_dsl(name: str, bytecode: bytes) -> list[str]:
-    context = DisassemblerContext(create_fallthrough_jump = ed9_create_fallthrough_jump)
+    context = DisassemblerContext(create_fallthrough_jump=ed9_create_fallthrough_jump)
     disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
 
     func = Function()
     func.name = name
     func.offset = 0
     func.is_common_func = False
-    func.entry_block = disasm.disasm_function(bytecode, offset = 0, name = name)
+    func.entry_block = disasm.disasm_function(bytecode, offset=0, name=name)
 
     return Formatter(FormatterContext()).format_function(func)
 
@@ -47,7 +47,6 @@ def run_case(title: str, name: str, bytecode: bytes, expected: str) -> bool:
 
     try:
         actual = [line.rstrip() for line in disasm_to_dsl(name, bytecode)]
-
     except Exception as e:
         print(f'FAIL: {name}: {type(e).__name__}: {e}\n')
         return False
@@ -62,7 +61,7 @@ def run_case(title: str, name: str, bytecode: bytes, expected: str) -> bool:
         return True
 
     print(f'FAIL: {name}')
-    print('\n'.join(difflib.unified_diff(expected_lines, actual, 'expected', 'actual', lineterm = '')))
+    print('\n'.join(difflib.unified_diff(expected_lines, actual, 'expected', 'actual', lineterm='')))
     print()
     return False
 
@@ -76,7 +75,7 @@ def test_simple_function() -> bool:
         0x0D,                                # 0x0F: RETURN()
     ])
 
-    expected = '''
+    expected = """
 @scena.LLILCode()
 def test_add():
     PUSH_INT(1)
@@ -84,7 +83,7 @@ def test_add():
     ADD()
     SET_REG(0)
     RETURN()
-'''
+"""
 
     return run_case('Simple Function', 'test_add', bytecode, expected)
 
@@ -103,7 +102,7 @@ def test_conditional() -> bool:
         0x0D,                                # 0x1A: RETURN()
     ])
 
-    expected = '''
+    expected = """
 @scena.LLILCode()
 def test_cond():
     GET_REG(0)
@@ -122,7 +121,7 @@ def test_cond():
 
     SET_REG(0)
     RETURN()
-'''
+"""
 
     return run_case('Conditional Branch', 'test_cond', bytecode, expected)
 
@@ -139,7 +138,7 @@ def test_caller_frame() -> bool:
         0x0D,                                # 0x1A: RETURN()
     ])
 
-    expected = '''
+    expected = """
 @scena.LLILCode()
 def test_frame():
     PUSH_CALLER_FRAME('loc_12')
@@ -153,7 +152,7 @@ def test_frame():
     PUSH_INT(0)
     SET_REG(0)
     RETURN()
-'''
+"""
 
     return run_case('PUSH_CALLER_FRAME', 'test_frame', bytecode, expected)
 
@@ -179,7 +178,7 @@ def test_loop() -> bool:
         0x0D,                                # 0x2E: RETURN()
     ])
 
-    expected = '''
+    expected = """
 @scena.LLILCode()
 def test_loop():
     PUSH_INT(0)
@@ -205,7 +204,7 @@ def test_loop():
     PUSH_INT(0)
     SET_REG(0)
     RETURN()
-'''
+"""
 
     return run_case('Loop (Backward Jump)', 'test_loop', bytecode, expected)
 
@@ -234,7 +233,7 @@ def test_jump_into_middle() -> bool:
         0x0D,                                # 0x36: RETURN()
     ])
 
-    expected = '''
+    expected = """
 @scena.LLILCode()
 def test_split():
     PUSH_INT(0)
@@ -262,7 +261,7 @@ def test_split():
     PUSH_INT(0)
     SET_REG(0)
     RETURN()
-'''
+"""
 
     return run_case('Jump Into Middle of Block', 'test_split', bytecode, expected)
 
@@ -285,7 +284,7 @@ def test_loop_back_to_entry() -> bool:
         0x0D,                                # 0x26: RETURN()
     ])
 
-    expected = '''
+    expected = """
 @scena.LLILCode()
 def test_loop_to_entry():
     def _loc_0(): pass
@@ -308,7 +307,7 @@ def test_loop_to_entry():
     PUSH_INT(0)
     SET_REG(0)
     RETURN()
-'''
+"""
 
     return run_case('Loop Back to Entry Block', 'test_loop_to_entry', bytecode, expected)
 

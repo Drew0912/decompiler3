@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for MLILFormatter's own formatting of a constant instruction.'''
+"""Unit tests for MLILFormatter's own formatting of a constant instruction."""
 
 from pathlib import Path
 import sys
@@ -18,7 +18,7 @@ SPECIAL_TEXT_LITERAL = r'"a\"b\\c\nd"'
 
 
 class TestConstantFormatting(unittest.TestCase):
-    '''A string constant prints as the same escaped literal as MLILConst's own str() (it used to be quoted raw).'''
+    """A string constant prints as the same escaped literal as MLILConst's own str() (it used to be quoted raw)."""
 
     def test_string_constant_is_escaped(self):
         self.assertEqual(MLILFormatter.format_instruction(MLILConst(SPECIAL_TEXT)), SPECIAL_TEXT_LITERAL)

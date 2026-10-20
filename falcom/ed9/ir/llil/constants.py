@@ -1,25 +1,25 @@
-'''Falcom VM specific constants and types'''
+"""Falcom VM specific constants and types"""
 
 from ir.llil.llil import *
 
 
 class LowLevelILConstFuncId(LowLevelILConst):
-    '''Falcom VM function ID constant'''
+    """Falcom VM function ID constant"""
 
     def __init__(self):
         # Special constant with no actual value
-        super().__init__(None, is_hex = False)
+        super().__init__(None, is_hex=False)
 
     def __str__(self) -> str:
         return '<func_id>'
 
 
 class LowLevelILConstRetAddr(LowLevelILConst):
-    '''Falcom VM return address constant (label-based)'''
+    """Falcom VM return address constant (label-based)"""
 
     def __init__(self, label: str):
         # Store label as the value
-        super().__init__(label, is_hex = False)
+        super().__init__(label, is_hex=False)
         self.label = label
 
     def __str__(self) -> str:
@@ -27,11 +27,11 @@ class LowLevelILConstRetAddr(LowLevelILConst):
 
 
 class LowLevelILConstRetAddrBlock(LowLevelILConst):
-    '''Falcom VM return address constant (block-based)'''
+    """Falcom VM return address constant (block-based)"""
 
     def __init__(self, block: 'LowLevelILBasicBlock'):
         # Store block reference as the value
-        super().__init__(block, is_hex = False)
+        super().__init__(block, is_hex=False)
         self.block = block
 
     def __str__(self) -> str:
@@ -39,18 +39,18 @@ class LowLevelILConstRetAddrBlock(LowLevelILConst):
 
 
 class LowLevelILConstScript(LowLevelILConst):
-    '''Falcom VM current script constant'''
+    """Falcom VM current script constant"""
 
     def __init__(self):
         # Special constant with no actual value
-        super().__init__(None, is_hex = False)
+        super().__init__(None, is_hex=False)
 
     def __str__(self) -> str:
         return '<script_ptr>'
 
 
 class LowLevelILConstScriptName(LowLevelILConst):
-    '''Falcom VM current script name constant (context marker)'''
+    """Falcom VM current script name constant (context marker)"""
 
     def __init__(self, name: str):
         super().__init__(name)
@@ -67,7 +67,7 @@ class LowLevelILConstScriptName(LowLevelILConst):
 
 
 class FalcomConstants:
-    '''Falcom VM specific constants factory'''
+    """Falcom VM specific constants factory"""
 
     @classmethod
     def current_func_id(cls):

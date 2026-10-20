@@ -1,3 +1,3 @@
-'''HLIL Passes - Re-export from passes directory'''
+"""HLIL Passes - Re-export from passes directory"""
 
 from .passes import *

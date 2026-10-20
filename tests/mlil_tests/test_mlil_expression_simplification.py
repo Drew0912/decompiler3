@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for ExpressionSimplificationPass: its algebraic identities fire only on int constants. With a float
+"""Unit tests for ExpressionSimplificationPass: its algebraic identities fire only on int constants. With a float
 constant x * 0.0 isn't int 0, and the VM's int/float mixing is unverified. Seen live: mon5047 printed 0.0 * arg4
-as 0. All-ones is -1 (script ints are signed, SCCP folds ~0 to -1): x & -1 is x, x | -1 is -1.'''
+as 0. All-ones is -1 (script ints are signed, SCCP folds ~0 to -1): x & -1 is x, x | -1 is -1."""
 
 from pathlib import Path
 import sys
@@ -24,7 +24,7 @@ def read_y() -> MLILVarSSA:
 
 
 def simplify(op):
-    '''x = op; return - runs the pass, returns what x's value became'''
+    """x = op; return - runs the pass, returns what x's value became"""
     func = MediumLevelILFunction('simplification_test', 0)
     block = MediumLevelILBasicBlock(0)
     block.instructions = [
@@ -43,7 +43,7 @@ class TestFloatConstants(unittest.TestCase):
         for op in (MLILMul(MLILConst(0.0), read_y()), MLILMul(read_y(), MLILConst(1.0)),
                    MLILAdd(read_y(), MLILConst(0.0)), MLILAdd(MLILConst(-0.0), read_y()),
                    MLILDiv(read_y(), MLILConst(1.0))):
-            with self.subTest(op = str(op)):
+            with self.subTest(op=str(op)):
                 self.assertIs(simplify(op), op)
 
     def test_int_identities_still_fire(self):
@@ -59,20 +59,20 @@ class TestFloatConstants(unittest.TestCase):
 
 
 class TestAllBitsSet(unittest.TestCase):
-    '''The constant arrives hex, as SCCP marks every constant under a bitwise operator'''
+    """The constant arrives hex, as SCCP marks every constant under a bitwise operator"""
 
     def test_and_keeps_the_other_operand(self):
         for side in ('lhs', 'rhs'):
-            y, all_bits = read_y(), MLILConst(ALL_BITS_SET, is_hex = True)
+            y, all_bits = read_y(), MLILConst(ALL_BITS_SET, is_hex=True)
             op = MLILAnd(all_bits, y) if side == 'lhs' else MLILAnd(y, all_bits)
-            with self.subTest(constant = side):
+            with self.subTest(constant=side):
                 self.assertIs(simplify(op), y)
 
     def test_or_becomes_the_all_ones_constant(self):
         for side in ('lhs', 'rhs'):
-            y, all_bits = read_y(), MLILConst(ALL_BITS_SET, is_hex = True)
+            y, all_bits = read_y(), MLILConst(ALL_BITS_SET, is_hex=True)
             op = MLILOr(all_bits, y) if side == 'lhs' else MLILOr(y, all_bits)
-            with self.subTest(constant = side):
+            with self.subTest(constant=side):
                 self.assertIs(simplify(op), all_bits)
 
 

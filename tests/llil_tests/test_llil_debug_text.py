@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''The opt-in debug text of lifted LLIL - the .llil.asm listing, the .dot graph, each node's str/repr - the
-function lookups the listing uses, and every node carrying the operation code that names it.'''
+"""The opt-in debug text of lifted LLIL - the .llil.asm listing, the .dot graph, each node's str/repr - the
+function lookups the listing uses, and every node carrying the operation code that names it."""
 
 from pathlib import Path
 import re
@@ -27,7 +27,7 @@ FIRST_VALUE = 7
 
 
 def lifted_text_function():
-    '''One function with every kind of instruction the debug text prints'''
+    """One function with every kind of instruction the debug text prints"""
     callee = returning_callee(1)
     asm = Asm()
     asm.debug_set_lineno(1)
@@ -44,10 +44,10 @@ def lifted_text_function():
     asm.label('else')
     asm.frame('after'); asm.push_int(4); asm.call_script(1); asm.label('after')
     asm.label('end'); asm.pop(WORD_SIZE); asm.ret()
-    return lift_asm(asm, argc = 1, others = (callee,))[1]
+    return lift_asm(asm, argc=1, others=(callee,))[1]
 
 
-EXPECTED_ASM = '''
+EXPECTED_ASM = """
 ; ---------- f ----------
 block_0(0x0000), f, [sp = 1, fp = 0]
   dbg_line 1
@@ -122,7 +122,7 @@ block_3(0x006D), loc_6D, [sp = 1]
 block_4(0x0082), loc_82, [sp = 1]
   sp--
   return
-'''.strip('\n').splitlines()
+""".strip('\n').splitlines()
 
 EXPECTED_DOT_EDGES = [
     '    block_0 -> block_3 [label="true", color=green];',
@@ -132,7 +132,7 @@ EXPECTED_DOT_EDGES = [
     '    block_3 -> block_4 [label="fall-through", style=dashed];',
 ]
 
-EXPECTED_BLOCK_SUMMARY = '''
+EXPECTED_BLOCK_SUMMARY = """
 ; ---------- f ----------
 block_0 f @ 0x0: [sp=1]
   -> block_3, block_1
@@ -143,11 +143,11 @@ block_2 loc_68 @ 0x68: [sp=1]
 block_3 loc_6D @ 0x6d: [sp=1]
   -> block_4
 block_4 loc_82 @ 0x82: [sp=1]
-'''.strip('\n').splitlines()
+""".strip('\n').splitlines()
 
 
 class TestLiftedDebugText(unittest.TestCase):
-    '''The opt-in .llil.asm / .dot dumps and the nodes' own text, for a function with every kind of instruction'''
+    """The opt-in .llil.asm / .dot dumps and the nodes' own text, for a function with every kind of instruction"""
 
     @classmethod
     def setUpClass(cls):
@@ -182,12 +182,12 @@ class TestLiftedDebugText(unittest.TestCase):
                 self.assertEqual(repr(inst), f'<{type(inst).__name__}: {text}>')
 
     def test_stack_load_and_store_text(self):
-        self.assertEqual(str(LowLevelILStackLoad(offset = 0, slot_index = 3)), 'STACK[sp<3>]')
-        self.assertEqual(str(LowLevelILStackLoad(offset = WORD_SIZE, slot_index = 4)), 'STACK[sp + 1<4>]')
-        self.assertEqual(str(LowLevelILStackLoad(offset = -WORD_SIZE, slot_index = 2)), 'STACK[sp - 1<2>]')
-        self.assertEqual(str(LowLevelILStackStore(5, offset = WORD_SIZE, slot_index = 4)), 'STACK[sp + 1] = 5')
-        self.assertEqual(str(LowLevelILStackStore(5, offset = -WORD_SIZE, slot_index = 2)), 'STACK[sp - 1] = 5')
-        self.assertEqual(str(LowLevelILStackStore(5, offset = 0, slot_index = 3)), 'STACK[sp] = 5')
+        self.assertEqual(str(LowLevelILStackLoad(offset=0, slot_index=3)), 'STACK[sp<3>]')
+        self.assertEqual(str(LowLevelILStackLoad(offset=WORD_SIZE, slot_index=4)), 'STACK[sp + 1<4>]')
+        self.assertEqual(str(LowLevelILStackLoad(offset=-WORD_SIZE, slot_index=2)), 'STACK[sp - 1<2>]')
+        self.assertEqual(str(LowLevelILStackStore(5, offset=WORD_SIZE, slot_index=4)), 'STACK[sp + 1] = 5')
+        self.assertEqual(str(LowLevelILStackStore(5, offset=-WORD_SIZE, slot_index=2)), 'STACK[sp - 1] = 5')
+        self.assertEqual(str(LowLevelILStackStore(5, offset=0, slot_index=3)), 'STACK[sp] = 5')
 
     def test_frame_and_sp_text(self):
         builder = make_builder(2)
@@ -200,21 +200,21 @@ class TestLiftedDebugText(unittest.TestCase):
 
     def test_hex_and_raw_constants(self):
         self.assertEqual(str(LowLevelILConst(255)), '255')
-        self.assertEqual(str(LowLevelILConst(255, is_hex = True)), '0xFF')
-        self.assertEqual(str(LowLevelILConst(-255, is_hex = True)), '-0xFF')
-        self.assertEqual(str(LowLevelILConst(255, is_raw = True)), '0xFF')
+        self.assertEqual(str(LowLevelILConst(255, is_hex=True)), '0xFF')
+        self.assertEqual(str(LowLevelILConst(-255, is_hex=True)), '-0xFF')
+        self.assertEqual(str(LowLevelILConst(255, is_raw=True)), '0xFF')
         self.assertEqual(str(LowLevelILConst(1.5)), '1.5')
 
 
 def lifted_pointer_function():
-    '''A function that reads, writes and takes the address of its parameter and of a local'''
+    """A function that reads, writes and takes the address of its parameter and of a local"""
     asm = Asm()
     asm.load_stack_deref(-WORD_SIZE); asm.pop(WORD_SIZE)
     asm.push_int(5); asm.pop_to_deref(-WORD_SIZE)
     asm.push_stack_offset(-WORD_SIZE); asm.pop(WORD_SIZE)
     asm.push_int(1); asm.push_stack_offset(-WORD_SIZE); asm.pop(2 * WORD_SIZE)
     asm.pop(WORD_SIZE); asm.ret()
-    return lift_asm(asm, argc = 1)[1]
+    return lift_asm(asm, argc=1)[1]
 
 
 def tail_call_function(argc: int):
@@ -229,14 +229,14 @@ def tail_call_function(argc: int):
 def no_argument_call_function():
     asm = Asm()
     asm.push_raw(CALLER_ID); asm.push_raw('after'); asm.call(CALLEE_ID); asm.label('after'); asm.ret()
-    return lift_asm(asm, others = (returning_callee(0),))[1]
+    return lift_asm(asm, others=(returning_callee(0),))[1]
 
 
 TAIL_CALL_TEXT = f'call_script_no_return(`{MODULE_NAME}.{SCRIPT_FUNC_NAME}`, '
 
 
 class TestMoreDebugText(unittest.TestCase):
-    '''.llil.asm lines of pointer accesses, tail calls and a call without arguments'''
+    """.llil.asm lines of pointer accesses, tail calls and a call without arguments"""
 
     def test_pointer_function_listing(self):
         lines = FalcomLLILFormatter.format_llil_function(lifted_pointer_function())
@@ -255,9 +255,9 @@ class TestMoreDebugText(unittest.TestCase):
                          f'  {TAIL_CALL_TEXT}[])')
 
     def test_node_text_of_instructions_the_listing_does_not_format_itself(self):
-        self.assertEqual(str(LowLevelILFrameStore(5, offset = 0)), 'STACK[fp + 0] = 5')
-        self.assertEqual(str(LowLevelILFrameStore(5, offset = WORD_SIZE)), 'STACK[fp + 1] = 5')
-        self.assertEqual(str(LowLevelILFrameStore(5, offset = -WORD_SIZE)), 'STACK[fp - 1] = 5')
+        self.assertEqual(str(LowLevelILFrameStore(5, offset=0)), 'STACK[fp + 0] = 5')
+        self.assertEqual(str(LowLevelILFrameStore(5, offset=WORD_SIZE)), 'STACK[fp + 1] = 5')
+        self.assertEqual(str(LowLevelILFrameStore(5, offset=-WORD_SIZE)), 'STACK[fp - 1] = 5')
 
         llil_func = lifted_text_function()
         branch, = instructions_of(llil_func, LowLevelILIf)
@@ -278,7 +278,7 @@ class TestMoreDebugText(unittest.TestCase):
 
 
 def nested_expressions(inst) -> list:
-    '''The expression nodes under inst'''
+    """The expression nodes under inst"""
     children = []
     for attribute in ('value', 'condition', 'lhs', 'rhs', 'operand', 'src', 'dest'):
         child = getattr(inst, attribute, None)
@@ -290,7 +290,7 @@ def nested_expressions(inst) -> list:
 
 
 class TestNodeKinds(unittest.TestCase):
-    '''Every operation code is its own value and every node carries the one that names it'''
+    """Every operation code is its own value and every node carries the one that names it"""
 
     EXPECTED = {
         'LowLevelILAdd': LowLevelILOperation.LLIL_ADD,
@@ -343,6 +343,7 @@ class TestNodeKinds(unittest.TestCase):
 
         for name, node in seen.items():
             self.assertEqual(node.operation_name, node.operation.name.replace('LLIL_', ''), name)
+
 
 if __name__ == '__main__':
     unittest.main()

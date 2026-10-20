@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-'''Unit tests for LLIL call-setup tracking: each pending call setup (PUSH_CURRENT_FUNC_ID +
+"""Unit tests for LLIL call-setup tracking: each pending call setup (PUSH_CURRENT_FUNC_ID +
 PUSH_RET_ADDR, or PUSH_CALLER_FRAME) is a record carried in stack snapshots and consumed by its call -
 across branches, joins, nested calls and stores below it. Malformed setups never reach the builder: the
-parser's stack simulation rejects them first (test_scp_stack_simulation.py).'''
+parser's stack simulation rejects them first (test_scp_stack_simulation.py)."""
 
 from pathlib import Path
 import sys
@@ -172,7 +172,7 @@ class TestNestedCallSetups(unittest.TestCase):
 
 
 class TestStoresBelowAPendingSetup(unittest.TestCase):
-    '''An in-place store only invalidates the slot it writes, never the setup above it.'''
+    """An in-place store only invalidates the slot it writes, never the setup above it."""
 
     def test_store_to_a_local_below_the_setup_leaves_it_callable(self):
         builder = make_builder()
@@ -195,7 +195,7 @@ class TestStoresBelowAPendingSetup(unittest.TestCase):
 
 
 class TestCallSetupsAtJoins(unittest.TestCase):
-    '''Arms that bring the same pending setups to a join are accepted, whatever values they push above them.'''
+    """Arms that bring the same pending setups to a join are accepted, whatever values they push above them."""
 
     def make_branch(self, builder: FalcomVMBuilder):
         left = add_block(builder, 'left')
@@ -243,8 +243,8 @@ class TestCallSetupsAtJoins(unittest.TestCase):
 
 
 class TestSetupMeetingAJoinBeforeItsReturnAddress(unittest.TestCase):
-    '''PUSH_CURRENT_FUNC_ID, a conditional that rejoins, then PUSH_RET_ADDR and the CALL: both arms bring the same
-    half-built setup to the join'''
+    """PUSH_CURRENT_FUNC_ID, a conditional that rejoins, then PUSH_RET_ADDR and the CALL: both arms bring the same
+    half-built setup to the join"""
 
     def test_local_call_setup_survives_a_join_before_its_return_address(self):
         asm = Asm()
@@ -252,7 +252,7 @@ class TestSetupMeetingAJoinBeforeItsReturnAddress(unittest.TestCase):
         asm.push_int(ARG_VALUE); asm.pop(WORD_SIZE)
         asm.label('join'); asm.push_raw('after'); asm.call(CALLEE_ID); asm.label('after'); asm.ret()
 
-        _, llil_func = lift_asm(asm, others = (returning_callee(NO_ARGS),))
+        _, llil_func = lift_asm(asm, others=(returning_callee(NO_ARGS),))
 
         call, = instructions_of(llil_func, LowLevelILCall)
         self.assertEqual(call.target, 'callee')

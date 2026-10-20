@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-'''Unit tests for address-taken locals as memory during SSA. Address-taken locals/parameters
+"""Unit tests for address-taken locals as memory during SSA. Address-taken locals/parameters
 are lowered to explicit *(&x) deref/store form during SSA construction (ir/mlil/mlil_ssa.py's
 _lower_address_taken_vars) instead of being versioned like ordinary scalars, so a call's real
 effect on an out-parameter is never dropped (real examples: mp0000_ev.EVENT_END_BTL,
-QSM410_00_01/QSM802_00_01).'''
+QSM410_00_01/QSM802_00_01)."""
 
 from pathlib import Path
 import sys
@@ -38,15 +38,15 @@ FUNC_START = 0x1000
 
 
 class TestStackTempOutParamNoStaleConstant(unittest.TestCase):
-    '''EVENT_END_BTL's real shape: the address of a local is captured into a stack temp, the
+    """EVENT_END_BTL's real shape: the address of a local is captured into a stack temp, the
     temp (not a literal &x) is passed to a call, and the local is read afterward. Cause 1 -
     _extract_addr_vars only ever recognized a literal AddressOf(Var) call argument, so this
-    shape's call was never recorded as touching the local at all.'''
+    shape's call was never recorded as touching the local at all."""
 
     def _build(self) -> MediumLevelILFunction:
         # var_s5 = 0; var_s14 = &var_s5; btl_get_area_pos(var_s14); return var_s5
         func = MediumLevelILFunction('event_end_btl_shape')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         var_s5 = func.get_or_create_local('var_s5')
         var_s14 = func.get_or_create_local('var_s14')
 
@@ -58,7 +58,7 @@ class TestStackTempOutParamNoStaleConstant(unittest.TestCase):
 
     def test_does_not_fold_to_the_pre_call_constant(self):
         func = self._build()
-        optimize_mlil(func, infer_types_enabled = False)
+        optimize_mlil(func, infer_types_enabled=False)
 
         ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))
@@ -76,12 +76,12 @@ class TestStackTempOutParamNoStaleConstant(unittest.TestCase):
 
 
 class TestSequentialOutParamCallsWithMidCopy(unittest.TestCase):
-    '''x = 5; ptr = &x; f(ptr); old = x; f(ptr); return x - old - two distinct post-call
-    values of x must never be conflated into `return 0`.'''
+    """x = 5; ptr = &x; f(ptr); old = x; f(ptr); return x - old - two distinct post-call
+    values of x must never be conflated into `return 0`."""
 
     def _build(self) -> MediumLevelILFunction:
         func = MediumLevelILFunction('sequential_out_param_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
         ptr = func.get_or_create_local('ptr')
         old = func.get_or_create_local('old')
@@ -96,7 +96,7 @@ class TestSequentialOutParamCallsWithMidCopy(unittest.TestCase):
 
     def test_does_not_fold_to_zero(self):
         func = self._build()
-        optimize_mlil(func, infer_types_enabled = False)
+        optimize_mlil(func, infer_types_enabled=False)
 
         ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))
@@ -114,16 +114,16 @@ class TestSequentialOutParamCallsWithMidCopy(unittest.TestCase):
 
 
 class TestAddressTakenControlFlowShapes(unittest.TestCase):
-    '''Address-taken locals need no phi at any merge point - not diamond joins, not loop
-    back-edges - since they are never scalar-versioned in the first place.'''
+    """Address-taken locals need no phi at any merge point - not diamond joins, not loop
+    back-edges - since they are never scalar-versioned in the first place."""
 
     def test_both_arm_diamond_write_needs_no_phi(self):
         # if (arg1 == 0) { f(&x) } else { g(&x) }; return x
         func = MediumLevelILFunction('diamond_addr_taken')
-        entry = func.create_block(start = FUNC_START)
-        true_block = func.create_block(start = FUNC_START + 0x10)
-        false_block = func.create_block(start = FUNC_START + 0x20)
-        merge_block = func.create_block(start = FUNC_START + 0x30)
+        entry = func.create_block(start=FUNC_START)
+        true_block = func.create_block(start=FUNC_START + 0x10)
+        false_block = func.create_block(start=FUNC_START + 0x20)
+        merge_block = func.create_block(start=FUNC_START + 0x30)
 
         arg1 = func.get_or_create_parameter(1, 'arg1')
         x = func.get_or_create_local('x')
@@ -152,9 +152,9 @@ class TestAddressTakenControlFlowShapes(unittest.TestCase):
     def test_loop_carried_write_with_prev_copy_needs_no_phi(self):
         # x = 0; while (arg1 != 0) { prev = x; f(&x); arg1 = arg1 - 1 }; return x - prev
         func = MediumLevelILFunction('loop_addr_taken')
-        entry = func.create_block(start = FUNC_START)
-        loop_block = func.create_block(start = FUNC_START + 0x10)
-        exit_block = func.create_block(start = FUNC_START + 0x20)
+        entry = func.create_block(start=FUNC_START)
+        loop_block = func.create_block(start=FUNC_START + 0x10)
+        exit_block = func.create_block(start=FUNC_START + 0x20)
 
         arg1 = func.get_or_create_parameter(1, 'arg1')
         x = func.get_or_create_local('x')
@@ -186,14 +186,14 @@ class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
     def test_constant_not_propagated_across_call(self):
         # x = 7; f(&x); return x - must not fold to `return 7`
         func = MediumLevelILFunction('const_prop_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
 
         block.add_instruction(MLILSetVar(x, MLILConst(7)))
         block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(x))]))
         block.add_instruction(MLILRet(MLILVar(x)))
 
-        optimize_mlil(func, infer_types_enabled = False)
+        optimize_mlil(func, infer_types_enabled=False)
 
         ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))
@@ -202,7 +202,7 @@ class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
     def test_multiple_address_taken_args_to_one_call(self):
         # x = 1; y = 2; f(&x, &y); return x + y - must not fold to `return 3`
         func = MediumLevelILFunction('multi_addr_taken_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
         y = func.get_or_create_local('y')
 
@@ -211,7 +211,7 @@ class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
         block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(x)), MLILAddressOf(MLILVar(y))]))
         block.add_instruction(MLILRet(MLILAdd(MLILVar(x), MLILVar(y))))
 
-        optimize_mlil(func, infer_types_enabled = False)
+        optimize_mlil(func, infer_types_enabled=False)
 
         ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))
@@ -219,7 +219,7 @@ class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
 
     def test_address_taken_parameter_stays_one_stable_identity(self):
         func = MediumLevelILFunction('addr_taken_param_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         arg1 = func.get_or_create_parameter(1, 'arg1')
 
         block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(arg1))]))
@@ -233,16 +233,16 @@ class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
 
 
 class TestRegGlobalPropagationAddressTaken(unittest.TestCase):
-    '''GLOBAL[n] = x; *(&x) = 5; use(GLOBAL[n]) - the value captured into GLOBAL[0] before
+    """GLOBAL[n] = x; *(&x) = 5; use(GLOBAL[n]) - the value captured into GLOBAL[0] before
     the store must not be replaced by a re-read of *x after it. RegGlobalValuePropagator's
     closed-form-only caching already defends this - a deref read is never cached under a
     REG/GLOBAL slot at all, so there is nothing for the later store to invalidate; SSA
     construction's lowering makes an address-taken local's ordinary reassignment go through
-    exactly the same StoreDeref shape.'''
+    exactly the same StoreDeref shape."""
 
     def test_stale_global_copy_not_substituted_after_address_taken_reassignment(self):
         func = MediumLevelILFunction('reg_global_addr_taken_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
 
         block.add_instruction(MLILStoreGlobal(0, MLILDeref(MLILAddressOf(MLILVar(x)))))
@@ -257,10 +257,10 @@ class TestRegGlobalPropagationAddressTaken(unittest.TestCase):
 
 
 class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
-    '''reg0 = f(&x); y = x + reg0 - CallResultFolder must not fold this into
+    """reg0 = f(&x); y = x + reg0 - CallResultFolder must not fold this into
     y = x + f(&x), which would read x through the pointer before f's call actually writes
     it. _read_unsafe_to_fold (ir/hlil/mlil_to_hlil.py) already defends a bare MLILDeref;
-    SSA construction's lowering makes every address-taken read go through exactly that shape.'''
+    SSA construction's lowering makes every address-taken read go through exactly that shape."""
 
     def test_fold_is_blocked_by_the_intervening_deref_read(self):
         func = MediumLevelILFunction('call_result_fold_test', 0)
@@ -297,10 +297,10 @@ class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
 
 
 class TestCFORedundantElseAssignAddressTakenReload(unittest.TestCase):
-    '''The discriminant stays a plain HLILVar (_remove_redundant_else_assign returns
+    """The discriminant stays a plain HLILVar (_remove_redundant_else_assign returns
     immediately for any other discriminant, so an address-taken one would never reach
     _stmt_modifies_any); the reloaded value reads a different, address-taken variable that
-    the case body writes through *(&x).'''
+    the case body writes through *(&x)."""
 
     def test_reload_of_address_taken_source_is_not_removed(self):
         # if (selector == 1) { *(&addr_var) = 99 }
@@ -329,18 +329,18 @@ class TestCFORedundantElseAssignAddressTakenReload(unittest.TestCase):
 
 
 class TestAddressTakenBackwardTypeInference(unittest.TestCase):
-    '''A pure out-parameter with no separate store, typed only via a later comparison use,
+    """A pure out-parameter with no separate store, typed only via a later comparison use,
     must still get typed after lowering - _infer_from_comparison etc. must unwrap *(&x) the
     same as a direct MLILVarSSA. The comparison must sit as a bare top-level MLILIf
     condition - _infer_from_usage only dispatches on the top-level instruction per block,
-    it does not recurse into nested expressions.'''
+    it does not recurse into nested expressions."""
 
     def test_comparison_only_usage_still_types_the_address_taken_local(self):
         # f(&x); if (x >= 2) { return 1 } else { return 0 } - x has no separate store
         func = MediumLevelILFunction('backward_infer_test')
-        block = func.create_block(start = FUNC_START)
-        true_block = func.create_block(start = FUNC_START + 0x10)
-        false_block = func.create_block(start = FUNC_START + 0x20)
+        block = func.create_block(start=FUNC_START)
+        true_block = func.create_block(start=FUNC_START + 0x10)
+        false_block = func.create_block(start=FUNC_START + 0x20)
         x = func.get_or_create_local('x')
 
         block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(x))]))
@@ -358,9 +358,9 @@ class TestAddressTakenBackwardTypeInference(unittest.TestCase):
 
 
 class TestAddressTakenCodegenBooleanCoercion(unittest.TestCase):
-    '''x = (a == b), for a numeric address-taken local x, must print x = int(a == b) - not
+    """x = (a == b), for a numeric address-taken local x, must print x = int(a == b) - not
     a bare boolean - through the *(&x) fold-back path specifically, reusing the ordinary
-    assignment branch's coercion rather than a second, unreimplemented copy.'''
+    assignment branch's coercion rather than a second, unreimplemented copy."""
 
     def test_boolean_assigned_to_numeric_address_taken_local_gets_int_wrapped(self):
         x = HLILVariable('x', HLILTypeKind.INT)
@@ -374,8 +374,8 @@ class TestAddressTakenCodegenBooleanCoercion(unittest.TestCase):
 
 
 class TestAddressTakenPrinting(unittest.TestCase):
-    '''*(&x) and *(&x) = v must print as plain x and x = v - never deref(addr_of(x)) /
-    deref_set(addr_of(x), v) - in both the TypeScript codegen and the debug HLIL formatter.'''
+    """*(&x) and *(&x) = v must print as plain x and x = v - never deref(addr_of(x)) /
+    deref_set(addr_of(x), v) - in both the TypeScript codegen and the debug HLIL formatter."""
 
     def test_typescript_read_and_write_fold_back_to_plain_variable(self):
         x = HLILVariable('x', HLILTypeKind.INT)
@@ -395,19 +395,19 @@ class TestAddressTakenPrinting(unittest.TestCase):
 
 
 class TestRebuildOpsPreserveMetadata(unittest.TestCase):
-    '''MLILBinaryOp.rebuild()/MLILUnaryOp.rebuild() must copy source metadata (address) onto the
+    """MLILBinaryOp.rebuild()/MLILUnaryOp.rebuild() must copy source metadata (address) onto the
     node they construct - previously silently dropped, and this step's lowering exercises
-    that path far more often (every expression containing an address-taken read).'''
+    that path far more often (every expression containing an address-taken read)."""
 
     def test_rebuilt_binary_op_keeps_source_address(self):
         # y = x + 1, where x is address-taken and the add carries its own source address
         func = MediumLevelILFunction('metadata_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
         y = func.get_or_create_local('y')
 
         block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(x))]))
-        add_expr = MLILAdd(MLILVar(x), MLILConst(1), address = 0x1234)
+        add_expr = MLILAdd(MLILVar(x), MLILConst(1), address=0x1234)
         block.add_instruction(MLILSetVar(y, add_expr))
 
         SSAConstructor(func).construct()
@@ -418,15 +418,15 @@ class TestRebuildOpsPreserveMetadata(unittest.TestCase):
 
 
 class TestCallOutputDecomposition(unittest.TestCase):
-    '''A call whose own `output` field coincides with an address-taken local - synthetic,
+    """A call whose own `output` field coincides with an address-taken local - synthetic,
     since the real ED9 translator cannot produce this shape today, but proves the
     structural fix (redirect through a fresh temp) actually closes the naming-split gap
-    rather than merely asserting against it.'''
+    rather than merely asserting against it."""
 
     def test_call_output_aliasing_address_taken_local_is_decomposed(self):
         # x = f(); g(&x); return x - x is both a call's own output AND address-taken
         func = MediumLevelILFunction('call_output_decompose_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
 
         call1 = MLILCall('f', [], x)
@@ -444,12 +444,12 @@ class TestCallOutputDecomposition(unittest.TestCase):
 
 
 class TestAddressTakenStructuralInvariants(unittest.TestCase):
-    '''Defensive invariants the address-taken lowering is designed to guarantee, checked
-    directly rather than only inferred from behavior.'''
+    """Defensive invariants the address-taken lowering is designed to guarantee, checked
+    directly rather than only inferred from behavior."""
 
     def test_lowered_local_never_appears_as_a_scalar_ssa_target(self):
         func = MediumLevelILFunction('invariant_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
 
         block.add_instruction(MLILSetVar(x, MLILConst(1)))
@@ -470,7 +470,7 @@ class TestAddressTakenStructuralInvariants(unittest.TestCase):
 
     def test_address_of_register_raises(self):
         func = MediumLevelILFunction('addr_of_register_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         reg0 = func.get_or_create_register_var(0)
 
         block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(reg0))]))
@@ -481,7 +481,7 @@ class TestAddressTakenStructuralInvariants(unittest.TestCase):
 
     def test_address_of_global_raises(self):
         func = MediumLevelILFunction('addr_of_global_test')
-        block = func.create_block(start = FUNC_START)
+        block = func.create_block(start=FUNC_START)
         global0 = func.get_or_create_global_var(0)
 
         block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(global0))]))
@@ -492,19 +492,19 @@ class TestAddressTakenStructuralInvariants(unittest.TestCase):
 
 
 class TestAddressTakenFromRealLLIL(unittest.TestCase):
-    '''End to end from real LLIL, built the same way the disassembler/lifter would (not
+    """End to end from real LLIL, built the same way the disassembler/lifter would (not
     hand-built MLIL): push_stack_addr + pop_to materializes the stack-temp shape, a fresh
-    load_stack re-reads it for the syscall so the call sees the temp, not a literal &x.'''
+    load_stack re-reads it for the syscall so the call sees the temp, not a literal &x."""
 
     def test_syscall_through_stack_temp_pointer_does_not_fold(self):
         builder = FalcomVMBuilder()
-        builder.create_function('addr_taken_repro', FUNC_START, num_params = 0)
+        builder.create_function('addr_taken_repro', FUNC_START, num_params=0)
         entry = builder.create_basic_block(FUNC_START, 'addr_taken_repro')
         builder.set_current_block(entry)
 
         builder.push_int(5)                     # var_s0 = 5; sp 0->1
         builder.push_int(0)                     # var_s1, the temp's slot; sp 1->2
-        builder.push_stack_addr(-2 * WORD_SIZE) # push &var_s0 (slot 0); sp 2->3
+        builder.push_stack_addr(-2 * WORD_SIZE)  # push &var_s0 (slot 0); sp 2->3
         builder.pop_to(-WORD_SIZE)              # var_s1 (slot 1) = &var_s0; sp 3->2
         builder.load_stack(-WORD_SIZE)          # push var_s1's value fresh; sp 2->3
         builder.syscall(1, 1, 1)                # syscall(var_s2) - sp stays 3
@@ -513,7 +513,7 @@ class TestAddressTakenFromRealLLIL(unittest.TestCase):
         builder.pop_bytes(3 * WORD_SIZE)        # sp 3->0 (discard the three remaining temps)
         builder.ret()
 
-        mlil_func = convert_falcom_llil_to_mlil(builder.function, optimize = True, infer_types = False)
+        mlil_func = convert_falcom_llil_to_mlil(builder.function, optimize=True, infer_types=False)
 
         ret_inst = next(inst for b in mlil_func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))

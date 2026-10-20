@@ -57,5 +57,4 @@ class ScenaDecompileConfig(StrictBase):
     output_dir: Path = TOOL_DIR / 'out'
 
     # Optional function filter, forwarded to ScpParser.disasm_all_functions(filter_func=...)
-    filter_func: Optional[Callable[[Function], bool]] = None # lambda f: f.name == 'TestCitySet'
-
+    filter_func: Optional[Callable[[Function], bool]] = None  # lambda f: f.name == 'TestCitySet'

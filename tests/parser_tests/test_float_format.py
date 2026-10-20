@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''ScpValue.float_literal: the .py spells a stored float as the shortest float literal that stores the same
+"""ScpValue.float_literal: the .py spells a stored float as the shortest float literal that stores the same
 word (PUSH_FLOAT(0.3), not PUSH_FLOAT(0.2999999523162842)); non-finite floats, which the game can't use, print
-as a float() call and warn when decoded.'''
+as a float() call and warn when decoded."""
 
 import ast
 import math
@@ -38,12 +38,12 @@ def decode(word: int) -> float:
 
 
 def stored(text: str) -> float:
-    '''The value the game holds for a source literal: encode, then decode'''
+    """The value the game holds for a source literal: encode, then decode"""
     return decode(ScpValue(float(text)).to_word())
 
 
 def edge_words() -> list[int]:
-    '''Every exponent with the smallest and largest kept mantissa, both signs, plus zeros and subnormals'''
+    """Every exponent with the smallest and largest kept mantissa, both signs, plus zeros and subnormals"""
     kept_mantissa_max = F32_MANTISSA & ~((1 << ScpValue.FLOAT_DROPPED_BITS) - 1)
     patterns = {0, 1 << ScpValue.FLOAT_DROPPED_BITS, kept_mantissa_max, F32_NEAR_MAX}
     for exponent in range(F32_EXP_MAX):
@@ -56,20 +56,20 @@ class TestShortestText(unittest.TestCase):
     def test_stored_value_prints_short(self):
         # stored('0.3') is 0.2999999523162842
         for text in ('0.3', '0.2', '-63.103', '27.2', '0.705', '0.0333'):
-            with self.subTest(text = text):
+            with self.subTest(text=text):
                 self.assertNotEqual(repr(stored(text)), text)
                 self.assertEqual(ScpValue.float_literal(stored(text)), text)
 
     def test_depends_only_on_the_word(self):
         # Values the decoder never produces: dropped bits set, or a double below float32's range
         for value, text in ((float32_from_bits(1), '0.0'), (float32_from_bits(F32_SIGN | 1), '-0.0'), (1e-50, '0.0')):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 self.assertEqual(ScpValue.float_literal(value), text)
 
     def test_always_a_float_literal(self):
         # '1' would encode an Integer and '-0' would lose its sign
         for value, text in ((1.0, '1.0'), (-0.0, '-0.0'), (170.0, '170.0'), (100.0, '100.0')):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 self.assertEqual(ScpValue.float_literal(value), text)
 
     def test_zero_is_not_the_midpoint(self):
@@ -111,7 +111,7 @@ class TestNonFinite(unittest.TestCase):
 
     def test_decoding_warns(self):
         word = float_word(F32_INF)
-        with self.assertLogs(types_scp.log, level = 'WARNING') as logs:
+        with self.assertLogs(types_scp.log, level='WARNING') as logs:
             self.assertEqual(decode(word), math.inf)
 
         self.assertIn(f"non-finite float inf (word 0x{word:08X}): the game can't use it", logs.output[0])

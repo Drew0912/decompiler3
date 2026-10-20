@@ -1,4 +1,4 @@
-'''Core IL base classes and traits'''
+"""Core IL base classes and traits"""
 
 from .il_base import *
 from .il_options import *

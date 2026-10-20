@@ -34,9 +34,10 @@ SLOT_PREFIXES = {
 }
 
 
-@dataclass(frozen = True)
+@dataclass(frozen=True)
 class CommentOptions:
     """Which optional comments the .py gets"""
+
     stack_slots     : bool = True   # each offset opcode's slot and what it holds, addressed locals, POP's slots, sp at labels
     float_bits      : bool = False  # PUSH_FLOAT's float32 bits and stored word
     function_ids    : bool = False  # a line above each function with its table index and code offset

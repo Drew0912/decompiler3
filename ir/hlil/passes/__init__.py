@@ -1,4 +1,4 @@
-'''HLIL Optimization Passes'''
+"""HLIL Optimization Passes"""
 
 from .pass_mlil_to_hlil import MLILToHLILPass
 from .pass_control_flow_optimization import ControlFlowOptimizationPass

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Unit tests for the MLIL type lattice (ir/mlil/mlil_types.py).'''
+"""Unit tests for the MLIL type lattice (ir/mlil/mlil_types.py)."""
 
 from pathlib import Path
 import sys
@@ -50,8 +50,8 @@ class TestVariantEquality(unittest.TestCase):
 
 
 class TestVariantGrowthIsRecorded(unittest.TestCase):
-    '''An address-taken local has one SSA identity, so each *(&x) = v store updates the same
-    entry: the third store's member must still be recorded once x is already a variant.'''
+    """An address-taken local has one SSA identity, so each *(&x) = v store updates the same
+    entry: the third store's member must still be recorded once x is already a variant."""
 
     def test_address_taken_local_collects_every_stored_type(self):
         # x = 1; x = 1.5; x = "s"; f(&x); return

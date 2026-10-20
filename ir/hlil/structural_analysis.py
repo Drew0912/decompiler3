@@ -1,4 +1,4 @@
-'''
+"""
 Structural Analysis for Control Flow Recovery
 
 Implements iterative region reduction with forward reachability analysis
@@ -8,7 +8,7 @@ Based on:
 - Sharir (1980): Structural Analysis
 - Cifuentes (1994): Reverse Compilation Techniques
 - No More Gotos (2015): Taming Control Flow
-'''
+"""
 
 from typing import Dict, List, Set, Optional, Tuple
 from collections import deque
@@ -17,7 +17,8 @@ from enum import Enum, auto
 
 
 class RegionType(Enum):
-    '''Types of control flow regions'''
+    """Types of control flow regions"""
+
     BLOCK = auto()          # Basic block
     SEQUENCE = auto()       # Linear sequence of regions
     IF_THEN = auto()        # if (cond) { then }
@@ -30,12 +31,13 @@ class RegionType(Enum):
 
 @dataclass
 class Region:
-    '''A region in the control flow graph'''
+    """A region in the control flow graph"""
+
     type: RegionType
     entry: int                              # Entry block index
     exit: Optional[int] = None              # Exit block index (None for infinite loops)
-    blocks: Set[int] = field(default_factory = set)  # All blocks in this region
-    children: List['Region'] = field(default_factory = list)  # Nested regions
+    blocks: Set[int] = field(default_factory=set)  # All blocks in this region
+    children: List['Region'] = field(default_factory=list)  # Nested regions
     condition_block: Optional[int] = None   # Block containing the condition (for if/loop)
 
     def __hash__(self):
@@ -44,15 +46,16 @@ class Region:
 
 @dataclass
 class LoopInfo:
-    '''Information about a natural loop'''
+    """Information about a natural loop"""
+
     header: int
     body: Set[int]
     back_edges: List[Tuple[int, int]]
-    exits: Set[int] = field(default_factory = set)
+    exits: Set[int] = field(default_factory=set)
 
 
 class StructuralAnalyzer:
-    '''
+    """
     Structural analysis using iterative region reduction.
 
     Algorithm:
@@ -63,7 +66,7 @@ class StructuralAnalyzer:
        b. In acyclic regions, find if-then-else using reachability
        c. Collapse linear sequences
     4. Repeat until no more reductions possible
-    '''
+    """
 
     def __init__(self, num_blocks: int, successors: Dict[int, List[int]]):
         self.num_blocks = num_blocks
@@ -101,7 +104,7 @@ class StructuralAnalyzer:
         return preds
 
     def _analyze(self):
-        '''Run full structural analysis'''
+        """Run full structural analysis"""
         if self.num_blocks == 0:
             return
 
@@ -115,7 +118,7 @@ class StructuralAnalyzer:
         self._reduce()
 
     def _compute_dominators(self):
-        '''Compute dominator tree using iterative dataflow'''
+        """Compute dominator tree using iterative dataflow"""
         all_nodes = set(range(self.num_blocks))
         dom = {i: all_nodes.copy() for i in range(self.num_blocks)}
         dom[0] = {0}  # Entry dominates only itself
@@ -167,7 +170,7 @@ class StructuralAnalyzer:
             self.idom[node] = idom
 
     def dominates(self, a: int, b: int) -> bool:
-        '''Check if a dominates b'''
+        """Check if a dominates b"""
         if a == b:
             return True
         current = b
@@ -180,7 +183,7 @@ class StructuralAnalyzer:
         return False
 
     def _identify_loops(self):
-        '''Find natural loops using back edges'''
+        """Find natural loops using back edges"""
         for src in range(self.num_blocks):
             for dst in self.original_successors.get(src, []):
                 if dst < self.num_blocks and self.dominates(dst, src):
@@ -188,7 +191,7 @@ class StructuralAnalyzer:
                     self._build_loop(src, dst)
 
     def _build_loop(self, tail: int, header: int):
-        '''Build natural loop from back edge'''
+        """Build natural loop from back edge"""
         body = {header, tail}
 
         # Walk back from the tail, never past the header: a self back edge's loop is the header alone
@@ -206,9 +209,9 @@ class StructuralAnalyzer:
             self.loops[header].body |= body
         else:
             self.loops[header] = LoopInfo(
-                header = header,
-                body = body,
-                back_edges = [(tail, header)]
+                header=header,
+                body=body,
+                back_edges=[(tail, header)]
             )
 
         # Find exits over the merged body, so a second back edge cannot report
@@ -222,7 +225,7 @@ class StructuralAnalyzer:
         self.loops[header].exits = exits
 
     def _reduce(self):
-        '''Iterative region reduction'''
+        """Iterative region reduction"""
         max_iterations = self.num_blocks * 2
         iteration = 0
 
@@ -249,11 +252,11 @@ class StructuralAnalyzer:
                 break
 
     def _reduce_loops(self) -> bool:
-        '''Reduce natural loops (innermost first)'''
+        """Reduce natural loops (innermost first)"""
         # Sort by size (smallest/innermost first)
         sorted_loops = sorted(
-            [(h, l) for h, l in self.loops.items() if h in self.active_nodes],
-            key = lambda x: len(x[1].body)
+            [(h, loop) for h, loop in self.loops.items() if h in self.active_nodes],
+            key=lambda x: len(x[1].body)
         )
 
         for header, loop in sorted_loops:
@@ -263,11 +266,11 @@ class StructuralAnalyzer:
 
             # Create loop region
             region = Region(
-                type = RegionType.NATURAL_LOOP,
-                entry = header,
-                exit = min(loop.exits) if loop.exits else None,
-                blocks = loop.body.copy(),
-                condition_block = header
+                type=RegionType.NATURAL_LOOP,
+                entry=header,
+                exit=min(loop.exits) if loop.exits else None,
+                blocks=loop.body.copy(),
+                condition_block=header
             )
 
             self.regions[header] = region
@@ -282,7 +285,7 @@ class StructuralAnalyzer:
         return False
 
     def _reduce_conditionals(self) -> bool:
-        '''Reduce if-then-else structures'''
+        """Reduce if-then-else structures"""
         for node in list(self.active_nodes):
             succs = [s for s in self.successors.get(node, []) if s in self.active_nodes]
 
@@ -307,13 +310,11 @@ class StructuralAnalyzer:
                 region_type = RegionType.IF_THEN
                 then_blocks = set()
                 else_blocks = self._get_region_blocks(false_target, merge)
-
             elif merge == false_target:
                 # if-then (then branch only)
                 region_type = RegionType.IF_THEN
                 then_blocks = self._get_region_blocks(true_target, merge)
                 else_blocks = set()
-
             else:
                 # if-then-else
                 region_type = RegionType.IF_THEN_ELSE
@@ -323,11 +324,11 @@ class StructuralAnalyzer:
             # Create region
             all_blocks = {node} | then_blocks | else_blocks
             region = Region(
-                type = region_type,
-                entry = node,
-                exit = merge,
-                blocks = all_blocks,
-                condition_block = node
+                type=region_type,
+                entry=node,
+                exit=merge,
+                blocks=all_blocks,
+                condition_block=node
             )
 
             self.regions[node] = region
@@ -349,7 +350,7 @@ class StructuralAnalyzer:
         return False
 
     def _reduce_sequences(self) -> bool:
-        '''Reduce linear sequences A -> B where A has one succ, B has one pred'''
+        """Reduce linear sequences A -> B where A has one succ, B has one pred"""
         for node in list(self.active_nodes):
             succs = [s for s in self.successors.get(node, []) if s in self.active_nodes]
 
@@ -369,10 +370,10 @@ class StructuralAnalyzer:
 
             # Collapse succ into node
             region = Region(
-                type = RegionType.SEQUENCE,
-                entry = node,
-                exit = succ,
-                blocks = {node, succ}
+                type=RegionType.SEQUENCE,
+                entry=node,
+                exit=succ,
+                blocks={node, succ}
             )
 
             self.regions[node] = region
@@ -393,12 +394,12 @@ class StructuralAnalyzer:
         return False
 
     def _collapse_into(self, block: int, representative: int):
-        '''Collapse a block into its representative'''
+        """Collapse a block into its representative"""
         self.collapsed[block] = representative
         self.active_nodes.discard(block)
 
     def _get_region_blocks(self, start: int, stop: int) -> Set[int]:
-        '''Get all blocks from start to stop (exclusive)'''
+        """Get all blocks from start to stop (exclusive)"""
         if start == stop:
             return set()
 
@@ -423,10 +424,10 @@ class StructuralAnalyzer:
         return blocks
 
     def _find_local_merge(self, true_target: int, false_target: int) -> Optional[int]:
-        '''
+        """
         Find merge point for if-else within a local acyclic region.
         Used during iterative reduction on the working graph.
-        '''
+        """
         if true_target == false_target:
             return true_target
 
@@ -462,8 +463,8 @@ class StructuralAnalyzer:
         # since true_target eventually reaches false_target itself (that's how a
         # shared-target chain works) - that would keep picking a block inside
         # false_target's own body as a false "merge", just one step further along.
-        reach_true = self._forward_reach(true_target, barrier = false_target)
-        reach_false = self._forward_reach(false_target, barrier = true_target)
+        reach_true = self._forward_reach(true_target, barrier=false_target)
+        reach_false = self._forward_reach(false_target, barrier=true_target)
 
         common = set(reach_true.keys()) & set(reach_false.keys())
         common.discard(true_target)
@@ -473,15 +474,15 @@ class StructuralAnalyzer:
             return None
 
         # Return nearest (minimum combined distance, then block order)
-        return min(common, key = lambda b: (reach_true[b] + reach_false[b], b))
+        return min(common, key=lambda b: (reach_true[b] + reach_false[b], b))
 
     def _unconditional_reach(self, start: int) -> Dict[int, int]:
-        '''Forward reachability following only unconditional (single-successor) edges
+        """Forward reachability following only unconditional (single-successor) edges
 
         Stops at the first 2-way branch instead of following either of its edges,
         so a block reached only through one outcome of a decision made along the
         way is never mistaken for start's own empty/trivial continuation.
-        '''
+        """
         reach = {start: 0}
         block = start
         depth = 0
@@ -505,12 +506,12 @@ class StructuralAnalyzer:
         return reach
 
     def _forward_reach(self, start: int, barrier: Optional[int] = None) -> Dict[int, int]:
-        '''Forward reachability, skipping back edges and collapsed nodes
+        """Forward reachability, skipping back edges and collapsed nodes
 
         barrier, if given, is never entered or traversed past - used to keep a
         branch's own reachable set from including whatever lies beyond the other
         branch's target once the two eventually converge.
-        '''
+        """
         reach = {}
         queue = deque([(start, 0)])
 
@@ -539,11 +540,11 @@ class StructuralAnalyzer:
 
     def find_merge_point(self, cond_block: int, true_target: int, false_target: int,
                          stop: Optional[int] = None) -> Optional[int]:
-        '''
+        """
         Merge point of the if ending cond_block, whose arms stop at stop (the enclosing merge or
         loop header, None at function level): the heuristic's answer when it is a real merge (see
         _MergeScope), else the nearest real merge both arms reach, else None.
-        '''
+        """
         merge = self._heuristic_merge_point(cond_block, true_target, false_target)
         if true_target == false_target or (merge is not None and merge == stop):
             return merge
@@ -555,12 +556,12 @@ class StructuralAnalyzer:
         return scope.nearest_valid_join(true_target, false_target)
 
     def _heuristic_merge_point(self, cond_block: int, true_target: int, false_target: int) -> Optional[int]:
-        '''
+        """
         Merge point candidate for if-else.
 
         First checks if a region was identified during structural analysis.
         Falls back to reachability search on the original graph.
-        '''
+        """
         # Check if we have a pre-computed region
         if cond_block in self.regions:
             region = self.regions[cond_block]
@@ -571,7 +572,7 @@ class StructuralAnalyzer:
         return self._find_merge_on_original(true_target, false_target)
 
     def _find_merge_on_original(self, true_target: int, false_target: int) -> Optional[int]:
-        '''Find merge point using original (unmodified) CFG'''
+        """Find merge point using original (unmodified) CFG"""
         if true_target == false_target:
             return true_target
 
@@ -604,8 +605,8 @@ class StructuralAnalyzer:
         # through the other branch first (see _find_local_merge for why plain
         # reachability would keep picking a block inside the other branch's own
         # body as a false "merge").
-        reach_true = self._forward_reach_original(true_target, barrier = false_target)
-        reach_false = self._forward_reach_original(false_target, barrier = true_target)
+        reach_true = self._forward_reach_original(true_target, barrier=false_target)
+        reach_false = self._forward_reach_original(false_target, barrier=true_target)
 
         common = set(reach_true.keys()) & set(reach_false.keys())
         common.discard(true_target)
@@ -615,10 +616,10 @@ class StructuralAnalyzer:
             return None
 
         # Return nearest (minimum combined distance, then block order)
-        return min(common, key = lambda b: (reach_true[b] + reach_false[b], b))
+        return min(common, key=lambda b: (reach_true[b] + reach_false[b], b))
 
     def _unconditional_reach_original(self, start: int) -> Dict[int, int]:
-        '''_unconditional_reach, but over the original (unmodified) CFG'''
+        """_unconditional_reach, but over the original (unmodified) CFG"""
         reach = {start: 0}
         block = start
         depth = 0
@@ -639,10 +640,10 @@ class StructuralAnalyzer:
         return reach
 
     def _forward_reach_original(self, start: int, barrier: Optional[int] = None) -> Dict[int, int]:
-        '''Forward reachability on original graph, skipping back edges
+        """Forward reachability on original graph, skipping back edges
 
         barrier, if given, is never entered or traversed past (see _forward_reach).
-        '''
+        """
         reach = {}
         queue = deque([(start, 0)])
 
@@ -665,7 +666,7 @@ class StructuralAnalyzer:
         return reach
 
     def should_invert_condition(self, true_target: int, false_target: int) -> bool:
-        '''
+        """
         Check if condition should be inverted for canonical if-else-if structure.
 
         In if-else-if chains, MLIL often has inverted conditions:
@@ -676,7 +677,7 @@ class StructuralAnalyzer:
 
         Structural detection: true_target has 2 successors (another condition),
         while false_target does not look like a continuation.
-        '''
+        """
         # Don't invert if true_target is a loop header
         if true_target in self.loops:
             return False
@@ -695,16 +696,16 @@ class StructuralAnalyzer:
         return True
 
     def get_loop_info(self, header: int) -> Optional[LoopInfo]:
-        '''Get loop information'''
+        """Get loop information"""
         return self.loops.get(header)
 
     def get_region(self, block: int) -> Optional[Region]:
-        '''Get region starting at block'''
+        """Get region starting at block"""
         return self.regions.get(block)
 
 
 class _MergeScope:
-    '''
+    """
     The part of the CFG an if's merge point must lie in, and what makes a block a real merge.
 
     Inside the innermost natural loop around the if, a path ends at a back edge, at an edge
@@ -713,7 +714,7 @@ class _MergeScope:
     around M into code that follows M (falling out of an arm would miss that code or run it
     twice), and - unless the stop is the loop header, where a jump is an explicit continue - no
     path reaches the enclosing stop without passing M (falling out there would run M first).
-    '''
+    """
 
     def __init__(self, analyzer: StructuralAnalyzer, cond_block: int, stop: Optional[int]):
         self.analyzer = analyzer
@@ -722,20 +723,20 @@ class _MergeScope:
 
         # Natural loops are nested or disjoint, so the smallest one holding the if is unique
         loops = [loop for loop in analyzer.loops.values() if cond_block in loop.body]
-        self.loop = min(loops, key = lambda loop: len(loop.body)) if loops else None
+        self.loop = min(loops, key=lambda loop: len(loop.body)) if loops else None
 
         self.stop_falls_out = stop is not None and not (self.loop is not None and stop == self.loop.header)
         self._reach_cache: Dict[Tuple[int, Optional[int]], Dict[int, int]] = {}
 
     def follows(self, src: int, dst: int) -> bool:
-        '''Whether a path inside the scope continues along src -> dst'''
+        """Whether a path inside the scope continues along src -> dst"""
         if dst >= self.analyzer.num_blocks or dst == self.stop or (src, dst) in self.analyzer.back_edges:
             return False
 
         return self.loop is None or (dst in self.loop.body and dst != self.loop.header)
 
     def reach(self, start: int, barrier: Optional[int] = None) -> Dict[int, int]:
-        '''Blocks reachable from start inside the scope without entering barrier, with distances'''
+        """Blocks reachable from start inside the scope without entering barrier, with distances"""
         key = (start, barrier)
         cached = self._reach_cache.get(key)
         if cached is not None:
@@ -758,8 +759,8 @@ class _MergeScope:
         return dist
 
     def is_valid(self, merge: int) -> bool:
-        '''Whether merge is a real merge of the if (see the class docstring)'''
-        before = self.reach(self.cond_block, barrier = merge)
+        """Whether merge is a real merge of the if (see the class docstring)"""
+        before = self.reach(self.cond_block, barrier=merge)
         successors = self.analyzer.original_successors
 
         if not any(merge in successors.get(block, []) and self.follows(block, merge) for block in before):
@@ -771,10 +772,10 @@ class _MergeScope:
         return not (before.keys() & self.reach(merge).keys())
 
     def nearest_valid_join(self, true_target: int, false_target: int) -> Optional[int]:
-        '''The nearest valid merge that both arms reach (an arm target itself counts), or None'''
+        """The nearest valid merge that both arms reach (an arm target itself counts), or None"""
         reach_true = self.reach(true_target) if self.follows(self.cond_block, true_target) else {}
         reach_false = self.reach(false_target) if self.follows(self.cond_block, false_target) else {}
-        joins = sorted(reach_true.keys() & reach_false.keys(), key = lambda b: (reach_true[b] + reach_false[b], b))
+        joins = sorted(reach_true.keys() & reach_false.keys(), key=lambda b: (reach_true[b] + reach_false[b], b))
 
         for merge in joins:
             if self.is_valid(merge):

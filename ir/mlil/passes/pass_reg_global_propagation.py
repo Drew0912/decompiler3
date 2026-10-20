@@ -1,4 +1,4 @@
-'''REG/GLOBAL value propagation pass'''
+"""REG/GLOBAL value propagation pass"""
 
 from collections import deque
 from dataclasses import dataclass, field
@@ -17,39 +17,42 @@ from ..mlil import (
 
 
 class StorageKind(Enum):
-    '''Kind of storage location'''
+    """Kind of storage location"""
+
     REG = auto()
     GLOBAL = auto()
 
 
-@dataclass(frozen = True)
+@dataclass(frozen=True)
 class StorageKey:
-    '''Key for cycle detection in substitute'''
+    """Key for cycle detection in substitute"""
+
     kind: StorageKind
     index: int
 
 
 @dataclass
 class RegGlobalState:
-    '''State for REG/GLOBAL value tracking'''
-    reg: Dict[int, Optional[MediumLevelILInstruction]] = field(default_factory = dict)
-    global_: Dict[int, Optional[MediumLevelILInstruction]] = field(default_factory = dict)
+    """State for REG/GLOBAL value tracking"""
+
+    reg: Dict[int, Optional[MediumLevelILInstruction]] = field(default_factory=dict)
+    global_: Dict[int, Optional[MediumLevelILInstruction]] = field(default_factory=dict)
 
     def copy(self) -> 'RegGlobalState':
         return RegGlobalState(
-            reg = dict(self.reg),
-            global_ = dict(self.global_)
+            reg=dict(self.reg),
+            global_=dict(self.global_)
         )
 
 
 class RegGlobalValuePropagator:
-    '''Propagate values through REG/GLOBAL storage'''
+    """Propagate values through REG/GLOBAL storage"""
 
     def __init__(self, func: MediumLevelILFunction):
         self.func = func
 
     def run(self) -> bool:
-        '''Run propagation and return True if any changes made'''
+        """Run propagation and return True if any changes made"""
         if not self.func.basic_blocks:
             return False
 
@@ -57,7 +60,7 @@ class RegGlobalValuePropagator:
         return self._transform(block_in_states)
 
     def _analyze(self) -> Dict[MediumLevelILBasicBlock, RegGlobalState]:
-        '''Phase 1: Dataflow analysis'''
+        """Phase 1: Dataflow analysis"""
         block_in: Dict[MediumLevelILBasicBlock, RegGlobalState] = {}
         block_out: Dict[MediumLevelILBasicBlock, RegGlobalState] = {}
 
@@ -74,11 +77,9 @@ class RegGlobalValuePropagator:
             # Compute in_state
             if block is entry:
                 in_state = RegGlobalState()
-
             elif block.incoming_edges:
                 pred_outs = [block_out[p] for p in block.incoming_edges if p in block_out]
                 in_state = self._merge_states(pred_outs) if pred_outs else RegGlobalState()
-
             else:
                 in_state = RegGlobalState()
 
@@ -100,7 +101,7 @@ class RegGlobalValuePropagator:
         return block_in
 
     def _transform(self, block_in_states: Dict[MediumLevelILBasicBlock, RegGlobalState]) -> bool:
-        '''Phase 2: Transform instructions'''
+        """Phase 2: Transform instructions"""
         changed = False
 
         for block in self.func.basic_blocks:
@@ -120,7 +121,7 @@ class RegGlobalValuePropagator:
         return changed
 
     def _merge_states(self, pred_states: List[RegGlobalState]) -> RegGlobalState:
-        '''Merge states from predecessors'''
+        """Merge states from predecessors"""
         if not pred_states:
             return RegGlobalState()
 
@@ -138,7 +139,6 @@ class RegGlobalValuePropagator:
             values = [s.reg.get(key) for s in pred_states]
             if all(v is not None for v in values) and self._all_expr_equal(values):
                 result.reg[key] = values[0]
-
             else:
                 result.reg[key] = None
 
@@ -151,7 +151,6 @@ class RegGlobalValuePropagator:
             values = [s.global_.get(key) for s in pred_states]
             if all(v is not None for v in values) and self._all_expr_equal(values):
                 result.global_[key] = values[0]
-
             else:
                 result.global_[key] = None
 
@@ -159,7 +158,7 @@ class RegGlobalValuePropagator:
 
     def _simulate_block(self, block: MediumLevelILBasicBlock,
                         in_state: RegGlobalState) -> RegGlobalState:
-        '''Simulate block execution to compute out_state'''
+        """Simulate block execution to compute out_state"""
         state = in_state.copy()
 
         for inst in block.instructions:
@@ -169,19 +168,17 @@ class RegGlobalValuePropagator:
 
     def _simulate_inst(self, inst: MediumLevelILInstruction,
                        state: RegGlobalState) -> RegGlobalState:
-        '''Simulate single instruction'''
+        """Simulate single instruction"""
         if isinstance(inst, MLILStoreReg):
             resolved = self._substitute(inst.value, state)
             new_state = state.copy()
             new_state.reg[inst.index] = resolved if self._is_closed_form(resolved) else None
             return new_state
-
         elif isinstance(inst, MLILStoreGlobal):
             resolved = self._substitute(inst.value, state)
             new_state = state.copy()
             new_state.global_[inst.index] = resolved if self._is_closed_form(resolved) else None
             return new_state
-
         elif isinstance(inst, MediumLevelILCall):
             new_state = state.copy()
             for k in new_state.reg:
@@ -189,13 +186,12 @@ class RegGlobalValuePropagator:
             for k in new_state.global_:
                 new_state.global_[k] = None
             return new_state
-
         else:
             return state
 
     def _transform_inst(self, inst: MediumLevelILInstruction,
                         state: RegGlobalState) -> Tuple[MediumLevelILInstruction, RegGlobalState]:
-        '''Transform instruction and update state'''
+        """Transform instruction and update state"""
         if isinstance(inst, MLILStoreReg):
             new_value = self._substitute(inst.value, state)
             new_state = state.copy()
@@ -207,7 +203,6 @@ class RegGlobalValuePropagator:
                 return (new_inst, new_state)
 
             return (inst, new_state)
-
         elif isinstance(inst, MLILStoreGlobal):
             new_value = self._substitute(inst.value, state)
             new_state = state.copy()
@@ -219,7 +214,6 @@ class RegGlobalValuePropagator:
                 return (new_inst, new_state)
 
             return (inst, new_state)
-
         elif isinstance(inst, MLILStoreDeref):
             # Dereference stores cannot affect closed-form cached values.
             new_dest = self._substitute(inst.dest, state)
@@ -229,7 +223,6 @@ class RegGlobalValuePropagator:
                 return (inst.rebuild(new_dest, new_value), state)
 
             return (inst, state)
-
         elif isinstance(inst, MediumLevelILCall):
             new_args = [self._substitute(arg, state) for arg in inst.args]
             new_state = state.copy()
@@ -244,7 +237,6 @@ class RegGlobalValuePropagator:
                 return (new_inst, new_state)
 
             return (inst, new_state)
-
         elif isinstance(inst, MLILSetVar):
             new_value = self._substitute(inst.value, state)
 
@@ -254,7 +246,6 @@ class RegGlobalValuePropagator:
                 return (new_inst, state)
 
             return (inst, state)
-
         elif isinstance(inst, MLILIf):
             new_cond = self._substitute(inst.condition, state)
 
@@ -264,7 +255,6 @@ class RegGlobalValuePropagator:
                 return (new_inst, state)
 
             return (inst, state)
-
         elif isinstance(inst, MLILRet):
             if inst.value is not None:
                 new_value = self._substitute(inst.value, state)
@@ -275,13 +265,12 @@ class RegGlobalValuePropagator:
                     return (new_inst, state)
 
             return (inst, state)
-
         else:
             return (inst, state)
 
     def _substitute(self, expr: MediumLevelILInstruction, state: RegGlobalState,
                     path: FrozenSet[StorageKey] = frozenset()) -> MediumLevelILInstruction:
-        '''Substitute LoadReg/LoadGlobal with known values'''
+        """Substitute LoadReg/LoadGlobal with known values"""
         if isinstance(expr, MLILLoadReg):
             key = StorageKey(StorageKind.REG, expr.index)
             if key in path:
@@ -290,7 +279,6 @@ class RegGlobalValuePropagator:
             if value is not None:
                 return self._substitute(value, state, path | {key})
             return expr
-
         elif isinstance(expr, MLILLoadGlobal):
             key = StorageKey(StorageKind.GLOBAL, expr.index)
             if key in path:
@@ -299,7 +287,6 @@ class RegGlobalValuePropagator:
             if value is not None:
                 return self._substitute(value, state, path | {key})
             return expr
-
         elif isinstance(expr, MLILBinaryOp):
             new_lhs = self._substitute(expr.lhs, state, path)
             new_rhs = self._substitute(expr.rhs, state, path)
@@ -308,7 +295,6 @@ class RegGlobalValuePropagator:
                 return expr.rebuild(new_lhs, new_rhs)
 
             return expr
-
         elif isinstance(expr, MLILUnaryOp):
             new_operand = self._substitute(expr.operand, state, path)
 
@@ -316,32 +302,26 @@ class RegGlobalValuePropagator:
                 return expr.rebuild(new_operand)
 
             return expr
-
         elif isinstance(expr, (MLILConst, MLILVar)):
             return expr
-
         else:
             return expr
 
     def _is_closed_form(self, expr: MediumLevelILInstruction) -> bool:
-        '''Return whether expr is a constant expression with no mutable inputs.'''
+        """Return whether expr is a constant expression with no mutable inputs."""
         if isinstance(expr, MLILConst):
             return True
-
         elif isinstance(expr, MLILDeref):
             return False
-
         elif isinstance(expr, MLILBinaryOp):
             return self._is_closed_form(expr.lhs) and self._is_closed_form(expr.rhs)
-
         elif isinstance(expr, MLILUnaryOp):
             return self._is_closed_form(expr.operand)
-
         else:
             return False
 
     def _state_equal(self, s1: RegGlobalState, s2: RegGlobalState) -> bool:
-        '''Check if two states are equal'''
+        """Check if two states are equal"""
         if s1.reg.keys() != s2.reg.keys():
             return False
 
@@ -359,7 +339,7 @@ class RegGlobalValuePropagator:
         return True
 
     def _all_expr_equal(self, values: List[Optional[MediumLevelILInstruction]]) -> bool:
-        '''Check if all values are equal'''
+        """Check if all values are equal"""
         if len(values) <= 1:
             return True
 
@@ -368,7 +348,7 @@ class RegGlobalValuePropagator:
 
     def _expr_equal(self, a: Optional[MediumLevelILInstruction],
                     b: Optional[MediumLevelILInstruction]) -> bool:
-        '''Check if two expressions are equal'''
+        """Check if two expressions are equal"""
         if a is None and b is None:
             return True
 
@@ -381,44 +361,38 @@ class RegGlobalValuePropagator:
         if isinstance(a, MLILConst):
             # NaN reflexive, so a NaN constant doesn't count as a change on every fixpoint pass
             return constant_values_equal(a.value, b.value)
-
         elif isinstance(a, MLILVar):
             return a.var.name == b.var.name
-
         elif isinstance(a, MLILLoadReg):
             return a.index == b.index
-
         elif isinstance(a, MLILLoadGlobal):
             return a.index == b.index
-
         elif isinstance(a, MLILBinaryOp):
             return (a.operation == b.operation and
                     self._expr_equal(a.lhs, b.lhs) and
                     self._expr_equal(a.rhs, b.rhs))
-
         elif isinstance(a, MLILUnaryOp):
             return (a.operation == b.operation and
                     self._expr_equal(a.operand, b.operand))
-
         else:
             return False
 
     def _copy_metadata(self, src: MediumLevelILInstruction,
                        dst: MediumLevelILInstruction) -> None:
-        '''Copy metadata from source to destination instruction'''
+        """Copy metadata from source to destination instruction"""
         dst.copy_metadata_from(src)
 
     def _rebuild_call(self, inst: MediumLevelILInstruction,
                       new_args: List[MediumLevelILInstruction]) -> MediumLevelILInstruction:
-        '''Rebuild call instruction with new arguments'''
+        """Rebuild call instruction with new arguments"""
         return inst.rebuild(new_args)
 
 
 class RegGlobalValuePropagationPass(Pass):
-    '''Propagate values through REG/GLOBAL storage'''
+    """Propagate values through REG/GLOBAL storage"""
 
     def run(self, mlil_func: MediumLevelILFunction) -> MediumLevelILFunction:
-        '''Run REG/GLOBAL value propagation'''
+        """Run REG/GLOBAL value propagation"""
         propagator = RegGlobalValuePropagator(mlil_func)
         propagator.run()
         return mlil_func

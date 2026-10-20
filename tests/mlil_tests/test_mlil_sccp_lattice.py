@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-'''Unit tests for SCCP constant equality in lattice values and phi merges: int and float constants stay
-distinct at equal numeric value, and NaN equals itself (constant_values_equal).'''
+"""Unit tests for SCCP constant equality in lattice values and phi merges: int and float constants stay
+distinct at equal numeric value, and NaN equals itself (constant_values_equal)."""
 
 import math
 from pathlib import Path
@@ -23,8 +23,8 @@ NAN_VALUE = float('nan')
 
 
 def run_sccp_on_phi(true_value, false_value) -> object:
-    '''Run SCCP on a phi with two reachable constant inputs and return its use: MLILConst if the phi
-    folded, MLILVarSSA if it did not.'''
+    """Run SCCP on a phi with two reachable constant inputs and return its use: MLILConst if the phi
+    folded, MLILVarSSA if it did not."""
     func = MediumLevelILFunction('sccp_phi_test', 0)
     p = MLILVariable('p')
     x = MLILVariable('x')
@@ -61,14 +61,14 @@ class TestLatticeConstantEquality(unittest.TestCase):
         self.assertNotEqual(LatticeValue.constant(INT_VALUE), LatticeValue.constant(FLOAT_VALUE))
 
     def test_nan_constant_equals_itself(self):
-        '''`!=` is what SCCP uses to decide whether a re-visit changed a value.'''
+        """`!=` is what SCCP uses to decide whether a re-visit changed a value."""
         self.assertFalse(LatticeValue.constant(NAN_VALUE) != LatticeValue.constant(float('nan')))
 
 
 class TestPhiMerge(unittest.TestCase):
     def test_int_and_float_arms_do_not_fold(self):
         for arms in ((INT_VALUE, FLOAT_VALUE), (FLOAT_VALUE, INT_VALUE)):
-            with self.subTest(arms = arms):
+            with self.subTest(arms=arms):
                 self.assertIsInstance(run_sccp_on_phi(*arms), MLILVarSSA)
 
     def test_nan_arms_fold(self):
@@ -78,7 +78,7 @@ class TestPhiMerge(unittest.TestCase):
 
     def test_equal_arms_still_fold(self):
         for value in (INT_VALUE, FLOAT_VALUE):
-            with self.subTest(value = value):
+            with self.subTest(value=value):
                 result = run_sccp_on_phi(value, value)
                 self.assertIsInstance(result, MLILConst)
                 self.assertIs(type(result.value), type(value))

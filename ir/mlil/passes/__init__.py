@@ -1,4 +1,4 @@
-'''MLIL Optimization Passes'''
+"""MLIL Optimization Passes"""
 
 # Lifting
 from .pass_llil_to_mlil import LLILToMLILPass

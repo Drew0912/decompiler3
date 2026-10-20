@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-'''Report debug line-number ordering at every IR level.
+"""Report debug line-number ordering at every IR level.
 
 Line numbers reach the output as real statements (the `DEBUG_SET_LINENO` opcode
 becomes `LowLevelILDebug` -> `MLILDebug` -> `HLILComment`), so their order is
@@ -22,7 +22,7 @@ Usage:
     python tools/ir_line_order_report.py <scp_file> [--batch] [--worst N]
 
 Note: prefix with PYTHONIOENCODING=utf-8 for scripts containing Japanese text.
-'''
+"""
 
 import argparse
 import contextlib
@@ -53,7 +53,7 @@ DEFAULT_WORST = 10
 
 
 class FunctionReport:
-    '''Line sequences for one function, one entry per IR level'''
+    """Line sequences for one function, one entry per IR level"""
 
     def __init__(self, name: str, sequences: dict):
         self.name = name
@@ -61,18 +61,18 @@ class FunctionReport:
 
     @classmethod
     def backward_steps(cls, sequence: List[int]) -> int:
-        '''Adjacent pairs where the line number goes down'''
+        """Adjacent pairs where the line number goes down"""
         return sum(1 for i in range(len(sequence) - 1) if sequence[i + 1] < sequence[i])
 
     @property
     def introduced(self) -> int:
-        '''Backward steps HLIL added on top of what MLIL already had'''
+        """Backward steps HLIL added on top of what MLIL already had"""
         return (self.backward_steps(self.sequences['hlil']) -
                 self.backward_steps(self.sequences['mlil']))
 
     @property
     def levels_agree(self) -> bool:
-        '''The three address-ordered levels must be the same sequence'''
+        """The three address-ordered levels must be the same sequence"""
         return (self.sequences['py'] == self.sequences['llil'] ==
                 self.sequences['mlil'])
 
@@ -81,16 +81,16 @@ class FunctionReport:
 
 
 def collect_dsl_lines(lifter: ED9VMLifter, func) -> List[int]:
-    '''DEBUG_SET_LINENO operands in address order
+    """DEBUG_SET_LINENO operands in address order
 
     Uses the lifter's own block collection so this walk cannot drift out of step
     with the order the LLIL is built in.
-    '''
+    """
     if func.entry_block is None:
         return []
 
     blocks = lifter._collect_blocks(func.entry_block)
-    blocks.sort(key = lambda b: b.offset)
+    blocks.sort(key=lambda b: b.offset)
 
     lines = []
     for block in blocks:
@@ -112,24 +112,24 @@ def collect_llil_lines(llil_func) -> List[int]:
 
 
 def collect_mlil_lines(mlil_func) -> List[int]:
-    '''Line directives in address order
+    """Line directives in address order
 
     Block order is not address order at MLIL: BlockMergePass splices a block onto
     its only predecessor, wherever that sits in the block list.
-    '''
+    """
     directives = [
         inst
         for block in mlil_func.basic_blocks
         for inst in block.instructions
         if isinstance(inst, MLILDebug) and inst.debug_type == 'line'
     ]
-    directives.sort(key = lambda inst: inst.address)
+    directives.sort(key=lambda inst: inst.address)
 
     return [int(inst.value) for inst in directives]
 
 
 def collect_hlil_lines(hlil_func) -> List[int]:
-    '''Line comments in statement-tree order - the order they are printed in'''
+    """Line comments in statement-tree order - the order they are printed in"""
     lines = []
 
     def walk(block: Optional[HLILBlock]):
@@ -149,19 +149,19 @@ def collect_hlil_lines(hlil_func) -> List[int]:
 
 
 def analyse_file(path: Path) -> List[FunctionReport]:
-    '''Line sequences per function, from the pipeline scena2py.py decompiles with'''
+    """Line sequences per function, from the pipeline scena2py.py decompiles with"""
     raise_recursion_limit()
     reports = []
 
     with contextlib.redirect_stdout(io.StringIO()):
-        parser, functions = ScpParser.load(path, round_trip = False, keep_unreachable_code = False)
+        parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
 
     for func in functions:
-        lifter = ED9VMLifter(parser = parser)
+        lifter = ED9VMLifter(parser=parser)
 
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             llil_func = lifter.lift_function(func)
-            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize = True)
+            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize=True)
             hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
 
             sequences = {
@@ -180,7 +180,7 @@ def print_function_table(reports: List[FunctionReport], worst: Optional[int]):
     shown = [r for r in reports if len(r.sequences['hlil']) > 1 or r.introduced]
 
     if worst is not None:
-        shown = sorted(shown, key = lambda r: -r.introduced)[:worst]
+        shown = sorted(shown, key=lambda r: -r.introduced)[:worst]
 
     if not shown:
         return
@@ -238,13 +238,13 @@ def print_summary(label: str, reports: List[FunctionReport]):
 
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description = 'Report debug line-number ordering across IR levels',
+        description='Report debug line-number ordering across IR levels',
     )
-    parser.add_argument('scp_file', help = 'Path to SCP file, or a directory to walk')
-    parser.add_argument('--batch', action = 'store_true', help = 'Per-file summary only')
-    parser.add_argument('--worst', type = int, nargs = '?', const = DEFAULT_WORST,
-                        help = 'Show only the N functions that introduced the most disorder')
-    parser.add_argument('--no-color', action = 'store_true', help = 'Accepted for symmetry, output is plain')
+    parser.add_argument('scp_file', help='Path to SCP file, or a directory to walk')
+    parser.add_argument('--batch', action='store_true', help='Per-file summary only')
+    parser.add_argument('--worst', type=int, nargs='?', const=DEFAULT_WORST,
+                        help='Show only the N functions that introduced the most disorder')
+    parser.add_argument('--no-color', action='store_true', help='Accepted for symmetry, output is plain')
 
     return parser
 
@@ -266,7 +266,6 @@ def main() -> int:
     for path in paths:
         try:
             reports = analyse_file(path)
-
         except Exception as exc:
             print(f'{path.name}: {type(exc).__name__}: {exc}')
             continue

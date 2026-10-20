@@ -1,4 +1,4 @@
-'''Dead Code Elimination Pass'''
+"""Dead Code Elimination Pass"""
 
 from ir.pipeline import Pass
 from ..hlil import (
@@ -10,7 +10,7 @@ from ..hlil import (
 
 
 class DeadCodeEliminationPass(Pass):
-    '''Remove unreachable code after a terminal statement'''
+    """Remove unreachable code after a terminal statement"""
 
     def run(self, func: HighLevelILFunction) -> HighLevelILFunction:
         self._remove_unreachable(func.body)

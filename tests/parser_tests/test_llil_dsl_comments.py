@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for the LLIL DSL's comments: the slot each offset opcode addresses and what it holds, the depth at labels
+"""Unit tests for the LLIL DSL's comments: the slot each offset opcode addresses and what it holds, the depth at labels
 and POP's slot count, read from the parser's StackLayout and aligned in one column with the other trailing comments;
-and the opt-in kinds - the argument each push becomes, PUSH_FLOAT's bits, each function's table index and offset.'''
+and the opt-in kinds - the argument each push becomes, PUSH_FLOAT's bits, each function's table index and offset."""
 
 from pathlib import Path
 import sys
@@ -32,18 +32,18 @@ CHECK_ALGO_USE_FILE = SORA2_SCRIPTS / 'ai/ai_chr5122_e00.dat'
 SYSCALL_SUBSYSTEM = 1
 SYSCALL_FUNC = 0x2F
 FLOAT_BITS = 'f32 0x3E999998, raw 0x8FA66666'      # FLOAT_VALUE's float32 bits and stored word
-ARGUMENTS_ONLY = CommentOptions(stack_slots = False, call_args = True)
-ALL_COMMENTS = CommentOptions(float_bits = True, function_ids = True, call_args = True)
+ARGUMENTS_ONLY = CommentOptions(stack_slots=False, call_args=True)
+ALL_COMMENTS = CommentOptions(float_bits=True, function_ids=True, call_args=True)
 
 
 def function_lines(asm: Asm, argc: int = 0, comments: CommentOptions = CommentOptions()) -> list[str]:
-    '''The .py body of the one function asm assembles, without its indent'''
+    """The .py body of the one function asm assembles, without its indent"""
     parser, functions = Program(Func(FUNC_NAME, argc, asm)).disassemble()
     return [line.strip() for line in parser.format_function(functions[0], comments)[2:]]
 
 
 def commented_lines(program: Program, comments: CommentOptions) -> list[str]:
-    '''The lines of the program's first function that carry a comment, without their indent'''
+    """The lines of the program's first function that carry a comment, without their indent"""
     parser, functions = program.disassemble()
     return [line.strip() for line in parser.format_function(functions[0], comments) if '#' in line]
 
@@ -61,17 +61,17 @@ class TestAppendComment(unittest.TestCase):
 class TestSlotText(unittest.TestCase):
     def test_each_kind(self):
         cases = {
-            SlotRef(2, params = (1,))                   : ('slot 2 = arg1', False),
-            SlotRef(3, local = True)                    : ('slot 3', False),
-            SlotRef(2, params = (1,), local = True)     : ('slot 2 = arg1 or local', True),
-            SlotRef(1, caller_frame = True)             : ('slot 1 = caller frame', True),
-            SlotRef(1, (1,), caller_frame = True)       : ('slot 1 = arg1 or caller frame', True),
-            SlotRef(0, call_setup = True)               : ('slot 0 = call setup', True),
+            SlotRef(2, params=(1,))                   : ('slot 2 = arg1', False),
+            SlotRef(3, local=True)                    : ('slot 3', False),
+            SlotRef(2, params=(1,), local=True)     : ('slot 2 = arg1 or local', True),
+            SlotRef(1, caller_frame=True)             : ('slot 1 = caller frame', True),
+            SlotRef(1, (1,), caller_frame=True)       : ('slot 1 = arg1 or caller frame', True),
+            SlotRef(0, call_setup=True)               : ('slot 0 = call setup', True),
             SlotRef(-1)                                 : ('slot -1 (below the stack)', True),
             SlotRef(5)                                  : ('slot 5 (above the stack)', True),
         }
         for ref, (text, unusual) in cases.items():
-            with self.subTest(ref = ref):
+            with self.subTest(ref=ref):
                 self.assertEqual((str(ref), ref.unusual), (text, unusual))
 
 
@@ -130,7 +130,7 @@ class TestFunctionComments(unittest.TestCase):
             'POP(4)                          # 1 slot',
             'RETURN()',
         ])
-        self.assertEqual(function_lines(asm, comments = CommentOptions(stack_slots = False)), [
+        self.assertEqual(function_lines(asm, comments=CommentOptions(stack_slots=False)), [
             'LOAD_GLOBAL(0)                  # global var 0',
             'LOAD_STACK(-4)',
             'SET_GLOBAL(0)                   # global var 0',
@@ -139,14 +139,14 @@ class TestFunctionComments(unittest.TestCase):
         ])
 
     def test_unreachable_code_gets_no_stack_comments(self):
-        '''Fidelity mode keeps the code after RETURN; it jumps into the reachable code, whose label says so, and into
-        itself, whose label stays bare'''
+        """Fidelity mode keeps the code after RETURN; it jumps into the reachable code, whose label says so, and into
+        itself, whose label stays bare"""
         asm = Asm()
         asm.push_int(LEFT_VALUE)
         asm.label('target'); asm.pop(WORD_SIZE); asm.ret()
         asm.label('dead'); asm.push_int(RIGHT_VALUE); asm.pop(WORD_SIZE); asm.jmp('target'); asm.jmp('dead')
-        program = Program(Func(FUNC_NAME, 0, asm), pool = ())     # the code runs up to the function names
-        parser, functions = program.disassemble(keep_unreachable_code = True)
+        program = Program(Func(FUNC_NAME, 0, asm), pool=())       # the code runs up to the function names
+        parser, functions = program.disassemble(keep_unreachable_code=True)
         target, dead = (f"loc_{program.label(name):X}" for name in ('target', 'dead'))
         lines = [line.strip() for line in parser.format_function(functions[0])[2:]]
         self.assertEqual(lines, [
@@ -169,7 +169,7 @@ class TestFunctionComments(unittest.TestCase):
         ])
 
     def test_blocks_formatted_without_a_layout_get_none(self):
-        '''Even on a formatter that just formatted a function with one'''
+        """Even on a formatter that just formatted a function with one"""
         asm = Asm()
         asm.load_stack(-WORD_SIZE); asm.pop(2 * WORD_SIZE); asm.ret()
         _, functions = Program(Func(FUNC_NAME, 1, asm)).disassemble()
@@ -181,7 +181,7 @@ class TestFunctionComments(unittest.TestCase):
 
 class TestCallArguments(unittest.TestCase):
     def test_local_call_numbers_its_arguments_from_the_last_push(self):
-        '''After a slot comment the number reads "passed as"; without stack comments it stands alone'''
+        """After a slot comment the number reads "passed as"; without stack comments it stands alone"""
         asm = Asm()
         asm.push_raw(0)                                                 # opens slot 1
         asm.push_raw(CALLER_ID); asm.push_raw('return')
@@ -192,7 +192,7 @@ class TestCallArguments(unittest.TestCase):
         asm.pop(2 * WORD_SIZE); asm.ret()
         program = Program(Func(FUNC_NAME, 1, asm), returning_callee(3))
         label = f"label('loc_{program.label('return'):X}')"
-        self.assertEqual(commented_lines(program, CommentOptions(call_args = True)), [
+        self.assertEqual(commented_lines(program, CommentOptions(call_args=True)), [
             'PUSH_RAW(RawInt(0x00000000))    # slot 1 (local)',
             'LOAD_STACK(-16)                 # slot 0 = arg1, passed as arg3',
             'LOAD_STACK(-16)                 # slot 1, passed as arg2',
@@ -214,7 +214,7 @@ class TestCallArguments(unittest.TestCase):
         self.assertEqual(commented_lines(Program(main_function(asm), returning_callee()), ARGUMENTS_ONLY), [])
 
     def test_syscall_leaves_its_arguments_for_the_next_one(self):
-        '''SYSCALL doesn't pop: a push a later SYSCALL reads again gets both numbers, in call order'''
+        """SYSCALL doesn't pop: a push a later SYSCALL reads again gets both numbers, in call order"""
         asm = Asm()
         asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2)
         asm.pop(WORD_SIZE); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 1)
@@ -255,19 +255,19 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
         program = Program(Func(FUNC_NAME, 1, asm))
         program.entries[0].params[0].default_value = ScpValue(FLOAT_VALUE)
         parser, functions = program.disassemble()
-        comments = CommentOptions(stack_slots = False, float_bits = True, call_args = True)
+        comments = CommentOptions(stack_slots=False, float_bits=True, call_args=True)
         lines = parser.format_function(functions[0], comments)
         self.assertNotIn('#', lines[1])
         self.assertEqual(lines[2].strip(), append_comment(f'PUSH_FLOAT({FLOAT_VALUE})', ['arg1', FLOAT_BITS]))
 
     def test_unreachable_code_keeps_the_global_var_and_float_bits(self):
-        '''Neither needs the simulated stack, which unreachable code doesn't have'''
+        """Neither needs the simulated stack, which unreachable code doesn't have"""
         asm = Asm()
         asm.ret()
         asm.label('dead'); asm.push_float(FLOAT_VALUE); asm.set_global(GLOBAL_INDEX); asm.jmp('dead')
-        parser, functions = Program(main_function(asm), pool = ()).disassemble(keep_unreachable_code = True)
-        for comments in (CommentOptions(), CommentOptions(stack_slots = False), ALL_COMMENTS):
-            with self.subTest(comments = comments):
+        parser, functions = Program(main_function(asm), pool=()).disassemble(keep_unreachable_code=True)
+        for comments in (CommentOptions(), CommentOptions(stack_slots=False), ALL_COMMENTS):
+            with self.subTest(comments=comments):
                 lines = [line.strip() for line in parser.format_function(functions[0], comments)]
                 bits = [FLOAT_BITS] if comments.float_bits else []
                 self.assertIn(append_comment(f'PUSH_FLOAT({FLOAT_VALUE})', bits), lines)
@@ -278,12 +278,12 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
         asm.ret()
         parser, functions = Program(main_function(asm), returning_callee()).disassemble()
         callee = functions[1]
-        self.assertEqual(parser.format_function(callee, CommentOptions(function_ids = True))[:2],
+        self.assertEqual(parser.format_function(callee, CommentOptions(function_ids=True))[:2],
                          [f'# id: 0x0001 offset: 0x{callee.offset:X}', '@scena.LLILCode()'])
         self.assertEqual(parser.format_function(callee)[0], '@scena.LLILCode()')
 
     def test_index_is_the_table_position_not_the_code_order(self):
-        '''The writer sorts the table by name and lays code out in source order, so Second comes first in the code'''
+        """The writer sorts the table by name and lays code out in source order, so Second comes first in the code"""
         with tempfile.TemporaryDirectory() as tmp_dir:
             dat = Path(tmp_dir) / 'test.dat'
             writer = fresh_writer(dat)
@@ -297,10 +297,10 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
                 RETURN()
 
             writer.run({})
-            parser, functions = ScpParser.load(dat, round_trip = False, keep_unreachable_code = False)
+            parser, functions = ScpParser.load(dat, round_trip=False, keep_unreachable_code=False)
 
         self.assertEqual([(func.name, func.index) for func in functions], [('Second', 1), ('First', 0)])
-        self.assertEqual(parser.format_function(functions[0], CommentOptions(function_ids = True))[0],
+        self.assertEqual(parser.format_function(functions[0], CommentOptions(function_ids=True))[0],
                          f'# id: 0x0001 offset: 0x{functions[0].offset:X}')
 
 
@@ -309,8 +309,8 @@ class TestRealScript(unittest.TestCase):
         require(CHECK_ALGO_USE_FILE)
 
     def test_check_algo_use(self):
-        '''The listing docs/dsl/DSL_FUTURE_WORK.md item 8 shows'''
-        parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip = False, keep_unreachable_code = False)
+        """The listing docs/dsl/DSL_FUTURE_WORK.md item 8 shows"""
+        parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip=False, keep_unreachable_code=False)
         lines = parser.gen_python_script(functions).split('\n')
         start = lines.index('def CheckAlgoUse(arg1: Value32, arg2: Value32, arg3: Value32):')
         expected = [
@@ -353,8 +353,8 @@ class TestRealScript(unittest.TestCase):
         self.assertEqual(lines[start + 1:start + 1 + len(expected)], expected)
 
     def test_check_algo_use_with_every_opt_in_comment(self):
-        '''First in the table, which is sorted by name, but not in the code; its local call passes two parameters'''
-        parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip = False, keep_unreachable_code = False)
+        """First in the table, which is sorted by name, but not in the code; its local call passes two parameters"""
+        parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip=False, keep_unreachable_code=False)
         self.assertEqual([func.index for func in parser.functions], list(range(len(parser.functions))))
         lines = parser.format_function(parser.get_func_by_name('CheckAlgoUse'), ALL_COMMENTS)
         self.assertEqual(lines[:3], [
@@ -366,7 +366,7 @@ class TestRealScript(unittest.TestCase):
         self.assertIn('    LOAD_STACK(-24)                 # slot 0 = arg3, passed as arg1', lines)
 
     def test_scena2py_flags(self):
-        '''The defaults, then each flag the other way on its own'''
+        """The defaults, then each flag the other way on its own"""
         markers = {
             'stack_slot_comments'   : '# slot 2 = arg1',
             'float_bits_comments'   : 'f32 0x',
@@ -374,7 +374,7 @@ class TestRealScript(unittest.TestCase):
             'call_arg_comments'     : '# arg1',
         }
         for flipped in (None, *markers):
-            with self.subTest(flipped = flipped), tempfile.TemporaryDirectory() as tmp_dir:
+            with self.subTest(flipped=flipped), tempfile.TemporaryDirectory() as tmp_dir:
                 config = ScenaDecompileConfig()
                 config.output_dir = Path(tmp_dir)
                 config.write_ts = config.write_mlil_asm = False
@@ -382,7 +382,7 @@ class TestRealScript(unittest.TestCase):
                     setattr(config, flipped, not getattr(config, flipped))
 
                 process_file(CHECK_ALGO_USE_FILE, config)
-                text = (Path(tmp_dir) / CHECK_ALGO_USE_FILE.stem / f'{CHECK_ALGO_USE_FILE.stem}.py').read_text(encoding = 'utf-8')
+                text = (Path(tmp_dir) / CHECK_ALGO_USE_FILE.stem / f'{CHECK_ALGO_USE_FILE.stem}.py').read_text(encoding='utf-8')
                 self.assertEqual({flag: marker in text for flag, marker in markers.items()},
                                  {flag: getattr(config, flag) for flag in markers})
 

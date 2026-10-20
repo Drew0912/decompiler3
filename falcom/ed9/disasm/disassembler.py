@@ -12,6 +12,7 @@ from .basic_block import *
 @dataclass
 class DisassemblerContext:
     """Context for disassembler with callbacks"""
+
     instruction_table      : 'InstructionTable' = None
     get_func_argc          : Callable[[int], int | None] = None  # func_id -> argc
     create_fallthrough_jump: Callable[[int, int, 'InstructionTable'], 'Instruction'] = None  # offset, target, inst_table -> synthetic_jmp
@@ -49,11 +50,9 @@ class Disassembler:
 
         if isinstance(stream, fileio.FileStream):
             fs = stream
-
         elif isinstance(stream, bytes):
             fs = fileio.FileStream()
             fs.OpenMemory(stream)
-
         else:
             raise ValueError(f'Invalid bytecode type: {type(stream)}')
 
@@ -185,7 +184,7 @@ class Disassembler:
         if offset in self.allocated_blocks:
             return self.allocated_blocks[offset]
 
-        block = BasicBlock(start_offset = offset)
+        block = BasicBlock(start_offset=offset)
         self.allocated_blocks[offset] = block
 
         return block
@@ -244,8 +243,8 @@ class Disassembler:
 
         # Create tail block
         tail = BasicBlock(
-            start_offset = split_offset,
-            end_offset   = owner.end_offset,
+            start_offset=split_offset,
+            end_offset=owner.end_offset,
         )
         tail.instructions = owner.instructions[split_idx:]
 

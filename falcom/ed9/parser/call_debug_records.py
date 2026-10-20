@@ -26,26 +26,28 @@ SAME_SCRIPT_MODULE = ''     # a script call's module naming a function of the ca
 ALIGNMENT_CAP = 2           # complete alignments counted up to: none, one or several is all the pairing needs
 
 
-@dataclass(slots = True)
+@dataclass(slots=True)
 class TrackedValue:
     """Simulated eval-stack slot; never changed once made, so a register and the stack may share one"""
+
     type        : ScpFunctionCallDebugInfoArg.Type
     payload     : ScpValue | None = None            # a constant's value
     string      : Any = None                        # the writer's pooled string of a String constant
     calls       : tuple['TrackedCall', ...] = ()    # the outermost calls nested in this value, in evaluation order
 
 
-@dataclass(eq = False, slots = True)
+@dataclass(eq=False, slots=True)
 class TrackedCall:
     """Call site, and its node in its statement's call tree"""
+
     call_type   : ScpFunctionCallDebugInfo.CallType
     target      : Any                               # CALL operand, (module, func) or (subsystem, cmd)
     ret_label   : Any                               # PUSH_RET_ADDR operand of a local CALL
     args        : list[TrackedValue]                # top of stack first (parameter order)
-    recorded    : bool                              # has a debug record: made after line info, no debug_record = False
-    children    : list['TrackedCall'] = field(default_factory = list)  # the calls nested in its args, parameter order
+    recorded    : bool                              # has a debug record: made after line info, no debug_record=False
+    children    : list['TrackedCall'] = field(default_factory=list)  # the calls nested in its args, parameter order
     parent      : 'TrackedCall | None' = None
-    debug_argc  : int | None = None                 # the writer's CALL(f, debug_argc = N): args its record keeps
+    debug_argc  : int | None = None                 # the writer's CALL(f, debug_argc=N): args its record keeps
 
 
 def nested_calls(values) -> tuple[TrackedCall, ...]:
@@ -110,13 +112,13 @@ class CallDebugInfoTracker:
             case InstructionKind.CALL:
                 args = self.pop(effect.pop_count(operands, self.get_param_count))
                 self.pop(effect.setup_pops)
-                self.add_call(CallType.Local, operands[CALLEE_OPERAND], self.close_frame(), args, returns = True)
+                self.add_call(CallType.Local, operands[CALLEE_OPERAND], self.close_frame(), args, returns=True)
 
             case InstructionKind.SYSCALL:
                 # Args stay on the stack - the following POP removes them
                 subsystem, cmd, _ = operands
                 args = self.peek(effect.read_count(operands))
-                self.add_call(CallType.Syscall, (subsystem, cmd), None, args, returns = True)
+                self.add_call(CallType.Syscall, (subsystem, cmd), None, args, returns=True)
 
             case (InstructionKind.POP | InstructionKind.CONDITIONAL_JUMP | InstructionKind.STORE_SLOT
                   | InstructionKind.STORE_DEREF | InstructionKind.STORE_GLOBAL | InstructionKind.DEBUG_LOG):
@@ -139,7 +141,7 @@ class CallDebugInfoTracker:
             case InstructionKind.BINARY | InstructionKind.UNARY:
                 # Popped top first: the operand evaluated first (its calls made first) is last
                 operand_values = self.pop(effect.pops)
-                self.stack.append(TrackedValue(ArgType.Expression, calls = nested_calls(reversed(operand_values))))
+                self.stack.append(TrackedValue(ArgType.Expression, calls=nested_calls(reversed(operand_values))))
 
             case InstructionKind.JUMP | InstructionKind.RETURN:
                 pass
@@ -155,14 +157,14 @@ class CallDebugInfoTracker:
 
                 self.pop(effect.setup_pops)
                 self.close_frame()
-                self.add_call(CallType.Script, (module, func), None, args, returns = True)
+                self.add_call(CallType.Script, (module, func), None, args, returns=True)
 
             case InstructionKind.TAIL_CALL:
                 # No caller frame precedes it (the table pops no setup): closing one would take an enclosing call's.
                 # It never returns here, so register 0 keeps what it held
                 module, func, _ = operands
                 args = self.pop(effect.pop_count(operands))
-                self.add_call(CallType.ScriptNoReturn, (module, func), None, args, returns = False)
+                self.add_call(CallType.ScriptNoReturn, (module, func), None, args, returns=False)
 
             case kind:
                 raise NotImplementedError(f'the tracker never tracks {kind.name}')
@@ -226,7 +228,7 @@ class CallDebugInfoTracker:
         """A call adopts each call nested in its args that has no parent yet (a result read twice adopts once); a
         returning call's result goes to RESULT_REGISTER. Calls compiled without line info (common functions, calls
         before the first DEBUG_SET_LINENO) get no record, even when a recorded call adopts them."""
-        call = TrackedCall(call_type, target, ret_label, args, recorded = self.has_line_info)
+        call = TrackedCall(call_type, target, ret_label, args, recorded=self.has_line_info)
         for value in args:
             for child in value.calls:
                 if child.parent is None:
@@ -235,7 +237,7 @@ class CallDebugInfoTracker:
 
         self.calls.append(call)
         if returns:
-            self.registers[RESULT_REGISTER] = TrackedValue(ScpFunctionCallDebugInfoArg.Type.CallResult, calls = (call,))
+            self.registers[RESULT_REGISTER] = TrackedValue(ScpFunctionCallDebugInfoArg.Type.CallResult, calls=(call,))
 
 
 def same_constant(payload: ScpValue, default: ScpValue) -> bool:
@@ -280,10 +282,11 @@ def record_args(data: bytes, record: ScpFunctionCallDebugInfo) -> list[tuple[int
     return [(read_u32(data, offset + ScpValue.WORD.size), read_u32(data, offset)) for offset in record.arg_offsets()]
 
 
-@dataclass(frozen = True, slots = True)
+@dataclass(frozen=True, slots=True)
 class RecordView:
     """A record as two files compare it: the callee by name, every argument as stored (a script call's name and a
     syscall's two constants too) by its type and encoded word, a string constant's word by its text"""
+
     call_type   : ScpFunctionCallDebugInfo.CallType
     callee      : str | None                        # the table name of the record's func_id, None for NO_FUNC_ID
     args        : tuple[tuple[int, int | str], ...]
@@ -293,10 +296,8 @@ def record_view(data: bytes, record: ScpFunctionCallDebugInfo, names: list[str])
     """record read from data, its func_id resolved through names (its file's table)"""
     if record.func_id == ScpFunctionCallDebugInfo.NO_FUNC_ID:
         callee = None
-
     elif record.func_id < len(names):
         callee = names[record.func_id]
-
     else:
         callee = f'#{record.func_id}'
 
@@ -320,20 +321,22 @@ def script_call_identity(call_type: ScpFunctionCallDebugInfo.CallType, module: s
     return ScpFunctionCallDebugInfo.NO_FUNC_ID, f'{module}.{func}'
 
 
-@dataclass(frozen = True, slots = True)
+@dataclass(frozen=True, slots=True)
 class RecordMatch:
     """A record and the call it belongs to"""
+
     record_index    : int
     record          : ScpFunctionCallDebugInfo
     call            : TrackedCall
     offset          : int                           # the call instruction's offset
 
 
-@dataclass(frozen = True, slots = True)
+@dataclass(frozen=True, slots=True)
 class RecordPairing:
     """A function's records against its recorded calls (record order): the matches, the local calls an alignment
     leaves without a record (CALL offsets), the calls and records left unmatched (indices) and every record that
     differs from the call it pairs with"""
+
     matches             : list[RecordMatch]
     unrecorded          : list[int]
     unmatched_calls     : list[int]
@@ -387,7 +390,6 @@ def pair_records(data: bytes, instructions: list[Instruction], records: list[Scp
         problem = record_mismatch(data, call, record, table_index)
         if problem is None:
             matches.append(RecordMatch(index, record, call, offset))
-
         else:
             mismatches.append((index, problem))
 
@@ -398,7 +400,7 @@ def align_records(data: bytes, calls: list[tuple[TrackedCall, int]], records: li
                   table_index: Callable[[str], int | None]) -> RecordPairing:
     """More calls than records: the compiler gives no record to a call whose statement has no line marker of its own
     (the first statement of an if body). Every record matches a call, in order, content-checked; the calls left over
-    must be local (only CALL takes debug_record = False). Paired only when exactly one such alignment exists: a wrong
+    must be local (only CALL takes debug_record=False). Paired only when exactly one such alignment exists: a wrong
     skip would shift every later record."""
     call_count, record_count = len(calls), len(records)
     slack = call_count - record_count       # the calls left over: a record j matches a call in [j, j + slack]
@@ -437,7 +439,6 @@ def align_records(data: bytes, calls: list[tuple[TrackedCall, int]], records: li
         j = len(aligned)
         if j < record_count and i - j <= slack and matches(i, j) and ways[j + 1][i - j]:
             aligned.append(RecordMatch(j, records[j], call, offset))
-
         else:
             unrecorded.append(offset)
 
@@ -458,11 +459,9 @@ def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebug
     if call.call_type == CallType.Local:
         expected_func_id = call.target
         call_args = call.args[:record.arg_count]
-
     elif call.call_type == CallType.Syscall:
         expected_func_id = ScpFunctionCallDebugInfo.NO_FUNC_ID
         leading_constants = [ScpValue(value) for value in call.target]
-
     else:
         module, func = call.target
         expected_func_id, name = script_call_identity(call.call_type, module.value, func.value, table_index)
@@ -479,11 +478,9 @@ def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebug
 
         if arg_type != ArgType.Constant:
             matches = raw_value == ScpValue(ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE).to_word()
-
         elif payload.type == ScpValue.Type.String:
             offset = string_offset(raw_value)
             matches = offset is not None and read_text(data, offset) == payload.value
-
         else:
             matches = raw_value == payload.to_word()
 

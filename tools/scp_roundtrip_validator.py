@@ -107,7 +107,7 @@ PAIRED_CALL_OPS         = {ED9Opcode.CALL: ED9Opcode.PUSH_RET_ADDR, ED9Opcode.CA
 MAX_CONVERGENCE_ROUNDS  = 4  # --logic-round-trip: give up if compile/decompile hasn't hit a fixed point by then
 
 # Runs a generated script's main() under a fixed run_name, so its own __main__ guard stays off
-ROUND_TRIP_RUNNER = "import runpy, sys; runpy.run_path(sys.argv[1], run_name = 'scp_roundtrip')['main']()"
+ROUND_TRIP_RUNNER = "import runpy, sys; runpy.run_path(sys.argv[1], run_name='scp_roundtrip')['main']()"
 
 
 class Status(IntEnum):
@@ -121,7 +121,7 @@ class CheckResult:
     name    : str
     status  : Status
     summary : str
-    details : list[str] = field(default_factory = list)
+    details : list[str] = field(default_factory=list)
 
     @classmethod
     def build(cls, name: str, summary: str, failures: list[str], warnings: list[str] | None = None) -> 'CheckResult':
@@ -129,10 +129,8 @@ class CheckResult:
 
         if failures:
             status = Status.FAIL
-
         elif warnings:
             status = Status.WARN
-
         else:
             status = Status.PASS
 
@@ -142,6 +140,7 @@ class CheckResult:
 @dataclass
 class ScriptContext:
     """One parsed + disassembled script shared by every check"""
+
     path            : Path
     data            : bytes
     fs              : fileio.FileStream
@@ -175,16 +174,15 @@ def load_script(path: Path) -> ScriptContext:
         entries = parser.function_entries
         data = path.read_bytes()
         return ScriptContext(
-            path            = path,
-            data            = data,
-            fs              = fs,
-            parser          = parser,
-            entries         = entries,
-            records         = read_debug_records(parser, data),
-            instructions    = [parser.get_instructions(func) for func in parser.functions],
-            code_order      = code_order(entries),
+            path=path,
+            data=data,
+            fs=fs,
+            parser=parser,
+            entries=entries,
+            records=read_debug_records(parser, data),
+            instructions=[parser.get_instructions(func) for func in parser.functions],
+            code_order=code_order(entries),
         )
-
     except BaseException:
         fs.Close()
         raise
@@ -197,7 +195,6 @@ def describe_range(ctx: ScriptContext, start: int, end: int) -> str:
     while ctx.fs.Position < end:
         try:
             inst = ED9_INSTRUCTION_TABLE.decode_instruction(ctx.fs, ctx.fs.Position)
-
         except ValueError:
             mnemonics.append('??')
             break
@@ -245,7 +242,7 @@ def check_layout(ctx: ScriptContext) -> CheckResult:
 
     position += header.global_var_count * ScpGlobalVar.SIZE
 
-    first_code = min((entry.offset for entry in ctx.entries), default = position)
+    first_code = min((entry.offset for entry in ctx.entries), default=position)
     if first_code != position:
         failures.append(f'first code offset 0x{first_code:X} != global var table end 0x{position:X}')
 
@@ -259,7 +256,7 @@ def check_function_order(ctx: ScriptContext) -> CheckResult:
     encoding = default_encoding()
 
     names = [func.name for func in ctx.parser.functions]
-    if names != sorted(names, key = lambda name: name.encode(encoding)):
+    if names != sorted(names, key=lambda name: name.encode(encoding)):
         failures.append('function table is not sorted by name')
 
     hashes = [entry.name_hash for entry in ctx.entries]
@@ -496,7 +493,7 @@ def check_string_fidelity(ctx: ScriptContext, pool_start: int) -> CheckResult:
 
     for position in positions:
         raw = ctx.data[position:ctx.data.index(NUL, position)]
-        text = raw.decode(encoding, errors = 'ignore')
+        text = raw.decode(encoding, errors='ignore')
         if text.encode(encoding) != raw:
             failures.append(f'string at 0x{position:X}: {ascii(text)} does not re-encode to its raw bytes')
 
@@ -506,7 +503,7 @@ def check_string_fidelity(ctx: ScriptContext, pool_start: int) -> CheckResult:
 
 def check_common_order(common_orders: dict[Path, list[str]]) -> CheckResult:
     """Common functions come from a shared include, so their relative code order should agree across files"""
-    reference = max(common_orders.values(), key = len)
+    reference = max(common_orders.values(), key=len)
     rank = {name: i for i, name in enumerate(reference)}
     warnings = []
 
@@ -526,7 +523,7 @@ def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = Tru
     Returns the parser and its disassembled functions so callers can fingerprint them without
     re-parsing."""
     with contextlib.redirect_stdout(io.StringIO()):
-        parser, functions = ScpParser.load(dat_path, round_trip = round_trip, keep_unreachable_code = keep_unreachable_code)
+        parser, functions = ScpParser.load(dat_path, round_trip=round_trip, keep_unreachable_code=keep_unreachable_code)
 
     write_text_lf(py_path, parser.gen_python_script(functions))
     return parser, functions
@@ -541,13 +538,13 @@ def compile_dsl(py_path: Path, run_dir: Path) -> tuple[int, list[str]]:
 
     result = subprocess.run(
         [sys.executable, '-P', '-c', ROUND_TRIP_RUNNER, py_path.name],
-        cwd             = run_dir,
-        env             = env,
-        stdin           = subprocess.DEVNULL,
-        capture_output  = True,
-        text            = True,
-        encoding        = 'utf-8',
-        errors          = 'replace',
+        cwd=run_dir,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        capture_output=True,
+        text=True,
+        encoding='utf-8',
+        errors='replace',
     )
 
     tail = (result.stderr or result.stdout).strip().splitlines()[-MAX_DETAILS:]
@@ -556,12 +553,12 @@ def compile_dsl(py_path: Path, run_dir: Path) -> tuple[int, list[str]]:
 
 def check_round_trip(path: Path, work_dir: Path) -> CheckResult:
     stem = path.name.split('.')[0]
-    run_dir = Path(tempfile.mkdtemp(prefix = f'{stem}_', dir = work_dir))
+    run_dir = Path(tempfile.mkdtemp(prefix=f'{stem}_', dir=work_dir))
     dat_path = run_dir / f'{stem}.dat'
     py_path = run_dir / f'{stem}.py'
 
     shutil.copyfile(path, dat_path)
-    decompile_to_python(dat_path, py_path, round_trip = True, keep_unreachable_code = True)
+    decompile_to_python(dat_path, py_path, round_trip=True, keep_unreachable_code=True)
     dat_path.unlink()
 
     returncode, tail = compile_dsl(py_path, run_dir)
@@ -587,7 +584,6 @@ def describe_difference(original: bytes, rebuilt: bytes) -> tuple[str, list[str]
     summary = f'differs at 0x{first_diff:X} (original {len(original)} bytes, rebuilt {len(rebuilt)} bytes)'
     try:
         lines = compare_file_records(original, rebuilt)
-
     except Exception as e:
         return f'{summary}, records unreadable', [f'records unreadable: {type(e).__name__}: {ascii(str(e))}']
 
@@ -666,10 +662,8 @@ def view_text(view: RecordView) -> str:
     """A record as a missing or extra line names it: its call type, callee (a script call's name) and argument count"""
     if view.callee is not None:
         callee = view.callee
-
     elif view.args:
         callee = arg_text(view.args[0])     # a script call's name, a syscall's subsystem
-
     else:
         callee = 'none'
 
@@ -703,6 +697,7 @@ class LogicSnapshot:
     """Everything the 'game logic' definition covers for one decompile: per-function (fingerprint,
     is_common_func) by name, the global table in index order (bytecode refers to globals by index,
     so order matters), and header dword_14."""
+
     fingerprints: dict[str, tuple]
     globals_table: list[tuple[str, int]]
     dword_14: int
@@ -780,11 +775,11 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
     finally:
         ctx.fs.Close()
 
-    file_dir = Path(tempfile.mkdtemp(prefix = f'{stem}_logic_', dir = work_dir))
+    file_dir = Path(tempfile.mkdtemp(prefix=f'{stem}_logic_', dir=work_dir))
 
-    source_parser, source_functions = decompile_to_python(path, file_dir / f'{stem}.py', round_trip = False, keep_unreachable_code = False)
+    source_parser, source_functions = decompile_to_python(path, file_dir / f'{stem}.py', round_trip=False, keep_unreachable_code=False)
     source_snapshot = LogicSnapshot.of(source_parser, source_functions)
-    py_texts = [(file_dir / f'{stem}.py').read_text(encoding = 'utf-8')]
+    py_texts = [(file_dir / f'{stem}.py').read_text(encoding='utf-8')]
     dat_bytes = []
     converged_round = None
 
@@ -803,8 +798,8 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
 
         results.extend(struct_results)
 
-        round_parser, round_functions = decompile_to_python(dat_path, round_dir / f'{stem}_out.py', round_trip = False, keep_unreachable_code = False)
-        py_texts.append((round_dir / f'{stem}_out.py').read_text(encoding = 'utf-8'))
+        round_parser, round_functions = decompile_to_python(dat_path, round_dir / f'{stem}_out.py', round_trip=False, keep_unreachable_code=False)
+        py_texts.append((round_dir / f'{stem}_out.py').read_text(encoding='utf-8'))
 
         # Checked every round, not just round 1: a file that only diverges after round 1 but still
         # happens to reach a byte-level fixed point must still fail here.
@@ -818,10 +813,9 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
 
     if converged_round is None:
         results.append(CheckResult('logic round trip', Status.FAIL, f'no fixed point within {MAX_CONVERGENCE_ROUNDS} rounds, kept {file_dir}'))
-
     else:
         results.append(CheckResult('logic round trip', Status.PASS, f'converged at round {converged_round}'))
-        shutil.rmtree(file_dir, ignore_errors = True)
+        shutil.rmtree(file_dir, ignore_errors=True)
 
     return results
 
@@ -839,7 +833,6 @@ def validate_file(path: Path) -> tuple[list[CheckResult], list[str]]:
             check_debug_records(ctx),
         ]
         common_order = [ctx.func_name(index) for index in ctx.code_order if ctx.parser.functions[index].is_common_func]
-
     finally:
         ctx.fs.Close()
 
@@ -861,12 +854,12 @@ def print_result(result: CheckResult, verbose: bool):
 
 
 def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description = 'Validate ED9-VM .dat scripts against the byte-exact round-trip rules')
-    parser.add_argument('paths', nargs = '+', help = '.dat files or directories (searched recursively)')
-    parser.add_argument('--round-trip', action = 'store_true', help = 'decompile, recompile and byte-compare each file')
-    parser.add_argument('--logic-round-trip', action = 'store_true', help = 'decompile with round_trip=False and verify game logic is preserved and compile/decompile reaches a fixed point')
-    parser.add_argument('--work-dir', metavar = 'DIR', help = 'where --round-trip / --logic-round-trip write their files (default: a new temp dir)')
-    parser.add_argument('--verbose', action = 'store_true', help = 'print every detail, including for passing checks')
+    parser = argparse.ArgumentParser(description='Validate ED9-VM .dat scripts against the byte-exact round-trip rules')
+    parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
+    parser.add_argument('--round-trip', action='store_true', help='decompile, recompile and byte-compare each file')
+    parser.add_argument('--logic-round-trip', action='store_true', help='decompile with round_trip=False and verify game logic is preserved and compile/decompile reaches a fixed point')
+    parser.add_argument('--work-dir', metavar='DIR', help='where --round-trip / --logic-round-trip write their files (default: a new temp dir)')
+    parser.add_argument('--verbose', action='store_true', help='print every detail, including for passing checks')
     return parser
 
 
@@ -876,8 +869,8 @@ def main() -> int:
 
     work_dir = None
     if args.round_trip or args.logic_round_trip:
-        work_dir = Path(args.work_dir) if args.work_dir else Path(tempfile.mkdtemp(prefix = 'scp_roundtrip_'))
-        work_dir.mkdir(parents = True, exist_ok = True)
+        work_dir = Path(args.work_dir) if args.work_dir else Path(tempfile.mkdtemp(prefix='scp_roundtrip_'))
+        work_dir.mkdir(parents=True, exist_ok=True)
         print(f'work dir: {work_dir}')
 
     totals = {status: 0 for status in Status}
@@ -888,21 +881,18 @@ def main() -> int:
 
         try:
             results, common_orders[path] = validate_file(path)
-
         except Exception as e:
             results = [CheckResult('load', Status.FAIL, f'{type(e).__name__}: {ascii(str(e))}')]
 
         if args.round_trip:
             try:
                 results.append(check_round_trip(path, work_dir))
-
             except Exception as e:
                 results.append(CheckResult('round trip', Status.FAIL, f'{type(e).__name__}: {ascii(str(e))}'))
 
         if args.logic_round_trip:
             try:
                 results.extend(check_logic_round_trip(path, work_dir))
-
             except Exception as e:
                 results.append(CheckResult('logic round trip', Status.FAIL, f'{type(e).__name__}: {ascii(str(e))}'))
 

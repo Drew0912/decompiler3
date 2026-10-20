@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-'''Unit tests for SSA dead-code elimination: one run removes a whole dead chain. Removing an unread
+"""Unit tests for SSA dead-code elimination: one run removes a whole dead chain. Removing an unread
 definition can leave the definitions it read unread too, and a single sweep removes only the unread
-end - so a chain would lose one link per optimizer round, and a long one would hit the round cap.'''
+end - so a chain would lose one link per optimizer round, and a long one would hit the round cap."""
 
 from pathlib import Path
 import sys
@@ -21,7 +21,7 @@ VALUE = 7
 
 
 def ssa_var(func: MediumLevelILFunction, name: str, version: int) -> MLILVariableSSA:
-    '''SSA version of local `name`, registering the local on first use'''
+    """SSA version of local `name`, registering the local on first use"""
     return MLILVariableSSA(func.locals.setdefault(name, MLILVariable(name)), version)
 
 
@@ -69,7 +69,7 @@ class TestDeadChainRemovedInOneRun(unittest.TestCase):
         # x#1 = Foo(); y#1 = x#1, and nothing reads y#1 - the call stays, its output goes
         func = MediumLevelILFunction('call_output', FUNC_START)
         x1, y1 = ssa_var(func, 'x', 1), ssa_var(func, 'y', 1)
-        call = MLILCall('Foo', [], output = x1)
+        call = MLILCall('Foo', [], output=x1)
         block = func.create_block(FUNC_START, 'entry')
         block.instructions = [call, MLILSetVarSSA(y1, MLILVarSSA(x1)), MLILRet()]
 
