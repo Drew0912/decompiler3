@@ -11,8 +11,6 @@ __all__ = (
     'CalleeParamCount',
     'StackEffect',
     'STACK_EFFECTS',
-    'ONE_VALUE',
-    'BINARY_OPERAND_COUNT',
     'LOCAL_SETUP_SLOTS',
     'CALLER_FRAME_SLOTS',
     'POP_SIZE_OPERAND',
@@ -24,8 +22,6 @@ __all__ = (
     'RESULT_REGISTER',
 )
 
-ONE_VALUE               = 1
-BINARY_OPERAND_COUNT    = 2
 LOCAL_SETUP_SLOTS       = 2     # CALL: func_id, ret_addr
 CALLER_FRAME_SLOTS      = 5     # PUSH_CALLER_FRAME: func_id, ret_addr, script pointer (2 slots), script_name
 POP_SIZE_OPERAND        = 0     # POP's byte count
@@ -116,23 +112,23 @@ class StackEffect:
 
 
 STACK_EFFECTS = {
-    InstructionKind.PUSH_CONST          : StackEffect(pushes=ONE_VALUE),
-    InstructionKind.SLOT_ADDRESS        : StackEffect(addresses_slot=True, pushes=ONE_VALUE),
-    InstructionKind.LOAD_SLOT           : StackEffect(addresses_slot=True, pushes=ONE_VALUE),
-    InstructionKind.LOAD_DEREF          : StackEffect(addresses_slot=True, pushes=ONE_VALUE),
-    InstructionKind.LOAD_GLOBAL         : StackEffect(pushes=ONE_VALUE),
-    InstructionKind.LOAD_REG            : StackEffect(pushes=ONE_VALUE),
-    InstructionKind.STORE_SLOT          : StackEffect(pops=ONE_VALUE, addresses_slot=True),
-    InstructionKind.STORE_DEREF         : StackEffect(pops=ONE_VALUE, addresses_slot=True),
-    InstructionKind.STORE_GLOBAL        : StackEffect(pops=ONE_VALUE),
-    InstructionKind.STORE_REG           : StackEffect(pops=ONE_VALUE),
-    InstructionKind.BINARY              : StackEffect(pops=BINARY_OPERAND_COUNT, pushes=ONE_VALUE),
-    InstructionKind.UNARY               : StackEffect(pops=ONE_VALUE, pushes=ONE_VALUE),
+    InstructionKind.PUSH_CONST          : StackEffect(pushes=1),
+    InstructionKind.SLOT_ADDRESS        : StackEffect(addresses_slot=True, pushes=1),
+    InstructionKind.LOAD_SLOT           : StackEffect(addresses_slot=True, pushes=1),
+    InstructionKind.LOAD_DEREF          : StackEffect(addresses_slot=True, pushes=1),
+    InstructionKind.LOAD_GLOBAL         : StackEffect(pushes=1),
+    InstructionKind.LOAD_REG            : StackEffect(pushes=1),
+    InstructionKind.STORE_SLOT          : StackEffect(pops=1, addresses_slot=True),
+    InstructionKind.STORE_DEREF         : StackEffect(pops=1, addresses_slot=True),
+    InstructionKind.STORE_GLOBAL        : StackEffect(pops=1),
+    InstructionKind.STORE_REG           : StackEffect(pops=1),
+    InstructionKind.BINARY              : StackEffect(pops=2, pushes=1),
+    InstructionKind.UNARY               : StackEffect(pops=1, pushes=1),
     InstructionKind.POP                 : StackEffect(pops=OperandCount(POP_SIZE_OPERAND, unit=WORD_SIZE)),
     InstructionKind.JUMP                : StackEffect(),
-    InstructionKind.CONDITIONAL_JUMP    : StackEffect(pops=ONE_VALUE),
-    InstructionKind.PUSH_FUNC_ID        : StackEffect(pushes=ONE_VALUE),
-    InstructionKind.PUSH_RET_ADDR       : StackEffect(pushes=ONE_VALUE),
+    InstructionKind.CONDITIONAL_JUMP    : StackEffect(pops=1),
+    InstructionKind.PUSH_FUNC_ID        : StackEffect(pushes=1),
+    InstructionKind.PUSH_RET_ADDR       : StackEffect(pushes=1),
     InstructionKind.PUSH_CALLER_FRAME   : StackEffect(pushes=CALLER_FRAME_SLOTS),
     InstructionKind.CALL                : StackEffect(pops=CalleeParamCount(CALLEE_OPERAND),
                                                       setup_pops=LOCAL_SETUP_SLOTS),
