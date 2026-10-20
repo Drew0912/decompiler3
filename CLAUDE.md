@@ -10,6 +10,11 @@ without asking; move files with plain `mv`.
 Change code only after the user confirms the approach; while it is still being discussed, describe the change instead
 of making it.
 
+## Unclear Requests
+When a request or brief can reasonably be read in two ways that lead to different work, do not guess. First check the
+code and docs; if they do not settle it, the main session asks the user before acting on that part, and a subagent,
+which cannot ask, goes with the likelier reading and states the ambiguity and its assumption at the top of its report.
+
 ## decompiler2 Submodule Access
 Read, search or reference files under the `decompiler2` submodule only when the user's current request says to use it. If looking at it would help, ask first and wait for a yes.
 The same holds for every folder in `.gitmodules`. Grep from the repo root already skips `decompiler2` (gitignored);

@@ -11,6 +11,8 @@ Instructions for Codex, which only reviews in this repo. (Claude Code reads `CLA
 - Never read, search or list anything under `decompiler2/` or any other folder in `.gitmodules`.
 - Scripts over the game scripts (`sora2_1.0/`, `sora1/`, `kuro1/`) run only as far as the brief allows: read-only,
   within its limits.
+- If the brief can reasonably be read in two ways that lead to different reviews, do not stop to ask: go with the
+  likelier reading and state the ambiguity and your assumption at the top of your report.
 - These rules hold unless the brief says the user lifted one for this review.
 
 ## Read First
