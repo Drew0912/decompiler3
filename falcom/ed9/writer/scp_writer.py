@@ -14,7 +14,9 @@ from dc3.config import default_encoding
 from dc3.fileio import str_to_bytes
 from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
-from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandFormat, OperandType
+from assembler import OperandDescriptor, OperandFormat, OperandType
+from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
+from ..disasm.ed9_optable import ED9OperandType
 from ..structs.crc32 import hash_func_Name
 from ..structs.call_debug_records import (PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue,
                                           canonical_argc, script_call_identity)
@@ -841,17 +843,6 @@ class ScpWriter:
 
         return value.to_bytes()
 
-    WRITER_BY_TYPE = {
-        OperandType.SInt8        : fileio.FileStream.WriteChar,
-        OperandType.UInt8        : fileio.FileStream.WriteByte,
-        OperandType.SInt16       : fileio.FileStream.WriteShort,
-        OperandType.UInt16       : fileio.FileStream.WriteUShort,
-        OperandType.SInt32       : fileio.FileStream.WriteLong,
-        OperandType.UInt32       : fileio.FileStream.WriteULong,
-        OperandType.Float32      : fileio.FileStream.WriteFloat,
-        ED9OperandType.GlobalVar : fileio.FileStream.WriteLong,
-    }
-
     def _write_operand(self, op_desc: OperandDescriptor, value):
         match op_desc.type:
             case OperandType.Offset:
@@ -864,7 +855,7 @@ class ScpWriter:
                 self._write_value_operand(value)
 
             case _:
-                self.WRITER_BY_TYPE[op_desc.type](self.fs, value)
+                op_desc.write_value(self.fs, value)
 
     def _write_value_operand(self, value):
         self._write_scp_value(value if isinstance(value, ScpValue) else ScpValue(value))

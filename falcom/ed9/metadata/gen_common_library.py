@@ -40,10 +40,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 from dc3.config import default_indent
 from dc3.utils import collect_paths, write_text_lf
+from assembler.instruction import Instruction
+from assembler.instruction_table import OperandType
 from falcom.ed9.disasm.ed9_optable import ED9Opcode, ED9OperandType
 from falcom.ed9.disasm.formatter import Formatter, FormatterContext
-from falcom.ed9.disasm.instruction import Instruction
-from falcom.ed9.disasm.instruction_table import OperandType
 from falcom.ed9.disasm.llil_dsl_comments import CommentOptions, append_comment, instruction_comments, label_comments
 from falcom.ed9.metadata import (COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT, COMMON_LIBRARY_PACKAGE,
                                  SCP_WRITER_HELPER_IMPORT)

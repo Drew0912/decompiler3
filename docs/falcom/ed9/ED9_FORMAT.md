@@ -1,7 +1,7 @@
 # ED9 Format: Parser and Disassembler
 
-> Status: current. How `falcom/ed9/parser/`, `falcom/ed9/structs/` and `falcom/ed9/disasm/` read an ED9 script
-> (`.dat`), and how the games on this format differ.
+> Status: current. How `falcom/ed9/parser/`, `falcom/ed9/structs/` and `falcom/ed9/disasm/` (on the generic
+> `assembler/`) read an ED9 script (`.dat`), and how the games on this format differ.
 
 ## Layer 1: Parser — Done
 
@@ -24,7 +24,8 @@ validator's code, debug-record, source-precondition and reachability checks use 
 
 ## Layer 2: Disassembler — Done
 
-**Location:** `falcom/ed9/disasm/`
+**Location:** `assembler/` (the generic instructions, operand descriptors, basic blocks and recursive descent
+disassembler) + `falcom/ed9/disasm/` (the ED9 opcode table, stack effects and formatter)
 
 Converts bytecode into a readable instruction sequence, identifies basic block boundaries, and parses operands.
 Instruction encoding/decoding is table-driven (an opcode table maps each opcode to its mnemonic and operand format), so

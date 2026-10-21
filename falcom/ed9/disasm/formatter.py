@@ -4,16 +4,16 @@ from dc3 import default_indent
 from typing import TYPE_CHECKING, Callable
 from dataclasses import dataclass
 
-from .instruction import SYNTHETIC_INSTRUCTION_SIZE
-from .instruction_table import OperandType
+from assembler.instruction import SYNTHETIC_INSTRUCTION_SIZE
+from assembler.instruction_table import OperandType
 from .llil_dsl_comments import (
     UNREACHABLE_TARGET_COMMENT, CommentOptions, append_comment, function_comments, instruction_comments, label_comments,
 )
 from ..structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
-    from .basic_block import BasicBlock
-    from .instruction import Instruction
+    from assembler.basic_block import BasicBlock
+    from assembler.instruction import Instruction
     from ..parser.parser_types import Function, FunctionParam, StackLayout
 
 __all__ = (

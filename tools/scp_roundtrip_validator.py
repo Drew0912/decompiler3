@@ -72,7 +72,8 @@ from dc3 import fileio
 from dc3.config import default_encoding
 from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
-from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
+from assembler import Instruction, OperandType
+from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.metadata.fingerprint import function_fingerprint
 from falcom.ed9.structs.call_debug_records import RecordView, pair_records, read_debug_records, record_view
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents

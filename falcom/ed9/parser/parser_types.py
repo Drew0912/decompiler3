@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from ..disasm import BasicBlock, Instruction
+    from assembler import BasicBlock, Instruction
 
 
 class GlobalVar:

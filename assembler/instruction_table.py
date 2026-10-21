@@ -9,7 +9,6 @@ from .instruction import Instruction
 
 if TYPE_CHECKING:
     from .instruction import Operand
-    from .formatter import FormatterContext
 
 
 class OperandType(IntEnum2):
@@ -108,6 +107,21 @@ class OperandDescriptor:
         """Read operand value from file stream"""
         return self.READER_BY_TYPE[self.format.type](fs)
 
+    WRITER_BY_TYPE = {
+        OperandType.SInt8   : fileio.FileStream.WriteChar,
+        OperandType.SInt16  : fileio.FileStream.WriteShort,
+        OperandType.SInt32  : fileio.FileStream.WriteLong,
+        OperandType.UInt8   : fileio.FileStream.WriteByte,
+        OperandType.UInt16  : fileio.FileStream.WriteUShort,
+        OperandType.UInt32  : fileio.FileStream.WriteULong,
+        OperandType.Float32 : fileio.FileStream.WriteFloat,
+        OperandType.Offset  : fileio.FileStream.WriteULong,
+    }
+
+    def write_value(self, fs: 'fileio.FileStream', value: Any):
+        """Write operand value to file stream"""
+        self.WRITER_BY_TYPE[self.format.type](fs, value)
+
     def format_integer(self, operand: 'Operand') -> str:
         if self.format.is_hex:
             # Only a signed type can hold a negative value, so one rule fits both
@@ -132,8 +146,8 @@ class OperandDescriptor:
         OperandType.Offset  : format_offset,
     }
 
-    def format_operand(self, operand: 'Operand', context: 'FormatterContext') -> str:
-        """Format operand for display"""
+    def format_operand(self, operand: 'Operand', context: Any) -> str:
+        """Format operand for display; context is the engine's formatter context, read only by an engine's override"""
         return self.FORMATTER_BY_TYPE[self.format.type](self, operand)
 
 
@@ -215,11 +229,11 @@ class InstructionDescriptor:
         """Get branch targets from this instruction"""
         return []
 
-    def format_operands(self, operands: list['Operand'], context: 'FormatterContext') -> list[str]:
+    def format_operands(self, operands: list['Operand'], context: Any) -> list[str]:
         """Format operands for display"""
         return [op.descriptor.format_operand(op, context) for op in operands]
 
-    def format_instruction(self, inst: Instruction, context: 'FormatterContext') -> str:
+    def format_instruction(self, inst: Instruction, context: Any) -> str:
         """Format instruction for display"""
         ops = self.format_operands(inst.operands, context)
         return f'{self.mnemonic}({", ".join(ops)})'

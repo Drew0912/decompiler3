@@ -4,9 +4,9 @@ from dc3 import fileio, IntEnum2, quote_string
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from .instruction_table import *
-from .instruction import *
-from .basic_block import *
+from assembler.instruction_table import *
+from assembler.instruction import *
+from assembler.basic_block import *
 from .stack_effects import STACK_EFFECTS, InstructionKind
 from ..structs.scp_types import *
 
@@ -41,6 +41,15 @@ class ED9OperandDescriptor(OperandDescriptor):
 
             case _:
                 return super().read_value(fs)
+
+    def write_value(self, fs: fileio.FileStream, value: Any):
+        """Write ED9-specific operand values"""
+        match self.format.type:
+            case ED9OperandType.GlobalVar:
+                fs.WriteLong(value)
+
+            case _:
+                super().write_value(fs, value)
 
     def format_operand(self, operand: Operand, context: 'FormatterContext') -> str:
         """Format ED9-specific operands"""
@@ -99,7 +108,7 @@ ED9_FORMAT_TABLE.update({
 })
 
 if TYPE_CHECKING:
-    from .disassembler import DisassemblerContext
+    from assembler.disassembler import DisassemblerContext
 
 
 

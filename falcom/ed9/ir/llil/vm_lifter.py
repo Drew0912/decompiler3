@@ -6,6 +6,7 @@ from typing import Dict, TYPE_CHECKING
 from ir.llil.llil import *
 from ir.core import IRParameter, SourceFloat
 
+from assembler import BasicBlock, Instruction
 from ...disasm import *
 from .llil_builder import *
 from ...parser import *

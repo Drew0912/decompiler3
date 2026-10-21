@@ -20,7 +20,7 @@ class BranchKind(IntEnum2):
 class BasicBlock:
     """Basic block in control flow graph"""
 
-    start_offset    : int                                                  # Starting offset
+    start_offset    : int                                                   # Starting offset
     name            : str                 = ''                              # Block label (e.g., 'loc_1234')
     end_offset      : int                 = 0                               # End offset (exclusive, 0 means unset)
     instructions    : list['Instruction'] = field(default_factory=list)

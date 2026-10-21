@@ -9,7 +9,7 @@ from .ed9_optable import ED9Opcode, ED9OperandType
 from ..structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
-    from .instruction import Instruction
+    from assembler.instruction import Instruction
     from ..parser.parser_types import Function, StackLayout
 
 __all__ = (

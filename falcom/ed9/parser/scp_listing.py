@@ -9,7 +9,8 @@ from pathlib import Path
 from dc3.logging import log
 from dc3.utils import quote_string, write_text_lf
 from ir.llil.llil import default_label_for_addr
-from ..disasm import CommentOptions, ED9Opcode, Formatter, FormatterContext, Instruction, OperandType
+from assembler import Instruction, OperandType
+from ..disasm import CommentOptions, ED9Opcode, Formatter, FormatterContext
 from ..disasm.ed9_optable import ED9OperandType
 from ..disasm.llil_dsl_comments import instruction_comments, label_comments
 from ..structs.call_debug_records import pair_records, read_debug_records, record_args

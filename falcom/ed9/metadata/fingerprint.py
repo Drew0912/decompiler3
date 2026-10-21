@@ -9,8 +9,8 @@ common-function library generator and the DSL emitter, so both sides always agre
 import hashlib
 from typing import TYPE_CHECKING, Callable
 
-from ..disasm.instruction import Instruction, Operand
-from ..disasm.instruction_table import OperandType
+from assembler.instruction import Instruction, Operand
+from assembler.instruction_table import OperandType
 from ..disasm.ed9_optable import ED9OperandType
 
 if TYPE_CHECKING:

@@ -17,7 +17,7 @@ languages, touches the generic / Falcom boundary, or the pipeline is not known y
 | `TESTS_GUIDE.md` | running the tests, layout, shared helpers, the corpus skip, moving tests | test work |
 | `VALIDATOR_GUIDE.md` | `tools/ir_semantic_validator.py` HARD_FAIL categories: known noise vs real signal | judging validator output |
 | `FUTURE_WORK.md` | the index of future work, and the ideas that span folders | proposing or planning new work |
-| `falcom/ed9/` | the ED9 script format: parser, disassembler, opcode table, per-game differences | `falcom/ed9/parser/`, `falcom/ed9/structs/`, `falcom/ed9/disasm/` |
+| `falcom/ed9/` | the ED9 script format: parser, disassembler, opcode table, per-game differences | `falcom/ed9/parser/`, `falcom/ed9/structs/`, `falcom/ed9/disasm/`, `assembler/` |
 | `llil/` | LLIL design | `ir/llil/`, `falcom/ed9/ir/llil/` |
 | `mlil/` | MLIL design, guide, future work | `ir/mlil/`, `falcom/ed9/ir/mlil/` |
 | `hlil/` | HLIL design, guide (with the TypeScript codegen), future work | `ir/hlil/`, `falcom/ed9/ir/hlil/`, `codegen/` |

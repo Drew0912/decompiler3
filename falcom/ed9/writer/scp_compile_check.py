@@ -12,7 +12,8 @@ from typing import Callable, NamedTuple
 
 from dc3.logging import log
 from ir.llil import WORD_SIZE
-from ..disasm import Instruction, InstructionKind
+from assembler import Instruction
+from ..disasm import InstructionKind
 from ..disasm.stack_effects import POP_SIZE_OPERAND
 from ..ir.llil import ED9LiftError, ED9VMLifter
 from ..parser.code_layout import dropped_ranges

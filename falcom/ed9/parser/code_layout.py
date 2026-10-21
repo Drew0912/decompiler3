@@ -1,6 +1,6 @@
 """Where each function's code lies in the file, and the ranges of it no instruction covers"""
 
-from ..disasm import Instruction
+from assembler import Instruction
 from ..structs.scp_types import ScpFunctionEntry, ScpGlobalVar, ScpHeader
 
 

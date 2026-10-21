@@ -13,9 +13,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from dc3.logging import log
-from falcom.ed9.disasm import (
-    Disassembler, DisassemblerContext, ED9_INSTRUCTION_TABLE, ED9Opcode, Formatter, FormatterContext,
-)
+from assembler import Disassembler, DisassemblerContext
+from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Formatter, FormatterContext
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblyError, ScpParser

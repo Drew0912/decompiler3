@@ -1,6 +1,8 @@
 from ..structs.scp_types import *
 from .parser_types import *
 from dc3 import fileio
+from assembler import (SYNTHETIC_INSTRUCTION_SIZE, BasicBlock, BranchKind, BranchTarget, Disassembler,
+                       DisassemblerContext, Instruction, Operand)
 from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND

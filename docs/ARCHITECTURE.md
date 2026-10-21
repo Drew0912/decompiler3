@@ -39,10 +39,11 @@ reproduces (table order, string pool, debug records) is checked by `tools/scp_ro
 
 ## Layer 2: Disassembler — Done
 
-**Location:** `falcom/ed9/disasm/`
+**Location:** `assembler/` (generic) + `falcom/ed9/disasm/` (Falcom-specific)
 
-Decodes bytecode into instructions and basic blocks, driven by the opcode table, which also gives each opcode's kind
-and stack effect (`stack_effects.py`). Detail: `docs/falcom/ed9/ED9_FORMAT.md`.
+Decodes bytecode into instructions and basic blocks: the generic recursive descent disassembler (`assembler/`), driven
+by the ED9 opcode table, which also gives each opcode's kind and stack effect (`stack_effects.py`). Detail:
+`docs/falcom/ed9/ED9_FORMAT.md`.
 
 ## Layer 3: Lifter — Done
 
@@ -137,7 +138,7 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
 
 ## Generic/Falcom Boundary
 
-`ir/` and `dc3/` are meant to be generic, with game code under `falcom/`, and nothing generic imports
+`ir/`, `assembler/` and `dc3/` are meant to be generic, with game code under `falcom/`, and nothing generic imports
 `falcom/`. `codegen/` is game output (user, 2026-10-02): it reads only HLIL and nothing in `ir/` depends on it, so
 game knowledge there can't spread back into the IR. The opcode table (`falcom/ed9/disasm/`) holds no IR node classes:
 it gives opcode kinds and stack effects, and the LLIL lifter maps them to nodes.
