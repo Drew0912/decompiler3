@@ -9,8 +9,9 @@ from ir.core import IRParameter, SourceFloat
 from assembler import BasicBlock, Instruction
 from ...disasm import *
 from .llil_builder import *
-from ...parser import *
-from ...parser.scp import ScpFunctionError
+from ...parser.parser_types import Function, FunctionParam
+from ...parser.scp import ScpFunctionError, ScpParser
+from ...structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
     from ...parser.scp import *

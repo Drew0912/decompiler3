@@ -1,8 +1,9 @@
 """TypeScript Code Generator - HLIL to production TypeScript"""
 
 import math
-from dc3 import default_indent, format_uint32_hex, quote_string
 from typing import List
+
+from dc3 import default_indent, format_uint32_hex, quote_string
 from ir.core import constant_values_equal, is_int_zero
 from ir.hlil import *
 

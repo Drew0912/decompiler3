@@ -9,7 +9,7 @@ import difflib
 from assembler import Disassembler, DisassemblerContext
 from falcom.ed9.disasm import *
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
-from falcom.ed9.parser import *
+from falcom.ed9.parser.parser_types import Function
 
 HEX_DUMP_WIDTH = 16
 

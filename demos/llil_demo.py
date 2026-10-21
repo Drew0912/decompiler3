@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 
 from ir.core import IRParameter
 from ir.llil import *
-from falcom import *
+from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter, FalcomVMBuilder
 
 # Next to this file: the graphs are of the demo's hand-built functions, not a real script
 DOT_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cfg.dot')

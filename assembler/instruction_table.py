@@ -1,10 +1,11 @@
 """Instruction table interface and descriptor"""
 
-from dc3 import fileio, format_signed_hex, IntEnum2, IntFlag2
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from .basic_block import BranchKind
 from typing import TYPE_CHECKING, Any
+
+from dc3 import fileio, format_signed_hex, IntEnum2, IntFlag2
+from .basic_block import BranchKind
 from .instruction import Instruction
 
 if TYPE_CHECKING:

@@ -1,3 +1,11 @@
+from enum import Enum, auto
+from typing import Callable, NamedTuple
+import bisect
+import keyword
+import pathlib
+import struct
+import sys
+
 from ..structs.scp_types import *
 from .parser_types import *
 from dc3 import fileio
@@ -16,13 +24,6 @@ from ..metadata.fingerprint import function_fingerprint, fingerprint_digest
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT
 from ir.llil import WORD_SIZE
-from enum import Enum, auto
-from typing import Callable, NamedTuple
-import bisect
-import keyword
-import pathlib
-import struct
-import sys
 
 # First lines of every generated script: the generating checkout's root, so it runs without PYTHONPATH
 SYS_PATH_SETUP_LINES = ['import sys', f'sys.path.insert(0, {str(PROJECT_ROOT)!r})']

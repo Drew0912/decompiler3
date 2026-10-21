@@ -12,7 +12,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from assembler import Disassembler, DisassemblerContext
 from falcom.ed9.disasm import *
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
-from falcom.ed9.parser import *
+from falcom.ed9.parser.parser_types import Function, FunctionParam
+from falcom.ed9.structs.scp_types import Nullable32, ScpParamFlags, ScpValue
 
 FALLTHROUGH_TARGET = 0x20
 

@@ -1,5 +1,6 @@
-from dc3 import default_encoding
 import binascii
+
+from dc3 import default_encoding
 
 crc32_table = [
     0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA, 0x076DC419,

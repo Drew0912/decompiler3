@@ -1,9 +1,9 @@
 """Generic recursive descent disassembler"""
 
-from dc3 import fileio
 from typing import Callable
 import heapq
 
+from dc3 import fileio
 from .instruction_table import *
 from .instruction import *
 from .basic_block import *

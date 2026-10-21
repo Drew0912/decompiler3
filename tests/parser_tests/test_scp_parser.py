@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from dc3 import default_encoding, default_endian, fileio, quote_string
-from falcom.ed9 import *
+from falcom.ed9.structs.scp_types import RawInt, ScpValue
 from falcom.ed9.structs.crc32 import crc32_table, hash_func_Name
 
 

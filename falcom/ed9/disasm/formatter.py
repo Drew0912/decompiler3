@@ -1,9 +1,9 @@
 """Formatter for ED9 VM disassembly output"""
 
-from dc3 import default_indent
 from typing import TYPE_CHECKING, Callable
 from dataclasses import dataclass
 
+from dc3 import default_indent
 from assembler.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from assembler.instruction_table import OperandType
 from .llil_dsl_comments import (

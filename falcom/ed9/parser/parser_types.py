@@ -1,8 +1,9 @@
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
+
 from dc3 import default_indent, StrictBase
 from ..structs.scp_types import *
 from ..structs.crc32 import hash_func_Name
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from assembler import BasicBlock, Instruction

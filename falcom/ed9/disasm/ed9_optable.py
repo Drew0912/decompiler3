@@ -1,9 +1,9 @@
 """ED9 (Kuro no Kiseki) Instruction Table"""
 
-from dc3 import fileio, IntEnum2, quote_string
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from dc3 import fileio, IntEnum2, quote_string
 from assembler.instruction_table import *
 from assembler.instruction import *
 from assembler.basic_block import *

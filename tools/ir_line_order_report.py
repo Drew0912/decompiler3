@@ -34,7 +34,7 @@ from typing import List, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dc3.utils import collect_paths, raise_recursion_limit
-from falcom.ed9 import ScpParser
+from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
