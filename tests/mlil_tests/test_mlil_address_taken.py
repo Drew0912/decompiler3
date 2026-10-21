@@ -498,7 +498,7 @@ class TestAddressTakenFromRealLLIL(unittest.TestCase):
 
     def test_syscall_through_stack_temp_pointer_does_not_fold(self):
         builder = FalcomVMBuilder()
-        builder.create_function('addr_taken_repro', FUNC_START, num_params=0)
+        builder.create_function('addr_taken_repro', FUNC_START)
         entry = builder.create_basic_block(FUNC_START, 'addr_taken_repro')
         builder.set_current_block(entry)
 

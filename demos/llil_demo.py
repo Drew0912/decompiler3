@@ -5,6 +5,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
+from ir.core import IRParameter
 from ir.llil import *
 from falcom import *
 
@@ -37,7 +38,7 @@ def create_AV_04_0017():
     """AV_04_0017 - Strict 1:1 translation from real game bytecode"""
     # Create builder and function
     builder = FalcomVMBuilder()
-    builder.create_function('AV_04_0017', 0x243C5, num_params=0)
+    builder.create_function('AV_04_0017', 0x243C5)
 
     # Create all blocks upfront with labels (automatically added to function)
     entry_block = builder.create_basic_block(0x243C5, 'AV_04_0017')
@@ -97,7 +98,7 @@ def create_DOF_ON():
     """DOF_ON - Strict 1:1 translation from real game bytecode"""
     # Create builder and function
     builder = FalcomVMBuilder()
-    builder.create_function('DOF_ON', 0x1FFDB6, num_params=2)
+    builder.create_function('DOF_ON', 0x1FFDB6, [IRParameter(f'arg{i + 1}') for i in range(2)])
 
     # Create all blocks upfront with labels (automatically added to function)
     entry_block = builder.create_basic_block(0x1FFDB6, 'DOF_ON')
@@ -216,7 +217,7 @@ def create_sound_play_se():
     """sound_play_se - Strict 1:1 translation from real game bytecode"""
     # Create builder and function
     builder = FalcomVMBuilder()
-    builder.create_function('sound_play_se', 0x149B2, num_params=8)
+    builder.create_function('sound_play_se', 0x149B2, [IRParameter(f'arg{i + 1}') for i in range(8)])
 
     # Create single block with label (automatically added to function)
     entry_block = builder.create_basic_block(0x149B2, 'sound_play_se')
@@ -259,7 +260,7 @@ def create_Dummy_m3010_talk0():
     """Dummy_m3010_talk0 - Complex menu system with nested conditionals"""
     # Create builder and function
     builder = FalcomVMBuilder()
-    builder.create_function('Dummy_m3010_talk0', 0x8ACC7, num_params=0)
+    builder.create_function('Dummy_m3010_talk0', 0x8ACC7)
 
     # Create all blocks upfront
     entry = builder.create_basic_block(0x8ACC7, 'Dummy_m3010_talk0')
@@ -616,7 +617,7 @@ def test_Dummy_m3010_talk0():
 
 def create_EV_06_37_00():
     builder = FalcomVMBuilder()
-    builder.create_function('EV_06_37_00', 0x16AC50, num_params=0)
+    builder.create_function('EV_06_37_00', 0x16AC50)
 
     # Create all blocks
     entry = builder.create_basic_block(0x16AC50, 'EV_06_37_00')
@@ -642,7 +643,7 @@ def create_EV_06_37_00():
 def create_test_conditional():
     """Test function - Conditional branches with POP_JMP_NOT_ZERO and POP_JMP_ZERO"""
     builder = FalcomVMBuilder()
-    builder.create_function('test_conditional', 0x5BDA0, num_params=0)
+    builder.create_function('test_conditional', 0x5BDA0)
 
     # Create blocks
     entry = builder.create_basic_block(0x5BDA0, 'entry')
@@ -681,7 +682,7 @@ def create_test_conditional():
 def create_TALK_BEGIN():
     """TALK_BEGIN - Function call with caller context and module call"""
     builder = FalcomVMBuilder()
-    builder.create_function('TALK_BEGIN', 0x54F50, num_params=2)
+    builder.create_function('TALK_BEGIN', 0x54F50, [IRParameter(f'arg{i + 1}') for i in range(2)])
 
     # Create blocks
     entry = builder.create_basic_block(0x54F50, 'TALK_BEGIN')

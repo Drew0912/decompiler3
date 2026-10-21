@@ -40,7 +40,7 @@ def build_call_function() -> LowLevelILFunction:
     """A call, then a return, one address per LLIL instruction - the call ends its LLIL block, so translation
     leaves a goto to the return block that block merge removes"""
     builder = FalcomVMBuilder()
-    builder.create_function('provenance_test', FUNC_START, num_params=0)
+    builder.create_function('provenance_test', FUNC_START)
     builder.set_current_block(builder.create_basic_block(FUNC_START, 'entry'))
     ret_block = builder.create_basic_block(FUNC_START + BLOCK_STRIDE, 'ret')
     emits = (builder.push_func_id, lambda: builder.push_ret_addr(ret_block), lambda: builder.push_int(ARG_VALUE),

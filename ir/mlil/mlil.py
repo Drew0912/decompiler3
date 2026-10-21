@@ -789,11 +789,6 @@ class MediumLevelILFunction:
         self.var_types: Dict[str, 'MLILType'] = {}  # Variable name -> inferred type
         self.is_common_func = is_common_func
 
-    @property
-    def num_params(self) -> int:
-        """Number of parameters (for backward compatibility)"""
-        return len(self.source_params)
-
     def add_basic_block(self, block: MediumLevelILBasicBlock):
         self.basic_blocks.append(block)
 

@@ -3,6 +3,7 @@
 
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
+from ir.core import IRParameter
 from tests.shared import scp_asm
 
 
@@ -17,7 +18,7 @@ FUNC_NAME = 'test_func'
 def make_builder(num_params: int = 0) -> FalcomVMBuilder:
     """A builder with one function and its entry block current"""
     builder = FalcomVMBuilder()
-    builder.create_function(FUNC_NAME, FUNC_START, num_params=num_params)
+    builder.create_function(FUNC_NAME, FUNC_START, [IRParameter(f'arg{i + 1}') for i in range(num_params)])
     builder.set_current_block(builder.create_basic_block(FUNC_START, FUNC_NAME))
     return builder
 

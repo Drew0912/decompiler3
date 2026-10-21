@@ -429,7 +429,7 @@ class LowLevelILTestZero(LowLevelILUnaryOp):
 
 # === Control Flow ===
 
-class LowLevelILGoto(LowLevelILStatement, Terminal):
+class LowLevelILJmp(LowLevelILStatement, Terminal):
     """Unconditional jump - target must be a BasicBlock (terminal)"""
 
     def __init__(self, target: 'LowLevelILBasicBlock'):
@@ -438,12 +438,6 @@ class LowLevelILGoto(LowLevelILStatement, Terminal):
 
     def __str__(self) -> str:
         return f'goto {self.target.block_name}'
-
-
-class LowLevelILJmp(LowLevelILGoto):
-    """Alias for LowLevelILGoto for convenience"""
-
-    pass
 
 
 class LowLevelILIf(LowLevelILStatement, Terminal):
@@ -630,7 +624,7 @@ class LowLevelILFunction:
 
     @property
     def num_params(self) -> int:
-        """Number of parameters (for backward compatibility)"""
+        """Number of parameters"""
         return len(self.params)
 
     def add_basic_block(self, block: LowLevelILBasicBlock):
@@ -701,7 +695,7 @@ class LowLevelILFunction:
             return []
 
         last_inst = block.instructions[-1]
-        if isinstance(last_inst, LowLevelILGoto):
+        if isinstance(last_inst, LowLevelILJmp):
             return [last_inst.target]
         elif isinstance(last_inst, LowLevelILIf):
             return [last_inst.true_target, last_inst.false_target]
