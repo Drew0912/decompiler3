@@ -11,14 +11,15 @@ from typing import Callable, get_args
 
 from dc3 import fileio
 from dc3.config import default_encoding
+from dc3.fileio import str_to_bytes
 from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, ED9OperandType, OperandDescriptor, OperandFormat, OperandType
-from ..parser.crc32 import hash_func_Name
-from ..parser.call_debug_records import (PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue,
-                                         canonical_argc, script_call_identity)
-from ..parser.string_pool import StringPoolSection
-from ..parser.types_scp import (
+from ..structs.crc32 import hash_func_Name
+from ..structs.call_debug_records import (PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue,
+                                          canonical_argc, script_call_identity)
+from ..structs.string_pool import StringPoolSection
+from ..structs.scp_types import (
     UINT32_SIZE,
     ScpValue,
     RawInt,
@@ -29,7 +30,6 @@ from ..parser.types_scp import (
     ScpFunctionCallDebugInfo,
     ScpFunctionCallDebugInfoArg,
 )
-from ..parser.utils import str_to_bytes
 from .scp_compile_check import CheckedFunction, CompileCheck, SourceSite, def_location, location_prefix
 from .scp_writer_hook_registry import HookRegistry, require_function, wrapped_chain
 

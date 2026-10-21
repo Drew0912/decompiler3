@@ -8,9 +8,9 @@ import struct
 from dc3 import fileio
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.types_parser import Function, FunctionParam
-from falcom.ed9.parser.types_scp import (ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry,
-                                         ScpParamFlags, ScpValue, Value32)
+from falcom.ed9.parser.parser_types import Function, FunctionParam
+from falcom.ed9.structs.scp_types import (ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry,
+                                          ScpParamFlags, ScpValue, Value32)
 from ir.llil.llil import WORD_SIZE
 
 

@@ -3,7 +3,7 @@ from typing import TypeAlias
 
 from dc3 import fileio, format_uint32_hex, IntEnum2, StrictBase, UINT32_MASK
 from dc3.logging import log
-from . import utils
+from dc3.utils import float32_bits as _float32_bits, float32_from_bits as _float32_from_bits
 
 UINT32_SIZE = fileio.struct_layout('L').size  # one u32 field of the .dat format
 
@@ -173,7 +173,7 @@ class ScpValue:
                 value = payload - (1 << cls.TYPE_SHIFT) if payload > cls.INTEGER_MAX else payload
 
             case ScpValue.Type.Float:
-                value = utils.float32_from_bits(cls.word_float32_bits(word))
+                value = _float32_from_bits(cls.word_float32_bits(word))
                 if not math.isfinite(value):
                     log.warning(f"non-finite float {value} (word 0x{word:08X}): the game can't use it, so compiling the .py will fail")
 
@@ -218,7 +218,7 @@ class ScpValue:
     def encode_float(cls, value: float) -> int:
         """The Float word value is stored as: its float32 bits without the lowest FLOAT_DROPPED_BITS, under the Float
         tag; OverflowError past float32's range"""
-        return (utils.float32_bits(value) >> cls.FLOAT_DROPPED_BITS) | (ScpValue.Type.Float << cls.TYPE_SHIFT)
+        return (_float32_bits(value) >> cls.FLOAT_DROPPED_BITS) | (ScpValue.Type.Float << cls.TYPE_SHIFT)
 
     @classmethod
     def float_word(cls, value: float) -> int | None:
@@ -248,7 +248,7 @@ class ScpValue:
         # the middle one, so the text depends only on the word
         bits = cls.word_float32_bits(word)
         half_range = 1 << (cls.FLOAT_DROPPED_BITS - 1)
-        sources = (utils.float32_from_bits(bits), utils.float32_from_bits(bits | half_range))
+        sources = (_float32_from_bits(bits), _float32_from_bits(bits | half_range))
         payload = word & cls.PAYLOAD_MASK
         tried = set()
 
@@ -264,7 +264,7 @@ class ScpValue:
                 candidate = float(text)
                 try:
                     # Every candidate's word has the Float tag, so the payload bits decide
-                    if utils.float32_bits(candidate) >> cls.FLOAT_DROPPED_BITS == payload:
+                    if _float32_bits(candidate) >> cls.FLOAT_DROPPED_BITS == payload:
                         return repr(candidate)
                 except OverflowError:
                     continue    # past float32's range: no word, as float_word's None

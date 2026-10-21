@@ -21,7 +21,7 @@ Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler l
                     WARN: unreachable code (kept in the .py unless ScpParser.keep_unreachable_code is off)
     string pool     never deduplicated: code refs (code order, unreachable code included), names, default
                     strings, debug-only strings, global var names (index order, always last);
-                    falcom/ed9/parser/string_pool.py
+                    falcom/ed9/structs/string_pool.py
     debug records   every record rebuilt from its call site, dead code included (call_debug_records.pair_records);
                     WARN: a call the compiler left without a record (aligned)
     round trip      (--round-trip) decompile into a work dir, delete the copy, run the generated .py,
@@ -74,13 +74,13 @@ from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, OperandType
 from falcom.ed9.metadata.fingerprint import function_fingerprint
-from falcom.ed9.parser.call_debug_records import RecordView, pair_records, read_debug_records, record_view
+from falcom.ed9.structs.call_debug_records import RecordView, pair_records, read_debug_records, record_view
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
-from falcom.ed9.parser.crc32 import hash_func_Name
+from falcom.ed9.structs.crc32 import hash_func_Name
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.string_pool import NUL, StringRefs, collect_string_refs, pool_strings, read_text, read_u32
-from falcom.ed9.parser.types_parser import Function
-from falcom.ed9.parser.types_scp import (
+from falcom.ed9.structs.string_pool import NUL, StringRefs, collect_string_refs, pool_strings, read_text, read_u32
+from falcom.ed9.parser.parser_types import Function
+from falcom.ed9.structs.scp_types import (
     ScpFunctionCallDebugInfo,
     ScpFunctionCallDebugInfoArg,
     ScpFunctionEntry,

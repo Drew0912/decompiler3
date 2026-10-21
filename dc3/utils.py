@@ -1,7 +1,10 @@
+import struct
 import sys
 import unicodedata
 from collections.abc import Iterable
 from pathlib import Path
+
+from .config import default_encoding, default_endian
 
 __all__ = (
     'PROJECT_ROOT',
@@ -14,6 +17,10 @@ __all__ = (
     'raise_recursion_limit',
     'collect_paths',
     'write_text_lf',
+    'int_to_bytes',
+    'pad_string',
+    'float32_bits',
+    'float32_from_bits',
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent   # dc3/ sits directly under the repo root
@@ -91,3 +98,26 @@ def collect_paths(paths: Iterable[str | Path]) -> list[Path]:
 def write_text_lf(path: Path, text: str):
     """Write text as UTF-8 with LF line endings on every platform"""
     path.write_text(text, encoding='utf-8', newline='\n')
+
+
+# Unused: records pack through their LAYOUT struct instead. Kept for now
+def int_to_bytes(i, size) -> bytes:
+    return int.to_bytes(i, size, default_endian())
+
+
+# Unused: kept on purpose (user)
+def pad_string(s: str, padding: int) -> bytes:
+    return s.encode(default_encoding()).ljust(padding, b'\x00')
+
+
+_FLOAT32 = struct.Struct('<f')  # a float32 cast to or from its bits: any one byte order on both sides
+_UINT32 = struct.Struct('<I')   # the float32's 32 bits
+
+
+def float32_bits(value: float) -> int:
+    """value's IEEE float32 bits"""
+    return _UINT32.unpack(_FLOAT32.pack(value))[0]
+
+
+def float32_from_bits(bits: int) -> float:
+    return _FLOAT32.unpack(_UINT32.pack(bits))[0]

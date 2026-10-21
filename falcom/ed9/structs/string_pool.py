@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 
 from dc3.config import default_encoding, default_endian
 from dc3.enum import IntEnum2
-from .types_scp import UINT32_SIZE, ScpFunctionCallDebugInfo, ScpGlobalVar, ScpValue
+from .scp_types import UINT32_SIZE, ScpFunctionCallDebugInfo, ScpGlobalVar, ScpValue
 
 # An annotation only: scp.py imports this module (through call_debug_records too)
 if TYPE_CHECKING:
-    from .scp import ScpParser
+    from ..parser.scp import ScpParser
 
 NUL = b'\0'     # ends every pool string
 

@@ -1,7 +1,7 @@
 """Where each function's code lies in the file, and the ranges of it no instruction covers"""
 
 from ..disasm import Instruction
-from .types_scp import ScpFunctionEntry, ScpGlobalVar, ScpHeader
+from ..structs.scp_types import ScpFunctionEntry, ScpGlobalVar, ScpHeader
 
 
 def code_start(header: ScpHeader) -> int:

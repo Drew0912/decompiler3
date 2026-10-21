@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the string pool's sections (falcom/ed9/parser/string_pool.py) - every section in pool order, code
+"""Unit tests for the string pool's sections (falcom/ed9/structs/string_pool.py) - every section in pool order, code
 strings in code order with unreachable code - and the round-trip validator that checks them."""
 
 from pathlib import Path
@@ -13,9 +13,9 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from ir.llil import WORD_SIZE
-from falcom.ed9.parser.call_debug_records import read_debug_records
+from falcom.ed9.structs.call_debug_records import read_debug_records
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.string_pool import StringPoolSection, StringRefs, collect_string_refs, pool_strings, read_text
+from falcom.ed9.structs.string_pool import StringPoolSection, StringRefs, collect_string_refs, pool_strings, read_text
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_roundtrip_validator import Status, load_script, validate_file
 from tests.shared.corpus import SORA2_SCRIPTS, require

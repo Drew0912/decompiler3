@@ -20,7 +20,7 @@ byte.
 
 - **Shortest floats** (item 1; done: Step 3 for the `.py`, Step 4 for the rest). The VM stores a float as
   a float32 with its 2 lowest mantissa bits dropped (`ScpValue.FLOAT_DROPPED_BITS`,
-  `falcom/ed9/parser/types_scp.py`), so each stored word stands for 4 float32 values, and the `.py`
+  `falcom/ed9/structs/scp_types.py`), so each stored word stands for 4 float32 values, and the `.py`
   printed the one with those bits zero, in full: `PUSH_FLOAT(0.2999999523162842)`. It now prints the
   shortest decimal that encodes to the same word, always as a float literal: `PUSH_FLOAT(0.3)`,
   `PUSH_FLOAT(1.0)`, `PUSH_FLOAT(-0.0)`, in `PUSH_FLOAT` operands and float parameter defaults
@@ -163,7 +163,7 @@ byte.
   script. Full description: `docs/dsl/HOOKS.md`. Tree hooks stay with the HLIL DSL
   (`docs/dsl/HOOKS.md`, HLIL DSL: Hooks and Patching).
 - **Clear errors for bad values** (item 12; Step 2b, done). `ScpValue(True)` failed with a bare
-  `KeyError` (`bool` is not in its type map, `falcom/ed9/parser/types_scp.py`), and `POP(True)` compiled
+  `KeyError` (`bool` is not in its type map, `falcom/ed9/structs/scp_types.py`), and `POP(True)` compiled
   silently as `POP(1)`, since `bool` passes every `int` check. `ScpValue` now rejects any type it can't
   encode, `ScpWriter.handle_opcode` rejects a `bool` operand for every opcode (`PUSH_INT(True)`,
   `POP(True)`, `SYSCALL(True, ...)`), and `GLOBAL_VAR` rejects a `bool` type. `CALL` was annotated
@@ -215,10 +215,10 @@ byte.
   A call's debug record is printed under it only where a per-pair content check confirms the pairing
   (`notes/debug_records_handoff.md`); otherwise the function notes `records not paired`. The string pool
   lists each string's section (code, names, defaults, debug-only, global names). Step 8b (done) moved the
-  section split from the round-trip validator into `falcom/ed9/parser/string_pool.py`, with one rule for where
+  section split from the round-trip validator into `falcom/ed9/structs/string_pool.py`, with one rule for where
   code strings sit (`ScpParser.string_operand_positions`), and counts the strings only unreachable code uses as
   code strings: the validator had missed them and failed the pool check of `ani/chr5000` and others. Step 8c-a
-  (done) moved the validator's record check into `falcom/ed9/parser/call_debug_records.py` (content only; the validator
+  (done) moved the validator's record check into `falcom/ed9/structs/call_debug_records.py` (content only; the validator
   kept a return-label rule on top until the debug-records plan 3c, whose Step 4 gave parser, listing and validator one
   shared `pair_records`) and the tracker replay into `CallDebugInfoTracker.replay`, which gives each call's
   instruction offset, so the listing can print a record under its call. Step 8c-b counts each code string operand once
@@ -333,8 +333,8 @@ Groundwork this would need, not yet done:
   ever reformat a value (enum names, hex vs. decimal) rather than just rename a parameter.
 - A possible `scp_writer_types.py` for named parameter types the knowledge DB introduces (e.g. an
   `ItemID` alias), distinct from the generic `Value32`/`NullableStr` aliases in
-  `falcom/ed9/parser/types_scp.py`, which stay tied to raw parsed value shape, not identified
-  meaning. Whether this is a new file or an extension of `types_scp.py` is an open call to make
+  `falcom/ed9/structs/scp_types.py`, which stay tied to raw parsed value shape, not identified
+  meaning. Whether this is a new file or an extension of `scp_types.py` is an open call to make
   when this is actually built.
 
 **Sequencing note:** this is independent of items 1-2 above — it applies to the LLIL DSL library

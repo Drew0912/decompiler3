@@ -1,11 +1,12 @@
 # ED9 Format: Parser and Disassembler
 
-> Status: current. How `falcom/ed9/parser/` and `falcom/ed9/disasm/` read an ED9 script (`.dat`), and how the
-> games on this format differ.
+> Status: current. How `falcom/ed9/parser/`, `falcom/ed9/structs/` and `falcom/ed9/disasm/` read an ED9 script
+> (`.dat`), and how the games on this format differ.
 
 ## Layer 1: Parser — Done
 
-**Location:** `falcom/ed9/parser/`
+**Location:** `falcom/ed9/parser/`, and `falcom/ed9/structs/` for the structures the writer shares with it
+(`scp_types.py`, `string_pool.py`, `call_debug_records.py`, `crc32.py`)
 
 Parses the SCP file format; extracts functions, global variables, strings, and other metadata;
 provides access to raw bytecode. Key components: `ScpParser` (main parser), `ScpHeader` (file
@@ -30,7 +31,7 @@ Instruction encoding/decoding is table-driven (an opcode table maps each opcode 
 adding a new instruction is a table entry rather than new parsing code. Each row also has a kind, and each kind a stack
 effect (`falcom/ed9/disasm/stack_effects.py`: the values it pops, a call's setup slots, the values it reads in place,
 the values it pushes, whether it addresses a slot, whether the stack must be empty after it). The parser's simulation
-and the debug-record tracker (`CallDebugInfoTracker`, `parser/call_debug_records.py`) dispatch on the kind and read the
+and the debug-record tracker (`CallDebugInfoTracker`, `structs/call_debug_records.py`) dispatch on the kind and read the
 effects; the LLIL lifter takes only which opcodes are binary and a local `CALL`'s argument count from the table
 (`docs/ARCHITECTURE.md`, Layer 3). `tests/parser_tests/test_stack_effects.py` checks all three walkers of the VM stack
 against the table.

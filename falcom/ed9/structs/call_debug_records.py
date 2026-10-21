@@ -15,11 +15,11 @@ from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Instruction, InstructionK
 from ..disasm.ed9_optable import opcodes_of
 from ..disasm.stack_effects import CALLEE_OPERAND, REGISTER_OPERAND, RESULT_REGISTER
 from .string_pool import read_text, read_u32, string_offset
-from .types_scp import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
+from .scp_types import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
 
 # An annotation only: scp.py imports this module
 if TYPE_CHECKING:
-    from .scp import ScpParser
+    from ..parser.scp import ScpParser
 
 PUSH_CONSTANT_OPS = opcodes_of(InstructionKind.PUSH_CONST)
 SAME_SCRIPT_MODULE = ''     # a script call's module naming a function of the calling script

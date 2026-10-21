@@ -17,7 +17,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from codegen.typescript import TypeScriptGenerator
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
-from falcom.ed9.parser.types_scp import ScpValue
+from falcom.ed9.structs.scp_types import ScpValue
 from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *

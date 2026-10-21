@@ -15,8 +15,8 @@ from dc3.utils import display_width
 from falcom.ed9.disasm import CommentOptions, Formatter, FormatterContext
 from falcom.ed9.disasm.llil_dsl_comments import COMMENT_COLUMN, MIN_COMMENT_GAP, append_comment
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.types_parser import SlotRef
-from falcom.ed9.parser.types_scp import ScpValue
+from falcom.ed9.parser.parser_types import SlotRef
+from falcom.ed9.structs.scp_types import ScpValue
 from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import RETURN

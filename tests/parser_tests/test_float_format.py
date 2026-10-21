@@ -13,9 +13,9 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.parser import types_scp
-from falcom.ed9.parser.types_scp import ScpValue
-from falcom.ed9.parser.utils import float32_from_bits
+from dc3.utils import float32_from_bits
+from falcom.ed9.structs import scp_types
+from falcom.ed9.structs.scp_types import ScpValue
 
 FLOAT_TAG       = ScpValue.Type.Float << ScpValue.TYPE_SHIFT
 RANDOM_WORDS    = 20000
@@ -111,7 +111,7 @@ class TestNonFinite(unittest.TestCase):
 
     def test_decoding_warns(self):
         word = float_word(F32_INF)
-        with self.assertLogs(types_scp.log, level='WARNING') as logs:
+        with self.assertLogs(scp_types.log, level='WARNING') as logs:
             self.assertEqual(decode(word), math.inf)
 
         self.assertIn(f"non-finite float inf (word 0x{word:08X}): the game can't use it", logs.output[0])

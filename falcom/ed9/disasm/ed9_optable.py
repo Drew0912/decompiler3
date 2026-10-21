@@ -8,7 +8,7 @@ from .instruction_table import *
 from .instruction import *
 from .basic_block import *
 from .stack_effects import STACK_EFFECTS, InstructionKind
-from ..parser.types_scp import *
+from ..structs.scp_types import *
 
 if TYPE_CHECKING:
     from .formatter import FormatterContext

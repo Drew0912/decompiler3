@@ -21,7 +21,7 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
-from falcom.ed9.parser.types_scp import ScpGlobalVar, ScpValue
+from falcom.ed9.structs.scp_types import ScpGlobalVar, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_writer_test_utils import WriterTestCase, at, fresh_writer, local_call, location
 

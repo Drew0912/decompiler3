@@ -6,11 +6,11 @@ from typing import TYPE_CHECKING
 
 from dc3.utils import display_width
 from .ed9_optable import ED9Opcode, ED9OperandType
-from ..parser.types_scp import ScpValue
+from ..structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
     from .instruction import Instruction
-    from ..parser.types_parser import Function, StackLayout
+    from ..parser.parser_types import Function, StackLayout
 
 __all__ = (
     'CommentOptions',

@@ -22,7 +22,7 @@ from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugLog, LowLevelILFalcomOperation
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET, RESULT_REG_INDEX
-from falcom.ed9.parser.types_scp import RawInt, ScpValue
+from falcom.ed9.structs.scp_types import RawInt, ScpValue
 from ir.hlil.hlil import HLILCall, HLILConst, HLILVar, iter_tree
 from ir.llil import WORD_SIZE
 from ir.hlil.hlil_formatter import HLILFormatter

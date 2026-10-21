@@ -26,8 +26,8 @@ from falcom.ed9.metadata import common_all
 from falcom.ed9.metadata import gen_common_library as gen
 from falcom.ed9.metadata.common_index import COMMON_FUNCTIONS
 from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
-from falcom.ed9.parser.types_parser import GlobalVar
-from falcom.ed9.parser.types_scp import ScpGlobalVar
+from falcom.ed9.parser.parser_types import GlobalVar
+from falcom.ed9.structs.scp_types import ScpGlobalVar
 from falcom.ed9.scena2py import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 import scp_roundtrip_validator

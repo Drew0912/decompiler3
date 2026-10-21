@@ -21,9 +21,9 @@ from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
 from falcom.ed9.disasm.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from falcom.ed9.disasm.stack_effects import STACK_EFFECTS, InstructionKind, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.parser.call_debug_records import CallDebugInfoTracker
+from falcom.ed9.structs.call_debug_records import CallDebugInfoTracker
 from falcom.ed9.parser.scp import ScpDisassemblyError, ScpParser
-from falcom.ed9.parser.types_parser import Function
+from falcom.ed9.parser.parser_types import Function
 from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
 from tests.shared.scp_asm import (
     CALLER_ID, CALLEE_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, MODULE_NAME, REG_INDEX, RIGHT_VALUE,

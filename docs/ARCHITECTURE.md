@@ -27,7 +27,8 @@ Compilation (the actual recompilation direction — needs only a DSL file, not a
 
 ## Layer 1: Parser — Done
 
-**Location:** `falcom/ed9/parser/`
+**Location:** `falcom/ed9/parser/`, and `falcom/ed9/structs/` for what it shares with the writer (the value and
+header types, the string pool, the call debug records)
 
 Reads the SCP file: the header, the function table with parameters and defaults, call-site debug records, global
 variables and the string pool (`ScpParser`). While the disassembler decodes a function, the parser simulates the VM

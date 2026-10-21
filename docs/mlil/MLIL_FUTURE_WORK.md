@@ -14,7 +14,7 @@ no matter what the VM's exact answer turns out to be. The float part closed `chr
 `AniBtlCraft01Main` printing `0.4 * 0.8` as `0.32` (a double-precision fold).
 
 **Not started** - a real fix needs more than not-folding:
-- `ScpValue` (`falcom/ed9/parser/types_scp.py`) describes the *constant encoding* (30-bit int
+- `ScpValue` (`falcom/ed9/structs/scp_types.py`) describes the *constant encoding* (30-bit int
   payload, float32-with-2-bits-dropped), not proof of the runtime arithmetic width - whether the
   VM actually computes int ops at 30 or 32 bits is unverified.
 - MOD's sign convention (Python's `%` vs. C-style truncating remainder) is unverified.

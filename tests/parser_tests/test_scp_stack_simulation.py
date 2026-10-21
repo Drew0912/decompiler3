@@ -19,8 +19,8 @@ from falcom.ed9.disasm import (
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblyError, ScpParser
-from falcom.ed9.parser.types_parser import Function, SlotRef, StackLayout
-from falcom.ed9.parser.types_scp import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
+from falcom.ed9.parser.parser_types import Function, SlotRef, StackLayout
+from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
 from falcom.ed9.ir.llil import ED9VMLifter
 from ir.llil.llil import WORD_SIZE
 from tests.shared.scp_asm import (

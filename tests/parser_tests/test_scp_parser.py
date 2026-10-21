@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dc3 import default_encoding, default_endian, fileio, quote_string
 from falcom.ed9 import *
-from falcom.ed9.parser.crc32 import crc32_table, hash_func_Name
+from falcom.ed9.structs.crc32 import crc32_table, hash_func_Name
 
 
 ENDIAN = '<' if default_endian() == 'little' else '>'

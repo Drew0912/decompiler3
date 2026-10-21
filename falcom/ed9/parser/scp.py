@@ -1,12 +1,12 @@
-from .types_scp import *
-from .types_parser import *
+from ..structs.scp_types import *
+from .parser_types import *
 from dc3 import fileio
 from ..disasm import *
 from ..disasm.ed9_optable import *
 from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
-from .call_debug_records import PUSH_CONSTANT_OPS, canonical_argc, pair_records
-from .string_pool import string_offset
+from ..structs.call_debug_records import PUSH_CONSTANT_OPS, canonical_argc, pair_records
+from ..structs.string_pool import string_offset
 from ..metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT,
                         SCP_WRITER_HELPER_IMPORT)
 from ..metadata.common_index import COMMON_FUNCTIONS

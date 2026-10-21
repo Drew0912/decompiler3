@@ -1,6 +1,6 @@
 from dc3 import default_indent, StrictBase
-from .types_scp import *
-from .crc32 import hash_func_Name
+from ..structs.scp_types import *
+from ..structs.crc32 import hash_func_Name
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 

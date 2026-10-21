@@ -17,7 +17,7 @@ from ..disasm.stack_effects import POP_SIZE_OPERAND
 from ..ir.llil import ED9LiftError, ED9VMLifter
 from ..parser.code_layout import dropped_ranges
 from ..parser.scp import ScpFunctionError, ScpParser
-from ..parser.types_parser import Function
+from ..parser.parser_types import Function
 
 # A stack entry in a parser message (format_stack_entry): MNEMONIC@0x.. or frame_N@0x.., the offset of its opcode
 STACK_ENTRY = re.compile(r'@0x([0-9A-F]+)\b')

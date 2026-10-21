@@ -5,7 +5,7 @@ from typing import Callable, Optional
 
 from dc3 import StrictBase
 from .parser.scp_listing import ListingSections
-from .parser.types_parser import Function
+from .parser.parser_types import Function
 
 TOOL_DIR = Path(__file__).resolve().parent
 

@@ -49,7 +49,7 @@ from falcom.ed9.metadata import (COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT
                                  SCP_WRITER_HELPER_IMPORT)
 from falcom.ed9.metadata.fingerprint import function_fingerprint, fingerprint_digest
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.types_parser import Function
+from falcom.ed9.parser.parser_types import Function
 from falcom.ed9.writer import scp_writer_helper
 
 OUTPUT_DIR = COMMON_LIBRARY_DIR

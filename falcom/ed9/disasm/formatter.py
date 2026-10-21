@@ -9,12 +9,12 @@ from .instruction_table import OperandType
 from .llil_dsl_comments import (
     UNREACHABLE_TARGET_COMMENT, CommentOptions, append_comment, function_comments, instruction_comments, label_comments,
 )
-from ..parser.types_scp import ScpValue
+from ..structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
     from .basic_block import BasicBlock
     from .instruction import Instruction
-    from ..parser.types_parser import Function, FunctionParam, StackLayout
+    from ..parser.parser_types import Function, FunctionParam, StackLayout
 
 __all__ = (
     'Formatter',

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for pairing call-site debug records with their calls: CallDebugInfoTracker (its call tree, registers and
-line gate; replay's record order and each call's instruction offset), falcom/ed9/parser/call_debug_records.py
+line gate; replay's record order and each call's instruction offset), falcom/ed9/structs/call_debug_records.py
 (canonical_argc, record_args, record_mismatch, script_call_identity, pair_records and its alignment of more calls than
 records), a local call's count on its CALL through a round trip - a dead call's too, and a call without a record
 (debug_record=False), function_extents, and the round-trip validator's debug-records check and record comparison
@@ -22,11 +22,12 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, RESULT_REGISTER
-from falcom.ed9.parser.call_debug_records import (CallDebugInfoTracker, TrackedValue, canonical_argc, pair_records,
-                                                  record_args, record_mismatch, script_call_identity)
+from falcom.ed9.structs.call_debug_records import (CallDebugInfoTracker, TrackedValue, canonical_argc, pair_records,
+                                                   record_args, record_mismatch, script_call_identity)
 from falcom.ed9.parser.code_layout import function_extents
-from falcom.ed9.parser.string_pool import NUL, read_text, string_offset
-from falcom.ed9.parser.types_scp import RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry, ScpValue
+from falcom.ed9.structs.string_pool import NUL, read_text, string_offset
+from falcom.ed9.structs.scp_types import (RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg,
+                                          ScpFunctionEntry, ScpValue)
 from falcom.ed9.writer.scp_writer_helper import *
 from scp_roundtrip_validator import (PUSH_VALUE_OFFSET, Status, check_debug_records, check_round_trip,
                                      compare_file_records, decompile_to_python, describe_difference, load_script)

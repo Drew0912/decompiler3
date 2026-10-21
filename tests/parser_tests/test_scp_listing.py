@@ -18,7 +18,7 @@ from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.code_layout import code_start
 from falcom.ed9.parser.scp_listing import BYTES_WIDTH, COLUMN_GAP, ListingSections, ScpListing
-from falcom.ed9.parser.types_scp import ScpFunctionCallDebugInfo
+from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo
 from falcom.ed9.scena2py import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *

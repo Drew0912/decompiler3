@@ -4,7 +4,7 @@ from typing import Callable
 
 from .scp_writer import get_scp_writer, require_script_name as _require_script_name, require_type as _require_type
 from ..disasm import ED9Opcode
-from ..parser.types_scp import *
+from ..structs.scp_types import *
 
 sint8   = int
 uint8   = int

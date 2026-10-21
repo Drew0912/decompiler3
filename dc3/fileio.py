@@ -204,3 +204,23 @@ class FileStream:
     def WriteFloat(self, *values: float) -> int:
         # Round through a C float first: an out-of-range value becomes inf instead of raising
         return sum(self._stream.write(struct.pack(self._endian + 'f', c_float(float(v)).value)) for v in values)
+
+
+def str_to_bytes(s: str) -> bytes:
+    """s as a NUL-terminated string in the default encoding, the form FileStream.ReadMultiByte reads"""
+    return s.encode(default_encoding()) + b'\x00'
+
+
+# Unused: kept on purpose (user)
+def float_to_bytes(i) -> bytes:
+    return struct_layout('f').pack(i)
+
+
+# Unused: kept on purpose (user)
+def double_to_bytes(i) -> bytes:
+    return struct_layout('d').pack(i)
+
+
+# Unused: kept on purpose (user)
+def read_fixed_string(fs: FileStream, size: int) -> str:
+    return fs.Read(size).split(b'\x00', maxsplit=1)[0].decode(default_encoding())

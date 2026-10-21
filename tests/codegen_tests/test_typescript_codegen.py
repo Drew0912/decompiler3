@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from codegen.typescript import TypeScriptGenerator, generate_typescript, generate_typescript_header
-from falcom.ed9.parser.types_scp import RawInt
+from falcom.ed9.structs.scp_types import RawInt
 from ir.core import SourceFloat
 from ir.core.il_base import IRParameter
 from ir.hlil import (

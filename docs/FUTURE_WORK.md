@@ -138,7 +138,7 @@ from decompiler2's ED8.x support:
     `OP_0E`, likely frame slots; `Expr24` / `Expr25`); one sample, with no dialogue text; the validators assume an
     LLIL layer.
 
-## kuro1 Byte-Exact Debug Records (`falcom/ed9/parser/call_debug_records.py`, `falcom/ed9/writer/`)
+## kuro1 Byte-Exact Debug Records (`falcom/ed9/structs/call_debug_records.py`, `falcom/ed9/writer/`)
 
 **Planned, not started; much later, after the HLIL DSL is done** (user, 2026-10-18). A three-game census
 (2026-10-18, every file, `tools/scp_roundtrip_validator.py` checks plus `--round-trip`) found `sora2_1.0`, `sora1` and
