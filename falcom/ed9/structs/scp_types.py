@@ -8,22 +8,21 @@ from dc3.utils import float32_bits as _float32_bits, float32_from_bits as _float
 UINT32_SIZE = fileio.struct_layout('L').size  # one u32 field of the .dat format
 
 
-class ScpParamFlags(IntEnum2):
-    Pointer     = 0x04
-    Nullable    = 0x08
-
-    Mask        = 0x0C
-
-
 class ScpParamType(IntEnum2):
+    class Flags(IntEnum2):
+        Pointer     = 0x04
+        Nullable    = 0x08
+
+        Mask        = 0x0C
+
     Value   = 0x01
     Offset  = 0x02
 
     Mask    = 0x03
 
-    Pointer         = Value | ScpParamFlags.Pointer
-    NullableValue   = Value | ScpParamFlags.Nullable
-    NullableOffset  = Offset | ScpParamFlags.Nullable
+    Pointer         = Value | Flags.Pointer
+    NullableValue   = Value | Flags.Nullable
+    NullableOffset  = Offset | Flags.Nullable
 
 
 class ScpParamFlags:
