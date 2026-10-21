@@ -73,7 +73,7 @@ class Formatter:
         unreachable_ids = {id(block) for block in unreachable_blocks}  # BasicBlock is an unhashable dataclass
 
         # Sort by offset
-        blocks.sort(key=lambda b: b.offset)
+        blocks.sort(key=lambda b: b.start_offset)
 
         # Format all blocks
         lines = []
@@ -113,8 +113,8 @@ class Formatter:
             return lines
 
         # Generate label only when this block's start is actually referenced by something
-        if not unreachable and block.offset in self.referenced_offsets:
-            lines.extend(self._format_label_once(block.offset))
+        if not unreachable and block.start_offset in self.referenced_offsets:
+            lines.extend(self._format_label_once(block.start_offset))
 
         # Format instructions
         for inst in block.instructions:
@@ -199,10 +199,10 @@ class Formatter:
 
         while todo:
             block = todo.pop()
-            if block.offset in visited:
+            if block.start_offset in visited:
                 continue
 
-            visited.add(block.offset)
+            visited.add(block.start_offset)
             blocks.append(block)
             todo.extend(block.succs)
 

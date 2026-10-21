@@ -176,7 +176,7 @@ class TestComputeRPO(unittest.TestCase):
         order = make_rpo_lifter()._compute_rpo(entry)
 
         self.assertEqual(order, [entry, higher, lower])
-        self.assertEqual(sorted(order, key=lambda b: b.offset), [entry, lower, higher])
+        self.assertEqual(sorted(order, key=lambda b: b.start_offset), [entry, lower, higher])
 
 
 class TestRPOIntegration(unittest.TestCase):

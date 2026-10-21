@@ -88,8 +88,8 @@ class Disassembler:
 
             # Add successors to worklist
             for succ in block.succs:
-                if succ.offset not in self.disassembled_blocks:
-                    heapq.heappush(worklist, succ.offset)
+                if succ.start_offset not in self.disassembled_blocks:
+                    heapq.heappush(worklist, succ.start_offset)
 
         return self.disassembled_blocks[entry_offset]
 

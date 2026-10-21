@@ -34,11 +34,6 @@ class BasicBlock:
             self.name = f'loc_{self.start_offset:X}'
 
     @property
-    def offset(self) -> int:
-        """Alias for start_offset (for backward compatibility)"""
-        return self.start_offset
-
-    @property
     def computed_end_offset(self) -> int:
         """End offset (exclusive) - computed from instructions if end_offset not set"""
         if self.end_offset:

@@ -476,7 +476,7 @@ class ScpDisassemblerContext(DisassemblerContext):
         slot (SlotRef.unusual) is logged as a warning. Raises only on a broken parser invariant: every reachable
         instruction has a recorded state."""
         blocks = {
-            block.offset: [inst for inst in block.instructions if inst.size != SYNTHETIC_INSTRUCTION_SIZE]
+            block.start_offset: [inst for inst in block.instructions if inst.size != SYNTHETIC_INSTRUCTION_SIZE]
             for block in Formatter.collect_blocks(entry_block)
         }
         starts = {start: self.inst_states[insts[0].offset] for start, insts in blocks.items()}
@@ -485,7 +485,7 @@ class ScpDisassemblerContext(DisassemblerContext):
 
         # Block start -> slot -> the entries that may stand there, by id (Instruction is unhashable)
         held = {start: [{} for _ in state] for start, state in starts.items()}
-        held[entry_block.offset] = [{id(entry): entry} for entry in starts[entry_block.offset]]
+        held[entry_block.start_offset] = [{id(entry): entry} for entry in starts[entry_block.start_offset]]
 
         def held_at(block: int, state: tuple, slot: int) -> dict:
             """The entries that may stand in slot where block's stack is state"""
@@ -1131,7 +1131,7 @@ class ScpParser(StrictBase):
 
             for block in blocks:
                 if id(block) in dropped_ids:
-                    log.warning(f'{func.name}: unreachable code at 0x{block.offset:X} not kept, it branches to an offset with no instruction')
+                    log.warning(f'{func.name}: unreachable code at 0x{block.start_offset:X} not kept, it branches to an offset with no instruction')
 
             blocks = [block for block in blocks if id(block) not in dropped_ids]
 

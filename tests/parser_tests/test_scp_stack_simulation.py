@@ -64,7 +64,7 @@ def assert_warns_backward_return(test: unittest.TestCase, program: Program, call
 
 
 def blocks_by_offset_of(entry_block) -> dict:
-    return {block.offset: block for block in Formatter.collect_blocks(entry_block)}
+    return {block.start_offset: block for block in Formatter.collect_blocks(entry_block)}
 
 
 def blocks_by_offset(func: Function) -> dict:
@@ -72,7 +72,7 @@ def blocks_by_offset(func: Function) -> dict:
 
 
 def successors(block) -> list[int]:
-    return [succ.offset for succ in block.succs]
+    return [succ.start_offset for succ in block.succs]
 
 
 def lift_all(parser: ScpParser, functions: list[Function]):
@@ -983,8 +983,8 @@ class TestBlockSplits(unittest.TestCase):
         parser, functions = program.disassemble()
         tail = blocks_by_offset(functions[0])[program.label('loop')]
 
-        self.assertEqual([succ.offset for succ in tail.true_succs], [program.label('loop')])
-        self.assertEqual([succ.offset for succ in tail.false_succs], [program.label('end')])
+        self.assertEqual([succ.start_offset for succ in tail.true_succs], [program.label('loop')])
+        self.assertEqual([succ.start_offset for succ in tail.false_succs], [program.label('end')])
         lift_all(parser, functions)
 
     def test_plain_backward_frame_target_keeps_the_call_in_the_tail(self):
