@@ -309,7 +309,7 @@ class TestListing(unittest.TestCase):
 
     def test_undecoded_bytes_listed_raw(self):
         """Dead code that doesn't decode (an opcode the table lacks) is kept as raw bytes inside its function"""
-        dead_start = self.functions['Main'].unreachable_blocks[0].start_offset
+        dead_start = self.functions['Main'].unreachable_blocks[0].offset
         data = bytearray(self.listing.data)
         data[dead_start] = INVALID_OPCODE
         listing = patched_listing(bytes(data))

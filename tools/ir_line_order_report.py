@@ -90,7 +90,7 @@ def collect_dsl_lines(lifter: ED9VMLifter, func) -> List[int]:
         return []
 
     blocks = lifter._collect_blocks(func.entry_block)
-    blocks.sort(key=lambda b: b.start_offset)
+    blocks.sort(key=lambda b: b.offset)
 
     lines = []
     for block in blocks:

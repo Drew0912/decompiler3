@@ -132,10 +132,10 @@ class TestComputeRPO(unittest.TestCase):
     builder entirely."""
 
     def test_diamond_places_join_after_both_arms(self):
-        entry = BasicBlock(start_offset=FUNC_START)
-        a = BasicBlock(start_offset=SECOND_BLOCK_START)
-        b = BasicBlock(start_offset=THIRD_BLOCK_START)
-        join = BasicBlock(start_offset=FOURTH_BLOCK_START)
+        entry = BasicBlock(offset=FUNC_START)
+        a = BasicBlock(offset=SECOND_BLOCK_START)
+        b = BasicBlock(offset=THIRD_BLOCK_START)
+        join = BasicBlock(offset=FOURTH_BLOCK_START)
         entry.add_branch(a)
         entry.add_branch(b)
         a.add_branch(join)
@@ -152,9 +152,9 @@ class TestComputeRPO(unittest.TestCase):
         """The exact shape that broke finalize()'s old blanket check: header.succs=[body, exit],
         body -> header. RPO must place header first; body (which can legitimately carry state
         across the back edge) ends up last, not exit (the real RETURN path)."""
-        header = BasicBlock(start_offset=FUNC_START)
-        body = BasicBlock(start_offset=SECOND_BLOCK_START)
-        exit_block = BasicBlock(start_offset=THIRD_BLOCK_START)
+        header = BasicBlock(offset=FUNC_START)
+        body = BasicBlock(offset=SECOND_BLOCK_START)
+        exit_block = BasicBlock(offset=THIRD_BLOCK_START)
         header.add_branch(body)
         header.add_branch(exit_block)
         body.add_branch(header)
@@ -167,16 +167,16 @@ class TestComputeRPO(unittest.TestCase):
         """entry -> higher-address block -> lower-address block (the original counterexample
         shape). RPO must visit the lower-address block AFTER the higher-address one, proving it
         isn't just re-deriving address order."""
-        entry = BasicBlock(start_offset=FUNC_START)
-        higher = BasicBlock(start_offset=THIRD_BLOCK_START)
-        lower = BasicBlock(start_offset=SECOND_BLOCK_START)
+        entry = BasicBlock(offset=FUNC_START)
+        higher = BasicBlock(offset=THIRD_BLOCK_START)
+        lower = BasicBlock(offset=SECOND_BLOCK_START)
         entry.add_branch(higher)
         higher.add_branch(lower)
 
         order = make_rpo_lifter()._compute_rpo(entry)
 
         self.assertEqual(order, [entry, higher, lower])
-        self.assertEqual(sorted(order, key=lambda b: b.start_offset), [entry, lower, higher])
+        self.assertEqual(sorted(order, key=lambda b: b.offset), [entry, lower, higher])
 
 
 class TestRPOIntegration(unittest.TestCase):

@@ -21,9 +21,8 @@ class BranchKind(IntEnum2):
 class BasicBlock:
     """Basic block in control flow graph"""
 
-    start_offset    : int                                                   # Starting offset
+    offset          : int                                                   # Starting offset
     name            : str                 = ''                              # Block label (e.g., 'loc_1234')
-    end_offset      : int                 = 0                               # End offset (exclusive, 0 means unset)
     instructions    : list['Instruction'] = field(default_factory=list)
     succs           : list['BasicBlock']  = field(default_factory=list)     # All successors
     true_succs      : list['BasicBlock']  = field(default_factory=list)     # True branch successors
@@ -32,17 +31,7 @@ class BasicBlock:
 
     def __post_init__(self):
         if not self.name:
-            self.name = f'loc_{self.start_offset:X}'
-
-    @property
-    def computed_end_offset(self) -> int:
-        """End offset (exclusive) - computed from instructions if end_offset not set"""
-        if self.end_offset:
-            return self.end_offset
-        if self.instructions:
-            last = self.instructions[-1]
-            return last.offset + last.size
-        return self.start_offset
+            self.name = f'loc_{self.offset:X}'
 
     @property
     def terminal(self) -> 'Instruction | None':
@@ -78,7 +67,7 @@ class BasicBlock:
 
     def __str__(self) -> str:
         indent = default_indent()
-        lines = [f'BasicBlock {self.name} @ 0x{self.start_offset:X}']
+        lines = [f'BasicBlock {self.name} @ 0x{self.offset:X}']
         for inst in self.instructions:
             lines.append(f'{indent}{inst.offset:08X}: {inst}')
 

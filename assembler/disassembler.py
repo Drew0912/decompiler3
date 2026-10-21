@@ -88,8 +88,8 @@ class Disassembler:
 
             # Add successors to worklist
             for succ in block.succs:
-                if succ.start_offset not in self.disassembled_blocks:
-                    heapq.heappush(worklist, succ.start_offset)
+                if succ.offset not in self.disassembled_blocks:
+                    heapq.heappush(worklist, succ.offset)
 
         return self.disassembled_blocks[entry_offset]
 
@@ -182,7 +182,7 @@ class Disassembler:
         if offset in self.allocated_blocks:
             return self.allocated_blocks[offset]
 
-        block = BasicBlock(start_offset=offset)
+        block = BasicBlock(offset=offset)
         self.allocated_blocks[offset] = block
 
         return block
@@ -207,7 +207,7 @@ class Disassembler:
         if target_offset in self.offset_to_block:
             owner = self.offset_to_block[target_offset]
             # Target is in middle of owner block, need to split
-            if owner.start_offset != target_offset:
+            if owner.offset != target_offset:
                 return self.split_block(owner, target_offset)
             # Target is already at start of owner (shouldn't happen, but handle it)
             return owner
@@ -225,10 +225,7 @@ class Disassembler:
                 break
 
         # Create tail block
-        tail = BasicBlock(
-            start_offset=split_offset,
-            end_offset=owner.end_offset,
-        )
+        tail = BasicBlock(offset=split_offset)
         tail.instructions = owner.instructions[split_idx:]
 
         # The owner's terminator moves to the tail, and its edges with it
@@ -241,7 +238,6 @@ class Disassembler:
 
         # Update owner (head)
         source_offset = owner.instructions[split_idx - 1].offset
-        owner.end_offset = split_offset
         owner.instructions = owner.instructions[:split_idx]
 
         # Add synthetic fallthrough jump instruction to owner to make it terminate properly
@@ -249,16 +245,16 @@ class Disassembler:
 
         synthetic_jmp = self.context.create_fallthrough_jump(
             split_offset,
-            tail.start_offset,
+            tail.offset,
             self.instruction_table
         )
         owner.instructions.append(synthetic_jmp)
         owner.add_branch(tail, BranchKind.UNCONDITIONAL)
 
         # Register tail in all tracking dictionaries
-        self.allocated_blocks[tail.start_offset] = tail
+        self.allocated_blocks[tail.offset] = tail
         # Mark tail as disassembled since it already has all its instructions
-        self.disassembled_blocks[tail.start_offset] = tail
+        self.disassembled_blocks[tail.offset] = tail
         # Update offset_to_block mapping for all instructions in tail
         for inst in tail.instructions:
             self.offset_to_block[inst.offset] = tail

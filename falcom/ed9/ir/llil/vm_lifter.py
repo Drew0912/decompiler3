@@ -68,14 +68,14 @@ class ED9VMLifter:
         builder.create_function(func.name, func.offset, ir_params, is_common_func=func.is_common_func)
 
         lift_blocks = self._compute_rpo(func.entry_block)
-        layout_blocks = sorted(lift_blocks, key=lambda b: b.start_offset)     # preserve address-order block indices
+        layout_blocks = sorted(lift_blocks, key=lambda b: b.offset)     # preserve address-order block indices
 
         llil_blocks: Dict[int, LowLevelILBasicBlock] = {}
         for block in layout_blocks:
-            llil_blocks[block.start_offset] = builder.create_basic_block(block.start_offset, block.name)
+            llil_blocks[block.offset] = builder.create_basic_block(block.offset, block.name)
 
         for block in lift_blocks:
-            builder.begin_block(llil_blocks[block.start_offset])
+            builder.begin_block(llil_blocks[block.offset])
             for inst in block.instructions:
                 # Set current SCP instruction address for LLIL address tracking
                 builder.set_current_address(inst.offset)
@@ -125,14 +125,14 @@ class ED9VMLifter:
                 postorder.append(block)
                 continue
 
-            if block.start_offset in visited:
+            if block.offset in visited:
                 continue
 
-            visited.add(block.start_offset)
+            visited.add(block.offset)
             stack.append((block, True))
 
             for succ in reversed(block.succs):
-                if succ.start_offset not in visited:
+                if succ.offset not in visited:
                     stack.append((succ, False))
 
         return list(reversed(postorder))
@@ -244,13 +244,13 @@ class ED9VMLifter:
                 builder.jmp(llil_blocks[inst.operands[0].value])
 
             case ED9Opcode.POP_JMP_ZERO:
-                true_block = llil_blocks[block.true_succs[0].start_offset]
-                false_block = llil_blocks[block.false_succs[0].start_offset]
+                true_block = llil_blocks[block.true_succs[0].offset]
+                false_block = llil_blocks[block.false_succs[0].offset]
                 builder.pop_jmp_zero(true_block, false_block)
 
             case ED9Opcode.POP_JMP_NOT_ZERO:
-                true_block = llil_blocks[block.true_succs[0].start_offset]
-                false_block = llil_blocks[block.false_succs[0].start_offset]
+                true_block = llil_blocks[block.true_succs[0].offset]
+                false_block = llil_blocks[block.false_succs[0].offset]
                 builder.pop_jmp_not_zero(true_block, false_block)
 
             case ED9Opcode.RETURN:
