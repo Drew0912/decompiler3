@@ -107,9 +107,7 @@ def CALL(func: Callable, debug_argc: int | None = None, debug_record: bool = Tru
         raise TypeError(get_scp_writer().at_statement(f'CALL debug_argc is {debug_argc!r} '
                                                       f'({type(debug_argc).__name__}), not int'))
 
-    if type(debug_record) is not bool:
-        raise TypeError(get_scp_writer().at_statement(f'CALL debug_record is {debug_record!r} '
-                                                      f'({type(debug_record).__name__}), not bool'))
+    _require_type('CALL', 'debug_record', debug_record, bool)
 
     return get_scp_writer().handle_opcode(ED9Opcode.CALL, func, debug_argc=debug_argc, debug_record=debug_record)
 

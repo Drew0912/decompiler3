@@ -149,7 +149,7 @@ class HookRegistry:
 
     # When the compile starts
 
-    def _start(self, g: dict):
+    def _start(self, script_globals: dict):
         """The compile starts: added functions register after the script's, each hook module gets the script's names,
         the run callbacks run, then the function callbacks"""
         for func in self.added_functions:
@@ -159,7 +159,7 @@ class HookRegistry:
             self._inject(func)
 
         for cb in self.run_callbacks:
-            cb(g)
+            cb(script_globals)
 
         self._apply_function_callbacks()
 

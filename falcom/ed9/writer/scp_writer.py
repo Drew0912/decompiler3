@@ -20,7 +20,7 @@ from ..disasm.ed9_optable import ED9OperandType
 from ..structs.crc32 import hash_func_Name
 from ..structs.call_debug_records import (PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue,
                                           canonical_argc, script_call_identity)
-from ..structs.string_pool import StringPoolSection
+from ..structs.string_pool import StringPoolSection, string_problem
 from ..structs.scp_types import (
     UINT32_SIZE,
     ScpValue,
@@ -44,7 +44,7 @@ UNRESOLVED_FUNC_OFFSET = 0xFFFFFFFF  # entry.offset, until _compile_functions() 
 UNRESOLVED_STRING_OFFSET = 0xFFFFFFFF  # a string reference, until _write_string_pool()
 UNRESOLVED_FUNC_INDEX = -1  # ScpFunction.index, until _build_function_table() sorts the table
 
-STRING_OFFSET_TAG = ScpValue.Type.String << 30  # 0xC0000000 - top 2 bits of a resolved string-pool offset
+STRING_OFFSET_TAG = ScpValue.Type.String << ScpValue.TYPE_SHIFT  # top 2 bits of a resolved string-pool offset
 NAME_OFFSET_FIELD_OFFSET = ScpFunctionEntry.SIZE - UINT32_SIZE  # name_offset is the last field of a function entry
 
 # ScpGlobalVar.LAYOUT stores a global's type as an unsigned word
@@ -56,17 +56,9 @@ GLOBAL_VAR_TYPES = tuple(ScpGlobalVar.Type)
 POSITIONAL_KINDS = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
 
 
-def string_problem(text: str) -> str | None:
-    """Why text can't be a pooled string (stored encoded and NUL-terminated, read up to the first NUL), or None"""
-    if '\0' in text:
-        return 'contains a NUL, which ends a .dat string early'
-
-    try:
-        text.encode(default_encoding())
-    except UnicodeEncodeError as e:
-        return f"can't be encoded: {e.reason} at position {e.start}"
-
-    return None
+def in_range(value: int, bounds: range) -> bool:
+    """Compared, not `in`: a range scans itself for an int subclass (an IntEnum, RawInt, ScpGlobalVar.Type)"""
+    return bounds.start <= value < bounds.stop
 
 
 def require_type(statement: str, name: str, value, kind: type | UnionType):
@@ -186,9 +178,6 @@ class ScpWriter:
         # Hooks
         self.hooks: HookRegistry = HookRegistry(self)
 
-    def init(self, name: str):
-        self.dat_name = name
-
     @property
     def compile_started(self) -> bool:
         """build() has begun: the script's globals are set"""
@@ -253,7 +242,7 @@ class ScpWriter:
 
         return wrapper
 
-    def add_global_var(self, name: str, type: int):
+    def add_global_var(self, name: str, var_type: int):
         # The header counts the globals before any body compiles
         if self.current_function is not None:
             raise ValueError(f'{self.current_function.name}: GLOBAL_VAR({name!r}) is inside a function body; '
@@ -270,17 +259,16 @@ class ScpWriter:
         if name in self.global_var_indices:
             raise ValueError(f'global var already declared: {name!r}')
 
-        # Compared, not `in`: a range scans itself for an int subclass (ScpGlobalVar.Type)
-        if not GLOBAL_VAR_TYPE_RANGE.start <= type < GLOBAL_VAR_TYPE_RANGE.stop:
-            raise ValueError(f'GLOBAL_VAR({name!r}) type is {type}, outside '
+        if not in_range(var_type, GLOBAL_VAR_TYPE_RANGE):
+            raise ValueError(f'GLOBAL_VAR({name!r}) type is {var_type}, outside '
                              f'{GLOBAL_VAR_TYPE_RANGE.start}..{GLOBAL_VAR_TYPE_RANGE.stop - 1}')
 
-        if type not in GLOBAL_VAR_TYPES:
-            log.warning(f'GLOBAL_VAR({name!r}) type is {type}, not '
+        if var_type not in GLOBAL_VAR_TYPES:
+            log.warning(f'GLOBAL_VAR({name!r}) type is {var_type}, not '
                         + ' or '.join(f'{known.value} ({known.name})' for known in GLOBAL_VAR_TYPES))
 
         self.global_var_indices[name] = len(self.global_vars)
-        self.global_vars.append(ScpGlobalVar(name, type))
+        self.global_vars.append(ScpGlobalVar(name, var_type))
 
     def global_var_index(self, name: str) -> int:
         index = self.global_var_indices.get(name)
@@ -402,16 +390,17 @@ class ScpWriter:
     # The compile: run() and build()
 
     @infrequent_gc()
-    def run(self, g: dict):
+    def run(self, script_globals: dict):
         """Compile the script and write the .dat - only once compiling succeeded, so a failure leaves an older .dat as it was"""
-        data = self.build(g)
+        data = self.build(script_globals)
         Path(self.dat_name).write_bytes(data)
 
-    def build(self, g: dict) -> bytes:
+    def build(self, script_globals: dict) -> bytes:
         """Compile every registered function into the script's bytes, in memory; with check_compiled, the bytes must
         decompile again. A failure ends the compile like any other: one compile per writer"""
-        self.globals = g  # compile_started: from here on add_function registers at once, GLOBAL_VAR and _inject work
-        self.hooks._start(g)
+        # compile_started: from here on add_function registers at once, GLOBAL_VAR and _inject work
+        self.globals = script_globals
+        self.hooks._start(script_globals)
 
         # Counted after the hooks, which may add functions and globals; nothing registers from here on
         self.registration_closed = True
@@ -506,7 +495,7 @@ class ScpWriter:
         if self.current_function is None:
             return text
 
-        return self._located(self._opcode_site() if self.check_compiled else None, text)
+        return self._located(self._opcode_site(), text)
 
     def _located(self, site: SourceSite | None, text: str) -> str:
         return f'{location_prefix(site)}{self.current_function.name}: {text}'
@@ -537,7 +526,8 @@ class ScpWriter:
 
         return self._script_call_record(call, args)  # Script and ScriptNoReturn
 
-    def _debug_arg(self, value: TrackedValue) -> DebugArg:
+    @classmethod
+    def _debug_arg(cls, value: TrackedValue) -> DebugArg:
         if value.type == ScpFunctionCallDebugInfoArg.Type.Constant:
             return DebugArg(value.type, value.payload, value.string)
 
@@ -697,7 +687,7 @@ class ScpWriter:
         if self.current_function is None:
             raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
-        site = self._opcode_site() if self.check_compiled else None
+        site = self._opcode_site()
         if self.hooks._dropped_by_opcode_callbacks(opcode, args, site):
             return
 
@@ -719,9 +709,7 @@ class ScpWriter:
 
         value = string = None
         if opcode in PUSH_CONSTANT_OPS:
-            problem = self._code_string_problem(args[0])
-            if problem is not None:
-                raise ValueError(self._at_opcode(f'{ED9Opcode(opcode).name} {problem}'))
+            self._require_poolable(args[0], opcode)
 
             try:
                 value, string = self._emit_push_constant(args[0])
@@ -749,8 +737,11 @@ class ScpWriter:
 
     def _opcode_site(self) -> SourceSite | None:
         """Where the opcode being compiled was emitted: the innermost frame running an opcode emitter or a function it
-        wraps (a helper either called counts as its call). f_lasti, not f_lineno: f_lineno scans the line table,
-        which grows with the function"""
+        wraps (a helper either called counts as its call); None while the compile check is off. f_lasti, not f_lineno:
+        f_lineno scans the line table, which grows with the function"""
+        if not self.check_compiled:
+            return None
+
         frame = sys._getframe(1)
         while frame is not None and id(frame.f_code) not in self.opcode_emitter_code_ids:
             frame = frame.f_back
@@ -781,15 +772,11 @@ class ScpWriter:
         global index within the declared table, a string one the pool can store"""
         for number, (op_desc, value) in enumerate(zip(operand_descriptors, args), 1):
             if op_desc.type == ED9OperandType.Value:
-                problem = self._code_string_problem(value)
-                if problem is not None:
-                    raise ValueError(self._at_opcode(f'{mnemonic} {problem}'))
-
+                self._require_poolable(value, mnemonic)
                 continue
 
             valid = self._operand_range(op_desc)
-            # Compared, not `in`: a range scans itself for an int subclass (an IntEnum, RawInt)
-            if valid is None or valid.start <= value < valid.stop:
+            if valid is None or in_range(value, valid):
                 continue
 
             # Only the global table can be empty
@@ -800,11 +787,14 @@ class ScpWriter:
             raise ValueError(self._at_opcode(f'{mnemonic} operand {number} is {value}, outside '
                                              f'{valid.start}..{valid.stop - 1}'))
 
-    def _code_string_problem(self, value) -> str | None:
-        """Why the pool can't store a string operand (str, or a String ScpValue); None if it can or it isn't a string"""
+    def _require_poolable(self, value, opcode: int | str):
+        """A string operand (str, or a String ScpValue) the pool can store, else a ValueError at the opcode's line;
+        opcode is its number or its mnemonic, named only when raising (PUSH is the commonest opcode)"""
         text = value.value if isinstance(value, ScpValue) else value
         problem = string_problem(text) if isinstance(text, str) else None
-        return f'string {text!r} {problem}' if problem is not None else None
+        if problem is not None:
+            name = opcode if isinstance(opcode, str) else ED9Opcode(opcode).name
+            raise ValueError(self._at_opcode(f'{name} string {text!r} {problem}'))
 
     def _operand_range(self, op_desc: OperandDescriptor) -> range | None:
         """The values an operand may take: its type's (OperandFormat.value_range), or the declared global indices"""
@@ -918,7 +908,7 @@ _gScp = ScpWriter()
 
 
 def create_scp_writer(name: str) -> ScpWriter:
-    _gScp.init(name)
+    _gScp.dat_name = name
 
     return _gScp
 

@@ -53,6 +53,19 @@ def read_text(data: bytes, offset: int) -> str:
     return data[offset:data.find(NUL, offset)].decode(default_encoding(), errors='replace')
 
 
+def string_problem(text: str) -> str | None:
+    """Why text can't be a pooled string (stored encoded and NUL-terminated, read up to the first NUL), or None"""
+    if '\0' in text:
+        return 'contains a NUL, which ends a .dat string early'
+
+    try:
+        text.encode(default_encoding())
+    except UnicodeEncodeError as e:
+        return f"can't be encoded: {e.reason} at position {e.start}"
+
+    return None
+
+
 def string_offset(raw_value: int) -> int | None:
     """String pool offset of a raw ScpValue word, None when it isn't a String"""
     if raw_value >> ScpValue.TYPE_SHIFT != ScpValue.Type.String:

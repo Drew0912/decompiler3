@@ -22,7 +22,7 @@ class _StderrHandler(logging.StreamHandler):
 log = logging.getLogger('decompiler3')
 log.setLevel(logging.INFO)
 log.propagate = False
-handler = _StderrHandler()
-handler.setFormatter(logging.Formatter('[%(asctime)s][%(filename)s:%(lineno)d][%(levelname)s] %(message)s', datefmt='%m-%d %H:%M:%S'))
+_handler = _StderrHandler()
+_handler.setFormatter(logging.Formatter('[%(asctime)s][%(filename)s:%(lineno)d][%(levelname)s] %(message)s', datefmt='%m-%d %H:%M:%S'))
 
-log.addHandler(handler)
+log.addHandler(_handler)

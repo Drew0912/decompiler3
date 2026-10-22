@@ -100,6 +100,11 @@ def function_facts(parser: ScpParser, func: Function) -> FunctionFacts:
     )
 
 
+def load_library_script(path: Path) -> tuple[ScpParser, list[Function]]:
+    """Both passes parse a script alike, or pass 2's fingerprint check fails"""
+    return ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
+
+
 def collect_occurrences(paths: list[Path]) -> tuple[dict[str, list[Occurrence]], dict[str, FunctionFacts]]:
     """Pass 1: fingerprint every is_common_func occurrence. name -> its occurrences in paths order, and digest ->
     facts (from its first occurrence)"""
@@ -107,7 +112,7 @@ def collect_occurrences(paths: list[Path]) -> tuple[dict[str, list[Occurrence]],
     facts_by_digest: dict[str, FunctionFacts] = {}
 
     for path in paths:
-        parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
+        parser, functions = load_library_script(path)
 
         for func in functions:
             if not func.is_common_func:
@@ -266,7 +271,7 @@ def render_included_functions(canonical: dict[str, Occurrence], included: set[st
     rendered: dict[str, list[str]] = {}
 
     for path, names in names_by_path.items():
-        parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
+        parser, functions = load_library_script(path)
         functions_by_name = {func.name: func for func in functions}
 
         for name in names:
@@ -333,11 +338,11 @@ def render_all(module_keys: list[str]) -> str:
     lines = [
         '"""Every common-function library module, re-exported in one place.',
         '',
-        'Every generated script imports this unconditionally (falcom/ed9/parser/scp.py\'s',
+        "Every generated script imports this unconditionally (falcom/ed9/parser/scp.py's",
         'gen_python_header), so the whole library is always in scope - not just the functions a',
-        'script\'s own source happened to use - for adding a common function call by hand.',
+        "script's own source happened to use - for adding a common function call by hand.",
         '',
-        'COMMON_LIBRARY_GENERATED is False when this package hasn\'t been generated yet (a fresh',
+        "COMMON_LIBRARY_GENERATED is False when this package hasn't been generated yet (a fresh",
         'checkout before gen_common_library.py has been run). match_library_functions',
         'checks that the module files exist instead of importing this, so an ungenerated library',
         'falls back to fully inline output instead of a manifest that would reference an undefined',
@@ -408,10 +413,10 @@ def generate(corpus_root: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('corpus_root', type=Path,
-                        help="a game's script folder (script or script_<lang>), e.g. sora2_1.0/script_en")
-    args = parser.parse_args()
+    arg_parser = argparse.ArgumentParser(description=__doc__)
+    arg_parser.add_argument('corpus_root', type=Path,
+                            help="a game's script folder (script or script_<lang>), e.g. sora2_1.0/script_en")
+    args = arg_parser.parse_args()
 
     generate(args.corpus_root)
 

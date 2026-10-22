@@ -51,7 +51,6 @@ class FileStream:
     def __init__(self, file: str | bytes | bytearray = None, mode: str = 'rb', *, endian: str = None, encoding: str = None):
         endian = endian or default_endian()
         self._stream = None
-        self._endian = _ENDIAN_NAMES.get(endian, endian)
         self._structs = {fmt: struct_layout(fmt, endian) for fmt in self.STRUCT_FORMATS}
         self._encoding = encoding or default_encoding()
 
@@ -82,13 +81,6 @@ class FileStream:
     def Close(self):
         if self._stream is not None:
             self._stream.close()
-
-    @property
-    def Length(self) -> int:
-        pos = self._stream.tell()
-        size = self._stream.seek(0, io.SEEK_END)
-        self._stream.seek(pos)
-        return size
 
     @property
     def Position(self) -> int:
@@ -160,7 +152,7 @@ class FileStream:
 
     STRING_CHUNK_SIZE = 64    # bytes read at a time while looking for a string's terminating NUL
 
-    def ReadMultiByte(self, cp: str = None) -> str:
+    def ReadMultiByte(self, encoding: str = None) -> str:
         """Null-terminated string, leaving the stream after its NUL; undecodable bytes are dropped with a warning"""
         start = self._stream.tell()
         s = bytearray()
@@ -176,7 +168,7 @@ class FileStream:
             if len(chunk) < self.STRING_CHUNK_SIZE:
                 break
 
-        encoding = cp or self._encoding
+        encoding = encoding or self._encoding
         try:
             return s.decode(encoding)
         except UnicodeDecodeError as e:
@@ -203,7 +195,7 @@ class FileStream:
 
     def WriteFloat(self, *values: float) -> int:
         # Round through a C float first: an out-of-range value becomes inf instead of raising
-        return sum(self._stream.write(struct.pack(self._endian + 'f', c_float(float(v)).value)) for v in values)
+        return sum(self._stream.write(self._structs['f'].pack(c_float(float(v)).value)) for v in values)
 
 
 def str_to_bytes(s: str) -> bytes:

@@ -105,8 +105,9 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
     """The .llil.asm, .mlil.asm, .hlil.ts, .ts and .dot outputs the config asks for"""
     output_dir = out.parent
 
-    need_llil = config.write_llil_asm or config.write_llil_dot or config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
-    if not need_llil:
+    need_hlil = config.write_hlil_ts or config.write_ts
+    need_mlil = config.write_mlil_asm or config.write_mlil_dot or need_hlil
+    if not (config.write_llil_asm or config.write_llil_dot or need_mlil):
         return
 
     llil_asm_lines: list[str] = []
@@ -128,7 +129,6 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if config.write_llil_dot:
                 write_text_lf(output_dir / f'{out.stem}.{func.name}.llil.dot', FalcomLLILFormatter.to_dot(llil_func))
 
-            need_mlil = config.write_mlil_asm or config.write_mlil_dot or config.write_hlil_ts or config.write_ts
             if not need_mlil:
                 continue
 
@@ -140,7 +140,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if config.write_mlil_dot:
                 write_text_lf(output_dir / f'{out.stem}.{func.name}.mlil.dot', MLILFormatter.to_dot(mlil_func))
 
-            if not (config.write_hlil_ts or config.write_ts):
+            if not need_hlil:
                 continue
 
             hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func, line_markers=config.line_markers)
@@ -174,11 +174,11 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
-    parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
-    parser.add_argument('-o', '--output-dir', type=Path, help="output folder (default: scena2py_config.py's output_dir)")
+    arg_parser = argparse.ArgumentParser(description='Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
+    arg_parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
+    arg_parser.add_argument('-o', '--output-dir', type=Path, help="output folder (default: scena2py_config.py's output_dir)")
 
-    args = parser.parse_args()
+    args = arg_parser.parse_args()
     files = collect_paths(args.paths)
     config = ScenaDecompileConfig()
     if args.output_dir is not None:

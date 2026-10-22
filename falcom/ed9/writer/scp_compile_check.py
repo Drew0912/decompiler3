@@ -53,6 +53,7 @@ class CompileCheck:
         self.dat_name = dat_name
         self.functions = functions
         self.functions_by_name = {f.name: f for f in functions}
+        self.function_offsets = [f.offset for f in functions]
         self.source_map = source_map    # code position of each opcode -> where it was emitted
         self.code_offset = code_offset  # file offset where the code starts
         self.warn_unreachable_code = warn_unreachable_code
@@ -106,8 +107,7 @@ class CompileCheck:
         though it reads values. The game's compiler always emits its own POP right after it, and nothing else checks
         argc while the stack balances. Code two functions reach is warned once, named by the function it is in; a
         SYSCALL ending a function gets only the run-on warning"""
-        starts = [f.offset for f in self.functions]
-        start_set = set(starts)
+        start_set = set(self.function_offsets)
         for inst in ordered:
             offset = inst.offset
             end = offset + inst.size
@@ -130,17 +130,14 @@ class CompileCheck:
             else:
                 continue
 
-            owner = self.functions[bisect.bisect_right(starts, offset) - 1].name
-            log.warning(self._failure_text(owner, message, inst))
+            log.warning(self._failure_text(self._function_at(offset), message, inst))
 
     def _warn_unreachable(self, ordered: list[Instruction], code_end: int):
         """A warning per range of code no function's reachable instructions cover, at its first opcode's line. All
         functions' code at once, since a function may jump into another's; a range never crosses a function's start
         (every entry is reachable), so it is the last function's starting at or before it"""
         positions = sorted(self.source_map)
-        starts = [f.offset for f in self.functions]
         for start, end, _ in dropped_ranges(ordered, self.code_offset, code_end):
-            owner = self.functions[bisect.bisect_right(starts, start) - 1].name
             count = (bisect.bisect_left(positions, end - self.code_offset)
                      - bisect.bisect_left(positions, start - self.code_offset))
             where = f'at 0x{start:X}..0x{end:X}'
@@ -149,7 +146,15 @@ class CompileCheck:
             else:
                 message = f'{count} opcodes {where} never run (no path reaches them); the everyday decompile drops them'
 
-            log.warning(self._failure_text(owner, message, offset=start))
+            log.warning(self._failure_text(self._function_at(start), message, offset=start))
+
+    def _function_at(self, offset: int) -> str:
+        """The function whose code starts last at or before a file offset"""
+        return self.functions[bisect.bisect_right(self.function_offsets, offset) - 1].name
+
+    def _site_at(self, offset: int | None) -> SourceSite | None:
+        """Where the opcode at a file offset was emitted (the source map is keyed by code position)"""
+        return self.source_map.get(offset - self.code_offset) if offset is not None else None
 
     def _run_on_note(self, function_name: str | None, inst: Instruction | None) -> str | None:
         """How the function runs on into the next function's code, located: it has no code at all, or inst runs past
@@ -181,7 +186,7 @@ class CompileCheck:
     def _with_entry_lines(self, text: str, function_name: str | None, offset: int | None) -> str:
         """text with the script line after each stack entry an opcode pushed (not a parameter): '(line N)' in the file
         of the opcode at offset (else of the function's def), 'file:N' in another (an opcode callback's)"""
-        site = self.source_map.get(offset - self.code_offset) if offset is not None else None
+        site = self._site_at(offset)
         f = self.functions_by_name.get(function_name)
         if site is not None:
             failing_file = site.code.co_filename
@@ -189,7 +194,7 @@ class CompileCheck:
             failing_file = f.body.__code__.co_filename if f is not None else None
 
         def with_line(match: re.Match) -> str:
-            entry_site = self.source_map.get(int(match[1], 16) - self.code_offset)
+            entry_site = self._site_at(int(match[1], 16))
             if entry_site is None:
                 return match[0]
 
@@ -202,7 +207,7 @@ class CompileCheck:
 
     def _failure_prefix(self, function_name: str | None, offset: int | None) -> str:
         """'file:line: ' of the opcode compiled at a file offset, else of the function's def; '' when neither is known"""
-        site = self.source_map.get(offset - self.code_offset) if offset is not None else None
+        site = self._site_at(offset)
         if site is not None:
             return location_prefix(site)
 
