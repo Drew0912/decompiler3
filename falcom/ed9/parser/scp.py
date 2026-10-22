@@ -171,32 +171,31 @@ def frame_return(entry) -> int | None:
 class StackEntryGroups:
     """Union-find over simulated stack entries. Entries that stand at the same position when two edges meet are one
     group: after the join either may be there. A call that consumes a group gives it a role every member must fit.
-    Keyed by identity: Instruction is an unhashable dataclass, and equal-looking pushes are still different pushes."""
+    Keyed by the entries, which compare and hash by identity: equal-looking pushes are still different pushes."""
 
     def __init__(self):
-        self.parent     : dict[int, int] = {}       # id(entry) -> id(parent entry)
-        self.members    : dict[int, list] = {}      # id(root) -> entries
-        self.roles      : dict[int, Role] = {}      # id(root) -> the role a call consumed the group as
+        self.parent     : dict = {}                 # entry -> parent entry
+        self.members    : dict[object, list] = {}   # root -> entries
+        self.roles      : dict[object, Role] = {}   # root -> the role a call consumed the group as
 
-    def find(self, entry) -> int:
-        key = id(entry)
-        if key not in self.parent:
-            self.parent[key] = key
-            self.members[key] = [entry]
-            return key
+    def find(self, entry):
+        if entry not in self.parent:
+            self.parent[entry] = entry
+            self.members[entry] = [entry]
+            return entry
 
-        root = key
-        while self.parent[root] != root:
+        root = entry
+        while self.parent[root] is not root:
             root = self.parent[root]
 
-        while self.parent[key] != root:
-            self.parent[key], key = root, self.parent[key]
+        while self.parent[entry] is not root:
+            self.parent[entry], entry = root, self.parent[entry]
 
         return root
 
     def role_of(self, entry) -> Role | None:
         """The role entry's group was consumed as, without creating a group for it"""
-        if id(entry) not in self.parent:
+        if entry not in self.parent:
             return None
 
         return self.roles.get(self.find(entry))
@@ -204,7 +203,7 @@ class StackEntryGroups:
     def union(self, entry, other) -> tuple[Role | None, Role | None]:
         """Merge two groups; returns the roles either was consumed as (none when they already were one group)"""
         root, other_root = self.find(entry), self.find(other)
-        if root == other_root:
+        if root is other_root:
             return None, None
 
         self.parent[other_root] = root
@@ -261,7 +260,7 @@ class ScpDisassemblerContext(DisassemblerContext):
     recorded_edges   : list = field(default_factory=list)                   # (source offset, target, state) of every edge
     inst_states      : dict[int, tuple] = field(default_factory=dict)       # instruction offset -> the stack before it
     groups           : StackEntryGroups = field(default_factory=StackEntryGroups)
-    plain_uses       : dict[int, object] = field(default_factory=dict)      # id -> entry an ordinary consumer used
+    plain_uses       : set = field(default_factory=set)                     # entries an ordinary consumer used
     declares_call_returns : bool = True             # CALL and CALL_SCRIPT return their own return edges
 
     def fail(self, message: str, inst: Instruction | None = None):
@@ -322,7 +321,7 @@ class ScpDisassemblerContext(DisassemblerContext):
 
     def fit(self, member, role: Role):
         """Check that member can be consumed as role; a setup PUSH_RAW becomes its pseudo-instruction"""
-        if id(member) in self.plain_uses:
+        if member in self.plain_uses:
             self.fail(f'expects {role}, but {format_stack_entry(member)} is also used as a plain value',
                       self.current_inst)
 
@@ -427,7 +426,7 @@ class ScpDisassemblerContext(DisassemblerContext):
             self.fail(f'uses {format_stack_entry(entry)} as a plain value, but a call consumes it as {role}',
                       self.current_inst)
 
-        self.plain_uses[id(entry)] = entry
+        self.plain_uses.add(entry)
 
     def pop_count(self, inst: Instruction) -> int:
         """How many entries inst pops above a call's setup; a local CALL's are its callee's parameters"""
@@ -485,11 +484,11 @@ class ScpDisassemblerContext(DisassemblerContext):
         # A recorded edge leaves from its block's last real instruction: the one that branches, or a split head's last
         source_blocks = {insts[-1].offset: start for start, insts in blocks.items()}
 
-        # Block start -> slot -> the entries that may stand there, by id (Instruction is unhashable)
-        held = {start: [{} for _ in state] for start, state in starts.items()}
-        held[entry_block.offset] = [{id(entry): entry} for entry in starts[entry_block.offset]]
+        # Block start -> slot -> the entries that may stand there
+        held = {start: [set() for _ in state] for start, state in starts.items()}
+        held[entry_block.offset] = [{entry} for entry in starts[entry_block.offset]]
 
-        def held_at(block: int, state: tuple, slot: int) -> dict:
+        def held_at(block: int, state: tuple, slot: int) -> set:
             """The entries that may stand in slot where block's stack is state"""
             while True:
                 entry = state[slot]
@@ -497,7 +496,7 @@ class ScpDisassemblerContext(DisassemblerContext):
                     return held[block][slot]
 
                 if not (isinstance(entry, Instruction) and entry.opcode == ED9Opcode.POP_TO):
-                    return {id(entry): entry}
+                    return {entry}
 
                 state = self.inst_states[entry.offset]
 
@@ -520,7 +519,7 @@ class ScpDisassemblerContext(DisassemblerContext):
                 if effect.addresses_slot:
                     slot = addressed_slot(inst, len(state))
                     live = 0 <= slot < len(state) - effect.pops
-                    entries = held_at(start, state, slot) if live else {}
+                    entries = held_at(start, state, slot) if live else set()
                     ref = self.slot_ref(slot, entries, layout.local_slots)
                     if not live and self.reject_outside_stack:
                         self.fail(f'addresses {ref}', inst)
@@ -532,7 +531,7 @@ class ScpDisassemblerContext(DisassemblerContext):
 
                 if inst.descriptor.kind in ARGUMENT_CALL_KINDS:
                     for slot in range(max(len(state) - self.call_argc(inst), 0), len(state)):
-                        for entry in held_at(start, state, slot).values():
+                        for entry in held_at(start, state, slot):
                             # A parameter or caller-frame entry has no line of its own
                             if isinstance(entry, Instruction):
                                 arguments.setdefault(entry.offset, []).append((inst.offset, len(state) - slot))
@@ -540,11 +539,10 @@ class ScpDisassemblerContext(DisassemblerContext):
         layout.arg_numbers = {offset: tuple(number for _, number in sorted(calls)) for offset, calls in arguments.items()}
         return layout
 
-    def slot_ref(self, slot: int, entries: dict, local_slots: dict[int, int]) -> SlotRef:
-        """What slot may hold, from the entries that may stand there (by id); each local's instruction goes into
-        local_slots"""
+    def slot_ref(self, slot: int, entries: set, local_slots: dict[int, int]) -> SlotRef:
+        """What slot may hold, from the entries that may stand there; each local's instruction goes into local_slots"""
         params, local, caller_frame, call_setup = [], False, False, False
-        for entry in entries.values():
+        for entry in entries:
             if isinstance(entry, ParamEntry):
                 params.append(len(self.current_func.params) - entry.index)
             elif isinstance(entry, FrameSlot):
@@ -1095,15 +1093,16 @@ class ScpParser(StrictBase):
 
         while True:
             offsets = reachable_offsets | {inst.offset for block in blocks for inst in block.instructions}
-            dropped_ids = {id(block) for block in blocks if any(target not in offsets for target in Formatter.branch_targets(block))}
-            if not dropped_ids:
+            dropped = {block for block in blocks
+                       if any(target not in offsets for target in Formatter.branch_targets(block))}
+            if not dropped:
                 return blocks
 
             for block in blocks:
-                if id(block) in dropped_ids:
+                if block in dropped:
                     log.warning(f'{func.name}: unreachable code at 0x{block.offset:X} not kept, it branches to an offset with no instruction')
 
-            blocks = [block for block in blocks if id(block) not in dropped_ids]
+            blocks = [block for block in blocks if block not in dropped]
 
     def format_function(self, func: Function, comments: CommentOptions = CommentOptions()) -> list[str]:
         """Format a disassembled function"""

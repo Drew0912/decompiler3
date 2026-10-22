@@ -82,7 +82,7 @@ class ScpListing:
         self.unreachable = set()
         for index in code_order(self.parser.function_entries):
             func = self.parser.functions[index]
-            self.unreachable.update(id(inst) for inst in ScpParser.unreachable_instructions(func))
+            self.unreachable.update(ScpParser.unreachable_instructions(func))
             for inst in self.parser.code_instructions(func):
                 self.decoded.setdefault(inst.offset, []).append((inst, func))
 
@@ -201,7 +201,7 @@ class ScpListing:
                 lines.append(self.with_comments(f'{"":<{self.asm_column}}{default_label_for_addr(inst.offset)}:', depth))
 
             text, notes = self.asm_text(inst)
-            comments = ['unreachable'] if id(inst) in self.unreachable else []
+            comments = ['unreachable'] if inst in self.unreachable else []
             if func.index not in indices:
                 comments.append(f'decoded by {func.name}')
 

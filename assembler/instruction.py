@@ -17,9 +17,9 @@ class Operand:
     value       : Any
 
 
-@dataclass
+@dataclass(eq=False)
 class Instruction:
-    """Generic instruction representation"""
+    """Generic instruction representation, compared and hashed by identity"""
 
     offset        : int                                             # Offset in bytecode
     opcode        : int                                             # Raw opcode value

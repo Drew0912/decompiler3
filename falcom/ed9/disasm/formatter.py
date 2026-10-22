@@ -69,13 +69,13 @@ class Formatter:
         self.referenced_offsets = self.find_referenced_offsets(entry_block, reachable_blocks=reachable_blocks)
 
         blocks = reachable_blocks + list(unreachable_blocks)
-        unreachable_ids = {id(block) for block in unreachable_blocks}  # BasicBlock is an unhashable dataclass
+        unreachable = set(unreachable_blocks)
 
         blocks.sort(key=lambda b: b.offset)
 
         lines = []
         for block in blocks:
-            if id(block) in unreachable_ids:
+            if block in unreachable:
                 block_lines = [UNREACHABLE_CODE_BEGIN, *self.format_block(block, unreachable=True), UNREACHABLE_CODE_END]
             else:
                 block_lines = self.format_block(block)
@@ -126,12 +126,6 @@ class Formatter:
             if inst.offset in self.unreachable_targets:
                 lines.extend(self._format_label_once(inst.offset, () if unreachable else (UNREACHABLE_TARGET_COMMENT,)))
 
-            # A referenced offset that starts no block: none in real scripts, as every branch target and return address
-            # starts one; this keeps its label defined if that ever fails. Not gated on `unreachable`: such an offset
-            # may sit in unreachable code, and its label must still be defined
-            if inst.offset in self.referenced_offsets:
-                lines.extend(self._format_label_once(inst.offset))
-
             formatted = inst.descriptor.format_instruction(inst, self.context)
             debug_argc = self.call_debug_argc.get(inst.offset)
             if debug_argc is not None:
@@ -177,8 +171,7 @@ class Formatter:
     @classmethod
     def find_referenced_offsets(cls, entry_block: 'BasicBlock', *, reachable_blocks: 'list[BasicBlock] | None' = None) -> set[int]:
         """Offsets a real (non-synthetic) Offset operand points at, among reachable blocks - each
-        one needs a label. Each starts a reachable block, as every branch target and return address does
-        (format_block falls back to a label at the instruction otherwise)"""
+        one needs a label. Each starts a reachable block, as every branch target and return address does"""
         if reachable_blocks is None:
             reachable_blocks = cls.collect_blocks(entry_block)
 

@@ -427,7 +427,8 @@ class TestRealScripts(unittest.TestCase):
         listing = ScpListing(require(DEAD_CODE_CALLS_FILE))
         call_offsets, _, note = listing.pairing(listing.parser.function_map['AniBtlCraft01'])
         self.assertIsNone(note)
-        self.assertTrue([offset for offset in call_offsets.values() if id(listing.decoded[offset][0][0]) in listing.unreachable])
+        self.assertTrue([offset for offset in call_offsets.values()
+                         if listing.decoded[offset][0][0] in listing.unreachable])
 
     def test_code_before_the_first_function(self):
         listing = ScpListing(require(CODE_BEFORE_FUNCTIONS_FILE))

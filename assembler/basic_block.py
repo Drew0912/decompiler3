@@ -17,9 +17,9 @@ class BranchKind(IntEnum2):
     FALSE           = 2     # Conditional branch not taken
 
 
-@dataclass
+@dataclass(eq=False)
 class BasicBlock:
-    """Basic block in control flow graph"""
+    """Basic block in control flow graph, compared and hashed by identity"""
 
     offset          : int                                                   # Starting offset
     name            : str                 = ''                              # Block label (e.g., 'loc_1234')
