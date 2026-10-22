@@ -191,7 +191,7 @@ class CallDebugInfoTracker:
         tracker = cls(get_param_count)
         for inst in instructions:
             payload = ScpValue(inst.operands[0].value) if inst.opcode in PUSH_CONSTANT_OPS else None
-            tracker.on_opcode(inst.opcode, [operand.value for operand in inst.operands], payload)
+            tracker.on_opcode(inst.opcode, inst.operand_values, payload)
             if call_offsets is not None and len(tracker.calls) > len(call_offsets):
                 call_offsets[tracker.calls[-1]] = inst.offset
 

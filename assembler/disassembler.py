@@ -1,5 +1,6 @@
 """Generic recursive descent disassembler"""
 
+from dataclasses import dataclass
 from typing import Callable
 import heapq
 
@@ -33,11 +34,11 @@ class Disassembler:
         self.context.instruction_table = instruction_table
 
         # Tracking dictionaries
-        self.disassembled_blocks: dict[int, BasicBlock] = {}   # offset -> completed block
-        self.disassembled_offset: dict[int, Instruction] = {}  # offset -> instruction
-        self.allocated_blocks: dict[int, BasicBlock] = {}      # offset -> allocated block
-        self.offset_to_block: dict[int, BasicBlock] = {}       # instruction offset -> block
-        self.covering: dict[int, Instruction] = {}             # byte offset -> decoded instruction covering it
+        self.disassembled_blocks: dict[int, BasicBlock] = {}     # offset -> completed block
+        self.offset_to_instruction: dict[int, Instruction] = {}  # offset -> instruction
+        self.allocated_blocks: dict[int, BasicBlock] = {}        # offset -> allocated block
+        self.offset_to_block: dict[int, BasicBlock] = {}         # instruction offset -> block
+        self.byte_to_instruction: dict[int, Instruction] = {}    # byte offset -> decoded instruction covering it
 
     def disasm_function(
         self,
@@ -113,7 +114,7 @@ class Disassembler:
             pos = fs.Position
 
             # Check if we've reached another block's instructions
-            if pos in self.disassembled_offset:
+            if pos in self.offset_to_instruction:
                 # Reached an instruction that's part of another block
                 break
 
@@ -123,7 +124,7 @@ class Disassembler:
             self.claim_bytes(inst)
 
             # Record instruction
-            self.disassembled_offset[pos] = inst
+            self.offset_to_instruction[pos] = inst
             self.offset_to_block[pos] = block
             block.instructions.append(inst)
 
@@ -136,10 +137,7 @@ class Disassembler:
                 pending_targets = self.context.on_instruction_decoded(self.context, inst, block)
 
             # If block terminates or declares future targets, collect them
-            if desc.ends_block:
-                pending_targets.extend(desc.get_branch_targets(inst, next_pos))
-
-            if desc.starts_block and not self.context.declares_call_returns:
+            if desc.ends_block or (desc.starts_block and not self.context.declares_call_returns):
                 pending_targets.extend(desc.get_branch_targets(inst, next_pos))
 
             # Add any pending targets
@@ -168,14 +166,12 @@ class Disassembler:
         if self.context.on_pre_add_branch:
             self.context.on_pre_add_branch(self.context, BranchTarget.unconditional(target_offset))
 
-        next_block = self.ensure_block_at(target_offset)
-        synthetic_jmp = self.context.create_fallthrough_jump(
-            src_offset,
-            target_offset,
-            self.instruction_table
-        )
-        block.instructions.append(synthetic_jmp)
-        block.add_branch(next_block, BranchKind.UNCONDITIONAL)
+        self._append_fallthrough_jump(block, src_offset, self.ensure_block_at(target_offset))
+
+    def _append_fallthrough_jump(self, block: BasicBlock, offset: int, target: BasicBlock):
+        """End block with a synthetic jump (made at offset) and its edge to target"""
+        block.instructions.append(self.context.create_fallthrough_jump(offset, target.offset, self.instruction_table))
+        block.add_branch(target, BranchKind.UNCONDITIONAL)
 
     def create_block(self, offset: int) -> BasicBlock:
         """Create or get a basic block at offset"""
@@ -190,11 +186,11 @@ class Disassembler:
     def claim_bytes(self, inst: Instruction):
         """Record the bytes inst covers, for ensure_block_at's mid-instruction check"""
         for offset in range(inst.offset, inst.offset + inst.size):
-            self.covering[offset] = inst
+            self.byte_to_instruction[offset] = inst
 
     def ensure_block_at(self, target_offset: int) -> BasicBlock:
         """Ensure target_offset is the start of a BasicBlock"""
-        other = self.covering.get(target_offset)
+        other = self.byte_to_instruction.get(target_offset)
         if other is not None and other.offset != target_offset:
             raise ValueError(f'Branch target 0x{target_offset:X} is inside the instruction at 0x{other.offset:X}')
 
@@ -207,10 +203,7 @@ class Disassembler:
         if target_offset in self.offset_to_block:
             owner = self.offset_to_block[target_offset]
             # Target is in middle of owner block, need to split
-            if owner.offset != target_offset:
-                return self.split_block(owner, target_offset)
-            # Target is already at start of owner (shouldn't happen, but handle it)
-            return owner
+            return self.split_block(owner, target_offset)
 
         # No existing block, create new empty block
         return self.create_block(target_offset)
@@ -218,11 +211,7 @@ class Disassembler:
     def split_block(self, owner: BasicBlock, split_offset: int) -> BasicBlock:
         """Split a block at split_offset"""
         # Find split index
-        split_idx = None
-        for i, inst in enumerate(owner.instructions):
-            if inst.offset == split_offset:
-                split_idx = i
-                break
+        split_idx = next(i for i, inst in enumerate(owner.instructions) if inst.offset == split_offset)
 
         # Create tail block
         tail = BasicBlock(offset=split_offset)
@@ -230,7 +219,6 @@ class Disassembler:
 
         # The owner's terminator moves to the tail, and its edges with it
         for succ in owner.succs:
-            succ.preds.remove(owner)
             tail.add_branch(succ)
 
         tail.true_succs, tail.false_succs = owner.true_succs, owner.false_succs
@@ -242,14 +230,7 @@ class Disassembler:
 
         # Add synthetic fallthrough jump instruction to owner to make it terminate properly
         # This is needed for LLIL conversion to ensure every block ends with a terminal instruction
-
-        synthetic_jmp = self.context.create_fallthrough_jump(
-            split_offset,
-            tail.offset,
-            self.instruction_table
-        )
-        owner.instructions.append(synthetic_jmp)
-        owner.add_branch(tail, BranchKind.UNCONDITIONAL)
+        self._append_fallthrough_jump(owner, split_offset, tail)
 
         # Register tail in all tracking dictionaries
         self.allocated_blocks[tail.offset] = tail
@@ -266,7 +247,7 @@ class Disassembler:
 
     def get_instruction(self, offset: int) -> Instruction | None:
         """Get instruction at offset, if disassembled"""
-        return self.disassembled_offset.get(offset)
+        return self.offset_to_instruction.get(offset)
 
     def get_block(self, offset: int) -> BasicBlock | None:
         """Get basic block at offset, if disassembled"""

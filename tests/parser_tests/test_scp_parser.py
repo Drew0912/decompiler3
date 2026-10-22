@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dc3 import default_encoding, default_endian, fileio, quote_string
 from falcom.ed9.structs.scp_types import RawInt, ScpValue
-from falcom.ed9.structs.crc32 import crc32_table, hash_func_Name
+from falcom.ed9.structs.crc32 import hash_function_name
 
 
 ENDIAN = '<' if default_endian() == 'little' else '>'
@@ -153,9 +153,6 @@ class TestFunctionNameHash(unittest.TestCase):
 
         return table
 
-    def test_table_is_the_standard_crc32_table(self):
-        self.assertEqual(crc32_table, self.polynomial_table())
-
     def test_name_hash_by_first_character(self):
         """The first byte picks a table entry: one name per UTF-8 lead byte a function name can start with"""
         table = self.polynomial_table()
@@ -163,7 +160,7 @@ class TestFunctionNameHash(unittest.TestCase):
             with self.subTest(first=first):
                 data = (first + 'Func').encode(default_encoding())
                 expected = binascii.crc32(data[1:], ~(table[~data[0]] ^ NAME_HASH_SEED_MASK)) ^ CRC32_FINAL_XOR
-                self.assertEqual(hash_func_Name(first + 'Func'), expected)
+                self.assertEqual(hash_function_name(first + 'Func'), expected)
 
 
 if __name__ == '__main__':

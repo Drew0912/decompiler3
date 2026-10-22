@@ -173,11 +173,9 @@ byte.
 - **`GLOBAL_VAR` and `label()` moved into `scp_writer_helper.py`** (item 13; Step 2b, done), next to
   `genLabel()`: they are DSL statements that emit no instruction. `GLOBAL_VAR` was the only non-opcode in
   the opcode handler, and `label()` sat at the end of `scp_writer.py`. No output change.
-- **Simpler Integer decode** (found in Step 5's review, not planned). `ScpValue.from_value` sign-extends
-  an Integer by shifting through `0xC0000000`/`0x80000000` and a bytes round trip; with Step 5's
-  `INTEGER_MAX` it is `value &= PAYLOAD_MASK`, then `value -= 1 << TYPE_SHIFT` past `INTEGER_MAX` (same
-  value on 316,385 words checked, including every boundary). It changes the parser's decode path, so it
-  needs a decompile dump to land.
+- **Simpler Integer decode** (found in Step 5's review; done, `64a7c86`). The Integer decode
+  sign-extended by shifting through `0xC0000000`/`0x80000000` and a bytes round trip; it is now the payload
+  (`word & PAYLOAD_MASK`), less `1 << TYPE_SHIFT` past `INTEGER_MAX` (`ScpValue.decode_word`).
 
 ## Listings and Docstrings
 

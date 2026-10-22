@@ -2,14 +2,11 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from dc3 import fileio, format_signed_hex, IntEnum2, IntFlag2
 from .basic_block import BranchKind
-from .instruction import Instruction
-
-if TYPE_CHECKING:
-    from .instruction import Operand
+from .instruction import Instruction, Operand
 
 
 class OperandType(IntEnum2):
@@ -53,11 +50,8 @@ class OperandFormat:
         self.is_hex      = is_hex
         self.value_range = self.integer_range(opr_type)
 
-    def __str__(self):
-        return repr(self.type)
-
     def __repr__(self):
-        return self.__str__()
+        return repr(self.type)
 
     @property
     def size(self):
@@ -83,7 +77,7 @@ class OperandDescriptor:
 
     @classmethod
     def from_format_string(cls, fmtstr: str, format_table: dict | None = None) -> tuple['OperandDescriptor', ...]:
-        format_table = format_table if format_table else cls.format_table
+        format_table = format_table or cls.format_table
         return tuple(format_table[f] for f in fmtstr)
 
     def __init__(self, format: OperandFormat):
@@ -123,18 +117,18 @@ class OperandDescriptor:
         """Write operand value to file stream"""
         self.WRITER_BY_TYPE[self.format.type](fs, value)
 
-    def format_integer(self, operand: 'Operand') -> str:
+    def format_integer(self, operand: Operand) -> str:
         if self.format.is_hex:
             # Only a signed type can hold a negative value, so one rule fits both
             return format_signed_hex(operand.value, self.format.size * HEX_DIGITS_PER_BYTE)
 
         return str(operand.value)
 
-    def format_float(self, operand: 'Operand') -> str:
+    def format_float(self, operand: Operand) -> str:
         return str(operand.value)
 
-    def format_offset(self, operand: 'Operand') -> str:
-        return f'\'loc_{operand.value:X}\''
+    def format_offset(self, operand: Operand) -> str:
+        return f"'loc_{operand.value:X}'"
 
     FORMATTER_BY_TYPE = {
         OperandType.SInt8   : format_integer,
@@ -147,7 +141,7 @@ class OperandDescriptor:
         OperandType.Offset  : format_offset,
     }
 
-    def format_operand(self, operand: 'Operand', context: Any) -> str:
+    def format_operand(self, operand: Operand, context: Any) -> str:
         """Format operand for display; context is the engine's formatter context, read only by an engine's override"""
         return self.FORMATTER_BY_TYPE[self.format.type](self, operand)
 
@@ -185,7 +179,7 @@ OperandDescriptor.format_table.update({
 class BranchTarget:
     """Branch target information"""
 
-    kind   : 'BranchKind'
+    kind   : BranchKind
     offset : int
 
     @classmethod
@@ -230,7 +224,7 @@ class InstructionDescriptor:
         """Get branch targets from this instruction"""
         return []
 
-    def format_operands(self, operands: list['Operand'], context: Any) -> list[str]:
+    def format_operands(self, operands: list[Operand], context: Any) -> list[str]:
         """Format operands for display"""
         return [op.descriptor.format_operand(op, context) for op in operands]
 
@@ -246,12 +240,10 @@ class InstructionTable(ABC):
     @abstractmethod
     def read_opcode(self, fs: 'fileio.FileStream') -> int:
         """Read opcode from file stream"""
-        pass
 
     @abstractmethod
     def get_descriptor(self, opcode: int) -> InstructionDescriptor:
         """Get instruction descriptor for opcode"""
-        pass
 
     @abstractmethod
     def read_operands(
@@ -259,9 +251,8 @@ class InstructionTable(ABC):
         fs: 'fileio.FileStream',
         inst: Instruction,
         offset: int
-    ) -> list['Operand']:
+    ) -> list[Operand]:
         """Read operands for instruction"""
-        pass
 
     def decode_instruction(
         self,
@@ -276,13 +267,7 @@ class InstructionTable(ABC):
         descriptor = self.get_descriptor(opcode)
 
         # Create instruction
-        inst = Instruction(
-            offset=offset,
-            opcode=opcode,
-            descriptor=descriptor,
-            operands=[],
-            size=0
-        )
+        inst = Instruction(offset=offset, opcode=opcode, descriptor=descriptor)
 
         # Read operands (may modify inst.opcode and inst.descriptor)
         operands = self.read_operands(fs, inst, offset)

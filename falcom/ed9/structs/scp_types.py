@@ -25,27 +25,35 @@ class ScpParamType(IntEnum2):
     NullableOffset  = Offset | Flags.Nullable
 
 
+# Explicit aliases: Pylance takes a bare assignment star-imported along many paths (a hook's `from <script> import *`)
+# for a variable, and rejects it in an annotation
+Value32: TypeAlias     = int | float
+Nullable32: TypeAlias  = Value32 | None
+NullableStr: TypeAlias = str | None
+Pointer: TypeAlias     = object
+
+
 class ScpParamFlags:
     LAYOUT  = fileio.struct_layout('L')     # flags
     SIZE    = LAYOUT.size
 
+    # A parameter annotation's flags; the five are distinct keys (a union compares and hashes by its members)
+    FLAGS_BY_TYPE = {
+        Value32     : ScpParamType.Value,
+        Nullable32  : ScpParamType.NullableValue,
+        str         : ScpParamType.Offset,
+        NullableStr : ScpParamType.NullableOffset,
+        Pointer     : ScpParamType.Pointer,
+    }
+
     def __init__(self, typ: object = None, *, fs: fileio.FileStream = None):
         self.flags = 0
-        self.defaultValue = None
 
         if typ is not None:
-            if typ == Value32:
-                self.flags = ScpParamType.Value
-            elif typ == Nullable32:
-                self.flags = ScpParamType.NullableValue
-            elif typ == str:
-                self.flags = ScpParamType.Offset
-            elif typ == NullableStr:
-                self.flags = ScpParamType.NullableOffset
-            elif typ == Pointer:
-                self.flags = ScpParamType.Pointer
-            else:
+            if typ not in self.FLAGS_BY_TYPE:
                 raise NotImplementedError(f'unsupported type: {typ}')
+
+            self.flags = self.FLAGS_BY_TYPE[typ]
 
         self.from_stream(fs)
 
@@ -86,7 +94,7 @@ class ScpParamFlags:
     def __str__(self) -> str:
         return f'flags = 0x{self.flags:08X}'
 
-    __repr__ =  __str__
+    __repr__ = __str__
 
 
 class RawInt(int):
@@ -95,14 +103,6 @@ class RawInt(int):
 
     def __repr__(self) -> str:
         return f'RawInt(0x{self:08X})'
-
-
-# Explicit aliases: Pylance takes a bare assignment star-imported along many paths (a hook's `from <script> import *`)
-# for a variable, and rejects it in an annotation
-Value32: TypeAlias     = int | float
-Nullable32: TypeAlias  = Value32 | None
-NullableStr: TypeAlias = str | None
-Pointer: TypeAlias     = object
 
 
 class ScpValue:
@@ -126,7 +126,7 @@ class ScpValue:
 
     TYPE_BY_TAG = tuple(Type)       # decode_word's lookup by a word's top 2 bits: an enum call is ~20x slower
 
-    ClassMap = {
+    TYPE_BY_PYTHON_CLASS = {
         RawInt  : Type.Raw,
         int     : Type.Integer,
         float   : Type.Float,
@@ -134,14 +134,14 @@ class ScpValue:
     }
 
     def __init__(self, value: int | float | str | RawInt = None, *, fs: fileio.FileStream = None):
-        self.value  = value
+        self.value = value
 
         if value is not None:
             # Exact type lookup: bool (an int subclass) and other types are rejected rather than mis-encoded
-            if type(value) not in self.ClassMap:
+            if type(value) not in self.TYPE_BY_PYTHON_CLASS:
                 raise TypeError(f'ScpValue takes int, float, str or RawInt, not {type(value).__name__}: {value!r}')
 
-            self.type = self.ClassMap[type(value)]
+            self.type = self.TYPE_BY_PYTHON_CLASS[type(value)]
         else:
             self.type = None
 
@@ -151,12 +151,7 @@ class ScpValue:
         if fs is None:
             return
 
-        value = fs.ReadULong()
-        return self.from_value(value, fs=fs)
-
-    def from_value(self, value: int, *, fs: fileio.FileStream = None):
-        self.type, self.value = self.decode_word(value, fs=fs)
-        return self
+        self.type, self.value = self.decode_word(fs.ReadULong(), fs=fs)
 
     @classmethod
     def decode_word(cls, word: int, *, fs: fileio.FileStream = None) -> tuple['ScpValue.Type', int | float | str | RawInt]:
@@ -164,19 +159,19 @@ class ScpValue:
         typ = word >> cls.TYPE_SHIFT
 
         match typ:
-            case ScpValue.Type.Raw:
+            case cls.Type.Raw:
                 value = RawInt(word)
 
-            case ScpValue.Type.Integer:
+            case cls.Type.Integer:
                 payload = word & cls.PAYLOAD_MASK
                 value = payload - (1 << cls.TYPE_SHIFT) if payload > cls.INTEGER_MAX else payload
 
-            case ScpValue.Type.Float:
+            case cls.Type.Float:
                 value = _float32_from_bits(cls.word_float32_bits(word))
                 if not math.isfinite(value):
                     log.warning(f"non-finite float {value} (word 0x{word:08X}): the game can't use it, so compiling the .py will fail")
 
-            case ScpValue.Type.String:
+            case cls.Type.String:
                 with fs.PositionSaver:
                     fs.Position = word & cls.PAYLOAD_MASK
                     value = fs.ReadMultiByte()
@@ -217,7 +212,7 @@ class ScpValue:
     def encode_float(cls, value: float) -> int:
         """The Float word value is stored as: its float32 bits without the lowest FLOAT_DROPPED_BITS, under the Float
         tag; OverflowError past float32's range"""
-        return (_float32_bits(value) >> cls.FLOAT_DROPPED_BITS) | (ScpValue.Type.Float << cls.TYPE_SHIFT)
+        return (_float32_bits(value) >> cls.FLOAT_DROPPED_BITS) | (cls.Type.Float << cls.TYPE_SHIFT)
 
     @classmethod
     def float_word(cls, value: float) -> int | None:
@@ -390,18 +385,6 @@ class ScpFunctionCallDebugInfoArg(StrictBase):
         Variable    = 2     # LOAD_STACK / PUSH_STACK_OFFSET, value is Raw 0
         Expression  = 3     # computed value, value is Raw 0
 
-    value : ScpValue
-    type  : int
-
-    def __init__(self, type: int, value: ScpValue):
-        self.type   = type
-        self.value  = value
-
-    def __str__(self) -> str:
-        return f'Arg<{self.type} {self.value}>'
-
-    __repr__ = __str__
-
 
 class ScpFunctionCallDebugInfo(StrictBase):
     LAYOUT      = fileio.struct_layout('LHHL')      # func_id, call_type, arg_count, info_offset: 0x0C
@@ -429,12 +412,9 @@ class ScpFunctionCallDebugInfo(StrictBase):
         self.func_id, call_type, self.arg_count, self.info_offset = self.LAYOUT.unpack(fs.Read(self.SIZE))
         self.call_type = self.CallType(call_type)
 
-    def to_bytes(self) -> bytes:
-        return self.pack(self.func_id, self.call_type, self.arg_count, self.info_offset)
-
     @classmethod
     def pack(cls, func_id: int, call_type: int, arg_count: int, info_offset: int) -> bytes:
-        """to_bytes from the fields, without building a record"""
+        """A record's bytes from its fields, without building one"""
         return cls.LAYOUT.pack(func_id, call_type, arg_count, info_offset)
 
     def arg_offsets(self) -> range:

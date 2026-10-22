@@ -69,8 +69,8 @@ class ScpListing:
 
     def __init__(self, path: Path):
         self.path = path
-        self.parser, _ = ScpParser.load(path, round_trip=False, keep_unreachable_code=True)
         self.data = path.read_bytes()
+        self.parser, _ = ScpParser.load_bytes(self.data, path.name, round_trip=False, keep_unreachable_code=True)
         self.records = read_debug_records(self.parser, self.data)
         self.refs = collect_string_refs(self.data, self.parser, self.records)
         self.offset_width = len(f'{len(self.data):X}')
@@ -258,15 +258,15 @@ class ScpListing:
         if offset is not None:
             return f'Str(0x{offset:X})', quote_string(read_text(self.data, offset))
 
-        value = ScpValue().from_value(word)
-        match value.type:
+        value_type, value = ScpValue.decode_word(word)
+        match value_type:
             case ScpValue.Type.Float:
-                return f'Float({ScpValue.float_literal(value.value)})', None
+                return f'Float({ScpValue.float_literal(value)})', None
 
             case ScpValue.Type.Integer:
-                return f'Int({value.value})', None
+                return f'Int({value})', None
 
-        return f'Raw(0x{value.value:X})', None
+        return f'Raw(0x{value:X})', None
 
     def pairing(self, func: Function) -> tuple[dict[int, int], list[int], str | None]:
         """Each record's call offset and the calls left without a record when every record holds what its call gets

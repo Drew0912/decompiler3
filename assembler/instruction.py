@@ -31,3 +31,8 @@ class Instruction:
     def mnemonic(self) -> str:
         """Instruction mnemonic"""
         return self.descriptor.mnemonic
+
+    @property
+    def operand_values(self) -> list[Any]:
+        """Each operand's value, in order"""
+        return [operand.value for operand in self.operands]

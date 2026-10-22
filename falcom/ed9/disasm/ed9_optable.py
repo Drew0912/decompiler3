@@ -107,11 +107,6 @@ ED9_FORMAT_TABLE.update({
     'G' : _ed9_oprdesc(ED9OperandType.GlobalVar),
 })
 
-if TYPE_CHECKING:
-    from assembler.disassembler import DisassemblerContext
-
-
-
 
 @dataclass
 class InstructionEntry:
@@ -287,54 +282,27 @@ def opcodes_of(*kinds: InstructionKind) -> tuple[ED9Opcode, ...]:
 class ED9InstructionDescriptor(InstructionDescriptor):
     """ED9-specific instruction descriptor with operand format and stack effect"""
 
-    def __init__(
-        self,
-        opcode: int,
-        mnemonic: str,
-        operand_fmt: str = '',
-        flags: InstructionFlags = InstructionFlags.NONE,
-        *,
-        kind: InstructionKind,
-    ):
-        super().__init__(opcode, mnemonic, flags)
-        self.operand_fmt = operand_fmt
-        self.operand_descriptors = OperandDescriptor.from_format_string(operand_fmt, ED9_FORMAT_TABLE)
-        self.kind = kind
-        self.effect = STACK_EFFECTS[kind]
-
-    def format_operands(self, operands: list[Operand], context: 'FormatterContext') -> list[str]:
-        """Format operands for display (ED9-specific)"""
-        return [op.descriptor.format_operand(op, context) for op in operands]
+    def __init__(self, entry: InstructionEntry):
+        super().__init__(entry.opcode, entry.mnemonic, entry.flags)
+        self.operand_descriptors = OperandDescriptor.from_format_string(entry.operand_fmt, ED9_FORMAT_TABLE)
+        self.kind = entry.kind
+        self.effect = STACK_EFFECTS[entry.kind]
 
     def get_branch_targets(self, inst, current_pos: int) -> list[BranchTarget]:
         """Extract branch targets from instruction"""
-        targets = []
-
         if self.opcode == ED9Opcode.JMP:
             # Unconditional jump
-            target = self._get_offset_operand(inst)
-            if target is not None:
-                targets.append(BranchTarget.unconditional(target))
-        elif self.opcode in (ED9Opcode.POP_JMP_ZERO, ED9Opcode.POP_JMP_NOT_ZERO):
+            return [BranchTarget.unconditional(inst.operands[0].value)]
+
+        if self.opcode in (ED9Opcode.POP_JMP_ZERO, ED9Opcode.POP_JMP_NOT_ZERO):
             # Conditional jump
-            target = self._get_offset_operand(inst)
-            if target is not None:
-                targets.append(BranchTarget.true_branch(target))
-                targets.append(BranchTarget.false_branch(current_pos))
-        elif self.opcode == ED9Opcode.PUSH_CALLER_FRAME:
+            return [BranchTarget.true_branch(inst.operands[0].value), BranchTarget.false_branch(current_pos)]
+
+        if self.opcode == ED9Opcode.PUSH_CALLER_FRAME:
             # Return address
-            target = self._get_offset_operand(inst)
-            if target is not None:
-                targets.append(BranchTarget.unconditional(target))
+            return [BranchTarget.unconditional(inst.operands[0].value)]
 
-        return targets
-
-    def _get_offset_operand(self, inst) -> int | None:
-        """Extract offset operand from instruction"""
-        for op in inst.operands:
-            if op.descriptor.format.type == OperandType.Offset:
-                return op.value
-        return None
+        return []
 
 
 
@@ -348,14 +316,7 @@ class ED9InstructionTable(InstructionTable):
     def _init_table(self):
         """Initialize instruction table from ED9_OPCODE_TABLE"""
         for entry in ED9_OPCODE_TABLE:
-            desc = ED9InstructionDescriptor(
-                opcode=entry.opcode,
-                mnemonic=entry.mnemonic,
-                operand_fmt=entry.operand_fmt,
-                flags=entry.flags,
-                kind=entry.kind,
-            )
-            self.descriptors[entry.opcode] = desc
+            self.descriptors[entry.opcode] = ED9InstructionDescriptor(entry)
 
     def read_opcode(self, fs: fileio.FileStream) -> int:
         """Read opcode byte"""
@@ -384,12 +345,7 @@ class ED9InstructionTable(InstructionTable):
         if descriptor.opcode == ED9Opcode.PUSH:
             return self._decode_push(fs, inst)
 
-        operands = []
-        for op_desc in descriptor.operand_descriptors:
-            value = op_desc.read_value(fs)
-            operands.append(Operand(descriptor=op_desc, value=value))
-
-        return operands
+        return [Operand(descriptor=op_desc, value=op_desc.read_value(fs)) for op_desc in descriptor.operand_descriptors]
 
     PSEUDO_PUSH_BY_TYPE = {
         ScpValue.Type.Raw       : ED9Opcode.PUSH_RAW,
@@ -413,19 +369,15 @@ def ed9_create_fallthrough_jump(offset: int, target: int, inst_table: 'Instructi
     # Get JMP descriptor from instruction table
     jmp_descriptor = inst_table.get_descriptor(ED9Opcode.JMP)
 
-    operand = Operand(descriptor=jmp_descriptor.operand_descriptors[0], value=target)
-
     # Create synthetic instruction
     # Use offset - 1 to avoid collision with tail block's first instruction
-    synthetic_inst = Instruction(
+    return Instruction(
         offset=offset - 1,
         opcode=jmp_descriptor.opcode,
         descriptor=jmp_descriptor,
-        operands=[operand],
+        operands=[Operand(descriptor=jmp_descriptor.operand_descriptors[0], value=target)],
         size=SYNTHETIC_INSTRUCTION_SIZE
     )
-
-    return synthetic_inst
 
 
 # Global instruction table instance

@@ -85,7 +85,7 @@ def stack_comments(layout: 'StackLayout', inst: 'Instruction') -> list[str]:
         comments.append(f'slot {layout.local_slots[inst.offset]} (local)')
 
     if inst.opcode == ED9Opcode.POP:
-        count = inst.descriptor.effect.pop_count([operand.value for operand in inst.operands])
+        count = inst.descriptor.effect.pop_count(inst.operand_values)
         comments.append(f'{count} slot' if count == 1 else f'{count} slots')
 
     return comments

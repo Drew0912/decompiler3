@@ -115,7 +115,7 @@ class CompileCheck:
                 continue
 
             follower = by_offset[end]
-            argc = inst.descriptor.effect.read_count([operand.value for operand in inst.operands])
+            argc = inst.descriptor.effect.read_count(inst.operand_values)
             values = 'value' if argc == 1 else 'values'
             if follower.descriptor.kind == InstructionKind.POP:
                 size = follower.operands[POP_SIZE_OPERAND].value

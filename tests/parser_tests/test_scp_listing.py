@@ -332,7 +332,7 @@ class TestSameScriptTailCalls(unittest.TestCase):
         listing = ScpListing(dat)
         for name in ('ToLoop', 'ToNowhere'):
             with self.subTest(function=name):
-                call_offsets, _, note = listing.pairing(listing.parser.get_func_by_name(name))
+                call_offsets, _, note = listing.pairing(listing.parser.function_map[name])
                 self.assertEqual((len(call_offsets), note), (1, None))
 
 
@@ -425,7 +425,7 @@ class TestRealScripts(unittest.TestCase):
 
     def test_dead_code_calls_tagged(self):
         listing = ScpListing(require(DEAD_CODE_CALLS_FILE))
-        call_offsets, _, note = listing.pairing(listing.parser.get_func_by_name('AniBtlCraft01'))
+        call_offsets, _, note = listing.pairing(listing.parser.function_map['AniBtlCraft01'])
         self.assertIsNone(note)
         self.assertTrue([offset for offset in call_offsets.values() if id(listing.decoded[offset][0][0]) in listing.unreachable])
 
@@ -442,7 +442,7 @@ class TestRealScripts(unittest.TestCase):
         """SkillTable's first if-body call has no record (no line marker of its own): its records pair with the other
         calls, and that CALL is tagged"""
         listing = ScpListing(require(UNMARKED_CALL_FILE))
-        call_offsets, unrecorded, note = listing.pairing(listing.parser.get_func_by_name(UNMARKED_CALL_FUNCTION))
+        call_offsets, unrecorded, note = listing.pairing(listing.parser.function_map[UNMARKED_CALL_FUNCTION])
         self.assertEqual((len(call_offsets), unrecorded, note), (UNMARKED_CALL_RECORDS, [UNMARKED_CALL_OFFSET], None))
 
         lines = listing.lines(ListingSections(header=False, global_vars=False, function_entries=False,

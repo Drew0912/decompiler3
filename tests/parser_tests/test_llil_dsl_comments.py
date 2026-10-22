@@ -356,7 +356,7 @@ class TestRealScript(unittest.TestCase):
         """First in the table, which is sorted by name, but not in the code; its local call passes two parameters"""
         parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip=False, keep_unreachable_code=False)
         self.assertEqual([func.index for func in parser.functions], list(range(len(parser.functions))))
-        lines = parser.format_function(parser.get_func_by_name('CheckAlgoUse'), ALL_COMMENTS)
+        lines = parser.format_function(parser.function_map['CheckAlgoUse'], ALL_COMMENTS)
         self.assertEqual(lines[:3], [
             '# id: 0x0000 offset: 0x33FF',
             '@scena.LLILCode()',

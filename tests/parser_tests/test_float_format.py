@@ -34,7 +34,8 @@ def float_word(f32_bits: int) -> int:
 
 
 def decode(word: int) -> float:
-    return ScpValue().from_value(word).value
+    _, value = ScpValue.decode_word(word)
+    return value
 
 
 def stored(text: str) -> float:

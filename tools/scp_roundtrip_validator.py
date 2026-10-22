@@ -77,7 +77,7 @@ from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.metadata.fingerprint import function_fingerprint
 from falcom.ed9.structs.call_debug_records import RecordView, pair_records, read_debug_records, record_view
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
-from falcom.ed9.structs.crc32 import hash_func_Name
+from falcom.ed9.structs.crc32 import hash_function_name
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.structs.string_pool import NUL, StringRefs, collect_string_refs, pool_strings, read_text, read_u32
 from falcom.ed9.parser.parser_types import Function
@@ -411,9 +411,9 @@ def check_source_preconditions(ctx: ScriptContext, pool_start: int) -> CheckResu
         failures.append(f'header dword_14 = 0x{ctx.parser.header.dword_14:X}, expected 0')
 
     for func, entry in zip(ctx.parser.functions, ctx.entries):
-        expected = hash_func_Name(func.name)
+        expected = hash_function_name(func.name)
         if entry.name_hash != expected:
-            failures.append(f'{func.name}: name_hash 0x{entry.name_hash:X} != hash_func_Name 0x{expected:X}')
+            failures.append(f'{func.name}: name_hash 0x{entry.name_hash:X} != hash_function_name 0x{expected:X}')
 
     extents = function_extents(ctx.entries, pool_start)
     for index in ctx.code_order:

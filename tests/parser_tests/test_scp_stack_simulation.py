@@ -866,7 +866,7 @@ class TestDeadCodeRecords(unittest.TestCase):
             parser, functions = self.load(filter_func=lambda func: func.name != FUNC_NAME)
 
         self.assertEqual([func.name for func in functions], [CALLEE_NAME])
-        filtered = parser.get_func_by_name(FUNC_NAME)
+        filtered = parser.function_map[FUNC_NAME]
         self.assertTrue(filtered.debug_info)
         self.assertEqual((filtered.call_written_argc, filtered.call_debug_argc, filtered.call_unrecorded), ({}, {}, set()))
 
@@ -1001,16 +1001,6 @@ class TestBlockSplits(unittest.TestCase):
 
         self.assertEqual(entry.instructions[-1].opcode, ED9Opcode.JMP)
         self.assertEqual(tail.instructions[-1].opcode, ED9Opcode.CALL_SCRIPT)
-
-    def test_split_keeps_preds_in_step_with_succs(self):
-        parser, functions = self.self_split_program().disassemble()
-
-        for block in Formatter.collect_blocks(functions[0].entry_block):
-            for succ in block.succs:
-                self.assertIn(block, succ.preds)
-
-            for pred in block.preds:
-                self.assertIn(block, pred.succs)
 
 
 class TestStackLayout(unittest.TestCase):

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Callable
 from dataclasses import dataclass
 
 from dc3 import default_indent
+from ir.llil.llil import default_label_for_addr
 from assembler.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from assembler.instruction_table import OperandType
 from .llil_dsl_comments import (
@@ -37,9 +38,9 @@ class FormatterContext:
 class Formatter:
     """Format disassembled code for output"""
 
-    def __init__(self, context: FormatterContext, indent: str | None = None):
+    def __init__(self, context: FormatterContext):
         self.context = context
-        self.indent = indent if indent is not None else default_indent()
+        self.indent = default_indent()
         self.formatted_offsets: set[int] = set()
         self.formatted_labels: set[str] = set()
         self.unreachable_targets: set[int] = set()   # offsets unreachable code branches to - each needs a label
@@ -221,7 +222,7 @@ class Formatter:
 
     def _format_label_once(self, offset: int, notes: tuple[str, ...] = ()) -> list[str]:
         """A label with the depth there, notes and a blank line, added to formatted_labels; [] if already there"""
-        name = f'loc_{offset:X}'
+        name = default_label_for_addr(offset)
         if name in self.formatted_labels:
             return []
 

@@ -63,7 +63,8 @@ class TestSourceFloat(unittest.TestCase):
 
 class TestLiftedFloat(unittest.TestCase):
     def test_decoded_float_keeps_its_value_and_gets_the_py_text(self):
-        value = LIFTER.source_value(ScpValue().from_value(WORD_0_3).value)
+        _, decoded = ScpValue.decode_word(WORD_0_3)
+        value = LIFTER.source_value(decoded)
 
         self.assertIs(type(value), SourceFloat)
         self.assertEqual(value.hex(), STORED_0_3.hex())

@@ -335,7 +335,7 @@ class TestValueRanges(unittest.TestCase):
     def test_integer_bounds(self):
         for value in (ScpValue.INTEGER_MIN, ScpValue.INTEGER_MAX):
             with self.subTest(value=value):
-                self.assertEqual(ScpValue().from_value(ScpValue(value).to_word()).value, value)
+                self.assertEqual(ScpValue.decode_word(ScpValue(value).to_word()), (ScpValue.Type.Integer, value))
 
         for value in (ScpValue.INTEGER_MIN - 1, ScpValue.INTEGER_MAX + 1):
             with self.subTest(value=value):
@@ -345,8 +345,7 @@ class TestValueRanges(unittest.TestCase):
     def test_raw_bounds(self):
         for value in (0, ScpValue.PAYLOAD_MASK):
             with self.subTest(value=value):
-                decoded = ScpValue().from_value(ScpValue(RawInt(value)).to_word())
-                self.assertEqual((decoded.type, decoded.value), (ScpValue.Type.Raw, value))
+                self.assertEqual(ScpValue.decode_word(ScpValue(RawInt(value)).to_word()), (ScpValue.Type.Raw, value))
 
         for value, text in ((-1, '-0x1'), (ScpValue.PAYLOAD_MASK + 1, '0x40000000')):
             with self.subTest(value=value):

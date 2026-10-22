@@ -17,7 +17,7 @@ from dc3.logging import log
 from assembler import OperandDescriptor, OperandFormat, OperandType
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from ..disasm.ed9_optable import ED9OperandType
-from ..structs.crc32 import hash_func_Name
+from ..structs.crc32 import hash_function_name
 from ..structs.call_debug_records import (PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue,
                                           canonical_argc, script_call_identity)
 from ..structs.string_pool import StringPoolSection, string_problem
@@ -307,7 +307,7 @@ class ScpWriter:
         entry.param_flags_offset    = 0  # placeholder - overwritten by _write_param_flags()
         entry.debug_info_count      = 0  # placeholder - overwritten by _write_debug_records()
         entry.debug_info_offset     = 0  # placeholder - overwritten by _write_debug_records()
-        entry.name_hash             = hash_func_Name(name)
+        entry.name_hash             = hash_function_name(name)
         entry.name_offset           = 0  # stays 0 in memory: _write_string_pool() patches the file's table directly
         return entry
 
@@ -752,7 +752,8 @@ class ScpWriter:
         """PUSH and its constant pseudo-ops (PUSH_CONSTANT_OPS) all collapse to the on-disk PUSH opcode + size byte +
         ScpValue; returns the value and its pooled string, for the call tracker"""
         # ScpValue takes only its exact types: an int enum (a named constant, a flag mask) pushes its value
-        if type(operand) not in ScpValue.ClassMap and isinstance(operand, Enum) and isinstance(operand, int):
+        if (type(operand) not in ScpValue.TYPE_BY_PYTHON_CLASS and isinstance(operand, Enum)
+                and isinstance(operand, int)):
             operand = int(operand)
 
         value = ScpValue(operand)

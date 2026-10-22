@@ -1,3 +1,4 @@
+from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Callable, NamedTuple
 import bisect
@@ -8,7 +9,7 @@ import sys
 
 from ..structs.scp_types import *
 from .parser_types import *
-from dc3 import fileio
+from dc3 import default_indent, fileio, quote_string, StrictBase
 from assembler import (SYNTHETIC_INSTRUCTION_SIZE, BasicBlock, BranchKind, BranchTarget, Disassembler,
                        DisassemblerContext, Instruction, Operand)
 from ..disasm import *
@@ -434,13 +435,13 @@ class ScpDisassemblerContext(DisassemblerContext):
         if isinstance(effect.pops, int):            # most kinds: no operand list to build
             return effect.pops
 
-        return effect.pop_count([operand.value for operand in inst.operands], self.get_func_argc)
+        return effect.pop_count(inst.operand_values, self.get_func_argc)
 
     def call_argc(self, inst: Instruction) -> int:
         """How many arguments a call takes from the stack; SYSCALL reads them in place"""
         effect = inst.descriptor.effect
         if effect.reads:
-            return effect.read_count([operand.value for operand in inst.operands])
+            return effect.read_count(inst.operand_values)
 
         return self.pop_count(inst)
 
@@ -628,9 +629,6 @@ class ScpParser(StrictBase):
 
         return parser, functions
 
-    def get_func_by_name(self, name: str) -> Function:
-        return self.function_map[name]
-
     def get_func_index(self, name: str) -> int | None:
         """A function's table index by its name, None when the script doesn't define it"""
         func = self.function_map.get(name)
@@ -649,9 +647,6 @@ class ScpParser(StrictBase):
         return len(self.functions[func_id].params)
 
     def parse(self):
-        self._read_header()
-
-    def _read_header(self):
         fs = self.fs
         self.header = ScpHeader(fs=fs)
 
@@ -676,16 +671,14 @@ class ScpParser(StrictBase):
             func.is_common_func = entry.is_common_func == 1
             func.offset = entry.offset
 
-            func_name = ScpValue().from_value(entry.name_offset, fs=fs)
-            func.name = func_name.value
+            _, func.name = ScpValue.decode_word(entry.name_offset, fs=fs)
 
             fs.Position = entry.param_flags_offset
             param_flags = [ScpParamFlags(fs=fs) for _ in range(entry.param_count)]
 
             fs.Position = entry.default_params_offset
-            default_params = [ScpValue(fs=fs) for _ in range(entry.default_params_count)]
-            while len(default_params) < len(param_flags):
-                default_params.insert(0, None)
+            defaults = [ScpValue(fs=fs) for _ in range(entry.default_params_count)]
+            default_params = [None] * (len(param_flags) - len(defaults)) + defaults
 
             for i in range(entry.param_count):
                 param = FunctionParam(type=param_flags[i], default_value=default_params[i])
@@ -712,36 +705,16 @@ class ScpParser(StrictBase):
         return functions
 
     def read_debug_info(self, fs: fileio.FileStream, func_entry: ScpFunctionEntry) -> list[ScpFunctionCallDebugInfo]:
-        debug_info_list = []
-
         if func_entry.debug_info_count == 0:
-            return debug_info_list
+            return []
 
         fs.Position = func_entry.debug_info_offset
-        for _ in range(func_entry.debug_info_count):
-            dbg_info = ScpFunctionCallDebugInfo(fs=fs)
-            debug_info_list.append(dbg_info)
-
-        return debug_info_list
+        return [ScpFunctionCallDebugInfo(fs=fs) for _ in range(func_entry.debug_info_count)]
 
     def _read_global_vars(self, fs: fileio.FileStream) -> list[GlobalVar]:
-        hdr = self.header
-        fs.Position = hdr.global_var_offset
-
-        global_vars: list[GlobalVar] = []
-
-        for i in range(hdr.global_var_count):
-            gvar_info = ScpGlobalVar(fs=fs)
-
-            global_var = GlobalVar(
-                index=i,
-                name=gvar_info.name,
-                type=gvar_info.type,
-            )
-
-            global_vars.append(global_var)
-
-        return global_vars
+        fs.Position = self.header.global_var_offset
+        entries = [ScpGlobalVar(fs=fs) for _ in range(self.header.global_var_count)]
+        return [GlobalVar(index=i, name=entry.name, type=entry.type) for i, entry in enumerate(entries)]
 
 
     # disassemble

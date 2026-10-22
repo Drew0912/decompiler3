@@ -1,23 +1,18 @@
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from dc3 import default_indent, StrictBase
+from dc3 import StrictBase
 from ..structs.scp_types import *
-from ..structs.crc32 import hash_func_Name
 
 if TYPE_CHECKING:
     from assembler import BasicBlock, Instruction
 
 
+@dataclass(eq=False, repr=False)
 class GlobalVar:
     index       : int
     name        : str
-    type        : ScpGlobalVar.Type
-
-    def __init__(self, index: int, name: str, type: ScpGlobalVar.Type):
-        self.index = index
-        self.name = name
-        self.type = type
+    type        : int
 
     def __str__(self) -> str:
         return f'global(index = {self.index}, name = {self.name!r}, type = {self.type})'
@@ -25,14 +20,10 @@ class GlobalVar:
     __repr__ = __str__
 
 
-
+@dataclass(eq=False, repr=False)
 class FunctionParam:
     type            : ScpParamFlags
-    default_value   : ScpValue | None
-
-    def __init__(self, type: ScpParamFlags, default_value: ScpValue | None = None):
-        self.type           = type
-        self.default_value  = default_value
+    default_value   : ScpValue | None = None
 
     def __str__(self) -> str:
         if self.default_value is not None:
@@ -113,30 +104,10 @@ class Function(StrictBase):
         self.runs_on = None
         self.backward_returns = {}
 
-    def name_hash(self) -> int:
-        return hash_func_Name(self.name)
-
     def __str__(self) -> str:
-        params = ', '.join([
-            param.type.get_python_type() if param.default_value is None
-                else f'{param.type.get_python_type()} = {param.default_value.value!r}'
-            for param in self.params
-        ])
-
-        lines = [
-            f'{self.name}({params})',
-        ]
-
-        indent = default_indent()
-
-        # if self.debug_info:
-        #     for dbg in self.debug_info:
-        #         dbg_lines = str(dbg).splitlines()
-        #         for dbg_line in dbg_lines:
-        #             lines.append(f'{indent}{dbg_line}')
-
-        #         lines.append('')
-
-        return '\n'.join(lines)
+        params = ', '.join(param.type.get_python_type() if param.default_value is None
+                           else f'{param.type.get_python_type()} = {param.default_value.value!r}'
+                           for param in self.params)
+        return f'{self.name}({params})'
 
     __repr__ = __str__

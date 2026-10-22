@@ -907,7 +907,7 @@ class TestRecordComparison(CompiledScript):
 
     def test_summary_with_identical_records(self):
         """A byte outside the records differs: Inner's PUSH_INT operand"""
-        operand = self.parser.get_func_by_name('Inner').offset + PUSH_VALUE_OFFSET
+        operand = self.parser.function_map['Inner'].offset + PUSH_VALUE_OFFSET
         rebuilt = self.with_word(self.data, operand, ScpValue(SAVED_VALUE).to_word())
         self.assertNotEqual(rebuilt, self.data)
         summary, lines = describe_difference(self.data, rebuilt)
