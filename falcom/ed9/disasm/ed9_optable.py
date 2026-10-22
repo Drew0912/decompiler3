@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     from .formatter import FormatterContext
 
 
-# ED9-specific operand types
 class ED9OperandType(IntEnum2):
     """ED9-specific operand types extending base OperandType"""
 
@@ -23,7 +22,6 @@ class ED9OperandType(IntEnum2):
     GlobalVar = OperandType.UserDefined + 3  # Global var table index (LOAD_GLOBAL/SET_GLOBAL)
 
 
-# ED9 operand descriptor with extended functionality
 class ED9OperandDescriptor(OperandDescriptor):
     """ED9-specific operand descriptor"""
 
@@ -192,7 +190,6 @@ ED9_OPCODE_TABLE = [
 ]
 
 
-# Helper to lookup opcode from table
 def _opcode(mnemonic: str) -> int:
     for entry in ED9_OPCODE_TABLE:
         if entry.mnemonic == mnemonic:
@@ -305,7 +302,6 @@ class ED9InstructionDescriptor(InstructionDescriptor):
         return []
 
 
-
 class ED9InstructionTable(InstructionTable):
     """ED9 VM Instruction Table"""
 
@@ -366,10 +362,8 @@ class ED9InstructionTable(InstructionTable):
 
 def ed9_create_fallthrough_jump(offset: int, target: int, inst_table: 'InstructionTable') -> Instruction:
     """Create a synthetic JMP instruction for split blocks"""
-    # Get JMP descriptor from instruction table
     jmp_descriptor = inst_table.get_descriptor(ED9Opcode.JMP)
 
-    # Create synthetic instruction
     # Use offset - 1 to avoid collision with tail block's first instruction
     return Instruction(
         offset=offset - 1,

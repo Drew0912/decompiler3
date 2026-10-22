@@ -54,7 +54,6 @@ class Formatter:
         """Format blocks starting from entry block (without function header), plus unreachable blocks in offset order;
         layout gives the stack and argument comments, call_debug_argc the CALLs that write their debug_argc,
         call_unrecorded those that write debug_record=False"""
-        # Reset formatted tracking
         self.formatted_offsets.clear()
         self.formatted_labels.clear()
         self.unreachable_targets = {target for block in unreachable_blocks for target in self.branch_targets(block)}
@@ -69,14 +68,11 @@ class Formatter:
         reachable_blocks = self.collect_blocks(entry_block)
         self.referenced_offsets = self.find_referenced_offsets(entry_block, reachable_blocks=reachable_blocks)
 
-        # Collect all blocks
         blocks = reachable_blocks + list(unreachable_blocks)
         unreachable_ids = {id(block) for block in unreachable_blocks}  # BasicBlock is an unhashable dataclass
 
-        # Sort by offset
         blocks.sort(key=lambda b: b.offset)
 
-        # Format all blocks
         lines = []
         for block in blocks:
             if id(block) in unreachable_ids:
@@ -88,7 +84,6 @@ class Formatter:
             if lines and lines[-1] != '':
                 lines.append('')
 
-        # Remove trailing empty line
         if lines and lines[-1] == '':
             lines.pop()
 
@@ -117,7 +112,6 @@ class Formatter:
         if not unreachable and block.offset in self.referenced_offsets:
             lines.extend(self._format_label_once(block.offset))
 
-        # Format instructions
         for inst in block.instructions:
             # Synthetic fall-through JMP added when a block is split - not in the bytecode
             if inst.size == SYNTHETIC_INSTRUCTION_SIZE:
@@ -132,13 +126,12 @@ class Formatter:
             if inst.offset in self.unreachable_targets:
                 lines.extend(self._format_label_once(inst.offset, () if unreachable else (UNREACHABLE_TARGET_COMMENT,)))
 
-            # Fallback for a referenced offset that is not a block start: the assert in format_entry_block rejects
-            # that, so this only fires under -O. Not gated on `unreachable`: such an offset may then sit only in
-            # unreachable code, and its label must still be defined.
+            # A referenced offset that starts no block: none in real scripts, as every branch target and return address
+            # starts one; this keeps its label defined if that ever fails. Not gated on `unreachable`: such an offset
+            # may sit in unreachable code, and its label must still be defined
             if inst.offset in self.referenced_offsets:
                 lines.extend(self._format_label_once(inst.offset))
 
-            # Format instruction with context
             formatted = inst.descriptor.format_instruction(inst, self.context)
             debug_argc = self.call_debug_argc.get(inst.offset)
             if debug_argc is not None:
@@ -184,8 +177,8 @@ class Formatter:
     @classmethod
     def find_referenced_offsets(cls, entry_block: 'BasicBlock', *, reachable_blocks: 'list[BasicBlock] | None' = None) -> set[int]:
         """Offsets a real (non-synthetic) Offset operand points at, among reachable blocks - each
-        one needs a label. Every one is guaranteed to land on some reachable block's start (see the
-        assert in format_entry_block, which computes this same set for its own use)."""
+        one needs a label. Each starts a reachable block, as every branch target and return address does
+        (format_block falls back to a label at the instruction otherwise)"""
         if reachable_blocks is None:
             reachable_blocks = cls.collect_blocks(entry_block)
 

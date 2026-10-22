@@ -62,7 +62,8 @@ def _condition(cond, variables: Dict[str, object]):
 def build_function(name: str, blocks: Dict[str, BlockSpec]) -> MediumLevelILFunction:
     """An MLIL function from {label: (calls and markers, terminal)}; the first block is the entry"""
     func = MediumLevelILFunction(name, 0)
-    params = sorted({t[1] for _, t in blocks.values() if t[0] == 'if' and isinstance(t[1], str)})
+    params = sorted({terminal[1] for _, terminal in blocks.values()
+                     if terminal[0] == 'if' and isinstance(terminal[1], str)})
     variables = {p: func.get_or_create_parameter(i + 1, p) for i, p in enumerate(params)}
     mlil_blocks = {label: func.create_block(label=label) for label in blocks}
 

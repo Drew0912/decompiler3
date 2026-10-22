@@ -662,8 +662,6 @@ class ScpParser(StrictBase):
     def _read_functions(self, fs: fileio.FileStream, func_entries: list[ScpFunctionEntry]) -> list[Function]:
         functions: list[Function] = []
 
-        # load function
-
         for index, entry in enumerate(func_entries):
             func = Function()
 
@@ -688,8 +686,6 @@ class ScpParser(StrictBase):
                                 f'{default.value!r}: the writer rejects that, so compiling the .py will fail')
 
                 func.params.append(param)
-
-            # func.params.reverse()
 
             functions.append(func)
 
@@ -1122,10 +1118,9 @@ class ScpParser(StrictBase):
     def gen_python_script(self, functions: list[Function], *, preamble: list[str] = (), comments: CommentOptions = CommentOptions()) -> str:
         """Full generated .py text: header (incl. shared-library imports/manifest), an optional
         preamble (e.g. scena2py.py's common-functions-omitted warning), every function this script
-        must still define itself, then the footer. match_library_functions runs exactly once here
-        and its result is threaded through the header and the inline-function filter, so the two
-        can never disagree about which functions got imported - see write_python_dsl/
-        decompile_to_python, which used to compute it separately in each half."""
+        must still define itself, then the footer. match_library_functions runs once here and its
+        result feeds both the header and the inline-function filter, so the two never disagree about
+        which functions are imported"""
         matched = self.match_library_functions(functions)
 
         lines = self.gen_python_header(functions, matched=matched)

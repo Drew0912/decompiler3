@@ -52,11 +52,10 @@ STACK_SLOT_OPS = {
     'push_stack_offset': ED9Opcode.PUSH_STACK_OFFSET,
     'pop_to': ED9Opcode.POP_TO, 'pop_to_deref': ED9Opcode.POP_TO_DEREF,
 }
-OTHER_OPS = (
-    'label', 'push_raw', 'push_int', 'push_float', 'push_str', 'load_global', 'set_global', 'call', 'syscall',
-    'debug_set_lineno',
-)
-MNEMONICS = (*OFFSET_OPS, *BYTE_OPERAND_OPS, *NO_OPERAND_OPS, *SCRIPT_CALL_OPS, *STACK_SLOT_OPS, *OTHER_OPS)
+GLOBAL_OPS = {'load_global': ED9Opcode.LOAD_GLOBAL, 'set_global': ED9Opcode.SET_GLOBAL}
+OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_float', 'push_str', 'call', 'syscall', 'debug_set_lineno')
+MNEMONICS = (*OFFSET_OPS, *BYTE_OPERAND_OPS, *NO_OPERAND_OPS, *SCRIPT_CALL_OPS, *STACK_SLOT_OPS, *GLOBAL_OPS,
+             *OTHER_OPS)
 PARAM_COUNT = 3
 
 
@@ -64,8 +63,12 @@ def word(value: int) -> bytes:
     return struct.pack('<I', value & WORD_MASK)
 
 
+def scp_word(kind: ScpValue.Type, payload: int) -> int:
+    return kind << ScpValue.TYPE_SHIFT | payload & ScpValue.PAYLOAD_MASK
+
+
 def scp_value(kind: ScpValue.Type, payload: int) -> bytes:
-    return word(kind << ScpValue.TYPE_SHIFT | payload & ScpValue.PAYLOAD_MASK)
+    return word(scp_word(kind, payload))
 
 
 def measuring(value) -> int:
@@ -86,7 +89,7 @@ class Asm:
         return lambda *args: self.items.append((name, args))
 
     def size(self) -> int:
-        return sum(len(self.encode(name, args, measuring, measuring)) for name, args in self.items)
+        return sum(self.encoded_size(name, args) for name, args in self.items)
 
     def assemble(self, base: int, strings: dict[str, int]) -> tuple[bytes, dict[str, int]]:
         labels = {}
@@ -95,13 +98,17 @@ class Asm:
             if name == 'label':
                 labels[args[0]] = position
 
-            position += len(self.encode(name, args, measuring, measuring))
+            position += self.encoded_size(name, args)
 
         def resolve(value) -> int:
             return labels[value] if isinstance(value, str) else value
 
         code = b''.join(self.encode(name, args, resolve, strings.__getitem__) for name, args in self.items)
         return code, labels
+
+    @classmethod
+    def encoded_size(cls, name: str, args: tuple) -> int:
+        return len(cls.encode(name, args, measuring, measuring))
 
     @classmethod
     def encode(cls, name: str, args: tuple, resolve, string_offset) -> bytes:
@@ -124,11 +131,8 @@ class Asm:
             case _ if name in STACK_SLOT_OPS:
                 return bytes([STACK_SLOT_OPS[name]]) + struct.pack('<i', args[0])
 
-            case 'load_global':
-                return bytes([ED9Opcode.LOAD_GLOBAL]) + word(args[0])
-
-            case 'set_global':
-                return bytes([ED9Opcode.SET_GLOBAL]) + word(args[0])
+            case _ if name in GLOBAL_OPS:
+                return bytes([GLOBAL_OPS[name]]) + word(args[0])
 
             case 'call':
                 return bytes([ED9Opcode.CALL]) + struct.pack('<H', args[0])
@@ -202,7 +206,7 @@ class Program:
         entry.params = [FunctionParam(ScpParamFlags(Value32)) for _ in range(argc)]
         self.entries.append(entry)
         table_entry = ScpFunctionEntry()
-        table_entry.name_offset = ScpValue.Type.String << ScpValue.TYPE_SHIFT | self.strings[name]
+        table_entry.name_offset = scp_word(ScpValue.Type.String, self.strings[name])
         self.function_entries.append(table_entry)
 
     def parser(self, keep_unreachable_code: bool = False) -> ScpParser:
@@ -253,12 +257,12 @@ def debug_records(*records: tuple) -> tuple[bytes, list[ScpFunctionCallDebugInfo
         for arg_type, value in args:
             if isinstance(value, str):
                 offset = arg_count * ScpFunctionCallDebugInfoArg.SIZE + len(strings)
-                word = ScpValue.Type.String << ScpValue.TYPE_SHIFT | offset
+                arg_word = scp_word(ScpValue.Type.String, offset)
                 strings += value.encode() + STRING_TERMINATOR
             else:
-                word = ScpValue(value).to_word()
+                arg_word = ScpValue(value).to_word()
 
-            args_bytes += ScpFunctionCallDebugInfoArg.LAYOUT.pack(word, arg_type)
+            args_bytes += ScpFunctionCallDebugInfoArg.LAYOUT.pack(arg_word, arg_type)
 
         raw.append(record)
 

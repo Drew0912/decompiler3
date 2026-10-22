@@ -260,19 +260,12 @@ class InstructionTable(ABC):
         offset: int
     ) -> Instruction:
         """Decode a complete instruction"""
-        # Read opcode
         opcode = self.read_opcode(fs)
-
-        # Get descriptor
         descriptor = self.get_descriptor(opcode)
-
-        # Create instruction
         inst = Instruction(offset=offset, opcode=opcode, descriptor=descriptor)
 
         # Read operands (may modify inst.opcode and inst.descriptor)
         operands = self.read_operands(fs, inst, offset)
-
-        # Update instruction
         inst.operands = operands
         inst.size = fs.Position - offset
 

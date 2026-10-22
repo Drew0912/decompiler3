@@ -67,8 +67,6 @@ class ScpParamFlags:
         return self.LAYOUT.pack(self.flags)
 
     def get_python_type(self) -> str:
-        # type = self.flags & ScenaFunctionParamType.Mask
-
         match self.flags:
             case ScpParamType.Value:
                 return 'Value32'
@@ -272,7 +270,6 @@ class ScpValue:
         return f'f32 {format_uint32_hex(cls.word_float32_bits(word))}, raw {format_uint32_hex(word)}'
 
     def __str__(self) -> str:
-        # return f'ScpValue<{self.value!r}>'
         return f'ScpValue({self.value!r})'
 
     __repr__ = __str__
