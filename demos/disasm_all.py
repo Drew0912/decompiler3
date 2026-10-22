@@ -41,9 +41,9 @@ def disasm_file(input_path: Path, output_path: Path):
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Disassemble .dat files to .py files')
-    parser.add_argument('path', help='Input file or directory')
-    args = parser.parse_args()
+    arg_parser = argparse.ArgumentParser(description='Disassemble .dat files to .py files')
+    arg_parser.add_argument('path', help='Input file or directory')
+    args = arg_parser.parse_args()
 
     input_path = Path(args.path)
 

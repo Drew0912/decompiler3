@@ -31,7 +31,7 @@ from falcom.ed9.structs.scp_types import ScpGlobalVar
 from falcom.ed9.scena2py import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 import scp_roundtrip_validator
-from scp_roundtrip_validator import compile_and_decompile_round, decompile_to_python
+from scp_roundtrip_validator import compile_round, decompile_to_python
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
 
@@ -455,7 +455,7 @@ class TestLineEndings(unittest.TestCase):
             first = Path(tmp) / 'e0000.py'
             decompile_to_python(SMALL_FILE, first, round_trip=False, keep_unreachable_code=False)
             with mock.patch.object(scp_roundtrip_validator, 'compile_dsl', return_value=(0, [])):
-                compile_and_decompile_round('e0000', Path(tmp) / 'round1', first.read_text(encoding='utf-8'))
+                compile_round('e0000', Path(tmp) / 'round1', first.read_text(encoding='utf-8'))
 
             self.assert_lf_only([first, Path(tmp) / 'round1' / 'e0000.py'])
 

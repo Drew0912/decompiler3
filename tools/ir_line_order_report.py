@@ -28,6 +28,7 @@ import argparse
 import contextlib
 import io
 import sys
+from itertools import pairwise
 from pathlib import Path
 from typing import List, Optional
 
@@ -41,11 +42,7 @@ from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.llil.llil import LowLevelILDebug
 from ir.mlil.mlil import MLILDebug
-from ir.hlil.hlil import (
-    HLILBlock,
-    line_marker_number,
-    sub_blocks,
-)
+from ir.hlil.hlil import iter_tree, line_marker_number
 
 
 LEVELS = ('py', 'llil', 'mlil', 'hlil')
@@ -62,7 +59,7 @@ class FunctionReport:
     @classmethod
     def backward_steps(cls, sequence: List[int]) -> int:
         """Adjacent pairs where the line number goes down"""
-        return sum(1 for i in range(len(sequence) - 1) if sequence[i + 1] < sequence[i])
+        return sum(1 for a, b in pairwise(sequence) if b < a)
 
     @property
     def introduced(self) -> int:
@@ -76,9 +73,6 @@ class FunctionReport:
         return (self.sequences['py'] == self.sequences['llil'] ==
                 self.sequences['mlil'])
 
-    def count_delta(self, lower: str, upper: str) -> int:
-        return len(self.sequences[upper]) - len(self.sequences[lower])
-
 
 def collect_dsl_lines(lifter: ED9VMLifter, func) -> List[int]:
     """DEBUG_SET_LINENO operands in address order
@@ -89,26 +83,14 @@ def collect_dsl_lines(lifter: ED9VMLifter, func) -> List[int]:
     if func.entry_block is None:
         return []
 
-    blocks = lifter._collect_blocks(func.entry_block)
-    blocks.sort(key=lambda b: b.offset)
-
-    lines = []
-    for block in blocks:
-        for inst in block.instructions:
-            if inst.opcode == ED9Opcode.DEBUG_SET_LINENO and inst.operands:
-                lines.append(int(inst.operands[0].value))
-
-    return lines
+    blocks = sorted(lifter._collect_blocks(func.entry_block), key=lambda b: b.offset)
+    return [int(inst.operands[0].value) for block in blocks for inst in block.instructions
+            if inst.opcode == ED9Opcode.DEBUG_SET_LINENO and inst.operands]
 
 
 def collect_llil_lines(llil_func) -> List[int]:
-    lines = []
-    for block in llil_func.basic_blocks:
-        for inst in block.instructions:
-            if isinstance(inst, LowLevelILDebug) and inst.debug_type == 'line':
-                lines.append(int(inst.value))
-
-    return lines
+    return [int(inst.value) for block in llil_func.basic_blocks for inst in block.instructions
+            if isinstance(inst, LowLevelILDebug) and inst.debug_type == 'line']
 
 
 def collect_mlil_lines(mlil_func) -> List[int]:
@@ -130,22 +112,8 @@ def collect_mlil_lines(mlil_func) -> List[int]:
 
 def collect_hlil_lines(hlil_func) -> List[int]:
     """Line comments in statement-tree order - the order they are printed in"""
-    lines = []
-
-    def walk(block: Optional[HLILBlock]):
-        if not block or not block.statements:
-            return
-
-        for stmt in block.statements:
-            line = line_marker_number(stmt)
-            if line is not None:
-                lines.append(line)
-
-            for child in sub_blocks(stmt):
-                walk(child)
-
-    walk(hlil_func.body)
-    return lines
+    markers = (line_marker_number(node) for node in iter_tree(hlil_func.body))
+    return [line for line in markers if line is not None]
 
 
 def analyse_file(path: Path) -> List[FunctionReport]:
@@ -176,6 +144,15 @@ def analyse_file(path: Path) -> List[FunctionReport]:
     return reports
 
 
+def header_line(first_column: str) -> str:
+    return f'{first_column:34}' + ''.join(f'{level:>13}' for level in LEVELS) + f'{"introduced":>12}'
+
+
+def level_cell(steps: int, count: int) -> str:
+    """One level's column: backward steps / line count"""
+    return f'{steps:>6}/{count:<6}'
+
+
 def print_function_table(reports: List[FunctionReport], worst: Optional[int]):
     shown = [r for r in reports if len(r.sequences['hlil']) > 1 or r.introduced]
 
@@ -185,7 +162,7 @@ def print_function_table(reports: List[FunctionReport], worst: Optional[int]):
     if not shown:
         return
 
-    header = f'{"function":34}' + ''.join(f'{level:>13}' for level in LEVELS) + f'{"introduced":>12}'
+    header = header_line('function')
     print(header)
     print('-' * len(header))
 
@@ -193,7 +170,7 @@ def print_function_table(reports: List[FunctionReport], worst: Optional[int]):
         row = f'{report.name[:33]:34}'
         for level in LEVELS:
             sequence = report.sequences[level]
-            row += f'{report.backward_steps(sequence):>6}/{len(sequence):<6}'
+            row += level_cell(report.backward_steps(sequence), len(sequence))
 
         row += f'{report.introduced:>+12}'
 
@@ -206,30 +183,19 @@ def print_function_table(reports: List[FunctionReport], worst: Optional[int]):
 
 
 def print_summary(label: str, reports: List[FunctionReport]):
-    totals = {level: [0, 0] for level in LEVELS}
-    disagree = 0
-
-    for report in reports:
-        for level in LEVELS:
-            sequence = report.sequences[level]
-            totals[level][0] += FunctionReport.backward_steps(sequence)
-            totals[level][1] += len(sequence)
-
-        if not report.levels_agree:
-            disagree += 1
+    steps = {level: sum(FunctionReport.backward_steps(r.sequences[level]) for r in reports) for level in LEVELS}
+    counts = {level: sum(len(r.sequences[level]) for r in reports) for level in LEVELS}
+    disagree = sum(not r.levels_agree for r in reports)
 
     row = f'{label[:33]:34}'
     for level in LEVELS:
-        row += f'{totals[level][0]:>6}/{totals[level][1]:<6}'
+        row += level_cell(steps[level], counts[level])
 
-    introduced = totals['hlil'][0] - totals['mlil'][0]
+    introduced = steps['hlil'] - steps['mlil']
     row += f'{introduced:>+12}'
     print(row)
 
-    deltas = ' '.join(
-        f'{lower}->{upper} {totals[upper][1] - totals[lower][1]:+d}'
-        for lower, upper in (('py', 'llil'), ('llil', 'mlil'), ('mlil', 'hlil'))
-    )
+    deltas = ' '.join(f'{lower}->{upper} {counts[upper] - counts[lower]:+d}' for lower, upper in pairwise(LEVELS))
     print(f'{"":34}counts: {deltas}')
 
     if disagree:
@@ -237,16 +203,15 @@ def print_summary(label: str, reports: List[FunctionReport]):
 
 
 def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    arg_parser = argparse.ArgumentParser(
         description='Report debug line-number ordering across IR levels',
     )
-    parser.add_argument('scp_file', help='Path to SCP file, or a directory to walk')
-    parser.add_argument('--batch', action='store_true', help='Per-file summary only')
-    parser.add_argument('--worst', type=int, nargs='?', const=DEFAULT_WORST,
-                        help='Show only the N functions that introduced the most disorder')
-    parser.add_argument('--no-color', action='store_true', help='Accepted for symmetry, output is plain')
+    arg_parser.add_argument('scp_file', help='Path to SCP file, or a directory to walk')
+    arg_parser.add_argument('--batch', action='store_true', help='Per-file summary only')
+    arg_parser.add_argument('--worst', type=int, nargs='?', const=DEFAULT_WORST,
+                            help='Show only the N functions that introduced the most disorder')
 
-    return parser
+    return arg_parser
 
 
 def main() -> int:
@@ -258,7 +223,7 @@ def main() -> int:
         print(f'no .dat files under {root}')
         return 1
 
-    print(f'{"":34}' + ''.join(f'{level:>13}' for level in LEVELS) + f'{"introduced":>12}')
+    print(header_line(''))
     print()
 
     grand: List[FunctionReport] = []

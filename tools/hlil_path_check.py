@@ -45,7 +45,7 @@ from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILInstruction, MediumLevelILExpr, MediumLevelILCall,
     MLILCall, MLILSyscall, MLILCallScript, MLILSetVar, MLILStoreGlobal, MLILStoreReg, MLILStoreDeref,
-    MLILIf, MLILGoto, MLILRet, MLILDebug, MLILNop, MLILConst, MLILVar, MLILLoadGlobal, MLILLoadReg,
+    MLILIf, MLILGoto, MLILRet, MLILConst, MLILVar, MLILLoadGlobal, MLILLoadReg,
 )
 from ir.hlil.hlil import (
     HighLevelILFunction, HLILInstruction, HLILStatement, HLILExpression, HLILBlock, HLILIf, HLILWhile,
@@ -70,7 +70,6 @@ class PathCheckResult:
     missing: List[Tuple] = field(default_factory=list)      # (anchor, next) MLIL has and an HLIL copy lacks
     extra: List[Tuple] = field(default_factory=list)        # (anchor, next) an HLIL copy has and MLIL lacks
     uncovered: List[int] = field(default_factory=list)      # reachable calls/stores with no reachable HLIL copy
-    anchors: int = 0
     unstructured: int = 0                                   # reachable unstructured-jump nodes
 
     @property
@@ -85,9 +84,6 @@ def is_mandatory_anchor(inst: MediumLevelILInstruction) -> bool:
 
 def is_optional_anchor(inst: MediumLevelILInstruction) -> bool:
     """Local assignments and other expression statements: checked where they survive"""
-    if isinstance(inst, (MLILIf, MLILGoto, MLILRet, MLILDebug, MLILNop)) or is_mandatory_anchor(inst):
-        return False
-
     return isinstance(inst, (MLILSetVar, MediumLevelILExpr))
 
 
@@ -445,7 +441,7 @@ class PathChecker:
             seen.add(node)
             todo.extend(t for t in self.successors.get(node, ()) if isinstance(t, _Copy))
 
-        result = PathCheckResult(anchors=len(reachable))
+        result = PathCheckResult()
         covered: Set[int] = set()
         reached_jumps: Set[_UnstructuredJump] = set()
         for node in seen:
@@ -493,10 +489,10 @@ def check_file(path: Path) -> List[Tuple[str, Optional[PathCheckResult], Optiona
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description='Check that the final HLIL keeps every MLIL control path')
-    parser.add_argument('scp_file', help='Path to an SCP file, or a directory to walk')
-    parser.add_argument('--verbose', action='store_true', help='List the differing edges of each failing function')
-    args = parser.parse_args()
+    arg_parser = argparse.ArgumentParser(description='Check that the final HLIL keeps every MLIL control path')
+    arg_parser.add_argument('scp_file', help='Path to an SCP file, or a directory to walk')
+    arg_parser.add_argument('--verbose', action='store_true', help='List the differing edges of each failing function')
+    args = arg_parser.parse_args()
 
     # The pipeline logs every function it translates
     log.setLevel(logging.WARNING)

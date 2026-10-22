@@ -62,6 +62,7 @@ import subprocess
 import sys
 import tempfile
 from collections import Counter
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from enum import IntEnum
 from pathlib import Path
@@ -78,7 +79,7 @@ from falcom.ed9.metadata.fingerprint import function_fingerprint
 from falcom.ed9.structs.call_debug_records import RecordView, pair_records, read_debug_records, record_view
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.structs.crc32 import hash_function_name
-from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
 from falcom.ed9.structs.string_pool import NUL, StringRefs, collect_string_refs, pool_strings, read_text, read_u32
 from falcom.ed9.parser.parser_types import Function
 from falcom.ed9.structs.scp_types import (
@@ -93,7 +94,6 @@ from falcom.ed9.writer.scp_writer import PUSH_SIZE_BYTE
 
 
 UINT8_SIZE              = 1
-OPCODE_SIZE             = UINT8_SIZE
 PUSH_SIZE_OFFSET        = OPCODE_SIZE                       # PUSH opcode, u8 size, ScpValue
 PUSH_VALUE_OFFSET       = PUSH_SIZE_OFFSET + UINT8_SIZE
 MAX_DETAILS             = 10
@@ -142,7 +142,6 @@ class CheckResult:
 class ScriptContext:
     """One parsed + disassembled script shared by every check"""
 
-    path            : Path
     data            : bytes
     fs              : fileio.FileStream
     parser          : ScpParser
@@ -160,6 +159,16 @@ class ScriptContext:
     def func_name(self, index: int) -> str:
         return self.parser.functions[index].name
 
+    def functions_in_code_order(
+        self,
+        pool_start: int,
+    ) -> Iterator[tuple[int, Function, list[Instruction], tuple[int, int]]]:
+        """(table index, function, its reachable instructions, its (start, end) byte range) per function, in code
+        order"""
+        extents = function_extents(self.entries, pool_start)
+        for index in self.code_order:
+            yield index, self.parser.functions[index], self.instructions[index], extents[index]
+
 
 def load_script(path: Path) -> ScriptContext:
     """Parse and disassemble path; the caller closes ctx.fs, or this closes it when the file fails to load"""
@@ -175,7 +184,6 @@ def load_script(path: Path) -> ScriptContext:
         entries = parser.function_entries
         data = path.read_bytes()
         return ScriptContext(
-            path=path,
             data=data,
             fs=fs,
             parser=parser,
@@ -208,7 +216,6 @@ def describe_range(ctx: ScriptContext, start: int, end: int) -> str:
 def check_layout(ctx: ScriptContext) -> CheckResult:
     header = ctx.parser.header
     failures = []
-    warnings = []
 
     if header.function_entry_offset != ScpHeader.SIZE:
         failures.append(f'function_entry_offset 0x{header.function_entry_offset:X} != 0x{ScpHeader.SIZE:X}')
@@ -248,7 +255,7 @@ def check_layout(ctx: ScriptContext) -> CheckResult:
         failures.append(f'first code offset 0x{first_code:X} != global var table end 0x{position:X}')
 
     summary = f'{len(ctx.entries)} functions, {record_count} debug records, {arg_count} debug args, {header.global_var_count} global vars'
-    return CheckResult.build('layout', summary, failures, warnings)
+    return CheckResult.build('layout', summary, failures)
 
 
 def check_function_order(ctx: ScriptContext) -> CheckResult:
@@ -299,22 +306,19 @@ def check_function_order(ctx: ScriptContext) -> CheckResult:
 def check_code(ctx: ScriptContext, pool_start: int) -> CheckResult:
     failures = []
     warnings = []
-    extents = function_extents(ctx.entries, pool_start)
 
-    for index in ctx.code_order:
-        name = ctx.func_name(index)
-        insts = ctx.instructions[index]
-        for start, end, _ in dropped_ranges(insts, *extents[index]):
-            warnings.append(f'{name}: unreachable 0x{start:X}..0x{end:X}: {describe_range(ctx, start, end)}')
+    for index, func, insts, extent in ctx.functions_in_code_order(pool_start):
+        for start, end, _ in dropped_ranges(insts, *extent):
+            warnings.append(f'{func.name}: unreachable 0x{start:X}..0x{end:X}: {describe_range(ctx, start, end)}')
 
         for inst in insts:
             if ctx.data[inst.offset] == ED9Opcode.PUSH and ctx.data[inst.offset + PUSH_SIZE_OFFSET] != PUSH_SIZE_BYTE:
-                failures.append(f'{name} @0x{inst.offset:X}: PUSH size byte {ctx.data[inst.offset + PUSH_SIZE_OFFSET]} != {PUSH_SIZE_BYTE}')
+                failures.append(f'{func.name} @0x{inst.offset:X}: PUSH size byte {ctx.data[inst.offset + PUSH_SIZE_OFFSET]} != {PUSH_SIZE_BYTE}')
 
             if inst.opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
                 func_id = ctx.read_u32(inst.offset + PUSH_VALUE_OFFSET)
                 if func_id != index:
-                    failures.append(f'{name} @0x{inst.offset:X}: PUSH_CURRENT_FUNC_ID pushes {func_id}, table index is {index}')
+                    failures.append(f'{func.name} @0x{inst.offset:X}: PUSH_CURRENT_FUNC_ID pushes {func_id}, table index is {index}')
 
     summary = f'{len(warnings)} unreachable ranges'
     return CheckResult.build('code', summary, failures, warnings)
@@ -322,7 +326,6 @@ def check_code(ctx: ScriptContext, pool_start: int) -> CheckResult:
 
 def check_string_pool(ctx: ScriptContext, refs: StringRefs) -> CheckResult:
     failures = []
-    warnings = []
 
     actual = []
     position = refs.pool_start
@@ -343,7 +346,7 @@ def check_string_pool(ctx: ScriptContext, refs: StringRefs) -> CheckResult:
         failures.append(f'pool string #{mismatch}: found {actual_text}, expected {expected_text} ({len(actual)} strings, {len(expected)} references)')
 
     summary = f'{len(actual)} strings: {len(refs.code)} code, {len(refs.names)} names, {len(refs.defaults)} defaults, {len(refs.debug)} debug-only, {len(refs.global_names)} global names'
-    return CheckResult.build('string pool', summary, failures, warnings)
+    return CheckResult.build('string pool', summary, failures)
 
 
 def check_debug_records(ctx: ScriptContext) -> CheckResult:
@@ -415,18 +418,13 @@ def check_source_preconditions(ctx: ScriptContext, pool_start: int) -> CheckResu
         if entry.name_hash != expected:
             failures.append(f'{func.name}: name_hash 0x{entry.name_hash:X} != hash_function_name 0x{expected:X}')
 
-    extents = function_extents(ctx.entries, pool_start)
-    for index in ctx.code_order:
-        func = ctx.parser.functions[index]
-        insts = ctx.instructions[index]
-        start, end = extents[index]
-
-        failures.extend(f'{func.name}: {message}' for message in check_instruction_ranges(insts, start, end))
+    for _, func, insts, extent in ctx.functions_in_code_order(pool_start):
+        failures.extend(f'{func.name}: {message}' for message in check_instruction_ranges(insts, *extent))
 
         counts = Counter(inst.opcode for inst in insts)
         for call_op, ret_op in PAIRED_CALL_OPS.items():
             if counts[call_op] != counts[ret_op]:
-                failures.append(f'{func.name}: {counts[call_op]} {ED9_INSTRUCTION_TABLE.get_descriptor(call_op).mnemonic} vs {counts[ret_op]} {ED9_INSTRUCTION_TABLE.get_descriptor(ret_op).mnemonic}, expected equal')
+                failures.append(f'{func.name}: {counts[call_op]} {call_op.name} vs {counts[ret_op]} {ret_op.name}, expected equal')
 
         if counts[ED9Opcode.CALL] != counts[ED9Opcode.PUSH_CURRENT_FUNC_ID]:
             failures.append(f'{func.name}: {counts[ED9Opcode.CALL]} CALL vs {counts[ED9Opcode.PUSH_CURRENT_FUNC_ID]} PUSH_CURRENT_FUNC_ID, expected equal')
@@ -453,15 +451,11 @@ def check_reachability(ctx: ScriptContext, pool_start: int) -> CheckResult:
     because it happens to fail to disassemble as instructions."""
     failures = []
     dropped_bytes = 0
-    extents = function_extents(ctx.entries, pool_start)
 
-    for index in ctx.code_order:
-        func = ctx.parser.functions[index]
-        insts = ctx.instructions[index]
-        start, end = extents[index]
+    for _, func, insts, extent in ctx.functions_in_code_order(pool_start):
         paired = call_pairing(insts)
 
-        for range_start, range_end, prev in dropped_ranges(insts, start, end):
+        for range_start, range_end, prev in dropped_ranges(insts, *extent):
             dropped_bytes += range_end - range_start
             prev_opcode = prev.opcode if prev is not None else None
 
@@ -527,9 +521,9 @@ def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = Tru
 
 
 def compile_dsl(py_path: Path, run_dir: Path) -> tuple[int, list[str]]:
-    """Compile a generated .py in a subprocess. -P keeps run_dir off sys.path, so a script named
-    after a top-level package (e.g. dc3.dat) can't shadow the real one; the script puts the repo
-    root on sys.path itself."""
+    """Compile a generated .py in a subprocess: (exit code, the last lines of its output, ascii-escaped). -P keeps
+    run_dir off sys.path, so a script named after a top-level package (e.g. dc3.dat) can't shadow the real one; the
+    script puts the repo root on sys.path itself."""
     env = dict(os.environ)
     env['PYTHONIOENCODING'] = 'utf-8'
 
@@ -545,11 +539,20 @@ def compile_dsl(py_path: Path, run_dir: Path) -> tuple[int, list[str]]:
     )
 
     tail = (result.stderr or result.stdout).strip().splitlines()[-MAX_DETAILS:]
-    return result.returncode, tail
+    return result.returncode, [ascii(line) for line in tail]
+
+
+def script_stem(path: Path) -> str:
+    """path's name up to its first dot: the name a generated script and its rebuilt .dat take"""
+    return path.name.split('.')[0]
+
+
+def exception_text(exc: Exception) -> str:
+    return f'{type(exc).__name__}: {ascii(str(exc))}'
 
 
 def check_round_trip(path: Path, work_dir: Path) -> CheckResult:
-    stem = path.name.split('.')[0]
+    stem = script_stem(path)
     run_dir = Path(tempfile.mkdtemp(prefix=f'{stem}_', dir=work_dir))
     dat_path = run_dir / f'{stem}.dat'
     py_path = run_dir / f'{stem}.py'
@@ -561,7 +564,7 @@ def check_round_trip(path: Path, work_dir: Path) -> CheckResult:
     returncode, tail = compile_dsl(py_path, run_dir)
 
     if returncode != 0 or not dat_path.exists():
-        return CheckResult('round trip', Status.FAIL, f'recompile failed (exit {returncode}), kept {run_dir}', [ascii(line) for line in tail])
+        return CheckResult('round trip', Status.FAIL, f'recompile failed (exit {returncode}), kept {run_dir}', tail)
 
     original = path.read_bytes()
     rebuilt = dat_path.read_bytes()
@@ -582,7 +585,7 @@ def describe_difference(original: bytes, rebuilt: bytes) -> tuple[str, list[str]
     try:
         lines = compare_file_records(original, rebuilt)
     except Exception as e:
-        return f'{summary}, records unreadable', [f'records unreadable: {type(e).__name__}: {ascii(str(e))}']
+        return f'{summary}, records unreadable', [f'records unreadable: {exception_text(e)}']
 
     if not lines:
         return f'{summary}, records identical', []
@@ -738,19 +741,16 @@ def compare_logic(source: LogicSnapshot, other: LogicSnapshot) -> CheckResult:
     return CheckResult.build('logic preserved', summary, failures)
 
 
-def compile_and_decompile_round(stem: str, round_dir: Path, py_text: str) -> tuple[int, list[str], Path | None]:
-    """One compile -> decompile round: writes py_text, compiles it, and (on success) decompiles the
-    result back. Returns (returncode, compile output tail, the round's .dat path or None on failure)."""
+def compile_round(stem: str, round_dir: Path, py_text: str) -> tuple[list[str], Path | None]:
+    """One round's compile: writes py_text into round_dir and compiles it. Returns (the compile output's tail, the
+    round's .dat path, or None when the compile failed)"""
     round_dir.mkdir()
     py_path = round_dir / f'{stem}.py'
     write_text_lf(py_path, py_text)
 
     returncode, tail = compile_dsl(py_path, round_dir)
     dat_path = round_dir / f'{stem}.dat'
-    if returncode != 0 or not dat_path.exists():
-        return returncode, tail, None
-
-    return returncode, tail, dat_path
+    return tail, (dat_path if returncode == 0 and dat_path.exists() else None)
 
 
 def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
@@ -760,7 +760,7 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
     MAX_CONVERGENCE_ROUNDS. Every round runs in its own directory but keeps the same <stem>
     basename, since the generated header embeds it and a changing name would stop out2 == out3 from
     ever holding even at a real fixed point."""
-    stem = path.name.split('.')[0]
+    stem = script_stem(path)
     results = []
 
     ctx = load_script(path)
@@ -778,13 +778,12 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
     source_snapshot = LogicSnapshot.of(source_parser, source_functions)
     py_texts = [(file_dir / f'{stem}.py').read_text(encoding='utf-8')]
     dat_bytes = []
-    converged_round = None
 
     for round_num in range(1, MAX_CONVERGENCE_ROUNDS + 1):
         round_dir = file_dir / f'r{round_num}'
-        returncode, tail, dat_path = compile_and_decompile_round(stem, round_dir, py_texts[-1])
+        tail, dat_path = compile_round(stem, round_dir, py_texts[-1])
         if dat_path is None:
-            results.append(CheckResult('logic round trip', Status.FAIL, f'round {round_num} compile failed, kept {file_dir}', [ascii(line) for line in tail]))
+            results.append(CheckResult('logic round trip', Status.FAIL, f'round {round_num} compile failed, kept {file_dir}', tail))
             return results
 
         dat_bytes.append(dat_path.read_bytes())
@@ -805,15 +804,11 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
         results.append(logic_result)
 
         if round_num >= 2 and dat_bytes[-2] == dat_bytes[-1] and py_texts[-2] == py_texts[-1]:
-            converged_round = round_num
-            break
+            results.append(CheckResult('logic round trip', Status.PASS, f'converged at round {round_num}'))
+            shutil.rmtree(file_dir, ignore_errors=True)
+            return results
 
-    if converged_round is None:
-        results.append(CheckResult('logic round trip', Status.FAIL, f'no fixed point within {MAX_CONVERGENCE_ROUNDS} rounds, kept {file_dir}'))
-    else:
-        results.append(CheckResult('logic round trip', Status.PASS, f'converged at round {converged_round}'))
-        shutil.rmtree(file_dir, ignore_errors=True)
-
+    results.append(CheckResult('logic round trip', Status.FAIL, f'no fixed point within {MAX_CONVERGENCE_ROUNDS} rounds, kept {file_dir}'))
     return results
 
 
@@ -851,13 +846,14 @@ def print_result(result: CheckResult, verbose: bool):
 
 
 def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description='Validate ED9-VM .dat scripts against the byte-exact round-trip rules')
-    parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
-    parser.add_argument('--round-trip', action='store_true', help='decompile, recompile and byte-compare each file')
-    parser.add_argument('--logic-round-trip', action='store_true', help='decompile with round_trip=False and verify game logic is preserved and compile/decompile reaches a fixed point')
-    parser.add_argument('--work-dir', metavar='DIR', help='where --round-trip / --logic-round-trip write their files (default: a new temp dir)')
-    parser.add_argument('--verbose', action='store_true', help='print every detail, including for passing checks')
-    return parser
+    arg_parser = argparse.ArgumentParser(
+        description='Validate ED9-VM .dat scripts against the byte-exact round-trip rules')
+    arg_parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
+    arg_parser.add_argument('--round-trip', action='store_true', help='decompile, recompile and byte-compare each file')
+    arg_parser.add_argument('--logic-round-trip', action='store_true', help='decompile with round_trip=False and verify game logic is preserved and compile/decompile reaches a fixed point')
+    arg_parser.add_argument('--work-dir', metavar='DIR', help='where --round-trip / --logic-round-trip write their files (default: a new temp dir)')
+    arg_parser.add_argument('--verbose', action='store_true', help='print every detail, including for passing checks')
+    return arg_parser
 
 
 def main() -> int:
@@ -870,7 +866,7 @@ def main() -> int:
         work_dir.mkdir(parents=True, exist_ok=True)
         print(f'work dir: {work_dir}')
 
-    totals = {status: 0 for status in Status}
+    totals = Counter()
     common_orders = {}
 
     for path in files:
@@ -879,19 +875,19 @@ def main() -> int:
         try:
             results, common_orders[path] = validate_file(path)
         except Exception as e:
-            results = [CheckResult('load', Status.FAIL, f'{type(e).__name__}: {ascii(str(e))}')]
+            results = [CheckResult('load', Status.FAIL, exception_text(e))]
 
         if args.round_trip:
             try:
                 results.append(check_round_trip(path, work_dir))
             except Exception as e:
-                results.append(CheckResult('round trip', Status.FAIL, f'{type(e).__name__}: {ascii(str(e))}'))
+                results.append(CheckResult('round trip', Status.FAIL, exception_text(e)))
 
         if args.logic_round_trip:
             try:
                 results.extend(check_logic_round_trip(path, work_dir))
             except Exception as e:
-                results.append(CheckResult('logic round trip', Status.FAIL, f'{type(e).__name__}: {ascii(str(e))}'))
+                results.append(CheckResult('logic round trip', Status.FAIL, exception_text(e)))
 
         for result in results:
             print_result(result, args.verbose)

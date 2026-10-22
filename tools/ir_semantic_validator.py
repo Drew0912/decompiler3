@@ -4078,37 +4078,37 @@ class Validator:
 # =============================================================================
 
 def create_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
+    arg_parser = argparse.ArgumentParser(
         description="IR Semantic Consistency Validator (CFG-based)"
     )
-    parser.add_argument("scp_file", help="Path to SCP file")
-    parser.add_argument(
+    arg_parser.add_argument("scp_file", help="Path to SCP file")
+    arg_parser.add_argument(
         "--compare", nargs=2, metavar=("LAYER1", "LAYER2"),
         help="Compare two IR layers (e.g., llil mlil)"
     )
-    parser.add_argument("--all", action="store_true", help="Compare all layer pairs")
-    parser.add_argument("--batch", action="store_true", help="Batch validate all functions")
-    parser.add_argument("--json", action="store_true", help="Output in JSON format")
-    parser.add_argument("--no-color", action="store_true", help="Disable color output")
-    parser.add_argument("--function", metavar="NAME", help="Filter specific function")
-    parser.add_argument("--failed-only", action="store_true", help="Show only failed functions in batch mode")
-    parser.add_argument("--export-regression", metavar="FILE", help="Export regression baseline")
-    parser.add_argument("--compare-regression", metavar="FILE", help="Compare against regression baseline")
-    parser.add_argument("--output-dir", metavar="DIR", help="Write results to separate files per layer pair")
-    parser.add_argument(
+    arg_parser.add_argument("--all", action="store_true", help="Compare all layer pairs")
+    arg_parser.add_argument("--batch", action="store_true", help="Batch validate all functions")
+    arg_parser.add_argument("--json", action="store_true", help="Output in JSON format")
+    arg_parser.add_argument("--no-color", action="store_true", help="Disable color output")
+    arg_parser.add_argument("--function", metavar="NAME", help="Filter specific function")
+    arg_parser.add_argument("--failed-only", action="store_true", help="Show only failed functions in batch mode")
+    arg_parser.add_argument("--export-regression", metavar="FILE", help="Export regression baseline")
+    arg_parser.add_argument("--compare-regression", metavar="FILE", help="Compare against regression baseline")
+    arg_parser.add_argument("--output-dir", metavar="DIR", help="Write results to separate files per layer pair")
+    arg_parser.add_argument(
         "--min-provenance-coverage",
         type=float,
         default=0.0,
         help="Fail quality gate if provenance coverage falls below this percentage (0-100)"
     )
-    parser.add_argument(
+    arg_parser.add_argument(
         "--max-unmatched-critical",
         type=int,
         default=-1,
         help="Fail quality gate if unmatched critical atom count exceeds this value (-1 disables)"
     )
 
-    return parser
+    return arg_parser
 
 
 # =============================================================================
@@ -4233,8 +4233,7 @@ class RegressionTester:
 # =============================================================================
 
 def main() -> int:
-    parser = create_parser()
-    args = parser.parse_args()
+    args = create_parser().parse_args()
 
     # Initialize error handler
     reset_error_handler()
