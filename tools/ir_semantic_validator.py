@@ -118,6 +118,11 @@ class SemanticOperand:
     kind: str               # 'const', 'var', 'reg', 'global', 'expr'
     value: Any = None       # Actual value or identifier
 
+    @property
+    def signature(self) -> str:
+        """kind:value, as fingerprints and effect keys spell an operand"""
+        return f"{self.kind}:{self.value}"
+
     def __str__(self) -> str:
         if self.kind == 'const':
             return repr(self.value)
@@ -300,7 +305,7 @@ class IRPipeline:
         raise_recursion_limit()
 
         self.scp_path = scp_path
-        self.scp = None
+        self.parser = None
         self.fs = None
         self.functions: List[Tuple[str, LowLevelILFunction, MediumLevelILFunction, HighLevelILFunction]] = []
         self.hlil_failed: set[str] = set()     # functions compared LLIL -> MLIL only
@@ -311,7 +316,7 @@ class IRPipeline:
             self.fs = fileio.FileStream(str(scp_path))
             parser = ScpParser(self.fs, scp_path.name)
             parser.parse()
-            self.scp = parser
+            self.parser = parser
             return True
         except Exception as e:
             print(f"Error parsing SCP file: {e}", file=sys.stderr)
@@ -323,14 +328,14 @@ class IRPipeline:
             self.fs = None
 
     def generate_ir(self, function_name: Optional[str] = None) -> bool:
-        if self.scp is None:
+        if self.parser is None:
             return False
 
         try:
-            self.scp.disasm_all_functions()
-            lifter = ED9VMLifter(parser=self.scp)
+            self.parser.disasm_all_functions()
+            lifter = ED9VMLifter(parser=self.parser)
 
-            for func in self.scp.functions:
+            for func in self.parser.functions:
                 if function_name and func.name != function_name:
                     continue
 
@@ -375,225 +380,71 @@ def report_unknown_operations() -> None:
         print(f"Unknown HLIL operations: {sorted(_unknown_hlil_ops)}", file=sys.stderr)
 
 
+def _kinds_by_name(groups: Dict[OperationKind, str]) -> Dict[str, OperationKind]:
+    """Operation name, its layer prefix dropped -> kind, from kind -> the names, space-separated"""
+    return {name: kind for kind, names in groups.items() for name in names.split()}
+
+
+LLIL_KINDS = _kinds_by_name({
+    OperationKind.ARITHMETIC:   'ADD SUB MUL DIV MOD NEG',
+    OperationKind.COMPARISON:   'EQ NE LT LE GT GE TEST_ZERO',
+    OperationKind.LOGICAL:      'LOGICAL_AND LOGICAL_OR',
+    OperationKind.BITWISE:      'AND OR BITWISE_NOT',
+    OperationKind.BRANCH:       'JMP BRANCH',
+    OperationKind.CALL:         'CALL SYSCALL CALL_SCRIPT DEBUG_LOG',
+    OperationKind.RETURN:       'RET',
+    OperationKind.LOAD:         'STACK_LOAD FRAME_LOAD LOAD REG_LOAD GLOBAL_LOAD CONST',
+    OperationKind.ASSIGN:       'STACK_STORE FRAME_STORE STORE REG_STORE GLOBAL_STORE',
+    OperationKind.NOP:          'NOP DEBUG SP_ADD PUSH_CALLER_FRAME',
+})
+
+MLIL_KINDS = _kinds_by_name({
+    OperationKind.ARITHMETIC:   'ADD SUB MUL DIV MOD NEG',
+    OperationKind.COMPARISON:   'EQ NE LT LE GT GE TEST_ZERO',
+    OperationKind.LOGICAL:      'LOGICAL_AND LOGICAL_OR LOGICAL_NOT',
+    OperationKind.BITWISE:      'AND OR XOR SHL SHR BITWISE_NOT',
+    OperationKind.BRANCH:       'GOTO IF',
+    OperationKind.CALL:         'CALL SYSCALL CALL_SCRIPT',
+    OperationKind.RETURN:       'RET',
+    OperationKind.LOAD:         'VAR CONST LOAD_GLOBAL LOAD_REG DEREF',
+    OperationKind.ASSIGN:       'SET_VAR STORE_GLOBAL STORE_REG STORE_DEREF',
+    OperationKind.NOP:          'NOP DEBUG',
+})
+
+# ASSIGN, EXPR_STMT, BINARY_OP and UNARY_OP are normalized by normalize_hlil_operation's own code
+HLIL_KINDS = _kinds_by_name({
+    OperationKind.CONTROL_FLOW: 'IF WHILE DO_WHILE SWITCH BREAK CONTINUE UNSTRUCTURED',
+    OperationKind.RETURN:       'RETURN',
+    OperationKind.LOAD:         'VAR CONST DEREF',
+    OperationKind.CALL:         'CALL SYSCALL',
+    OperationKind.NOP:          'BLOCK COMMENT',
+})
+HLIL_WITHOUT_OPERANDS = {'BREAK', 'CONTINUE', 'UNSTRUCTURED', 'BLOCK', 'COMMENT'}
+
+
 def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
     """Convert LLIL instruction to normalized SemanticOperation"""
-    op = instr.operation
+    name = instr.operation.name.removeprefix('LLIL_')
     loc = SourceLocation(scp_offset=instr.address, llil_index=instr.inst_index)
+    kind = LLIL_KINDS.get(name)
 
-    # Arithmetic operations
-    if op in (LowLevelILOperation.LLIL_ADD, LowLevelILOperation.LLIL_SUB,
-              LowLevelILOperation.LLIL_MUL, LowLevelILOperation.LLIL_DIV,
-              LowLevelILOperation.LLIL_MOD):
-        return SemanticOperation(
-            kind=OperationKind.ARITHMETIC,
-            operator=op.name.replace('LLIL_', ''),
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_NEG:
-        return SemanticOperation(
-            kind=OperationKind.ARITHMETIC,
-            operator='NEG',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
+    if kind is None:
+        _unknown_llil_ops.add(instr.operation.name)
+        return SemanticOperation(kind=OperationKind.UNKNOWN, operator=instr.operation.name, source_location=loc)
 
-    # Comparison operations
-    elif op in (LowLevelILOperation.LLIL_EQ, LowLevelILOperation.LLIL_NE,
-                LowLevelILOperation.LLIL_LT, LowLevelILOperation.LLIL_LE,
-                LowLevelILOperation.LLIL_GT, LowLevelILOperation.LLIL_GE):
-        return SemanticOperation(
-            kind=OperationKind.COMPARISON,
-            operator=op.name.replace('LLIL_', ''),
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_TEST_ZERO:
-        return SemanticOperation(
-            kind=OperationKind.COMPARISON,
-            operator='TEST_ZERO',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
+    if kind == OperationKind.NOP:
+        return SemanticOperation(kind=kind, operator=name, source_location=loc)
 
-    # Logical operations
-    elif op in (LowLevelILOperation.LLIL_LOGICAL_AND, LowLevelILOperation.LLIL_LOGICAL_OR):
-        return SemanticOperation(
-            kind=OperationKind.LOGICAL,
-            operator=op.name.replace('LLIL_', ''),
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
+    result = None
+    if name == 'GLOBAL_STORE' and hasattr(instr, 'index'):
+        result = SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]")
 
-    # Bitwise operations
-    elif op in (LowLevelILOperation.LLIL_AND, LowLevelILOperation.LLIL_OR):
-        return SemanticOperation(
-            kind=OperationKind.BITWISE,
-            operator=op.name.replace('LLIL_', ''),
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_BITWISE_NOT:
-        return SemanticOperation(
-            kind=OperationKind.BITWISE,
-            operator='BITWISE_NOT',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-
-    # Control flow
-    elif op == LowLevelILOperation.LLIL_JMP:
-        return SemanticOperation(
-            kind=OperationKind.BRANCH,
-            operator='JMP',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_BRANCH:
-        return SemanticOperation(
-            kind=OperationKind.BRANCH,
-            operator='BRANCH',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_CALL:
-        return SemanticOperation(
-            kind=OperationKind.CALL,
-            operator='CALL',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_SYSCALL:
-        return SemanticOperation(
-            kind=OperationKind.CALL,
-            operator='SYSCALL',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILFalcomOperation.LLIL_CALL_SCRIPT:
-        return SemanticOperation(
-            kind=OperationKind.CALL,
-            operator='CALL_SCRIPT',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_RET:
-        return SemanticOperation(
-            kind=OperationKind.RETURN,
-            operator='RET',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-
-    # Storage operations
-    elif op == LowLevelILOperation.LLIL_STACK_LOAD:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='STACK_LOAD',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_STACK_STORE:
-        return SemanticOperation(
-            kind=OperationKind.ASSIGN,
-            operator='STACK_STORE',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_FRAME_LOAD:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='FRAME_LOAD',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_FRAME_STORE:
-        return SemanticOperation(
-            kind=OperationKind.ASSIGN,
-            operator='FRAME_STORE',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_LOAD:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='LOAD',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_STORE:
-        return SemanticOperation(
-            kind=OperationKind.ASSIGN,
-            operator='STORE',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_REG_LOAD:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='REG_LOAD',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_REG_STORE:
-        return SemanticOperation(
-            kind=OperationKind.ASSIGN,
-            operator='REG_STORE',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-
-    # Falcom-specific GLOBAL operations
-    elif op.name == 'LLIL_GLOBAL_STORE':
-        result = None
-        if hasattr(instr, 'index'):
-            result = SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]")
-        return SemanticOperation(
-            kind=OperationKind.ASSIGN,
-            operator='GLOBAL_STORE',
-            operands=_extract_llil_operands(instr),
-            result=result,
-            source_location=loc
-        )
-    elif op.name == 'LLIL_GLOBAL_LOAD':
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='GLOBAL_LOAD',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-
-    # Falcom-specific DEBUG_LOG (lifted to an MLIL call)
-    elif op.name == 'LLIL_DEBUG_LOG':
-        return SemanticOperation(
-            kind=OperationKind.CALL,
-            operator='DEBUG_LOG',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-    elif op == LowLevelILOperation.LLIL_CONST:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='CONST',
-            operands=_extract_llil_operands(instr),
-            source_location=loc
-        )
-
-    # NOP and internal
-    elif op in (LowLevelILOperation.LLIL_NOP, LowLevelILOperation.LLIL_DEBUG,
-                LowLevelILOperation.LLIL_SP_ADD, LowLevelILFalcomOperation.LLIL_PUSH_CALLER_FRAME):
-        return SemanticOperation(
-            kind=OperationKind.NOP,
-            operator=op.name.replace('LLIL_', ''),
-            source_location=loc
-        )
-
-    # Unknown
-    _unknown_llil_ops.add(op.name)
     return SemanticOperation(
-        kind=OperationKind.UNKNOWN,
-        operator=op.name,
-        source_location=loc
+        kind=kind,
+        operator=name,
+        operands=_extract_llil_operands(instr),
+        result=result,
+        source_location=loc,
     )
 
 
@@ -642,227 +493,40 @@ def normalize_mlil_operation(
     normalized back to LOAD_REG/STORE_REG and stay comparable with LLIL.
     """
     register_names = register_names or {}
-    op = instr.operation
+    name = instr.operation.name.removeprefix('MLIL_')
     loc = SourceLocation(scp_offset=instr.address, llil_index=instr.llil_index, mlil_index=instr.inst_index)
+    kind = MLIL_KINDS.get(name)
 
-    # Arithmetic operations
-    if op in (MediumLevelILOperation.MLIL_ADD, MediumLevelILOperation.MLIL_SUB,
-              MediumLevelILOperation.MLIL_MUL, MediumLevelILOperation.MLIL_DIV,
-              MediumLevelILOperation.MLIL_MOD):
-        return SemanticOperation(
-            kind=OperationKind.ARITHMETIC,
-            operator=op.name.replace('MLIL_', ''),
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_NEG:
-        return SemanticOperation(
-            kind=OperationKind.ARITHMETIC,
-            operator='NEG',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
+    if kind is None:
+        _unknown_mlil_ops.add(instr.operation.name)
+        return SemanticOperation(kind=OperationKind.UNKNOWN, operator=instr.operation.name, source_location=loc)
 
-    # Comparison operations
-    elif op in (MediumLevelILOperation.MLIL_EQ, MediumLevelILOperation.MLIL_NE,
-                MediumLevelILOperation.MLIL_LT, MediumLevelILOperation.MLIL_LE,
-                MediumLevelILOperation.MLIL_GT, MediumLevelILOperation.MLIL_GE):
-        return SemanticOperation(
-            kind=OperationKind.COMPARISON,
-            operator=op.name.replace('MLIL_', ''),
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_TEST_ZERO:
-        return SemanticOperation(
-            kind=OperationKind.COMPARISON,
-            operator='TEST_ZERO',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
+    if kind == OperationKind.NOP:
+        return SemanticOperation(kind=kind, operator=name, source_location=loc)
 
-    # Logical operations
-    elif op in (MediumLevelILOperation.MLIL_LOGICAL_AND, MediumLevelILOperation.MLIL_LOGICAL_OR):
-        return SemanticOperation(
-            kind=OperationKind.LOGICAL,
-            operator=op.name.replace('MLIL_', ''),
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_LOGICAL_NOT:
-        return SemanticOperation(
-            kind=OperationKind.LOGICAL,
-            operator='LOGICAL_NOT',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-
-    # Bitwise operations
-    elif op in (MediumLevelILOperation.MLIL_AND, MediumLevelILOperation.MLIL_OR,
-                MediumLevelILOperation.MLIL_XOR, MediumLevelILOperation.MLIL_SHL,
-                MediumLevelILOperation.MLIL_SHR):
-        return SemanticOperation(
-            kind=OperationKind.BITWISE,
-            operator=op.name.replace('MLIL_', ''),
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_BITWISE_NOT:
-        return SemanticOperation(
-            kind=OperationKind.BITWISE,
-            operator='BITWISE_NOT',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-
-    # Control flow
-    elif op == MediumLevelILOperation.MLIL_GOTO:
-        return SemanticOperation(
-            kind=OperationKind.BRANCH,
-            operator='GOTO',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_IF:
-        return SemanticOperation(
-            kind=OperationKind.BRANCH,
-            operator='IF',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_CALL:
-        return SemanticOperation(
-            kind=OperationKind.CALL,
-            operator='CALL',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_SYSCALL:
-        return SemanticOperation(
-            kind=OperationKind.CALL,
-            operator='SYSCALL',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_CALL_SCRIPT:
-        return SemanticOperation(
-            kind=OperationKind.CALL,
-            operator='CALL_SCRIPT',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_RET:
-        return SemanticOperation(
-            kind=OperationKind.RETURN,
-            operator='RET',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-
-    # Variable operations
-    elif op == MediumLevelILOperation.MLIL_VAR:
+    operator, result = name, None
+    if name == 'VAR':
         var_name = instr.var.name if hasattr(instr.var, 'name') else str(instr.var)
-        is_register = var_name in register_names
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='LOAD_REG' if is_register else 'VAR',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_SET_VAR:
-        result = None
-        is_register = False
+        if var_name in register_names:
+            operator = 'LOAD_REG'
+    elif name == 'SET_VAR':
         if hasattr(instr, 'var') and instr.var is not None:
             var_name = instr.var.name if hasattr(instr.var, 'name') else str(instr.var)
-            is_register = var_name in register_names
-
-            if is_register:
+            if var_name in register_names:
+                operator = 'STORE_REG'
                 result = SemanticOperand(kind='reg', value=f"REGS[{register_names[var_name]}]")
             else:
                 result = SemanticOperand(kind='var', value=var_name)
+    elif name == 'STORE_GLOBAL' and hasattr(instr, 'index'):
+        result = SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]")
+    elif name == 'STORE_REG' and hasattr(instr, 'index'):
+        result = SemanticOperand(kind='reg', value=f"REGS[{instr.index}]")
 
-        return SemanticOperation(
-            kind=OperationKind.ASSIGN,
-            operator='STORE_REG' if is_register else 'SET_VAR',
-            operands=_extract_mlil_operands(instr),
-            result=result,
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_CONST:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='CONST',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-
-    # Global and register
-    elif op == MediumLevelILOperation.MLIL_LOAD_GLOBAL:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='LOAD_GLOBAL',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_STORE_GLOBAL:
-        result = None
-        if hasattr(instr, 'index'):
-            result = SemanticOperand(kind='global', value=f"GLOBALS[{instr.index}]")
-        return SemanticOperation(
-            kind=OperationKind.ASSIGN,
-            operator='STORE_GLOBAL',
-            operands=_extract_mlil_operands(instr),
-            result=result,
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_LOAD_REG:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='LOAD_REG',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_STORE_REG:
-        result = None
-        if hasattr(instr, 'index'):
-            result = SemanticOperand(kind='reg', value=f"REGS[{instr.index}]")
-        return SemanticOperation(
-            kind=OperationKind.ASSIGN,
-            operator='STORE_REG',
-            operands=_extract_mlil_operands(instr),
-            result=result,
-            source_location=loc,
-        )
-
-    # Pointer dereference
-    elif op == MediumLevelILOperation.MLIL_DEREF:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='DEREF',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == MediumLevelILOperation.MLIL_STORE_DEREF:
-        return SemanticOperation(
-            kind=OperationKind.ASSIGN,
-            operator='STORE_DEREF',
-            operands=_extract_mlil_operands(instr),
-            source_location=loc,
-        )
-
-    # NOP
-    elif op in (MediumLevelILOperation.MLIL_NOP, MediumLevelILOperation.MLIL_DEBUG):
-        return SemanticOperation(
-            kind=OperationKind.NOP,
-            operator=op.name.replace('MLIL_', ''),
-            source_location=loc,
-        )
-
-    # Unknown
-    _unknown_mlil_ops.add(op.name)
     return SemanticOperation(
-        kind=OperationKind.UNKNOWN,
-        operator=op.name,
+        kind=kind,
+        operator=operator,
+        operands=_extract_mlil_operands(instr),
+        result=result,
         source_location=loc,
     )
 
@@ -909,63 +573,8 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
     op = instr.operation
     loc = SourceLocation(scp_offset=instr.address, mlil_index=instr.mlil_index)
 
-    # Control flow statements
-    if op == HLILOperation.HLIL_IF:
-        return SemanticOperation(
-            kind=OperationKind.CONTROL_FLOW,
-            operator='IF',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_WHILE:
-        return SemanticOperation(
-            kind=OperationKind.CONTROL_FLOW,
-            operator='WHILE',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_DO_WHILE:
-        return SemanticOperation(
-            kind=OperationKind.CONTROL_FLOW,
-            operator='DO_WHILE',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_SWITCH:
-        return SemanticOperation(
-            kind=OperationKind.CONTROL_FLOW,
-            operator='SWITCH',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_BREAK:
-        return SemanticOperation(
-            kind=OperationKind.CONTROL_FLOW,
-            operator='BREAK',
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_CONTINUE:
-        return SemanticOperation(
-            kind=OperationKind.CONTROL_FLOW,
-            operator='CONTINUE',
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_RETURN:
-        return SemanticOperation(
-            kind=OperationKind.RETURN,
-            operator='RETURN',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_UNSTRUCTURED:
-        return SemanticOperation(
-            kind=OperationKind.CONTROL_FLOW,
-            operator='UNSTRUCTURED',
-            source_location=loc,
-        )
-
     # Assignment
-    elif op == HLILOperation.HLIL_ASSIGN:
+    if op == HLILOperation.HLIL_ASSIGN:
         if hasattr(instr, 'src') and hasattr(instr.src, 'operation') and not _is_global_call_assignment(instr):
             src_op = instr.src.operation
             if src_op == HLILOperation.HLIL_CALL:
@@ -994,14 +603,6 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             source_location=loc,
         )
 
-    # Block
-    elif op == HLILOperation.HLIL_BLOCK:
-        return SemanticOperation(
-            kind=OperationKind.NOP,
-            operator='BLOCK',
-            source_location=loc,
-        )
-
     # Expression statement - unwrap
     elif op == HLILOperation.HLIL_EXPR_STMT:
         if hasattr(instr, 'expr') and instr.expr is not None:
@@ -1014,29 +615,7 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             source_location=loc,
         )
 
-    # Comment
-    elif op == HLILOperation.HLIL_COMMENT:
-        return SemanticOperation(
-            kind=OperationKind.NOP,
-            operator='COMMENT',
-            source_location=loc,
-        )
-
     # Expressions
-    elif op == HLILOperation.HLIL_VAR:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='VAR',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_CONST:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='CONST',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
     elif op == HLILOperation.HLIL_BINARY_OP:
         bin_op = instr.op if hasattr(instr, 'op') else None
         return SemanticOperation(
@@ -1053,34 +632,20 @@ def normalize_hlil_operation(instr: HLILInstruction) -> SemanticOperation:
             operands=_extract_hlil_operands(instr),
             source_location=loc,
         )
-    elif op == HLILOperation.HLIL_CALL:
-        return SemanticOperation(
-            kind=OperationKind.CALL,
-            operator='CALL',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_SYSCALL:
-        return SemanticOperation(
-            kind=OperationKind.CALL,
-            operator='SYSCALL',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
-    elif op == HLILOperation.HLIL_DEREF:
-        return SemanticOperation(
-            kind=OperationKind.LOAD,
-            operator='DEREF',
-            operands=_extract_hlil_operands(instr),
-            source_location=loc,
-        )
 
-    # Unknown
+    # Every other operation by its kind
     op_name = op.name if hasattr(op, 'name') else str(op)
-    _unknown_hlil_ops.add(op_name)
+    name = op_name.removeprefix('HLIL_')
+    kind = HLIL_KINDS.get(name)
+
+    if kind is None:
+        _unknown_hlil_ops.add(op_name)
+        return SemanticOperation(kind=OperationKind.UNKNOWN, operator=op_name, source_location=loc)
+
     return SemanticOperation(
-        kind=OperationKind.UNKNOWN,
-        operator=op_name,
+        kind=kind,
+        operator=name,
+        operands=[] if name in HLIL_WITHOUT_OPERANDS else _extract_hlil_operands(instr),
         source_location=loc,
     )
 
@@ -1203,73 +768,41 @@ class CFG:
         return self.nodes.get(node_id)
 
 
-def build_cfg_from_llil(llil_func: LowLevelILFunction) -> CFG:
-    """Construct CFG from LLILFunction"""
+# Internal stack operations, which build_cfg_from_llil leaves out
+LLIL_STACK_OPERATIONS = (
+    LowLevelILOperation.LLIL_STACK_STORE,
+    LowLevelILOperation.LLIL_STACK_LOAD,
+    LowLevelILOperation.LLIL_SP_ADD,
+)
+
+
+def _cfg_from_blocks(
+    basic_blocks: List[Any],
+    normalize: Callable[[Any], SemanticOperation],
+    skipped_operations: Tuple[Any, ...] = (),
+) -> CFG:
+    """One node per basic block holding its normalized operations but the NOPs, the first block the entry. No edges
+    on purpose: edges on one layer alone make block matching worse, so all three CFG builders get them together
+    (docs/FUTURE_WORK.md, "Static Game-Logic Check"); so every node is an exit"""
     cfg = CFG()
 
-    for i, bb in enumerate(llil_func.basic_blocks):
-        ops = []
-        for instr in bb.instructions:
-            # Skip internal stack operations
-            if instr.operation in (
-                LowLevelILOperation.LLIL_STACK_STORE,
-                LowLevelILOperation.LLIL_STACK_LOAD,
-                LowLevelILOperation.LLIL_SP_ADD,
-            ):
-                continue
-            sem_op = normalize_llil_operation(instr)
-            if sem_op.kind != OperationKind.NOP:
-                ops.append(sem_op)
-
-        node = CFGNode(
-            id=i,
-            address=bb.start,
-            operations=ops,
-            is_entry=(i == 0),
-        )
-        cfg.add_node(node)
-
-    # No edges on purpose: edges on one layer alone make block matching worse, so all three CFG builders get them
-    # together (docs/FUTURE_WORK.md, "Static Game-Logic Check")
-
-    # Mark exit nodes
-    for node in cfg.nodes.values():
-        if not node.successors:
-            node.is_exit = True
+    for i, bb in enumerate(basic_blocks):
+        ops = [normalize(instr) for instr in bb.instructions if instr.operation not in skipped_operations]
+        operations = [op for op in ops if op.kind != OperationKind.NOP]
+        cfg.add_node(CFGNode(id=i, address=bb.start, operations=operations, is_entry=(i == 0), is_exit=True))
 
     return cfg
+
+
+def build_cfg_from_llil(llil_func: LowLevelILFunction) -> CFG:
+    """Construct CFG from LLILFunction"""
+    return _cfg_from_blocks(llil_func.basic_blocks, normalize_llil_operation, LLIL_STACK_OPERATIONS)
 
 
 def build_cfg_from_mlil(mlil_func: MediumLevelILFunction) -> CFG:
     """Construct CFG from MLILFunction"""
-    cfg = CFG()
-
     register_names = {var.name: index for index, var in mlil_func.register_vars.items()}
-
-    for i, bb in enumerate(mlil_func.basic_blocks):
-        ops = []
-        for instr in bb.instructions:
-            sem_op = normalize_mlil_operation(instr, register_names)
-            if sem_op.kind != OperationKind.NOP:
-                ops.append(sem_op)
-
-        node = CFGNode(
-            id=i,
-            address=bb.start,
-            operations=ops,
-            is_entry=(i == 0),
-        )
-        cfg.add_node(node)
-
-    # No edges on purpose: edges on one layer alone make block matching worse, so all three CFG builders get them
-    # together (docs/FUTURE_WORK.md, "Static Game-Logic Check")
-
-    # Mark exit nodes
-    for node in cfg.nodes.values():
-        if not node.successors:
-            node.is_exit = True
-
-    return cfg
+    return _cfg_from_blocks(mlil_func.basic_blocks, lambda instr: normalize_mlil_operation(instr, register_names))
 
 
 def _collect_call_expressions(node: Any, found: List[Any]) -> None:
@@ -1364,13 +897,24 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
 
     def flatten_statements(stmts: List[HLILStatement], block_id: int) -> Tuple[int, List[int]]:
         """Flatten HLIL statements into CFG blocks, return (next_id, exit_ids)"""
-        nonlocal cfg
         if not stmts:
             return block_id, []
 
         current_ops: List[SemanticOperation] = []
         current_id = block_id
         exits: List[int] = []
+
+        def save_current_block() -> Optional[int]:
+            """The operations gathered so far as a block of their own: its id, or None when there are none"""
+            nonlocal current_ops, current_id
+            if not current_ops:
+                return None
+
+            address = current_ops[0].source_location.scp_offset
+            cfg.add_node(CFGNode(id=current_id, address=address, operations=current_ops))
+            current_id += 1
+            current_ops = []
+            return current_id - 1
 
         for stmt in stmts:
             op = normalize_hlil_operation(stmt)
@@ -1382,13 +926,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
             if hasattr(stmt, 'operation'):
                 if stmt.operation == HLILOperation.HLIL_SWITCH:
                     current_ops.extend(folded_ops)
-
-                    # Save current block
-                    if current_ops:
-                        node = CFGNode(id=current_id, address=current_ops[0].source_location.scp_offset if current_ops else 0, operations=current_ops)
-                        cfg.add_node(node)
-                        current_id += 1
-                        current_ops = []
+                    save_current_block()
 
                     # Create scrutinee block
                     switch_node = CFGNode(id=current_id, address=op.source_location.scp_offset, operations=[op])
@@ -1411,13 +949,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     continue
                 elif stmt.operation == HLILOperation.HLIL_IF:
                     current_ops.extend(folded_ops)
-
-                    # Save current block
-                    if current_ops:
-                        node = CFGNode(id=current_id, address=current_ops[0].source_location.scp_offset if current_ops else 0, operations=current_ops)
-                        cfg.add_node(node)
-                        current_id += 1
-                        current_ops = []
+                    save_current_block()
 
                     # Create condition block
                     cond_node = CFGNode(id=current_id, address=op.source_location.scp_offset, operations=[op])
@@ -1426,7 +958,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     current_id += 1
 
                     # Process then branch (HLILIf.true_block, not .body)
-                    then_stmts = extract_statements(stmt.true_block if hasattr(stmt, 'true_block') else None)
+                    then_stmts = extract_statements(stmt.true_block)
                     if then_stmts:
                         then_start = current_id
                         then_id, then_exits = flatten_statements(then_stmts, current_id)
@@ -1437,7 +969,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
 
                     # Process else branch (HLILIf.false_block, not .else_body)
                     else_exits = []
-                    if hasattr(stmt, 'false_block') and stmt.false_block:
+                    if stmt.false_block:
                         else_stmts = extract_statements(stmt.false_block)
                         if else_stmts:
                             else_start = current_id
@@ -1449,13 +981,8 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     exits.extend(else_exits)
                     continue
                 elif stmt.operation == HLILOperation.HLIL_WHILE:
-                    # Save current block
-                    if current_ops:
-                        node = CFGNode(id=current_id, address=current_ops[0].source_location.scp_offset if current_ops else 0, operations=current_ops)
-                        cfg.add_node(node)
-                        prev_id = current_id
-                        current_id += 1
-                        current_ops = []
+                    prev_id = save_current_block()
+                    if prev_id is not None:
                         cfg.add_edge(prev_id, current_id)
 
                     # Create loop header (condition calls run on each iteration)
@@ -1465,7 +992,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     current_id += 1
 
                     # Process loop body
-                    body_stmts = extract_statements(stmt.body if hasattr(stmt, 'body') else None)
+                    body_stmts = extract_statements(stmt.body)
                     if body_stmts:
                         body_start = current_id
                         body_id, body_exits = flatten_statements(body_stmts, current_id)
@@ -1478,17 +1005,12 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     exits.append(header_id)  # Loop exit
                     continue
                 elif stmt.operation == HLILOperation.HLIL_DO_WHILE:
-                    # Save current block
-                    if current_ops:
-                        node = CFGNode(id=current_id, address=current_ops[0].source_location.scp_offset, operations=current_ops)
-                        cfg.add_node(node)
-                        current_id += 1
-                        current_ops = []
+                    save_current_block()
 
                     # Body runs before the condition is first tested
                     body_start = current_id
                     body_exits: List[int] = []
-                    body_stmts = extract_statements(stmt.body if hasattr(stmt, 'body') else None)
+                    body_stmts = extract_statements(stmt.body)
                     if body_stmts:
                         body_id, body_exits = flatten_statements(body_stmts, current_id)
                         current_id = max(body_id, current_id)
@@ -1514,27 +1036,16 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                 current_ops.append(op)
 
         # Save remaining ops
-        if current_ops:
-            node = CFGNode(id=current_id, address=current_ops[0].source_location.scp_offset if current_ops else 0, operations=current_ops)
-            cfg.add_node(node)
-            exits.append(current_id)
-            current_id += 1
+        last_id = save_current_block()
+        if last_id is not None:
+            exits.append(last_id)
 
         return current_id, exits
 
     # Flatten all statements
-    stmts = None
-    if hasattr(hlil_func, 'body') and hlil_func.body:
-        body = hlil_func.body
-        if hasattr(body, 'statements'):
-            stmts = list(body.statements)
-        elif hasattr(body, 'body'):
-            stmts = [body]
-    elif hasattr(hlil_func, 'statements') and hlil_func.statements:
-        stmts = list(hlil_func.statements)
-
+    stmts = list(hlil_func.body.statements)
     if stmts:
-        next_id, exit_ids = flatten_statements(stmts, 0)
+        _, exit_ids = flatten_statements(stmts, 0)
         if cfg.nodes:
             cfg.nodes[0].is_entry = True
             for eid in exit_ids:
@@ -1740,8 +1251,8 @@ def propagate_similarity(
     return matrix
 
 
-def hungarian_matching(matrix: SimilarityMatrix) -> List[Tuple[int, int]]:
-    """Find optimal block assignment using greedy Hungarian approximation"""
+def greedy_block_matching(matrix: SimilarityMatrix) -> List[Tuple[int, int]]:
+    """Each source block in turn takes its most similar unused target block, if the similarity is above 0.3"""
     matches: List[Tuple[int, int]] = []
     used_cols: set = set()
 
@@ -1812,7 +1323,7 @@ class CFGMatcher:
 
             matrix = build_initial_similarity_matrix(sub_src_cfg, sub_tgt_cfg)
             matrix = propagate_similarity(matrix, sub_src_cfg, sub_tgt_cfg)
-            idx_matches = hungarian_matching(matrix)
+            idx_matches = greedy_block_matching(matrix)
 
             sub_src_nodes = list(sub_src_cfg.nodes.keys())
             sub_tgt_nodes = list(sub_tgt_cfg.nodes.keys())
@@ -1898,33 +1409,29 @@ def compare_operands(op1: SemanticOperation, op2: SemanticOperation) -> bool:
 COMMUTATIVE_OPS = {'ADD', 'MUL', 'AND', 'OR', 'EQ', 'NE', 'LOGICAL_AND', 'LOGICAL_OR'}
 
 
-def is_commutative(operator: str) -> bool:
-    return operator in COMMUTATIVE_OPS
-
-
 def compare_expression_trees(op1: SemanticOperation, op2: SemanticOperation) -> bool:
-    """Compare expression trees with recursive semantic equivalence"""
+    """Same kind, the same operator or a transform pair, and the same operands - either way round for a commutative
+    binary operator"""
     if op1.kind != op2.kind:
         return False
 
     if op1.operator != op2.operator and not _is_transform_pair(op1.operator, op2.operator):
         return False
 
-    if is_commutative(op1.operator):
-        if compare_operands(op1, op2):
-            return True
+    if compare_operands(op1, op2):
+        return True
 
-        if len(op1.operands) == 2 and len(op2.operands) == 2:
-            reversed_op1 = SemanticOperation(
-                kind=op1.kind,
-                operator=op1.operator,
-                operands=[op1.operands[1], op1.operands[0]],
-                result=op1.result,
-                source_location=op1.source_location
-            )
-            return compare_operands(reversed_op1, op2)
+    if op1.operator in COMMUTATIVE_OPS and len(op1.operands) == 2:
+        reversed_op1 = SemanticOperation(
+            kind=op1.kind,
+            operator=op1.operator,
+            operands=[op1.operands[1], op1.operands[0]],
+            result=op1.result,
+            source_location=op1.source_location
+        )
+        return compare_operands(reversed_op1, op2)
 
-    return compare_operands(op1, op2)
+    return False
 
 
 @dataclass
@@ -1964,14 +1471,9 @@ MLIL_HLIL_TRANSFORMATIONS: List[TransformationRule] = [
 ]
 
 
-def match_transformation(
-    source_op: str, target_op: str, transformations: List[TransformationRule]
-) -> Optional[TransformationRule]:
-    """Detect if difference is an expected transformation"""
-    for rule in transformations:
-        if rule.source_pattern == source_op and rule.target_pattern == target_op:
-            return rule
-    return None
+def is_expected_transformation(source_op: str, target_op: str, transformations: List[TransformationRule]) -> bool:
+    """Is source_op -> target_op one of the transformations expected between the two layers"""
+    return any(rule.source_pattern == source_op and rule.target_pattern == target_op for rule in transformations)
 
 
 def classify_difference(
@@ -1980,18 +1482,10 @@ def classify_difference(
     layer_transforms: List[TransformationRule]
 ) -> ComparisonStatus:
     """Classify difference as EQUIVALENT, TRANSFORMED, or DIFFERENT"""
-    # Check exact equivalence
-    if source_op.kind == target_op.kind and source_op.operator == target_op.operator:
-        if compare_operands(source_op, target_op):
-            return ComparisonStatus.EQUIVALENT
-
-    # Check expression tree equivalence
     if compare_expression_trees(source_op, target_op):
         return ComparisonStatus.EQUIVALENT
 
-    # Check known transformations
-    transform = match_transformation(source_op.operator, target_op.operator, layer_transforms)
-    if transform:
+    if is_expected_transformation(source_op.operator, target_op.operator, layer_transforms):
         return ComparisonStatus.TRANSFORMED
 
     # Same kind but different operator might still be transformed
@@ -2005,8 +1499,9 @@ def classify_difference(
 # Section 8: Provenance + Behavior Validation
 # =============================================================================
 
+# A critical atom's operators: calls, returns, stores and assignments
 CRITICAL_OPERATORS = {
-    'CALL', 'SYSCALL', 'CALL_SCRIPT', 'RET', 'RETURN', 'STORE_GLOBAL', 'GLOBAL_STORE'
+    'CALL', 'SYSCALL', 'CALL_SCRIPT', 'RET', 'RETURN', 'STORE_GLOBAL', 'GLOBAL_STORE', 'STORE_REG', 'ASSIGN', 'SET_VAR'
 }
 
 CRITICAL_BRANCH_OPERATORS = {'IF', 'GOTO', 'WHILE'}
@@ -2024,22 +1519,19 @@ PROVENANCE_MATCH_SCORE = 100
 ADDRESS_MATCH_SCORE = 80
 SIGNATURE_MATCH_SCORE = 40
 FAMILY_TARGET_MATCH_SCORE = 30
+OPERAND_COUNT_MATCH_SCORE = FAMILY_TARGET_MATCH_SCORE
 CONDITION_EQUIVALENT_MATCH_SCORE = 40
 MIN_EFFECT_MATCH_SCORE = FAMILY_TARGET_MATCH_SCORE
 MIN_CONDITION_MATCH_SCORE = CONDITION_EQUIVALENT_MATCH_SCORE
 
 
 def _semantic_fingerprint(op: SemanticOperation) -> str:
-    operand_fingerprint = ",".join(f"{operand.kind}:{operand.value}" for operand in op.operands)
+    operand_fingerprint = ",".join(operand.signature for operand in op.operands)
     return f"{op.kind.name}:{op.operator}:{operand_fingerprint}"
 
 
 def semantic_operation_to_atom(op: SemanticOperation) -> SemanticAtom:
-    critical = (
-        op.operator in CRITICAL_OPERATORS
-        or op.operator in CRITICAL_BRANCH_OPERATORS
-        or (op.kind == OperationKind.ASSIGN and op.operator in ('STORE_GLOBAL', 'GLOBAL_STORE', 'STORE_REG', 'ASSIGN', 'SET_VAR'))
-    )
+    critical = op.operator in CRITICAL_OPERATORS or op.operator in CRITICAL_BRANCH_OPERATORS
 
     return SemanticAtom(
         kind=op.kind,
@@ -2100,7 +1592,7 @@ def _atom_match_score(source_atom: SemanticAtom, target_atom: SemanticAtom) -> i
         score += SIGNATURE_MATCH_SCORE
 
     if len(source_atom.operands) == len(target_atom.operands):
-        score += FAMILY_TARGET_MATCH_SCORE
+        score += OPERAND_COUNT_MATCH_SCORE
 
     return score
 
@@ -2159,24 +1651,11 @@ def _match_atoms_provenance_first(
     return matches, provenance_matches, fallback_matches
 
 
-def _extract_write_signature(op: SemanticOperation) -> Tuple[str, str]:
-    destination = "unknown"
-    if op.result is not None:
-        destination = str(op.result.value)
-    elif op.operands:
-        destination = str(op.operands[0].value)
-
-    # Only a global result is a global write - operand text can name a global that is only read
-    if op.result is not None and op.result.kind == 'global':
-        return EFFECT_CATEGORY_WRITE_GLOBAL, destination
-    return EFFECT_CATEGORY_WRITE_REG, destination
-
-
 def _normalize_operand_key(operand: Optional[SemanticOperand]) -> str:
     if operand is None:
         return UNKNOWN_TARGET_KEY
     if operand.kind in ('var', 'reg', 'global', 'const'):
-        return f"{operand.kind}:{operand.value}"
+        return operand.signature
     return operand.kind
 
 
@@ -2209,20 +1688,19 @@ def semantic_op_to_effect_event(op: SemanticOperation) -> Optional[EffectEvent]:
         return _build_effect_event(op, EFFECT_CATEGORY_CALL, CALL_FAMILY, target_key)
 
     if op.kind == OperationKind.ASSIGN:
-        category, destination = _extract_write_signature(op)
-
+        # Only a global result is a global write - operand text can name a global that is only read.
         # Only global writes are shared state, so only they anchor the comparison.
         # Local and register writes are private to the function and are expected to
         # be folded away (into a call result, a condition or the returned value);
         # the per-operation comparison still reports them as equivalent, transformed
         # or eliminated.
-        if category != EFFECT_CATEGORY_WRITE_GLOBAL:
+        if op.result is None or op.result.kind != 'global':
             return None
 
-        target_key = destination if destination else UNKNOWN_TARGET_KEY
-        return _build_effect_event(op, category, category, target_key)
+        target_key = str(op.result.value)
+        return _build_effect_event(op, EFFECT_CATEGORY_WRITE_GLOBAL, EFFECT_CATEGORY_WRITE_GLOBAL, target_key)
 
-    if op.kind == OperationKind.RETURN or op.operator in ('RET', 'RETURN'):
+    if op.kind == OperationKind.RETURN:
         target_key = _normalize_operand_key(op.operands[0] if op.operands else None)
         return _build_effect_event(op, EFFECT_CATEGORY_RETURN, RETURN_FAMILY, target_key)
 
@@ -2325,14 +1803,14 @@ def _match_effect_events(
 
 def _normalize_condition_signature(op: SemanticOperation) -> str:
     if op.operator in ('WHILE', 'IF'):
-        operands = [f"{operand.kind}:{operand.value}" for operand in op.operands]
+        operands = [operand.signature for operand in op.operands]
         joined = ",".join(sorted(operands))
         return f"branch_condition:{joined}"
 
     if op.operator in ('EQ', 'NE', 'LT', 'LE', 'GT', 'GE'):
         if len(op.operands) >= 2:
-            left = f"{op.operands[0].kind}:{op.operands[0].value}"
-            right = f"{op.operands[1].kind}:{op.operands[1].value}"
+            left = op.operands[0].signature
+            right = op.operands[1].signature
             if op.operator in ('EQ', 'NE'):
                 pair = "|".join(sorted([left, right]))
                 return f"{op.operator}:{pair}"
@@ -2796,6 +2274,23 @@ def compare_mlil_hlil(
     return report
 
 
+def compare_function(
+    pipeline: IRPipeline,
+    func_name: str,
+    llil: LowLevelILFunction,
+    mlil: MediumLevelILFunction,
+    hlil: HighLevelILFunction,
+    **gates: Any,
+) -> FunctionReport:
+    """Both layer comparisons of one pipeline function, under the quality gates (compare_llil_mlil's keywords); the
+    MLIL -> HLIL one only where HLIL conversion succeeded"""
+    func_report = FunctionReport(function_name=func_name)
+    func_report.llil_mlil = compare_llil_mlil(llil, mlil, func_name, **gates)
+    if pipeline.can_compare_mlil_hlil(func_name):
+        func_report.mlil_hlil = compare_mlil_hlil(mlil, hlil, func_name, **gates)
+    return func_report
+
+
 # =============================================================================
 # Section 10: Output Formatting + Validation Runner
 # =============================================================================
@@ -2954,25 +2449,16 @@ class Formatter:
         lines: List[str] = []
         lines.append(f"  {self.cyan}{fr.function_name}{self.reset}")
 
-        if fr.llil_mlil:
-            s = fr.llil_mlil.statistics
-            status = f"{self.green}PASS{self.reset}" if fr.llil_mlil.passed else f"{self.red}FAIL{self.reset}"
-            lines.append(
-                f"    LLIL->MLIL: {status}  "
-                f"blocks={s.matched_blocks}/{s.total_source_blocks}  "
-                f"eq={s.equivalent} trans={s.transformed} diff={s.different} "
-                f"elim={s.eliminated}"
-            )
-
-        if fr.mlil_hlil:
-            s = fr.mlil_hlil.statistics
-            status = f"{self.green}PASS{self.reset}" if fr.mlil_hlil.passed else f"{self.red}FAIL{self.reset}"
-            lines.append(
-                f"    MLIL->HLIL: {status}  "
-                f"blocks={s.matched_blocks}/{s.total_source_blocks}  "
-                f"eq={s.equivalent} trans={s.transformed} diff={s.different} "
-                f"elim={s.eliminated}"
-            )
+        for label, report in (("LLIL->MLIL", fr.llil_mlil), ("MLIL->HLIL", fr.mlil_hlil)):
+            if report:
+                s = report.statistics
+                status = f"{self.green}PASS{self.reset}" if report.passed else f"{self.red}FAIL{self.reset}"
+                lines.append(
+                    f"    {label}: {status}  "
+                    f"blocks={s.matched_blocks}/{s.total_source_blocks}  "
+                    f"eq={s.equivalent} trans={s.transformed} diff={s.different} "
+                    f"elim={s.eliminated}"
+                )
 
         return "\n".join(lines)
 
@@ -3065,8 +2551,10 @@ class Validator:
         self.progress = progress
         self.stream = stream
         self.as_json = as_json
-        self.min_provenance_coverage = min_provenance_coverage
-        self.max_unmatched_critical = max_unmatched_critical
+        # The quality gates every comparison runs under: compare_llil_mlil's and compare_mlil_hlil's keywords
+        self.gates = dict(
+            min_provenance_coverage=min_provenance_coverage, max_unmatched_critical=max_unmatched_critical
+        )
 
     def _print(self, text: str) -> None:
         print(text, file=self.stream, flush=True)
@@ -3084,23 +2572,11 @@ class Validator:
             self.progress.update(idx, total, f"{label} {func_name}")
 
             if layer1 == "llil" and layer2 == "mlil":
-                report = compare_llil_mlil(
-                    llil,
-                    mlil,
-                    func_name,
-                    min_provenance_coverage=self.min_provenance_coverage,
-                    max_unmatched_critical=self.max_unmatched_critical,
-                )
+                report = compare_llil_mlil(llil, mlil, func_name, **self.gates)
             elif layer1 == "mlil" and layer2 == "hlil":
                 if not self.pipeline.can_compare_mlil_hlil(func_name):
                     continue
-                report = compare_mlil_hlil(
-                    mlil,
-                    hlil,
-                    func_name,
-                    min_provenance_coverage=self.min_provenance_coverage,
-                    max_unmatched_critical=self.max_unmatched_critical,
-                )
+                report = compare_mlil_hlil(mlil, hlil, func_name, **self.gates)
             else:
                 print(f"Unsupported layer pair: {layer1} -> {layer2}", file=sys.stderr)
                 return 1
@@ -3135,23 +2611,7 @@ class Validator:
         for idx, (func_name, llil, mlil, hlil) in enumerate(self.pipeline.functions, 1):
             self.progress.update(idx, total, f"Comparing {func_name}")
 
-            func_report = FunctionReport(function_name=func_name)
-            func_report.llil_mlil = compare_llil_mlil(
-                llil,
-                mlil,
-                func_name,
-                min_provenance_coverage=self.min_provenance_coverage,
-                max_unmatched_critical=self.max_unmatched_critical,
-            )
-
-            if self.pipeline.can_compare_mlil_hlil(func_name):
-                func_report.mlil_hlil = compare_mlil_hlil(
-                    mlil,
-                    hlil,
-                    func_name,
-                    min_provenance_coverage=self.min_provenance_coverage,
-                    max_unmatched_critical=self.max_unmatched_critical,
-                )
+            func_report = compare_function(self.pipeline, func_name, llil, mlil, hlil, **self.gates)
 
             llil_ok = func_report.llil_mlil.passed if func_report.llil_mlil else True
             hlil_ok = func_report.mlil_hlil.passed if func_report.mlil_hlil else True
@@ -3195,33 +2655,12 @@ class Validator:
         scp_name = Path(self.pipeline.scp_path).stem
         no_color_fmt = Formatter(use_color=False)
 
-        llil_mlil_file = out_path / f"{scp_name}_llil_mlil.txt"
-        with open(llil_mlil_file, 'w', encoding='utf-8') as f:
-            file_validator = Validator(
-                self.pipeline,
-                no_color_fmt,
-                self.progress,
-                f,
-                self.as_json,
-                min_provenance_coverage=self.min_provenance_coverage,
-                max_unmatched_critical=self.max_unmatched_critical,
-            )
-            file_validator.compare("llil", "mlil")
-        print(f"LLIL->MLIL: {llil_mlil_file}", file=sys.stderr)
-
-        mlil_hlil_file = out_path / f"{scp_name}_mlil_hlil.txt"
-        with open(mlil_hlil_file, 'w', encoding='utf-8') as f:
-            file_validator = Validator(
-                self.pipeline,
-                no_color_fmt,
-                self.progress,
-                f,
-                self.as_json,
-                min_provenance_coverage=self.min_provenance_coverage,
-                max_unmatched_critical=self.max_unmatched_critical,
-            )
-            file_validator.compare("mlil", "hlil")
-        print(f"MLIL->HLIL: {mlil_hlil_file}", file=sys.stderr)
+        for layer1, layer2 in (("llil", "mlil"), ("mlil", "hlil")):
+            pair_file = out_path / f"{scp_name}_{layer1}_{layer2}.txt"
+            with open(pair_file, 'w', encoding='utf-8') as f:
+                file_validator = Validator(self.pipeline, no_color_fmt, self.progress, f, self.as_json, **self.gates)
+                file_validator.compare(layer1, layer2)
+            print(f"{layer1.upper()}->{layer2.upper()}: {pair_file}", file=sys.stderr)
 
         return 0
 
@@ -3268,110 +2707,98 @@ def create_parser() -> argparse.ArgumentParser:
 # Section 12: Regression Testing
 # =============================================================================
 
-class RegressionTester:
-    """Regression testing support for validation results"""
+def export_baseline(pipeline: IRPipeline, output_file: str) -> bool:
+    """Export validation results as regression baseline"""
+    function_results = []
 
-    def export_baseline(self, pipeline: IRPipeline, output_file: str) -> bool:
-        """Export validation results as regression baseline"""
-        function_results = []
+    for func_name, llil, mlil, hlil in pipeline.functions:
+        func_report = compare_function(pipeline, func_name, llil, mlil, hlil)
+        function_results.append(Formatter.function_report_to_json(func_report))
 
-        for func_name, llil, mlil, hlil in pipeline.functions:
-            func_report = FunctionReport(function_name=func_name)
-            func_report.llil_mlil = compare_llil_mlil(llil, mlil, func_name)
+    baseline = {
+        "version": "2.0",
+        "file": pipeline.scp_path,
+        "functions": function_results,
+    }
 
-            if pipeline.can_compare_mlil_hlil(func_name):
-                func_report.mlil_hlil = compare_mlil_hlil(mlil, hlil, func_name)
+    try:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            json.dump(baseline, f, indent=2)
+        return True
+    except Exception as e:
+        print(f"Error exporting baseline: {e}", file=sys.stderr)
+        return False
 
-            function_results.append(Formatter.function_report_to_json(func_report))
 
-        baseline = {
-            "version": "2.0",
-            "file": pipeline.scp_path,
-            "functions": function_results,
-        }
+def compare_baseline(pipeline: IRPipeline, baseline_file: str) -> int:
+    """Compare current results against baseline and report differences"""
+    try:
+        with open(baseline_file, 'r', encoding='utf-8') as f:
+            baseline = json.load(f)
+    except Exception as e:
+        print(f"Error loading baseline: {e}", file=sys.stderr)
+        return 1
 
-        try:
-            with open(output_file, 'w', encoding='utf-8') as f:
-                json.dump(baseline, f, indent=2)
-            return True
-        except Exception as e:
-            print(f"Error exporting baseline: {e}", file=sys.stderr)
-            return False
+    current_results: Dict[str, Dict] = {}
+    for func_name, llil, mlil, hlil in pipeline.functions:
+        func_report = compare_function(pipeline, func_name, llil, mlil, hlil)
+        current_results[func_name] = Formatter.function_report_to_json(func_report)
 
-    def compare_baseline(self, pipeline: IRPipeline, baseline_file: str) -> int:
-        """Compare current results against baseline and report differences"""
-        try:
-            with open(baseline_file, 'r', encoding='utf-8') as f:
-                baseline = json.load(f)
-        except Exception as e:
-            print(f"Error loading baseline: {e}", file=sys.stderr)
-            return 1
+    baseline_results = {f["function"]: f for f in baseline.get("functions", [])}
 
-        current_results: Dict[str, Dict] = {}
-        for func_name, llil, mlil, hlil in pipeline.functions:
-            func_report = FunctionReport(function_name=func_name)
-            func_report.llil_mlil = compare_llil_mlil(llil, mlil, func_name)
+    regressions = []
+    improvements = []
 
-            if pipeline.can_compare_mlil_hlil(func_name):
-                func_report.mlil_hlil = compare_mlil_hlil(mlil, hlil, func_name)
+    def extract_gate_count(result: Dict[str, Any], layer_key: str) -> int:
+        layer = result.get(layer_key, {})
+        stats = layer.get("statistics", {})
+        status_counts = stats.get("status_counts", {})
+        return int(status_counts.get("hard_fail", 0))
 
-            current_results[func_name] = Formatter.function_report_to_json(func_report)
+    for func_name, current in current_results.items():
+        if func_name not in baseline_results:
+            continue
 
-        baseline_results = {f["function"]: f for f in baseline.get("functions", [])}
+        base = baseline_results[func_name]
 
-        regressions = []
-        improvements = []
+        for layer_key in ("llil_mlil", "mlil_hlil"):
+            if layer_key in current and layer_key in base:
+                cur_diff = extract_gate_count(current, layer_key)
+                base_diff = extract_gate_count(base, layer_key)
+                layer_label = layer_key.upper().replace("_", "-")
 
-        def extract_gate_count(result: Dict[str, Any], layer_key: str) -> int:
-            layer = result.get(layer_key, {})
-            stats = layer.get("statistics", {})
-            status_counts = stats.get("status_counts", {})
-            return int(status_counts.get("hard_fail", 0))
+                if cur_diff > base_diff:
+                    regressions.append({
+                        "function": func_name, "layer": layer_label,
+                        "baseline_diff": base_diff, "current_diff": cur_diff,
+                    })
+                elif cur_diff < base_diff:
+                    improvements.append({
+                        "function": func_name, "layer": layer_label,
+                        "baseline_diff": base_diff, "current_diff": cur_diff,
+                    })
 
-        for func_name, current in current_results.items():
-            if func_name not in baseline_results:
-                continue
+    print("=== Regression Test Results ===")
+    print(f"Baseline: {baseline_file}")
+    print(f"Functions compared: {len(current_results)}")
+    print()
 
-            base = baseline_results[func_name]
-
-            for layer_key in ("llil_mlil", "mlil_hlil"):
-                if layer_key in current and layer_key in base:
-                    cur_diff = extract_gate_count(current, layer_key)
-                    base_diff = extract_gate_count(base, layer_key)
-                    layer_label = layer_key.upper().replace("_", "-")
-
-                    if cur_diff > base_diff:
-                        regressions.append({
-                            "function": func_name, "layer": layer_label,
-                            "baseline_diff": base_diff, "current_diff": cur_diff,
-                        })
-                    elif cur_diff < base_diff:
-                        improvements.append({
-                            "function": func_name, "layer": layer_label,
-                            "baseline_diff": base_diff, "current_diff": cur_diff,
-                        })
-
-        print("=== Regression Test Results ===")
-        print(f"Baseline: {baseline_file}")
-        print(f"Functions compared: {len(current_results)}")
+    if regressions:
+        print(f"REGRESSIONS FOUND: {len(regressions)}")
+        for r in regressions:
+            print(f"  {r['function']} ({r['layer']}): {r['baseline_diff']} -> {r['current_diff']} differences")
         print()
 
-        if regressions:
-            print(f"REGRESSIONS FOUND: {len(regressions)}")
-            for r in regressions:
-                print(f"  {r['function']} ({r['layer']}): {r['baseline_diff']} -> {r['current_diff']} differences")
-            print()
+    if improvements:
+        print(f"Improvements: {len(improvements)}")
+        for i in improvements:
+            print(f"  {i['function']} ({i['layer']}): {i['baseline_diff']} -> {i['current_diff']} differences")
+        print()
 
-        if improvements:
-            print(f"Improvements: {len(improvements)}")
-            for i in improvements:
-                print(f"  {i['function']} ({i['layer']}): {i['baseline_diff']} -> {i['current_diff']} differences")
-            print()
+    if not regressions and not improvements:
+        print("No changes detected from baseline")
 
-        if not regressions and not improvements:
-            print("No changes detected from baseline")
-
-        return 1 if regressions else 0
+    return 1 if regressions else 0
 
 
 # =============================================================================
@@ -3382,12 +2809,10 @@ def run_mode(args: argparse.Namespace, pipeline: IRPipeline) -> int:
     """Runs what args asks for - a regression export or comparison, or a validation - and returns its exit code"""
     # Regression testing (no formatter/progress needed)
     if args.export_regression:
-        tester = RegressionTester()
-        return 0 if tester.export_baseline(pipeline, args.export_regression) else 1
+        return 0 if export_baseline(pipeline, args.export_regression) else 1
 
     if args.compare_regression:
-        tester = RegressionTester()
-        return tester.compare_baseline(pipeline, args.compare_regression)
+        return compare_baseline(pipeline, args.compare_regression)
 
     # Create validator
     use_color = not args.no_color and not args.output_dir
@@ -3410,22 +2835,11 @@ def run_mode(args: argparse.Namespace, pipeline: IRPipeline) -> int:
         return validator.compare(args.compare[0], args.compare[1])
 
     if args.all:
-        exit_code = 0
-        code = validator.compare("llil", "mlil")
-        if code != 0:
-            exit_code = code
+        # Both pairs run, in this order; either one failing fails the run
+        return max(validator.compare("llil", "mlil"), validator.compare("mlil", "hlil"))
 
-        code = validator.compare("mlil", "hlil")
-        if code != 0:
-            exit_code = code
-
-        return exit_code
-
-    if args.batch:
-        return validator.batch(args.failed_only)
-
-    # Default: batch
-    return validator.batch()
+    # Default: batch (--batch asks for it by name)
+    return validator.batch(args.failed_only)
 
 
 def main() -> int:
