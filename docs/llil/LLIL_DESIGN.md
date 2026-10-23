@@ -33,8 +33,10 @@ operand stack has little use for LLIL and can lift straight to MLIL.
 | Path | Responsibility |
 | --- | --- |
 | `ir/llil/llil.py` | Node model: the generic `LowLevelILOperation`, the `LowLevelILExpr`/`LowLevelILStatement` split, every generic node, `LowLevelILBasicBlock`, `LowLevelILFunction` (instruction numbering, `build_cfg()`), `WORD_SIZE`. |
-| `ir/llil/llil_builder.py` | `LowLevelILBuilder`: stack pointer and virtual stack, push/pop, slot storage (`_holds_parameter`), per-edge stack state (`StackSnapshot`, `save_stack_for_offset`, `_record_edge_state`); `LLILFormatter` for the `.llil.asm` text and `.llil.dot` graphs (each instruction's own text, the binary/unary expansion). |
-| `falcom/ed9/ir/llil/llil_builder.py` | `FalcomVMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `finalize()`; `FalcomLLILFormatter` (the pops the builder hides, see Formatting). |
+| `ir/llil/llil_builder.py` | `LowLevelILBuilder`: stack pointer and virtual stack, push/pop, slot storage (`_holds_parameter`), per-edge stack state (`StackSnapshot`, `save_stack_for_offset`, `_record_edge_state`). |
+| `ir/llil/llil_formatter.py` | `LLILFormatter`: the `.llil.asm` text and `.llil.dot` graphs (each instruction's own text, the binary/unary expansion). |
+| `falcom/ed9/ir/llil/llil_builder.py` | `FalcomVMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `finalize()`. |
+| `falcom/ed9/ir/llil/llil_formatter.py` | `FalcomLLILFormatter`: the pops the builder hides (see Formatting). |
 | `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILPushCallerFrame`, `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILDebugLog`; their operations in `LowLevelILFalcomOperation`. |
 | `falcom/ed9/ir/llil/constants.py` | ED9 constants the call setups push: function ID, return-address block, script pointer, script name. |
 | `falcom/ed9/ir/llil/vm_lifter.py` | `ED9VMLifter.lift_function()`: the production entry point, a `match` arm per opcode - the binary opcodes share one, picked by the opcode table's kind (`BINARY_BUILDER_METHODS` names each one's builder operation), and a local `CALL`'s argument count comes from its stack effect. |

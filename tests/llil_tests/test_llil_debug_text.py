@@ -14,7 +14,7 @@ from ir.llil.llil import (
     LowLevelILCall, LowLevelILConst, LowLevelILFrameStore, LowLevelILIf, LowLevelILOperation, LowLevelILStackLoad,
     LowLevelILStackStore, LowLevelILStore, UNASSIGNED_INST_INDEX, WORD_SIZE,
 )
-from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
+from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn, LowLevelILFalcomOperation
 from tests.shared.llil_utils import instructions_of, lift_asm, make_builder
 from tests.shared.scp_asm import (

@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILFrameStore, LowLevelILStackStore, LowLevelILConst, WORD_SIZE
-from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
+from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
 from ir.mlil.mlil import MLILSetVar
 from tests.shared.llil_utils import make_builder

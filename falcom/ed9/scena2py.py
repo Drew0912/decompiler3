@@ -22,7 +22,7 @@ from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.scp_listing import write_listing
 from falcom.ed9.parser.parser_types import Function
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter
+from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.mlil.mlil_formatter import MLILFormatter

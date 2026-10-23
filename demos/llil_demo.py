@@ -7,7 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 
 from ir.core import IRParameter
 from ir.llil import *
-from falcom.ed9.ir.llil.llil_builder import FalcomLLILFormatter, FalcomVMBuilder
+from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
+from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 
 # Next to this file: the graphs are of the demo's hand-built functions, not a real script
 DOT_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cfg.dot')
@@ -562,7 +563,7 @@ def test_AV_04_0017():
 
     func1 = create_AV_04_0017()
     print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func1)))
-    with open(DOT_FILE_PATH, 'w') as f:
+    with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(FalcomLLILFormatter.to_dot(func1))
 
 
@@ -578,7 +579,7 @@ def test_DOF_ON():
 
     # Generate CFG visualization
     dot = FalcomLLILFormatter.to_dot(func2)
-    with open(DOT_FILE_PATH, 'w') as f:
+    with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
     print(f'\n📊 CFG saved to {DOT_FILE_PATH}')
     print('   View online: https://dreampuf.github.io/GraphvizOnline/')
@@ -608,7 +609,7 @@ def test_Dummy_m3010_talk0():
 
     # Generate CFG visualization
     dot = FalcomLLILFormatter.to_dot(func4)
-    with open(DOT_FILE_PATH, 'w') as f:
+    with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
     print(f'\n📊 CFG saved to {DOT_FILE_PATH}')
     print('   View online: https://dreampuf.github.io/GraphvizOnline/')
@@ -734,7 +735,7 @@ def test_TALK_BEGIN():
     print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func5)))
 
     dot = FalcomLLILFormatter.to_dot(func5)
-    with open(DOT_FILE_PATH, 'w') as f:
+    with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
 
 
@@ -752,7 +753,7 @@ def test_conditional():
     print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func5)))
 
     dot = FalcomLLILFormatter.to_dot(func5)
-    with open(DOT_FILE_PATH, 'w') as f:
+    with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
 
 
@@ -770,7 +771,7 @@ def test_EV_06_37_00():
     print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func6)))
 
     dot = FalcomLLILFormatter.to_dot(func6)
-    with open(DOT_FILE_PATH, 'w') as f:
+    with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
 
 
