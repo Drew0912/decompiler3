@@ -1,11 +1,8 @@
 """Falcom-specific LLIL Extensions"""
 
 from enum import IntEnum
-from typing import Optional, List, TYPE_CHECKING
+from typing import List
 from ir.llil import *
-
-if TYPE_CHECKING:
-    from .constants import *
 
 
 class LowLevelILFalcomOperation(IntEnum):
@@ -14,31 +11,8 @@ class LowLevelILFalcomOperation(IntEnum):
     LLIL_GLOBAL_LOAD           = LowLevelILOperation.LLIL_USER_DEFINED      # Load from global variable array
     LLIL_GLOBAL_STORE          = LowLevelILOperation.LLIL_USER_DEFINED + 1  # Store to global variable array
     LLIL_DEBUG_LOG             = LowLevelILOperation.LLIL_USER_DEFINED + 2  # Debug print of stack values
-    LLIL_PUSH_CALLER_FRAME     = LowLevelILOperation.LLIL_USER_DEFINED + 3  # Push 4 values in CALLER_FRAME_SLOTS
     LLIL_CALL_SCRIPT           = LowLevelILOperation.LLIL_USER_DEFINED + 4  # Call script function
     LLIL_CALL_SCRIPT_NO_RETURN = LowLevelILOperation.LLIL_USER_DEFINED + 5  # Tail-call script function
-
-
-class LowLevelILPushCallerFrame(LowLevelILStatement):
-    """PUSH_CALLER_FRAME - Push caller frame to save call context (statement)"""
-
-    def __init__(
-        self,
-        func_id: 'LowLevelILConstFuncId',
-        ret_addr: 'LowLevelILConstRetAddrBlock',
-        script_ptr: 'LowLevelILConstScript',
-        script_name: 'LowLevelILConstScriptName'
-    ):
-        super().__init__(LowLevelILFalcomOperation.LLIL_PUSH_CALLER_FRAME)
-
-        self.func_id          = func_id                     # FalcomConstants.current_func_id()
-        self.ret_addr         = ret_addr                    # FalcomConstants.ret_addr_block()
-        self.script_ptr       = script_ptr                  # FalcomConstants.current_script()
-        self.script_name      = script_name                 # FalcomConstants.current_script_name()
-        self.slot_index       : Optional[int] = None        # Will be set by builder to track stack position
-
-    def __str__(self) -> str:
-        return f'push_caller_frame({self.ret_addr})'
 
 
 class LowLevelILCallScript(LowLevelILCall):
@@ -48,7 +22,6 @@ class LowLevelILCallScript(LowLevelILCall):
         self,
         module: str,
         func: str,
-        caller_frame: LowLevelILPushCallerFrame,
         args: List['LowLevelILExpr'],
         return_target: 'LowLevelILBasicBlock'
     ):
@@ -57,9 +30,7 @@ class LowLevelILCallScript(LowLevelILCall):
         self.operation    = LowLevelILFalcomOperation.LLIL_CALL_SCRIPT
         self.module       = module          # Script module name (e.g., 'system')
         self.func         = func            # Function name (e.g., 'OnTalkBegin')
-        self.caller_frame = caller_frame    # Caller frame (popped from vstack)
         self.args         = args            # Arguments (popped from vstack)
-        self.arg_count    = len(args)       # Number of arguments
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)
@@ -84,7 +55,6 @@ class LowLevelILCallScriptNoReturn(LowLevelILCall):
         self.operation    = LowLevelILFalcomOperation.LLIL_CALL_SCRIPT_NO_RETURN
         self.module       = module          # Script module name (e.g., 'system')
         self.func         = func            # Function name (e.g., 'OnTalkBegin')
-        self.arg_count    = len(args)       # Number of arguments
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)

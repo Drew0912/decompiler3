@@ -136,7 +136,7 @@ class LLILToMLILTranslator:
         """Translate LLIL expression to MLIL"""
         # Constants
         if isinstance(llil_expr, LowLevelILConst):
-            return MLILConst(llil_expr.value, llil_expr.is_hex)
+            return MLILConst(llil_expr.value)
 
         # Stack operations → Variables
         elif isinstance(llil_expr, LowLevelILStackLoad):

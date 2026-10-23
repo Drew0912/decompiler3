@@ -132,7 +132,7 @@ class TestNestedCallSetups(unittest.TestCase):
         builder.ret()
 
         self.assertIsInstance(outer_call, LowLevelILCallScript)
-        self.assertIsNot(inner_call.caller_frame, outer_call.caller_frame)
+        self.assertIs(inner_call.return_target, inner_ret)
         self.assertEqual(outer_call.args, [outer_arg])
         self.assertIs(outer_call.return_target, outer_ret)
 

@@ -79,7 +79,7 @@ class TestBlockLabels(unittest.TestCase):
 
 
 class TestFunctionLookups(unittest.TestCase):
-    """The function's lookups by instruction index, block address and label"""
+    """The function's lookups by block address and label"""
 
     def make_function(self):
         builder = make_builder()
@@ -88,16 +88,6 @@ class TestFunctionLookups(unittest.TestCase):
         builder.pop_n(1)
         builder.ret()
         return builder, entry, builder.finalize()
-
-    def test_instruction_lookup_stops_at_the_ends(self):
-        _, entry, func = self.make_function()
-        count = len(entry.instructions)
-
-        self.assertIs(func.get_instruction_by_index(0), entry.instructions[0])
-        self.assertIs(func.get_instruction_by_index(count - 1), entry.instructions[-1])
-        self.assertIsNone(func.get_instruction_by_index(-1))
-        self.assertIsNone(func.get_instruction_by_index(count))
-        self.assertIs(func.get_instruction_block_by_index(0), entry)
 
     def test_block_lookups(self):
         builder, entry, func = self.make_function()

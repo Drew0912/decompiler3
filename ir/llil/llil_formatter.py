@@ -13,13 +13,6 @@ class LLILFormatter:
         """Add indentation to multiple lines"""
         return [indent + line for line in lines]
 
-    @classmethod
-    def format_instruction(cls, inst: LowLevelILInstruction) -> str:
-        """Format a single instruction - can be customized per instruction type"""
-        # For now, use the instruction's __str__ method
-        # This can be extended with custom formatting logic for specific instruction types
-        return str(inst)
-
     # Map operation to expression template
     __expr_templates = {
         LowLevelILOperation.LLIL_ADD            : '{lhs} + {rhs}',

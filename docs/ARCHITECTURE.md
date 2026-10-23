@@ -53,9 +53,8 @@ by the ED9 opcode table, which also gives each opcode's kind and stack effect (`
 Lifts disassembled instructions to LLIL: manages virtual stack and register state, and resolves VM
 semantics such as calls, branches, and CFG shape. It does **not** recover `if`/`else`, loops, or
 switch structure — that recovery is entirely HLIL's job, several layers up. The LLIL `Function`
-assigns every instruction a global `inst_index` (see `get_instruction_by_index()`,
-`get_instruction_block_by_index()`, `iter_instructions()`); each MLIL statement records the one it
-comes from as its `llil_index`. Which opcodes are binary and how many arguments a local `CALL` pops
+assigns every instruction a global `inst_index`; each MLIL statement records the one it comes from
+as its `llil_index`. Which opcodes are binary and how many arguments a local `CALL` pops
 come from the opcode table's kinds and stack effects. The stack model, slot lifetimes, call setups and
 per-edge stack state are in `docs/llil/LLIL_DESIGN.md`.
 

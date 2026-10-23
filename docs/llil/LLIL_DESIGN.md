@@ -37,7 +37,7 @@ operand stack has little use for LLIL and can lift straight to MLIL.
 | `ir/llil/llil_formatter.py` | `LLILFormatter`: the `.llil.asm` text and `.llil.dot` graphs (each instruction's own text, the binary/unary expansion). |
 | `falcom/ed9/ir/llil/llil_builder.py` | `FalcomVMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `finalize()`. |
 | `falcom/ed9/ir/llil/llil_formatter.py` | `FalcomLLILFormatter`: the pops the builder hides (see Formatting). |
-| `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILPushCallerFrame`, `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILDebugLog`; their operations in `LowLevelILFalcomOperation`. |
+| `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILDebugLog`; their operations in `LowLevelILFalcomOperation`. |
 | `falcom/ed9/ir/llil/constants.py` | ED9 constants the call setups push: function ID, return-address block, script pointer, script name. |
 | `falcom/ed9/ir/llil/vm_lifter.py` | `ED9VMLifter.lift_function()`: the production entry point, a `match` arm per opcode - the binary opcodes share one, picked by the opcode table's kind (`BINARY_BUILDER_METHODS` names each one's builder operation), and a local `CALL`'s argument count comes from its stack effect. |
 
@@ -58,7 +58,7 @@ came from, `inst_index`, `options.hidden_for_formatter`). Nodes are either a
 | Globals (ED9) | `LowLevelILGlobalStore(index, value)`, `LowLevelILGlobalLoad(index)` |
 | Arithmetic / compare / logic | `LowLevelILBinaryOp` subclasses (`Add`, `Sub`, `Mul`, `Div`, `Mod`, `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, bitwise `And`/`Or`, eager `LogicalAnd`/`LogicalOr`); `LowLevelILUnaryOp` subclasses (`Neg`, `BitwiseNot`, `TestZero`) |
 | Terminals | `LowLevelILJmp(target)`, `LowLevelILIf(condition, true_target, false_target)`, `LowLevelILCall(target, return_target, args, returns)`, `LowLevelILRet()`; ED9 `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn` (both subclass `LowLevelILCall`) |
-| Other | `LowLevelILConst(value, is_hex, is_raw)`, `LowLevelILSyscall(subsystem, cmd, argc, args)`, `LowLevelILDebug('line', n)` (from `DEBUG_SET_LINENO`), `LowLevelILDebugLog(args)` |
+| Other | `LowLevelILConst(value, is_raw)`, `LowLevelILSyscall(subsystem, cmd, argc, args)`, `LowLevelILDebug('line', n)` (from `DEBUG_SET_LINENO`), `LowLevelILDebugLog(args)` |
 
 Offsets are **bytes** (`slot * WORD_SIZE`); `slot_index` is an absolute slot number. Stack offsets
 count from the current `sp`, frame offsets from the frame base.
@@ -70,8 +70,8 @@ after it (MLIL's `BlockMergePass` splices the two back together).
 
 **Instruction numbering.** `inst_index` is -1 until the instruction joins a block of a function,
 which gives it the next number (no node is shared between blocks). `finalize()` renumbers
-everything in block order (`reindex_in_block_order()`), and `get_instruction_by_index()`,
-`get_instruction_block_by_index()` and `iter_instructions()` look them up. Each MLIL statement's `llil_index` is one of these numbers.
+everything in block order (`reindex_in_block_order()`). Each MLIL statement's `llil_index` is one of these
+numbers.
 
 ## Stack Model
 
@@ -127,8 +127,7 @@ the slot of parameter 1 (arg1) in place`), and a tail call forwarding one has it
 `PUSH_CALLER_FRAME` pushes the function ID, the return address, the script pointer (two slots) and
 the script name - `CALLER_FRAME_SLOTS` = 5 slots - and opens a `SCRIPT` setup. `CALL_SCRIPT`,
 with `sp` at `sp_before_call + CALLER_FRAME_SLOTS + argc`, emits `LowLevelILCallScript` and cleans
-up like a local call. The `LowLevelILPushCallerFrame` node is kept on the setup and on the
-call (`caller_frame`); it is never added to a block.
+up like a local call.
 
 Setups nest (an argument may contain another call), so the builder keeps a stack of them,
 innermost last, and they are part of the stack state an edge carries: two arms of a branch each see

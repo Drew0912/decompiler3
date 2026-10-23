@@ -709,7 +709,7 @@ def create_TALK_BEGIN():
     builder.set_current_block(loc_54F6B)
 
     # PUSH(0x00000000)
-    builder.push_int(0x00000000, is_hex=True)
+    builder.push_int(0x00000000)
     # SET_REG(0)
     builder.set_reg(0)
     # POP(8)

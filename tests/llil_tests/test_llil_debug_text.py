@@ -198,10 +198,8 @@ class TestLiftedDebugText(unittest.TestCase):
         for delta, text in ((1, 'sp++'), (-1, 'sp--'), (3, 'sp += 3'), (-3, 'sp -= 3')):
             self.assertEqual(str(builder.emit_sp_add(delta)), text)
 
-    def test_hex_and_raw_constants(self):
+    def test_typed_and_raw_constant_text(self):
         self.assertEqual(str(LowLevelILConst(255)), '255')
-        self.assertEqual(str(LowLevelILConst(255, is_hex=True)), '0xFF')
-        self.assertEqual(str(LowLevelILConst(-255, is_hex=True)), '-0xFF')
         self.assertEqual(str(LowLevelILConst(255, is_raw=True)), '0xFF')
         self.assertEqual(str(LowLevelILConst(1.5)), '1.5')
 
@@ -262,8 +260,6 @@ class TestMoreDebugText(unittest.TestCase):
         llil_func = lifted_text_function()
         branch, = instructions_of(llil_func, LowLevelILIf)
         self.assertEqual(str(branch), 'if EQ(STACK[sp<1>], 0) goto block_3 else block_1')
-        self.assertEqual(str(LowLevelILIf(branch.condition, branch.true_target)),
-                         'if EQ(STACK[sp<1>], 0) goto block_3')
 
         call, = [inst for inst in instructions_of(llil_func, LowLevelILCall) if type(inst) is LowLevelILCall]
         self.assertEqual(str(call), 'call callee(STACK[sp<3>])')

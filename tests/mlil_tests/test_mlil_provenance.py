@@ -56,7 +56,7 @@ def build_call_function() -> LowLevelILFunction:
 
 
 def llil_instructions(llil: LowLevelILFunction) -> dict:
-    return {inst.inst_index: inst for inst in llil.iter_instructions()}
+    return {inst.inst_index: inst for block in llil.basic_blocks for inst in block.instructions}
 
 
 def stamp(inst, address: int, llil_index: int):

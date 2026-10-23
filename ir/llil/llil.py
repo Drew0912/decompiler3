@@ -1,12 +1,8 @@
 """LLIL - Stack-based low-level IR"""
 
-from typing import Any, List, Optional, Union, TYPE_CHECKING
+from typing import Any, List, Optional, Union
 from dc3 import format_signed_hex, IntEnum2, quote_string
 from ir.core import *
-
-if TYPE_CHECKING:
-    # Forward declaration for type hints
-    pass
 
 # Constants
 WORD_SIZE = 4  # 4 bytes per word
@@ -58,7 +54,6 @@ class LowLevelILOperation(IntEnum2):
 
     # Constants and special
     LLIL_CONST              = 50    # constant value
-    LLIL_NOP               = 52    # no operation
 
     # VM specific
     LLIL_SYSCALL            = 60    # system call
@@ -138,12 +133,6 @@ class LowLevelILStackLoad(LowLevelILExpr):
         super().__init__(LowLevelILOperation.LLIL_STACK_LOAD)
         self.offset = offset  # Byte offset
         self.slot_index = slot_index  # Absolute stack slot index
-
-    def __eq__(self, other):
-        return object.__eq__(self, other)
-
-    def __hash__(self):
-        return object.__hash__(self)
 
     def __str__(self) -> str:
         # Convert byte offset to word offset for display
@@ -444,19 +433,14 @@ class LowLevelILIf(LowLevelILStatement, Terminal):
     """Conditional branch - targets must be BasicBlocks (terminal)"""
 
     def __init__(self, condition: 'LowLevelILBinaryOp', true_target: 'LowLevelILBasicBlock',
-                 false_target: Optional['LowLevelILBasicBlock'] = None):
+                 false_target: 'LowLevelILBasicBlock'):
         super().__init__(LowLevelILOperation.LLIL_BRANCH)
         self.condition = condition  # An instruction that produces a boolean value
         self.true_target = true_target
         self.false_target = false_target
 
     def __str__(self) -> str:
-        true_name = self.true_target.block_name
-        if self.false_target:
-            false_name = self.false_target.block_name
-            return f'if {self.condition} goto {true_name} else {false_name}'
-        else:
-            return f'if {self.condition} goto {true_name}'
+        return f'if {self.condition} goto {self.true_target.block_name} else {self.false_target.block_name}'
 
 
 class LowLevelILCall(LowLevelILStatement, Terminal):
@@ -498,10 +482,9 @@ class LowLevelILRet(LowLevelILStatement, Terminal):
 class LowLevelILConst(LowLevelILExpr, Constant):
     """Constant value (int, float, or string) (expression)"""
 
-    def __init__(self, value: Union[int, float, str], is_hex: bool = False, is_raw: bool = False):
+    def __init__(self, value: Union[int, float, str], is_raw: bool = False):
         super().__init__(LowLevelILOperation.LLIL_CONST)
         self.value = value
-        self.is_hex = is_hex  # True to display as hex, False for decimal (default)
         self.is_raw = is_raw  # True for raw values (type-less), False for typed constants
 
     def __str__(self) -> str:
@@ -509,7 +492,7 @@ class LowLevelILConst(LowLevelILExpr, Constant):
             return quote_string(self.value, "'")
 
         # Raw values always print in hex
-        if isinstance(self.value, int) and (self.is_raw or self.is_hex):
+        if isinstance(self.value, int) and self.is_raw:
             return format_signed_hex(self.value)
 
         return str(self.value)
@@ -559,10 +542,9 @@ def default_label_for_addr(addr: int) -> str:
 class LowLevelILBasicBlock:
     """Basic block containing LLIL instructions (following BN design)"""
 
-    def __init__(self, start: int, index: int = 0, label: Optional[str] = None):
+    def __init__(self, start: int, label: Optional[str] = None):
         self.start = start
-        self.end = start
-        self.index = index  # Block index in function
+        self.index = 0  # Block index in function, set by LowLevelILFunction.add_basic_block
         self.label = label if label is not None else default_label_for_addr(start)
         self.instructions: List[LowLevelILInstruction] = []
         self.sp_in = 0   # sp state at block entry
@@ -577,7 +559,7 @@ class LowLevelILBasicBlock:
         self.instructions.append(inst)
 
         if self.function is not None:
-            self.function._register_instruction(self, inst)
+            self.function._register_instruction(inst)
 
     def add_outgoing_edge(self, target: 'LowLevelILBasicBlock'):
         """Add outgoing edge to another block"""
@@ -618,8 +600,6 @@ class LowLevelILFunction:
         self._label_map: dict[str, LowLevelILBasicBlock] = {}  # label -> block
         self.frame_base_sp: Optional[int] = None  # Frame pointer (sp at function entry)
         self._next_inst_index: int = 0
-        self._inst_block_map: dict[int, LowLevelILBasicBlock] = {}
-        self._instructions: List[LowLevelILInstruction] = []
         self.is_common_func = is_common_func
 
     @property
@@ -638,37 +618,18 @@ class LowLevelILFunction:
         self._block_map[block.start] = block
         self._label_map[block.label] = block
 
-    def _register_instruction(self, block: LowLevelILBasicBlock, inst: LowLevelILInstruction):
-        """Assign a global instruction index and track block association"""
+    def _register_instruction(self, inst: LowLevelILInstruction):
+        """Assign the next global instruction index"""
         inst.inst_index = self._next_inst_index
         self._next_inst_index += 1
-        self._instructions.append(inst)
-        self._inst_block_map[inst.inst_index] = block
 
     def reindex_in_block_order(self):
-        """Rebuild instruction indices and lookup tables in basic-block list order, regardless of
-        the order instructions were originally registered in."""
-        self._instructions = []
-        self._inst_block_map = {}
+        """Renumber the instructions in basic-block list order, regardless of the order they were originally
+        registered in."""
         self._next_inst_index = 0
-
         for block in self.basic_blocks:
             for inst in block.instructions:
-                self._register_instruction(block, inst)
-
-    def get_instruction_by_index(self, inst_index: int) -> Optional[LowLevelILInstruction]:
-        """Get instruction by global inst_index"""
-        if inst_index < 0 or inst_index >= len(self._instructions):
-            return None
-        return self._instructions[inst_index]
-
-    def get_instruction_block_by_index(self, inst_index: int) -> Optional[LowLevelILBasicBlock]:
-        """Get the basic block containing the instruction with inst_index"""
-        return self._inst_block_map.get(inst_index)
-
-    def iter_instructions(self):
-        """Iterate over instructions in inst_index order"""
-        return iter(self._instructions)
+                self._register_instruction(inst)
 
     def get_block_by_addr(self, addr: int) -> Optional[LowLevelILBasicBlock]:
         """Get basic block by start address"""

@@ -1,7 +1,7 @@
 """ED9 VM bytecode → Falcom LLIL lifter"""
 
 import math
-from typing import Dict, TYPE_CHECKING
+from typing import Dict
 
 from ir.llil.llil import *
 from ir.core import IRParameter, SourceFloat
@@ -12,9 +12,6 @@ from .llil_builder import *
 from ...parser.parser_types import Function, FunctionParam
 from ...parser.scp import ScpFunctionError, ScpParser
 from ...structs.scp_types import ScpValue
-
-if TYPE_CHECKING:
-    from ...parser.scp import *
 
 
 class ED9LiftError(ScpFunctionError):

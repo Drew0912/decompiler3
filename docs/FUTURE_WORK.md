@@ -74,8 +74,9 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
   `notes/rewrite/08_decision_and_checklist.md` (Checklist, "Boundary rules").
 - **Small moves, done by the opcode-table plan** (Step 7 `89063e4`, no output change; Step 7b `f8f4682` changed only
   the `POP_TO_DEREF` lines of `.llil.asm`):
-  - `LLIL_PUSH_CALLER_FRAME`/`LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` live only in `LowLevelILFalcomOperation`
-    (`falcom/ed9/ir/llil/llil_ext.py`) with the global ops, numbered after `LLIL_DEBUG_LOG`.
+  - `LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` live only in `LowLevelILFalcomOperation`
+    (`falcom/ed9/ir/llil/llil_ext.py`) with the global ops, numbered after `LLIL_DEBUG_LOG` (`LLIL_PUSH_CALLER_FRAME`,
+    moved with them, was later removed with its node, which no block ever held).
   - The pop shapes are `FalcomLLILFormatter`'s: a shape is Falcom's when the pop it shows is done by a
     `FalcomVMBuilder` method that hides it (`set_reg`, `pop_jmp_zero`/`pop_jmp_not_zero`, `pop_to`, `pop_to_deref`:
     `REG[n] = STACK[--sp]`, `if (STACK[--sp] ...)`, two `= STACK[--sp]` stores, `*ptr = STACK[--sp]`; `set_global`'s

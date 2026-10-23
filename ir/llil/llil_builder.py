@@ -116,10 +116,8 @@ class LowLevelILBuilder:
 
     def create_basic_block(self, start: int, label: str = None) -> LowLevelILBasicBlock:
         """Create basic block and automatically add to function"""
-        # Get next block index
-        index = len(self.function.basic_blocks)
         # Create block
-        block = LowLevelILBasicBlock(start, index, label=label)
+        block = LowLevelILBasicBlock(start, label=label)
         # Automatically add to function
         self.function.add_basic_block(block)
         return block
@@ -129,10 +127,6 @@ class LowLevelILBuilder:
     def set_current_address(self, addr: int) -> None:
         """Set current source instruction address for subsequent LLIL instructions"""
         self.__current_address = addr
-
-    def get_current_address(self) -> int:
-        """Get current source instruction address"""
-        return self.__current_address
 
     # === Stack Pointer Management (Public Interface) ===
 
@@ -148,17 +142,13 @@ class LowLevelILBuilder:
         """Adjust shadow SP by delta (does NOT emit IL) - PRIVATE"""
         self.__current_sp += delta
 
-    def _cleanup_stack(self, argc: int) -> list[LowLevelILExpr]:
+    def _cleanup_stack(self, argc: int):
         """Clean up stack and vstack without emitting IL - PRIVATE"""
-        popped_values = []
-
         if argc > 0:
             self.__sp_adjust(-argc)
             # Pop from vstack (will raise if underflow - indicates bug in caller)
             for _ in range(argc):
-                popped_values.append(self.__vstack_pop())
-
-        return popped_values
+                self.__vstack_pop()
 
     def emit_sp_add(self, delta: int, *, hidden_for_formatter: bool = False) -> LowLevelILSpAdd:
         """Emit SpAdd IL and sync shadow sp (single entry point for SP changes)"""
@@ -302,10 +292,6 @@ class LowLevelILBuilder:
         """STACK[sp + offset] (no sp change) - returns expression"""
         return LowLevelILStackLoad(offset=offset, slot_index=slot_index)
 
-    def stack_store(self, value: Union[LowLevelILExpr, int, str], offset: int):
-        """STACK[sp + offset] = value (no sp change)"""
-        self._store_slot(self._to_expr(value), self._slot_index(offset), offset)
-
     def frame_load(self, offset: int) -> 'LowLevelILFrameLoad':
         """STACK[frame + offset] - Frame-relative load (for function parameters)"""
         return LowLevelILFrameLoad(offset)
@@ -441,21 +427,21 @@ class LowLevelILBuilder:
 
     # === Constants ===
 
-    def const_int(self, value: int, is_hex: bool = False) -> LowLevelILConst:
+    def const_int(self, value: int) -> LowLevelILConst:
         """Integer constant"""
-        return LowLevelILConst(value, is_hex)
+        return LowLevelILConst(value)
 
     def const_float(self, value: float) -> LowLevelILConst:
         """Float constant"""
-        return LowLevelILConst(value, False)
+        return LowLevelILConst(value)
 
     def const_str(self, value: str) -> LowLevelILConst:
         """String constant"""
-        return LowLevelILConst(value, False)
+        return LowLevelILConst(value)
 
     def const_raw(self, value: int) -> LowLevelILConst:
         """Raw constant (type-less, displayed as hex)"""
-        return LowLevelILConst(value, is_hex=False, is_raw=True)
+        return LowLevelILConst(value, is_raw=True)
 
     # === Binary Operations ===
 

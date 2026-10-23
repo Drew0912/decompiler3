@@ -64,7 +64,7 @@ class TestCallScriptNoReturnLLIL(unittest.TestCase):
         self.assertIsNone(inst.return_target)
         self.assertEqual(inst.module, MODULE_NAME)
         self.assertEqual(inst.func, FUNC_NAME)
-        self.assertEqual(inst.arg_count, 2)
+        self.assertEqual(len(inst.args), 2)
 
 
 class TestCallScriptNoReturnMLIL(unittest.TestCase):
@@ -128,7 +128,7 @@ class TestScriptCallNames(unittest.TestCase):
         _, llil_func = lift_asm(asm)
 
         call, = instructions_of(llil_func, LowLevelILCallScript)
-        self.assertEqual((call.module, call.func, call.arg_count),
+        self.assertEqual((call.module, call.func, len(call.args)),
                          (scp_asm.MODULE_NAME, scp_asm.SCRIPT_FUNC_NAME, SCRIPT_ARGC))
         self.assertEqual(call.target, f'{scp_asm.MODULE_NAME}.{scp_asm.SCRIPT_FUNC_NAME}')
 
@@ -139,7 +139,7 @@ class TestScriptCallNames(unittest.TestCase):
         _, llil_func = lift_asm(asm)
 
         call, = instructions_of(llil_func, LowLevelILCallScriptNoReturn)
-        self.assertEqual((call.module, call.func, call.arg_count),
+        self.assertEqual((call.module, call.func, len(call.args)),
                          (scp_asm.MODULE_NAME, scp_asm.SCRIPT_FUNC_NAME, SCRIPT_ARGC))
 
 

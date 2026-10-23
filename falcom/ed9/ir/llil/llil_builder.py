@@ -31,7 +31,6 @@ class PendingCallSetup:
     kind: CallSetupKind
     sp_before_call: int
     return_block: Optional[LowLevelILBasicBlock]   # None while a LOCAL setup awaits PUSH_RET_ADDR
-    caller_frame: Optional[LowLevelILPushCallerFrame] = None
 
     def shape(self) -> SetupShape:
         return_name = None if self.return_block is None else self.return_block.block_name
@@ -104,36 +103,23 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def push_func_id(self):
         """Push current function ID - opens a local call setup, completed by push_ret_addr"""
         sp_before_call = self.sp_get()
-        self.push(FalcomConstants.current_func_id())
+        self.push(LowLevelILConstFuncId())
         self._pending_setups.append(PendingCallSetup(CallSetupKind.LOCAL, sp_before_call, return_block=None))
 
     def push_ret_addr(self, target: LowLevelILBasicBlock):
         """Push return address - completes the open local call setup"""
         setup = self._pending_setups[-1]
-        self.push(FalcomConstants.ret_addr_block(target))
-        self._pending_setups[-1] = PendingCallSetup(setup.kind, setup.sp_before_call, target, setup.caller_frame)
+        self.push(LowLevelILConstRetAddrBlock(target))
+        self._pending_setups[-1] = PendingCallSetup(setup.kind, setup.sp_before_call, target)
 
     def push_caller_frame(self, return_target: LowLevelILBasicBlock):
         """PUSH_CALLER_FRAME operation - opens a script call setup, consumed by call_script"""
         sp_before_call = self.sp_get()
-
-        func_id = FalcomConstants.current_func_id()
-        ret_addr = FalcomConstants.ret_addr_block(return_target)
-        script = FalcomConstants.current_script()
-        script_name = FalcomConstants.current_script_name('')  # Empty string for now
-
-        # The atomic PUSH_CALLER_FRAME instruction, occupying CALLER_FRAME_SLOTS stack slots
-        push_frame_inst = LowLevelILPushCallerFrame(func_id, ret_addr, script, script_name)
-        push_frame_inst.slot_index = sp_before_call
-
-        self.push(func_id)
-        self.push(ret_addr)
-        self.push(script)
-        self.push(script_name)
-
-        self._pending_setups.append(
-            PendingCallSetup(CallSetupKind.SCRIPT, sp_before_call, return_target, push_frame_inst)
-        )
+        self.push(LowLevelILConstFuncId())
+        self.push(LowLevelILConstRetAddrBlock(return_target))
+        self.push(LowLevelILConstScript())
+        self.push(LowLevelILConstScriptName())
+        self._pending_setups.append(PendingCallSetup(CallSetupKind.SCRIPT, sp_before_call, return_target))
 
     def call(self, target: str, arg_count: int):
         """CALL operation - arg_count is the callee's declared parameter count; the callee pops them and the setup"""
@@ -148,7 +134,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
         setup = self._pending_setups[-1]
         args = self.vstack_peek_many(arg_count)   # last pushed first
 
-        self.add_instruction(LowLevelILCallScript(module, func, setup.caller_frame, args, setup.return_block))
+        self.add_instruction(LowLevelILCallScript(module, func, args, setup.return_block))
         self._consume_setup(setup, CALLER_FRAME_SLOTS + arg_count)
 
     def call_script_no_return(self, module: str, func: str, arg_count: int):
@@ -173,9 +159,9 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     # === VM Operations ===
 
-    def push_int(self, value: int, is_hex: bool = False):
+    def push_int(self, value: int):
         """PUSH_INT operation"""
-        self.push(self.const_int(value, is_hex=is_hex))
+        self.push(self.const_int(value))
 
     def push_str(self, value: str):
         """PUSH_STR operation"""

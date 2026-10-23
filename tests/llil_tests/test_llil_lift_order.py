@@ -11,11 +11,11 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ir.llil.llil import LowLevelILEq, WORD_SIZE
+from ir.llil.llil import LowLevelILEq, LowLevelILInstruction, WORD_SIZE
 from assembler.basic_block import BasicBlock
 from falcom.ed9.ir.llil import ED9VMLifter
 from tests.shared.llil_utils import (
-    FOURTH_BLOCK_START, FUNC_START, SECOND_BLOCK_START, THIRD_BLOCK_START, make_builder,
+    FOURTH_BLOCK_START, FUNC_START, SECOND_BLOCK_START, THIRD_BLOCK_START, instructions_of, make_builder,
 )
 
 
@@ -45,9 +45,9 @@ def make_diamond(num_params: int = 0):
 
 
 class TestReindexInBlockOrder(unittest.TestCase):
-    """reindex_in_block_order() keeps inst_index/iter_instructions() ordered by basic_blocks list
-    position, independent of the order instructions were actually registered in - needed once a
-    lifter translates blocks in a different order than it creates them."""
+    """reindex_in_block_order() numbers inst_index by basic_blocks list position, independent of the
+    order instructions were actually registered in - needed once a lifter translates blocks in a
+    different order than it creates them."""
 
     def test_noop_when_already_registered_in_block_order(self):
         builder = make_builder()
@@ -57,9 +57,9 @@ class TestReindexInBlockOrder(unittest.TestCase):
         builder.set_current_block(second)
         builder.debug_line(2)
 
-        before = [inst.inst_index for inst in builder.function.iter_instructions()]
+        before = [inst.inst_index for inst in instructions_of(builder.function, LowLevelILInstruction)]
         builder.function.reindex_in_block_order()
-        after = [inst.inst_index for inst in builder.function.iter_instructions()]
+        after = [inst.inst_index for inst in instructions_of(builder.function, LowLevelILInstruction)]
 
         self.assertEqual(before, after)
         self.assertEqual([0, 1], after)
@@ -86,10 +86,6 @@ class TestReindexInBlockOrder(unittest.TestCase):
 
         self.assertEqual(first_inst.inst_index, 0)
         self.assertEqual(second_inst.inst_index, 1)
-        self.assertIs(builder.function.get_instruction_by_index(0), first_inst)
-        self.assertIs(builder.function.get_instruction_by_index(1), second_inst)
-        self.assertIs(builder.function.get_instruction_block_by_index(0), entry)
-        self.assertIs(builder.function.get_instruction_block_by_index(1), second)
 
     def test_finalize_numbers_in_block_order(self):
         builder = make_builder()
@@ -107,7 +103,6 @@ class TestReindexInBlockOrder(unittest.TestCase):
         func = builder.finalize()
 
         self.assertEqual((jmp_inst.inst_index, ret_inst.inst_index), (0, 1))
-        self.assertEqual(list(func.iter_instructions()), [jmp_inst, ret_inst])
 
 
 class TestBlockLifecycle(unittest.TestCase):

@@ -2,6 +2,8 @@
 
 from typing import Any, List
 
+from dc3.logging import log
+
 
 class Pass:
     """Pass base class"""
@@ -18,18 +20,17 @@ class Pipeline:
         """Initialize pipeline"""
         self.passes = passes or []
 
-    def add_pass(self, pass_obj: Pass) -> 'Pipeline':
+    def add_pass(self, pass_obj: Pass):
         """Add a pass to the pipeline"""
         self.passes.append(pass_obj)
-        return self
 
     def run(self, input_data: Any, debug: bool = False) -> Any:
-        """Run all passes in the pipeline"""
+        """Run all passes in the pipeline; with debug, log when each pass starts and ends"""
         result = input_data
         for pass_obj in self.passes:
             if debug:
-                print(f'  Running {pass_obj.__class__.__name__}...')
+                log.info(f'Running {pass_obj.__class__.__name__}...')
             result = pass_obj.run(result)
             if debug:
-                print(f'  {pass_obj.__class__.__name__} done')
+                log.info(f'{pass_obj.__class__.__name__} done')
         return result

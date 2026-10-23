@@ -395,7 +395,7 @@ LLIL_KINDS = _kinds_by_name({
     OperationKind.RETURN:       'RET',
     OperationKind.LOAD:         'STACK_LOAD FRAME_LOAD LOAD REG_LOAD GLOBAL_LOAD CONST',
     OperationKind.ASSIGN:       'STACK_STORE FRAME_STORE STORE REG_STORE GLOBAL_STORE',
-    OperationKind.NOP:          'NOP DEBUG SP_ADD PUSH_CALLER_FRAME',
+    OperationKind.NOP:          'DEBUG SP_ADD',
 })
 
 MLIL_KINDS = _kinds_by_name({
