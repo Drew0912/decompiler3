@@ -423,8 +423,12 @@ HLIL_WITHOUT_OPERANDS = {'BREAK', 'CONTINUE', 'UNSTRUCTURED', 'BLOCK', 'COMMENT'
 
 
 def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
-    """Convert LLIL instruction to normalized SemanticOperation"""
+    """Convert LLIL instruction to normalized SemanticOperation. A tail call's is its script call:
+    normalize_llil_operations adds the return that follows it"""
     name = instr.operation.name.removeprefix('LLIL_')
+    if instr.operation == LowLevelILFalcomOperation.LLIL_CALL_SCRIPT_NO_RETURN:
+        name = 'CALL_SCRIPT'
+
     loc = SourceLocation(scp_offset=instr.address, llil_index=instr.inst_index)
     kind = LLIL_KINDS.get(name)
 
@@ -446,6 +450,17 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
         result=result,
         source_location=loc,
     )
+
+
+def normalize_llil_operations(instr: LowLevelILInstruction) -> List[SemanticOperation]:
+    """instr's normalized operations: its own and, after a tail call, the return of the callee's result - MLIL
+    translates a tail call as `return module.func(args)` (falcom/ed9/ir/mlil/mlil_translator.py)"""
+    operations = [normalize_llil_operation(instr)]
+    if instr.operation == LowLevelILFalcomOperation.LLIL_CALL_SCRIPT_NO_RETURN:
+        loc = SourceLocation(scp_offset=instr.address, llil_index=instr.inst_index)
+        operations.append(SemanticOperation(kind=OperationKind.RETURN, operator='RET', source_location=loc))
+
+    return operations
 
 
 def _expr_or_const_operand(value: Any, instruction_type: type) -> SemanticOperand:
@@ -778,7 +793,7 @@ LLIL_STACK_OPERATIONS = (
 
 def _cfg_from_blocks(
     basic_blocks: List[Any],
-    normalize: Callable[[Any], SemanticOperation],
+    normalize: Callable[[Any], List[SemanticOperation]],
     skipped_operations: Tuple[Any, ...] = (),
 ) -> CFG:
     """One node per basic block holding its normalized operations but the NOPs, the first block the entry. No edges
@@ -787,7 +802,7 @@ def _cfg_from_blocks(
     cfg = CFG()
 
     for i, bb in enumerate(basic_blocks):
-        ops = [normalize(instr) for instr in bb.instructions if instr.operation not in skipped_operations]
+        ops = [op for instr in bb.instructions if instr.operation not in skipped_operations for op in normalize(instr)]
         operations = [op for op in ops if op.kind != OperationKind.NOP]
         cfg.add_node(CFGNode(id=i, address=bb.start, operations=operations, is_entry=(i == 0), is_exit=True))
 
@@ -796,13 +811,13 @@ def _cfg_from_blocks(
 
 def build_cfg_from_llil(llil_func: LowLevelILFunction) -> CFG:
     """Construct CFG from LLILFunction"""
-    return _cfg_from_blocks(llil_func.basic_blocks, normalize_llil_operation, LLIL_STACK_OPERATIONS)
+    return _cfg_from_blocks(llil_func.basic_blocks, normalize_llil_operations, LLIL_STACK_OPERATIONS)
 
 
 def build_cfg_from_mlil(mlil_func: MediumLevelILFunction) -> CFG:
     """Construct CFG from MLILFunction"""
     register_names = {var.name: index for index, var in mlil_func.register_vars.items()}
-    return _cfg_from_blocks(mlil_func.basic_blocks, lambda instr: normalize_mlil_operation(instr, register_names))
+    return _cfg_from_blocks(mlil_func.basic_blocks, lambda instr: [normalize_mlil_operation(instr, register_names)])
 
 
 def _collect_call_expressions(node: Any, found: List[Any]) -> None:

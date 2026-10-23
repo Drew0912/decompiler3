@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for tools/ir_semantic_validator.py: HLIL global/register operands, do-while flattening,
-missing_write_anchor detection for dropped global writes, and layer-tagged provenance keys"""
+missing_write_anchor detection for dropped global writes, layer-tagged provenance keys, and tail calls"""
 
 from pathlib import Path
 import sys
@@ -27,18 +27,21 @@ from ir.llil import LowLevelILConst
 from ir.mlil import (
     MLILAddressOf,
     MLILCall,
+    MLILCallScript,
     MLILConst,
     MLILLoadGlobal,
+    MLILRet,
     MLILStoreDeref,
     MLILStoreGlobal,
     MLILVar,
     MLILVariable,
 )
-from falcom.ed9.ir.llil.llil_ext import LowLevelILGlobalStore
+from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn, LowLevelILGlobalStore
 from ir_semantic_validator import (
     EFFECT_CATEGORY_CALL,
     EFFECT_CATEGORY_WRITE_GLOBAL,
     IRLayer,
+    OperationKind,
     SemanticOperand,
     _extract_hard_fail_category,
     _match_atoms_provenance_first,
@@ -46,6 +49,7 @@ from ir_semantic_validator import (
     build_cfg_from_hlil,
     normalize_hlil_operation,
     normalize_llil_operation,
+    normalize_llil_operations,
     normalize_mlil_operation,
     semantic_op_to_effect_event,
     semantic_operation_to_atom,
@@ -59,6 +63,7 @@ MISSING_WRITE_ANCHOR = 'missing_write_anchor'
 LLIL_INDEX = 3
 CALL_TARGET = 'get_value'
 MLIL_INDEX = 8
+SCRIPT_MODULE = 'other_script'
 
 
 def hlil_global_var() -> HLILVariable:
@@ -226,6 +231,32 @@ class TestProvenanceKeys(unittest.TestCase):
         hlil_call.mlil_index = MLIL_INDEX
         source, target = normalize_mlil_operation(mlil_call), normalize_hlil_operation(hlil_call)
         self.assertEqual(self.provenance_match_count(source, target), 1)
+
+
+class TestTailCall(unittest.TestCase):
+    """A tail call is a script call and the return of its result: MLIL translates it as `return module.func(args)`"""
+
+    def tail_call_ops(self):
+        tail_call = LowLevelILCallScriptNoReturn(SCRIPT_MODULE, CALL_TARGET, [])
+        tail_call.inst_index = LLIL_INDEX
+        return normalize_llil_operations(tail_call)
+
+    def mlil_call_and_return_ops(self):
+        result = MLILVariable('reg0')
+        call, ret = MLILCallScript(SCRIPT_MODULE, CALL_TARGET, [], result), MLILRet(MLILVar(result))
+        for inst in (call, ret):
+            inst.llil_index = LLIL_INDEX
+        return [normalize_mlil_operation(call), normalize_mlil_operation(ret)]
+
+    def test_tail_call_is_a_script_call_then_a_return(self):
+        self.assertEqual([(op.kind, op.operator) for op in self.tail_call_ops()],
+                         [(OperationKind.CALL, 'CALL_SCRIPT'), (OperationKind.RETURN, 'RET')])
+
+    def test_tail_call_matches_the_mlil_call_and_return(self):
+        categories = hard_fail_categories(
+            self.tail_call_ops(), self.mlil_call_and_return_ops(), IRLayer.LLIL, IRLayer.MLIL,
+        )
+        self.assertEqual(categories, [])
 
 
 if __name__ == '__main__':
