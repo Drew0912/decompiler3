@@ -996,9 +996,9 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     exits.extend(else_exits)
                     continue
                 elif stmt.operation == HLILOperation.HLIL_WHILE:
-                    prev_id = save_current_block()
-                    if prev_id is not None:
-                        cfg.add_edge(prev_id, current_id)
+                    # The block before the loop stays unlinked: consecutive blocks get no edges
+                    # (docs/VALIDATOR_GUIDE.md, Limitations)
+                    save_current_block()
 
                     # Create loop header (condition calls run on each iteration)
                     header_node = CFGNode(id=current_id, address=op.source_location.scp_offset, operations=folded_ops + [op])
