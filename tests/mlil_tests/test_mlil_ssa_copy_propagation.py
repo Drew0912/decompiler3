@@ -724,7 +724,7 @@ def optimized_corpus_mlil(dat_name: str, func_name: str) -> MediumLevelILFunctio
     parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
     func = next(f for f in functions if f.name == func_name)
     llil = ED9VMLifter(parser=parser).lift_function(func)
-    return convert_falcom_llil_to_mlil(llil, parser, optimize=True, infer_types=True)
+    return convert_falcom_llil_to_mlil(llil, optimize=True, infer_types=True)
 
 
 class TestCorpusRegisterReadAfterClobberingCall(unittest.TestCase):

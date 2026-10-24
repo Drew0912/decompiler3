@@ -3,31 +3,10 @@
 from typing import List
 
 from .mlil import *
-from .mlil_ssa import MLILVarSSA, MLILSetVarSSA, MLILPhi
-
-
-# Instructions the listing prints as their own str()
-STR_FORMATTED_INSTRUCTIONS = (
-    MLILVar, MLILSetVar, MLILVarSSA, MLILSetVarSSA, MLILPhi,
-    MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod, MLILAnd, MLILOr, MLILXor, MLILLogicalAnd, MLILLogicalOr,
-    MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe, MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero,
-    MLILAddressOf, MLILGoto, MLILIf, MLILRet, MLILCall, MLILSyscall, MLILLoadGlobal, MLILStoreGlobal,
-    MLILLoadReg, MLILStoreReg, MLILDeref, MLILStoreDeref, MLILNop,
-)
 
 
 class MLILFormatter:
     """Format MLIL functions for display"""
-
-    @classmethod
-    def _format_const(cls, const: MLILConst) -> str:
-        """Format a constant value"""
-        if isinstance(const.value, str):
-            return str(const)   # MLILConst's own escaped literal
-        elif isinstance(const.value, bool):
-            return 'true' if const.value else 'false'
-        else:
-            return str(const.value)
 
     @classmethod
     def format_function(cls, func: MediumLevelILFunction) -> List[str]:
@@ -79,10 +58,6 @@ class MLILFormatter:
         result = [f'{block.label}:']
 
         for inst in block.instructions:
-            # Skip hidden instructions
-            if inst.options.hidden_for_formatter:
-                continue
-
             formatted = cls.format_instruction(inst)
             result.append(f'  {formatted}')
 
@@ -90,17 +65,13 @@ class MLILFormatter:
 
     @classmethod
     def format_instruction(cls, inst: MediumLevelILInstruction) -> str:
-        """Format a single instruction: its own str(), except a constant, a script call and a debug record"""
-        if isinstance(inst, MLILConst):
-            return cls._format_const(inst)
-        elif isinstance(inst, MLILCallScript):
+        """Format a single instruction: its own str(), except a script call and a debug record"""
+        if isinstance(inst, MLILCallScript):
             return f'{inst}  ; MLILCallScript'
         elif isinstance(inst, MLILDebug):
             return f'; {inst}'
-        elif isinstance(inst, STR_FORMATTED_INSTRUCTIONS):
-            return str(inst)
 
-        raise NotImplementedError(f'Unhandled MLIL instruction type: {type(inst).__name__}')
+        return str(inst)
 
     @classmethod
     def to_dot(cls, func: MediumLevelILFunction) -> str:
@@ -123,9 +94,6 @@ class MLILFormatter:
 
             # Format instructions
             for inst in block.instructions:
-                if inst.options.hidden_for_formatter:
-                    continue
-
                 formatted = cls.format_instruction(inst)
                 escaped = formatted.replace('\\', '\\\\').replace('"', '\\"')
                 label_parts.append(escaped + '\\l')
@@ -179,8 +147,3 @@ class MLILFormatter:
 
         lines.append('}')
         return '\n'.join(lines)
-
-
-def format_mlil_function(func: MediumLevelILFunction) -> List[str]:
-    """Convenience function to format MLIL function"""
-    return MLILFormatter.format_function(func)

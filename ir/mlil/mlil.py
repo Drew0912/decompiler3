@@ -11,7 +11,7 @@ from ir.core import *
 UNASSIGNED_SLOT_INDEX = -1
 
 if TYPE_CHECKING:
-    from ir.llil import LowLevelILBasicBlock, LowLevelILFunction
+    from ir.llil import LowLevelILFunction
 
 
 # === Naming Utilities ===
@@ -108,7 +108,7 @@ class MediumLevelILOperation(IntEnum2):
     # Falcom VM specific
     MLIL_CALL_SCRIPT        = 1000
 
-    # SSA (future)
+    # SSA
     MLIL_PHI                = 2000
     MLIL_VAR_SSA            = 2001
     MLIL_SET_VAR_SSA        = 2002
@@ -153,13 +153,9 @@ class MediumLevelILInstruction(ILInstruction):
 class MediumLevelILExpr(MediumLevelILInstruction):
     """Base class for value expressions"""
 
-    pass
-
 
 class MediumLevelILStatement(MediumLevelILInstruction):
     """Base class for statements"""
-
-    pass
 
 
 # === Variables ===
@@ -737,7 +733,6 @@ class MediumLevelILBasicBlock:
         self.instructions: List[MediumLevelILInstruction] = []
         self.incoming_edges: List['MediumLevelILBasicBlock'] = []
         self.outgoing_edges: List['MediumLevelILBasicBlock'] = []
-        self.llil_block: Optional[LowLevelILBasicBlock] = None  # Source LLIL block
 
     def add_instruction(self, inst: MediumLevelILInstruction):
         self.instructions.append(inst)
@@ -859,9 +854,6 @@ class MediumLevelILFunction:
                 return index
 
         return None
-
-    def iter_blocks(self) -> Iterator[MediumLevelILBasicBlock]:
-        return iter(self.basic_blocks)
 
     def iter_instructions(self) -> Iterator[MediumLevelILInstruction]:
         for block in self.basic_blocks:

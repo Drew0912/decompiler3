@@ -40,6 +40,15 @@ class ED9VMLifter:
         ED9Opcode.LOGICAL_OR    : FalcomVMBuilder.logical_or,
     }
 
+    # Declared parameter type (ScpParamFlags.get_python_type()) -> IRParameter's generic type name
+    PARAM_TYPE_NAMES = {
+        'Value32'       : 'int',
+        'Nullable32'    : 'int',
+        'str'           : 'str',
+        'NullableStr'   : 'str',
+        'Pointer'       : 'pointer',
+    }
+
     def __init__(
         self,
         *,
@@ -86,7 +95,7 @@ class ED9VMLifter:
         result = []
         for i, param in enumerate(params):
             name = f'arg{i + 1}'
-            type_name = param.type.get_python_type()
+            type_name = self.PARAM_TYPE_NAMES[param.type.get_python_type()]
             default_value = self.source_value(param.default_value.value) if param.default_value else None
             result.append(IRParameter(name, type_name, default_value))
         return result

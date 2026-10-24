@@ -31,12 +31,11 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil_passes.py` | Re-export shim over `ir/mlil/passes/` — mirrors HLIL's `hlil_passes.py`. |
 | `ir/mlil/mlil_builder.py` | Builder API for constructing MLIL directly. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging). |
-| `ir/mlil/mlil_types.py` | Type-kind/unification support, `FunctionSignatureDB`. |
+| `ir/mlil/mlil_types.py` | Type-kind/unification support. |
 | `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator`/`translate_llil_to_mlil` (not Falcom-specific). |
 | `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
 | `falcom/ed9/ir/mlil/mlil_passes.py` | `ED9LLILToMLILPass`, the pipeline's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
 | `falcom/ed9/ir/mlil/mlil_translator.py` | Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
-| `falcom/ed9/ir/mlil/type_signatures.py` | Type signature data used by Falcom-specific passes. |
 | `tests/mlil_tests/test_mlil_metadata.py` | One of several dedicated MLIL test files today — see Testing below. |
 
 Note: `falcom/ed9/lifters/mlil_lifter.py`, previously listed here, does not exist anywhere in the
@@ -238,16 +237,15 @@ said only one existed.
   checks: `test_mlil_rebuild.py`, `test_mlil_provenance.py`).
 - SCCP's edge reachability is coarse, and kept that way on purpose: a statement it does not model (a
   call, a store) marks every edge out of its block reachable, and so does an `if` whose condition is
-  not known yet. This only loses folding - production SCCP never removes blocks - and tighter
+  not known yet. This only loses folding - SCCP never removes blocks - and tighter
   reachability would fold more constants, moving output further from the bytecode.
 - Rendered parameter types no longer come from this pass: since 2026-09-29 HLIL's
   `FalcomTypeInferencePass` takes them from the declared flags, so `Value32`/`Nullable32` - which this
   pass still calls `int` - reach a signature as `number` (int or float). Locals still use this pass's
   types. An HLIL type pass for locals (CX Step F's follow-up plan) is parked until the tool is nearly
   done. Known gaps until then: call results are never typed (a call is a statement with an `output`,
-  which the pass never reads, and the signature DB's syscall/script tables are empty); use hints come
-  only from the top level of an `if` condition, so a comparison nested under `&&`/`||` gives none; and
-  types are keyed by pre-deconstruction names, so a split variable (`var_s11_v0`) finds no type (78
-  locals in the corpus).
+  which the pass never reads); use hints come only from the top level of an `if` condition, so a
+  comparison nested under `&&`/`||` gives none; and types are keyed by pre-deconstruction names, so a
+  split variable (`var_s11_v0`) finds no type (78 locals in the corpus).
 - This document and `docs/mlil/MLIL_GUIDE.md` should be kept in sync with `ir/mlil/passes/` as passes
   are added, removed, or reordered — that directory is the actual source of truth for what runs.

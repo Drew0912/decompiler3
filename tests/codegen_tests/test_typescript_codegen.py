@@ -154,7 +154,7 @@ class TestPointerCodegen(unittest.TestCase):
     """A Pointer (out-parameter) keeps its own kind through MLIL and HLIL."""
 
     def test_pointer_parameter_renders_as_the_alias(self):
-        func = MediumLevelILFunction(TEST_FUNCTION_NAME, params=[IRParameter('arg1', 'Pointer')])
+        func = MediumLevelILFunction(TEST_FUNCTION_NAME, params=[IRParameter('arg1', 'pointer')])
         func.get_or_create_parameter(1, 'arg1')
         func.create_block().add_instruction(MLILRet())
 

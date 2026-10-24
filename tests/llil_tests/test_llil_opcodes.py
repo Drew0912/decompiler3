@@ -64,9 +64,9 @@ class TestDebugLogIsLifted(unittest.TestCase):
         self.assertEqual(logs[0].operation, LowLevelILFalcomOperation.LLIL_DEBUG_LOG)
 
     def test_survives_as_a_debug_log_call_in_mlil(self):
-        parser, llil_func = self.make_function()
+        _, llil_func = self.make_function()
 
-        mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize=False)
+        mlil_func = convert_falcom_llil_to_mlil(llil_func, optimize=False)
 
         calls = [inst for block in mlil_func.basic_blocks for inst in block.instructions
                  if isinstance(inst, MLILCall) and inst.target == DEBUG_LOG_CALL_TARGET]
@@ -116,8 +116,8 @@ class TestOperatorsKeepTheirOperands(unittest.TestCase):
 
         getattr(asm, mnemonic)()
         asm.set_reg(REG_INDEX); asm.ret()
-        parser, llil_func = lift_asm(asm)
-        return llil_func, convert_falcom_llil_to_mlil(llil_func, parser, optimize=False)
+        _, llil_func = lift_asm(asm)
+        return llil_func, convert_falcom_llil_to_mlil(llil_func, optimize=False)
 
     def test_binary_operators(self):
         for mnemonic, llil_class, mlil_class, operation in BINARY_OPERATORS:
@@ -151,8 +151,8 @@ class TestRawPushKeepsItsType(unittest.TestCase):
     def test_reaches_hlil_as_a_raw_int_printed_as_a_number(self):
         asm = Asm()
         asm.push_raw(RAW_VALUE); asm.set_reg(RESULT_REG_INDEX); asm.ret()
-        parser, llil_func = lift_asm(asm)
-        mlil_func = convert_falcom_llil_to_mlil(llil_func, parser)
+        _, llil_func = lift_asm(asm)
+        mlil_func = convert_falcom_llil_to_mlil(llil_func)
         hlil_func = convert_falcom_mlil_to_hlil(mlil_func)
 
         [value] = [node.value for node in iter_tree(hlil_func.body) if isinstance(node, HLILConst)]
@@ -167,8 +167,8 @@ class TestRawPushKeepsItsType(unittest.TestCase):
 
     def hlil_call(self, asm: Asm, callee_argc: int) -> HLILCall:
         """The one call in asm's function, lifted to HLIL beside a callee taking callee_argc arguments"""
-        parser, llil_func = lift_asm(asm, others=(returning_callee(callee_argc),))
-        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil(llil_func, parser))
+        _, llil_func = lift_asm(asm, others=(returning_callee(callee_argc),))
+        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil(llil_func))
         [call] = [node for node in iter_tree(hlil_func.body) if isinstance(node, HLILCall)]
         return call
 
@@ -219,7 +219,7 @@ class TestRawPushKeepsItsType(unittest.TestCase):
         callee.params[0].default_value = ScpValue(RawInt(RAW_VALUE))
 
         llil_func = ED9VMLifter(parser=parser).lift_function(callee)
-        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil(llil_func, parser), callee)
+        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil(llil_func), callee)
 
         self.assertIn(f'(arg1: number = {RAW_VALUE})', generate_typescript(hlil_func))
         self.assertIn(f'= {RawInt(RAW_VALUE)!r}', Formatter.format_param(0, callee.params[0]))

@@ -13,7 +13,6 @@ from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from ir.llil.llil import LowLevelILFunction
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.mlil.mlil_optimizer import mlil_optimization_passes, optimize_mlil
-from ir.mlil.mlil_types import FunctionSignatureDB
 from ir.mlil.passes import (
     BlockMergePass, SSAConversionPass, SSAOptimizationPass, SSATypeInferencePass, SSADeconstructionPass,
     RegGlobalValuePropagationPass,
@@ -53,12 +52,6 @@ class TestMLILPassList(unittest.TestCase):
     def test_type_inference_can_be_left_out(self):
         expected = [cls for cls in EXPECTED_PASS_TYPES if cls is not SSATypeInferencePass]
         self.assertEqual([type(p) for p in mlil_optimization_passes(infer_types=False)], expected)
-
-    def test_signature_db_reaches_type_inference(self):
-        signature_db = FunctionSignatureDB()
-        inference = next(p for p in mlil_optimization_passes(signature_db=signature_db)
-                         if isinstance(p, SSATypeInferencePass))
-        self.assertIs(inference.signature_db, signature_db)
 
 
 class TestOptimizeMLILMatchesProduction(unittest.TestCase):

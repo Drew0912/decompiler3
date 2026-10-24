@@ -18,9 +18,8 @@ from .passes import (
 
 SSA_OPTIMIZER_MAX_ITERATIONS = 10
 
-# _structural_key skips what never reflects a semantic change between fixpoint iterations: source tracking (address,
-# inst_index, llil_index) and the formatting options created on first use (_options)
-_SNAPSHOT_EXCLUDED_ATTRS = frozenset({'address', 'inst_index', 'llil_index', '_options'})
+# _structural_key skips the source tracking: it never reflects a semantic change between fixpoint iterations
+_SNAPSHOT_EXCLUDED_ATTRS = frozenset({'address', 'inst_index', 'llil_index'})
 
 
 class SSAOptimizer:
@@ -31,7 +30,7 @@ class SSAOptimizer:
 
     def optimize(self) -> MediumLevelILFunction:
         """Run all optimization passes"""
-        # Run SCCP first for aggressive constant propagation and unreachable code elimination
+        # Run SCCP once, before the fixpoint passes
         sccp = SCCP(self.function)
         sccp.run()
 

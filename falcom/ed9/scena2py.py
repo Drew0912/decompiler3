@@ -132,7 +132,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if not need_mlil:
                 continue
 
-            mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize=config.optimize_mlil, infer_types=config.infer_types)
+            mlil_func = convert_falcom_llil_to_mlil(llil_func, optimize=config.optimize_mlil, infer_types=config.infer_types)
 
             if config.write_mlil_asm:
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))

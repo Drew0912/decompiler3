@@ -45,7 +45,7 @@ class IRParameter:
 
     def __init__(self, name: str, type_name: str = None, default_value=None):
         self.name = name
-        self.type_name = type_name  # Type as string (e.g. 'int', 'str', 'float')
+        self.type_name = type_name  # Generic type name: 'int', 'str' or 'pointer'
         self.default_value = default_value
 
     def __repr__(self):

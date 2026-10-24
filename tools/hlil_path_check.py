@@ -478,7 +478,7 @@ def check_file(path: Path) -> List[Tuple[str, Optional[PathCheckResult], Optiona
         try:
             with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
                 llil_func = ED9VMLifter(parser=parser).lift_function(func)
-                mlil_func = convert_falcom_llil_to_mlil(llil_func, parser, optimize=True, infer_types=True)
+                mlil_func = convert_falcom_llil_to_mlil(llil_func, optimize=True, infer_types=True)
                 hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
 
             rows.append((func.name, check_function(mlil_func, hlil_func), None))

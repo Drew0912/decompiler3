@@ -46,7 +46,7 @@ def run_sccp_and_get_use(op) -> object:
 
 
 def both_arms_survive(condition, setup=()) -> bool:
-    """setup; if (condition) return else return - whether SCCP with remove_unreachable keeps both arms"""
+    """setup; if (condition) return else return - whether SCCP finds both arms reachable"""
     func = make_func('branch_test')
     entry = MediumLevelILBasicBlock(0)
     true_block = MediumLevelILBasicBlock(1)
@@ -58,9 +58,10 @@ def both_arms_survive(condition, setup=()) -> bool:
     entry.add_outgoing_edge(false_block)
     func.basic_blocks = [entry, true_block, false_block]
 
-    SCCP(func, remove_unreachable=True).run()
+    sccp = SCCP(func)
+    sccp.run()
 
-    return true_block in func.basic_blocks and false_block in func.basic_blocks
+    return sccp.block_reachable[true_block] and sccp.block_reachable[false_block]
 
 
 class TestDivModNeverFold(unittest.TestCase):
@@ -84,9 +85,9 @@ class TestDivModNeverFold(unittest.TestCase):
         self.assertIsInstance(result, MLILVarSSA)
 
     def test_div_derived_branch_condition_does_not_remove_either_successor(self):
-        """A different SCCP consumer than constant substitution: with remove_unreachable=True,
-        a branch on a DIV-derived (bottom) value must not be treated as determined - both
-        successors have to survive, the same as any other genuinely-unknown condition."""
+        """A different SCCP consumer than constant substitution: a branch on a DIV-derived
+        (bottom) value must not be treated as determined - both successors have to stay
+        reachable, the same as any other genuinely-unknown condition."""
         x1 = MLILVariableSSA(MLILVariable('x'), 1)
         self.assertTrue(both_arms_survive(MLILVarSSA(x1), [MLILSetVarSSA(x1, MLILDiv(MLILConst(10), MLILConst(3)))]))
 

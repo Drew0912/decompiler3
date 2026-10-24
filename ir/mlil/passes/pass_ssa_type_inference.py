@@ -4,7 +4,6 @@ Infer types for SSA variables using:
 1. Parameter types from source_params
 2. Constant types
 3. Type propagation through assignments
-4. Syscall/call return types from signature_db
 """
 
 from typing import Dict, Optional
@@ -17,12 +16,24 @@ from ..mlil_types import *
 SSA_TYPE_PROPAGATION_MAX_ITERATIONS = 20
 USAGE_INFERENCE_PASSES = 3
 
+# Expressions whose value is always an int
+INT_RESULT_OPS = (
+    MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr, MLILLogicalAnd, MLILLogicalOr,
+    MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe, MLILLogicalNot, MLILBitwiseNot, MLILTestZero, MLILLoadReg,
+)
+
+# IRParameter.type_name -> the parameter's type
+PARAM_TYPES = {
+    'int'       : MLILType.int_type(),
+    'str'       : MLILType.string_type(),
+    'pointer'   : MLILType.pointer_type(),
+}
+
 
 class SSATypeInferencePass(Pass):
     """Infer types for SSA variables"""
 
-    def __init__(self, signature_db: Optional[FunctionSignatureDB] = None):
-        self.signature_db = signature_db
+    def __init__(self):
         self.function: MediumLevelILFunction = None
         self.var_types: Dict[MLILVariableSSA, MLILType] = {}
 
@@ -49,7 +60,7 @@ class SSATypeInferencePass(Pass):
 
             if i < len(self.function.source_params):
                 type_name = self.function.source_params[i].type_name
-                self.var_types[ssa_var] = self._type_name_to_mlil_type(type_name)
+                self.var_types[ssa_var] = PARAM_TYPES.get(type_name, MLILType.unknown())
             else:
                 self.var_types[ssa_var] = MLILType.unknown()
 
@@ -103,10 +114,6 @@ class SSATypeInferencePass(Pass):
                 for inst in block.instructions:
                     if isinstance(inst, MLILIf):
                         self._infer_from_condition(inst.condition)
-                    elif isinstance(inst, (MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
-                        self._infer_from_comparison(inst)
-                    elif isinstance(inst, (MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod)):
-                        self._infer_from_arithmetic(inst)
 
     @classmethod
     def _ssa_var_from_address(cls, expr: MediumLevelILInstruction) -> Optional[MLILVariableSSA]:
@@ -147,44 +154,13 @@ class SSATypeInferencePass(Pass):
             rhs_type = self._infer_expr_type(expr.rhs)
             unified = unify_types(lhs_type, rhs_type)
             return unified if unified.is_numeric() else MLILType.int_type()
-        elif isinstance(expr, (MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr)):
-            return MLILType.int_type()
-        elif isinstance(expr, (MLILLogicalAnd, MLILLogicalOr)):
-            return MLILType.int_type()
-        elif isinstance(expr, (MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
+        elif isinstance(expr, INT_RESULT_OPS):
             return MLILType.int_type()
         elif isinstance(expr, MLILNeg):
             operand_type = self._infer_expr_type(expr.operand)
             return operand_type if operand_type.is_numeric() else MLILType.int_type()
-        elif isinstance(expr, (MLILLogicalNot, MLILBitwiseNot, MLILTestZero)):
-            return MLILType.int_type()
-        elif isinstance(expr, MLILCall):
-            if self.signature_db:
-                ret_type = self.signature_db.get_call_return_type(expr.target)
-                if ret_type:
-                    return ret_type
 
-            return MLILType.unknown()
-        elif isinstance(expr, MLILSyscall):
-            if self.signature_db:
-                ret_type = self.signature_db.get_syscall_return_type(expr.subsystem, expr.cmd)
-                if ret_type:
-                    return ret_type
-
-            return MLILType.unknown()
-        elif isinstance(expr, MLILCallScript):
-            if self.signature_db:
-                ret_type = self.signature_db.get_script_call_return_type(expr.module, expr.func)
-                if ret_type:
-                    return ret_type
-
-            return MLILType.unknown()
-        elif isinstance(expr, MLILLoadReg):
-            return MLILType.int_type()
-        elif isinstance(expr, MLILLoadGlobal):
-            return MLILType.unknown()
-        else:
-            return MLILType.unknown()
+        return MLILType.unknown()
 
     def _infer_const_type(self, const: MLILConst) -> MLILType:
         """Infer type from constant value"""
@@ -213,9 +189,6 @@ class SSATypeInferencePass(Pass):
 
     def _infer_from_comparison(self, comp: MediumLevelILInstruction):
         """Infer type from comparison operation"""
-        if not hasattr(comp, 'lhs') or not hasattr(comp, 'rhs'):
-            return
-
         lhs, rhs = comp.lhs, comp.rhs
 
         if isinstance(rhs, MLILConst):
@@ -231,9 +204,6 @@ class SSATypeInferencePass(Pass):
 
     def _infer_from_arithmetic(self, arith: MediumLevelILInstruction):
         """Infer that variables in arithmetic are numeric"""
-        if not hasattr(arith, 'lhs') or not hasattr(arith, 'rhs'):
-            return
-
         for operand in (arith.lhs, arith.rhs):
             operand_var = self._as_ssa_var(operand)
             if operand_var is None:
@@ -272,18 +242,3 @@ class SSATypeInferencePass(Pass):
                 base_types[name] = typ
 
         return base_types
-
-    @classmethod
-    def _type_name_to_mlil_type(cls, type_name: str) -> MLILType:
-        """Convert source type name to MLILType"""
-        if not type_name:
-            return MLILType.unknown()
-
-        type_map = {
-            'Value32': MLILType.int_type(),
-            'str': MLILType.string_type(),
-            'Nullable32': MLILType.int_type(),
-            'NullableStr': MLILType.string_type(),
-            'Pointer': MLILType.pointer_type(),
-        }
-        return type_map.get(type_name, MLILType.unknown())

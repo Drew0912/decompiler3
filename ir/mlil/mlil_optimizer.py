@@ -1,10 +1,9 @@
 """MLIL Optimizer - the one pass list that runs after LLIL->MLIL translation"""
 
-from typing import List, Optional
+from typing import List
 
 from ir.pipeline import Pass, Pipeline
 from .mlil import MediumLevelILFunction
-from .mlil_types import FunctionSignatureDB
 from .passes import (
     BlockMergePass,
     SSAConversionPass,
@@ -15,25 +14,22 @@ from .passes import (
 )
 
 
-def mlil_optimization_passes(infer_types: bool = True,
-                             signature_db: Optional[FunctionSignatureDB] = None) -> List[Pass]:
+def mlil_optimization_passes(infer_types: bool = True) -> List[Pass]:
     """The MLIL passes that run after LLIL->MLIL translation, in production order"""
     # BlockMergePass must run before SSAConversionPass
     passes: List[Pass] = [BlockMergePass(), SSAConversionPass(), SSAOptimizationPass()]
 
     # Type inference runs on SSA form
     if infer_types:
-        passes.append(SSATypeInferencePass(signature_db))
+        passes.append(SSATypeInferencePass())
 
     passes.append(SSADeconstructionPass())
     passes.append(RegGlobalValuePropagationPass())
     return passes
 
 
-def optimize_mlil(function: MediumLevelILFunction,
-                  infer_types_enabled: bool = True,
-                  signature_db: Optional[FunctionSignatureDB] = None) -> MediumLevelILFunction:
+def optimize_mlil(function: MediumLevelILFunction, infer_types_enabled: bool = True) -> MediumLevelILFunction:
     """Run the production MLIL passes on an already translated function"""
-    function = Pipeline(mlil_optimization_passes(infer_types_enabled, signature_db)).run(function)
+    function = Pipeline(mlil_optimization_passes(infer_types_enabled)).run(function)
     function.renumber_instructions()
     return function

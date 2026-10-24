@@ -1,6 +1,6 @@
 """MLIL Type System - Type definitions for type inference"""
 
-from typing import AbstractSet, Optional
+from typing import AbstractSet
 from enum import Enum, auto
 
 
@@ -45,10 +45,6 @@ class MLILType:
         """Check if type is numeric (int, float, bool)"""
         return self.kind in (MLILTypeKind.INT, MLILTypeKind.FLOAT, MLILTypeKind.BOOL)
 
-    def is_pointer(self) -> bool:
-        """Check if type is pointer (string, pointer)"""
-        return self.kind in (MLILTypeKind.STRING, MLILTypeKind.POINTER)
-
     @classmethod
     def unknown(cls) -> 'MLILType':
         """Create unknown type"""
@@ -58,11 +54,6 @@ class MLILType:
     def int_type(cls) -> 'MLILType':
         """Create int type"""
         return MLILType(MLILTypeKind.INT)
-
-    @classmethod
-    def bool_type(cls) -> 'MLILType':
-        """Create bool type"""
-        return MLILType(MLILTypeKind.BOOL)
 
     @classmethod
     def string_type(cls) -> 'MLILType':
@@ -78,11 +69,6 @@ class MLILType:
     def pointer_type(cls) -> 'MLILType':
         """Create generic pointer type"""
         return MLILType(MLILTypeKind.POINTER)
-
-    @classmethod
-    def void_type(cls) -> 'MLILType':
-        """Create void type"""
-        return MLILType(MLILTypeKind.VOID)
 
 
 class MLILVariantType(MLILType):
@@ -138,23 +124,3 @@ def unify_types(t1: MLILType, t2: MLILType) -> MLILType:
 
     # Incompatible types: create variant
     return MLILVariantType({t1, t2})
-
-
-# ============================================================================
-# Function Signature Database Interface (Platform-agnostic)
-# ============================================================================
-
-class FunctionSignatureDB:
-    """Interface for platform-specific function signature databases"""
-
-    def get_call_return_type(self, target) -> Optional[MLILType]:
-        """Get return type for function call (target can be any type)"""
-        return None
-
-    def get_syscall_return_type(self, subsystem: int, cmd: int) -> Optional[MLILType]:
-        """Get return type for syscall (subsystem, cmd)"""
-        return None
-
-    def get_script_call_return_type(self, module: str, func: str) -> Optional[MLILType]:
-        """Get return type for script call (module, func)"""
-        return None

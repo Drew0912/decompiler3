@@ -25,9 +25,7 @@ class LLILToMLILTranslator:
 
         # Create MLIL blocks for each LLIL block
         for llil_block in llil_func.basic_blocks:
-            mlil_block = self.builder.create_block(llil_block.start, llil_block.label)
-            mlil_block.llil_block = llil_block
-            self.block_map[llil_block] = mlil_block
+            self.block_map[llil_block] = self.builder.create_block(llil_block.start, llil_block.label)
 
         # Translate each block
         for llil_block in llil_func.basic_blocks:

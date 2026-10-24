@@ -69,7 +69,7 @@ class TestDeclaredParameterTypes(unittest.TestCase):
     def test_declared_flag_wins_over_the_inferred_variant(self):
         # AniFieldAttack(arg1 = 0.1) stores floats into its Value32 parameter: the SSA pass gives
         # variant<int, float>, which rendered `arg1: any` while the pass was disabled
-        mlil = make_mlil_function('Value32', FLOAT_DEFAULT)
+        mlil = make_mlil_function('int', FLOAT_DEFAULT)
         mlil.var_types = {'arg1': INT_FLOAT_VARIANT}
         scp_func = make_scp_function(FunctionParam(ScpParamFlags(Value32), ScpValue(FLOAT_DEFAULT)))
 
@@ -79,7 +79,7 @@ class TestDeclaredParameterTypes(unittest.TestCase):
 
     def test_string_default_is_quoted_once(self):
         # Guard: the default value still comes from the converter, formatted by codegen
-        mlil = make_mlil_function('NullableStr', STRING_DEFAULT)
+        mlil = make_mlil_function('str', STRING_DEFAULT)
         scp_func = make_scp_function(FunctionParam(ScpParamFlags(NullableStr), ScpValue(STRING_DEFAULT)))
 
         ts = generate_typescript(convert_falcom_mlil_to_hlil(mlil, scp_func))
@@ -88,7 +88,7 @@ class TestDeclaredParameterTypes(unittest.TestCase):
 
     def test_without_the_script_function_the_inferred_type_stays(self):
         # Guard: callers that pass no script function (the semantic validator) keep the converter's mapping
-        mlil = make_mlil_function('Value32', FLOAT_DEFAULT)
+        mlil = make_mlil_function('int', FLOAT_DEFAULT)
         mlil.var_types = {'arg1': INT_FLOAT_VARIANT}
 
         ts = generate_typescript(convert_falcom_mlil_to_hlil(mlil))
