@@ -85,7 +85,7 @@ class StructuralAnalyzer:
         preds = {i: [] for i in range(self.num_blocks)}
         for src, succs in self.working_successors.items():
             for dst in succs:
-                if dst < self.num_blocks and src not in preds[dst]:
+                if src not in preds[dst]:
                     preds[dst].append(src)
         return preds
 
@@ -152,7 +152,7 @@ class StructuralAnalyzer:
         """Find natural loops using back edges"""
         for src in range(self.num_blocks):
             for dst in self.original_successors.get(src, []):
-                if dst < self.num_blocks and self.dominates(dst, src):
+                if self.dominates(dst, src):
                     self.back_edges.add((src, dst))
                     self._build_loop(src, dst)
 
@@ -514,7 +514,7 @@ class _MergeScope:
 
     def follows(self, src: int, dst: int) -> bool:
         """Whether a path inside the scope continues along src -> dst"""
-        if dst >= self.analyzer.num_blocks or dst == self.stop or (src, dst) in self.analyzer.back_edges:
+        if dst == self.stop or (src, dst) in self.analyzer.back_edges:
             return False
 
         return self.loop is None or (dst in self.loop.body and dst != self.loop.header)

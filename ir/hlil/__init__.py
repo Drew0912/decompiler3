@@ -96,9 +96,6 @@ __all__ = [
     # Formatter
     'HLILFormatter',
 
-    # Converter
-    'convert_mlil_to_hlil',
-
     # Passes
     'MLILToHLILPass',
     'ControlFlowOptimizationPass',

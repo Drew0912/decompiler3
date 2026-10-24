@@ -35,7 +35,7 @@ from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLI
                           HLILConst, HLILVar, HLILVariable, HLILBinaryOp, HLILUnaryOp, HLILComment, BinaryOp,
                           UnaryOp, constant_truth, reachable_statements, iter_tree)
 from ir.hlil.hlil_formatter import HLILFormatter
-from ir.hlil.mlil_to_hlil import MLILToHLILConverter, constant_condition_truth, convert_mlil_to_hlil
+from ir.hlil.mlil_to_hlil import MLILToHLILConverter, constant_condition_truth
 from ir.mlil.mlil import (
     MediumLevelILFunction, MLILCall, MLILConst, MLILIf, MLILLogicalNot, MLILRet, MLILSetVar, MLILTestZero, MLILVar,
     MLILVariable,
@@ -717,7 +717,6 @@ class TestProvenance(unittest.TestCase):
         func.create_block().instructions = [MLILRet(MLILConst(0))]
 
         self.assertEqual(MLILToHLILConverter(connect(func)).convert().start_addr, START_ADDRESS)
-        self.assertEqual(convert_mlil_to_hlil(connect(func)).start_addr, START_ADDRESS)
 
     def test_statement_keeps_the_address_and_index_of_its_instruction(self):
         func = MediumLevelILFunction('source', START_ADDRESS)

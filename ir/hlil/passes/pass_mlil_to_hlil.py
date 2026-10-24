@@ -10,5 +10,4 @@ class MLILToHLILPass(Pass):
     """MLIL to HLIL conversion pass"""
 
     def run(self, mlil_func: MediumLevelILFunction) -> HighLevelILFunction:
-        converter = MLILToHLILConverter(mlil_func)
-        return converter.convert()
+        return MLILToHLILConverter(mlil_func).convert()
