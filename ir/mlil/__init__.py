@@ -20,7 +20,6 @@ __all__ = [
     # Builder, Translator, Formatter, and Optimizers
     'MLILBuilder',
     'LLILToMLILTranslator',
-    'translate_llil_to_mlil',
     'MLILFormatter',
     'SSAOptimizer',
     'mlil_optimization_passes',

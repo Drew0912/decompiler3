@@ -7,6 +7,32 @@ from .mlil import *
 from .mlil_builder import *
 
 
+# The MLIL operation for each LLIL operation that maps one to one, keyed by exact type: none of these classes has a
+# subclass today, and a future one needs its own entry here (or an arm above these lookups)
+BINARY_OP_TYPES = {
+    LowLevelILAdd           : MLILAdd,
+    LowLevelILSub           : MLILSub,
+    LowLevelILMul           : MLILMul,
+    LowLevelILDiv           : MLILDiv,
+    LowLevelILMod           : MLILMod,
+    LowLevelILAnd           : MLILAnd,
+    LowLevelILOr            : MLILOr,
+    LowLevelILLogicalAnd    : MLILLogicalAnd,
+    LowLevelILLogicalOr     : MLILLogicalOr,
+    LowLevelILEq            : MLILEq,
+    LowLevelILNe            : MLILNe,
+    LowLevelILLt            : MLILLt,
+    LowLevelILLe            : MLILLe,
+    LowLevelILGt            : MLILGt,
+    LowLevelILGe            : MLILGe,
+}
+UNARY_OP_TYPES = {
+    LowLevelILNeg           : MLILNeg,
+    LowLevelILBitwiseNot    : MLILBitwiseNot,
+    LowLevelILTestZero      : MLILTestZero,
+}
+
+
 class LLILToMLILTranslator:
     """LLIL to MLIL translator (base class)"""
 
@@ -80,10 +106,18 @@ class LLILToMLILTranslator:
                 f'handled in a derived translator class.'
             )
 
+    def _stack_var(self, slot_index: int) -> MLILVariable:
+        """The local variable of a stack slot"""
+        return self.builder.get_or_create_local(mlil_stack_var_name(slot_index), slot_index)
+
+    def _param_var(self, frame_offset: int) -> MLILVariable:
+        """The parameter variable of a frame slot"""
+        param_index = self._frame_offset_to_param_index(frame_offset)
+        return self.builder.get_or_create_parameter(param_index, mlil_arg_var_name(param_index))
+
     def _translate_stack_store(self, llil_inst: LowLevelILStackStore):
         """Translate StackStore to SetVar (local variable)"""
-        var_name = mlil_stack_var_name(llil_inst.slot_index)
-        var = self.builder.get_or_create_local(var_name, llil_inst.slot_index)
+        var = self._stack_var(llil_inst.slot_index)
         value = self._translate_expr(llil_inst.value)
         self.builder.set_var(var, value)
 
@@ -97,9 +131,7 @@ class LLILToMLILTranslator:
 
     def _translate_frame_store(self, llil_inst: LowLevelILFrameStore):
         """Translate FrameStore to SetVar (parameter)"""
-        param_index = self._frame_offset_to_param_index(llil_inst.offset)
-        var_name = mlil_arg_var_name(param_index)
-        var = self.builder.get_or_create_parameter(param_index, var_name)
+        var = self._param_var(llil_inst.offset)
         value = self._translate_expr(llil_inst.value)
         self.builder.set_var(var, value)
 
@@ -134,104 +166,23 @@ class LLILToMLILTranslator:
 
         # Stack operations → Variables
         elif isinstance(llil_expr, LowLevelILStackLoad):
-            var_name = mlil_stack_var_name(llil_expr.slot_index)
-            var = self.builder.get_or_create_local(var_name, llil_expr.slot_index)
-            return self.builder.var(var)
+            return MLILVar(self._stack_var(llil_expr.slot_index))
         elif isinstance(llil_expr, LowLevelILFrameLoad):
-            param_index = self._frame_offset_to_param_index(llil_expr.offset)
-            var_name = mlil_arg_var_name(param_index)
-            var = self.builder.get_or_create_parameter(param_index, var_name)
-            return self.builder.var(var)
+            return MLILVar(self._param_var(llil_expr.offset))
         elif isinstance(llil_expr, LowLevelILStackAddr):
-            # Stack address → address of local variable (&var)
-            var_name = mlil_stack_var_name(llil_expr.slot_index)
-            var = self.builder.get_or_create_local(var_name, llil_expr.slot_index)
-            return self.builder.address_of(self.builder.var(var))
+            return MLILAddressOf(MLILVar(self._stack_var(llil_expr.slot_index)))
         elif isinstance(llil_expr, LowLevelILFrameAddr):
-            # Frame address → address of parameter variable (&argN)
-            param_index = self._frame_offset_to_param_index(llil_expr.offset)
-            var_name = mlil_arg_var_name(param_index)
-            var = self.builder.get_or_create_parameter(param_index, var_name)
-            return self.builder.address_of(self.builder.var(var))
+            return MLILAddressOf(MLILVar(self._param_var(llil_expr.offset)))
         elif isinstance(llil_expr, LowLevelILLoad):
-            # Pointer dereference → *ptr
-            src = self._translate_expr(llil_expr.src)
-            return self.builder.deref(src)
+            return MLILDeref(self._translate_expr(llil_expr.src))
 
-        # Binary operations
-        elif isinstance(llil_expr, LowLevelILAdd):
+        # Binary and unary operations
+        elif type(llil_expr) in BINARY_OP_TYPES:
             lhs = self._translate_expr(llil_expr.lhs)
             rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.add(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILSub):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.sub(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILMul):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.mul(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILDiv):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.div(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILMod):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.mod(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILAnd):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.bitwise_and(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILOr):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.bitwise_or(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILLogicalAnd):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.logical_and(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILLogicalOr):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.logical_or(lhs, rhs)
-
-        # Comparison operations
-        elif isinstance(llil_expr, LowLevelILEq):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.eq(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILNe):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.ne(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILLt):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.lt(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILLe):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.le(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILGt):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.gt(lhs, rhs)
-        elif isinstance(llil_expr, LowLevelILGe):
-            lhs = self._translate_expr(llil_expr.lhs)
-            rhs = self._translate_expr(llil_expr.rhs)
-            return self.builder.ge(lhs, rhs)
-
-        # Unary operations
-        elif isinstance(llil_expr, LowLevelILNeg):
-            operand = self._translate_expr(llil_expr.operand)
-            return self.builder.neg(operand)
-        elif isinstance(llil_expr, LowLevelILBitwiseNot):
-            operand = self._translate_expr(llil_expr.operand)
-            return self.builder.bitwise_not(operand)
-        elif isinstance(llil_expr, LowLevelILTestZero):
-            operand = self._translate_expr(llil_expr.operand)
-            return self.builder.test_zero(operand)
+            return BINARY_OP_TYPES[type(llil_expr)](lhs, rhs)
+        elif type(llil_expr) in UNARY_OP_TYPES:
+            return UNARY_OP_TYPES[type(llil_expr)](self._translate_expr(llil_expr.operand))
         else:
             # Unknown expression - must be handled by derived class
             raise NotImplementedError(
@@ -239,9 +190,3 @@ class LLILToMLILTranslator:
                 f'This may be an architecture-specific expression that should be '
                 f'handled in a derived translator class.'
             )
-
-
-def translate_llil_to_mlil(llil_func: LowLevelILFunction) -> MediumLevelILFunction:
-    """Translate LLIL to MLIL (generic translator)"""
-    translator = LLILToMLILTranslator()
-    return translator.translate(llil_func)

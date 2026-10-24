@@ -1,4 +1,4 @@
-"""MLIL Builder - Helper for constructing MLIL functions"""
+"""MLIL Builder - builds an MLIL function: its blocks, variables and statements (expressions are the node classes)"""
 
 from typing import Optional, List, TYPE_CHECKING
 
@@ -14,7 +14,6 @@ class MLILBuilder:
     def __init__(self):
         self.function: Optional[MediumLevelILFunction] = None
         self.current_block: Optional[MediumLevelILBasicBlock] = None
-        self._inst_counter = 0  # For generating unique inst_index
         self._current_address = 0  # Source SCP address for current instruction
         self._current_llil_index = UNASSIGNED_INST_INDEX
 
@@ -26,11 +25,9 @@ class MLILBuilder:
     # === Function Management ===
 
     def create_function(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None, *, is_common_func: bool = False):
-        """Create MLIL function"""
         self.function = MediumLevelILFunction(name, start_addr, params, is_common_func=is_common_func)
 
     def finalize(self) -> MediumLevelILFunction:
-        """Finalize and return the constructed function"""
         # Fill in missing parameters (unused params not created during translation)
         source_params = self.function.source_params
         # First extend to full length
@@ -50,16 +47,13 @@ class MLILBuilder:
         return self.function.create_block(start, label)
 
     def set_current_block(self, block: MediumLevelILBasicBlock):
-        """Set the current block for instruction insertion"""
+        """Set the block later statements are added to"""
         self.current_block = block
 
     def add_instruction(self, inst: MediumLevelILInstruction):
-        """Add instruction to current block"""
-        inst.inst_index = self._inst_counter
+        """Add inst to the current block with the current source (renumber_instructions() numbers it later)"""
         inst.address = self._current_address
         inst.llil_index = self._current_llil_index
-        self._inst_counter += 1
-
         self.current_block.add_instruction(inst)
 
     # === Variable Management ===
@@ -69,217 +63,50 @@ class MLILBuilder:
         return self.function.get_or_create_parameter(param_index, name)
 
     def get_or_create_local(self, name: str, slot_index: int = UNASSIGNED_SLOT_INDEX) -> MLILVariable:
-        """Get or create a local variable"""
         return self.function.get_or_create_local(name, slot_index)
 
     def get_or_create_register_var(self, reg_index: int) -> MLILVariable:
         """Get or create the variable modelling a VM register"""
         return self.function.get_or_create_register_var(reg_index)
 
-    # === Constants ===
-
-    def const_int(self, value: int, is_hex: bool = False) -> MLILConst:
-        """Create integer constant"""
-        return MLILConst(value, is_hex)
-
-    def const_float(self, value: float) -> MLILConst:
-        """Create float constant"""
-        return MLILConst(value, False)
-
-    def const_str(self, value: str) -> MLILConst:
-        """Create string constant"""
-        return MLILConst(value, False)
-
-    # === Variable Operations ===
-
-    def var(self, var: MLILVariable) -> MLILVar:
-        """Load variable value (returns expression, does not add instruction)"""
-        return MLILVar(var)
+    # === Statements ===
 
     def set_var(self, var: MLILVariable, value: MediumLevelILInstruction):
-        """Store value to variable (adds instruction)"""
-        inst = MLILSetVar(var, value)
-        self.add_instruction(inst)
+        self.add_instruction(MLILSetVar(var, value))
 
-    # === Binary Operations ===
+    def store_global(self, index: int, value: MediumLevelILInstruction):
+        self.add_instruction(MLILStoreGlobal(index, value))
 
-    def add(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILAdd:
-        """Create ADD operation (returns expression, does not add instruction)"""
-        return MLILAdd(lhs, rhs)
+    def store_deref(self, dest: MediumLevelILInstruction, value: MediumLevelILInstruction):
+        self.add_instruction(MLILStoreDeref(dest, value))
 
-    def sub(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILSub:
-        """Create SUB operation"""
-        return MLILSub(lhs, rhs)
-
-    def mul(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILMul:
-        """Create MUL operation"""
-        return MLILMul(lhs, rhs)
-
-    def div(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILDiv:
-        """Create DIV operation"""
-        return MLILDiv(lhs, rhs)
-
-    def mod(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILMod:
-        """Create MOD operation"""
-        return MLILMod(lhs, rhs)
-
-    def bitwise_and(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILAnd:
-        """Create bitwise AND operation"""
-        return MLILAnd(lhs, rhs)
-
-    def bitwise_or(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILOr:
-        """Create bitwise OR operation"""
-        return MLILOr(lhs, rhs)
-
-    def bitwise_xor(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILXor:
-        """Create bitwise XOR operation"""
-        return MLILXor(lhs, rhs)
-
-    def shl(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILShl:
-        """Create left shift operation"""
-        return MLILShl(lhs, rhs)
-
-    def shr(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILShr:
-        """Create right shift operation"""
-        return MLILShr(lhs, rhs)
-
-    def logical_and(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILLogicalAnd:
-        """Create logical AND operation"""
-        return MLILLogicalAnd(lhs, rhs)
-
-    def logical_or(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILLogicalOr:
-        """Create logical OR operation"""
-        return MLILLogicalOr(lhs, rhs)
-
-    # === Comparison Operations ===
-
-    def eq(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILEq:
-        """Create EQ operation"""
-        return MLILEq(lhs, rhs)
-
-    def ne(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILNe:
-        """Create NE operation"""
-        return MLILNe(lhs, rhs)
-
-    def lt(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILLt:
-        """Create LT operation"""
-        return MLILLt(lhs, rhs)
-
-    def le(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILLe:
-        """Create LE operation"""
-        return MLILLe(lhs, rhs)
-
-    def gt(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILGt:
-        """Create GT operation"""
-        return MLILGt(lhs, rhs)
-
-    def ge(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILGe:
-        """Create GE operation"""
-        return MLILGe(lhs, rhs)
-
-    # === Unary Operations ===
-
-    def neg(self, operand: MediumLevelILInstruction) -> MLILNeg:
-        """Create NEG operation"""
-        return MLILNeg(operand)
-
-    def logical_not(self, operand: MediumLevelILInstruction) -> MLILLogicalNot:
-        """Create logical NOT operation"""
-        return MLILLogicalNot(operand)
-
-    def test_zero(self, operand: MediumLevelILInstruction) -> MLILTestZero:
-        """Create TEST_ZERO operation"""
-        return MLILTestZero(operand)
-
-    def bitwise_not(self, operand: MediumLevelILInstruction) -> MLILBitwiseNot:
-        """Create bitwise NOT operation (~x)"""
-        return MLILBitwiseNot(operand)
-
-    def address_of(self, operand: MediumLevelILInstruction) -> MLILAddressOf:
-        """Create ADDRESS_OF operation (&var)"""
-        return MLILAddressOf(operand)
+    def debug(self, debug_type: str, value):
+        self.add_instruction(MLILDebug(debug_type, value))
 
     # === Control Flow ===
 
     def goto(self, target: MediumLevelILBasicBlock):
-        """Unconditional jump"""
-        inst = MLILGoto(target)
-        self.add_instruction(inst)
+        self.add_instruction(MLILGoto(target))
         self.current_block.add_outgoing_edge(target)
 
     def branch_if(self, condition: MediumLevelILInstruction,
                   true_target: MediumLevelILBasicBlock,
                   false_target: MediumLevelILBasicBlock):
-        """Conditional branch"""
-        inst = MLILIf(condition, true_target, false_target)
-        self.add_instruction(inst)
+        self.add_instruction(MLILIf(condition, true_target, false_target))
         self.current_block.add_outgoing_edge(true_target)
         self.current_block.add_outgoing_edge(false_target)
 
     def ret(self, value: Optional[MediumLevelILInstruction] = None):
-        """Return from function"""
-        inst = MLILRet(value)
-        self.add_instruction(inst)
+        self.add_instruction(MLILRet(value))
 
     # === Function Calls ===
 
     def call(self, target: str, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None,
              *, clobbers_registers: bool = True):
-        """Function call"""
-        inst = MLILCall(target, args, output, clobbers_registers=clobbers_registers)
-        self.add_instruction(inst)
+        self.add_instruction(MLILCall(target, args, output, clobbers_registers=clobbers_registers))
 
     def syscall(self, subsystem: int, cmd: int, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None):
-        """System call"""
-        inst = MLILSyscall(subsystem, cmd, args, output)
-        self.add_instruction(inst)
+        self.add_instruction(MLILSyscall(subsystem, cmd, args, output))
 
     def call_script(self, module: str, func: str, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None):
-        """Falcom script call"""
-        inst = MLILCallScript(module, func, args, output)
-        self.add_instruction(inst)
-
-    # === Globals ===
-
-    def load_global(self, index: int) -> MLILLoadGlobal:
-        """Load global variable (returns expression)"""
-        return MLILLoadGlobal(index)
-
-    def store_global(self, index: int, value: MediumLevelILInstruction):
-        """Store to global variable"""
-        inst = MLILStoreGlobal(index, value)
-        self.add_instruction(inst)
-
-    # === Registers ===
-
-    def load_reg(self, index: int) -> MLILLoadReg:
-        """Load register (returns expression)"""
-        return MLILLoadReg(index)
-
-    def store_reg(self, index: int, value: MediumLevelILInstruction):
-        """Store to register"""
-        inst = MLILStoreReg(index, value)
-        self.add_instruction(inst)
-
-    # === Pointer Dereference ===
-
-    def deref(self, operand: MediumLevelILInstruction) -> MLILDeref:
-        """Dereference a pointer expression (returns expression)"""
-        return MLILDeref(operand)
-
-    def store_deref(self, dest: MediumLevelILInstruction, value: MediumLevelILInstruction):
-        """Store through a pointer expression (*dest = value)"""
-        inst = MLILStoreDeref(dest, value)
-        self.add_instruction(inst)
-
-    # === Debug ===
-
-    def nop(self):
-        """No operation"""
-        inst = MLILNop()
-        self.add_instruction(inst)
-
-    def debug(self, debug_type: str, value):
-        """Debug information"""
-        inst = MLILDebug(debug_type, value)
-        self.add_instruction(inst)
+        self.add_instruction(MLILCallScript(module, func, args, output))

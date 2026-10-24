@@ -39,7 +39,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
             self.builder.set_var(reg_var, value)
         elif isinstance(llil_inst, LowLevelILRet):
             # The VM returns whatever the result register holds
-            self.builder.ret(self.builder.var(self._result_reg_var()))
+            self.builder.ret(MLILVar(self._result_reg_var()))
         elif isinstance(llil_inst, LowLevelILCallScriptNoReturn):
             self._translate_call_script_no_return(llil_inst)
         elif isinstance(llil_inst, LowLevelILCallScript):
@@ -83,7 +83,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
         self.builder.call_script(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
-        self.builder.ret(self.builder.var(self._result_reg_var()))
+        self.builder.ret(MLILVar(self._result_reg_var()))
 
     def _translate_syscall(self, llil_inst: LowLevelILSyscall):
         """Translate Falcom syscall"""
@@ -108,9 +108,9 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         """Translate LLIL expression, handling Falcom-specific types"""
         # Falcom-specific expressions
         if isinstance(llil_expr, LowLevelILGlobalLoad):
-            return self.builder.load_global(llil_expr.index)
+            return MLILLoadGlobal(llil_expr.index)
         elif isinstance(llil_expr, LowLevelILRegLoad):
-            return self.builder.var(self.builder.get_or_create_register_var(llil_expr.reg_index))
+            return MLILVar(self.builder.get_or_create_register_var(llil_expr.reg_index))
 
         # Falcom-specific constants
         elif isinstance(llil_expr, LowLevelILConstFuncId):
