@@ -242,6 +242,29 @@ class MLILSetVar(MediumLevelILStatement):
 
 # === Binary Operations ===
 
+# Each binary operation's operator as the listing prints it
+BINARY_OP_SYMBOLS = {
+    MediumLevelILOperation.MLIL_ADD         : '+',
+    MediumLevelILOperation.MLIL_SUB         : '-',
+    MediumLevelILOperation.MLIL_MUL         : '*',
+    MediumLevelILOperation.MLIL_DIV         : '/',
+    MediumLevelILOperation.MLIL_MOD         : '%',
+    MediumLevelILOperation.MLIL_AND         : '&',
+    MediumLevelILOperation.MLIL_OR          : '|',
+    MediumLevelILOperation.MLIL_XOR         : '^',
+    MediumLevelILOperation.MLIL_SHL         : '<<',
+    MediumLevelILOperation.MLIL_SHR         : '>>',
+    MediumLevelILOperation.MLIL_LOGICAL_AND : '&&',
+    MediumLevelILOperation.MLIL_LOGICAL_OR  : '||',
+    MediumLevelILOperation.MLIL_EQ          : '==',
+    MediumLevelILOperation.MLIL_NE          : '!=',
+    MediumLevelILOperation.MLIL_LT          : '<',
+    MediumLevelILOperation.MLIL_LE          : '<=',
+    MediumLevelILOperation.MLIL_GT          : '>',
+    MediumLevelILOperation.MLIL_GE          : '>=',
+}
+
+
 class MLILBinaryOp(MediumLevelILExpr, BinaryOperation):
     """Base class for binary operations"""
 
@@ -259,27 +282,7 @@ class MLILBinaryOp(MediumLevelILExpr, BinaryOperation):
         return (self.lhs, self.rhs)
 
     def __str__(self) -> str:
-        op_map = {
-            MediumLevelILOperation.MLIL_ADD: '+',
-            MediumLevelILOperation.MLIL_SUB: '-',
-            MediumLevelILOperation.MLIL_MUL: '*',
-            MediumLevelILOperation.MLIL_DIV: '/',
-            MediumLevelILOperation.MLIL_MOD: '%',
-            MediumLevelILOperation.MLIL_AND: '&',
-            MediumLevelILOperation.MLIL_OR: '|',
-            MediumLevelILOperation.MLIL_XOR: '^',
-            MediumLevelILOperation.MLIL_SHL: '<<',
-            MediumLevelILOperation.MLIL_SHR: '>>',
-            MediumLevelILOperation.MLIL_LOGICAL_AND: '&&',
-            MediumLevelILOperation.MLIL_LOGICAL_OR: '||',
-            MediumLevelILOperation.MLIL_EQ: '==',
-            MediumLevelILOperation.MLIL_NE: '!=',
-            MediumLevelILOperation.MLIL_LT: '<',
-            MediumLevelILOperation.MLIL_LE: '<=',
-            MediumLevelILOperation.MLIL_GT: '>',
-            MediumLevelILOperation.MLIL_GE: '>=',
-        }
-        op_str = op_map.get(self.operation, self.operation_name)
+        op_str = BINARY_OP_SYMBOLS.get(self.operation, self.operation_name)
         return f'({self.lhs} {op_str} {self.rhs})'
 
 
@@ -343,6 +346,10 @@ class MLILLogicalOr(MLILBinaryOp):
         super().__init__(MediumLevelILOperation.MLIL_LOGICAL_OR, lhs, rhs, **kwargs)
 
 
+# De Morgan: the logical operator each one becomes when a negation is pushed into its operands
+DE_MORGAN = {MLILLogicalAnd: MLILLogicalOr, MLILLogicalOr: MLILLogicalAnd}
+
+
 # === Comparison Operations ===
 
 class MLILEq(MLILBinaryOp):
@@ -375,7 +382,33 @@ class MLILGe(MLILBinaryOp):
         super().__init__(MediumLevelILOperation.MLIL_GE, lhs, rhs, **kwargs)
 
 
+# Each comparison and the comparison with the opposite outcome
+NEGATED_COMPARISON = {
+    MLILEq  : MLILNe,
+    MLILNe  : MLILEq,
+    MLILLt  : MLILGe,
+    MLILLe  : MLILGt,
+    MLILGt  : MLILLe,
+    MLILGe  : MLILLt,
+}
+COMPARISON_TYPES = tuple(NEGATED_COMPARISON)
+
+
+def negate_comparison(expr: MediumLevelILInstruction) -> Optional[MediumLevelILInstruction]:
+    """The comparison with the opposite outcome over the same operands, or None if expr is not a comparison"""
+    negated_type = NEGATED_COMPARISON.get(type(expr))
+    return negated_type(expr.lhs, expr.rhs) if negated_type is not None else None
+
+
 # === Unary Operations ===
+
+# Each unary operation's operator as the listing prints it (TestZero, AddressOf and Deref print their own form)
+UNARY_OP_SYMBOLS = {
+    MediumLevelILOperation.MLIL_NEG         : '-',
+    MediumLevelILOperation.MLIL_LOGICAL_NOT : '!',
+    MediumLevelILOperation.MLIL_BITWISE_NOT : '~',
+}
+
 
 class MLILUnaryOp(MediumLevelILExpr, UnaryOperation):
     """Base class for unary operations"""
@@ -393,12 +426,7 @@ class MLILUnaryOp(MediumLevelILExpr, UnaryOperation):
         return (self.operand,)
 
     def __str__(self) -> str:
-        op_map = {
-            MediumLevelILOperation.MLIL_NEG: '-',
-            MediumLevelILOperation.MLIL_LOGICAL_NOT: '!',
-            MediumLevelILOperation.MLIL_BITWISE_NOT: '~',
-        }
-        op_str = op_map.get(self.operation, self.operation_name)
+        op_str = UNARY_OP_SYMBOLS.get(self.operation, self.operation_name)
         return f'{op_str}{self.operand}'
 
 
@@ -479,8 +507,8 @@ class MLILRet(MediumLevelILStatement, Terminal):
     def __str__(self) -> str:
         if self.value is not None:
             return f'return {self.value}'
-        else:
-            return 'return'
+
+        return 'return'
 
 
 # === Function Calls ===
@@ -551,13 +579,8 @@ class MLILSyscall(MediumLevelILCall):
                            clobbers_registers=self.clobbers_registers).copy_metadata_from(self)
 
     def __str__(self) -> str:
-            args = [
-                f'{self.subsystem}',
-                f'{self.cmd}',
-                *[str(arg) for arg in self.args],
-            ]
-
-            return self.format_with_output(f'syscall({', '.join(args)})')
+        args_str = ', '.join([f'{self.subsystem}', f'{self.cmd}', *(str(arg) for arg in self.args)])
+        return self.format_with_output(f'syscall({args_str})')
 
 
 class MLILCallScript(MediumLevelILCall):
@@ -658,7 +681,6 @@ class MLILDebug(MediumLevelILStatement):
 
 
 def is_nop_instr(instr: MediumLevelILInstruction) -> bool:
-    """Check if instruction has no effect (debug/nop)"""
     return isinstance(instr, (MLILDebug, MLILNop))
 
 
@@ -825,7 +847,6 @@ class MediumLevelILFunction:
         return self.register_vars[reg_index]
 
     def is_register_var(self, var: MLILVariable) -> bool:
-        """Check whether a variable models a VM register"""
         return var in self.register_vars.values()
 
     def get_or_create_global_var(self, global_index: int) -> MLILVariable:
@@ -840,7 +861,6 @@ class MediumLevelILFunction:
         return self.global_vars[global_index]
 
     def is_global_var(self, var: MLILVariable) -> bool:
-        """Check whether a variable models a VM global"""
         return var in self.global_vars.values()
 
     def call_may_clobber(self, call: 'MediumLevelILCall', var: MLILVariable) -> bool:

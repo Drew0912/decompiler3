@@ -48,11 +48,10 @@ class ConstantPropagationPass(Pass):
         """Build constant map from SSA definitions"""
         self.constants = {}
 
-        for block in func.basic_blocks:
-            for inst in block.instructions:
-                if isinstance(inst, MLILSetVarSSA):
-                    if isinstance(inst.value, MLILConst):
-                        self.constants[inst.var] = inst.value.value
+        for inst in func.iter_instructions():
+            if isinstance(inst, MLILSetVarSSA):
+                if isinstance(inst.value, MLILConst):
+                    self.constants[inst.var] = inst.value.value
 
     def _propagate_once(self, func: MediumLevelILFunction) -> bool:
         """Single propagation pass"""
@@ -77,16 +76,16 @@ class ConstantPropagationPass(Pass):
         if isinstance(inst, MLILSetVarSSA):
             new_value = self._propagate_in_expr(inst.value)
             if new_value is not inst.value:
-                return MLILSetVarSSA(inst.var, new_value, address=inst.address).copy_metadata_from(inst)
+                return MLILSetVarSSA(inst.var, new_value).copy_metadata_from(inst)
         elif isinstance(inst, MLILIf):
             new_condition = self._propagate_in_expr(inst.condition)
             if new_condition is not inst.condition:
-                return MLILIf(new_condition, inst.true_target, inst.false_target, address=inst.address).copy_metadata_from(inst)
+                return MLILIf(new_condition, inst.true_target, inst.false_target).copy_metadata_from(inst)
         elif isinstance(inst, MLILRet):
             if inst.value is not None:
                 new_value = self._propagate_in_expr(inst.value)
                 if new_value is not inst.value:
-                    return MLILRet(new_value, address=inst.address).copy_metadata_from(inst)
+                    return MLILRet(new_value).copy_metadata_from(inst)
         elif isinstance(inst, MediumLevelILCall):
             new_args = [self._propagate_in_expr(arg) for arg in inst.args]
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
@@ -95,9 +94,9 @@ class ConstantPropagationPass(Pass):
             new_value = self._propagate_in_expr(inst.value)
             if new_value is not inst.value:
                 if isinstance(inst, MLILStoreGlobal):
-                    return MLILStoreGlobal(inst.index, new_value, address=inst.address).copy_metadata_from(inst)
+                    return MLILStoreGlobal(inst.index, new_value).copy_metadata_from(inst)
                 else:
-                    return MLILStoreReg(inst.index, new_value, address=inst.address).copy_metadata_from(inst)
+                    return MLILStoreReg(inst.index, new_value).copy_metadata_from(inst)
         elif isinstance(inst, MLILStoreDeref):
             new_dest = self._propagate_in_expr(inst.dest)
             new_value = self._propagate_in_expr(inst.value)

@@ -20,7 +20,16 @@ from ..mlil_ssa import (
 )
 
 
-class DeadCodeEliminationPass(Pass):
+def string_debug_comment(inst: MLILSetVarSSA, sccp_replaced_vars: Set[MLILVariableSSA]) -> List[MLILDebug]:
+    """A removed assignment of a string constant, kept as a debug comment - unless SCCP replaced the variable,
+    so the string already sits in its uses (a call's arguments)"""
+    if isinstance(inst.value, MLILConst) and isinstance(inst.value.value, str) and inst.var not in sccp_replaced_vars:
+        return [MLILDebug('string', inst.value.value).copy_metadata_from(inst)]
+
+    return []
+
+
+class SSADeadCodeEliminationPass(Pass):
     """Remove unused SSA variable assignments"""
 
     def __init__(self, sccp_replaced_vars: Set[MLILVariableSSA] = None):
@@ -51,36 +60,26 @@ class DeadCodeEliminationPass(Pass):
             new_instructions = []
 
             for inst in block.instructions:
-                if not isinstance(inst, (MLILSetVarSSA, MLILPhi)):
+                if isinstance(inst, MLILSetVarSSA):
+                    # A global write is an observable cross-function side effect - keep it even
+                    # with zero in-function reads, unlike an ordinary dead local assignment
+                    if self.ssa_uses.get(inst.var) or func.is_global_var(inst.var.base_var):
+                        new_instructions.append(inst)
+                    else:
+                        removed = True
+                        new_instructions.extend(string_debug_comment(inst, self.sccp_replaced_vars))
+                elif isinstance(inst, MLILPhi):
+                    if self.ssa_uses.get(inst.dest):
+                        new_instructions.append(inst)
+                    else:
+                        removed = True
+                else:
                     # An unread call result is dropped, the call itself stays
                     if isinstance(inst, MediumLevelILCall) and inst.output is not None:
                         if not self.ssa_uses.get(inst.output):
                             inst.output = None
 
                     new_instructions.append(inst)
-                    continue
-
-                if isinstance(inst, MLILSetVarSSA):
-                    uses = self.ssa_uses.get(inst.var, [])
-
-                    # A global write is an observable cross-function side effect - keep it even
-                    # with zero in-function reads, unlike an ordinary dead local assignment
-                    if len(uses) > 0 or func.is_global_var(inst.var.base_var):
-                        new_instructions.append(inst)
-                    else:
-                        removed = True
-
-                        # Preserve string constants as debug comments
-                        # Skip if variable was replaced by SCCP (string is now in function args)
-                        if isinstance(inst.value, MLILConst) and isinstance(inst.value.value, str):
-                            if inst.var not in self.sccp_replaced_vars:
-                                debug_comment = MLILDebug('string', inst.value.value).copy_metadata_from(inst)
-                                new_instructions.append(debug_comment)
-                elif isinstance(inst, MLILPhi):
-                    if len(self.ssa_uses.get(inst.dest, [])) > 0:
-                        new_instructions.append(inst)
-                    else:
-                        removed = True
 
             block.instructions = new_instructions
 
@@ -90,7 +89,6 @@ class DeadCodeEliminationPass(Pass):
         """Build SSA use chains"""
         self.ssa_uses = {}
 
-        for block in func.basic_blocks:
-            for inst in block.instructions:
-                for var, reader in iter_ssa_reads(inst):
-                    self.ssa_uses.setdefault(var, []).append(reader)
+        for inst in func.iter_instructions():
+            for var, reader in iter_ssa_reads(inst):
+                self.ssa_uses.setdefault(var, []).append(reader)

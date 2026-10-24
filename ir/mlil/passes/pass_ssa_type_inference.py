@@ -19,7 +19,7 @@ USAGE_INFERENCE_PASSES = 3
 # Expressions whose value is always an int
 INT_RESULT_OPS = (
     MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr, MLILLogicalAnd, MLILLogicalOr,
-    MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe, MLILLogicalNot, MLILBitwiseNot, MLILTestZero, MLILLoadReg,
+    *COMPARISON_TYPES, MLILLogicalNot, MLILBitwiseNot, MLILTestZero, MLILLoadReg,
 )
 
 # IRParameter.type_name -> the parameter's type
@@ -65,14 +65,13 @@ class SSATypeInferencePass(Pass):
                 self.var_types[ssa_var] = MLILType.unknown()
 
         # All other SSA variables as unknown
-        for block in self.function.basic_blocks:
-            for inst in block.instructions:
-                if isinstance(inst, MLILSetVarSSA):
-                    if inst.var not in self.var_types:
-                        self.var_types[inst.var] = MLILType.unknown()
-                elif isinstance(inst, MLILPhi):
-                    if inst.dest not in self.var_types:
-                        self.var_types[inst.dest] = MLILType.unknown()
+        for inst in self.function.iter_instructions():
+            if isinstance(inst, MLILSetVarSSA):
+                if inst.var not in self.var_types:
+                    self.var_types[inst.var] = MLILType.unknown()
+            elif isinstance(inst, MLILPhi):
+                if inst.dest not in self.var_types:
+                    self.var_types[inst.dest] = MLILType.unknown()
 
     def _propagate_types(self):
         """Propagate types through assignments until convergence"""
@@ -83,37 +82,35 @@ class SSATypeInferencePass(Pass):
             changed = False
             iterations += 1
 
-            for block in self.function.basic_blocks:
-                for inst in block.instructions:
-                    if isinstance(inst, MLILSetVarSSA):
-                        new_type = self._infer_expr_type(inst.value)
-                        if self._update_type(inst.var, new_type):
-                            changed = True
-                    elif isinstance(inst, MLILPhi):
-                        unified = MLILType.unknown()
-                        for src_var, _ in inst.sources:
-                            src_type = self.var_types.get(src_var, MLILType.unknown())
-                            unified = unify_types(unified, src_type)
+            for inst in self.function.iter_instructions():
+                if isinstance(inst, MLILSetVarSSA):
+                    new_type = self._infer_expr_type(inst.value)
+                    if self._update_type(inst.var, new_type):
+                        changed = True
+                elif isinstance(inst, MLILPhi):
+                    unified = MLILType.unknown()
+                    for src_var, _ in inst.sources:
+                        src_type = self.var_types.get(src_var, MLILType.unknown())
+                        unified = unify_types(unified, src_type)
 
-                        if self._update_type(inst.dest, unified):
+                    if self._update_type(inst.dest, unified):
+                        changed = True
+                elif isinstance(inst, MLILStoreDeref):
+                    # A lowered address-taken local (ir/mlil/mlil_ssa.py's
+                    # _lower_address_taken_vars) has no MLILSetVarSSA target to type -
+                    # every *(&x) = v store is its only source of type evidence
+                    target = self._ssa_var_from_address(inst.dest)
+                    if target is not None:
+                        new_type = self._infer_expr_type(inst.value)
+                        if self._update_type(target, new_type):
                             changed = True
-                    elif isinstance(inst, MLILStoreDeref):
-                        # A lowered address-taken local (ir/mlil/mlil_ssa.py's
-                        # _lower_address_taken_vars) has no MLILSetVarSSA target to type -
-                        # every *(&x) = v store is its only source of type evidence
-                        target = self._ssa_var_from_address(inst.dest)
-                        if target is not None:
-                            new_type = self._infer_expr_type(inst.value)
-                            if self._update_type(target, new_type):
-                                changed = True
 
     def _infer_from_usage(self):
         """Infer types from how variables are used (backward inference)"""
         for _ in range(USAGE_INFERENCE_PASSES):
-            for block in self.function.basic_blocks:
-                for inst in block.instructions:
-                    if isinstance(inst, MLILIf):
-                        self._infer_from_condition(inst.condition)
+            for inst in self.function.iter_instructions():
+                if isinstance(inst, MLILIf):
+                    self._infer_from_condition(inst.condition)
 
     @classmethod
     def _ssa_var_from_address(cls, expr: MediumLevelILInstruction) -> Optional[MLILVariableSSA]:
@@ -176,7 +173,7 @@ class SSATypeInferencePass(Pass):
 
     def _infer_from_condition(self, cond: MediumLevelILInstruction):
         """Infer type from conditional expression"""
-        if isinstance(cond, (MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)):
+        if isinstance(cond, COMPARISON_TYPES):
             self._infer_from_comparison(cond)
         elif isinstance(cond, (MLILAdd, MLILSub, MLILMul, MLILDiv, MLILMod)):
             self._infer_from_arithmetic(cond)

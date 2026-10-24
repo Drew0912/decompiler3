@@ -2,8 +2,7 @@
 
 from collections import deque
 from dataclasses import dataclass, field
-from enum import Enum, auto
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from ir.core import constant_values_equal
 from ir.pipeline import Pass
@@ -16,27 +15,16 @@ from ..mlil import (
 )
 
 
-class StorageKind(Enum):
-    """Kind of storage location"""
-
-    REG = auto()
-    GLOBAL = auto()
-
-
-@dataclass(frozen=True)
-class StorageKey:
-    """Key for cycle detection in substitute"""
-
-    kind: StorageKind
-    index: int
+# Each tracked slot (a register or global index) -> its closed-form value, or None once unknown
+SlotValues = Dict[int, Optional[MediumLevelILInstruction]]
 
 
 @dataclass
 class RegGlobalState:
     """State for REG/GLOBAL value tracking"""
 
-    reg: Dict[int, Optional[MediumLevelILInstruction]] = field(default_factory=dict)
-    global_: Dict[int, Optional[MediumLevelILInstruction]] = field(default_factory=dict)
+    reg: SlotValues = field(default_factory=dict)
+    global_: SlotValues = field(default_factory=dict)
 
     def copy(self) -> 'RegGlobalState':
         return RegGlobalState(
@@ -122,39 +110,18 @@ class RegGlobalValuePropagator:
 
     def _merge_states(self, pred_states: List[RegGlobalState]) -> RegGlobalState:
         """Merge states from predecessors"""
-        if not pred_states:
-            return RegGlobalState()
+        return RegGlobalState(reg=self._merge_slots([s.reg for s in pred_states]),
+                              global_=self._merge_slots([s.global_ for s in pred_states]))
 
-        if len(pred_states) == 1:
-            return pred_states[0].copy()
+    def _merge_slots(self, pred_slots: List[SlotValues]) -> SlotValues:
+        """One kind of slot merged: a slot keeps its value only where every predecessor holds the same one"""
+        merged = {}
+        for key in set().union(*pred_slots):
+            values = [slots.get(key) for slots in pred_slots]
+            known = all(v is not None for v in values) and self._all_expr_equal(values)
+            merged[key] = values[0] if known else None
 
-        result = RegGlobalState()
-
-        # Merge reg
-        all_reg_keys: Set[int] = set()
-        for s in pred_states:
-            all_reg_keys.update(s.reg.keys())
-
-        for key in all_reg_keys:
-            values = [s.reg.get(key) for s in pred_states]
-            if all(v is not None for v in values) and self._all_expr_equal(values):
-                result.reg[key] = values[0]
-            else:
-                result.reg[key] = None
-
-        # Merge global_
-        all_global_keys: Set[int] = set()
-        for s in pred_states:
-            all_global_keys.update(s.global_.keys())
-
-        for key in all_global_keys:
-            values = [s.global_.get(key) for s in pred_states]
-            if all(v is not None for v in values) and self._all_expr_equal(values):
-                result.global_[key] = values[0]
-            else:
-                result.global_[key] = None
-
-        return result
+        return merged
 
     def _simulate_block(self, block: MediumLevelILBasicBlock,
                         in_state: RegGlobalState) -> RegGlobalState:
@@ -198,9 +165,7 @@ class RegGlobalValuePropagator:
             new_state.reg[inst.index] = new_value if self._is_closed_form(new_value) else None
 
             if new_value is not inst.value:
-                new_inst = MLILStoreReg(inst.index, new_value)
-                self._copy_metadata(inst, new_inst)
-                return (new_inst, new_state)
+                return (MLILStoreReg(inst.index, new_value).copy_metadata_from(inst), new_state)
 
             return (inst, new_state)
         elif isinstance(inst, MLILStoreGlobal):
@@ -209,9 +174,7 @@ class RegGlobalValuePropagator:
             new_state.global_[inst.index] = new_value if self._is_closed_form(new_value) else None
 
             if new_value is not inst.value:
-                new_inst = MLILStoreGlobal(inst.index, new_value)
-                self._copy_metadata(inst, new_inst)
-                return (new_inst, new_state)
+                return (MLILStoreGlobal(inst.index, new_value).copy_metadata_from(inst), new_state)
 
             return (inst, new_state)
         elif isinstance(inst, MLILStoreDeref):
@@ -232,27 +195,21 @@ class RegGlobalValuePropagator:
                 new_state.global_[k] = None
 
             if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
-                new_inst = self._rebuild_call(inst, new_args)
-                self._copy_metadata(inst, new_inst)
-                return (new_inst, new_state)
+                return (inst.rebuild(new_args), new_state)
 
             return (inst, new_state)
         elif isinstance(inst, MLILSetVar):
             new_value = self._substitute(inst.value, state)
 
             if new_value is not inst.value:
-                new_inst = MLILSetVar(inst.var, new_value)
-                self._copy_metadata(inst, new_inst)
-                return (new_inst, state)
+                return (MLILSetVar(inst.var, new_value).copy_metadata_from(inst), state)
 
             return (inst, state)
         elif isinstance(inst, MLILIf):
             new_cond = self._substitute(inst.condition, state)
 
             if new_cond is not inst.condition:
-                new_inst = MLILIf(new_cond, inst.true_target, inst.false_target)
-                self._copy_metadata(inst, new_inst)
-                return (new_inst, state)
+                return (MLILIf(new_cond, inst.true_target, inst.false_target).copy_metadata_from(inst), state)
 
             return (inst, state)
         elif isinstance(inst, MLILRet):
@@ -260,52 +217,33 @@ class RegGlobalValuePropagator:
                 new_value = self._substitute(inst.value, state)
 
                 if new_value is not inst.value:
-                    new_inst = MLILRet(new_value)
-                    self._copy_metadata(inst, new_inst)
-                    return (new_inst, state)
+                    return (MLILRet(new_value).copy_metadata_from(inst), state)
 
             return (inst, state)
         else:
             return (inst, state)
 
-    def _substitute(self, expr: MediumLevelILInstruction, state: RegGlobalState,
-                    path: FrozenSet[StorageKey] = frozenset()) -> MediumLevelILInstruction:
-        """Substitute LoadReg/LoadGlobal with known values"""
+    def _substitute(self, expr: MediumLevelILInstruction, state: RegGlobalState) -> MediumLevelILInstruction:
+        """Substitute LoadReg/LoadGlobal with known values (closed forms: they hold no load of their own)"""
         if isinstance(expr, MLILLoadReg):
-            key = StorageKey(StorageKind.REG, expr.index)
-            if key in path:
-                return expr
-            value = state.reg.get(expr.index)
-            if value is not None:
-                return self._substitute(value, state, path | {key})
-            return expr
+            known = state.reg.get(expr.index)
+            return expr if known is None else known
         elif isinstance(expr, MLILLoadGlobal):
-            key = StorageKey(StorageKind.GLOBAL, expr.index)
-            if key in path:
-                return expr
-            value = state.global_.get(expr.index)
-            if value is not None:
-                return self._substitute(value, state, path | {key})
-            return expr
+            known = state.global_.get(expr.index)
+            return expr if known is None else known
         elif isinstance(expr, MLILBinaryOp):
-            new_lhs = self._substitute(expr.lhs, state, path)
-            new_rhs = self._substitute(expr.rhs, state, path)
+            new_lhs = self._substitute(expr.lhs, state)
+            new_rhs = self._substitute(expr.rhs, state)
 
             if new_lhs is not expr.lhs or new_rhs is not expr.rhs:
                 return expr.rebuild(new_lhs, new_rhs)
-
-            return expr
         elif isinstance(expr, MLILUnaryOp):
-            new_operand = self._substitute(expr.operand, state, path)
+            new_operand = self._substitute(expr.operand, state)
 
             if new_operand is not expr.operand:
                 return expr.rebuild(new_operand)
 
-            return expr
-        elif isinstance(expr, (MLILConst, MLILVar)):
-            return expr
-        else:
-            return expr
+        return expr
 
     def _is_closed_form(self, expr: MediumLevelILInstruction) -> bool:
         """Return whether expr is a constant expression with no mutable inputs."""
@@ -322,29 +260,13 @@ class RegGlobalValuePropagator:
 
     def _state_equal(self, s1: RegGlobalState, s2: RegGlobalState) -> bool:
         """Check if two states are equal"""
-        if s1.reg.keys() != s2.reg.keys():
-            return False
-
-        if s1.global_.keys() != s2.global_.keys():
-            return False
-
-        for k in s1.reg:
-            if not self._expr_equal(s1.reg[k], s2.reg[k]):
-                return False
-
-        for k in s1.global_:
-            if not self._expr_equal(s1.global_[k], s2.global_[k]):
-                return False
-
-        return True
+        return (s1.reg.keys() == s2.reg.keys() and s1.global_.keys() == s2.global_.keys()
+                and all(self._expr_equal(s1.reg[k], s2.reg[k]) for k in s1.reg)
+                and all(self._expr_equal(s1.global_[k], s2.global_[k]) for k in s1.global_))
 
     def _all_expr_equal(self, values: List[Optional[MediumLevelILInstruction]]) -> bool:
         """Check if all values are equal"""
-        if len(values) <= 1:
-            return True
-
-        first = values[0]
-        return all(self._expr_equal(first, v) for v in values[1:])
+        return all(self._expr_equal(values[0], v) for v in values[1:])
 
     def _expr_equal(self, a: Optional[MediumLevelILInstruction],
                     b: Optional[MediumLevelILInstruction]) -> bool:
@@ -363,36 +285,20 @@ class RegGlobalValuePropagator:
             return constant_values_equal(a.value, b.value)
         elif isinstance(a, MLILVar):
             return a.var.name == b.var.name
-        elif isinstance(a, MLILLoadReg):
+        elif isinstance(a, (MLILLoadReg, MLILLoadGlobal)):
             return a.index == b.index
-        elif isinstance(a, MLILLoadGlobal):
-            return a.index == b.index
-        elif isinstance(a, MLILBinaryOp):
-            return (a.operation == b.operation and
-                    self._expr_equal(a.lhs, b.lhs) and
-                    self._expr_equal(a.rhs, b.rhs))
-        elif isinstance(a, MLILUnaryOp):
-            return (a.operation == b.operation and
-                    self._expr_equal(a.operand, b.operand))
+        elif isinstance(a, (MLILBinaryOp, MLILUnaryOp)):
+            # The same type is the same operation: each op subclass fixes its own
+            return all(self._expr_equal(x, y) for x, y in zip(a.operands(), b.operands()))
         else:
             return False
-
-    def _copy_metadata(self, src: MediumLevelILInstruction,
-                       dst: MediumLevelILInstruction) -> None:
-        """Copy metadata from source to destination instruction"""
-        dst.copy_metadata_from(src)
-
-    def _rebuild_call(self, inst: MediumLevelILInstruction,
-                      new_args: List[MediumLevelILInstruction]) -> MediumLevelILInstruction:
-        """Rebuild call instruction with new arguments"""
-        return inst.rebuild(new_args)
 
 
 class RegGlobalValuePropagationPass(Pass):
     """Propagate values through REG/GLOBAL storage"""
 
-    def run(self, mlil_func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         """Run REG/GLOBAL value propagation"""
-        propagator = RegGlobalValuePropagator(mlil_func)
+        propagator = RegGlobalValuePropagator(func)
         propagator.run()
-        return mlil_func
+        return func

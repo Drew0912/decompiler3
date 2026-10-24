@@ -10,7 +10,6 @@ class MLILFormatter:
 
     @classmethod
     def format_function(cls, func: MediumLevelILFunction) -> List[str]:
-        """Format entire MLIL function"""
         result = [
             f'; ===== MLIL Function {func.name} @ 0x{func.start_addr:X} =====',
             f'; Parameters: {len([p for p in func.parameters if p])}, Locals: {len(func.locals)}',
@@ -54,7 +53,6 @@ class MLILFormatter:
 
     @classmethod
     def format_block(cls, block: MediumLevelILBasicBlock) -> List[str]:
-        """Format a single basic block"""
         result = [f'{block.label}:']
 
         for inst in block.instructions:

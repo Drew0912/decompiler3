@@ -25,10 +25,9 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
 
     def _translate_instruction(self, llil_inst: LowLevelILInstruction):
         """Translate LLIL instruction, handling Falcom-specific operations"""
-        # Skip stack stores for caller frame values
-        if isinstance(llil_inst, LowLevelILStackStore):
-            if self._is_caller_frame_value(llil_inst.value):
-                return  # Omit caller frame preparation from MLIL
+        # A stack store of a caller frame value prepares the call: MLIL omits it
+        if isinstance(llil_inst, LowLevelILStackStore) and self._is_caller_frame_value(llil_inst.value):
+            return
 
         # Falcom-specific instructions
         if isinstance(llil_inst, LowLevelILGlobalStore):

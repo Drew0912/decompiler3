@@ -58,7 +58,7 @@ class TestStackTempOutParamNoStaleConstant(unittest.TestCase):
 
     def test_does_not_fold_to_the_pre_call_constant(self):
         func = self._build()
-        optimize_mlil(func, infer_types_enabled=False)
+        optimize_mlil(func, infer_types=False)
 
         ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))
@@ -96,7 +96,7 @@ class TestSequentialOutParamCallsWithMidCopy(unittest.TestCase):
 
     def test_does_not_fold_to_zero(self):
         func = self._build()
-        optimize_mlil(func, infer_types_enabled=False)
+        optimize_mlil(func, infer_types=False)
 
         ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))
@@ -193,7 +193,7 @@ class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
         block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(x))]))
         block.add_instruction(MLILRet(MLILVar(x)))
 
-        optimize_mlil(func, infer_types_enabled=False)
+        optimize_mlil(func, infer_types=False)
 
         ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))
@@ -211,7 +211,7 @@ class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
         block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(x)), MLILAddressOf(MLILVar(y))]))
         block.add_instruction(MLILRet(MLILAdd(MLILVar(x), MLILVar(y))))
 
-        optimize_mlil(func, infer_types_enabled=False)
+        optimize_mlil(func, infer_types=False)
 
         ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))

@@ -61,7 +61,7 @@ class TestOptimizeMLILMatchesProduction(unittest.TestCase):
                 production = convert_falcom_llil_to_mlil(build_call_function(), optimize=True,
                                                          infer_types=infer_types)
                 translated = convert_falcom_llil_to_mlil(build_call_function(), optimize=False)
-                optimized = optimize_mlil(translated, infer_types_enabled=infer_types)
+                optimized = optimize_mlil(translated, infer_types=infer_types)
 
                 self.assertEqual(MLILFormatter.format_function(optimized), MLILFormatter.format_function(production))
                 self.assertEqual(len(optimized.basic_blocks), 1, 'the call-return goto was not merged away')

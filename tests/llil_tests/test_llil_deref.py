@@ -308,7 +308,7 @@ class TestAddressTakenLocalStoresUseMemoryForm(unittest.TestCase):
         block.add_instruction(MLILStoreDeref(MLILAddressOf(MLILVar(x)), MLILConst(2)))
         block.add_instruction(MLILRet(MLILVar(x)))
 
-        optimize_mlil(func, infer_types_enabled=False)
+        optimize_mlil(func, infer_types=False)
 
         ret_inst = next(inst for inst in block.instructions if isinstance(inst, MLILRet))
         self.assertFalse(isinstance(ret_inst.value, MLILConst) and ret_inst.value.value == 1)
@@ -366,7 +366,7 @@ class TestCallAddressTakenArgNeedsNoPhi(unittest.TestCase):
     def test_optimizer_does_not_fold_past_the_conditional_call(self):
         func = self._build_diamond_with_addr_taken_call('addr_arg_phi_sccp_test')
 
-        optimize_mlil(func, infer_types_enabled=False)
+        optimize_mlil(func, infer_types=False)
 
         ret_inst = next(inst for block in func.basic_blocks for inst in block.instructions
                          if isinstance(inst, MLILRet))

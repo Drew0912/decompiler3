@@ -28,8 +28,8 @@ def mlil_optimization_passes(infer_types: bool = True) -> List[Pass]:
     return passes
 
 
-def optimize_mlil(function: MediumLevelILFunction, infer_types_enabled: bool = True) -> MediumLevelILFunction:
+def optimize_mlil(function: MediumLevelILFunction, infer_types: bool = True) -> MediumLevelILFunction:
     """Run the production MLIL passes on an already translated function"""
-    function = Pipeline(mlil_optimization_passes(infer_types_enabled)).run(function)
+    function = Pipeline(mlil_optimization_passes(infer_types)).run(function)
     function.renumber_instructions()
     return function

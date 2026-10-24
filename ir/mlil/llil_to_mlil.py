@@ -18,16 +18,12 @@ class LLILToMLILTranslator:
     def translate(self, llil_func: LowLevelILFunction) -> MediumLevelILFunction:
         """Translate LLIL function to MLIL"""
         self.llil_func = llil_func
-
-        # Create MLIL function
         self.builder.create_function(llil_func.name, llil_func.start_addr, llil_func.params, is_common_func=llil_func.is_common_func)
         self.builder.function.llil_function = llil_func
 
-        # Create MLIL blocks for each LLIL block
         for llil_block in llil_func.basic_blocks:
             self.block_map[llil_block] = self.builder.create_block(llil_block.start, llil_block.label)
 
-        # Translate each block
         for llil_block in llil_func.basic_blocks:
             mlil_block = self.block_map[llil_block]
             self.builder.set_current_block(mlil_block)

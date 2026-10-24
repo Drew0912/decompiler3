@@ -9,8 +9,6 @@ from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
     MediumLevelILInstruction,
-    MLILConst,
-    MLILDebug,
 )
 from ..mlil_ssa import (
     iter_ssa_reads,
@@ -18,6 +16,7 @@ from ..mlil_ssa import (
     MLILSetVarSSA,
     MLILPhi,
 )
+from .pass_ssa_dead_code import string_debug_comment
 
 
 class DeadPhiSourceEliminationPass(Pass):
@@ -37,20 +36,18 @@ class DeadPhiSourceEliminationPass(Pass):
         """Build SSA use chains"""
         self.ssa_uses = {}
 
-        for block in func.basic_blocks:
-            for inst in block.instructions:
-                for var, _ in iter_ssa_reads(inst):
-                    self.ssa_uses.setdefault(var, []).append(inst)
+        for inst in func.iter_instructions():
+            for var, _ in iter_ssa_reads(inst):
+                self.ssa_uses.setdefault(var, []).append(inst)
 
     def _eliminate_dead_phis(self, func: MediumLevelILFunction):
         """Eliminate dead Phi nodes and definitions feeding them"""
         # Find all Phi nodes with no real use
         dead_phis: Set[MLILPhi] = set()
-        for block in func.basic_blocks:
-            for inst in block.instructions:
-                if isinstance(inst, MLILPhi):
-                    if not self._has_real_use(inst.dest):
-                        dead_phis.add(inst)
+        for inst in func.iter_instructions():
+            if isinstance(inst, MLILPhi):
+                if not self._has_real_use(inst.dest):
+                    dead_phis.add(inst)
 
         if not dead_phis:
             return
@@ -79,13 +76,7 @@ class DeadPhiSourceEliminationPass(Pass):
                 # observable cross-function side effect regardless of whether the phi is read
                 if isinstance(inst, MLILSetVarSSA) and inst.var in dead_defs \
                         and not func.is_global_var(inst.var.base_var):
-                    # Preserve string constants as debug comments
-                    # Skip if variable was replaced by SCCP (string is now in function args)
-                    if isinstance(inst.value, MLILConst) and isinstance(inst.value.value, str):
-                        if inst.var not in self.sccp_replaced_vars:
-                            debug_comment = MLILDebug('string', inst.value.value).copy_metadata_from(inst)
-                            new_instructions.append(debug_comment)
-
+                    new_instructions.extend(string_debug_comment(inst, self.sccp_replaced_vars))
                     continue
 
                 new_instructions.append(inst)

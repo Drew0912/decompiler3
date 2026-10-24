@@ -61,7 +61,7 @@ def both_arms_survive(condition, setup=()) -> bool:
     sccp = SCCP(func)
     sccp.run()
 
-    return sccp.block_reachable[true_block] and sccp.block_reachable[false_block]
+    return true_block in sccp.reachable_blocks and false_block in sccp.reachable_blocks
 
 
 class TestDivModNeverFold(unittest.TestCase):

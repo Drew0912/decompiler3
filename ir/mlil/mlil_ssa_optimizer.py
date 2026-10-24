@@ -49,8 +49,8 @@ class SSAOptimizer:
         # Iterative optimization until fixpoint
         snapshot = self._snapshot()
         for _ in range(SSA_OPTIMIZER_MAX_ITERATIONS):
-            for p in passes:
-                p.run(self.function)
+            for optimization_pass in passes:
+                optimization_pass.run(self.function)
 
             previous, snapshot = snapshot, self._snapshot()
             if snapshot == previous:

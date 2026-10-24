@@ -18,14 +18,14 @@ class BlockMergePass(Pass):
     of those blocks would leave a Phi's sources dangling.
     """
 
-    def run(self, mlil_func: MediumLevelILFunction) -> MediumLevelILFunction:
-        if not mlil_func.basic_blocks:
-            return mlil_func
+    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+        if not func.basic_blocks:
+            return func
 
-        entry = mlil_func.basic_blocks[0]
+        entry = func.basic_blocks[0]
         absorbed: Set[MediumLevelILBasicBlock] = set()
 
-        for head in mlil_func.basic_blocks:
+        for head in func.basic_blocks:
             if head in absorbed:
                 continue
 
@@ -39,10 +39,10 @@ class BlockMergePass(Pass):
                 target = self._mergeable_target(head, entry)
 
         if absorbed:
-            mlil_func.basic_blocks = [b for b in mlil_func.basic_blocks if b not in absorbed]
-            mlil_func.renumber_blocks()
+            func.basic_blocks = [b for b in func.basic_blocks if b not in absorbed]
+            func.renumber_blocks()
 
-        return mlil_func
+        return func
 
     def _mergeable_target(self, head: MediumLevelILBasicBlock,
                           entry: MediumLevelILBasicBlock) -> Optional[MediumLevelILBasicBlock]:

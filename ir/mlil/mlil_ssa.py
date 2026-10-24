@@ -90,6 +90,18 @@ def iter_ssa_reads(node: MediumLevelILInstruction,
                 yield source_var, current
 
 
+def iter_ssa_defs(function: MediumLevelILFunction) -> Iterator[Tuple[MLILVariableSSA, MediumLevelILInstruction,
+                                                                     MediumLevelILBasicBlock, int]]:
+    """Every SSA variable a statement defines - an MLILSetVarSSA's var, an MLILPhi's dest - as (variable,
+    definition, block, index in the block). A call's output is not included."""
+    for block in function.basic_blocks:
+        for index, inst in enumerate(block.instructions):
+            if isinstance(inst, MLILSetVarSSA):
+                yield inst.var, inst, block, index
+            elif isinstance(inst, MLILPhi):
+                yield inst.dest, inst, block, index
+
+
 # ============================================================================
 # Dominance Analysis (Iterative)
 # ============================================================================
@@ -98,8 +110,14 @@ class DominanceAnalysis:
     """Compute dominance tree and dominance frontiers (iterative)"""
 
     def __init__(self, function: MediumLevelILFunction):
-        self.function = function
         self.blocks = self._compute_rpo(function.basic_blocks)
+        self.block_index = {block: i for i, block in enumerate(self.blocks)}
+
+        # Predecessors among the reachable blocks only (not incoming_edges)
+        self.preds: Dict[MediumLevelILBasicBlock, List[MediumLevelILBasicBlock]] = defaultdict(list)
+        for block in self.blocks:
+            for succ in block.outgoing_edges:
+                self.preds[succ].append(block)
 
         # Results
         self.idom: Dict[MediumLevelILBasicBlock, Optional[MediumLevelILBasicBlock]] = {}
@@ -152,24 +170,18 @@ class DominanceAnalysis:
         for block in self.blocks[1:]:
             self.idom[block] = None
 
-        # Build predecessor map
-        preds: Dict[MediumLevelILBasicBlock, List[MediumLevelILBasicBlock]] = defaultdict(list)
-        for block in self.blocks:
-            for succ in block.outgoing_edges:
-                preds[succ].append(block)
-
         # Iterate until convergence
         changed = True
         while changed:
             changed = False
 
             for block in self.blocks[1:]:  # Skip entry
-                if not preds[block]:
+                if not self.preds[block]:
                     continue
 
                 # New idom = intersect of all processed predecessors
                 new_idom = None
-                for pred in preds[block]:
+                for pred in self.preds[block]:
                     if self.idom[pred] is not None:
                         if new_idom is None:
                             new_idom = pred
@@ -185,15 +197,11 @@ class DominanceAnalysis:
         finger1 = b1
         finger2 = b2
 
-        # Build index cache for O(1) lookup
-        if not hasattr(self, '_block_index'):
-            self._block_index = {b: i for i, b in enumerate(self.blocks)}
-
         while finger1 != finger2:
-            while self._block_index[finger1] > self._block_index[finger2]:
+            while self.block_index[finger1] > self.block_index[finger2]:
                 finger1 = self.idom[finger1]
 
-            while self._block_index[finger2] > self._block_index[finger1]:
+            while self.block_index[finger2] > self.block_index[finger1]:
                 finger2 = self.idom[finger2]
 
         return finger1
@@ -206,17 +214,11 @@ class DominanceAnalysis:
 
     def _compute_dom_frontiers(self):
         """Compute dominance frontiers (iterative)"""
-        # Build predecessor map
-        preds: Dict[MediumLevelILBasicBlock, List[MediumLevelILBasicBlock]] = defaultdict(list)
         for block in self.blocks:
-            for succ in block.outgoing_edges:
-                preds[succ].append(block)
-
-        for block in self.blocks:
-            if len(preds[block]) < 2:
+            if len(self.preds[block]) < 2:
                 continue
 
-            for pred in preds[block]:
+            for pred in self.preds[block]:
                 runner = pred
                 while runner != self.idom.get(block):
                     self.dom_frontier[runner].add(block)
@@ -260,37 +262,29 @@ class SSAConstructor:
 
     def construct(self) -> MediumLevelILFunction:
         """Convert function to SSA form (modifies in-place)"""
-        # Step 0: Raise stored globals into variables, so the rest of SSA construction
-        # tracks them exactly like registers (versions, phis, call clobbers)
+        # Raise stored globals into variables, so the rest of SSA construction tracks them
+        # exactly like registers (versions, phis, call clobbers)
         self._raise_globals()
-
-        # Step 1: Dominance analysis
         self.dom_analysis.analyze()
 
-        # Step 2: Collect address-taken locals/parameters - a stable storage identity, not
-        # a scalar SSA value, so they are lowered to explicit *(&x) memory form below rather
-        # than versioned directly (see _lower_address_taken_vars)
+        # Address-taken locals/parameters are a stable storage identity, not a scalar SSA
+        # value, so they are lowered to explicit *(&x) memory form below rather than
+        # versioned directly (see _lower_address_taken_vars)
         self.address_taken_vars = self._collect_address_taken_vars()
 
-        # Step 3: A call's own output is a def path independent of MLILSetVar - redirect any
-        # that would alias an address-taken local through a fresh temp before the general
+        # A call's own output is a def path independent of MLILSetVar - redirect any that
+        # would alias an address-taken local through a fresh temp before the general
         # lowering runs, so that lowering never has to special-case call outputs
         self._decompose_address_taken_call_outputs()
 
-        # Step 4: Lower every address-taken local's reads/writes to explicit *(&x) deref/
-        # store form, so each one renames to a single stable address identity below instead
-        # of being versioned like an ordinary scalar
+        # Lower every address-taken local's reads/writes to explicit *(&x) deref/store form,
+        # so each one renames to a single stable address identity below instead of being
+        # versioned like an ordinary scalar
         self._lower_address_taken_vars()
 
-        # Step 5: Collect variable definitions
         self._collect_defs()
-
-        # Step 6: Insert Phi nodes
         self._insert_phi_nodes()
-
-        # Step 7: Rename variables (iterative)
         self._rename_variables_iterative()
-
         return self.function
 
     def _collect_address_taken_vars(self) -> Set[MLILVariable]:
@@ -305,11 +299,10 @@ class SSAConstructor:
         """
         address_taken: Set[MLILVariable] = set()
 
-        for block in self.function.basic_blocks:
-            for inst in block.instructions:
-                for node in walk(inst, skip=(MLILAddressOf,)):
-                    if isinstance(node, MLILAddressOf) and isinstance(node.operand, MLILVar):
-                        address_taken.add(node.operand.var)
+        for inst in self.function.iter_instructions():
+            for node in walk(inst, skip=(MLILAddressOf,)):
+                if isinstance(node, MLILAddressOf) and isinstance(node.operand, MLILVar):
+                    address_taken.add(node.operand.var)
 
         return address_taken
 
@@ -330,7 +323,7 @@ class SSAConstructor:
                     temp = self._mint_local(f'{original_output.name}__result')
                     inst.output = temp
 
-                    set_var = MLILSetVar(original_output, MLILVar(temp), address=inst.address).copy_metadata_from(inst)
+                    set_var = MLILSetVar(original_output, MLILVar(temp)).copy_metadata_from(inst)
                     new_instructions.append(set_var)
 
             block.instructions = new_instructions
@@ -366,10 +359,10 @@ class SSAConstructor:
 
             if inst.var in self.address_taken_vars:
                 dest = MLILAddressOf(MLILVar(inst.var))
-                return MLILStoreDeref(dest, new_value, address=inst.address).copy_metadata_from(inst)
+                return MLILStoreDeref(dest, new_value).copy_metadata_from(inst)
 
             if new_value is not inst.value:
-                return MLILSetVar(inst.var, new_value, address=inst.address).copy_metadata_from(inst)
+                return MLILSetVar(inst.var, new_value).copy_metadata_from(inst)
 
             return inst
 
@@ -407,13 +400,13 @@ class SSAConstructor:
             new_cond = self._lower_expr(stmt.condition)
 
             if new_cond is not stmt.condition:
-                return MLILIf(new_cond, stmt.true_target, stmt.false_target, address=stmt.address).copy_metadata_from(stmt)
+                return MLILIf(new_cond, stmt.true_target, stmt.false_target).copy_metadata_from(stmt)
         elif isinstance(stmt, MLILRet):
             if stmt.value is not None:
                 new_value = self._lower_expr(stmt.value)
 
                 if new_value is not stmt.value:
-                    return MLILRet(new_value, address=stmt.address).copy_metadata_from(stmt)
+                    return MLILRet(new_value).copy_metadata_from(stmt)
         elif isinstance(stmt, MediumLevelILCall):
             new_args = [self._lower_expr(arg) for arg in stmt.args]
 
@@ -423,12 +416,12 @@ class SSAConstructor:
             new_value = self._lower_expr(stmt.value)
 
             if new_value is not stmt.value:
-                return MLILStoreReg(stmt.index, new_value, address=stmt.address).copy_metadata_from(stmt)
+                return MLILStoreReg(stmt.index, new_value).copy_metadata_from(stmt)
         elif isinstance(stmt, MLILStoreGlobal):
             new_value = self._lower_expr(stmt.value)
 
             if new_value is not stmt.value:
-                return MLILStoreGlobal(stmt.index, new_value, address=stmt.address).copy_metadata_from(stmt)
+                return MLILStoreGlobal(stmt.index, new_value).copy_metadata_from(stmt)
         elif isinstance(stmt, MLILStoreDeref):
             new_dest = self._lower_expr(stmt.dest)
             new_value = self._lower_expr(stmt.value)
@@ -447,10 +440,7 @@ class SSAConstructor:
         gains nothing from SSA versioning.
         """
         self.raised_global_indices = {
-            inst.index
-            for block in self.function.basic_blocks
-            for inst in block.instructions
-            if isinstance(inst, MLILStoreGlobal)
+            inst.index for inst in self.function.iter_instructions() if isinstance(inst, MLILStoreGlobal)
         }
 
         if not self.raised_global_indices:
@@ -465,12 +455,12 @@ class SSAConstructor:
             # Every MLILStoreGlobal's index is in raised_global_indices by construction (see _raise_globals)
             new_value = self._raise_expr(inst.value)
             global_var = self.function.get_or_create_global_var(inst.index)
-            return MLILSetVar(global_var, new_value, address=inst.address).copy_metadata_from(inst)
+            return MLILSetVar(global_var, new_value).copy_metadata_from(inst)
         elif isinstance(inst, MLILSetVar):
             new_value = self._raise_expr(inst.value)
 
             if new_value is not inst.value:
-                return MLILSetVar(inst.var, new_value, address=inst.address).copy_metadata_from(inst)
+                return MLILSetVar(inst.var, new_value).copy_metadata_from(inst)
 
             return inst
         else:
@@ -505,13 +495,13 @@ class SSAConstructor:
             new_cond = self._raise_expr(stmt.condition)
 
             if new_cond is not stmt.condition:
-                return MLILIf(new_cond, stmt.true_target, stmt.false_target, address=stmt.address).copy_metadata_from(stmt)
+                return MLILIf(new_cond, stmt.true_target, stmt.false_target).copy_metadata_from(stmt)
         elif isinstance(stmt, MLILRet):
             if stmt.value is not None:
                 new_value = self._raise_expr(stmt.value)
 
                 if new_value is not stmt.value:
-                    return MLILRet(new_value, address=stmt.address).copy_metadata_from(stmt)
+                    return MLILRet(new_value).copy_metadata_from(stmt)
         elif isinstance(stmt, MediumLevelILCall):
             new_args = [self._raise_expr(arg) for arg in stmt.args]
 
@@ -521,7 +511,7 @@ class SSAConstructor:
             new_value = self._raise_expr(stmt.value)
 
             if new_value is not stmt.value:
-                return MLILStoreReg(stmt.index, new_value, address=stmt.address).copy_metadata_from(stmt)
+                return MLILStoreReg(stmt.index, new_value).copy_metadata_from(stmt)
         elif isinstance(stmt, MLILStoreDeref):
             new_dest = self._raise_expr(stmt.dest)
             new_value = self._raise_expr(stmt.value)
@@ -560,7 +550,7 @@ class SSAConstructor:
 
     def _clobbered_reg_global_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
         """Registers/globals a call may clobber, excluding its own output"""
-        return [var for var in list(self.function.register_vars.values()) + list(self.function.global_vars.values())
+        return [var for var in [*self.function.register_vars.values(), *self.function.global_vars.values()]
                 if var != inst.output and self.function.call_may_clobber(inst, var)]
 
     def _insert_phi_nodes(self):
@@ -602,76 +592,57 @@ class SSAConstructor:
         # with the entry seed's identity - two unrelated definitions sharing one MLILVariableSSA,
         # so SSA-based passes (e.g. SCCP) can propagate the later definition's value backward into
         # reads of the entry seed. var_stack[var] is unaffected: 0 remains the correct version for a
-        # read before any real definition.
-        for var in self.function.parameters:
+        # read before any real definition. Globals live outside function.locals (see
+        # get_or_create_global_var), so they are seeded too.
+        for var in [*self.function.parameters, *self.function.locals.values(), *self.function.global_vars.values()]:
             if var is not None:
                 self.var_versions[var] = 1
                 self.var_stack[var].append(0)
 
-        for var in self.function.locals.values():
-            self.var_versions[var] = 1
-            self.var_stack[var].append(0)
-
-        # Globals live outside function.locals (see get_or_create_global_var) so they need their own seeding
-        for var in self.function.global_vars.values():
-            self.var_versions[var] = 1
-            self.var_stack[var].append(0)
-
         entry = self.function.basic_blocks[0]
 
-        # Stack: (block, phase)
-        # phase 0: process block
-        # phase 1: process successors' phis
-        # phase 2: recurse to children
-        # phase 3: pop versions
-        stack: List[Tuple[MediumLevelILBasicBlock, int, List[MLILVariable]]] = [(entry, 0, [])]
+        # A block is entered once (renamed, then its versions added to its successors' phi sources)
+        # and left after its dominator-tree children, popping the versions it pushed
+        stack: List[Tuple[MediumLevelILBasicBlock, bool, List[MLILVariable]]] = [(entry, False, [])]
         visited: Set[MediumLevelILBasicBlock] = set()
 
         while stack:
-            block, phase, pushed_vars = stack.pop()
+            block, leaving, pushed = stack.pop()
 
-            if phase == 0:
-                # Process block instructions
-                if block in visited:
-                    continue
-
-                visited.add(block)
-                pushed = []
-
-                new_insts = []
-                for inst in block.instructions:
-                    result = self._rename_inst(inst, pushed)
-                    if isinstance(result, list):
-                        new_insts.extend(result)
-                    else:
-                        new_insts.append(result)
-
-                block.instructions = new_insts
-
-                # Schedule remaining phases
-                stack.append((block, 3, pushed))  # Phase 3: pop versions
-                stack.append((block, 2, []))       # Phase 2: recurse children
-                stack.append((block, 1, []))       # Phase 1: update successor phis
-            elif phase == 1:
-                # Update Phi nodes in successors
-                for succ in block.outgoing_edges:
-                    for inst in succ.instructions:
-                        if isinstance(inst, MLILPhi):
-                            var = inst.dest.base_var
-
-                            if var in self.var_stack and self.var_stack[var]:
-                                current_ver = self.var_stack[var][-1]
-                                ssa_var = MLILVariableSSA(var, current_ver)
-                                inst.sources.append((ssa_var, block))
-            elif phase == 2:
-                # Recurse to dominated children
-                for child in self.dom_analysis.dom_tree[block]:
-                    stack.append((child, 0, []))
-            elif phase == 3:
-                # Pop versions
-                for var in pushed_vars:
+            if leaving:
+                for var in pushed:
                     if self.var_stack[var]:
                         self.var_stack[var].pop()
+
+                continue
+
+            if block in visited:
+                continue
+
+            visited.add(block)
+
+            new_insts = []
+            for inst in block.instructions:
+                result = self._rename_inst(inst, pushed)
+                if isinstance(result, list):
+                    new_insts.extend(result)
+                else:
+                    new_insts.append(result)
+
+            block.instructions = new_insts
+
+            for succ in block.outgoing_edges:
+                for inst in succ.instructions:
+                    if isinstance(inst, MLILPhi):
+                        var = inst.dest.base_var
+
+                        if var in self.var_stack and self.var_stack[var]:
+                            current_ver = self.var_stack[var][-1]
+                            ssa_var = MLILVariableSSA(var, current_ver)
+                            inst.sources.append((ssa_var, block))
+
+            stack.append((block, True, pushed))
+            stack.extend((child, False, []) for child in self.dom_analysis.dom_tree[block])
 
     def _rename_inst(self, inst: MediumLevelILInstruction, pushed: List[MLILVariable]) -> MediumLevelILInstruction:
         """Rename variables in single instruction"""
@@ -689,7 +660,7 @@ class SSAConstructor:
             new_ver = self._new_version(inst.var)
             pushed.append(inst.var)
 
-            return MLILSetVarSSA(MLILVariableSSA(inst.var, new_ver), new_value, address=inst.address).copy_metadata_from(inst)
+            return MLILSetVarSSA(MLILVariableSSA(inst.var, new_ver), new_value).copy_metadata_from(inst)
         elif isinstance(inst, MediumLevelILCall):
             # Rename the call (uses current SSA versions)
             renamed = self._rename_stmt(inst)
@@ -720,7 +691,7 @@ class SSAConstructor:
 
                 # Pseudo-definition: var#new = <undef> (call modified the variable)
                 new_ssa_var = MLILVariableSSA(var, new_ver)
-                pseudo_def = MLILSetVarSSA(new_ssa_var, MLILUndef(), address=inst.address).copy_metadata_from(inst)
+                pseudo_def = MLILSetVarSSA(new_ssa_var, MLILUndef()).copy_metadata_from(inst)
                 result.append(pseudo_def)
 
             return result
@@ -765,13 +736,13 @@ class SSAConstructor:
             new_cond = self._rename_expr(stmt.condition)
 
             if new_cond is not stmt.condition:
-                return MLILIf(new_cond, stmt.true_target, stmt.false_target, address=stmt.address).copy_metadata_from(stmt)
+                return MLILIf(new_cond, stmt.true_target, stmt.false_target).copy_metadata_from(stmt)
         elif isinstance(stmt, MLILRet):
             if stmt.value is not None:
                 new_value = self._rename_expr(stmt.value)
 
                 if new_value is not stmt.value:
-                    return MLILRet(new_value, address=stmt.address).copy_metadata_from(stmt)
+                    return MLILRet(new_value).copy_metadata_from(stmt)
         elif isinstance(stmt, MediumLevelILCall):
             new_args = [self._rename_expr(arg) for arg in stmt.args]
 
@@ -782,9 +753,9 @@ class SSAConstructor:
 
             if new_value is not stmt.value:
                 if isinstance(stmt, MLILStoreGlobal):
-                    return MLILStoreGlobal(stmt.index, new_value, address=stmt.address).copy_metadata_from(stmt)
+                    return MLILStoreGlobal(stmt.index, new_value).copy_metadata_from(stmt)
                 else:
-                    return MLILStoreReg(stmt.index, new_value, address=stmt.address).copy_metadata_from(stmt)
+                    return MLILStoreReg(stmt.index, new_value).copy_metadata_from(stmt)
         elif isinstance(stmt, MLILStoreDeref):
             new_dest = self._rename_expr(stmt.dest)
             new_value = self._rename_expr(stmt.value)
@@ -838,47 +809,32 @@ class SSADeconstructor:
 
     def deconstruct(self) -> MediumLevelILFunction:
         """Convert from SSA to non-SSA (modifies in-place)"""
-        # Step 1: Eliminate Phi nodes (insert copies in predecessors)
         self._eliminate_phi_nodes()
-
-        # Step 2: Collect all SSA variables and their def/use sites
         self._collect_ssa_vars()
         self._collect_undefined_register_versions()
-
-        # Step 3: Compute liveness (which variables are live at each point)
         self._compute_liveness()
-
-        # Step 4: Build interference graph (variables that can't share a name)
         self._build_interference_graph()
-
-        # Step 5: Allocate final variable names (coalescing)
         self._allocate_variables()
-
-        # Step 6: Replace SSA variables with allocated variables
         self._apply_mapping()
-
-        # Step 7: Drop the split blocks whose copy coalesced away
         self._remove_redundant_splits()
-
         return self.function
 
     def _collect_ssa_vars(self):
         """Collect every SSA variable the function defines or reads"""
-        for block in self.function.basic_blocks:
-            for inst in block.instructions:
-                if isinstance(inst, MLILSetVarSSA):
-                    self.all_ssa_vars.add(inst.var)
+        for inst in self.function.iter_instructions():
+            if isinstance(inst, MLILSetVarSSA):
+                self.all_ssa_vars.add(inst.var)
 
-                    if isinstance(inst.value, MLILUndef):
-                        self.undef_defs.add(inst.var)
-                    elif isinstance(inst.value, MLILVarSSA):
-                        self.copy_affinity[inst.var].add(inst.value.var)
-                        self.copy_affinity[inst.value.var].add(inst.var)
-                elif isinstance(inst, MediumLevelILCall) and inst.output is not None:
-                    self.all_ssa_vars.add(inst.output)
+                if isinstance(inst.value, MLILUndef):
+                    self.undef_defs.add(inst.var)
+                elif isinstance(inst.value, MLILVarSSA):
+                    self.copy_affinity[inst.var].add(inst.value.var)
+                    self.copy_affinity[inst.value.var].add(inst.var)
+            elif isinstance(inst, MediumLevelILCall) and inst.output is not None:
+                self.all_ssa_vars.add(inst.output)
 
-                for var, _ in iter_ssa_reads(inst):
-                    self.all_ssa_vars.add(var)
+            for var, _ in iter_ssa_reads(inst):
+                self.all_ssa_vars.add(var)
 
     def _collect_undefined_register_versions(self):
         """Register versions that hold no value known inside this function
@@ -894,13 +850,12 @@ class SSADeconstructor:
 
         defined: Set[MLILVariableSSA] = set()
 
-        for block in self.function.basic_blocks:
-            for inst in block.instructions:
-                if isinstance(inst, MLILSetVarSSA):
-                    if not isinstance(inst.value, MLILUndef):
-                        defined.add(inst.var)
-                elif isinstance(inst, MediumLevelILCall) and inst.output is not None:
-                    defined.add(inst.output)
+        for inst in self.function.iter_instructions():
+            if isinstance(inst, MLILSetVarSSA):
+                if not isinstance(inst.value, MLILUndef):
+                    defined.add(inst.var)
+            elif isinstance(inst, MediumLevelILCall) and inst.output is not None:
+                defined.add(inst.output)
 
         for ssa_var in self.all_ssa_vars:
             if ssa_var.base_var in self.reg_index_by_var and ssa_var not in defined:
@@ -913,16 +868,13 @@ class SSADeconstructor:
 
     def _compute_liveness(self):
         """Compute live-in and live-out sets for each block using dataflow analysis"""
-        # Initialize
         for block in self.function.basic_blocks:
             self.live_in[block] = set()
             self.live_out[block] = set()
 
-        # Iterate until fixed point
         changed = True
         while changed:
             changed = False
-            # Process blocks in reverse order
             for block in reversed(self.function.basic_blocks):
                 # live_out = union of live_in of all successors
                 new_live_out = set()
@@ -1094,9 +1046,9 @@ class SSADeconstructor:
 
             # A global write lowers back to a GLOBALS[n] store - never a plain variable assignment
             if global_index is not None:
-                return MLILStoreGlobal(global_index, new_value, address=inst.address).copy_metadata_from(inst)
+                return MLILStoreGlobal(global_index, new_value).copy_metadata_from(inst)
 
-            return MLILSetVar(new_var, new_value, address=inst.address).copy_metadata_from(inst)
+            return MLILSetVar(new_var, new_value).copy_metadata_from(inst)
         else:
             return self._apply_mapping_to_stmt(inst)
 
@@ -1134,12 +1086,12 @@ class SSADeconstructor:
         if isinstance(stmt, MLILIf):
             new_cond = self._apply_mapping_to_expr(stmt.condition)
             if new_cond is not stmt.condition:
-                return MLILIf(new_cond, stmt.true_target, stmt.false_target, address=stmt.address).copy_metadata_from(stmt)
+                return MLILIf(new_cond, stmt.true_target, stmt.false_target).copy_metadata_from(stmt)
         elif isinstance(stmt, MLILRet):
-            if stmt.value:
+            if stmt.value is not None:
                 new_value = self._apply_mapping_to_expr(stmt.value)
                 if new_value is not stmt.value:
-                    return MLILRet(new_value, address=stmt.address).copy_metadata_from(stmt)
+                    return MLILRet(new_value).copy_metadata_from(stmt)
         elif isinstance(stmt, MediumLevelILCall):
             if stmt.output is not None:
                 stmt.output = self.var_mapping.get(stmt.output, stmt.output.base_var)
@@ -1151,9 +1103,9 @@ class SSADeconstructor:
             new_value = self._apply_mapping_to_expr(stmt.value)
             if new_value is not stmt.value:
                 if isinstance(stmt, MLILStoreGlobal):
-                    return MLILStoreGlobal(stmt.index, new_value, address=stmt.address).copy_metadata_from(stmt)
+                    return MLILStoreGlobal(stmt.index, new_value).copy_metadata_from(stmt)
                 else:
-                    return MLILStoreReg(stmt.index, new_value, address=stmt.address).copy_metadata_from(stmt)
+                    return MLILStoreReg(stmt.index, new_value).copy_metadata_from(stmt)
         elif isinstance(stmt, MLILStoreDeref):
             new_dest = self._apply_mapping_to_expr(stmt.dest)
             new_value = self._apply_mapping_to_expr(stmt.value)
@@ -1314,11 +1266,9 @@ class SSADeconstructor:
 
 def convert_to_ssa(function: MediumLevelILFunction) -> MediumLevelILFunction:
     """Convert MLIL to SSA (in-place)"""
-    constructor = SSAConstructor(function)
-    return constructor.construct()
+    return SSAConstructor(function).construct()
 
 
 def convert_from_ssa(function: MediumLevelILFunction) -> MediumLevelILFunction:
     """Convert from SSA to non-SSA (in-place)"""
-    deconstructor = SSADeconstructor(function)
-    return deconstructor.deconstruct()
+    return SSADeconstructor(function).deconstruct()
