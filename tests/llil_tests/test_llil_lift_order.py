@@ -235,7 +235,7 @@ class TestRPOIntegration(unittest.TestCase):
         builder.begin_block(call_block)
         builder.push_func_id()
         builder.push_ret_addr(ret_target)
-        builder.call('some_func', NO_ARGS)   # records the edge into ret_target itself
+        builder.call_local('some_func', NO_ARGS)   # records the edge into ret_target itself
 
         builder.begin_block(other_branch)   # lifted before ret_target, leaves unrelated state
         builder.push_int(999)

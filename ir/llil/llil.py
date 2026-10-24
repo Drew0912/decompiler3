@@ -5,7 +5,7 @@ from dc3 import format_signed_hex, IntEnum2, quote_string
 from ir.core import *
 
 # Constants
-WORD_SIZE = 4  # 4 bytes per word
+WORD_SIZE = 4  # bytes per stack word
 
 
 class LowLevelILOperation(IntEnum2):
@@ -95,13 +95,26 @@ class LowLevelILInstruction(ILInstruction):
 class LowLevelILExpr(LowLevelILInstruction):
     """Base class for value expressions"""
 
-    pass
-
 
 class LowLevelILStatement(LowLevelILInstruction):
     """Base class for statements"""
 
-    pass
+
+# === Offset Text ===
+
+def sp_offset_text(offset: int) -> str:
+    """A byte offset from sp in words, as the listing shows it: 'sp', 'sp + 1', 'sp - 1'"""
+    words = offset // WORD_SIZE
+    if words == 0:
+        return 'sp'
+
+    return f'sp + {words}' if words > 0 else f'sp - {-words}'
+
+
+def frame_offset_text(offset: int) -> str:
+    """A byte offset from the frame base in words, as the listing shows it: 'fp + 0', 'fp + 1', 'fp - 1'"""
+    words = offset // WORD_SIZE
+    return f'fp + {words}' if words >= 0 else f'fp - {-words}'
 
 
 # === Atomic Stack Operations ===
@@ -116,14 +129,7 @@ class LowLevelILStackStore(LowLevelILStatement):
         self.slot_index = slot_index  # Absolute stack slot index
 
     def __str__(self) -> str:
-        # Convert byte offset to word offset for display
-        word_offset = self.offset // WORD_SIZE
-        if word_offset == 0:
-            return f'STACK[sp] = {self.value}'
-        elif word_offset > 0:
-            return f'STACK[sp + {word_offset}] = {self.value}'
-        else:
-            return f'STACK[sp - {-word_offset}] = {self.value}'
+        return f'STACK[{sp_offset_text(self.offset)}] = {self.value}'
 
 
 class LowLevelILStackLoad(LowLevelILExpr):
@@ -135,14 +141,7 @@ class LowLevelILStackLoad(LowLevelILExpr):
         self.slot_index = slot_index  # Absolute stack slot index
 
     def __str__(self) -> str:
-        # Convert byte offset to word offset for display
-        word_offset = self.offset // WORD_SIZE
-        if word_offset == 0:
-            return f'STACK[sp<{self.slot_index}>]'
-        elif word_offset > 0:
-            return f'STACK[sp + {word_offset}<{self.slot_index}>]'
-        else:
-            return f'STACK[sp - {-word_offset}<{self.slot_index}>]'
+        return f'STACK[{sp_offset_text(self.offset)}<{self.slot_index}>]'
 
 
 class LowLevelILFrameLoad(LowLevelILExpr):
@@ -153,13 +152,7 @@ class LowLevelILFrameLoad(LowLevelILExpr):
         self.offset = offset  # Byte offset relative to frame
 
     def __str__(self) -> str:
-        # Convert byte offset to word offset for display
-        # Always show explicit offset: fp + 0, fp + 1, etc.
-        word_offset = self.offset // WORD_SIZE
-        if word_offset >= 0:
-            return f'STACK[fp + {word_offset}]'
-        else:
-            return f'STACK[fp - {-word_offset}]'
+        return f'STACK[{frame_offset_text(self.offset)}]'
 
 
 class LowLevelILFrameStore(LowLevelILStatement):
@@ -171,13 +164,7 @@ class LowLevelILFrameStore(LowLevelILStatement):
         self.offset = offset  # Byte offset relative to frame
 
     def __str__(self) -> str:
-        # Convert byte offset to word offset for display
-        # Always show explicit offset: fp + 0, fp + 1, etc.
-        word_offset = self.offset // WORD_SIZE
-        if word_offset >= 0:
-            return f'STACK[fp + {word_offset}] = {self.value}'
-        else:
-            return f'STACK[fp - {-word_offset}] = {self.value}'
+        return f'STACK[{frame_offset_text(self.offset)}] = {self.value}'
 
 
 class LowLevelILLoad(LowLevelILExpr):
@@ -222,8 +209,6 @@ class LowLevelILSpAdd(LowLevelILStatement):
             return f'sp -= {-self.delta}'
 
 
-
-
 class LowLevelILStackAddr(LowLevelILExpr):
     """Address of stack slot (sp-independent)"""
 
@@ -244,11 +229,7 @@ class LowLevelILFrameAddr(LowLevelILExpr):
         self.offset = offset  # Byte offset relative to frame
 
     def __str__(self) -> str:
-        word_offset = self.offset // WORD_SIZE
-        if word_offset >= 0:
-            return f'&STACK[fp + {word_offset}]'
-        else:
-            return f'&STACK[fp - {-word_offset}]'
+        return f'&STACK[{frame_offset_text(self.offset)}]'
 
 
 # === Register Operations ===
@@ -457,7 +438,7 @@ class LowLevelILCall(LowLevelILStatement, Terminal):
         super().__init__(LowLevelILOperation.LLIL_CALL)
         self.target = target
         self.return_target = return_target  # Where to return after call (None if returns is False)
-        self.args = args if args is not None else []  # Arguments (used by MLIL translator)
+        self.args = args if args is not None else []  # Argument expressions
         self.returns = returns  # False for a tail call that never gives control back to this function
 
     def __str__(self) -> str:
@@ -660,10 +641,8 @@ class LowLevelILFunction:
             return [last_inst.target]
         elif isinstance(last_inst, LowLevelILIf):
             return [last_inst.true_target, last_inst.false_target]
-        elif isinstance(last_inst, LowLevelILCall) and last_inst.returns:
-            return [last_inst.return_target]
         elif isinstance(last_inst, LowLevelILCall):
-            return []   # tail call
+            return [last_inst.return_target] if last_inst.returns else []   # a tail call has no return edge
         elif isinstance(last_inst, LowLevelILRet):
             return []
         else:

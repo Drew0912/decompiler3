@@ -33,7 +33,7 @@ operand stack has little use for LLIL and can lift straight to MLIL.
 | Path | Responsibility |
 | --- | --- |
 | `ir/llil/llil.py` | Node model: the generic `LowLevelILOperation`, the `LowLevelILExpr`/`LowLevelILStatement` split, every generic node, `LowLevelILBasicBlock`, `LowLevelILFunction` (instruction numbering, `build_cfg()`), `WORD_SIZE`. |
-| `ir/llil/llil_builder.py` | `LowLevelILBuilder`: stack pointer and virtual stack, push/pop, slot storage (`_holds_parameter`), per-edge stack state (`StackSnapshot`, `save_stack_for_offset`, `_record_edge_state`). |
+| `ir/llil/llil_builder.py` | `LowLevelILBuilder`: stack pointer and virtual stack, push/pop, slot storage (`_holds_parameter`), per-edge stack state (`StackSnapshot`, `_record_edge_state`). |
 | `ir/llil/llil_formatter.py` | `LLILFormatter`: the `.llil.asm` text and `.llil.dot` graphs (each instruction's own text, the binary/unary expansion). |
 | `falcom/ed9/ir/llil/llil_builder.py` | `FalcomVMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `finalize()`. |
 | `falcom/ed9/ir/llil/llil_formatter.py` | `FalcomLLILFormatter`: the pops the builder hides (see Formatting). |
@@ -117,7 +117,7 @@ the slot of parameter 1 (arg1) in place`), and a tail call forwarding one has it
   call; `PUSH_RET_ADDR`, directly above the function ID, completes the setup with its return
   block.
 - `CALL` consumes the innermost pending setup, a complete local one, with `sp` at `sp_before_call +
-  LOCAL_SETUP_SLOTS + argc`, where `argc` (`call`'s `arg_count`) is the callee's declared parameter
+  LOCAL_SETUP_SLOTS + argc`, where `argc` (`call_local`'s `arg_count`) is the callee's declared parameter
   count - the lifter resolves it through `CALL`'s stack effect with the parser's function table. It
   emits `LowLevelILCall` with the callee name, the return block and the arguments (the top `argc`
   virtual stack entries, last pushed first), then drops the setup and the arguments, pops the

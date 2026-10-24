@@ -67,14 +67,11 @@ class ED9VMLifter:
         lift_blocks = self._compute_rpo(func.entry_block)
         layout_blocks = sorted(lift_blocks, key=lambda b: b.offset)     # preserve address-order block indices
 
-        llil_blocks: Dict[int, LowLevelILBasicBlock] = {}
-        for block in layout_blocks:
-            llil_blocks[block.offset] = builder.create_basic_block(block.offset, block.name)
+        llil_blocks = {block.offset: builder.create_basic_block(block.offset, block.name) for block in layout_blocks}
 
         for block in lift_blocks:
             builder.begin_block(llil_blocks[block.offset])
             for inst in block.instructions:
-                # Set current SCP instruction address for LLIL address tracking
                 builder.set_current_address(inst.offset)
                 try:
                     self._translate_instruction(builder, inst, block, llil_blocks)
@@ -172,9 +169,9 @@ class ED9VMLifter:
 
             case ED9Opcode.CALL:
                 func_id = int(inst.operands[0].value)
-                target = self._resolve_call_target(func_id)
+                target = self._parser.get_func_name_from_func_id(func_id)
                 argc = self._pop_count(inst)
-                builder.call(target, argc)
+                builder.call_local(target, argc)
 
             case ED9Opcode.CALL_SCRIPT:
                 module = inst.operands[0].value.value           # each name operand is a String ScpValue
@@ -257,11 +254,7 @@ class ED9VMLifter:
                 opcode = ED9Opcode(inst.opcode)
                 raise NotImplementedError(f'Unhandled opcode: {opcode.name} (0x{opcode.value:02X})')
 
-    def _resolve_call_target(self, func_id: int) -> str:
-        return self._parser.get_func_name_from_func_id(func_id)
-
     def _pop_count(self, inst: Instruction) -> int:
         """How many entries inst pops, by its stack effect; a local CALL's are its callee's declared parameters. Only
         the CALL arm asks: the other calls take their count from their operand, every other opcode from its builder"""
-        operand_values = [operand.value for operand in inst.operands]
-        return inst.descriptor.effect.pop_count(operand_values, self._parser.get_func_argc)
+        return inst.descriptor.effect.pop_count(inst.operand_values, self._parser.get_func_argc)

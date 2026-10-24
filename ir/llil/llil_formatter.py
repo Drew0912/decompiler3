@@ -1,17 +1,12 @@
 """LLIL Formatter - the .llil.asm listing and the .llil.dot graph"""
 
-from typing import List
+from typing import List, Optional
 
 from .llil import *
 
 
 class LLILFormatter:
     """Formatting layer for beautiful output"""
-
-    @classmethod
-    def indent_lines(cls, lines: List[str], indent: str) -> List[str]:
-        """Add indentation to multiple lines"""
-        return [indent + line for line in lines]
 
     # Map operation to expression template
     __expr_templates = {
@@ -41,25 +36,21 @@ class LLILFormatter:
         """Format binary operation with expanded pseudo-code"""
         template = cls.__expr_templates[binary_op.operation]
         expr = template.format(lhs='lhs', rhs='rhs')
-
-        lines = []
-        lines.append(f'rhs = STACK[--sp]  ; {binary_op.rhs}')
-        lines.append(f'lhs = STACK[--sp]  ; {binary_op.lhs}')
-        lines.append(f'STACK[sp++] = {expr}')
-
-        return lines
+        return [
+            f'rhs = STACK[--sp]  ; {binary_op.rhs}',
+            f'lhs = STACK[--sp]  ; {binary_op.lhs}',
+            f'STACK[sp++] = {expr}',
+        ]
 
     @classmethod
     def _format_unary_op_expanded(cls, unary_op: 'LowLevelILUnaryOp') -> List[str]:
         """Format unary operation with expanded pseudo-code"""
         template = cls.__expr_templates[unary_op.operation]
         expr = template.format(operand='operand')
-
-        lines = []
-        lines.append(f'operand = STACK[--sp]  ; {unary_op.operand}')
-        lines.append(f'STACK[sp++] = {expr}')
-
-        return lines
+        return [
+            f'operand = STACK[--sp]  ; {unary_op.operand}',
+            f'STACK[sp++] = {expr}',
+        ]
 
     @classmethod
     def _format_simplified(cls, inst: LowLevelILInstruction) -> List[str]:
@@ -70,24 +61,15 @@ class LLILFormatter:
         return [str(inst)]
 
     @classmethod
-    def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> List[str]:
-        """Format instruction with expanded stack operations (multi-line)"""
-        if isinstance(inst, LowLevelILStackStore) and inst.offset == 0:
-            # StackStore containing a binary operation: expand the binary op
-            if isinstance(inst.value, LowLevelILBinaryOp):
-                return cls._format_binary_op_expanded(inst.value)
+    def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> Optional[List[str]]:
+        """A binary or unary operation, pushed or bare, as its pops, its computation and its push; None for any other
+        instruction"""
+        operation = inst.value if isinstance(inst, LowLevelILStackStore) and inst.offset == 0 else inst
+        if isinstance(operation, LowLevelILBinaryOp):
+            return cls._format_binary_op_expanded(operation)
 
-            # StackStore containing a unary operation: expand the unary op
-            if isinstance(inst.value, LowLevelILUnaryOp):
-                return cls._format_unary_op_expanded(inst.value)
-
-        # Binary operations: pop 2, compute, push 1
-        elif isinstance(inst, LowLevelILBinaryOp):
-            return cls._format_binary_op_expanded(inst)
-
-        # Unary operations: pop 1, compute, push 1
-        elif isinstance(inst, LowLevelILUnaryOp):
-            return cls._format_unary_op_expanded(inst)
+        if isinstance(operation, LowLevelILUnaryOp):
+            return cls._format_unary_op_expanded(operation)
 
         return None
 
@@ -104,14 +86,8 @@ class LLILFormatter:
             if result and isinstance(inst, LowLevelILDebug):
                 result.append('')
 
-            # Use expanded format for multi-line instructions
-            expanded = cls.format_instruction_expanded(inst)
-            if expanded:
-                # Multi-line instruction
-                result.extend(cls.indent_lines(expanded, indent))
-            else:
-                lines = cls._format_simplified(inst)
-                result.extend(cls.indent_lines(lines, indent))
+            lines = cls.format_instruction_expanded(inst) or cls._format_simplified(inst)
+            result.extend(indent + line for line in lines)
 
         return result
 
@@ -137,10 +113,7 @@ class LLILFormatter:
                 block_info.append(f'[sp = {block.sp_in}]')
 
             result.append(', '.join(block_info))
-
-            # Format instructions - now returns list
-            indent = '  '
-            result.extend(cls.format_instruction_sequence(block.instructions, indent))
+            result.extend(cls.format_instruction_sequence(block.instructions))
             result.append('')
 
         return result

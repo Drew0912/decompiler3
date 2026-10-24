@@ -44,7 +44,7 @@ def build_call_function() -> LowLevelILFunction:
     builder.set_current_block(builder.create_basic_block(FUNC_START, 'entry'))
     ret_block = builder.create_basic_block(FUNC_START + BLOCK_STRIDE, 'ret')
     emits = (builder.push_func_id, lambda: builder.push_ret_addr(ret_block), lambda: builder.push_int(ARG_VALUE),
-             lambda: builder.call('f', ONE_ARG))
+             lambda: builder.call_local('f', ONE_ARG))
     for offset, emit in enumerate(emits):
         builder.set_current_address(FUNC_START + offset)
         emit()

@@ -83,7 +83,7 @@ class TestPopKeepsVstackInSync(unittest.TestCase):
         builder.push_int(2)
         builder.pop_bytes(WORD_SIZE)   # vstack should now hold just slot 0
 
-        builder.save_stack_for_offset(target.start)
+        builder.jmp(target)
 
         saved = builder.saved_stacks[target.start]
         self.assertEqual(len(saved.values), 1)

@@ -23,31 +23,21 @@ class ILInstruction:
 class ControlFlow(ILInstruction):
     """Control flow instruction trait"""
 
-    pass
-
 
 class Terminal(ControlFlow):
     """Terminal control flow instruction trait"""
-
-    pass
 
 
 class Constant(ILInstruction):
     """Constant value expression trait"""
 
-    pass
-
 
 class BinaryOperation(ILInstruction):
     """Binary operation trait"""
 
-    pass
-
 
 class UnaryOperation(ILInstruction):
     """Unary operation trait"""
-
-    pass
 
 
 class IRParameter:

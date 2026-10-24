@@ -26,11 +26,10 @@ class LowLevelILCallScript(LowLevelILCall):
         return_target: 'LowLevelILBasicBlock'
     ):
         target = f'{module}.{func}'
-        super().__init__(target, return_target)
+        super().__init__(target, return_target, args)
         self.operation    = LowLevelILFalcomOperation.LLIL_CALL_SCRIPT
         self.module       = module          # Script module name (e.g., 'system')
         self.func         = func            # Function name (e.g., 'OnTalkBegin')
-        self.args         = args            # Arguments (popped from vstack)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)

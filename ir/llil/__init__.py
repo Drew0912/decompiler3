@@ -16,6 +16,10 @@ __all__ = [
     'LowLevelILExpr',
     'LowLevelILStatement',
 
+    # Offset text
+    'sp_offset_text',
+    'frame_offset_text',
+
     # Stack, frame and memory
     'LowLevelILStackStore',
     'LowLevelILStackLoad',

@@ -47,7 +47,7 @@ class TestLocalCallSetup(unittest.TestCase):
         builder.push_int(ARG_VALUE)
         arg_load = builder.vstack_peek()
 
-        builder.call('f', ONE_ARG)
+        builder.call_local('f', ONE_ARG)
 
         self.assertIsInstance(last_instruction(builder), LowLevelILCall)
         self.assertEqual(last_instruction(builder).args, [arg_load])
@@ -61,7 +61,7 @@ class TestLocalCallSetup(unittest.TestCase):
         builder.pop_n(1)
         builder.push_ret_addr(ret_block)
 
-        builder.call('f', NO_ARGS)
+        builder.call_local('f', NO_ARGS)
 
 
 class TestCallSetupInSnapshots(unittest.TestCase):
@@ -76,9 +76,9 @@ class TestCallSetupInSnapshots(unittest.TestCase):
         builder.pop_jmp_zero(left, right)
 
         builder.begin_block(left)
-        builder.call('f', NO_ARGS)
+        builder.call_local('f', NO_ARGS)
         builder.begin_block(right)
-        builder.call('g', NO_ARGS)
+        builder.call_local('g', NO_ARGS)
 
         self.assertEqual(last_instruction(builder).target, 'g')
 
@@ -104,7 +104,7 @@ class TestCallSetupInSnapshots(unittest.TestCase):
         builder.pop_jmp_zero(mid, detour)
 
         builder.begin_block(mid)
-        builder.call('f', NO_ARGS)
+        builder.call_local('f', NO_ARGS)
         builder.begin_block(ret_block)
         builder.ret()
         builder.begin_block(detour)   # lifted last, ends with the setup still pending
@@ -143,7 +143,7 @@ class TestNestedCallSetups(unittest.TestCase):
         builder.push_caller_frame(outer_ret)
         builder.push_func_id()
         builder.push_ret_addr(inner_ret)
-        builder.call('f', NO_ARGS)
+        builder.call_local('f', NO_ARGS)
 
         builder.begin_block(inner_ret)
         builder.call_script(MODULE_NAME, 'outer', 0)
@@ -160,7 +160,7 @@ class TestNestedCallSetups(unittest.TestCase):
         builder.call_script(MODULE_NAME, 'inner', 0)
 
         builder.begin_block(inner_ret)
-        builder.call('f', NO_ARGS)
+        builder.call_local('f', NO_ARGS)
 
         self.assertIs(last_instruction(builder).return_target, outer_ret)
 
@@ -176,7 +176,7 @@ class TestStoresBelowAPendingSetup(unittest.TestCase):
         builder.push_int(STORED_VALUE)            # slot 3
         builder.pop_to(-3 * WORD_SIZE)            # sp 4 -> 3, stores into slot 0
 
-        builder.call('f', NO_ARGS)
+        builder.call_local('f', NO_ARGS)
 
     def test_store_to_a_parameter_below_the_setup_leaves_it_callable(self):
         builder = make_builder(LOCAL_PARAM_COUNT)
@@ -185,7 +185,7 @@ class TestStoresBelowAPendingSetup(unittest.TestCase):
         builder.push_int(STORED_VALUE)            # slot 4
         builder.pop_to(-4 * WORD_SIZE)            # sp 5 -> 4, stores into parameter slot 0
 
-        builder.call('f', NO_ARGS)
+        builder.call_local('f', NO_ARGS)
 
 
 class TestCallSetupsAtJoins(unittest.TestCase):
@@ -216,7 +216,7 @@ class TestCallSetupsAtJoins(unittest.TestCase):
             builder.jmp(join)
 
         builder.begin_block(join)
-        builder.call('f', NO_ARGS)
+        builder.call_local('f', NO_ARGS)
         builder.begin_block(ret_block)
         builder.ret()
 
@@ -231,7 +231,7 @@ class TestCallSetupsAtJoins(unittest.TestCase):
             builder.jmp(join)
 
         builder.begin_block(join)
-        builder.call('f', ONE_ARG)
+        builder.call_local('f', ONE_ARG)
 
         self.assertEqual(last_instruction(builder).args[0].slot_index, LOCAL_SETUP_SLOTS)
 

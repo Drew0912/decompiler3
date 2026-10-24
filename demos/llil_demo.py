@@ -61,7 +61,7 @@ def create_AV_04_0017():
     # PUSH_STR('AV_04_0017')
     builder.push_str('AV_04_0017')
     # CALL(map_event_box_set_enable)
-    builder.call('map_event_box_set_enable', DECLARED_PARAMS['map_event_box_set_enable'])
+    builder.call_local('map_event_box_set_enable', DECLARED_PARAMS['map_event_box_set_enable'])
     # Falls through to BLOCK 1
 
     # === BLOCK 1: loc_243E3 - avoice_play call ===
@@ -76,7 +76,7 @@ def create_AV_04_0017():
     # PUSH_INT(427)
     builder.push_int(427)
     # CALL(avoice_play)
-    builder.call('avoice_play', DECLARED_PARAMS['avoice_play'])
+    builder.call_local('avoice_play', DECLARED_PARAMS['avoice_play'])
     # Falls through to BLOCK 2
 
     # === BLOCK 2: loc_243FB - Return ===
@@ -125,7 +125,7 @@ def create_DOF_ON():
     # PUSH_INT(1)
     builder.push_int(1)
     # CALL(screen_dof_set_enable)
-    builder.call('screen_dof_set_enable', DECLARED_PARAMS['screen_dof_set_enable'])
+    builder.call_local('screen_dof_set_enable', DECLARED_PARAMS['screen_dof_set_enable'])
     # Falls through to BLOCK 1
 
     # === BLOCK 1: loc_1FFDCB - Check arg2 == 0 ===
@@ -161,7 +161,7 @@ def create_DOF_ON():
     # LOAD_STACK(-16)
     builder.load_stack(-16)
     # CALL(screen_dof_set_focus_range)
-    builder.call('screen_dof_set_focus_range', DECLARED_PARAMS['screen_dof_set_focus_range'])
+    builder.call_local('screen_dof_set_focus_range', DECLARED_PARAMS['screen_dof_set_focus_range'])
     # Falls through to BLOCK 3
 
     # === BLOCK 3: loc_1FFE02 - Jump to merge point ===
@@ -182,7 +182,7 @@ def create_DOF_ON():
     # LOAD_STACK(-20)
     builder.load_stack(-20)
     # CALL(screen_dof_set_focus_range)
-    builder.call('screen_dof_set_focus_range', DECLARED_PARAMS['screen_dof_set_focus_range'])
+    builder.call_local('screen_dof_set_focus_range', DECLARED_PARAMS['screen_dof_set_focus_range'])
     # Falls through to BLOCK 5
 
     # === BLOCK 5: loc_1FFE20 - Merge point, set blur level ===
@@ -195,7 +195,7 @@ def create_DOF_ON():
     # PUSH_INT(3)
     builder.push_int(3)
     # CALL(screen_dof_set_blur_level)
-    builder.call('screen_dof_set_blur_level', DECLARED_PARAMS['screen_dof_set_blur_level'])
+    builder.call_local('screen_dof_set_blur_level', DECLARED_PARAMS['screen_dof_set_blur_level'])
     # Falls through to BLOCK 6
 
     # === BLOCK 6: loc_1FFE35 - Return ===
@@ -298,7 +298,7 @@ def create_Dummy_m3010_talk0():
     builder.push_ret_addr(loc_8ACE5)
     builder.push(builder.const_float(4.0))
     builder.push_int(0)
-    builder.call('TALK_BEGIN', DECLARED_PARAMS['TALK_BEGIN'])
+    builder.call_local('TALK_BEGIN', DECLARED_PARAMS['TALK_BEGIN'])
 
     # === BLOCK 1: loc_8ACE5 - menu_create ===
     builder.set_current_block(loc_8ACE5)
@@ -309,7 +309,7 @@ def create_Dummy_m3010_talk0():
     builder.push_int(0)
     builder.push_int(0)
     builder.push_int(0)
-    builder.call('menu_create', DECLARED_PARAMS['menu_create'])
+    builder.call_local('menu_create', DECLARED_PARAMS['menu_create'])
 
     # === BLOCK 2: loc_8AD0F - menu_additem (ボス戦前) ===
     builder.set_current_block(loc_8AD0F)
@@ -319,7 +319,7 @@ def create_Dummy_m3010_talk0():
     builder.push_int(2)
     builder.push_str('ボス戦前')
     builder.push_int(0)
-    builder.call('menu_additem', DECLARED_PARAMS['menu_additem'])
+    builder.call_local('menu_additem', DECLARED_PARAMS['menu_additem'])
 
     # === BLOCK 3: loc_8AD33 - menu_additem (中間地点②) ===
     builder.set_current_block(loc_8AD33)
@@ -329,7 +329,7 @@ def create_Dummy_m3010_talk0():
     builder.push_int(1)
     builder.push_str('中間地点②')
     builder.push_int(0)
-    builder.call('menu_additem', DECLARED_PARAMS['menu_additem'])
+    builder.call_local('menu_additem', DECLARED_PARAMS['menu_additem'])
 
     # === BLOCK 4: loc_8AD57 - menu_additem (中間地点①) ===
     builder.set_current_block(loc_8AD57)
@@ -339,7 +339,7 @@ def create_Dummy_m3010_talk0():
     builder.push_int(0)
     builder.push_str('中間地点①')
     builder.push_int(0)
-    builder.call('menu_additem', DECLARED_PARAMS['menu_additem'])
+    builder.call_local('menu_additem', DECLARED_PARAMS['menu_additem'])
 
     # === BLOCK 5: loc_8AD7B - menu_open ===
     builder.set_current_block(loc_8AD7B)
@@ -350,7 +350,7 @@ def create_Dummy_m3010_talk0():
     builder.push_int(-1)
     builder.push_int(-1)
     builder.push_int(0)
-    builder.call('menu_open', DECLARED_PARAMS['menu_open'])
+    builder.call_local('menu_open', DECLARED_PARAMS['menu_open'])
 
     # === BLOCK 6: loc_8ADA5 - menu_wait and store result ===
     builder.set_current_block(loc_8ADA5)
@@ -359,7 +359,7 @@ def create_Dummy_m3010_talk0():
     builder.push_func_id()
     builder.push_ret_addr(loc_8ADC3)
     builder.push_int(0)
-    builder.call('menu_wait', DECLARED_PARAMS['menu_wait'])
+    builder.call_local('menu_wait', DECLARED_PARAMS['menu_wait'])
 
     # === BLOCK 7: loc_8ADC3 - GET_REG(0), POP_TO(-4), menu_close ===
     builder.set_current_block(loc_8ADC3)
@@ -371,7 +371,7 @@ def create_Dummy_m3010_talk0():
     builder.push_func_id()
     builder.push_ret_addr(loc_8ADE2)
     builder.push_int(0)
-    builder.call('menu_close', DECLARED_PARAMS['menu_close'])
+    builder.call_local('menu_close', DECLARED_PARAMS['menu_close'])
 
     # === BLOCK 8: loc_8ADE2 - Check if selection >= 0 ===
     builder.set_current_block(loc_8ADE2)
@@ -391,7 +391,7 @@ def create_Dummy_m3010_talk0():
     builder.push(builder.const_float(1.0))
     builder.push_int(0)
     builder.push(builder.const_float(0.5))
-    builder.call('fade_out', DECLARED_PARAMS['fade_out'])
+    builder.call_local('fade_out', DECLARED_PARAMS['fade_out'])
 
     # === BLOCK 10: loc_8AE20 - fade_out return: call fade_wait ===
     builder.set_current_block(loc_8AE20)
@@ -399,7 +399,7 @@ def create_Dummy_m3010_talk0():
     builder.push_func_id()
     builder.push_ret_addr(loc_8AE38)
     builder.push_int(0)
-    builder.call('fade_wait', DECLARED_PARAMS['fade_wait'])
+    builder.call_local('fade_wait', DECLARED_PARAMS['fade_wait'])
 
     # === BLOCK 11: loc_8AE38 - Check if selection == 0 ===
     builder.set_current_block(loc_8AE38)
@@ -420,7 +420,7 @@ def create_Dummy_m3010_talk0():
     builder.push(builder.const_float(1.918))
     builder.push(builder.const_float(-134.292))
     builder.push_int(65000)
-    builder.call('chr_set_pos', DECLARED_PARAMS['chr_set_pos'])
+    builder.call_local('chr_set_pos', DECLARED_PARAMS['chr_set_pos'])
 
     # === BLOCK 13: loc_8AE7C - camera_rotate_chr ===
     builder.set_current_block(loc_8AE7C)
@@ -434,7 +434,7 @@ def create_Dummy_m3010_talk0():
     builder.push(builder.const_float(0.0))
     builder.push(builder.const_float(0.0))
     builder.push_int(65000)
-    builder.call('camera_rotate_chr', DECLARED_PARAMS['camera_rotate_chr'])
+    builder.call_local('camera_rotate_chr', DECLARED_PARAMS['camera_rotate_chr'])
 
     # === BLOCK 14: loc_8AEB8 - Jump to merge point ===
     builder.set_current_block(loc_8AEB8)
@@ -459,7 +459,7 @@ def create_Dummy_m3010_talk0():
     builder.push(builder.const_float(-0.297))
     builder.push(builder.const_float(-85.992))
     builder.push_int(65000)
-    builder.call('chr_set_pos', DECLARED_PARAMS['chr_set_pos'])
+    builder.call_local('chr_set_pos', DECLARED_PARAMS['chr_set_pos'])
 
     # === BLOCK 16: loc_8AF01 - camera_rotate_chr ===
     builder.set_current_block(loc_8AF01)
@@ -473,7 +473,7 @@ def create_Dummy_m3010_talk0():
     builder.push(builder.const_float(0.0))
     builder.push(builder.const_float(0.0))
     builder.push_int(65000)
-    builder.call('camera_rotate_chr', DECLARED_PARAMS['camera_rotate_chr'])
+    builder.call_local('camera_rotate_chr', DECLARED_PARAMS['camera_rotate_chr'])
 
     # === BLOCK 17: loc_8AF3D - Jump to merge point ===
     builder.set_current_block(loc_8AF3D)
@@ -498,7 +498,7 @@ def create_Dummy_m3010_talk0():
     builder.push(builder.const_float(-0.283))
     builder.push(builder.const_float(-5.976))
     builder.push_int(65000)
-    builder.call('chr_set_pos', DECLARED_PARAMS['chr_set_pos'])
+    builder.call_local('chr_set_pos', DECLARED_PARAMS['chr_set_pos'])
 
     # === BLOCK 19: loc_8AF86 - Case 2: camera_rotate_chr ===
     builder.set_current_block(loc_8AF86)
@@ -512,14 +512,14 @@ def create_Dummy_m3010_talk0():
     builder.push(builder.const_float(0.0))
     builder.push(builder.const_float(0.0))
     builder.push_int(65000)
-    builder.call('camera_rotate_chr', DECLARED_PARAMS['camera_rotate_chr'])
+    builder.call_local('camera_rotate_chr', DECLARED_PARAMS['camera_rotate_chr'])
 
     # === BLOCK 20: loc_8AFC2 - TALK_END (merge point from all cases) ===
     builder.set_current_block(loc_8AFC2)
     builder.debug_line(10824)
     builder.push_func_id()
     builder.push_ret_addr(loc_8AFD4)
-    builder.call('TALK_END', DECLARED_PARAMS['TALK_END'])
+    builder.call_local('TALK_END', DECLARED_PARAMS['TALK_END'])
 
     # === BLOCK 21: loc_8AFD4 - Check if selection >= 0 for fade_in ===
     builder.set_current_block(loc_8AFD4)
@@ -539,7 +539,7 @@ def create_Dummy_m3010_talk0():
     builder.push(builder.const_float(0.0))
     builder.push_int(0)
     builder.push(builder.const_float(0.5))
-    builder.call('fade_in', DECLARED_PARAMS['fade_in'])
+    builder.call_local('fade_in', DECLARED_PARAMS['fade_in'])
 
     # === BLOCK 23: loc_8B012 - Return (final merge point) ===
     builder.set_current_block(loc_8B012)

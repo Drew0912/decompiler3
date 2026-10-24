@@ -1,6 +1,6 @@
 """Falcom LLIL Formatter - shows the pops the VM builder hides and a bytecode float's bits"""
 
-from typing import List
+from typing import List, Optional
 
 from ir.core import Constant, SourceFloat
 from ir.llil import *
@@ -17,7 +17,7 @@ class FalcomLLILFormatter(LLILFormatter):
         ]
 
     @classmethod
-    def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> List[str]:
+    def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> Optional[List[str]]:
         if isinstance(inst, LowLevelILGlobalStore):
             return cls._format_global_store_expanded(inst)
 
@@ -44,9 +44,7 @@ class FalcomLLILFormatter(LLILFormatter):
 
         # POP_TO into a parameter
         elif isinstance(inst, LowLevelILFrameStore):
-            word_offset = inst.offset // WORD_SIZE
-            location = f'fp + {word_offset}' if word_offset >= 0 else f'fp - {-word_offset}'
-            lines = [f'STACK[{location}] = STACK[--sp] ; {inst.value}']
+            lines = [f'STACK[{frame_offset_text(inst.offset)}] = STACK[--sp] ; {inst.value}']
 
         # POP_TO_DEREF
         elif isinstance(inst, LowLevelILStore):

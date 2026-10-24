@@ -40,7 +40,7 @@ def build_call_function() -> LowLevelILFunction:
     builder.push_func_id()
     builder.push_ret_addr(ret_block)
     builder.push_int(ARG_VALUE)
-    builder.call('f', ONE_ARG)
+    builder.call_local('f', ONE_ARG)
     builder.begin_block(ret_block)
     builder.ret()
     return builder.finalize()

@@ -1,6 +1,6 @@
 """Falcom VM Builder - High-level builder with Falcom VM patterns"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import List, NamedTuple, Optional, Tuple, Union
 from ir.llil import *
@@ -72,9 +72,8 @@ class FalcomVMBuilder(LowLevelILBuilder):
     # === Virtual Stack Management ===
 
     def push(self, value: Union[LowLevelILExpr, int, float, str], *, hidden_for_formatter: bool = False):
-        """Push value onto stack: StackStore + SpAdd (see docs/llil/LLIL_DESIGN.md)"""
         if isinstance(value, LowLevelILConstScript):
-            # 8 bytes script pointer
+            # The script pointer takes two slots
             super().push(value, hidden_for_formatter=hidden_for_formatter)
 
         return super().push(value, hidden_for_formatter=hidden_for_formatter)
@@ -110,7 +109,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
         """Push return address - completes the open local call setup"""
         setup = self._pending_setups[-1]
         self.push(LowLevelILConstRetAddrBlock(target))
-        self._pending_setups[-1] = PendingCallSetup(setup.kind, setup.sp_before_call, target)
+        self._pending_setups[-1] = replace(setup, return_block=target)
 
     def push_caller_frame(self, return_target: LowLevelILBasicBlock):
         """PUSH_CALLER_FRAME operation - opens a script call setup, consumed by call_script"""
@@ -121,12 +120,12 @@ class FalcomVMBuilder(LowLevelILBuilder):
         self.push(LowLevelILConstScriptName())
         self._pending_setups.append(PendingCallSetup(CallSetupKind.SCRIPT, sp_before_call, return_target))
 
-    def call(self, target: str, arg_count: int):
+    def call_local(self, target: str, arg_count: int):
         """CALL operation - arg_count is the callee's declared parameter count; the callee pops them and the setup"""
         setup = self._pending_setups[-1]
         args = self.vstack_peek_many(arg_count)   # last pushed first
 
-        super().call(target, return_target=setup.return_block, args=args)
+        self.call(target, return_target=setup.return_block, args=args)
         self._consume_setup(setup, LOCAL_SETUP_SLOTS + arg_count)
 
     def call_script(self, module: str, func: str, arg_count: int):
@@ -145,7 +144,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
         reading them back), so _cleanup_stack brings the tracked sp back to 0 without emitting IL -
         matching the bytecode, which emits no cleanup POP before a tail call.
         """
-        parameters = self._untracked_parameters(arg_count)
+        parameters = self._describe_untracked_parameters(arg_count)
         if parameters is not None:
             raise RuntimeError(
                 f"forwards {parameters} to a tail call, which the decompiler can't follow - pass LOAD_STACK copies "
@@ -173,7 +172,6 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def set_reg(self, reg_index: int):
         """SET_REG operation"""
-        # Pop from stack using StackPop expression
         stack_val = self.pop(hidden_for_formatter=True)
         self.reg_store(reg_index, stack_val)
 

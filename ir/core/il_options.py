@@ -2,7 +2,7 @@
 
 
 class ILOptions:
-    """Attributes:"""
+    """Formatter flags on one IL instruction"""
 
     __slots__ = ('hidden_for_formatter',)
 

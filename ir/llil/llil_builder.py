@@ -109,16 +109,14 @@ class LowLevelILBuilder:
     def _seed_entry_state(self):
         """The entry block starts with only the parameters on the stack (fp = 0 points at the first one), none
         of them tracked on the vstack. Recorded directly - it is the entry's state, not an edge."""
-        self.__sp_set(self.function.num_params)
+        self.__current_sp = self.function.num_params
         self.frame_base_sp = 0
         self.function.frame_base_sp = 0
         self.saved_stacks[self.function.start_addr] = self.save_stack_state()
 
     def create_basic_block(self, start: int, label: str = None) -> LowLevelILBasicBlock:
         """Create basic block and automatically add to function"""
-        # Create block
         block = LowLevelILBasicBlock(start, label=label)
-        # Automatically add to function
         self.function.add_basic_block(block)
         return block
 
@@ -134,21 +132,13 @@ class LowLevelILBuilder:
         """Get current stack pointer value"""
         return self.__current_sp
 
-    def __sp_set(self, value: int):
-        """Set shadow SP to absolute value (does NOT emit IL) - PRIVATE"""
-        self.__current_sp = value
-
-    def __sp_adjust(self, delta: int):
-        """Adjust shadow SP by delta (does NOT emit IL) - PRIVATE"""
-        self.__current_sp += delta
-
     def _cleanup_stack(self, argc: int):
         """Clean up stack and vstack without emitting IL - PRIVATE"""
         if argc > 0:
-            self.__sp_adjust(-argc)
+            self.__current_sp -= argc
             # Pop from vstack (will raise if underflow - indicates bug in caller)
             for _ in range(argc):
-                self.__vstack_pop()
+                self.__vstack.pop()
 
     def emit_sp_add(self, delta: int, *, hidden_for_formatter: bool = False) -> LowLevelILSpAdd:
         """Emit SpAdd IL and sync shadow sp (single entry point for SP changes)"""
@@ -162,17 +152,9 @@ class LowLevelILBuilder:
     def _discard_vstack_to(self, new_sp: int):
         """Sync the vstack after a bulk stack-pointer decrease."""
         while self.__vstack.size() and self.__vstack.peek().slot_index >= new_sp:
-            self.__vstack_pop()
+            self.__vstack.pop()
 
     # === Virtual Stack Management (Public Interface) ===
-
-    def __vstack_push(self, expr: LowLevelILExpr):
-        """Push expression to vstack"""
-        self.__vstack.push(expr)
-
-    def __vstack_pop(self) -> LowLevelILExpr:
-        """Pop expression from vstack (returns LowLevelILExpr)"""
-        return self.__vstack.pop()
 
     def vstack_peek(self, offset: int = -1) -> LowLevelILExpr:
         """Peek at top of vstack without popping (returns LowLevelILExpr)"""
@@ -208,29 +190,25 @@ class LowLevelILBuilder:
 
     def restore_stack_state(self, snapshot: StackSnapshot):
         """Restore a trusted snapshot; its tracked slots determine slot storage."""
-        self.__sp_set(snapshot.sp)
+        self.__current_sp = snapshot.sp
         self.__vstack.restore(snapshot.values)
 
-    def save_stack_for_offset(self, offset: int):
-        """Merge the current stack state into `offset`'s: the first merge records it, every later one must
-        bring the same shape. Terminals merge the states their edges carry through _record_edge_state"""
+    def _record_edge_state(self, target: LowLevelILBasicBlock):
+        """Merge the stack state an edge carries into its target's: recorded when the target has none yet (the
+        entry's is seeded), otherwise it must have the same shape"""
         snapshot = self.save_stack_state()
-        recorded = self.saved_stacks.get(offset)
+        recorded = self.saved_stacks.get(target.start)
         if recorded is None:
-            self.saved_stacks[offset] = snapshot
+            self.saved_stacks[target.start] = snapshot
             return
 
         incoming, expected = snapshot.shape(), recorded.shape()
         if incoming != expected:
             source = self.current_block.block_name if self.current_block is not None else 'outside any block'
             raise RuntimeError(
-                f'Stack state mismatch on an edge from {source} into {offset:#x}: '
+                f'Stack state mismatch on an edge from {source} into {target.start:#x}: '
                 f'incoming {incoming}, expected {expected}'
             )
-
-    def _record_edge_state(self, target: LowLevelILBasicBlock):
-        """Merge the stack state an edge carries into its target"""
-        self.save_stack_for_offset(target.start)
 
     def get_block_by_addr(self, addr: int) -> Optional[LowLevelILBasicBlock]:
         """Get block by start address"""
@@ -249,7 +227,7 @@ class LowLevelILBuilder:
 
         # Update stack pointer based on instruction type
         if isinstance(inst, LowLevelILSpAdd):
-            self.__sp_adjust(inst.delta)
+            self.__current_sp += inst.delta
 
     # === Virtual Stack Management ===
 
@@ -270,13 +248,11 @@ class LowLevelILBuilder:
         """Push value onto stack: StackStore + SpAdd (see docs/llil/LLIL_DESIGN.md)"""
         expr = self._to_expr(value)
         slot_index = self.sp_get()
-        # 1. StackStore(sp+0, value)
         self.add_instruction(LowLevelILStackStore(expr, offset=0, slot_index=slot_index))
-        # 2. SpAdd(+1)
         self.emit_sp_add(1, hidden_for_formatter=hidden_for_formatter)
         # Track on vstack: always use StackLoad reference
         # SCCP will propagate constants where needed
-        self.__vstack_push(LowLevelILStackLoad(offset=0, slot_index=slot_index))
+        self.__vstack.push(LowLevelILStackLoad(offset=0, slot_index=slot_index))
 
         return expr
 
@@ -284,13 +260,9 @@ class LowLevelILBuilder:
         """Pop value from stack and emit SpAdd"""
         self._require_tracked(1)
         self.emit_sp_add(-1, hidden_for_formatter=hidden_for_formatter)
-        return self.__vstack_pop()
+        return self.__vstack.pop()
 
     # === Stack and Frame Operations ===
-
-    def stack_load(self, offset: int, slot_index: int) -> LowLevelILStackLoad:
-        """STACK[sp + offset] (no sp change) - returns expression"""
-        return LowLevelILStackLoad(offset=offset, slot_index=slot_index)
 
     def frame_load(self, offset: int) -> 'LowLevelILFrameLoad':
         """STACK[frame + offset] - Frame-relative load (for function parameters)"""
@@ -325,7 +297,7 @@ class LowLevelILBuilder:
         is in the highest slot"""
         return self.function.num_params - (slot_index - self.frame_base_sp)
 
-    def _untracked_parameters(self, count: int) -> Optional[str]:
+    def _describe_untracked_parameters(self, count: int) -> Optional[str]:
         """The parameter slots among the top count slots, described ('the slot of parameter 1 (arg1)'), when the vstack
         runs short of count only by them; None when it holds count entries or a missing slot isn't a parameter's"""
         sp = self.sp_get()
@@ -344,7 +316,7 @@ class LowLevelILBuilder:
         """The top count slots must be values the function pushed. The vstack tracks every push but no parameter, so
         running short there is an opcode using parameter slots in place, which the lift doesn't follow; any other
         shortfall is left to the vstack's own error"""
-        parameters = self._untracked_parameters(count)
+        parameters = self._describe_untracked_parameters(count)
         if parameters is not None:
             raise RuntimeError(
                 f"uses {parameters} in place, which the decompiler can't follow - {self.PARAMETER_COPY_HINT}"
@@ -388,7 +360,7 @@ class LowLevelILBuilder:
         if self._holds_parameter(slot_index):
             return self.frame_load(self._frame_offset(slot_index))
 
-        return self.stack_load(offset, slot_index)
+        return LowLevelILStackLoad(offset=offset, slot_index=slot_index)
 
     def _slot_address(self, slot_index: int) -> LowLevelILExpr:
         """Address of a live slot"""
