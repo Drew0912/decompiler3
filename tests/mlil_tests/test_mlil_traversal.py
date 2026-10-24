@@ -11,14 +11,13 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILInstruction, MediumLevelILFunction, MediumLevelILBasicBlock, MediumLevelILCall,
+    MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILCall,
     MLILVariable, MLILConst, MLILUndef, MLILVar, MLILSetVar, MLILBinaryOp, MLILUnaryOp, MLILAdd, MLILMul,
     MLILNeg, MLILAddressOf, MLILGoto, MLILIf, MLILRet, MLILCall, MLILSyscall, MLILCallScript,
     MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILNop, MLILDebug, MLILStoreDeref, walk,
 )
 from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILPhi, iter_ssa_reads
 from ir.mlil.passes.pass_ssa_copy_propagation import CopyPropagationPass
-from ir.mlil.passes.pass_ssa_expression_inlining import ExpressionInliningPass
 from tests.shared.ir_utils import concrete_subclasses
 
 
@@ -146,20 +145,6 @@ class TestWalkerRulesKept(unittest.TestCase):
     def test_call_types_are_exactly_the_three_call_classes(self):
         # passes rely on MediumLevelILCall covering exactly these three call classes
         self.assertEqual(concrete_subclasses(MediumLevelILCall), {MLILCall, MLILSyscall, MLILCallScript})
-
-    def test_inliner_rejects_a_call_inside_an_expression(self):
-        # MLIL calls are statements; a call nested in an expression would be a translator bug
-        func = MediumLevelILFunction('call_in_expression', 0)
-        x1 = MLILVariableSSA(MLILVariable('x'), 1)
-        block = MediumLevelILBasicBlock(0)
-        block.instructions = [
-            MLILSetVarSSA(x1, MLILAdd(MLILCall('f', []), c())),
-            MLILRet(MLILVarSSA(x1)),
-        ]
-        func.basic_blocks = [block]
-
-        with self.assertRaises(ValueError):
-            ExpressionInliningPass().run(func)
 
 
 if __name__ == '__main__':

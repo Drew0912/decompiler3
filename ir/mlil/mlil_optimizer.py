@@ -18,8 +18,7 @@ from .passes import (
 def mlil_optimization_passes(infer_types: bool = True,
                              signature_db: Optional[FunctionSignatureDB] = None) -> List[Pass]:
     """The MLIL passes that run after LLIL->MLIL translation, in production order"""
-    # A LowLevelILCall is a block terminator, so nearly every call site is one goto away from its return
-    # block - undo that split before any SSA analysis runs, so every later pass sees the smaller CFG
+    # BlockMergePass must run before SSAConversionPass
     passes: List[Pass] = [BlockMergePass(), SSAConversionPass(), SSAOptimizationPass()]
 
     # Type inference runs on SSA form

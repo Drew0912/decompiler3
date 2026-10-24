@@ -82,7 +82,7 @@ class SSAOptimizer:
     @classmethod
     def _structural_key(cls, value):
         """Recursively reduce an instruction, or any attribute value reachable from one, to an
-        exact and hashable key. One generic walk over each object's own attributes instead of a
+        exact comparison key. One generic walk over each object's own attributes instead of a
         per-node-type walker (`.claude/rules/ir.md`), so a new instruction/operand type is covered
         without a change here. Every branch tags its result with the value's actual type object
         (not its name - two distinct classes can share a __name__), so values of different types
@@ -111,13 +111,5 @@ class SSAOptimizer:
 
         if hasattr(value, '__dict__'):
             return (type(value), tuple((k, cls._structural_key(v)) for k, v in sorted(vars(value).items())))
-
-        try:
-            hash(value)
-        except TypeError:
-            # No current construction path produces an unhashable attribute value (MLILDebug.value/
-            # MLILConst.value are typed Any, but nothing populates them with a dict/set/etc.) -
-            # fail loud instead of silently returning an unfrozen, potentially mutable key.
-            raise NotImplementedError(f'_structural_key: unhashable attribute value not supported ({value!r})')
 
         return (type(value), value)

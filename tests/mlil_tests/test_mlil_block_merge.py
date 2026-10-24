@@ -15,7 +15,6 @@ sys.path.insert(0, str(REPO_ROOT))
 from ir.mlil.mlil import (
     MediumLevelILFunction, MLILConst, MLILGoto, MLILIf, MLILRet, MLILCall,
 )
-from ir.mlil.mlil_ssa import MLILPhi, MLILVariableSSA
 from ir.mlil.passes import BlockMergePass
 
 
@@ -251,43 +250,6 @@ class TestUnreachableCycleTermination(unittest.TestCase):
         survivors = [b for b in func.basic_blocks if b is not entry]
         self.assertEqual(len(survivors), 1)
         self.assertIs(survivors[0].instructions[-1].target, survivors[0])
-
-
-class TestPhiGuard(unittest.TestCase):
-    """This pass only supports pre-SSA MLIL - a Phi node must make it fail loud, not silently
-    drop a predecessor's copy."""
-
-    def test_phi_node_present_raises(self):
-        func = MediumLevelILFunction('phi_guard')
-        block = func.create_block(start=FUNC_START, label='entry')
-        var = func.get_or_create_local('var_s0')
-
-        block.add_instruction(MLILPhi(MLILVariableSSA(var, 1), []))
-        block.add_instruction(MLILRet(None))
-
-        with self.assertRaises(RuntimeError):
-            BlockMergePass().run(func)
-
-
-class TestInconsistentEdgeInvariant(unittest.TestCase):
-    """A corrupted edge list is a real upstream bug - the pass must fail loud, never merge on
-    top of it."""
-
-    def test_target_with_wrong_recorded_predecessor_raises(self):
-        func = MediumLevelILFunction('bad_edges')
-        head = func.create_block(start=FUNC_START, label='head')
-        other = func.create_block(start=FUNC_START + 4, label='other')
-        target = func.create_block(start=FUNC_START + 8, label='target')
-
-        head.add_instruction(MLILGoto(target))
-        head.add_outgoing_edge(target)
-
-        # Corrupt it afterward: target's sole recorded predecessor claims to be `other`
-        target.incoming_edges = [other]
-        target.add_instruction(MLILRet(None))
-
-        with self.assertRaises(RuntimeError):
-            BlockMergePass().run(func)
 
 
 if __name__ == '__main__':

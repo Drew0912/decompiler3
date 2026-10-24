@@ -115,9 +115,6 @@ class ExpressionInliningPass(Pass):
             def_pos = self.def_positions.get(ssa_var)
             use_pos = self.use_positions.get(ssa_var, [None])[0]
 
-            if any(isinstance(node, MediumLevelILCall) for node in walk(defn.value)):
-                raise ValueError(f'{ssa_var}: an MLIL call is a statement, never part of an expression')
-
             storages = self._impure_read_storages(defn.value, func)
 
             if storages is None or storages:

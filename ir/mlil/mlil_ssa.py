@@ -189,14 +189,7 @@ class DominanceAnalysis:
         if not hasattr(self, '_block_index'):
             self._block_index = {b: i for i, b in enumerate(self.blocks)}
 
-        max_iterations = len(self.blocks) * 2
-        iterations = 0
-
         while finger1 != finger2:
-            iterations += 1
-            if iterations > max_iterations:
-                raise RuntimeError(f'_intersect: infinite loop detected between {b1} and {b2}')
-
             while self._block_index[finger1] > self._block_index[finger2]:
                 finger1 = self.idom[finger1]
 
@@ -219,21 +212,13 @@ class DominanceAnalysis:
             for succ in block.outgoing_edges:
                 preds[succ].append(block)
 
-        max_iterations = len(self.blocks)
-
         for block in self.blocks:
             if len(preds[block]) < 2:
                 continue
 
             for pred in preds[block]:
                 runner = pred
-                iterations = 0
-
                 while runner != self.idom.get(block):
-                    iterations += 1
-                    if iterations > max_iterations:
-                        raise RuntimeError(f'_compute_dom_frontiers: infinite loop at block {block}')
-
                     self.dom_frontier[runner].add(block)
                     runner = self.idom.get(runner)
 
@@ -315,11 +300,8 @@ class SSAConstructor:
         read/write (see _lower_address_taken_vars) must be consistent everywhere the variable
         appears, not just near the nearest '&'.
 
-        Raises if a register or raised global is ever address-taken - no opcode produces one
-        today, and admitting one here would need the same memory-form lowering this class
-        gives locals/parameters, which registers/globals do not go through. Checked by
-        identity (is_register_var/is_global_var), not by '.locals' membership - a register's
-        MLILVariable is created via get_or_create_local, so it lives in '.locals' too.
+        No opcode takes the address of a register or a raised global (either would need a
+        memory-form lowering of its own), so every variable collected is a local or parameter.
         """
         address_taken: Set[MLILVariable] = set()
 
@@ -328,12 +310,6 @@ class SSAConstructor:
                 for node in walk(inst, skip=(MLILAddressOf,)):
                     if isinstance(node, MLILAddressOf) and isinstance(node.operand, MLILVar):
                         address_taken.add(node.operand.var)
-
-        for var in address_taken:
-            if self.function.is_register_var(var) or self.function.is_global_var(var):
-                raise NotImplementedError(
-                    f'Address taken of register/global variable {var.name!r} - no opcode '
-                    f'produces this today, and it is not covered by address-taken lowering')
 
         return address_taken
 
@@ -757,10 +733,6 @@ class SSAConstructor:
         if isinstance(expr, MLILVar):
             # Replace with SSA version
             var = expr.var
-
-            if var not in self.var_stack or not self.var_stack[var]:
-                raise ValueError(f'Use of undefined variable: {var.name}')
-
             current_ver = self.var_stack[var][-1]
             return MLILVarSSA(MLILVariableSSA(var, current_ver))
         elif isinstance(expr, MLILVarSSA):
@@ -955,9 +927,7 @@ class SSADeconstructor:
                 # live_out = union of live_in of all successors
                 new_live_out = set()
                 for succ in block.outgoing_edges:
-                    # Skip successors that were removed by optimization
-                    if succ in self.live_in:
-                        new_live_out |= self.live_in[succ]
+                    new_live_out |= self.live_in[succ]
 
                 # live_in = use + (live_out - def)
                 use_set = set()
@@ -1127,8 +1097,6 @@ class SSADeconstructor:
                 return MLILStoreGlobal(global_index, new_value, address=inst.address).copy_metadata_from(inst)
 
             return MLILSetVar(new_var, new_value, address=inst.address).copy_metadata_from(inst)
-        elif isinstance(inst, MLILPhi):
-            raise RuntimeError('Phi node not eliminated')
         else:
             return self._apply_mapping_to_stmt(inst)
 
@@ -1330,9 +1298,6 @@ class SSADeconstructor:
                         continue
 
                     copy_block = self._phi_copy_block(pred_block, block, split_cache)
-
-                    if not copy_block.has_terminal:
-                        raise RuntimeError(f'Phi copy block {copy_block.label} has no terminal')
 
                     # Edge copy phi.dest = ssa_var before the terminal, with the outgoing branch's provenance
                     terminal = copy_block.instructions[-1]

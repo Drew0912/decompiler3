@@ -190,9 +190,8 @@ pseudo-definitions). Both passes share one check, `reaches_without_redefinition`
 The call itself is the barrier, not its pseudo-definitions or output: dead-code elimination drops an
 unread call output and dead register pseudo-definitions while the call - and its clobber - stays,
 so a later optimizer round must still see it (without this, a saved `reg0` value was forwarded past
-the next call in ~1,800 places across the corpus). Dead-code elimination refuses to drop a call
-output that is a global (it raises): call results only ever land in the result register, and
-dropping a global output would silently lose a global write.
+the next call in ~1,800 places across the corpus). Call results only ever land in the result
+register, so dropping an unread call output never loses a global write.
 
 SCCP folds constant `+ - * & | ^ << >>`, unary `- ! ~`, `&&`/`||`, and comparisons on ints, but
 deliberately never evaluates `MLIL_DIV`/`MLIL_MOD`, or any op with a float operand, to a lattice

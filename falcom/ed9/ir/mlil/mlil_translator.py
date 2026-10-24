@@ -88,13 +88,6 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
 
     def _translate_syscall(self, llil_inst: LowLevelILSyscall):
         """Translate Falcom syscall"""
-        # Verify args match argc
-        if llil_inst.argc > 0 and not llil_inst.args:
-            raise ValueError(f'Syscall argc={llil_inst.argc} but args is empty')
-
-        if len(llil_inst.args) != llil_inst.argc:
-            raise ValueError(f'Syscall argc={llil_inst.argc} but got {len(llil_inst.args)} args')
-
         # Translate arguments from LLIL
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 

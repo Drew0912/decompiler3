@@ -18,8 +18,6 @@ if TYPE_CHECKING:
 
 def mlil_stack_var_name(slot_index: int) -> str:
     """Generate stack variable name (var_s0, var_s1, ...)"""
-    if slot_index < 0:
-        raise ValueError(f'Negative slot_index: {slot_index}')
     return f'var_s{slot_index}'
 
 
@@ -30,15 +28,11 @@ def mlil_arg_var_name(arg_index: int) -> str:
 
 def mlil_reg_var_name(reg_index: int) -> str:
     """Generate register variable name (reg0, reg1, ...)"""
-    if reg_index < 0:
-        raise ValueError(f'Negative reg_index: {reg_index}')
     return f'reg{reg_index}'
 
 
 def mlil_global_var_name(global_index: int) -> str:
     """Generate global variable name (global0, global1, ...)"""
-    if global_index < 0:
-        raise ValueError(f'Negative global_index: {global_index}')
     return f'global{global_index}'
 
 

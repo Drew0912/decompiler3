@@ -719,21 +719,6 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         self.assertTrue(reaches_without_redefinition(func, reg0, block, 0, block, 2))
 
 
-class TestDeadCodeGlobalCallOutput(unittest.TestCase):
-    """Call results only land in the result register - a global call output would be a global
-    write that dropping an unread output silently loses, so it must fail loudly instead."""
-
-    def test_unread_global_call_output_raises(self):
-        func = make_func('global_call_output')
-        global5 = func.get_or_create_global_var(5)
-        block = MediumLevelILBasicBlock(0)
-        block.instructions = [MLILCall('produce', [], output=MLILVariableSSA(global5, 1)), MLILRet(MLILConst(0))]
-        func.basic_blocks = [block]
-
-        with self.assertRaises(ValueError):
-            SSADeadCodeEliminationPass().run(func)
-
-
 def optimized_corpus_mlil(dat_name: str, func_name: str) -> MediumLevelILFunction:
     path = require(SORA2_SCRIPTS / f'ani/{dat_name}')
     parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)

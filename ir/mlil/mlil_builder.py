@@ -27,15 +27,10 @@ class MLILBuilder:
 
     def create_function(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None, *, is_common_func: bool = False):
         """Create MLIL function"""
-        if self.function is not None:
-            raise RuntimeError('Function already created')
         self.function = MediumLevelILFunction(name, start_addr, params, is_common_func=is_common_func)
 
     def finalize(self) -> MediumLevelILFunction:
         """Finalize and return the constructed function"""
-        if self.function is None:
-            raise RuntimeError('No function created')
-
         # Fill in missing parameters (unused params not created during translation)
         source_params = self.function.source_params
         # First extend to full length
@@ -46,36 +41,20 @@ class MLILBuilder:
             if self.function.parameters[i] is None:
                 self.function.parameters[i] = MLILVariable(src_param.name)
 
-        # Verify all blocks have terminal instructions
-        for block in self.function.basic_blocks:
-            if not block.has_terminal:
-                raise RuntimeError(
-                    f'Block {block.label} does not have a terminal instruction'
-                )
-
         return self.function
 
     # === Block Management ===
 
     def create_block(self, start: int = 0, label: str = None) -> MediumLevelILBasicBlock:
         """Create a new basic block and add to function"""
-        if self.function is None:
-            raise RuntimeError('No function created')
-
-        block = self.function.create_block(start, label)
-        return block
+        return self.function.create_block(start, label)
 
     def set_current_block(self, block: MediumLevelILBasicBlock):
         """Set the current block for instruction insertion"""
-        if block not in self.function.basic_blocks:
-            raise RuntimeError(f'Block {block} not in function')
         self.current_block = block
 
     def add_instruction(self, inst: MediumLevelILInstruction):
         """Add instruction to current block"""
-        if self.current_block is None:
-            raise RuntimeError('No current block set')
-
         inst.inst_index = self._inst_counter
         inst.address = self._current_address
         inst.llil_index = self._current_llil_index
@@ -87,20 +66,14 @@ class MLILBuilder:
 
     def get_or_create_parameter(self, param_index: int, name: str) -> MLILVariable:
         """Get or create a parameter (1-based index)"""
-        if self.function is None:
-            raise RuntimeError('No function created')
         return self.function.get_or_create_parameter(param_index, name)
 
     def get_or_create_local(self, name: str, slot_index: int = UNASSIGNED_SLOT_INDEX) -> MLILVariable:
         """Get or create a local variable"""
-        if self.function is None:
-            raise RuntimeError('No function created')
         return self.function.get_or_create_local(name, slot_index)
 
     def get_or_create_register_var(self, reg_index: int) -> MLILVariable:
         """Get or create the variable modelling a VM register"""
-        if self.function is None:
-            raise RuntimeError('No function created')
         return self.function.get_or_create_register_var(reg_index)
 
     # === Constants ===

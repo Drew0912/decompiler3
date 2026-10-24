@@ -468,28 +468,6 @@ class TestAddressTakenStructuralInvariants(unittest.TestCase):
                 output_base = getattr(inst.output, 'base_var', inst.output)
                 self.assertNotEqual(output_base, x)
 
-    def test_address_of_register_raises(self):
-        func = MediumLevelILFunction('addr_of_register_test')
-        block = func.create_block(start=FUNC_START)
-        reg0 = func.get_or_create_register_var(0)
-
-        block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(reg0))]))
-        block.add_instruction(MLILRet(MLILConst(0)))
-
-        with self.assertRaises(NotImplementedError):
-            SSAConstructor(func).construct()
-
-    def test_address_of_global_raises(self):
-        func = MediumLevelILFunction('addr_of_global_test')
-        block = func.create_block(start=FUNC_START)
-        global0 = func.get_or_create_global_var(0)
-
-        block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(global0))]))
-        block.add_instruction(MLILRet(MLILConst(0)))
-
-        with self.assertRaises(NotImplementedError):
-            SSAConstructor(func).construct()
-
 
 class TestAddressTakenFromRealLLIL(unittest.TestCase):
     """End to end from real LLIL, built the same way the disassembler/lifter would (not

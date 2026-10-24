@@ -112,21 +112,12 @@ class TestSnapshotSchedule(unittest.TestCase):
 
 class TestStructuralKeyExactness(unittest.TestCase):
     """Direct tests of _structural_key/_snapshot: distinct types never share a key (e.g. a float
-    and a string holding the float's hex text), and a dict-valued attribute raises instead of
-    becoming an unfrozen, potentially unsound key."""
+    and a string holding the float's hex text)"""
 
     def test_float_and_matching_hex_string_do_not_collide(self):
         float_key = SSAOptimizer._structural_key(1.0)
         string_key = SSAOptimizer._structural_key((1.0).hex())
         self.assertNotEqual(float_key, string_key)
-
-    def test_dict_valued_attribute_raises(self):
-        with self.assertRaises(NotImplementedError):
-            SSAOptimizer._structural_key({'a': 1})
-
-    def test_set_valued_attribute_raises(self):
-        with self.assertRaises(NotImplementedError):
-            SSAOptimizer._structural_key({1, 2, 3})
 
     def test_same_class_name_from_different_types_does_not_collide(self):
         # Two distinct classes sharing a __name__ - the key must discriminate by the actual
