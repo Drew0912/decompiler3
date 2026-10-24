@@ -123,10 +123,10 @@ living in `ir/mlil/mlil_ssa.py`, entirely outside `ir/hlil/`.
 `codegen/typescript.py` is a real TypeScript emitter, not generic pseudocode: typed signatures and
 `let` declarations, a generated header with `GLOBALS`/`REGS` arrays, a `Pointer` type for
 out-parameters (`type Pointer = number;`, so a `Pointer` takes the same `int(...)` coercion as a
-number) and `addr_of`/`deref`/`deref_set`/`int`/`extern_call`/`syscall`/`debug.log` intrinsics, and
-per-syscall wrapper functions from a signature database. TypeScript has no `*ptr` syntax, so a pointer read is a `deref(ptr)`
-call and a store through one (`HLILAssign` whose `dest` is `HLILDeref`) becomes a `deref_set(ptr,
-value)` call instead of an assignment - matching the existing `addr_of(x)` convention for `&x`. It
+number) and `addr_of`/`deref`/`deref_set`/`int`/`extern_call`/`syscall`/`debug.log` intrinsics.
+TypeScript has no `*ptr` syntax, so a pointer read is a `deref(ptr)` call and a store through one
+(`HLILAssign` whose `dest` is `HLILDeref`) becomes a `deref_set(ptr, value)` call instead of an
+assignment - matching the existing `addr_of(x)` convention for `&x`. It
 also does its own peephole simplification at print time (constant-folds
 comparisons of two int constants via `constant_truth` - never floats, whose VM comparisons are
 unverified - `(bool) != 0` → `bool` for an int `0` only, double-negation elimination) — some

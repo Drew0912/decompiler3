@@ -44,7 +44,7 @@ class LLILToMLILTranslator:
     def translate(self, llil_func: LowLevelILFunction) -> MediumLevelILFunction:
         """Translate LLIL function to MLIL"""
         self.llil_func = llil_func
-        self.builder.create_function(llil_func.name, llil_func.start_addr, llil_func.params, is_common_func=llil_func.is_common_func)
+        self.builder.create_function(llil_func.name, llil_func.start_addr, llil_func.params)
         self.builder.function.llil_function = llil_func
 
         for llil_block in llil_func.basic_blocks:

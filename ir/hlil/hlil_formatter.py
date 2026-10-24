@@ -52,11 +52,7 @@ class HLILFormatter:
             args = ', '.join(cls._format_expr(arg) for arg in expr.args)
             return f'{expr.func_name}({args})'
         elif isinstance(expr, HLILSyscall):
-            args = [
-                f'{expr.subsystem}',
-                f'{expr.cmd}',
-                *[cls._format_expr(arg) for arg in expr.args],
-            ]
+            args = [str(expr.subsystem), str(expr.cmd), *[cls._format_expr(arg) for arg in expr.args]]
             return f'syscall({', '.join(args)})'
         elif isinstance(expr, HLILExternCall):
             args = ', '.join(cls._format_expr(arg) for arg in expr.args)
@@ -71,7 +67,7 @@ class HLILFormatter:
         lines = []
 
         # Function header (simple, no types)
-        params = ', '.join(p.name for p in func.parameters) if func.parameters else ''
+        params = ', '.join(p.name for p in func.parameters)
         lines.append(f'function {func.name}({params}) {{')
 
         # Variables (simple declarations)
@@ -80,23 +76,13 @@ class HLILFormatter:
                 lines.append(f'{default_indent()}var {var.name}')
             lines.append('')
 
-        # Function body
-        body_lines = cls._format_block(func.body, indent=1)
-        lines.extend(body_lines)
-
+        lines.extend(cls._format_block(func.body, indent=1))
         lines.append('}')
         return lines
 
     @classmethod
     def _format_block(cls, block: HLILBlock, indent: int = 0) -> List[str]:
-        """Format a block of statements"""
-        lines = []
-
-        for stmt in block.statements:
-            stmt_lines = cls._format_statement(stmt, indent)
-            lines.extend(stmt_lines)
-
-        return lines
+        return [line for stmt in block.statements for line in cls._format_statement(stmt, indent)]
 
     @classmethod
     def _format_if_chain(cls, if_stmt: HLILIf, indent: int) -> List[str]:
@@ -178,16 +164,10 @@ class HLILFormatter:
                     lines.append(f'{indent_str}{case_body_indent}break;')
 
             lines.append(f'{indent_str}}}')
-        elif isinstance(stmt, HLILBreak):
-            if stmt.label:
-                lines.append(f'{indent_str}break {stmt.label};')
-            else:
-                lines.append(f'{indent_str}break;')
-        elif isinstance(stmt, HLILContinue):
-            if stmt.label:
-                lines.append(f'{indent_str}continue {stmt.label};')
-            else:
-                lines.append(f'{indent_str}continue;')
+        elif isinstance(stmt, (HLILBreak, HLILContinue)):
+            keyword = 'break' if isinstance(stmt, HLILBreak) else 'continue'
+            label = f' {stmt.label}' if stmt.label else ''
+            lines.append(f'{indent_str}{keyword}{label};')
         elif isinstance(stmt, HLILReturn):
             if stmt.value is not None:
                 value_str = cls._format_expr(stmt.value)

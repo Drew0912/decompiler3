@@ -815,7 +815,7 @@ class MediumLevelILBasicBlock:
 class MediumLevelILFunction:
     """MLIL function container"""
 
-    def __init__(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None, *, is_common_func: bool = False):
+    def __init__(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None):
         self.name = name
         self.start_addr = start_addr
         self.source_params: List['IRParameter'] = params or []  # Original params from source
@@ -826,7 +826,6 @@ class MediumLevelILFunction:
         self.global_vars: Dict[int, MLILVariable] = {}  # Global var table index -> variable
         self.llil_function: Optional[LowLevelILFunction] = None
         self.var_types: Dict[str, 'MLILType'] = {}  # Variable name -> inferred type
-        self.is_common_func = is_common_func
 
     def add_basic_block(self, block: MediumLevelILBasicBlock):
         self.basic_blocks.append(block)

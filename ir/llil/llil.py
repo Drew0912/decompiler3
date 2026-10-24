@@ -572,7 +572,7 @@ class LowLevelILBasicBlock:
 class LowLevelILFunction:
     """Function containing LLIL basic blocks (following BN design)"""
 
-    def __init__(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None, *, is_common_func: bool = False):
+    def __init__(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None):
         self.name = name
         self.start_addr = start_addr
         self.params: List['IRParameter'] = params or []
@@ -581,7 +581,6 @@ class LowLevelILFunction:
         self._label_map: dict[str, LowLevelILBasicBlock] = {}  # label -> block
         self.frame_base_sp: Optional[int] = None  # Frame pointer (sp at function entry)
         self._next_inst_index: int = 0
-        self.is_common_func = is_common_func
 
     @property
     def num_params(self) -> int:

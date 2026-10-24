@@ -196,7 +196,6 @@ class HighLevelILFunction:
     body: HLILBlock
     variables: list[HLILVariable]
     parameters: list[HLILVariable]
-    is_common_func: bool
 ```
 
 (Simplified field view; the real definitions are in `ir/hlil/hlil.py`.) An `HLILIf` owns its true

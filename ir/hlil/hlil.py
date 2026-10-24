@@ -1018,13 +1018,12 @@ def _reach_statement(stmt: HLILStatement, reached: List[HLILStatement], targets:
 class HighLevelILFunction:
     """HLIL function container"""
 
-    def __init__(self, name: str, start_addr: int = 0, *, is_common_func: bool = False):
+    def __init__(self, name: str, start_addr: int = 0):
         self.name = name
         self.start_addr = start_addr
         self.body = HLILBlock()
         self.variables: List[HLILVariable] = []  # Local variables
         self.parameters: List[HLILVariable] = []  # Parameters
-        self.is_common_func = is_common_func
 
     def __str__(self) -> str:
         return f'HighLevelILFunction({self.name}, {len(self.body.statements)} stmts)'

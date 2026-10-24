@@ -24,8 +24,8 @@ class MLILBuilder:
 
     # === Function Management ===
 
-    def create_function(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None, *, is_common_func: bool = False):
-        self.function = MediumLevelILFunction(name, start_addr, params, is_common_func=is_common_func)
+    def create_function(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None):
+        self.function = MediumLevelILFunction(name, start_addr, params)
 
     def finalize(self) -> MediumLevelILFunction:
         # Fill in missing parameters (unused params not created during translation)

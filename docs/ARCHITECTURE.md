@@ -86,7 +86,7 @@ ordering, and chain-flattening heuristics are expected to keep changing fastest 
 **Location:** `codegen/typescript.py`
 
 Converts HLIL into readable TypeScript-flavored pseudocode: typed signatures, `GLOBALS`/`REGS`
-arrays, per-syscall wrapper functions, and its own print-time peephole simplification.
+arrays, and its own print-time peephole simplification.
 
 Game-specific output, unlike `ir/`: it reads only HLIL, and nothing in `ir/` depends on it, so it may follow
 the game's conventions ("Generic/Falcom Boundary" below).

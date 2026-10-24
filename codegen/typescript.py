@@ -1,37 +1,33 @@
 """TypeScript Code Generator - HLIL to production TypeScript"""
 
 import math
-from typing import List
+from typing import Iterator, List
 
-from dc3 import default_indent, format_uint32_hex, quote_string
+from dc3 import default_indent, quote_string
 from ir.core import constant_values_equal, is_int_zero
 from ir.hlil import *
 
 
+# HLIL type hint -> TypeScript type (any other: any)
+TYPESCRIPT_TYPES = {
+    HLILTypeKind.INT        : 'number',
+    HLILTypeKind.FLOAT      : 'number',
+    HLILTypeKind.NUMBER     : 'number',
+    HLILTypeKind.STRING     : 'string',
+    HLILTypeKind.BOOL       : 'boolean',
+    HLILTypeKind.VOID       : 'void',
+    HLILTypeKind.POINTER    : 'Pointer',
+}
+
+
 class TypeScriptGenerator:
     _current_func: 'HighLevelILFunction' = None
-    _signature_db = None  # FormatSignatureDB for arg formatting
     _callee_defaults: dict[str, tuple] = {}  # local callee name -> each parameter's default (None: none)
     _written_argc: dict[int, int] = {}       # local CALL offset -> args its debug record keeps (round trip)
 
     @classmethod
-    def set_signature_db(cls, db):
-        """Set signature database for formatting"""
-        cls._signature_db = db
-
-    @classmethod
     def _format_type(cls, type_hint) -> str:
-        """Map HLIL type to TypeScript"""
-        type_map = {
-            HLILTypeKind.INT: 'number',
-            HLILTypeKind.FLOAT: 'number',
-            HLILTypeKind.NUMBER: 'number',
-            HLILTypeKind.STRING: 'string',
-            HLILTypeKind.BOOL: 'boolean',
-            HLILTypeKind.VOID: 'void',
-            HLILTypeKind.POINTER: 'Pointer',
-        }
-        return type_map.get(type_hint, 'any')
+        return TYPESCRIPT_TYPES.get(type_hint, 'any')
 
     @classmethod
     def _format_float(cls, value: float) -> str:
@@ -60,14 +56,8 @@ class TypeScriptGenerator:
 
     @classmethod
     def _format_call_args(cls, func_name: str, args: list, address: int) -> str:
-        """Format call arguments, using signature hints if available"""
-        args = cls._without_trailing_defaults(func_name, args, address)
-        if cls._signature_db:
-            sig = cls._signature_db.get_function(func_name)
-            if sig:
-                return cls._format_call_args_with_sig(args, sig.params)
-
-        return ', '.join(cls._format_expr(arg) for arg in args)
+        """The call's arguments without its trailing defaults"""
+        return ', '.join(cls._format_expr(arg) for arg in cls._without_trailing_defaults(func_name, args, address))
 
     @classmethod
     def _without_trailing_defaults(cls, func_name: str, args: list, address: int) -> list:
@@ -89,71 +79,30 @@ class TypeScriptGenerator:
         return args[:max(kept, cls._written_argc.get(address, 0))]
 
     @classmethod
-    def _format_call_args_with_sig(cls, args: list, params: list) -> str:
-        """Format call arguments with parameter hints"""
-        formatted = []
-        has_variadic = params and params[-1].variadic
-        fixed_count = len(params) - 1 if has_variadic else len(params)
-
-        for i, arg in enumerate(args):
-            if i < fixed_count and params[i].format:
-                formatted_arg = cls._format_arg_with_hint(arg, params[i].format)
-                formatted.append(formatted_arg)
+    def _return_values(cls, block: HLILBlock) -> Iterator[HLILExpression]:
+        """The values block's returns give, in source order, through the blocks its statements own (sub_blocks)"""
+        for stmt in block.statements:
+            if isinstance(stmt, HLILReturn):
+                if stmt.value is not None:
+                    yield stmt.value
             else:
-                formatted.append(cls._format_expr(arg))
-
-        return ', '.join(formatted)
-
-    @classmethod
-    def _format_arg_with_hint(cls, arg, format_hint: str) -> str:
-        """Format argument with format hint (hex, enum, etc.)"""
-        if isinstance(arg, HLILConst) and isinstance(arg.value, int):
-            formatted = cls._signature_db.format_value(arg.value, format_hint)
-            if formatted:
-                return formatted
-
-        return cls._format_expr(arg)
+                for child in sub_blocks(stmt):
+                    yield from cls._return_values(child)
 
     @classmethod
     def _infer_return_type(cls, block: HLILBlock) -> str:
-        """Infer return type from return statements"""
-        # Recursively search for return statements
-        def find_returns(blk: HLILBlock) -> List[HLILReturn]:
-            returns = []
-            for stmt in blk.statements:
-                if isinstance(stmt, HLILReturn):
-                    returns.append(stmt)
-                else:
-                    for child in sub_blocks(stmt):
-                        returns.extend(find_returns(child))
-
-            return returns
-
-        returns = find_returns(block)
-
-        # If no return statements or all returns are void
-        if not returns or all(r.value is None for r in returns):
+        """The type of the first value a return gives: a string or boolean constant's, else number; void if none"""
+        value = next(cls._return_values(block), None)
+        if value is None:
             return 'void'
 
-        # Check if any return has a value
-        for ret in returns:
-            if ret.value is not None:
-                # Try to infer type from the value
-                if isinstance(ret.value, HLILConst):
-                    val = ret.value.value
-                    if isinstance(val, bool):
-                        return 'boolean'
-                    elif isinstance(val, int):
-                        return 'number'
-                    elif isinstance(val, float):
-                        return 'number'
-                    elif isinstance(val, str):
-                        return 'string'
+        if isinstance(value, HLILConst) and isinstance(value.value, bool):
+            return 'boolean'
 
-                # Default to number for most return values
-                return 'number'
+        if isinstance(value, HLILConst) and isinstance(value.value, str):
+            return 'string'
 
-        return 'void'
+        return 'number'
 
     @classmethod
     def _is_number_var(cls, expr: HLILExpression) -> bool:
@@ -255,25 +204,10 @@ class TypeScriptGenerator:
     @classmethod
     def _format_expr(cls, expr: HLILExpression) -> str:
         if isinstance(expr, HLILVar):
-            var = expr.var
-            if var.kind == VariableKind.GLOBAL:
-                return f'GLOBALS[{var.index}]'
-            elif var.kind == VariableKind.REG:
-                return f'REGS[{var.index}]'
-            else:
-                return var.name
+            return str(expr.var)
         elif isinstance(expr, HLILConst):
-            # Handle different constant types
-            if isinstance(expr.value, str):
-                return quote_string(expr.value)
-            elif isinstance(expr.value, bool):
-                return 'true' if expr.value else 'false'
-            elif isinstance(expr.value, float):
-                return cls._format_float(expr.value)
-            elif isinstance(expr.value, int) and expr.is_hex:
-                return format_uint32_hex(expr.value)
-            else:
-                return str(expr.value)
+            # The constant's own text, but a float as a TypeScript number
+            return cls._format_float(expr.value) if isinstance(expr.value, float) else str(expr)
         elif isinstance(expr, HLILBinaryOp):
             # A comparison of two int constants prints its value, by the rule HLIL decides constant
             # conditions with (constant_truth: floats decide nothing). Any other op with two constant
@@ -321,19 +255,8 @@ class TypeScriptGenerator:
             args = cls._format_call_args(expr.func_name, expr.args, expr.address)
             return f'{expr.func_name}({args})'
         elif isinstance(expr, HLILSyscall):
-            # Don't replace syscalls in common functions (they are the wrappers themselves)
-            is_common = cls._current_func and cls._current_func.is_common_func
-            sig = cls._signature_db.get_syscall(expr.subsystem, expr.cmd) if cls._signature_db and not is_common else None
-            if sig:
-                args = cls._format_call_args_with_sig(expr.args, sig.params)
-                return f'{sig.name}({args})'
-            else:
-                args = [
-                    f'{expr.subsystem}',
-                    f'{expr.cmd}',
-                    *[cls._format_expr(arg) for arg in expr.args],
-                ]
-                return f'syscall({", ".join(args)})'
+            args = [str(expr.subsystem), str(expr.cmd), *[cls._format_expr(arg) for arg in expr.args]]
+            return f'syscall({", ".join(args)})'
         elif isinstance(expr, HLILExternCall):
             args = [
                 quote_string(expr.target, "'"),
@@ -345,19 +268,20 @@ class TypeScriptGenerator:
             return str(expr)
 
     @classmethod
+    def _format_parameter(cls, param: HLILVariable) -> str:
+        text = f'{param.name}: {cls._format_type(param.type_hint)}'
+        if param.default_value is not None:
+            text += f' = {cls._format_default_value(param.default_value)}'
+
+        return text
+
+    @classmethod
     def generate_function(cls, func: HighLevelILFunction) -> List[str]:
         cls._current_func = func
         lines = []
 
         # Function signature with types
-        if func.parameters:
-            params = ', '.join(
-                f'{p.name}: {cls._format_type(p.type_hint)} = {cls._format_default_value(p.default_value)}' if p.default_value is not None else f'{p.name}: {cls._format_type(p.type_hint)}'
-                for p in func.parameters
-            )
-        else:
-            params = ''
-
+        params = ', '.join(cls._format_parameter(param) for param in func.parameters)
         return_type = cls._infer_return_type(func.body)
         lines.append(f'function {func.name}({params}): {return_type} {{')
 
@@ -368,22 +292,13 @@ class TypeScriptGenerator:
                 lines.append(f'{default_indent()}let {var.name}: {var_type};')
             lines.append('')
 
-        # Function body
-        body_lines = cls._generate_block(func.body, indent=1)
-        lines.extend(body_lines)
-
+        lines.extend(cls._generate_block(func.body, indent=1))
         lines.append('}')
         return lines
 
     @classmethod
     def _generate_block(cls, block: HLILBlock, indent: int = 0) -> List[str]:
-        lines = []
-
-        for stmt in block.statements:
-            stmt_lines = cls._generate_statement(stmt, indent)
-            lines.extend(stmt_lines)
-
-        return lines
+        return [line for stmt in block.statements for line in cls._generate_statement(stmt, indent)]
 
     @classmethod
     def _generate_statement(cls, stmt: HLILStatement, indent: int = 0) -> List[str]:
@@ -471,16 +386,10 @@ class TypeScriptGenerator:
                 lines.append(f'{indent_str}{case_indent}}}')
 
             lines.append(f'{indent_str}}}')
-        elif isinstance(stmt, HLILBreak):
-            if stmt.label:
-                lines.append(f'{indent_str}break {stmt.label};')
-            else:
-                lines.append(f'{indent_str}break;')
-        elif isinstance(stmt, HLILContinue):
-            if stmt.label:
-                lines.append(f'{indent_str}continue {stmt.label};')
-            else:
-                lines.append(f'{indent_str}continue;')
+        elif isinstance(stmt, (HLILBreak, HLILContinue)):
+            keyword = 'break' if isinstance(stmt, HLILBreak) else 'continue'
+            label = f' {stmt.label}' if stmt.label else ''
+            lines.append(f'{indent_str}{keyword}{label};')
         elif isinstance(stmt, HLILUnstructured):
             # A jump HLIL could not express: say so, and end this path instead of falling through
             lines.append(f'{indent_str}// {stmt}')
@@ -550,46 +459,6 @@ function syscall(subsystem: number, cmd: number, ...args: any[]): any { return u
 const debug = { log(...args: any[]): void {} };
 
 """
-
-
-def generate_syscall_wrappers(signature_db) -> str:
-    """Generate TypeScript wrapper functions for syscalls"""
-    if not signature_db or not signature_db.syscalls:
-        return ''
-
-    lines = ['// Syscall wrappers']
-
-    for name, sig in signature_db.syscalls.items():
-        # Build parameter list
-        params = []
-        args = []
-        for p in sig.params:
-            if p.variadic:
-                params.append(f'...{p.name}: ({p.type})[]')
-                args.append(f'...{p.name}')
-            else:
-                params.append(f'{p.name}: {p.type}')
-                args.append(p.name)
-
-        params_str = ', '.join(params)
-        args_str = ', '.join(args)
-
-        # Determine return type
-        if sig.return_hint:
-            if sig.return_hint.type == 'void':
-                return_type = 'void'
-                body = f'syscall({sig.subsystem}, {sig.cmd}, {args_str});' if args_str else f'syscall({sig.subsystem}, {sig.cmd});'
-            else:
-                return_type = 'number'
-                body = f'return syscall({sig.subsystem}, {sig.cmd}, {args_str});' if args_str else f'return syscall({sig.subsystem}, {sig.cmd});'
-        else:
-            return_type = 'any'
-            body = f'return syscall({sig.subsystem}, {sig.cmd}, {args_str});' if args_str else f'return syscall({sig.subsystem}, {sig.cmd});'
-
-        lines.append(f'function {name}({params_str}): {return_type} {{ {body} }}')
-
-    lines.append('')
-    return '\n'.join(lines) + '\n'
 
 
 def generate_typescript(func: HighLevelILFunction, callee_defaults: dict[str, tuple] | None = None,

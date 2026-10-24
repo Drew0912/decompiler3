@@ -96,14 +96,8 @@ class LowLevelILBuilder:
 
     # === Function and Block Creation ===
 
-    def create_function(self, name: str, start_addr: int, params: List[IRParameter] = None, *,
-                        is_common_func: bool = False):
-        """Create function inside builder
-
-        Args:
-            is_common_func: Whether this is a shared/included function (syscall wrapper)
-        """
-        self.function = LowLevelILFunction(name, start_addr, params, is_common_func=is_common_func)
+    def create_function(self, name: str, start_addr: int, params: List[IRParameter] = None):
+        self.function = LowLevelILFunction(name, start_addr, params)
         self._seed_entry_state()
 
     def _seed_entry_state(self):
