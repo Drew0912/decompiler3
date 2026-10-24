@@ -49,23 +49,20 @@ class BranchOrderNormalizationPass(Pass):
         self._process_block(func.body)
         return func
 
-    def _process_block(self, block: Optional[HLILBlock]):
-        if not block or not block.statements:
-            return
-
+    def _process_block(self, block: HLILBlock):
         for stmt in block.statements:
             # Settle nested arms first: a swap below changes the first line
             # this level reads
             for child in sub_blocks(stmt):
                 self._process_block(child)
 
-            if isinstance(stmt, HLILIf):
-                self._normalize(stmt)
+            if isinstance(stmt, HLILIf) and self._wants_swap(stmt):
+                self._swap(stmt)
 
-    def _normalize(self, stmt: HLILIf):
-        """Swap this if's arms when the other order reads better"""
+    def _wants_swap(self, stmt: HLILIf) -> bool:
+        """Whether this if's arms read better the other way round"""
         if not self._has_statements(stmt.true_block) or not self._has_statements(stmt.false_block):
-            return
+            return False
 
         true_is_chain = self._is_else_if_chain(stmt.true_block)
         false_is_chain = self._is_else_if_chain(stmt.false_block)
@@ -76,22 +73,14 @@ class BranchOrderNormalizationPass(Pass):
         # coincidentally-nested, unrelated if), in which case treat it like any
         # other pair of sibling arms instead of protecting it unconditionally
         if false_is_chain and not true_is_chain:
-            if self._looks_like_same_chain(stmt.condition, stmt.false_block):
-                return
-
-            if not self._should_swap(stmt):
-                return
-
-            self._swap(stmt)
-            return
+            return not self._looks_like_same_chain(stmt.condition, stmt.false_block) and self._should_swap(stmt)
 
         # The chain sits in the then-branch instead: the pairwise line/depth
         # tie-break below only reliably catches this at the outermost link (its
         # entry comment reads as an earlier line than the sibling case body), so
         # a deeper cascade stays buried unless this is unconditional
         if true_is_chain and not false_is_chain:
-            self._swap(stmt)
-            return
+            return True
 
         # Both arms are chains: codegen can only flatten the false/else side, so
         # something nests either way. Flatten whichever chain runs longer and
@@ -102,14 +91,9 @@ class BranchOrderNormalizationPass(Pass):
             false_len = self._chain_length(stmt.false_block)
 
             if true_len != false_len:
-                if true_len > false_len:
-                    self._swap(stmt)
-                return
+                return true_len > false_len
 
-        if not self._should_swap(stmt):
-            return
-
-        self._swap(stmt)
+        return self._should_swap(stmt)
 
     @classmethod
     def _chain_length(cls, block: Optional[HLILBlock]) -> int:

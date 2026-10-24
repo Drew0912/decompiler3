@@ -318,7 +318,7 @@ class TestCFORedundantElseAssignAddressTakenReload(unittest.TestCase):
                            case_body, false_block)
 
         func = HighLevelILFunction('cfo_addr_taken_reload_test')
-        func.add_statement(first_if)
+        func.body.add_statement(first_if)
         func = ControlFlowOptimizationPass().run(func)
 
         else_stmts = func.body.statements[0].false_block.statements

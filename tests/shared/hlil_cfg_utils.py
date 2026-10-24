@@ -8,6 +8,7 @@ unstructured-jump node may cut a run short, but only where the MLIL run jumps to
 Such a run is decided by its parameters alone, so it either ends within one visit per block or
 loops forever: with FUEL well above that, both levels run out of fuel exactly when they loop.
 """
+from collections import Counter
 from itertools import count, product
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
@@ -246,12 +247,8 @@ def unstructured_nodes(hlil: HighLevelILFunction, reachable_only: bool = True) -
 
 def statements_in_two_places(hlil: HighLevelILFunction) -> List[str]:
     """Statements the tree reaches more than once: a pass that moved one left it behind too"""
-    reached = {}
-    for node in iter_tree(hlil.body):
-        if isinstance(node, HLILStatement):
-            reached.setdefault(id(node), []).append(node)
-
-    return [str(nodes[0]) for nodes in reached.values() if len(nodes) > 1]
+    reached = Counter(node for node in iter_tree(hlil.body) if isinstance(node, HLILStatement))
+    return [str(node) for node, times in reached.items() if times > 1]
 
 
 def calls_emitted(hlil: HighLevelILFunction, name: str) -> int:

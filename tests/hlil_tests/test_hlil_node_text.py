@@ -40,7 +40,7 @@ NODE_TEXT = [
     (HLILAddressOf(cond()), '&c', 'HLILAddressOf(c)'),
     (HLILDeref(cond()), '*c', 'HLILDeref(c)'),
     (HLILCall('f', [cond()]), 'f(c)', 'HLILCall(f, 1 args)'),
-    (HLILSyscall('0', '3', [cond()]), '0.3(c)', 'HLILSyscall(0.3)'),
+    (HLILSyscall(0, 3, [cond()]), '0.3(c)', 'HLILSyscall(0.3)'),
     (HLILExternCall('m:g', [cond()]), 'm:g(c)', 'HLILExternCall(m:g, 1 args)'),
     (HLILBlock([HLILReturn()]), '{ 1 statements }', 'HLILBlock(1 stmts)'),
     (HLILIf(cond(), HLILBlock()), 'if (c) { ... }', 'HLILIf(cond=c)'),
@@ -73,7 +73,7 @@ NODE_OPERATIONS = [
     (HLILAddressOf(cond()), HLILOperation.HLIL_ADDRESS_OF),
     (HLILDeref(cond()), HLILOperation.HLIL_DEREF),
     (HLILCall('f', []), HLILOperation.HLIL_CALL),
-    (HLILSyscall('0', '3', []), HLILOperation.HLIL_SYSCALL),
+    (HLILSyscall(0, 3, []), HLILOperation.HLIL_SYSCALL),
     (HLILExternCall('m:g', []), HLILOperation.HLIL_CALL),
     (HLILBlock(), HLILOperation.HLIL_BLOCK),
     (HLILIf(cond(), HLILBlock()), HLILOperation.HLIL_IF),
@@ -112,9 +112,9 @@ class TestNodeAttributes(unittest.TestCase):
                 self.assertEqual(node.mlil_index, UNASSIGNED_INST_INDEX)
 
     def test_syscall_keeps_its_target(self):
-        syscall = HLILSyscall('0', '3', [cond()])
+        syscall = HLILSyscall(0, 3, [cond()])
 
-        self.assertEqual((syscall.subsystem, syscall.cmd), ('0', '3'))
+        self.assertEqual((syscall.subsystem, syscall.cmd), (0, 3))
 
 
 if __name__ == '__main__':

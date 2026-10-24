@@ -24,19 +24,10 @@ class FalcomTypeInferencePass(Pass):
 
     def run(self, hlil_func: HighLevelILFunction) -> HighLevelILFunction:
         """Set each parameter's type_hint from its declared flag"""
-        for param in hlil_func.parameters:
-            # Parameters are named arg1..argN in declaration order
-            if not param.name.startswith('arg'):
-                continue
-
-            try:
-                index = int(param.name.removeprefix('arg')) - 1
-            except ValueError:
-                continue
-
-            if 0 <= index < len(self.scp_func.params):
-                kind = PARAM_TYPE_KINDS.get(self.scp_func.params[index].type.get_python_type())
-                if kind is not None:
-                    param.type_hint = kind
+        for index, param in enumerate(hlil_func.parameters):
+            # HLIL keeps the declared parameters, in declaration order
+            kind = PARAM_TYPE_KINDS.get(self.scp_func.params[index].type.get_python_type())
+            if kind is not None:
+                param.type_hint = kind
 
         return hlil_func

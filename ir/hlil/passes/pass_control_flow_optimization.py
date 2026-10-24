@@ -2,11 +2,12 @@
 
 from enum import Enum, auto
 from typing import List, NamedTuple, Optional, Tuple
-from ir.core import constant_values_equal, is_int_zero
+from ir.core import is_int_zero
 from ir.pipeline import Pass
 from ..hlil import (
     HighLevelILFunction,
     HLILBlock,
+    HLILInstruction,
     HLILStatement,
     HLILExpression,
     HLILVar,
@@ -36,6 +37,7 @@ from ..hlil import (
     iter_tree,
     negate_condition,
     read_children,
+    same_const_or_var,
     sole_statement,
     sub_blocks,
 )
@@ -78,58 +80,31 @@ class ControlFlowOptimizationPass(Pass):
         return func
 
     def _optimize_block(self, block: HLILBlock):
-        if not block or not block.statements:
-            return
-
         optimized = []
         i = 0
 
         while i < len(block.statements):
             stmt = block.statements[i]
 
-            # Try inline: [nop*, assign, if] -> [nop*, if(bool_expr)]
-            if isinstance(stmt, HLILAssign) and isinstance(stmt.dest, HLILVar):
-                if is_boolean_expr(stmt.src):
-                    if i + 1 < len(block.statements):
-                        next_stmt = block.statements[i + 1]
-                        inlined = self._try_inline_condition(stmt, next_stmt)
-                        if inlined:
-                            # Recursively optimize the inlined if's sub-blocks
-                            for child in sub_blocks(inlined):
-                                self._optimize_block(child)
+            # Try inline: [comment*, assign, if] -> [comment*, if(bool_expr)]
+            j = i
+            while j < len(block.statements) and self._is_comment(block.statements[j]):
+                j += 1
 
-                            # Remove redundant assignments
-                            self._remove_redundant_else_assign(inlined, optimized)
-                            optimized.append(inlined)
-                            i += 2
-                            continue
+            if j + 1 < len(block.statements):
+                inlined = self._try_inline_condition(block.statements[j], block.statements[j + 1])
+                if inlined:
+                    optimized.extend(block.statements[i:j])
 
-            # Skip nop to find [assign, if] pattern for inlining
-            if self._is_nop_stmt(stmt):
-                # Look ahead for [assign, if] pattern
-                j = i + 1
-                while j < len(block.statements) and self._is_nop_stmt(block.statements[j]):
-                    j += 1
+                    # Recursively optimize the inlined if's sub-blocks
+                    for child in sub_blocks(inlined):
+                        self._optimize_block(child)
 
-                if j < len(block.statements) - 1:
-                    assign_stmt = block.statements[j]
-                    if_stmt = block.statements[j + 1]
-                    if isinstance(assign_stmt, HLILAssign) and isinstance(assign_stmt.dest, HLILVar):
-                        if is_boolean_expr(assign_stmt.src):
-                            inlined = self._try_inline_condition(assign_stmt, if_stmt)
-                            if inlined:
-                                # Collect leading nops
-                                for k in range(i, j):
-                                    optimized.append(block.statements[k])
-
-                                for child in sub_blocks(inlined):
-                                    self._optimize_block(child)
-
-                                # Remove redundant assignments
-                                self._remove_redundant_else_assign(inlined, optimized)
-                                optimized.append(inlined)
-                                i = j + 2
-                                continue
+                    # Remove redundant assignments
+                    self._remove_redundant_else_assign(inlined, optimized)
+                    optimized.append(inlined)
+                    i = j + 2
+                    continue
 
             for child in sub_blocks(stmt):
                 self._optimize_block(child)
@@ -158,11 +133,15 @@ class ControlFlowOptimizationPass(Pass):
 
         block.statements = optimized
 
-    def _try_inline_condition(self, assign_stmt: HLILAssign, next_stmt: HLILStatement) -> Optional[HLILIf]:
+    def _try_inline_condition(self, assign_stmt: HLILStatement, next_stmt: HLILStatement) -> Optional[HLILIf]:
         """
         Try to inline: var = bool_expr; if (var != 0) {...} -> if (bool_expr) {...}
         Returns new HLILIf if successful, None otherwise.
         """
+        if not (isinstance(assign_stmt, HLILAssign) and isinstance(assign_stmt.dest, HLILVar)
+                and is_boolean_expr(assign_stmt.src)):
+            return None
+
         if not isinstance(next_stmt, HLILIf):
             return None
 
@@ -201,32 +180,23 @@ class ControlFlowOptimizationPass(Pass):
         # are excluded since their own reads of var are the pattern being folded away, not
         # an outside use (next_stmt's branches were just checked above; its condition is the
         # read this transform consumes).
-        if self._var_read_elsewhere(assigned_var, exclude=(id(assign_stmt), id(next_stmt))):
+        if self._var_read_elsewhere(assigned_var, exclude=(assign_stmt, next_stmt)):
             return None
 
         condition_expr = assign_stmt.src
-        negate = (cond.op == BinaryOp.EQ)
-        has_else = next_stmt.false_block and next_stmt.false_block.statements
 
-        if negate and has_else:
-            # if (var == 0) {A} else {B} -> if (expr) {B} else {A}
-            new_condition = condition_expr
-            new_true_block = next_stmt.false_block
-            new_false_block = next_stmt.true_block
-        elif negate:
-            # if (var == 0) {A} -> if (!expr) {A}
-            new_condition = negate_condition(condition_expr)
-            new_true_block = next_stmt.true_block
-            new_false_block = None
-        else:
+        if cond.op == BinaryOp.NE:
             # if (var != 0) {A} else {B} -> if (expr) {A} else {B}
-            new_condition = condition_expr
-            new_true_block = next_stmt.true_block
-            new_false_block = next_stmt.false_block
+            return HLILIf(condition_expr, next_stmt.true_block, next_stmt.false_block)
 
-        return HLILIf(new_condition, new_true_block, new_false_block)
+        if next_stmt.false_block and next_stmt.false_block.statements:
+            # if (var == 0) {A} else {B} -> if (expr) {B} else {A}
+            return HLILIf(condition_expr, next_stmt.false_block, next_stmt.true_block)
 
-    def _var_read_elsewhere(self, var: HLILVariable, exclude: tuple) -> bool:
+        # if (var == 0) {A} -> if (!expr) {A}
+        return HLILIf(negate_condition(condition_expr), next_stmt.true_block)
+
+    def _var_read_elsewhere(self, var: HLILVariable, exclude: Tuple[HLILStatement, ...]) -> bool:
         """Check if var is read anywhere in the function, outside the excluded nodes.
 
         No kill/reachability tracking, unlike _can_read_original_value - any read anywhere
@@ -234,10 +204,13 @@ class ControlFlowOptimizationPass(Pass):
         being considered. That is deliberately conservative: it only ever blocks an
         optimization, never causes one, so it cannot turn a safe deletion into an unsafe one.
         """
-        return any(isinstance(n, HLILVar) and n.var == var for n in iter_tree(self._func_body, read_children, exclude))
+        return self._reads_var(var, self._func_body, exclude)
 
-    def _is_nop_stmt(self, stmt: HLILStatement) -> bool:
-        """Check if statement has no side effects (can be skipped)"""
+    def _reads_var(self, var: HLILVariable, node: HLILInstruction, exclude: Tuple[HLILStatement, ...] = ()) -> bool:
+        """Whether node reads var anywhere below it, outside the excluded nodes"""
+        return any(isinstance(n, HLILVar) and n.var == var for n in iter_tree(node, read_children, exclude))
+
+    def _is_comment(self, stmt: HLILStatement) -> bool:
         return isinstance(stmt, HLILComment)
 
     def _can_read_original_value(self, var: HLILVariable, node, killed: bool = False) -> tuple:
@@ -269,8 +242,7 @@ class ControlFlowOptimizationPass(Pass):
         # anything themselves, so killed is fixed across the whole subtree - walked with the
         # shared iter_tree, so a new expression node type can't drift from the other walkers.
         if isinstance(node, HLILExpression):
-            reads = not killed and any(isinstance(n, HLILVar) and n.var == var for n in iter_tree(node, read_children))
-            return (reads, killed, ())
+            return (not killed and self._reads_var(var, node), killed, ())
 
         # Statements
         if isinstance(node, HLILExprStmt):
@@ -399,9 +371,6 @@ class ControlFlowOptimizationPass(Pass):
             # A jump HLIL could not express: whatever runs next may read var
             return (True, None, ())
 
-        if isinstance(node, HLILComment):
-            return (False, killed, ())
-
         return (False, killed, ())
 
     def _loop_result(self, var: HLILVariable, node, killed: bool, *,
@@ -518,10 +487,10 @@ class ControlFlowOptimizationPass(Pass):
         if outer_var.kind not in (VariableKind.LOCAL, VariableKind.PARAM):
             return
 
-        # Find first non-nop statement in else block
+        # Find first non-comment statement in else block
         false_stmts = if_stmt.false_block.statements
         assign_idx = 0
-        while assign_idx < len(false_stmts) and self._is_nop_stmt(false_stmts[assign_idx]):
+        while assign_idx < len(false_stmts) and self._is_comment(false_stmts[assign_idx]):
             assign_idx += 1
 
         if assign_idx >= len(false_stmts):
@@ -587,23 +556,11 @@ class ControlFlowOptimizationPass(Pass):
 
         for stmt in reversed(preceding_stmts):
             if (isinstance(stmt, HLILAssign) and isinstance(stmt.dest, HLILVar)
-                    and stmt.dest.var == var and self._source_matches(stmt.src, source)):
+                    and stmt.dest.var == var and same_const_or_var(stmt.src, source)):
                 return True
 
             if self._stmt_modifies_any(stmt, vars_to_guard):
                 return False
-
-        return False
-
-    def _source_matches(self, a: HLILExpression, b: HLILExpression) -> bool:
-        """True if a and b are the same constant value or the same plain variable - the only two
-        shapes source_expr is ever allowed to be by the time this is called.
-        """
-        if isinstance(a, HLILConst) and isinstance(b, HLILConst):
-            return constant_values_equal(a.value, b.value)
-
-        if isinstance(a, HLILVar) and isinstance(b, HLILVar):
-            return a.var == b.var
 
         return False
 

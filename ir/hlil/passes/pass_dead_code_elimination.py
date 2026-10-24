@@ -17,9 +17,6 @@ class DeadCodeEliminationPass(Pass):
         return func
 
     def _remove_unreachable(self, block: HLILBlock):
-        if not block or not block.statements:
-            return
-
         for stmt in block.statements:
             for child in sub_blocks(stmt):
                 self._remove_unreachable(child)

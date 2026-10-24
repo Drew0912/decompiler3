@@ -29,7 +29,9 @@ from ..hlil import (
     HLILUnstructured,
     BinaryOp,
     COMPARISON_FUNCTIONS,
+    comment_statements,
     contains_escaping_exit,
+    drop_trailing_continue,
     iter_tree,
     negate_condition,
     sole_statement,
@@ -44,10 +46,7 @@ class LoopRecoveryPass(Pass):
         self._process_block(func.body)
         return func
 
-    def _process_block(self, block: Optional[HLILBlock]):
-        if not block or not block.statements:
-            return
-
+    def _process_block(self, block: HLILBlock):
         # Rebuilt rather than assigned in place: recovery can turn one loop into a
         # loop plus the statements hoisted out after it
         recovered: List[HLILStatement] = []
@@ -69,7 +68,7 @@ class LoopRecoveryPass(Pass):
         if any(isinstance(node, HLILUnstructured) for node in iter_tree(loop.body)):
             return [loop]
 
-        self._drop_trailing_continue(loop.body)
+        drop_trailing_continue(loop.body)
         loop.condition = self._fold_constant_condition(loop.condition)
 
         if not self._is_always_true(loop.condition):
@@ -78,7 +77,7 @@ class LoopRecoveryPass(Pass):
         guarded = self._guarded_body(loop.body)
         if guarded is not None:
             loop.condition, loop.body = guarded
-            self._drop_trailing_continue(loop.body)
+            drop_trailing_continue(loop.body)
             return [loop]
 
         leading_exit = self._leading_exit_condition(loop.body)
@@ -126,9 +125,7 @@ class LoopRecoveryPass(Pass):
             return None
 
         # Comments above the test are re-read on every iteration with it
-        for comment in reversed(body.statements[:index]):
-            new_body.statements.insert(0, comment)
-
+        new_body.statements[:0] = body.statements[:index]
         return (condition, new_body)
 
     def _is_only_break(self, block: Optional[HLILBlock]) -> bool:
@@ -148,8 +145,7 @@ class LoopRecoveryPass(Pass):
 
         # Comments above the test stay at the top of the body, with the test - and the
         # break's own comments stay where the test was, since the break becomes that test
-        comments = [s for s in stmt.true_block.statements if isinstance(s, HLILComment)]
-        body.statements[index : index + 1] = comments
+        body.statements[index : index + 1] = comment_statements(stmt.true_block)
         return negate_condition(stmt.condition)
 
     def _leading_exit_return(self, body: HLILBlock) -> Optional[tuple]:
@@ -200,8 +196,7 @@ class LoopRecoveryPass(Pass):
             return None
 
         # The break becomes the loop test, so its comments stay where the test was
-        comments = [s for s in stmt.true_block.statements if isinstance(s, HLILComment)]
-        body.statements[-1:] = comments
+        body.statements[-1:] = comment_statements(stmt.true_block)
         return negate_condition(stmt.condition)
 
     def _is_lone_break(self, stmt: HLILStatement) -> bool:
@@ -221,12 +216,6 @@ class LoopRecoveryPass(Pass):
                 return index
 
         return None
-
-    def _drop_trailing_continue(self, body: HLILBlock):
-        """Remove a continue that only restates what the end of the body does"""
-        if body.statements and isinstance(body.statements[-1], HLILContinue):
-            if body.statements[-1].label is None:
-                body.statements.pop()
 
     def _fold_constant_condition(self, condition: HLILExpression) -> HLILExpression:
         """Reduce an == or != between two constants to a single constant"""

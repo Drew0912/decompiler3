@@ -207,7 +207,7 @@ class TestFormatterSwitchBreak(unittest.TestCase):
 
     def format_switch(self, first_body: HLILBlock) -> list:
         func = HighLevelILFunction('f')
-        func.add_statement(HLILSwitch(var('x'), [
+        func.body.add_statement(HLILSwitch(var('x'), [
             HLILSwitchCase([HLILConst(FIRST_CASE_VALUE)], first_body),
             HLILSwitchCase([HLILConst(SECOND_CASE_VALUE)], HLILBlock([HLILReturn()])),
         ]))

@@ -142,7 +142,7 @@ class TestGlobalAssignedCallResult(unittest.TestCase):
 
     def build_events(self, call) -> list[tuple[str, str]]:
         func = HighLevelILFunction('f')
-        func.add_statement(HLILAssign(HLILVar(hlil_global_var()), call))
+        func.body.add_statement(HLILAssign(HLILVar(hlil_global_var()), call))
         cfg = build_cfg_from_hlil(func)
         ops = [op for node_id in sorted(cfg.nodes) for op in cfg.nodes[node_id].operations]
         events = [semantic_op_to_effect_event(op) for op in ops]
@@ -162,7 +162,7 @@ class TestGlobalAssignedCallResult(unittest.TestCase):
     def test_register_assigned_call_result_stays_one_call(self):
         func = HighLevelILFunction('f')
         reg_var = HLILVariable(kind=VariableKind.REG, index=REG_INDEX)
-        func.add_statement(HLILAssign(HLILVar(reg_var), HLILCall('get_value', [])))
+        func.body.add_statement(HLILAssign(HLILVar(reg_var), HLILCall('get_value', [])))
         cfg = build_cfg_from_hlil(func)
         operators = [op.operator for node in cfg.nodes.values() for op in node.operations]
         self.assertEqual(operators, ['CALL'])
@@ -184,7 +184,7 @@ class TestDoWhileFlattening(unittest.TestCase):
     def build_ops(self, condition) -> list[str]:
         func = HighLevelILFunction('f')
         body = HLILBlock([HLILExprStmt(HLILCall('body_call', []))])
-        func.add_statement(HLILDoWhile(condition, body))
+        func.body.add_statement(HLILDoWhile(condition, body))
         cfg = build_cfg_from_hlil(func)
         return [
             (op.operator, op.operands[0].value if op.operands else None)

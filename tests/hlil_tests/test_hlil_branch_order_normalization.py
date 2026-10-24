@@ -66,7 +66,7 @@ def guarded_call(name: str) -> HLILIf:
 def run_pass(stmt) -> HLILIf:
     """stmt after BranchOrderNormalizationPass"""
     func = HighLevelILFunction('test_branch_order')
-    func.add_statement(stmt)
+    func.body.add_statement(stmt)
     return BranchOrderNormalizationPass().run(func).body.statements[0]
 
 

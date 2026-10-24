@@ -72,7 +72,7 @@ def call_names(block: HLILBlock) -> list:
 
 def run_pass(loop: HLILWhile) -> HighLevelILFunction:
     func = HighLevelILFunction('test_loop')
-    func.add_statement(loop)
+    func.body.add_statement(loop)
     return LoopRecoveryPass().run(func)
 
 

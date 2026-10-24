@@ -1,17 +1,16 @@
 """HLIL - Structured control flow (if/while/do-while) from unstructured MLIL (goto/label)"""
 
-from typing import Callable, Iterator, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Collection, Iterator, List, Optional, Sequence, Tuple, Union
 from enum import auto
 import operator
 import re
 from dc3 import format_uint32_hex, IntEnum2, quote_string
-from ir.core import UNASSIGNED_INST_INDEX
+from ir.core import UNASSIGNED_INST_INDEX, constant_values_equal
 
 
 class HLILTypeKind(IntEnum2):
     """HLIL type kinds"""
 
-    UNKNOWN = auto()
     INT     = auto()
     FLOAT   = auto()
     STRING  = auto()
@@ -107,13 +106,9 @@ class HLILInstruction:
 class HLILStatement(HLILInstruction):
     """Base class for HLIL statements"""
 
-    pass
-
 
 class HLILExpression(HLILInstruction):
     """Base class for HLIL expressions"""
-
-    pass
 
 
 # ============================================================================
@@ -133,11 +128,11 @@ class HLILVariable:
     """HLIL variable with optional type information"""
 
     def __init__(self, name: Optional[str] = None, type_hint: Optional[HLILTypeKind] = None, default_value: Optional[str] = None,
-                 kind: VariableKind = None, index: Optional[int] = None):
+                 kind: VariableKind = VariableKind.LOCAL, index: Optional[int] = None):
         self.name = name
         self.type_hint = type_hint
         self.default_value = default_value
-        self.kind = kind if kind is not None else VariableKind.LOCAL
+        self.kind = kind
         self.index = index  # For GLOBAL/REG: the slot index
 
     def __str__(self) -> str:
@@ -397,7 +392,7 @@ class HLILCall(HLILExpression):
 class HLILSyscall(HLILExpression):
     """System call"""
 
-    def __init__(self, subsystem: str, cmd: str, args: List[HLILExpression]):
+    def __init__(self, subsystem: int, cmd: int, args: List[HLILExpression]):
         super().__init__(HLILOperation.HLIL_SYSCALL)
         self.subsystem = subsystem
         self.cmd = cmd
@@ -439,7 +434,6 @@ class HLILBlock(HLILStatement):
         self.statements = statements or []
 
     def add_statement(self, stmt: HLILStatement):
-        """Add a statement to the block"""
         self.statements.append(stmt)
 
     def __str__(self) -> str:
@@ -515,7 +509,6 @@ class HLILSwitchCase:
         self.body = body
 
     def is_default(self) -> bool:
-        """Check if this is the default case"""
         return self.values is None
 
     def _label_str(self) -> str:
@@ -718,6 +711,17 @@ def constant_truth(cond: HLILExpression) -> Optional[bool]:
     return None
 
 
+def same_const_or_var(a: HLILExpression, b: HLILExpression) -> bool:
+    """Whether a and b are the same constant (constant_values_equal) or the same variable"""
+    if isinstance(a, HLILConst) and isinstance(b, HLILConst):
+        return constant_values_equal(a.value, b.value)
+
+    if isinstance(a, HLILVar) and isinstance(b, HLILVar):
+        return a.var == b.var
+
+    return False
+
+
 # The comment a source line's marker becomes: MLILDebug('line', N) -> HLILComment('line(N)')
 LINE_MARKER = re.compile(r'line\((\d+)\)')
 
@@ -734,6 +738,11 @@ def line_marker_number(stmt: HLILStatement) -> Optional[int]:
 def code_statements(block: HLILBlock) -> List[HLILStatement]:
     """block's statements without its comments"""
     return [stmt for stmt in block.statements if not isinstance(stmt, HLILComment)]
+
+
+def comment_statements(block: HLILBlock) -> List[HLILComment]:
+    """block's comments"""
+    return [stmt for stmt in block.statements if isinstance(stmt, HLILComment)]
 
 
 def sole_statement(block: Optional[HLILBlock]) -> Optional[HLILStatement]:
@@ -755,7 +764,13 @@ def split_else_if_arm(block: HLILBlock) -> Optional[Tuple[List[HLILComment], HLI
     if not isinstance(inner_if, HLILIf):
         return None
 
-    return [stmt for stmt in block.statements if isinstance(stmt, HLILComment)], inner_if
+    return comment_statements(block), inner_if
+
+
+def drop_trailing_continue(body: HLILBlock):
+    """Remove a bare continue ending a loop body: the end of the body does the same"""
+    if body.statements and isinstance(body.statements[-1], HLILContinue) and body.statements[-1].label is None:
+        body.statements.pop()
 
 
 def unwrap_address_taken_var(expr: 'HLILExpression') -> Optional['HLILVar']:
@@ -803,7 +818,7 @@ def expr_children(node: HLILInstruction) -> Sequence[HLILExpression]:
     return []
 
 
-def stmt_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
+def node_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
     """Every direct child of node - statements, blocks and expressions - in source order. A
     switch contributes each case's labels, then that case's body."""
     if isinstance(node, HLILAssign):
@@ -839,23 +854,23 @@ def stmt_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
 
 
 def read_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
-    """stmt_children without a plain assignment target: writing x does not read it, while a
+    """node_children without a plain assignment target: writing x does not read it, while a
     store through a pointer (*p = v) still reads p"""
     if isinstance(node, HLILAssign) and not isinstance(node.dest, HLILDeref):
         return [node.src]
 
-    return stmt_children(node)
+    return node_children(node)
 
 
 def iter_tree(node: Optional[HLILInstruction],
-              children: Callable[[HLILInstruction], Sequence[HLILInstruction]] = stmt_children,
-              exclude: Tuple[int, ...] = ()) -> Iterator[HLILInstruction]:
+              children: Callable[[HLILInstruction], Sequence[HLILInstruction]] = node_children,
+              exclude: Collection[HLILInstruction] = ()) -> Iterator[HLILInstruction]:
     """node and everything below it, pre-order in children's order, without recursion. A node
-    whose id() is in exclude is skipped together with everything below it."""
+    in exclude is skipped together with everything below it."""
     pending = [node]
     while pending:
         current = pending.pop()
-        if current is None or (exclude and id(current) in exclude):
+        if current is None or current in exclude:
             continue
 
         yield current
@@ -1010,10 +1025,6 @@ class HighLevelILFunction:
         self.variables: List[HLILVariable] = []  # Local variables
         self.parameters: List[HLILVariable] = []  # Parameters
         self.is_common_func = is_common_func
-
-    def add_statement(self, stmt: HLILStatement):
-        """Add a statement to the function body"""
-        self.body.add_statement(stmt)
 
     def __str__(self) -> str:
         return f'HighLevelILFunction({self.name}, {len(self.body.statements)} stmts)'

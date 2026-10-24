@@ -69,9 +69,9 @@ class TestFunctionText(unittest.TestCase):
         func.parameters = [HLILVariable(name, kind=VariableKind.PARAM) for name in ('arg1', 'arg2')]
         func.variables = [HLILVariable('local')]
         syscall = HLILSyscall(SUBSYSTEM, COMMAND, [HLILConst(ARGUMENT_VALUE), HLILConst('text')])
-        func.add_statement(HLILExprStmt(syscall))
-        func.add_statement(HLILExprStmt(HLILExternCall('other:Entry', [var('arg1')])))
-        func.add_statement(HLILIf(
+        func.body.add_statement(HLILExprStmt(syscall))
+        func.body.add_statement(HLILExprStmt(HLILExternCall('other:Entry', [var('arg1')])))
+        func.body.add_statement(HLILIf(
             equals('arg1', FIRST_VALUE),
             HLILBlock([call('first')]),
             HLILBlock([HLILIf(
@@ -80,9 +80,9 @@ class TestFunctionText(unittest.TestCase):
                 HLILBlock([call('other')]),
             )]),
         ))
-        func.add_statement(HLILBlock([HLILAssign(var('local'), HLILConst(FIRST_VALUE))]))
-        func.add_statement(HLILComment('note'))
-        func.add_statement(HLILReturn(var('local')))
+        func.body.add_statement(HLILBlock([HLILAssign(var('local'), HLILConst(FIRST_VALUE))]))
+        func.body.add_statement(HLILComment('note'))
+        func.body.add_statement(HLILReturn(var('local')))
         return func
 
     def test_every_line(self):
@@ -114,13 +114,13 @@ class TestFunctionText(unittest.TestCase):
 
     def test_string_argument_is_escaped(self):
         func = HighLevelILFunction('Init')
-        func.add_statement(HLILExprStmt(HLILCall('show', [HLILConst(SPECIAL_TEXT)])))
+        func.body.add_statement(HLILExprStmt(HLILCall('show', [HLILConst(SPECIAL_TEXT)])))
 
         self.assertIn(indented(1, f'show({SPECIAL_TEXT_LITERAL});'), HLILFormatter.format_function(func))
 
     def test_hex_constant_prints_unsigned_hex(self):
         func = HighLevelILFunction('Init')
-        func.add_statement(HLILExprStmt(HLILCall('show', [HLILConst(ALL_BITS_SET, is_hex=True)])))
+        func.body.add_statement(HLILExprStmt(HLILCall('show', [HLILConst(ALL_BITS_SET, is_hex=True)])))
 
         self.assertIn(indented(1, f'show({ALL_BITS_SET_HEX});'), HLILFormatter.format_function(func))
 

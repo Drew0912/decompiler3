@@ -39,6 +39,7 @@ from ir.hlil import (
     UnaryOp,
     VariableKind,
     iter_tree,
+    same_const_or_var,
 )
 from ir.hlil.passes.pass_control_flow_optimization import ExitKind
 from tests.shared.hlil_cfg_utils import statements_in_two_places
@@ -117,7 +118,7 @@ def run_cfo(*statements: HLILStatement) -> HighLevelILFunction:
     """A function of these statements, after ControlFlowOptimizationPass"""
     func = HighLevelILFunction(TEST_FUNCTION_NAME)
     for stmt in statements:
-        func.add_statement(stmt)
+        func.body.add_statement(stmt)
 
     return ControlFlowOptimizationPass().run(func)
 
@@ -690,22 +691,21 @@ class TestReachingAssignmentExistsModificationBarriers(unittest.TestCase):
         self.assertTrue(result)
 
 
-class TestSourceMatchesDistinguishesIntFromFloat(unittest.TestCase):
+class TestSameConstOrVarDistinguishesIntFromFloat(unittest.TestCase):
     """Mirrors pass_reg_global_propagation.py's established _expr_equal contract: int and
     float constants are distinct representations even at equal numeric value, and NaN
     compares equal to itself."""
 
     def test_int_and_float_same_value_do_not_match(self):
-        self.assertFalse(ControlFlowOptimizationPass()._source_matches(HLILConst(1), HLILConst(1.0)))
+        self.assertFalse(same_const_or_var(HLILConst(1), HLILConst(1.0)))
 
     def test_same_type_same_value_matches(self):
-        cfo = ControlFlowOptimizationPass()
-        self.assertTrue(cfo._source_matches(HLILConst(1), HLILConst(1)))
-        self.assertTrue(cfo._source_matches(HLILConst(1.5), HLILConst(1.5)))
+        self.assertTrue(same_const_or_var(HLILConst(1), HLILConst(1)))
+        self.assertTrue(same_const_or_var(HLILConst(1.5), HLILConst(1.5)))
 
     def test_nan_matches_itself(self):
         nan = float('nan')
-        self.assertTrue(ControlFlowOptimizationPass()._source_matches(HLILConst(nan), HLILConst(nan)))
+        self.assertTrue(same_const_or_var(HLILConst(nan), HLILConst(nan)))
 
 
 SOURCE_MARKER_VALUE = 42

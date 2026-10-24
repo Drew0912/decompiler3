@@ -63,7 +63,7 @@ def render_call(argument, parameters=()) -> str:
     """The TypeScript of a function whose body is f(argument)"""
     func = HighLevelILFunction(TEST_FUNCTION_NAME)
     func.parameters = list(parameters)
-    func.add_statement(HLILExprStmt(HLILCall('f', [argument])))
+    func.body.add_statement(HLILExprStmt(HLILCall('f', [argument])))
     return generate_typescript(func)
 
 
@@ -77,7 +77,7 @@ class TestEmptyThenArm(unittest.TestCase):
 
     def render_if(self, condition) -> str:
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(HLILIf(condition, HLILBlock(), HLILBlock([HLILExprStmt(HLILCall('f', []))])))
+        func.body.add_statement(HLILIf(condition, HLILBlock(), HLILBlock([HLILExprStmt(HLILCall('f', []))])))
         return generate_typescript(func)
 
     def test_condition_is_negated_like_the_hlil_passes(self):
@@ -139,7 +139,7 @@ class TestSwitchEmptyCase(unittest.TestCase):
         switch_stmt = HLILSwitch(make_scrutinee(), [empty_case, second_case])
 
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(switch_stmt)
+        func.body.add_statement(switch_stmt)
 
         ts = generate_typescript(func)
         lines = [line.strip() for line in ts.splitlines()]
@@ -169,7 +169,7 @@ class TestPointerCodegen(unittest.TestCase):
         pointer = HLILVariable('arg1', HLILTypeKind.POINTER)
         bool_expr = HLILBinaryOp(BinaryOp.EQ, HLILVar(HLILVariable('a')), HLILVar(HLILVariable('b')))
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(HLILAssign(HLILVar(pointer), bool_expr))
+        func.body.add_statement(HLILAssign(HLILVar(pointer), bool_expr))
 
         self.assertIn('arg1 = int(', generate_typescript(func))
 
@@ -187,7 +187,7 @@ class TestNumberCodegen(unittest.TestCase):
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
         func.variables = [HLILVariable('x', HLILTypeKind.NUMBER)]
         bool_expr = HLILBinaryOp(BinaryOp.EQ, HLILVar(HLILVariable('a')), HLILVar(HLILVariable('b')))
-        func.add_statement(HLILAssign(HLILVar(HLILVariable('x')), bool_expr))
+        func.body.add_statement(HLILAssign(HLILVar(HLILVariable('x')), bool_expr))
 
         ts = generate_typescript(func)
 
@@ -243,7 +243,7 @@ class TestExternCallCodegen(unittest.TestCase):
 
     def test_target_is_escaped(self):
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(HLILExprStmt(HLILExternCall(SPECIAL_TARGET, [])))
+        func.body.add_statement(HLILExprStmt(HLILExternCall(SPECIAL_TARGET, [])))
 
         self.assertIn(f'extern_call({SPECIAL_TARGET_LITERAL});', generate_typescript(func))
 
@@ -271,7 +271,7 @@ class TestTrailingDefaultArguments(unittest.TestCase):
 
     def render(self, statement, defaults=DEFAULTS) -> str:
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
-        func.add_statement(statement)
+        func.body.add_statement(statement)
         return generate_typescript(func, defaults)
 
     def test_trailing_defaults_left_out(self):
@@ -350,7 +350,7 @@ class TestTrailingDefaultArguments(unittest.TestCase):
         """.hlil.ts is written from the same tree before .ts, then later outputs and callers see it"""
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
         statement = HLILExprStmt(call(CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE))
-        func.add_statement(statement)
+        func.body.add_statement(statement)
 
         self.assertIn('g(a);', generate_typescript(func, DEFAULTS))
         # A direct caller (the codegen tests format single expressions) never sees the last render's defaults
@@ -378,7 +378,7 @@ class TestWrittenArguments(unittest.TestCase):
     def render(self, written_argc: dict[int, int] | None, *exprs: HLILExpression) -> str:
         func = HighLevelILFunction(TEST_FUNCTION_NAME)
         for expr in exprs:
-            func.add_statement(HLILExprStmt(expr))
+            func.body.add_statement(HLILExprStmt(expr))
 
         return generate_typescript(func, DEFAULTS, written_argc)
 

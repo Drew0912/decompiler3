@@ -148,8 +148,8 @@ class PathChecker:
             for i, inst in enumerate(block.instructions)
         }
         # One object per HLIL node, so loop fixpoints compare equal sets
-        self.copies: Dict[int, _Copy] = {}
-        self.jumps: Dict[int, _UnstructuredJump] = {}
+        self.copies: Dict[HLILInstruction, _Copy] = {}
+        self.jumps: Dict[HLILUnstructured, _UnstructuredJump] = {}
         self.successors: Dict[object, Set] = {}
 
     # === MLIL ===
@@ -271,10 +271,9 @@ class PathChecker:
         return 'RET ?'
 
     def copy_of(self, node: HLILInstruction) -> _Copy:
-        key = id(node)
-        if key not in self.copies:
-            self.copies[key] = _Copy(node.mlil_index)
-        return self.copies[key]
+        if node not in self.copies:
+            self.copies[node] = _Copy(node.mlil_index)
+        return self.copies[node]
 
     def calls_in(self, expr: Optional[HLILExpression]) -> List[HLILExpression]:
         """The anchored calls expr evaluates, in evaluation order (arguments first)"""
@@ -344,7 +343,7 @@ class PathChecker:
     def statement(self, stmt: HLILStatement, follow: FrozenSet, targets: List[_ExitTarget]) -> FrozenSet:
         """First of running stmt, then follow"""
         if isinstance(stmt, HLILUnstructured):
-            return frozenset((self.jumps.setdefault(id(stmt), _UnstructuredJump(stmt.target)),))
+            return frozenset((self.jumps.setdefault(stmt, _UnstructuredJump(stmt.target)),))
 
         if isinstance(stmt, HLILComment):
             return follow

@@ -6,7 +6,7 @@ from typing import Dict, FrozenSet, List, Set, Optional, Tuple
 
 from dc3.logging import log
 from ir.mlil.mlil import *
-from ir.mlil.mlil_types import MLILType, MLILTypeKind
+from ir.mlil.mlil_types import MLILTypeKind
 from .hlil import *
 from .structural_analysis import StructuralAnalyzer
 
@@ -39,13 +39,13 @@ _UNARY_OP_MAP = {
 }
 
 _MLIL_TYPE_MAP = {
-    MLILTypeKind.UNKNOWN  : HLILTypeKind.UNKNOWN,
+    MLILTypeKind.UNKNOWN  : None,
     MLILTypeKind.INT      : HLILTypeKind.INT,
     MLILTypeKind.FLOAT    : HLILTypeKind.FLOAT,
     MLILTypeKind.STRING   : HLILTypeKind.STRING,
     MLILTypeKind.BOOL     : HLILTypeKind.INT,
     MLILTypeKind.POINTER  : HLILTypeKind.POINTER,
-    MLILTypeKind.VARIANT  : HLILTypeKind.UNKNOWN,
+    MLILTypeKind.VARIANT  : None,
     MLILTypeKind.VOID     : HLILTypeKind.VOID,
 }
 
@@ -53,10 +53,6 @@ _MLIL_TYPE_MAP = {
 # without goto, but it grows output, so cap how far it can run per function.
 CLONE_STATEMENT_BUDGET   = 400  # total statements re-emitted per function
 CLONE_MAX_REGION_BLOCKS  = 48   # blocks in one re-emitted region
-
-
-def _mlil_type_to_hlil(mlil_type: MLILType) -> HLILTypeKind:
-    return _MLIL_TYPE_MAP[mlil_type.kind]
 
 
 def constant_condition_truth(condition: MediumLevelILInstruction) -> Optional[bool]:
@@ -475,7 +471,6 @@ class MLILToHLILConverter:
         return self.hlil_func
 
     def _convert_parameters(self):
-        """Build the HLIL parameter list from the MLIL one"""
         for i, mlil_var in enumerate(self.mlil_func.parameters):
             if mlil_var is None:
                 continue
@@ -507,12 +502,7 @@ class MLILToHLILConverter:
 
     def _get_type_hint(self, var_name: str) -> Optional[HLILTypeKind]:
         mlil_type = self.mlil_func.var_types.get(var_name)
-        if mlil_type is None:
-            return None
-        hlil_type = _mlil_type_to_hlil(mlil_type)
-        if hlil_type == HLILTypeKind.UNKNOWN:
-            return None
-        return hlil_type
+        return None if mlil_type is None else _MLIL_TYPE_MAP[mlil_type.kind]
 
     def _build_cfg(self):
         num_blocks = len(self.mlil_func.basic_blocks)
@@ -681,13 +671,7 @@ class MLILToHLILConverter:
         elif loop_body_start is not None:
             self._reconstruct_control_flow(loop_body_start, loop_body, stop_at=header_idx, jump_source=last_instr)
 
-        # Drop the redundant trailing continue of this loop's own body
-        if loop_body.statements:
-            tail = loop_body.statements[-1]
-
-            if isinstance(tail, HLILContinue) and tail.label is None:
-                loop_body.statements.pop()
-
+        drop_trailing_continue(loop_body)
         self.loop_stack.pop()
 
         while_stmt = HLILWhile(condition, loop_body, label=stack_entry.label)

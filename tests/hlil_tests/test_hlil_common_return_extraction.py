@@ -72,7 +72,7 @@ def make_if_else(true_value, false_value) -> HLILIf:
 def run_pass(*statements) -> HighLevelILFunction:
     func = HighLevelILFunction('f')
     for stmt in statements:
-        func.add_statement(stmt)
+        func.body.add_statement(stmt)
 
     CommonReturnExtractionPass().run(func)
     return func

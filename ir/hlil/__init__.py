@@ -22,6 +22,7 @@ __all__ = [
     'is_boolean_expr',
     'negate_condition',
     'constant_truth',
+    'same_const_or_var',
 
     # C-family syntax
     'BINARY_OP_STR',
@@ -74,9 +75,11 @@ __all__ = [
 
     # Shape helpers
     'code_statements',
+    'comment_statements',
     'line_marker_number',
     'sole_statement',
     'split_else_if_arm',
+    'drop_trailing_continue',
     'unwrap_address_taken_var',
     'sub_blocks',
     'contains_escaping_exit',
@@ -86,7 +89,7 @@ __all__ = [
 
     # Tree walking
     'expr_children',
-    'stmt_children',
+    'node_children',
     'read_children',
     'iter_tree',
 

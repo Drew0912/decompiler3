@@ -86,13 +86,13 @@ TypeScript generator and the debug formatter; a non-C output needs its own. `TER
 of `!`.
 
 Tree walking is shared the same way. `sub_blocks` gives the blocks a structured statement owns;
-`stmt_children` gives every child of a node in source order (a switch contributes each case's
+`node_children` gives every child of a node in source order (a switch contributes each case's
 labels, then its body), `read_children` the same without a plain assignment target, and
 `iter_tree` walks a whole subtree without recursion. `contains_escaping_exit` says whether a
 `break`/`continue` leaves a block (a loop owns both, a switch only a `break`), and `sole_statement`
 finds a block's one non-comment statement. The passes, the converter's variable declaration and
 the renderers are built on these, so a new node type needs a sample in
-`tests/hlil_tests/test_hlil_traversal.py` and an entry in `stmt_children` (a statement) or `expr_children` (an
+`tests/hlil_tests/test_hlil_traversal.py` and an entry in `node_children` (a statement) or `expr_children` (an
 expression), plus `sub_blocks` if it owns a block - that test fails until both exist.
 
 `HLILSwitchCase` is a helper owned by `HLILSwitch`, not an `HLILInstruction`. Its `values` field is
@@ -144,10 +144,10 @@ HLIL does not have variable versions, phi nodes, or SSA construction/deconstruct
 the non-SSA `MediumLevelILFunction` produced by the upstream MLIL pipeline. This keeps the final IR
 close to a source-language variable model and avoids exposing optimizer machinery to codegen.
 
-Type information is deliberately lightweight. `HLILTypeKind` contains `UNKNOWN`, `INT`, `FLOAT`,
-`STRING`, `BOOL`, `VOID`, `POINTER` and `NUMBER` (int or float), but types are hints on variables
-rather than types attached to every expression. During conversion, MLIL booleans map to `INT`, MLIL
-pointers (`Pointer` out-parameters) to `POINTER`, and MLIL variants to unknown. Parameter default
+Type information is deliberately lightweight. `HLILTypeKind` contains `INT`, `FLOAT`, `STRING`,
+`BOOL`, `VOID`, `POINTER` and `NUMBER` (int or float), but types are hints on variables rather than
+types attached to every expression. During conversion, MLIL booleans map to `INT`, MLIL pointers
+(`Pointer` out-parameters) to `POINTER`, and unknown and variant MLIL types to no hint. Parameter default
 values are copied from MLIL source-parameter metadata when available. When the script's function is
 given, `FalcomTypeInferencePass` then sets each parameter's type from its declared flag -
 `Value32`/`Nullable32` -> `NUMBER`, `str`/`NullableStr` -> `STRING`, `Pointer` -> `POINTER` - so a

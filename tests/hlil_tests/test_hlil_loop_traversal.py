@@ -33,7 +33,7 @@ class TestDeadCodeEliminationInDoWhile(unittest.TestCase):
         ])
         loop = HLILDoWhile(HLILConst(0), body)
         func = HighLevelILFunction('f')
-        func.add_statement(loop)
+        func.body.add_statement(loop)
 
         DeadCodeEliminationPass().run(func)
 
@@ -50,7 +50,7 @@ class TestCommonReturnExtractionInDoWhile(unittest.TestCase):
         )
         loop = HLILDoWhile(HLILConst(0), HLILBlock([branch]))
         func = HighLevelILFunction('f')
-        func.add_statement(loop)
+        func.body.add_statement(loop)
 
         CommonReturnExtractionPass().run(func)
 

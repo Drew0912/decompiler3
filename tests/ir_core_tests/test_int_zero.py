@@ -75,8 +75,8 @@ class TestHLILConditionInlining(unittest.TestCase):
     def statements_after_pass(self, zero) -> list:
         flag = HLILVariable('flag')
         func = HighLevelILFunction('inline_test')
-        func.add_statement(HLILAssign(HLILVar(flag), less_than_one()))
-        func.add_statement(HLILIf(HLILBinaryOp(BinaryOp.NE, HLILVar(flag), HLILConst(zero)),
+        func.body.add_statement(HLILAssign(HLILVar(flag), less_than_one()))
+        func.body.add_statement(HLILIf(HLILBinaryOp(BinaryOp.NE, HLILVar(flag), HLILConst(zero)),
                                   HLILBlock([HLILExprStmt(HLILCall('f', []))]), HLILBlock()))
         return ControlFlowOptimizationPass().run(func).body.statements
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the shared HLIL tree walkers in ir/hlil/hlil.py - expr_children, stmt_children,
+"""Unit tests for the shared HLIL tree walkers in ir/hlil/hlil.py - expr_children, node_children,
 read_children, iter_tree, contains_escaping_exit and sole_statement - which the passes and the
 converter are built on instead of each hand-listing the node kinds."""
 
@@ -44,7 +44,7 @@ from ir.hlil import (
     read_children,
     sole_statement,
     split_else_if_arm,
-    stmt_children,
+    node_children,
 )
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from tests.shared.ir_utils import concrete_subclasses
@@ -75,7 +75,7 @@ def samples() -> list:
         HLILUnaryOp(UnaryOp.NEG, c(FIRST_VALUE)),
         HLILAddressOf(var('x')), HLILDeref(var('p')),
         HLILCall('f', [c(FIRST_VALUE), c(SECOND_VALUE)]),
-        HLILSyscall('sys', 'cmd', [c(FIRST_VALUE)]),
+        HLILSyscall(0, 3, [c(FIRST_VALUE)]),
         HLILExternCall('m:g', [c(FIRST_VALUE)]),
         HLILBlock([HLILBreak(), HLILContinue()]),
         HLILIf(c(TRUE_CONDITION), HLILBlock(), HLILBlock()), HLILIf(c(TRUE_CONDITION), HLILBlock()),
@@ -107,8 +107,8 @@ def ids(nodes) -> list:
 
 
 class TestChildrenCoverEveryNode(unittest.TestCase):
-    """stmt_children is the one list of a node's children: every node type must return exactly the
-    nodes it holds. A new node type fails here until it has a sample and an entry in stmt_children
+    """node_children is the one list of a node's children: every node type must return exactly the
+    nodes it holds. A new node type fails here until it has a sample and an entry in node_children
     (a statement) or expr_children (an expression)."""
 
     def test_every_node_type_has_a_sample(self):
@@ -116,15 +116,15 @@ class TestChildrenCoverEveryNode(unittest.TestCase):
         missing = concrete_subclasses(HLILInstruction) - sampled
         self.assertEqual(missing, set(), [cls.__name__ for cls in missing])
 
-    def test_stmt_children_are_exactly_the_held_nodes(self):
+    def test_node_children_are_exactly_the_held_nodes(self):
         for node in samples():
             with self.subTest(node=type(node).__name__):
-                self.assertCountEqual(ids(stmt_children(node)), ids(held_nodes(node)))
+                self.assertCountEqual(ids(node_children(node)), ids(held_nodes(node)))
 
     def test_read_children_drop_only_a_plain_assignment_target(self):
         for node in samples():
             with self.subTest(node=type(node).__name__):
-                expected = [node.src] if isinstance(node, HLILAssign) else stmt_children(node)
+                expected = [node.src] if isinstance(node, HLILAssign) else node_children(node)
                 self.assertEqual(ids(read_children(node)), ids(expected))
 
 
@@ -136,9 +136,9 @@ class TestSourceOrder(unittest.TestCase):
 
         if_stmt = HLILIf(cond, true_block, false_block)
 
-        self.assertEqual(ids(stmt_children(if_stmt)), ids([cond, true_block, false_block]))
-        self.assertEqual(ids(stmt_children(HLILDoWhile(cond, body))), ids([body, cond]))
-        self.assertEqual(ids(stmt_children(HLILAssign(dest, src))), ids([dest, src]))
+        self.assertEqual(ids(node_children(if_stmt)), ids([cond, true_block, false_block]))
+        self.assertEqual(ids(node_children(HLILDoWhile(cond, body))), ids([body, cond]))
+        self.assertEqual(ids(node_children(HLILAssign(dest, src))), ids([dest, src]))
 
     def test_switch_gives_each_case_labels_then_body(self):
         scrutinee, first, second = var('x'), c(FIRST_CASE_VALUE), c(SECOND_CASE_VALUE)
@@ -146,7 +146,7 @@ class TestSourceOrder(unittest.TestCase):
         switch = HLILSwitch(scrutinee, [HLILSwitchCase([first, second], first_body),
                                         HLILSwitchCase(None, default_body)])
 
-        self.assertEqual(ids(stmt_children(switch)), ids([scrutinee, first, second, first_body, default_body]))
+        self.assertEqual(ids(node_children(switch)), ids([scrutinee, first, second, first_body, default_body]))
 
     def test_a_store_through_a_pointer_reads_the_pointer(self):
         dest, src = HLILDeref(var('p')), c(FIRST_VALUE)
@@ -168,7 +168,7 @@ class TestIterTree(unittest.TestCase):
         outer = HLILExprStmt(var('y'))
         block = HLILBlock([inner, outer])
 
-        self.assertEqual(ids(iter_tree(block, exclude=(id(inner),))), ids([block, outer, outer.expr]))
+        self.assertEqual(ids(iter_tree(block, exclude=(inner,))), ids([block, outer, outer.expr]))
 
     def test_children_function_decides_what_is_visited(self):
         dest = var('x')
@@ -259,7 +259,7 @@ class TestWalkerUsers(unittest.TestCase):
         chain = link(FIRST_CASE_VALUE, HLILBlock([link(SECOND_CASE_VALUE, HLILBlock([link(THIRD_CASE_VALUE, None)]))]))
         loop = HLILDoWhile(var('running'), HLILBlock([chain]))
         func = HighLevelILFunction('f')
-        func.add_statement(loop)
+        func.body.add_statement(loop)
 
         ControlFlowOptimizationPass().run(func)
 
