@@ -64,12 +64,17 @@ statement copies all three with `copy_metadata_from()`. Nodes are split into `Me
 | Calls | `MLIL_CALL`, `MLIL_CALL_SCRIPT`, `MLIL_SYSCALL` |
 | Falcom specific | Derived metadata on top of generic ops — stack-setup helpers like `PUSH_CALLER_FRAME`/`PUSH_CURRENT_FUNC_ID`/`PUSH_RET_ADDR` are fully lowered to regular variables/arguments, with no dedicated MLIL opcode. |
 
-When a pass replaces an expression's operands and keeps its operation, it calls the node's own
-`rebuild()`, which keeps the source metadata (address, indices): `MLILBinaryOp.rebuild()` and
-`MLILUnaryOp.rebuild()` (one method each, since every subclass constructor takes only its operands),
-and the call and `MLILStoreDeref` rebuilds. There is no per-pass reconstruction table. A rewrite
-that produces a different operation (NNF's De Morgan, comparison inversion) builds the new node
-directly.
+When a pass replaces a node's operands and keeps its operation, it calls `map_operands(node,
+transform)` (`ir/mlil/mlil.py`): transform runs on each direct operand in evaluation order, and the
+node comes back as it is when nothing changed, else through its own `rebuild(*operands)`, which keeps
+the source metadata (address, indices) and every other field. `MLILBinaryOp.rebuild()` and
+`MLILUnaryOp.rebuild()` are one method each, since every subclass constructor takes only its
+operands; every statement holding an expression has its own, so a new node type with operands needs
+one too. SSA construction and deconstruction, copy propagation, inlining, constant propagation, SCCP
+and register/global propagation rewrite this way: each handles its own leaves and names what it does
+not enter (copy propagation, inlining, SCCP and the address-taken lowering stop at `&`; constant
+propagation also at `TestZero`). There is no per-pass reconstruction table. A rewrite that produces
+a different operation (NNF's De Morgan, comparison inversion) builds the new node directly.
 
 Reading is shared the same way. Every node's `operands()` returns the expressions it holds, in
 evaluation order; `walk()` (`ir/mlil/mlil.py`) visits a node and everything below it, and

@@ -5,10 +5,10 @@ from typing import Any, Dict, List, Set
 
 from ir.core import constant_values_equal
 from ..mlil import (
+    map_operands,
     MediumLevelILFunction,
     MediumLevelILInstruction,
     MediumLevelILBasicBlock,
-    MediumLevelILCall,
     MLILConst,
     MLILBinaryOp,
     MLILUnaryOp,
@@ -36,9 +36,6 @@ from ..mlil import (
     MLILIf,
     MLILGoto,
     MLILRet,
-    MLILStoreGlobal,
-    MLILStoreReg,
-    MLILStoreDeref,
 )
 from ..mlil_ssa import (
     iter_ssa_defs,
@@ -411,7 +408,7 @@ class SCCP:
             new_instructions = []
 
             for inst in block.instructions:
-                new_inst = self._replace_constants_in_inst(inst)
+                new_inst = map_operands(inst, self._replace_constants_in_expr)
                 new_instructions.append(new_inst)
 
                 if new_inst is not inst:
@@ -420,46 +417,6 @@ class SCCP:
             block.instructions = new_instructions
 
         return changed
-
-    def _replace_constants_in_inst(self, inst: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Replace constant SSA variables in instruction"""
-        if isinstance(inst, MLILSetVarSSA):
-            new_value = self._replace_constants_in_expr(inst.value)
-
-            if new_value is not inst.value:
-                return MLILSetVarSSA(inst.var, new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MLILIf):
-            new_cond = self._replace_constants_in_expr(inst.condition)
-
-            if new_cond is not inst.condition:
-                return MLILIf(new_cond, inst.true_target, inst.false_target).copy_metadata_from(inst)
-        elif isinstance(inst, MLILRet):
-            if inst.value is not None:
-                new_value = self._replace_constants_in_expr(inst.value)
-
-                if new_value is not inst.value:
-                    return MLILRet(new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MediumLevelILCall):
-            new_args = [self._replace_constants_in_expr(arg) for arg in inst.args]
-
-            if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
-                return inst.rebuild(new_args)
-        elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
-            new_value = self._replace_constants_in_expr(inst.value)
-
-            if new_value is not inst.value:
-                if isinstance(inst, MLILStoreGlobal):
-                    return MLILStoreGlobal(inst.index, new_value).copy_metadata_from(inst)
-                else:
-                    return MLILStoreReg(inst.index, new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MLILStoreDeref):
-            new_dest = self._replace_constants_in_expr(inst.dest)
-            new_value = self._replace_constants_in_expr(inst.value)
-
-            if new_dest is not inst.dest or new_value is not inst.value:
-                return inst.rebuild(new_dest, new_value)
-
-        return inst
 
     def _replace_constants_in_expr(self, expr: MediumLevelILInstruction, is_bitwise: bool = False) -> MediumLevelILInstruction:
         """Replace constant SSA variables with constants"""
@@ -477,22 +434,10 @@ class SCCP:
                 return MLILConst(expr.value, is_hex=True)
 
             return expr
-        elif isinstance(expr, MLILBinaryOp):
-            # Bitwise operations use hex format for constants
-            child_is_bitwise = isinstance(expr, (MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr))
-            new_lhs = self._replace_constants_in_expr(expr.lhs, child_is_bitwise)
-            new_rhs = self._replace_constants_in_expr(expr.rhs, child_is_bitwise)
-
-            if new_lhs is not expr.lhs or new_rhs is not expr.rhs:
-                return expr.rebuild(new_lhs, new_rhs)
         elif isinstance(expr, MLILAddressOf):
             # &x names x's storage, not its value - never substitute a constant under it
             return expr
-        elif isinstance(expr, MLILUnaryOp):
-            child_is_bitwise = isinstance(expr, MLILBitwiseNot)
-            new_operand = self._replace_constants_in_expr(expr.operand, child_is_bitwise)
-
-            if new_operand is not expr.operand:
-                return expr.rebuild(new_operand)
-
-        return expr
+        else:
+            # Bitwise operations use hex format for constants
+            child_is_bitwise = isinstance(expr, (MLILAnd, MLILOr, MLILXor, MLILShl, MLILShr, MLILBitwiseNot))
+            return map_operands(expr, lambda operand: self._replace_constants_in_expr(operand, child_is_bitwise))

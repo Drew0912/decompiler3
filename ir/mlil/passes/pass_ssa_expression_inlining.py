@@ -7,24 +7,16 @@ Pattern: x#n = expr; ... use(x#n) -> ... use(expr)
 from typing import Dict, List, Optional, Tuple
 from ir.pipeline import Pass
 from ..mlil import (
+    map_operands,
     walk,
     MediumLevelILFunction,
     MediumLevelILBasicBlock,
     MediumLevelILInstruction,
     MLILConst,
-    MLILBinaryOp,
-    MLILNeg,
-    MLILLogicalNot,
-    MLILBitwiseNot,
-    MLILTestZero,
-    MLILRet,
-    MediumLevelILCall,
-    MLILStoreGlobal,
-    MLILStoreReg,
     MLILLoadGlobal,
     MLILLoadReg,
+    MLILAddressOf,
     MLILDeref,
-    MLILStoreDeref,
 )
 from ..mlil_ssa import (
     iter_ssa_defs,
@@ -33,7 +25,6 @@ from ..mlil_ssa import (
     MLILVarSSA,
     MLILSetVarSSA,
     MLILPhi,
-    MLILIf,
     MLILUndef,
 )
 from .pass_ssa_copy_propagation import reaches_without_redefinition
@@ -144,7 +135,7 @@ class ExpressionInliningPass(Pass):
             new_instructions = []
 
             for inst in block.instructions:
-                new_inst = self._inline_in_inst(inst, inlinable)
+                new_inst = map_operands(inst, lambda expr: self._inline_in_expr(expr, inlinable))
                 new_instructions.append(new_inst)
 
                 if new_inst is not inst:
@@ -188,55 +179,13 @@ class ExpressionInliningPass(Pass):
 
         return any(node is use for node in walk(def_block.instructions[def_idx + 1]))
 
-    def _inline_in_inst(self, inst: MediumLevelILInstruction,
-                        inlinable: Dict[MLILVariableSSA, MediumLevelILInstruction]) -> MediumLevelILInstruction:
-        """Inline expressions in instruction"""
-        if isinstance(inst, MLILSetVarSSA):
-            new_value = self._inline_in_expr(inst.value, inlinable)
-            if new_value is not inst.value:
-                return MLILSetVarSSA(inst.var, new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MLILIf):
-            new_condition = self._inline_in_expr(inst.condition, inlinable)
-            if new_condition is not inst.condition:
-                return MLILIf(new_condition, inst.true_target, inst.false_target).copy_metadata_from(inst)
-        elif isinstance(inst, MLILRet):
-            if inst.value is not None:
-                new_value = self._inline_in_expr(inst.value, inlinable)
-                if new_value is not inst.value:
-                    return MLILRet(new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MediumLevelILCall):
-            new_args = [self._inline_in_expr(arg, inlinable) for arg in inst.args]
-            if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
-                return inst.rebuild(new_args)
-        elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
-            new_value = self._inline_in_expr(inst.value, inlinable)
-            if new_value is not inst.value:
-                if isinstance(inst, MLILStoreGlobal):
-                    return MLILStoreGlobal(inst.index, new_value).copy_metadata_from(inst)
-                else:
-                    return MLILStoreReg(inst.index, new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MLILStoreDeref):
-            new_dest = self._inline_in_expr(inst.dest, inlinable)
-            new_value = self._inline_in_expr(inst.value, inlinable)
-            if new_dest is not inst.dest or new_value is not inst.value:
-                return inst.rebuild(new_dest, new_value)
-
-        return inst
-
     def _inline_in_expr(self, expr: MediumLevelILInstruction,
                         inlinable: Dict[MLILVariableSSA, MediumLevelILInstruction]) -> MediumLevelILInstruction:
         """Inline single-use expressions"""
         if isinstance(expr, MLILVarSSA):
-            if expr.var in inlinable:
-                return inlinable[expr.var]
-        elif isinstance(expr, MLILBinaryOp):
-            lhs = self._inline_in_expr(expr.lhs, inlinable)
-            rhs = self._inline_in_expr(expr.rhs, inlinable)
-            if lhs is not expr.lhs or rhs is not expr.rhs:
-                return expr.rebuild(lhs, rhs)
-        elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero, MLILDeref)):
-            operand = self._inline_in_expr(expr.operand, inlinable)
-            if operand is not expr.operand:
-                return expr.rebuild(operand)
-
-        return expr
+            return inlinable.get(expr.var, expr)
+        elif isinstance(expr, MLILAddressOf):
+            # &x's operand is a location: an expression computing x's value is no substitute
+            return expr
+        else:
+            return map_operands(expr, lambda operand: self._inline_in_expr(operand, inlinable))

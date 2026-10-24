@@ -192,7 +192,7 @@ class TestCallRebuildKeepsClobberFlag(unittest.TestCase):
 
         for call in calls:
             with self.subTest(call=type(call).__name__):
-                rebuilt = call.rebuild([MLILConst(2)])
+                rebuilt = call.rebuild(MLILConst(2))
 
                 self.assertIs(type(rebuilt), type(call))
                 self.assertFalse(rebuilt.clobbers_registers)

@@ -55,6 +55,9 @@ class MLILSetVarSSA(MediumLevelILStatement):
         self.var = var
         self.value = value
 
+    def rebuild(self, value: MediumLevelILInstruction) -> 'MLILSetVarSSA':
+        return MLILSetVarSSA(self.var, value).copy_metadata_from(self)
+
     def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
         return (self.value,)
 
@@ -353,91 +356,31 @@ class SSAConstructor:
             block.instructions = [self._lower_inst(inst) for inst in block.instructions]
 
     def _lower_inst(self, inst: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Lower one instruction (mirrors _raise_inst's per-kind dispatch)"""
-        if isinstance(inst, MLILSetVar):
-            new_value = self._lower_expr(inst.value)
+        """Lower one instruction: a write of an address-taken variable becomes a store through &x"""
+        if isinstance(inst, MLILSetVar) and inst.var in self.address_taken_vars:
+            dest = MLILAddressOf(MLILVar(inst.var))
+            return MLILStoreDeref(dest, self._lower_expr(inst.value)).copy_metadata_from(inst)
 
-            if inst.var in self.address_taken_vars:
-                dest = MLILAddressOf(MLILVar(inst.var))
-                return MLILStoreDeref(dest, new_value).copy_metadata_from(inst)
-
-            if new_value is not inst.value:
-                return MLILSetVar(inst.var, new_value).copy_metadata_from(inst)
-
-            return inst
-
-        return self._lower_stmt(inst)
+        return map_operands(inst, self._lower_expr)
 
     def _lower_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Recursively lower address-taken reads in an expression tree (mirrors _raise_expr's walk)"""
+        """Recursively lower address-taken reads in an expression tree"""
         if isinstance(expr, MLILAddressOf):
             # The variable whose address is being taken is the stable address identity
             # itself - leave &x as &x, never rewrite it to &*(&x)
             return expr
         elif isinstance(expr, MLILVar) and expr.var in self.address_taken_vars:
             return MLILDeref(MLILAddressOf(MLILVar(expr.var))).copy_metadata_from(expr)
-        elif isinstance(expr, MLILBinaryOp):
-            new_lhs = self._lower_expr(expr.lhs)
-            new_rhs = self._lower_expr(expr.rhs)
-
-            if new_lhs is expr.lhs and new_rhs is expr.rhs:
-                return expr
-
-            return expr.rebuild(new_lhs, new_rhs)
-        elif isinstance(expr, MLILUnaryOp):
-            new_operand = self._lower_expr(expr.operand)
-
-            if new_operand is expr.operand:
-                return expr
-
-            return expr.rebuild(new_operand)
         else:
-            return expr
-
-    def _lower_stmt(self, stmt: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Lower address-taken reads inside a statement's expressions (mirrors _raise_stmt's walk)"""
-        if isinstance(stmt, MLILIf):
-            new_cond = self._lower_expr(stmt.condition)
-
-            if new_cond is not stmt.condition:
-                return MLILIf(new_cond, stmt.true_target, stmt.false_target).copy_metadata_from(stmt)
-        elif isinstance(stmt, MLILRet):
-            if stmt.value is not None:
-                new_value = self._lower_expr(stmt.value)
-
-                if new_value is not stmt.value:
-                    return MLILRet(new_value).copy_metadata_from(stmt)
-        elif isinstance(stmt, MediumLevelILCall):
-            new_args = [self._lower_expr(arg) for arg in stmt.args]
-
-            if any(new_args[i] is not stmt.args[i] for i in range(len(stmt.args))):
-                return stmt.rebuild(new_args)
-        elif isinstance(stmt, MLILStoreReg):
-            new_value = self._lower_expr(stmt.value)
-
-            if new_value is not stmt.value:
-                return MLILStoreReg(stmt.index, new_value).copy_metadata_from(stmt)
-        elif isinstance(stmt, MLILStoreGlobal):
-            new_value = self._lower_expr(stmt.value)
-
-            if new_value is not stmt.value:
-                return MLILStoreGlobal(stmt.index, new_value).copy_metadata_from(stmt)
-        elif isinstance(stmt, MLILStoreDeref):
-            new_dest = self._lower_expr(stmt.dest)
-            new_value = self._lower_expr(stmt.value)
-
-            if new_dest is not stmt.dest or new_value is not stmt.value:
-                return stmt.rebuild(new_dest, new_value)
-
-        return stmt
+            return map_operands(expr, self._lower_expr)
 
     def _raise_globals(self):
         """Raise MLILStoreGlobal/MLILLoadGlobal into MLILSetVar/MLILVar over per-index MLILVariables,
         for every global stored somewhere in this function.
 
         An unraised MLILLoadGlobal (a global that is only ever read in this function) is left alone -
-        it falls through _rename_expr's catch-all unchanged, which is correct: a read-only global
-        gains nothing from SSA versioning.
+        _rename_expr passes it through unchanged, which is correct: a read-only global gains
+        nothing from SSA versioning.
         """
         self.raised_global_indices = {
             inst.index for inst in self.function.iter_instructions() if isinstance(inst, MLILStoreGlobal)
@@ -450,76 +393,22 @@ class SSAConstructor:
             block.instructions = [self._raise_inst(inst) for inst in block.instructions]
 
     def _raise_inst(self, inst: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Raise one instruction (mirrors _rename_inst's per-kind dispatch, without SSA versioning)"""
+        """Raise one instruction: a global store becomes an assignment of the global's variable"""
         if isinstance(inst, MLILStoreGlobal):
             # Every MLILStoreGlobal's index is in raised_global_indices by construction (see _raise_globals)
             new_value = self._raise_expr(inst.value)
             global_var = self.function.get_or_create_global_var(inst.index)
             return MLILSetVar(global_var, new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MLILSetVar):
-            new_value = self._raise_expr(inst.value)
-
-            if new_value is not inst.value:
-                return MLILSetVar(inst.var, new_value).copy_metadata_from(inst)
-
-            return inst
         else:
-            return self._raise_stmt(inst)
+            return map_operands(inst, self._raise_expr)
 
     def _raise_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Recursively raise MLILLoadGlobal in an expression tree (mirrors _rename_expr's walk)"""
+        """Recursively raise MLILLoadGlobal in an expression tree"""
         if isinstance(expr, MLILLoadGlobal) and expr.index in self.raised_global_indices:
             global_var = self.function.get_or_create_global_var(expr.index)
             return MLILVar(global_var).copy_metadata_from(expr)
-        elif isinstance(expr, MLILBinaryOp):
-            new_lhs = self._raise_expr(expr.lhs)
-            new_rhs = self._raise_expr(expr.rhs)
-
-            if new_lhs is expr.lhs and new_rhs is expr.rhs:
-                return expr
-
-            return expr.rebuild(new_lhs, new_rhs)
-        elif isinstance(expr, MLILUnaryOp):
-            new_operand = self._raise_expr(expr.operand)
-
-            if new_operand is expr.operand:
-                return expr
-
-            return expr.rebuild(new_operand)
         else:
-            return expr
-
-    def _raise_stmt(self, stmt: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Raise MLILLoadGlobal inside a statement's expressions (mirrors _rename_stmt's walk)"""
-        if isinstance(stmt, MLILIf):
-            new_cond = self._raise_expr(stmt.condition)
-
-            if new_cond is not stmt.condition:
-                return MLILIf(new_cond, stmt.true_target, stmt.false_target).copy_metadata_from(stmt)
-        elif isinstance(stmt, MLILRet):
-            if stmt.value is not None:
-                new_value = self._raise_expr(stmt.value)
-
-                if new_value is not stmt.value:
-                    return MLILRet(new_value).copy_metadata_from(stmt)
-        elif isinstance(stmt, MediumLevelILCall):
-            new_args = [self._raise_expr(arg) for arg in stmt.args]
-
-            if any(new_args[i] is not stmt.args[i] for i in range(len(stmt.args))):
-                return stmt.rebuild(new_args)
-        elif isinstance(stmt, MLILStoreReg):
-            new_value = self._raise_expr(stmt.value)
-
-            if new_value is not stmt.value:
-                return MLILStoreReg(stmt.index, new_value).copy_metadata_from(stmt)
-        elif isinstance(stmt, MLILStoreDeref):
-            new_dest = self._raise_expr(stmt.dest)
-            new_value = self._raise_expr(stmt.value)
-
-            if new_dest is not stmt.dest or new_value is not stmt.value:
-                return stmt.rebuild(new_dest, new_value)
-
-        return stmt
+            return map_operands(expr, self._raise_expr)
 
     def _collect_defs(self):
         """Collect blocks where each variable is defined"""
@@ -663,7 +552,7 @@ class SSAConstructor:
             return MLILSetVarSSA(MLILVariableSSA(inst.var, new_ver), new_value).copy_metadata_from(inst)
         elif isinstance(inst, MediumLevelILCall):
             # Rename the call (uses current SSA versions)
-            renamed = self._rename_stmt(inst)
+            renamed = map_operands(inst, self._rename_expr)
 
             # Registers and globals the call clobbers get pseudo-definitions so later reads
             # do not see the older value. Address-taken locals need no such treatment here -
@@ -696,8 +585,7 @@ class SSAConstructor:
 
             return result
         else:
-            # Other statements: rename expressions
-            return self._rename_stmt(inst)
+            return map_operands(inst, self._rename_expr)
 
     def _rename_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
         """Recursively rename variables in expression"""
@@ -706,64 +594,8 @@ class SSAConstructor:
             var = expr.var
             current_ver = self.var_stack[var][-1]
             return MLILVarSSA(MLILVariableSSA(var, current_ver))
-        elif isinstance(expr, MLILVarSSA):
-            # Already SSA, keep it
-            return expr
-        elif isinstance(expr, MLILConst):
-            return expr
-        elif isinstance(expr, MLILBinaryOp):
-            new_lhs = self._rename_expr(expr.lhs)
-            new_rhs = self._rename_expr(expr.rhs)
-
-            if new_lhs is expr.lhs and new_rhs is expr.rhs:
-                return expr
-
-            return expr.rebuild(new_lhs, new_rhs)
-        elif isinstance(expr, MLILUnaryOp):
-            new_operand = self._rename_expr(expr.operand)
-
-            if new_operand is expr.operand:
-                return expr
-
-            return expr.rebuild(new_operand)
         else:
-            # Other expressions (LoadGlobal, LoadReg, etc.)
-            return expr
-
-    def _rename_stmt(self, stmt: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Rename variables in statement"""
-        if isinstance(stmt, MLILIf):
-            new_cond = self._rename_expr(stmt.condition)
-
-            if new_cond is not stmt.condition:
-                return MLILIf(new_cond, stmt.true_target, stmt.false_target).copy_metadata_from(stmt)
-        elif isinstance(stmt, MLILRet):
-            if stmt.value is not None:
-                new_value = self._rename_expr(stmt.value)
-
-                if new_value is not stmt.value:
-                    return MLILRet(new_value).copy_metadata_from(stmt)
-        elif isinstance(stmt, MediumLevelILCall):
-            new_args = [self._rename_expr(arg) for arg in stmt.args]
-
-            if any(new_args[i] is not stmt.args[i] for i in range(len(stmt.args))):
-                return stmt.rebuild(new_args)
-        elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
-            new_value = self._rename_expr(stmt.value)
-
-            if new_value is not stmt.value:
-                if isinstance(stmt, MLILStoreGlobal):
-                    return MLILStoreGlobal(stmt.index, new_value).copy_metadata_from(stmt)
-                else:
-                    return MLILStoreReg(stmt.index, new_value).copy_metadata_from(stmt)
-        elif isinstance(stmt, MLILStoreDeref):
-            new_dest = self._rename_expr(stmt.dest)
-            new_value = self._rename_expr(stmt.value)
-
-            if new_dest is not stmt.dest or new_value is not stmt.value:
-                return stmt.rebuild(new_dest, new_value)
-
-        return stmt
+            return map_operands(expr, self._rename_expr)
 
     def _new_version(self, var: MLILVariable) -> int:
         """Allocate new SSA version for variable"""
@@ -1049,8 +881,11 @@ class SSADeconstructor:
                 return MLILStoreGlobal(global_index, new_value).copy_metadata_from(inst)
 
             return MLILSetVar(new_var, new_value).copy_metadata_from(inst)
-        else:
-            return self._apply_mapping_to_stmt(inst)
+
+        if isinstance(inst, MediumLevelILCall) and inst.output is not None:
+            inst.output = self.var_mapping.get(inst.output, inst.output.base_var)
+
+        return map_operands(inst, self._apply_mapping_to_expr)
 
     def _apply_mapping_to_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
         """Apply variable mapping to expression"""
@@ -1067,52 +902,8 @@ class SSADeconstructor:
                 return MLILLoadGlobal(global_index).copy_metadata_from(expr)
 
             return MLILVar(new_var)
-        elif isinstance(expr, MLILBinaryOp):
-            new_lhs = self._apply_mapping_to_expr(expr.lhs)
-            new_rhs = self._apply_mapping_to_expr(expr.rhs)
-            if new_lhs is expr.lhs and new_rhs is expr.rhs:
-                return expr
-            return expr.rebuild(new_lhs, new_rhs)
-        elif isinstance(expr, MLILUnaryOp):
-            new_operand = self._apply_mapping_to_expr(expr.operand)
-            if new_operand is expr.operand:
-                return expr
-            return expr.rebuild(new_operand)
         else:
-            return expr
-
-    def _apply_mapping_to_stmt(self, stmt: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Apply variable mapping to statement"""
-        if isinstance(stmt, MLILIf):
-            new_cond = self._apply_mapping_to_expr(stmt.condition)
-            if new_cond is not stmt.condition:
-                return MLILIf(new_cond, stmt.true_target, stmt.false_target).copy_metadata_from(stmt)
-        elif isinstance(stmt, MLILRet):
-            if stmt.value is not None:
-                new_value = self._apply_mapping_to_expr(stmt.value)
-                if new_value is not stmt.value:
-                    return MLILRet(new_value).copy_metadata_from(stmt)
-        elif isinstance(stmt, MediumLevelILCall):
-            if stmt.output is not None:
-                stmt.output = self.var_mapping.get(stmt.output, stmt.output.base_var)
-
-            new_args = [self._apply_mapping_to_expr(arg) for arg in stmt.args]
-            if any(new_args[i] is not stmt.args[i] for i in range(len(stmt.args))):
-                return stmt.rebuild(new_args)
-        elif isinstance(stmt, (MLILStoreGlobal, MLILStoreReg)):
-            new_value = self._apply_mapping_to_expr(stmt.value)
-            if new_value is not stmt.value:
-                if isinstance(stmt, MLILStoreGlobal):
-                    return MLILStoreGlobal(stmt.index, new_value).copy_metadata_from(stmt)
-                else:
-                    return MLILStoreReg(stmt.index, new_value).copy_metadata_from(stmt)
-        elif isinstance(stmt, MLILStoreDeref):
-            new_dest = self._apply_mapping_to_expr(stmt.dest)
-            new_value = self._apply_mapping_to_expr(stmt.value)
-            if new_dest is not stmt.dest or new_value is not stmt.value:
-                return stmt.rebuild(new_dest, new_value)
-
-        return stmt
+            return map_operands(expr, self._apply_mapping_to_expr)
 
     def _retarget_branch(self, block: MediumLevelILBasicBlock,
                          old_target: MediumLevelILBasicBlock,

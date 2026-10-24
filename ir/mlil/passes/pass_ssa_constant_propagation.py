@@ -6,25 +6,17 @@ Replace SSA variables with constant values (no folding).
 from typing import Dict
 from ir.pipeline import Pass
 from ..mlil import (
+    map_operands,
     MediumLevelILFunction,
     MediumLevelILInstruction,
-    MediumLevelILCall,
     MLILConst,
-    MLILBinaryOp,
-    MLILNeg,
-    MLILLogicalNot,
-    MLILBitwiseNot,
-    MLILRet,
-    MLILStoreGlobal,
-    MLILStoreReg,
-    MLILDeref,
-    MLILStoreDeref,
+    MLILAddressOf,
+    MLILTestZero,
 )
 from ..mlil_ssa import (
     MLILVariableSSA,
     MLILVarSSA,
     MLILSetVarSSA,
-    MLILIf,
 )
 
 
@@ -61,7 +53,7 @@ class ConstantPropagationPass(Pass):
             new_instructions = []
 
             for inst in block.instructions:
-                new_inst = self._propagate_in_inst(inst)
+                new_inst = map_operands(inst, self._propagate_in_expr)
                 new_instructions.append(new_inst)
 
                 if new_inst is not inst:
@@ -71,55 +63,18 @@ class ConstantPropagationPass(Pass):
 
         return changed
 
-    def _propagate_in_inst(self, inst: MediumLevelILInstruction) -> MediumLevelILInstruction:
-        """Propagate constants in a single instruction"""
-        if isinstance(inst, MLILSetVarSSA):
-            new_value = self._propagate_in_expr(inst.value)
-            if new_value is not inst.value:
-                return MLILSetVarSSA(inst.var, new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MLILIf):
-            new_condition = self._propagate_in_expr(inst.condition)
-            if new_condition is not inst.condition:
-                return MLILIf(new_condition, inst.true_target, inst.false_target).copy_metadata_from(inst)
-        elif isinstance(inst, MLILRet):
-            if inst.value is not None:
-                new_value = self._propagate_in_expr(inst.value)
-                if new_value is not inst.value:
-                    return MLILRet(new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MediumLevelILCall):
-            new_args = [self._propagate_in_expr(arg) for arg in inst.args]
-            if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
-                return inst.rebuild(new_args)
-        elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
-            new_value = self._propagate_in_expr(inst.value)
-            if new_value is not inst.value:
-                if isinstance(inst, MLILStoreGlobal):
-                    return MLILStoreGlobal(inst.index, new_value).copy_metadata_from(inst)
-                else:
-                    return MLILStoreReg(inst.index, new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MLILStoreDeref):
-            new_dest = self._propagate_in_expr(inst.dest)
-            new_value = self._propagate_in_expr(inst.value)
-            if new_dest is not inst.dest or new_value is not inst.value:
-                return inst.rebuild(new_dest, new_value)
-
-        return inst
-
     def _propagate_in_expr(self, expr: MediumLevelILInstruction) -> MediumLevelILInstruction:
         """Replace SSA variables with constants"""
         if isinstance(expr, MLILVarSSA):
             if expr.var in self.constants:
                 return MLILConst(self.constants[expr.var], is_hex=False)
-        elif isinstance(expr, MLILBinaryOp):
-            lhs = self._propagate_in_expr(expr.lhs)
-            rhs = self._propagate_in_expr(expr.rhs)
 
-            if lhs is not expr.lhs or rhs is not expr.rhs:
-                return expr.rebuild(lhs, rhs)
-        elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILDeref)):
-            operand = self._propagate_in_expr(expr.operand)
-
-            if operand is not expr.operand:
-                return expr.rebuild(operand)
-
-        return expr
+            return expr
+        elif isinstance(expr, MLILAddressOf):
+            # &x's operand is a location: a constant is no substitute
+            return expr
+        elif isinstance(expr, MLILTestZero):
+            # Its operand is left alone: entering it changes the output (work order, "Uneven MLIL pass coverage")
+            return expr
+        else:
+            return map_operands(expr, self._propagate_in_expr)

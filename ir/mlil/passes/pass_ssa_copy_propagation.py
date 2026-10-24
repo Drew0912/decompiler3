@@ -6,21 +6,12 @@ Replace SSA variable copies (x#1 = x#0 -> use x#0).
 from typing import Dict, List, Optional, Set, Tuple
 from ir.pipeline import Pass
 from ..mlil import (
+    map_operands,
     MediumLevelILFunction,
     MediumLevelILBasicBlock,
     MediumLevelILInstruction,
-    MLILBinaryOp,
-    MLILNeg,
-    MLILLogicalNot,
-    MLILBitwiseNot,
-    MLILTestZero,
-    MLILRet,
     MediumLevelILCall,
-    MLILStoreGlobal,
-    MLILStoreReg,
     MLILAddressOf,
-    MLILDeref,
-    MLILStoreDeref,
 )
 from ..mlil_ssa import (
     iter_ssa_defs,
@@ -28,7 +19,6 @@ from ..mlil_ssa import (
     MLILVariableSSA,
     MLILVarSSA,
     MLILSetVarSSA,
-    MLILIf,
 )
 
 
@@ -132,7 +122,7 @@ class CopyPropagationPass(Pass):
             new_instructions = []
 
             for idx, inst in enumerate(block.instructions):
-                new_inst = self._replace_in_inst(inst, func, block, idx)
+                new_inst = map_operands(inst, lambda expr: self._replace_in_expr(expr, func, block, idx))
                 new_instructions.append(new_inst)
 
                 if new_inst is not inst:
@@ -205,59 +195,15 @@ class CopyPropagationPass(Pass):
 
         return root
 
-    def _replace_in_inst(self, inst: MediumLevelILInstruction, func: MediumLevelILFunction,
-                         block: MediumLevelILBasicBlock, idx: int) -> MediumLevelILInstruction:
-        """Replace copy variables in instruction"""
-        if isinstance(inst, MLILSetVarSSA):
-            new_value = self._replace_in_expr(inst.value, func, block, idx)
-            if new_value is not inst.value:
-                return MLILSetVarSSA(inst.var, new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MLILIf):
-            new_condition = self._replace_in_expr(inst.condition, func, block, idx)
-            if new_condition is not inst.condition:
-                return MLILIf(new_condition, inst.true_target, inst.false_target).copy_metadata_from(inst)
-        elif isinstance(inst, MLILRet):
-            if inst.value is not None:
-                new_value = self._replace_in_expr(inst.value, func, block, idx)
-                if new_value is not inst.value:
-                    return MLILRet(new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MediumLevelILCall):
-            new_args = [self._replace_in_expr(arg, func, block, idx) for arg in inst.args]
-            if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
-                return inst.rebuild(new_args)
-        elif isinstance(inst, (MLILStoreGlobal, MLILStoreReg)):
-            new_value = self._replace_in_expr(inst.value, func, block, idx)
-            if new_value is not inst.value:
-                if isinstance(inst, MLILStoreGlobal):
-                    return MLILStoreGlobal(inst.index, new_value).copy_metadata_from(inst)
-
-                return MLILStoreReg(inst.index, new_value).copy_metadata_from(inst)
-        elif isinstance(inst, MLILStoreDeref):
-            new_dest = self._replace_in_expr(inst.dest, func, block, idx)
-            new_value = self._replace_in_expr(inst.value, func, block, idx)
-            if new_dest is not inst.dest or new_value is not inst.value:
-                return inst.rebuild(new_dest, new_value)
-
-        return inst
-
     def _replace_in_expr(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction,
                          block: MediumLevelILBasicBlock, idx: int) -> MediumLevelILInstruction:
         """Replace copy variables in expression"""
         if isinstance(expr, MLILVarSSA):
             root = self._resolve_effective_root(expr.var, func, block, idx)
-            if root is not expr.var:
-                return MLILVarSSA(root)
-        elif isinstance(expr, MLILBinaryOp):
-            lhs = self._replace_in_expr(expr.lhs, func, block, idx)
-            rhs = self._replace_in_expr(expr.rhs, func, block, idx)
-            if lhs is not expr.lhs or rhs is not expr.rhs:
-                return expr.rebuild(lhs, rhs)
-        elif isinstance(expr, (MLILNeg, MLILLogicalNot, MLILBitwiseNot, MLILTestZero, MLILDeref)):
-            # MLILDeref belongs here: unlike MLILAddressOf (whose operand is a location, never
-            # substitutable), a pointer's VALUE is an ordinary operand - propagating a value-equal
-            # copy into it is safe and desirable.
-            operand = self._replace_in_expr(expr.operand, func, block, idx)
-            if operand is not expr.operand:
-                return expr.rebuild(operand)
-
-        return expr
+            return MLILVarSSA(root) if root is not expr.var else expr
+        elif isinstance(expr, MLILAddressOf):
+            # &x's operand is a location, never substitutable. MLILDeref's is a pointer's VALUE,
+            # an ordinary operand: propagating a value-equal copy into it is safe and desirable
+            return expr
+        else:
+            return map_operands(expr, lambda operand: self._replace_in_expr(operand, func, block, idx))

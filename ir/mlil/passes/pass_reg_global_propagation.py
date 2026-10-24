@@ -7,11 +7,9 @@ from typing import Dict, List, Optional, Set, Tuple
 from ir.core import constant_values_equal
 from ir.pipeline import Pass
 from ..mlil import (
-    MediumLevelILFunction, MediumLevelILBasicBlock, MediumLevelILInstruction,
-    MLILConst, MLILVar, MLILBinaryOp, MLILUnaryOp, MLILSetVar,
-    MLILIf, MLILRet, MediumLevelILCall,
-    MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg,
-    MLILDeref, MLILStoreDeref,
+    map_operands, MediumLevelILFunction, MediumLevelILBasicBlock, MediumLevelILInstruction,
+    MLILConst, MLILVar, MLILBinaryOp, MLILUnaryOp, MediumLevelILCall,
+    MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILDeref,
 )
 
 
@@ -159,69 +157,9 @@ class RegGlobalValuePropagator:
     def _transform_inst(self, inst: MediumLevelILInstruction,
                         state: RegGlobalState) -> Tuple[MediumLevelILInstruction, RegGlobalState]:
         """Transform instruction and update state"""
-        if isinstance(inst, MLILStoreReg):
-            new_value = self._substitute(inst.value, state)
-            new_state = state.copy()
-            new_state.reg[inst.index] = new_value if self._is_closed_form(new_value) else None
-
-            if new_value is not inst.value:
-                return (MLILStoreReg(inst.index, new_value).copy_metadata_from(inst), new_state)
-
-            return (inst, new_state)
-        elif isinstance(inst, MLILStoreGlobal):
-            new_value = self._substitute(inst.value, state)
-            new_state = state.copy()
-            new_state.global_[inst.index] = new_value if self._is_closed_form(new_value) else None
-
-            if new_value is not inst.value:
-                return (MLILStoreGlobal(inst.index, new_value).copy_metadata_from(inst), new_state)
-
-            return (inst, new_state)
-        elif isinstance(inst, MLILStoreDeref):
-            # Dereference stores cannot affect closed-form cached values.
-            new_dest = self._substitute(inst.dest, state)
-            new_value = self._substitute(inst.value, state)
-
-            if new_dest is not inst.dest or new_value is not inst.value:
-                return (inst.rebuild(new_dest, new_value), state)
-
-            return (inst, state)
-        elif isinstance(inst, MediumLevelILCall):
-            new_args = [self._substitute(arg, state) for arg in inst.args]
-            new_state = state.copy()
-            for k in new_state.reg:
-                new_state.reg[k] = None
-            for k in new_state.global_:
-                new_state.global_[k] = None
-
-            if any(new_args[i] is not inst.args[i] for i in range(len(inst.args))):
-                return (inst.rebuild(new_args), new_state)
-
-            return (inst, new_state)
-        elif isinstance(inst, MLILSetVar):
-            new_value = self._substitute(inst.value, state)
-
-            if new_value is not inst.value:
-                return (MLILSetVar(inst.var, new_value).copy_metadata_from(inst), state)
-
-            return (inst, state)
-        elif isinstance(inst, MLILIf):
-            new_cond = self._substitute(inst.condition, state)
-
-            if new_cond is not inst.condition:
-                return (MLILIf(new_cond, inst.true_target, inst.false_target).copy_metadata_from(inst), state)
-
-            return (inst, state)
-        elif isinstance(inst, MLILRet):
-            if inst.value is not None:
-                new_value = self._substitute(inst.value, state)
-
-                if new_value is not inst.value:
-                    return (MLILRet(new_value).copy_metadata_from(inst), state)
-
-            return (inst, state)
-        else:
-            return (inst, state)
+        new_inst = map_operands(inst, lambda expr: self._substitute(expr, state))
+        # _simulate_inst substitutes the stored value again, which changes nothing: a known value is a closed form
+        return (new_inst, self._simulate_inst(new_inst, state))
 
     def _substitute(self, expr: MediumLevelILInstruction, state: RegGlobalState) -> MediumLevelILInstruction:
         """Substitute LoadReg/LoadGlobal with known values (closed forms: they hold no load of their own)"""
@@ -231,19 +169,8 @@ class RegGlobalValuePropagator:
         elif isinstance(expr, MLILLoadGlobal):
             known = state.global_.get(expr.index)
             return expr if known is None else known
-        elif isinstance(expr, MLILBinaryOp):
-            new_lhs = self._substitute(expr.lhs, state)
-            new_rhs = self._substitute(expr.rhs, state)
-
-            if new_lhs is not expr.lhs or new_rhs is not expr.rhs:
-                return expr.rebuild(new_lhs, new_rhs)
-        elif isinstance(expr, MLILUnaryOp):
-            new_operand = self._substitute(expr.operand, state)
-
-            if new_operand is not expr.operand:
-                return expr.rebuild(new_operand)
-
-        return expr
+        else:
+            return map_operands(expr, lambda operand: self._substitute(operand, state))
 
     def _is_closed_form(self, expr: MediumLevelILInstruction) -> bool:
         """Return whether expr is a constant expression with no mutable inputs."""
