@@ -1,7 +1,7 @@
 """TypeScript Code Generator - HLIL to production TypeScript"""
 
 import math
-from typing import Iterator, List
+from typing import Iterator, List, Optional, Tuple
 
 from dc3 import default_indent, quote_string
 from ir.core import constant_values_equal, is_int_zero
@@ -20,7 +20,9 @@ TYPESCRIPT_TYPES = {
 }
 
 
-class TypeScriptGenerator:
+class TypeScriptGenerator(HLILStatementPrinter):
+    CASE_BLOCKS = True
+
     _current_func: 'HighLevelILFunction' = None
     _callee_defaults: dict[str, tuple] = {}  # local callee name -> each parameter's default (None: none)
     _written_argc: dict[int, int] = {}       # local CALL offset -> args its debug record keeps (round trip)
@@ -122,7 +124,7 @@ class TypeScriptGenerator:
         return hint in (HLILTypeKind.INT, HLILTypeKind.FLOAT, HLILTypeKind.NUMBER, HLILTypeKind.POINTER)
 
     @classmethod
-    def _format_var_assignment(cls, dest: HLILVar, src: HLILExpression, indent_str: str) -> str:
+    def _format_var_assignment(cls, dest: HLILVar, src: HLILExpression) -> str:
         """Format `dest = src;`, wrapping src in int(...) when assigning a boolean expression
         to a numeric variable. Shared by the ordinary HLILAssign path and the address-taken
         *(&x) = v fold-back path, so both get the same coercion instead of it being
@@ -133,7 +135,7 @@ class TypeScriptGenerator:
         if is_boolean_expr(src) and cls._is_number_var(dest):
             src_str = f'int({src_str})'
 
-        return f'{indent_str}{dest_str} = {src_str};'
+        return f'{dest_str} = {src_str};'
 
     @classmethod
     def _zero_comparison(cls, expr: HLILExpression) -> tuple[bool, HLILExpression] | None:
@@ -292,143 +294,42 @@ class TypeScriptGenerator:
                 lines.append(f'{default_indent()}let {var.name}: {var_type};')
             lines.append('')
 
-        lines.extend(cls._generate_block(func.body, indent=1))
+        lines.extend(cls._format_block(func.body, indent=1))
         lines.append('}')
         return lines
 
     @classmethod
-    def _generate_block(cls, block: HLILBlock, indent: int = 0) -> List[str]:
-        return [line for stmt in block.statements for line in cls._generate_statement(stmt, indent)]
+    def _if_arms(cls, stmt: HLILIf) -> Tuple[HLILExpression, HLILBlock, Optional[HLILBlock]]:
+        """Arm order is decided in HLIL (BranchOrderNormalizationPass), so that this output and the HLIL dump agree -
+        only an empty then-arm is still worth rewriting here, negated as the HLIL passes negate"""
+        true_empty = not stmt.true_block or not stmt.true_block.statements
+        if true_empty and stmt.false_block and stmt.false_block.statements:
+            return negate_condition(stmt.condition), stmt.false_block, None
+
+        return stmt.condition, stmt.true_block, stmt.false_block
 
     @classmethod
-    def _generate_statement(cls, stmt: HLILStatement, indent: int = 0) -> List[str]:
-        indent_str = default_indent() * indent
-        lines = []
+    def _format_unstructured(cls, stmt: HLILUnstructured) -> List[str]:
+        # A jump HLIL could not express: say so, and end this path instead of falling through
+        return [f'// {stmt}', f'throw new Error("unstructured: {stmt.target}");']
 
-        if isinstance(stmt, HLILIf):
-            condition = stmt.condition
-            true_block = stmt.true_block
-            false_block = stmt.false_block
+    @classmethod
+    def _format_assign(cls, stmt: HLILAssign) -> str:
+        if not isinstance(stmt.dest, HLILDeref):
+            return cls._format_var_assignment(stmt.dest, stmt.src)
 
-            # Arm order is decided in HLIL (BranchOrderNormalizationPass) so that
-            # this output and the HLIL dump agree - only an empty then-branch is
-            # still worth rewriting here, negated as the HLIL passes negate
-            false_has_content = false_block and false_block.statements
-            true_empty = not true_block or not true_block.statements
+        # *(&x) = v - address-taken local x's own lowered write - folds back to plain
+        # x = v, through the same _format_var_assignment ordinary assignment uses, so it
+        # gets the same boolean-to-int coercion rather than a second, unreimplemented copy
+        unwrapped = unwrap_address_taken_var(stmt.dest)
+        if unwrapped is not None:
+            return cls._format_var_assignment(unwrapped, stmt.src)
 
-            if true_empty and false_has_content:
-                cond_str = cls._format_expr(negate_condition(condition))
-                true_block, false_block = false_block, None
-            else:
-                cond_str = cls._format_expr(condition)
-
-            lines.append(f'{indent_str}if ({cond_str}) {{')
-            lines.extend(cls._generate_block(true_block, indent + 1))
-
-            while false_block and false_block.statements:
-                # else { [comments] single if } -> [comments] else if
-                arm = split_else_if_arm(false_block)
-
-                if arm is not None:
-                    comments, inner_if = arm
-
-                    for comment in comments:
-                        lines.extend(cls._generate_statement(comment, indent))
-
-                    inner_cond = cls._format_expr(inner_if.condition)
-                    lines.append(f'{indent_str}}} else if ({inner_cond}) {{')
-                    lines.extend(cls._generate_block(inner_if.true_block, indent + 1))
-                    false_block = inner_if.false_block
-                else:
-                    lines.append(f'{indent_str}}} else {{')
-                    lines.extend(cls._generate_block(false_block, indent + 1))
-                    break
-
-            lines.append(f'{indent_str}}}')
-        elif isinstance(stmt, HLILWhile):
-            # while (condition) { ... }, optionally labeled
-            cond_str = cls._format_expr(stmt.condition)
-            label_prefix = f'{stmt.label}: ' if stmt.label else ''
-            lines.append(f'{indent_str}{label_prefix}while ({cond_str}) {{')
-            lines.extend(cls._generate_block(stmt.body, indent + 1))
-            lines.append(f'{indent_str}}}')
-        elif isinstance(stmt, HLILDoWhile):
-            # do { ... } while (condition);, optionally labeled
-            cond_str = cls._format_expr(stmt.condition)
-            label_prefix = f'{stmt.label}: ' if stmt.label else ''
-            lines.append(f'{indent_str}{label_prefix}do {{')
-            lines.extend(cls._generate_block(stmt.body, indent + 1))
-            lines.append(f'{indent_str}}} while ({cond_str});')
-        elif isinstance(stmt, HLILSwitch):
-            # switch (scrutinee) { ... }
-            scrutinee_str = cls._format_expr(stmt.scrutinee)
-            lines.append(f'{indent_str}switch ({scrutinee_str}) {{')
-            case_indent = default_indent()
-            case_body_indent = default_indent() * 2
-            for case in stmt.cases:
-                if case.is_default():
-                    lines.append(f'{indent_str}{case_indent}default: {{')
-                else:
-                    # Labels sharing a body stack, only the last one opens the block
-                    for value in case.values[:-1]:
-                        lines.append(f'{indent_str}{case_indent}case {cls._format_expr(value)}:')
-
-                    lines.append(f'{indent_str}{case_indent}case {cls._format_expr(case.values[-1])}: {{')
-                lines.extend(cls._generate_block(case.body, indent + 2))
-
-                # Add break unless the case ends in a terminal statement - including an empty
-                # case body (no last statement at all), which otherwise falls through into the
-                # next case instead of doing nothing
-                last_stmt = case.body.statements[-1] if case.body.statements else None
-                if not isinstance(last_stmt, TERMINAL_STATEMENTS):
-                    lines.append(f'{indent_str}{case_body_indent}break;')
-
-                lines.append(f'{indent_str}{case_indent}}}')
-
-            lines.append(f'{indent_str}}}')
-        elif isinstance(stmt, (HLILBreak, HLILContinue)):
-            keyword = 'break' if isinstance(stmt, HLILBreak) else 'continue'
-            label = f' {stmt.label}' if stmt.label else ''
-            lines.append(f'{indent_str}{keyword}{label};')
-        elif isinstance(stmt, HLILUnstructured):
-            # A jump HLIL could not express: say so, and end this path instead of falling through
-            lines.append(f'{indent_str}// {stmt}')
-            lines.append(f'{indent_str}throw new Error("unstructured: {stmt.target}");')
-        elif isinstance(stmt, HLILReturn):
-            if stmt.value is not None:
-                value_str = cls._format_expr(stmt.value)
-                lines.append(f'{indent_str}return {value_str};')
-            else:
-                lines.append(f'{indent_str}return;')
-        elif isinstance(stmt, HLILAssign) and isinstance(stmt.dest, HLILDeref):
-            # *(&x) = v - address-taken local x's own lowered write - folds back to plain
-            # x = v, through the same _format_var_assignment ordinary assignment uses, so it
-            # gets the same boolean-to-int coercion rather than a second, unreimplemented copy
-            unwrapped = unwrap_address_taken_var(stmt.dest)
-            if unwrapped is not None:
-                lines.append(cls._format_var_assignment(unwrapped, stmt.src, indent_str))
-            else:
-                # A genuine store through some other pointer - TypeScript has no *ptr syntax,
-                # so this is a deref_set() call, matching the addr_of() convention for &var
-                ptr_str = cls._format_expr(stmt.dest.operand)
-                src_str = cls._format_expr(stmt.src)
-                lines.append(f'{indent_str}deref_set({ptr_str}, {src_str});')
-        elif isinstance(stmt, HLILAssign):
-            lines.append(cls._format_var_assignment(stmt.dest, stmt.src, indent_str))
-        elif isinstance(stmt, HLILExprStmt):
-            expr_str = cls._format_expr(stmt.expr)
-            lines.append(f'{indent_str}{expr_str};')
-        elif isinstance(stmt, HLILComment):
-            lines.append(f'{indent_str}// {stmt.text}')
-        elif isinstance(stmt, HLILBlock):
-            # Nested block
-            lines.append(f'{indent_str}{{')
-            lines.extend(cls._generate_block(stmt, indent + 1))
-            lines.append(f'{indent_str}}}')
-        else:
-            lines.append(f'{indent_str}// {stmt}')
-
-        return lines
+        # A genuine store through some other pointer - TypeScript has no *ptr syntax,
+        # so this is a deref_set() call, matching the addr_of() convention for &var
+        ptr_str = cls._format_expr(stmt.dest.operand)
+        src_str = cls._format_expr(stmt.src)
+        return f'deref_set({ptr_str}, {src_str});'
 
 
 def generate_typescript_header() -> str:

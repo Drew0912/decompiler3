@@ -4,9 +4,10 @@ from typing import List
 
 from dc3 import default_indent
 from .hlil import *
+from .statement_printer import HLILStatementPrinter
 
 
-class HLILFormatter:
+class HLILFormatter(HLILStatementPrinter):
     """Format HLIL functions for debugging"""
 
     @classmethod
@@ -81,116 +82,9 @@ class HLILFormatter:
         return lines
 
     @classmethod
-    def _format_block(cls, block: HLILBlock, indent: int = 0) -> List[str]:
-        return [line for stmt in block.statements for line in cls._format_statement(stmt, indent)]
+    def _format_assign(cls, stmt: HLILAssign) -> str:
+        return f'{cls._format_expr(stmt.dest)} = {cls._format_expr(stmt.src)};'
 
     @classmethod
-    def _format_if_chain(cls, if_stmt: HLILIf, indent: int) -> List[str]:
-        """Format if / else-if / else chain"""
-        indent_str = default_indent() * indent
-        lines = []
-
-        # First if
-        cond_str = cls._format_expr(if_stmt.condition)
-        lines.append(f'{indent_str}if ({cond_str}) {{')
-        lines.extend(cls._format_block(if_stmt.true_block, indent + 1))
-
-        # Walk through else-if chain
-        current_else = if_stmt.false_block
-        while current_else and current_else.statements:
-            # else { [comments] single if } -> [comments] else if, matching the TS codegen
-            arm = split_else_if_arm(current_else)
-
-            if arm is not None:
-                comments, nested_if = arm
-
-                for comment in comments:
-                    lines.extend(cls._format_statement(comment, indent))
-
-                cond_str = cls._format_expr(nested_if.condition)
-                lines.append(f'{indent_str}}} else if ({cond_str}) {{')
-                lines.extend(cls._format_block(nested_if.true_block, indent + 1))
-                current_else = nested_if.false_block
-            else:
-                # Final else block
-                lines.append(f'{indent_str}}} else {{')
-                lines.extend(cls._format_block(current_else, indent + 1))
-                break
-
-        lines.append(f'{indent_str}}}')
-        return lines
-
-    @classmethod
-    def _format_statement(cls, stmt: HLILStatement, indent: int = 0) -> List[str]:
-        """Format a statement"""
-        indent_str = default_indent() * indent
-        lines = []
-
-        if isinstance(stmt, HLILIf):
-            # if (condition) { ... } [else if (...) { ... }]* [else { ... }]
-            lines.extend(cls._format_if_chain(stmt, indent))
-        elif isinstance(stmt, HLILWhile):
-            # while (condition) { ... }, optionally labeled
-            cond_str = cls._format_expr(stmt.condition)
-            label_prefix = f'{stmt.label}: ' if stmt.label else ''
-            lines.append(f'{indent_str}{label_prefix}while ({cond_str}) {{')
-            lines.extend(cls._format_block(stmt.body, indent + 1))
-            lines.append(f'{indent_str}}}')
-        elif isinstance(stmt, HLILDoWhile):
-            # do { ... } while (condition);, optionally labeled
-            cond_str = cls._format_expr(stmt.condition)
-            label_prefix = f'{stmt.label}: ' if stmt.label else ''
-            lines.append(f'{indent_str}{label_prefix}do {{')
-            lines.extend(cls._format_block(stmt.body, indent + 1))
-            lines.append(f'{indent_str}}} while ({cond_str});')
-        elif isinstance(stmt, HLILSwitch):
-            # switch (scrutinee) { ... }
-            scrutinee_str = cls._format_expr(stmt.scrutinee)
-            lines.append(f'{indent_str}switch ({scrutinee_str}) {{')
-            case_indent = default_indent()
-            case_body_indent = default_indent() * 2
-            for case in stmt.cases:
-                if case.is_default():
-                    lines.append(f'{indent_str}{case_indent}default:')
-                else:
-                    for value in case.values:
-                        lines.append(f'{indent_str}{case_indent}case {cls._format_expr(value)}:')
-                lines.extend(cls._format_block(case.body, indent + 2))
-
-                # Add break unless the case ends in a terminal statement - an empty case
-                # included, which would otherwise read as sharing the next case's body
-                last_stmt = case.body.statements[-1] if case.body.statements else None
-                if not isinstance(last_stmt, TERMINAL_STATEMENTS):
-                    lines.append(f'{indent_str}{case_body_indent}break;')
-
-            lines.append(f'{indent_str}}}')
-        elif isinstance(stmt, (HLILBreak, HLILContinue)):
-            keyword = 'break' if isinstance(stmt, HLILBreak) else 'continue'
-            label = f' {stmt.label}' if stmt.label else ''
-            lines.append(f'{indent_str}{keyword}{label};')
-        elif isinstance(stmt, HLILReturn):
-            if stmt.value is not None:
-                value_str = cls._format_expr(stmt.value)
-                lines.append(f'{indent_str}return {value_str};')
-            else:
-                lines.append(f'{indent_str}return;')
-        elif isinstance(stmt, HLILUnstructured):
-            lines.append(f'{indent_str}goto {stmt.target}; // unstructured ({stmt.reason})')
-        elif isinstance(stmt, HLILAssign):
-            dest_str = cls._format_expr(stmt.dest)
-            src_str = cls._format_expr(stmt.src)
-            lines.append(f'{indent_str}{dest_str} = {src_str};')
-        elif isinstance(stmt, HLILExprStmt):
-            expr_str = cls._format_expr(stmt.expr)
-            lines.append(f'{indent_str}{expr_str};')
-        elif isinstance(stmt, HLILComment):
-            lines.append(f'{indent_str}// {stmt.text}')
-        elif isinstance(stmt, HLILBlock):
-            # Nested block
-            lines.append(f'{indent_str}{{')
-            lines.extend(cls._format_block(stmt, indent + 1))
-            lines.append(f'{indent_str}}}')
-        else:
-            lines.append(f'{indent_str}// {stmt}')
-
-        return lines
+    def _format_unstructured(cls, stmt: HLILUnstructured) -> List[str]:
+        return [f'goto {stmt.target}; // unstructured ({stmt.reason})']

@@ -369,7 +369,7 @@ class TestAddressTakenCodegenBooleanCoercion(unittest.TestCase):
         bool_expr = HLILBinaryOp(BinaryOp.EQ, HLILVar(a), HLILVar(b))
         assign = HLILAssign(HLILDeref(HLILAddressOf(HLILVar(x))), bool_expr)
 
-        lines = TypeScriptGenerator._generate_statement(assign)
+        lines = TypeScriptGenerator._format_statement(assign)
         self.assertTrue(any('x = int(' in line for line in lines), f'{lines}')
 
 
@@ -383,7 +383,7 @@ class TestAddressTakenPrinting(unittest.TestCase):
 
         self.assertEqual(TypeScriptGenerator._format_expr(lowered_read), 'x')
 
-        assign_lines = TypeScriptGenerator._generate_statement(HLILAssign(lowered_read, HLILConst(5)))
+        assign_lines = TypeScriptGenerator._format_statement(HLILAssign(lowered_read, HLILConst(5)))
         self.assertTrue(any('x = 5' in line for line in assign_lines))
         self.assertFalse(any('deref' in line for line in assign_lines))
 

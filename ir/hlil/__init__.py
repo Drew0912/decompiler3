@@ -1,6 +1,7 @@
 """High Level Intermediate Language (HLIL)"""
 
 from .hlil import *
+from .statement_printer import *
 from .hlil_formatter import *
 from .mlil_to_hlil import *
 from .hlil_passes import *
@@ -96,7 +97,8 @@ __all__ = [
     # Function
     'HighLevelILFunction',
 
-    # Formatter
+    # Printers
+    'HLILStatementPrinter',
     'HLILFormatter',
 
     # Passes

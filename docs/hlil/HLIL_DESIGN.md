@@ -36,7 +36,8 @@ work happen upstream; HLIL favors explicit tree ownership and straightforward co
 | `ir/hlil/hlil.py` | Core enums and tree nodes: expressions, statements, variables, switch cases, and `HighLevelILFunction`. |
 | `ir/hlil/mlil_to_hlil.py` | Generic MLIL → HLIL conversion, including CFG construction, call-result folding, loop/branch reconstruction, shared-region cloning, and variable declaration. |
 | `ir/hlil/structural_analysis.py` | Dominator calculation, natural-loop discovery, iterative region reduction, and merge-point queries used by the converter. |
-| `ir/hlil/hlil_formatter.py` | Debug formatter for rendering an HLIL tree. It is separate from the TypeScript code generator. |
+| `ir/hlil/statement_printer.py` | `HLILStatementPrinter`, the statement printer the debug formatter and the TypeScript code generator share: each prints expressions its own way and overrides the hooks where its statements differ (assignments, unstructured jumps, an if's arms, switch case blocks). |
+| `ir/hlil/hlil_formatter.py` | Debug formatter for rendering an HLIL tree, on the shared statement printer. It is separate from the TypeScript code generator. |
 | `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: control-flow optimization, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
 | `ir/hlil/hlil_passes.py` | Compatibility re-export of `ir/hlil/passes/`. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, formatter, converter, and passes. |

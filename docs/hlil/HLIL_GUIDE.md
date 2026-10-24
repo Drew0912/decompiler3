@@ -24,6 +24,7 @@ deals with VM-level calls, branches, and CFG shape.
 | --- | --- |
 | `ir/hlil/__init__.py` | Public API surface — re-exports node types, formatter, converter, passes. |
 | `ir/hlil/hlil.py` | Core node/instruction class definitions (statements, expressions, variables). |
+| `ir/hlil/statement_printer.py` | The statement printer (`HLILStatementPrinter`) the debug formatter and `codegen/typescript.py` share; each prints expressions itself. |
 | `ir/hlil/hlil_formatter.py` | Debug text pretty-printer (`HLILFormatter`) — tree dump, not codegen. |
 | `ir/hlil/mlil_to_hlil.py` | The MLIL → HLIL converter: CFG build, call-result folding, structural reconstruction. |
 | `ir/hlil/structural_analysis.py` | Dominator / natural-loop / region-reduction CFG analysis (`StructuralAnalyzer`), used by the converter. |
