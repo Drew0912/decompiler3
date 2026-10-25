@@ -497,41 +497,21 @@ def default_label_for_addr(addr: int) -> str:
 
 # === Container Classes ===
 
-class LowLevelILBasicBlock:
+class LowLevelILBasicBlock(ILBasicBlock):
     """Basic block containing LLIL instructions (following BN design)"""
 
     def __init__(self, start: int, label: Optional[str] = None):
-        self.start = start
-        self.index = 0  # Block index in function, set by LowLevelILFunction.add_basic_block
-        self.label = label if label is not None else default_label_for_addr(start)
-        self.instructions: List[LowLevelILInstruction] = []
+        # The index is set by LowLevelILFunction.add_basic_block
+        super().__init__(0, start, label if label is not None else default_label_for_addr(start))
         self.sp_in = 0   # sp state at block entry
         self.function: Optional['LowLevelILFunction'] = None  # Set when block added to a function
 
-        # Control flow edges (following BN design)
-        self.outgoing_edges: List['LowLevelILBasicBlock'] = []
-        self.incoming_edges: List['LowLevelILBasicBlock'] = []
-
     def add_instruction(self, inst: LowLevelILInstruction):
-        """Add instruction to this block"""
-        self.instructions.append(inst)
+        """Add instruction to this block, registered with its function once it has one"""
+        super().add_instruction(inst)
 
         if self.function is not None:
             self.function._register_instruction(inst)
-
-    def add_outgoing_edge(self, target: 'LowLevelILBasicBlock'):
-        """Add outgoing edge to another block"""
-        if target not in self.outgoing_edges:
-            self.outgoing_edges.append(target)
-        if self not in target.incoming_edges:
-            target.incoming_edges.append(self)
-
-    @property
-    def has_terminal(self) -> bool:
-        """Check if block ends with a terminal instruction"""
-        if not self.instructions:
-            return False
-        return isinstance(self.instructions[-1], Terminal)
 
     @property
     def block_name(self) -> str:

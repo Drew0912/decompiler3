@@ -751,34 +751,15 @@ def map_operands(node: MediumLevelILInstruction,
 
 # === Basic Block ===
 
-class MediumLevelILBasicBlock:
+class MediumLevelILBasicBlock(ILBasicBlock):
     """MLIL basic block"""
 
     def __init__(self, index: int, start: int = 0, label: str = None):
-        self.index = index
-        self.start = start
-        self.label = label or f'mlil_{index}'
-        self.instructions: List[MediumLevelILInstruction] = []
-        self.incoming_edges: List['MediumLevelILBasicBlock'] = []
-        self.outgoing_edges: List['MediumLevelILBasicBlock'] = []
-
-    def add_instruction(self, inst: MediumLevelILInstruction):
-        self.instructions.append(inst)
-
-    def add_outgoing_edge(self, block: 'MediumLevelILBasicBlock'):
-        if block not in self.outgoing_edges:
-            self.outgoing_edges.append(block)
-        if self not in block.incoming_edges:
-            block.incoming_edges.append(self)
+        super().__init__(index, start, label or f'mlil_{index}')
 
     @property
     def block_name(self) -> str:
         return f'mlil_block_{self.index}'
-
-    @property
-    def has_terminal(self) -> bool:
-        return (self.instructions and
-                isinstance(self.instructions[-1], Terminal))
 
     def __str__(self) -> str:
         body = '\n'.join(f'  {inst}' for inst in self.instructions)

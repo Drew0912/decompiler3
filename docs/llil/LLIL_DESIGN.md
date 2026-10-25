@@ -184,7 +184,8 @@ instruction's own line already spells out the stack action. `SET_REG`, `SET_GLOB
 their own line (`REG[0] = STACK[--sp]  ; ...`, `GLOBAL[0] = STACK[--sp] ; ...`,
 `if (STACK[--sp] EQ 0) goto ...`, `STACK[1] = STACK[--sp] ; ...`, `*STACK[fp + 3] = STACK[--sp] ; ...`);
 the generic `LLILFormatter` prints those instructions' own text. `to_dot()` draws a function's CFG
-(`.llil.dot`).
+(`.llil.dot`) with the DOT writer MLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`): a node holds
+the listing's block header and lines.
 
 ## Testing
 

@@ -2,11 +2,16 @@
 
 from typing import List, Optional
 
+from ir.core import CFGDotFormatter
 from .llil import *
 
 
-class LLILFormatter:
+class LLILFormatter(CFGDotFormatter):
     """Formatting layer for beautiful output"""
+
+    DOT_IF     = LowLevelILIf
+    DOT_GOTO   = LowLevelILJmp
+    DOT_RETURN = LowLevelILRet
 
     # Map operation to expression template
     __expr_templates = {
@@ -99,112 +104,27 @@ class LLILFormatter:
         ]
 
         for block in func.basic_blocks:
-            # Block header: {block_N}(addr), label, [sp = N, fp = M]
-
-            block_info = [
-                f'block_{block.index}(0x{block.start:04X})',
-                block.label,
-            ]
-
-            # Show sp and fp (fp only on first block)
-            if block.index == 0 and func.frame_base_sp is not None:
-                block_info.append(f'[sp = {block.sp_in}, fp = {func.frame_base_sp}]')
-            else:
-                block_info.append(f'[sp = {block.sp_in}]')
-
-            result.append(', '.join(block_info))
+            result.append(cls._block_header(func, block, address_spec='04X'))
             result.extend(cls.format_instruction_sequence(block.instructions))
             result.append('')
 
         return result
 
     @classmethod
-    def to_dot(cls, func: LowLevelILFunction) -> str:
-        """Generate Graphviz DOT format for CFG visualization"""
-        lines = []
-        lines.append(f'digraph "{func.name}" {{')
-        lines.append('    rankdir=TB;')
-        lines.append('    node [shape=box, fontname="Courier New", fontsize=10];')
-        lines.append('    edge [fontname="Courier New", fontsize=9];')
-        lines.append('')
+    def _block_header(cls, func: LowLevelILFunction, block: LowLevelILBasicBlock, address_spec: str) -> str:
+        """block_N(0xADDR), label, [sp = N]; the entry block also shows fp: [sp = N, fp = M]"""
+        if block.index == 0 and func.frame_base_sp is not None:
+            stack = f'[sp = {block.sp_in}, fp = {func.frame_base_sp}]'
+        else:
+            stack = f'[sp = {block.sp_in}]'
 
-        # Add nodes (basic blocks)
-        for block in func.basic_blocks:
-            label_parts = []
+        return f'block_{block.index}(0x{block.start:{address_spec}}), {block.label}, {stack}'
 
-            # Block header: block_N(0xADDR), label, [sp = N, fp = M]
-            # Use same format as format_llil_function
-            header_parts = [
-                f'block_{block.index}(0x{block.start:X})',
-                block.label,
-            ]
+    @classmethod
+    def _dot_header(cls, func: LowLevelILFunction, block: LowLevelILBasicBlock) -> str:
+        return cls._block_header(func, block, address_spec='X')
 
-            # Show sp and fp (fp only on first block)
-            if block.index == 0 and func.frame_base_sp is not None:
-                header_parts.append(f'[sp = {block.sp_in}, fp = {func.frame_base_sp}]')
-            else:
-                header_parts.append(f'[sp = {block.sp_in}]')
-
-            header = ', '.join(header_parts) + '\\l'
-            label_parts.append(header)
-            label_parts.append('-' * 40 + '\\l')
-
-            # Format instructions using expand format (same as format_llil_function)
-            formatted_lines = cls.format_instruction_sequence(block.instructions, '')
-            for line in formatted_lines:
-                # Escape for DOT format
-                escaped = line.replace('\\', '\\\\').replace('"', '\\"')
-                label_parts.append(escaped + '\\l')
-
-            label = ''.join(label_parts)
-
-            # Node styling
-            if block.index == 0:
-                # Entry block
-                lines.append(f'    {block.block_name} [label="{label}", style=filled, fillcolor=lightgreen];')
-            elif block.has_terminal and isinstance(block.instructions[-1], LowLevelILRet):
-                # Exit block
-                lines.append(f'    {block.block_name} [label="{label}", style=filled, fillcolor=lightblue];')
-            else:
-                lines.append(f'    {block.block_name} [label="{label}"];')
-
-        lines.append('')
-
-        # Add edges
-        for block in func.basic_blocks:
-            if not block.outgoing_edges:
-                continue
-
-            last_inst = block.instructions[-1] if block.instructions else None
-
-            for target in block.outgoing_edges:
-                # Determine edge label and style
-                edge_label = ''
-                edge_style = ''
-
-                if isinstance(last_inst, LowLevelILIf):
-                    # Conditional branch
-                    if target == last_inst.true_target:
-                        edge_label = 'true'
-                        edge_style = ', color=green'
-                    elif last_inst.false_target and target == last_inst.false_target:
-                        edge_label = 'false'
-                        edge_style = ', color=red'
-                    else:
-                        edge_label = 'fall-through'
-                        edge_style = ', style=dashed'
-                elif isinstance(last_inst, LowLevelILJmp):
-                    edge_label = 'goto'
-                    edge_style = ', color=blue'
-                else:
-                    # Fall-through
-                    edge_label = 'fall-through'
-                    edge_style = ', style=dashed'
-
-                if edge_label:
-                    lines.append(f'    {block.block_name} -> {target.block_name} [label="{edge_label}"{edge_style}];')
-                else:
-                    lines.append(f'    {block.block_name} -> {target.block_name}{edge_style};')
-
-        lines.append('}')
-        return '\n'.join(lines)
+    @classmethod
+    def _dot_lines(cls, block: LowLevelILBasicBlock) -> list[str]:
+        """The listing's lines, unindented"""
+        return cls.format_instruction_sequence(block.instructions, '')

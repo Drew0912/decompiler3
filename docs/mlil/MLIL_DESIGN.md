@@ -29,7 +29,7 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil_optimizer.py` | `mlil_optimization_passes()`, the one list of passes that runs after LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
 | `ir/mlil/passes/` | The actual pass implementations (14 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_block_merge.py`. |
 | `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function's blocks, variables and statements; expressions are built with the node classes. |
-| `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging). |
+| `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging) and the `.mlil.dot` graphs, with the DOT writer LLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`). |
 | `ir/mlil/mlil_types.py` | Type-kind/unification support. |
 | `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific); the one-to-one binary / unary operations by table. |
 | `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
@@ -150,7 +150,9 @@ class MediumLevelILFunction:
 
 (Simplified for illustration — the real classes are `MediumLevelILBasicBlock` and
 `MediumLevelILFunction` in `ir/mlil/mlil.py`.) Predecessor/successor edges are `incoming_edges`/`outgoing_edges`, not `preds`/
-`succs`. Each MLIL block mirrors an LLIL block when `optimize=False` - the `BlockMergePass` (part
+`succs`. Both layers' blocks derive from `ILBasicBlock` (`ir/core/il_cfg.py`): the instructions, the edges kept on
+both ends (`add_outgoing_edge`) and `has_terminal`.
+Each MLIL block mirrors an LLIL block when `optimize=False` - the `BlockMergePass` (part
 of the SSA optimization pipeline, so it does not run when `optimize=False`) collapses call-return
 and other single-predecessor goto chains when optimization is enabled, so this 1:1 property does
 not hold for `optimize=True` output. A statement's `llil_index` is how tools get back to LLIL

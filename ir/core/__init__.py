@@ -15,5 +15,7 @@ __all__ = [
     'SourceFloat',
     'UNASSIGNED_INST_INDEX',
     'ILOptions',
+    'ILBasicBlock',
     'reverse_post_order',
+    'CFGDotFormatter',
 ]
