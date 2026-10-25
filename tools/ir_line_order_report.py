@@ -40,6 +40,7 @@ from falcom.ed9.disasm.ed9_optable import ED9Opcode
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from ir.core import reverse_post_order
 from ir.llil.llil import LowLevelILDebug
 from ir.mlil.mlil import MLILDebug
 from ir.hlil.hlil import iter_tree, line_marker_number
@@ -74,16 +75,16 @@ class FunctionReport:
                 self.sequences['mlil'])
 
 
-def collect_dsl_lines(lifter: ED9VMLifter, func) -> List[int]:
+def collect_dsl_lines(func) -> List[int]:
     """DEBUG_SET_LINENO operands in address order
 
-    Uses the lifter's own block collection so this walk cannot drift out of step
-    with the order the LLIL is built in.
+    Walks the blocks the lifter lifts (reverse_post_order over succs, as the lifter calls it), so
+    this walk cannot drift out of step with the blocks the LLIL is built from.
     """
     if func.entry_block is None:
         return []
 
-    blocks = sorted(lifter._collect_blocks(func.entry_block), key=lambda b: b.offset)
+    blocks = sorted(reverse_post_order(func.entry_block, lambda block: block.succs), key=lambda b: b.offset)
     return [int(inst.operands[0].value) for block in blocks for inst in block.instructions
             if inst.opcode == ED9Opcode.DEBUG_SET_LINENO and inst.operands]
 
@@ -133,7 +134,7 @@ def analyse_file(path: Path) -> List[FunctionReport]:
             hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
 
             sequences = {
-                'py'  : collect_dsl_lines(lifter, func),
+                'py'  : collect_dsl_lines(func),
                 'llil': collect_llil_lines(llil_func),
                 'mlil': collect_mlil_lines(mlil_func),
                 'hlil': collect_hlil_lines(hlil_func),

@@ -259,142 +259,119 @@ class LowLevelILRegLoad(LowLevelILExpr):
 
 # === Arithmetic Operations ===
 
-class LowLevelILBinaryOp(LowLevelILExpr, BinaryOperation):
-    """Base for binary operations (expression)"""
+class LowLevelILBinaryOp(LowLevelILExpr):
+    """Base for binary operations (expression): each subclass sets only its OPERATION"""
 
-    def __init__(
-        self,
-        operation: LowLevelILOperation,
-        lhs: 'LowLevelILExpr' = None,
-        rhs: 'LowLevelILExpr' = None
-    ):
-        super().__init__(operation)
+    OPERATION: LowLevelILOperation
+
+    def __init__(self, lhs: 'LowLevelILExpr', rhs: 'LowLevelILExpr'):
+        super().__init__(self.OPERATION)
         self.lhs = lhs  # Left operand expression
         self.rhs = rhs  # Right operand expression
 
     def __str__(self) -> str:
-        if self.lhs and self.rhs:
-            return f'{self.operation_name}({self.lhs}, {self.rhs})'
-        return self.operation_name
+        return f'{self.operation_name}({self.lhs}, {self.rhs})'
 
 
 class LowLevelILAdd(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_ADD, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_ADD
 
 
 class LowLevelILMul(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_MUL, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_MUL
 
 
 class LowLevelILSub(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_SUB, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_SUB
 
 
 class LowLevelILDiv(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_DIV, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_DIV
 
 
 class LowLevelILMod(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_MOD, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_MOD
 
 
 class LowLevelILEq(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_EQ, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_EQ
 
 
 class LowLevelILNe(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_NE, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_NE
 
 
 class LowLevelILLt(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_LT, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_LT
 
 
 class LowLevelILLe(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_LE, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_LE
 
 
 class LowLevelILGt(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_GT, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_GT
 
 
 class LowLevelILGe(LowLevelILBinaryOp):
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_GE, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_GE
 
 
 class LowLevelILAnd(LowLevelILBinaryOp):
     """Bitwise AND"""
 
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_AND, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_AND
 
 
 class LowLevelILOr(LowLevelILBinaryOp):
     """Bitwise OR"""
 
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_OR, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_OR
 
 
 class LowLevelILLogicalAnd(LowLevelILBinaryOp):
     """Logical AND (&&)"""
 
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_LOGICAL_AND, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_LOGICAL_AND
 
 
 class LowLevelILLogicalOr(LowLevelILBinaryOp):
     """Logical OR (||)"""
 
-    def __init__(self, lhs: 'LowLevelILExpr' = None, rhs: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_LOGICAL_OR, lhs, rhs)
+    OPERATION = LowLevelILOperation.LLIL_LOGICAL_OR
 
 
 # === Unary Operations ===
 
-class LowLevelILUnaryOp(LowLevelILExpr, UnaryOperation):
-    """Base class for unary operations (expression)"""
+class LowLevelILUnaryOp(LowLevelILExpr):
+    """Base class for unary operations (expression): each subclass sets only its OPERATION"""
 
-    def __init__(self, operation: LowLevelILOperation, operand: 'LowLevelILExpr' = None):
-        super().__init__(operation)
+    OPERATION: LowLevelILOperation
+
+    def __init__(self, operand: 'LowLevelILExpr'):
+        super().__init__(self.OPERATION)
         self.operand = operand
 
     def __str__(self) -> str:
-        if self.operand:
-            return f'{self.operation_name}({self.operand})'
-        return self.operation_name
+        return f'{self.operation_name}({self.operand})'
 
 
 class LowLevelILNeg(LowLevelILUnaryOp):
     """Arithmetic negation (-x)"""
 
-    def __init__(self, operand: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_NEG, operand)
+    OPERATION = LowLevelILOperation.LLIL_NEG
 
 
 class LowLevelILBitwiseNot(LowLevelILUnaryOp):
     """Bitwise NOT (~x)"""
 
-    def __init__(self, operand: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_BITWISE_NOT, operand)
+    OPERATION = LowLevelILOperation.LLIL_BITWISE_NOT
 
 
 class LowLevelILTestZero(LowLevelILUnaryOp):
     """Test if zero (x == 0)"""
 
-    def __init__(self, operand: 'LowLevelILExpr' = None):
-        super().__init__(LowLevelILOperation.LLIL_TEST_ZERO, operand)
+    OPERATION = LowLevelILOperation.LLIL_TEST_ZERO
 
 
 # === Control Flow ===

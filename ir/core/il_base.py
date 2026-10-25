@@ -20,24 +20,12 @@ class ILInstruction:
         return self._options
 
 
-class ControlFlow(ILInstruction):
-    """Control flow instruction trait"""
-
-
-class Terminal(ControlFlow):
+class Terminal(ILInstruction):
     """Terminal control flow instruction trait"""
 
 
 class Constant(ILInstruction):
     """Constant value expression trait"""
-
-
-class BinaryOperation(ILInstruction):
-    """Binary operation trait"""
-
-
-class UnaryOperation(ILInstruction):
-    """Unary operation trait"""
 
 
 class IRParameter:

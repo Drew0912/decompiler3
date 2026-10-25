@@ -12,10 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILEq, LowLevelILInstruction, WORD_SIZE
-from assembler.basic_block import BasicBlock
-from falcom.ed9.ir.llil import ED9VMLifter
 from tests.shared.llil_utils import (
-    FOURTH_BLOCK_START, FUNC_START, SECOND_BLOCK_START, THIRD_BLOCK_START, instructions_of, make_builder,
+    FOURTH_BLOCK_START, SECOND_BLOCK_START, THIRD_BLOCK_START, instructions_of, make_builder,
 )
 
 
@@ -25,12 +23,6 @@ LEFT_VALUE = 1
 RIGHT_VALUE = 2
 SEED_PARAM_COUNT = 2
 NO_ARGS = 0
-
-
-def make_rpo_lifter() -> ED9VMLifter:
-    """_compute_rpo touches no lifter/parser state, so any non-None parser satisfies the
-    constructor."""
-    return ED9VMLifter(parser=object())
 
 
 def make_diamond(num_params: int = 0):
@@ -122,64 +114,12 @@ class TestBlockLifecycle(unittest.TestCase):
         self.assertEqual(other.sp_in, DELIBERATELY_DIFFERENT_SP)
 
 
-class TestComputeRPO(unittest.TestCase):
-    """_compute_rpo over the disassembler CFG (BasicBlock/succs), independent of the LLIL
-    builder entirely."""
-
-    def test_diamond_places_join_after_both_arms(self):
-        entry = BasicBlock(offset=FUNC_START)
-        a = BasicBlock(offset=SECOND_BLOCK_START)
-        b = BasicBlock(offset=THIRD_BLOCK_START)
-        join = BasicBlock(offset=FOURTH_BLOCK_START)
-        entry.add_branch(a)
-        entry.add_branch(b)
-        a.add_branch(join)
-        b.add_branch(join)
-
-        order = make_rpo_lifter()._compute_rpo(entry)
-
-        self.assertEqual(order[0], entry)
-        self.assertEqual(order[-1], join)
-        self.assertLess(order.index(a), order.index(join))
-        self.assertLess(order.index(b), order.index(join))
-
-    def test_loop_back_edge_places_body_after_header_and_exit(self):
-        """The exact shape that broke finalize()'s old blanket check: header.succs=[body, exit],
-        body -> header. RPO must place header first; body (which can legitimately carry state
-        across the back edge) ends up last, not exit (the real RETURN path)."""
-        header = BasicBlock(offset=FUNC_START)
-        body = BasicBlock(offset=SECOND_BLOCK_START)
-        exit_block = BasicBlock(offset=THIRD_BLOCK_START)
-        header.add_branch(body)
-        header.add_branch(exit_block)
-        body.add_branch(header)
-
-        order = make_rpo_lifter()._compute_rpo(header)
-
-        self.assertEqual(order, [header, exit_block, body])
-
-    def test_rpo_is_not_secretly_address_order(self):
-        """entry -> higher-address block -> lower-address block (the original counterexample
-        shape). RPO must visit the lower-address block AFTER the higher-address one, proving it
-        isn't just re-deriving address order."""
-        entry = BasicBlock(offset=FUNC_START)
-        higher = BasicBlock(offset=THIRD_BLOCK_START)
-        lower = BasicBlock(offset=SECOND_BLOCK_START)
-        entry.add_branch(higher)
-        higher.add_branch(lower)
-
-        order = make_rpo_lifter()._compute_rpo(entry)
-
-        self.assertEqual(order, [entry, higher, lower])
-        self.assertEqual(sorted(order, key=lambda b: b.offset), [entry, lower, higher])
-
-
 class TestRPOIntegration(unittest.TestCase):
     """The mechanisms RPO depends on for safety - real per-exit validation and call-return edge
     saving - proven together at the builder level."""
 
     def test_loop_with_carried_state_does_not_confuse_the_exit_check(self):
-        """header/body/exit, matching TestComputeRPO's own loop shape, with one parameter: body is
+        """header/body/exit, matching the loop shape in ir_core_tests/test_il_cfg.py, with one parameter: body is
         lifted last and ends at sp 1 (the parameter is still on the stack) as it jumps back; exit pops
         the parameter and returns. Neither finalize() nor ret() should be confused by body being
         lifted last."""
@@ -191,7 +131,7 @@ class TestRPOIntegration(unittest.TestCase):
         builder.push_int(CONDITION_VALUE)
         builder.pop_jmp_zero(exit_block, body)
 
-        builder.begin_block(exit_block)   # RPO lifts exit before body - see TestComputeRPO
+        builder.begin_block(exit_block)   # RPO lifts exit before body - see ir_core_tests/test_il_cfg.py
         builder.pop_bytes(WORD_SIZE)       # exit path pops the parameter
         builder.ret()                      # must not raise
 

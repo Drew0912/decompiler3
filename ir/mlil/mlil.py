@@ -269,17 +269,18 @@ BINARY_OP_SYMBOLS = {
 }
 
 
-class MLILBinaryOp(MediumLevelILExpr, BinaryOperation):
-    """Base class for binary operations"""
+class MLILBinaryOp(MediumLevelILExpr):
+    """Base class for binary operations: each subclass sets only its OPERATION"""
 
-    def __init__(self, operation: MediumLevelILOperation, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(operation, **kwargs)
+    OPERATION: MediumLevelILOperation
+
+    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
+        super().__init__(self.OPERATION, **kwargs)
         self.lhs = lhs
         self.rhs = rhs
 
     def rebuild(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> 'MLILBinaryOp':
-        """Copy of this operation with new operands, keeping metadata. Every subclass takes
-        (lhs, rhs, **kwargs) and only fixes its operation."""
+        """Copy of this operation with new operands, keeping metadata"""
         return type(self)(lhs, rhs).copy_metadata_from(self)
 
     def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
@@ -291,63 +292,51 @@ class MLILBinaryOp(MediumLevelILExpr, BinaryOperation):
 
 
 class MLILAdd(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_ADD, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_ADD
 
 
 class MLILSub(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_SUB, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_SUB
 
 
 class MLILMul(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_MUL, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_MUL
 
 
 class MLILDiv(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_DIV, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_DIV
 
 
 class MLILMod(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_MOD, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_MOD
 
 
 class MLILAnd(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_AND, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_AND
 
 
 class MLILOr(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_OR, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_OR
 
 
 class MLILXor(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_XOR, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_XOR
 
 
 class MLILShl(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_SHL, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_SHL
 
 
 class MLILShr(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_SHR, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_SHR
 
 
 class MLILLogicalAnd(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_LOGICAL_AND, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_LOGICAL_AND
 
 
 class MLILLogicalOr(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_LOGICAL_OR, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_LOGICAL_OR
 
 
 # De Morgan: the logical operator each one becomes when a negation is pushed into its operands
@@ -357,33 +346,27 @@ DE_MORGAN = {MLILLogicalAnd: MLILLogicalOr, MLILLogicalOr: MLILLogicalAnd}
 # === Comparison Operations ===
 
 class MLILEq(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_EQ, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_EQ
 
 
 class MLILNe(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_NE, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_NE
 
 
 class MLILLt(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_LT, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_LT
 
 
 class MLILLe(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_LE, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_LE
 
 
 class MLILGt(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_GT, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_GT
 
 
 class MLILGe(MLILBinaryOp):
-    def __init__(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_GE, lhs, rhs, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_GE
 
 
 # Each comparison and the comparison with the opposite outcome
@@ -414,16 +397,17 @@ UNARY_OP_SYMBOLS = {
 }
 
 
-class MLILUnaryOp(MediumLevelILExpr, UnaryOperation):
-    """Base class for unary operations"""
+class MLILUnaryOp(MediumLevelILExpr):
+    """Base class for unary operations: each subclass sets only its OPERATION"""
 
-    def __init__(self, operation: MediumLevelILOperation, operand: MediumLevelILInstruction, **kwargs):
-        super().__init__(operation, **kwargs)
+    OPERATION: MediumLevelILOperation
+
+    def __init__(self, operand: MediumLevelILInstruction, **kwargs):
+        super().__init__(self.OPERATION, **kwargs)
         self.operand = operand
 
     def rebuild(self, operand: MediumLevelILInstruction) -> 'MLILUnaryOp':
-        """Copy of this operation with a new operand, keeping metadata. Every subclass takes
-        (operand, **kwargs) and only fixes its operation."""
+        """Copy of this operation with a new operand, keeping metadata"""
         return type(self)(operand).copy_metadata_from(self)
 
     def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
@@ -435,18 +419,15 @@ class MLILUnaryOp(MediumLevelILExpr, UnaryOperation):
 
 
 class MLILNeg(MLILUnaryOp):
-    def __init__(self, operand: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_NEG, operand, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_NEG
 
 
 class MLILLogicalNot(MLILUnaryOp):
-    def __init__(self, operand: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_LOGICAL_NOT, operand, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_LOGICAL_NOT
 
 
 class MLILTestZero(MLILUnaryOp):
-    def __init__(self, operand: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_TEST_ZERO, operand, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_TEST_ZERO
 
     def __str__(self) -> str:
         return f'({self.operand} == 0)'
@@ -455,15 +436,13 @@ class MLILTestZero(MLILUnaryOp):
 class MLILBitwiseNot(MLILUnaryOp):
     """Bitwise NOT (~x)"""
 
-    def __init__(self, operand: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_BITWISE_NOT, operand, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_BITWISE_NOT
 
 
 class MLILAddressOf(MLILUnaryOp):
     """Address-of operation (&var)"""
 
-    def __init__(self, operand: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_ADDRESS_OF, operand, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_ADDRESS_OF
 
     def __str__(self) -> str:
         return f'&{self.operand}'
@@ -718,8 +697,7 @@ class MLILDeref(MLILUnaryOp):
     _is_closed_form, which never caches a deref read under a REG/GLOBAL slot at all).
     """
 
-    def __init__(self, operand: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_DEREF, operand, **kwargs)
+    OPERATION = MediumLevelILOperation.MLIL_DEREF
 
     def __str__(self) -> str:
         return f'*{_parenthesize_deref_operand(self.operand)}'

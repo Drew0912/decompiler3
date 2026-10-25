@@ -56,7 +56,7 @@ came from, `inst_index`, `options.hidden_for_formatter`). Nodes are either a
 | Pointer (runtime address) | `LowLevelILLoad(src)` (`*src`), `LowLevelILStore(dest, value)` (`*dest = value`) |
 | Registers | `LowLevelILRegStore(reg_index, value)`, `LowLevelILRegLoad(reg_index)` |
 | Globals (ED9) | `LowLevelILGlobalStore(index, value)`, `LowLevelILGlobalLoad(index)` |
-| Arithmetic / compare / logic | `LowLevelILBinaryOp` subclasses (`Add`, `Sub`, `Mul`, `Div`, `Mod`, `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, bitwise `And`/`Or`, eager `LogicalAnd`/`LogicalOr`); `LowLevelILUnaryOp` subclasses (`Neg`, `BitwiseNot`, `TestZero`) |
+| Arithmetic / compare / logic | `LowLevelILBinaryOp(lhs, rhs)` subclasses (`Add`, `Sub`, `Mul`, `Div`, `Mod`, `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, bitwise `And`/`Or`, eager `LogicalAnd`/`LogicalOr`); `LowLevelILUnaryOp(operand)` subclasses (`Neg`, `BitwiseNot`, `TestZero`); each subclass sets only its `OPERATION` |
 | Terminals | `LowLevelILJmp(target)`, `LowLevelILIf(condition, true_target, false_target)`, `LowLevelILCall(target, return_target, args, returns)`, `LowLevelILRet()`; ED9 `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn` (both subclass `LowLevelILCall`) |
 | Other | `LowLevelILConst(value, is_raw)`, `LowLevelILSyscall(subsystem, cmd, argc, args)`, `LowLevelILDebug('line', n)` (from `DEBUG_SET_LINENO`), `LowLevelILDebugLog(args)` |
 
@@ -149,7 +149,8 @@ them.
 ## Control Flow and Per-Edge Stack State
 
 `ED9VMLifter.lift_function()` creates every reachable block first, in address order (so block
-indices follow addresses), then lifts them in reverse post-order from the entry, so every block
+indices follow addresses), then lifts them in reverse post-order from the entry
+(`reverse_post_order`, `ir/core/il_cfg.py`, which MLIL's dominance analysis shares), so every block
 but the entry is lifted after at least one of its predecessors. `begin_block` restores the stack
 state recorded for the block by an edge from a block lifted before it.
 

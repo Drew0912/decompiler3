@@ -29,7 +29,7 @@ A test sits in the folder of the code it tests. Each folder is named after that 
 | `tools_tests/` | the scripts in `tools/`: the validators, the line-order report, the HLIL path check |
 | `dc3_tests/` | `dc3/`: logging, file I/O, the GC policy |
 | `codegen_tests/` | the TypeScript code generator (`codegen/`) |
-| `ir_core_tests/` | the `ir/core` values every layer shares: `is_int_zero`, `SourceFloat` |
+| `ir_core_tests/` | the `ir/core` values every layer shares: `is_int_zero`, `SourceFloat`, `reverse_post_order` |
 | `shared/` | helpers for the tests above; no tests |
 
 ## Shared helpers

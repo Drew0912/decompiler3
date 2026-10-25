@@ -3,6 +3,7 @@
 from __future__ import annotations
 from typing import Dict, Iterator, List, Set, Optional, Tuple, Deque
 from collections import deque, defaultdict
+from ir.core import reverse_post_order
 from .mlil import *
 
 
@@ -113,7 +114,8 @@ class DominanceAnalysis:
     """Compute dominance tree and dominance frontiers (iterative)"""
 
     def __init__(self, function: MediumLevelILFunction):
-        self.blocks = self._compute_rpo(function.basic_blocks)
+        blocks = function.basic_blocks
+        self.blocks = reverse_post_order(blocks[0], lambda block: block.outgoing_edges) if blocks else []
         self.block_index = {block: i for i, block in enumerate(self.blocks)}
 
         # Predecessors among the reachable blocks only (not incoming_edges)
@@ -126,34 +128,6 @@ class DominanceAnalysis:
         self.idom: Dict[MediumLevelILBasicBlock, Optional[MediumLevelILBasicBlock]] = {}
         self.dom_tree: Dict[MediumLevelILBasicBlock, List[MediumLevelILBasicBlock]] = defaultdict(list)
         self.dom_frontier: Dict[MediumLevelILBasicBlock, Set[MediumLevelILBasicBlock]] = defaultdict(set)
-
-    def _compute_rpo(self, blocks: List[MediumLevelILBasicBlock]) -> List[MediumLevelILBasicBlock]:
-        """Compute Reverse Postorder via DFS (only reachable blocks)"""
-        if not blocks:
-            return []
-
-        visited = set()
-        postorder = []
-        stack = [(blocks[0], False)]
-
-        while stack:
-            block, processed = stack.pop()
-
-            if processed:
-                postorder.append(block)
-                continue
-
-            if block in visited:
-                continue
-
-            visited.add(block)
-            stack.append((block, True))
-
-            for succ in reversed(block.outgoing_edges):
-                if succ not in visited:
-                    stack.append((succ, False))
-
-        return list(reversed(postorder))
 
     def analyze(self):
         """Run dominance analysis"""
