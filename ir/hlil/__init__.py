@@ -4,7 +4,7 @@ from .hlil import *
 from .statement_printer import *
 from .hlil_formatter import *
 from .mlil_to_hlil import *
-from .hlil_passes import *
+from .passes import *
 
 __all__ = [
     # Types

@@ -21,9 +21,8 @@ from ir.mlil.mlil import (
     MLILIf, MLILGoto, MLILAdd, MLILSub, MLILEq, MLILGe, MLILRet, MLILStoreGlobal, MLILLoadGlobal,
 )
 from ir.mlil.mlil_ssa import SSAConstructor, SSADeconstructor
-from ir.mlil.mlil_passes import SSAConversionPass
 from ir.mlil.mlil_optimizer import optimize_mlil
-from ir.mlil.passes import SSATypeInferencePass, RegGlobalValuePropagationPass
+from ir.mlil.passes import SSAConversionPass, SSATypeInferencePass, RegGlobalValuePropagationPass
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from ir.hlil.hlil import (
     HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock, HLILAddressOf,

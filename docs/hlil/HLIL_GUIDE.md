@@ -29,7 +29,6 @@ deals with VM-level calls, branches, and CFG shape.
 | `ir/hlil/mlil_to_hlil.py` | The MLIL → HLIL converter: CFG build, call-result folding, structural reconstruction. |
 | `ir/hlil/structural_analysis.py` | Dominator / natural-loop / region-reduction CFG analysis (`StructuralAnalyzer`), used by the converter. |
 | `tools/hlil_path_check.py` | Checks that the final HLIL keeps every MLIL control path (lost or invented paths, missing calls/stores, each repeated region on its own); not part of the pipeline. |
-| `ir/hlil/hlil_passes.py` | Re-export shim (`from .passes import *`) — no logic of its own. |
 | `ir/hlil/passes/*.py` | Seven pass modules (below) — one is the conversion wrapper itself, six are post-conversion transformations (line-marker removal only with `line_markers` off). |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Falcom's concrete pipeline wiring — this, not anything in `ir/hlil/` directly, is what the real driver calls. Mirrors the same generic/project-specific split MLIL uses (`ir/mlil/*` + `falcom/ed9/ir/mlil/`). |
 | `codegen/typescript.py` | HLIL → TypeScript pseudocode emitter (`TypeScriptGenerator`) — the actual human-readable output. |

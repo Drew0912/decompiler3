@@ -4,7 +4,7 @@ from typing import Optional
 from ir.mlil.mlil import MediumLevelILFunction
 from ir.hlil import HighLevelILFunction
 from ir.pipeline import Pipeline
-from ir.hlil.hlil_passes import (
+from ir.hlil.passes import (
     MLILToHLILPass,
     ControlFlowOptimizationPass,
     LoopRecoveryPass,

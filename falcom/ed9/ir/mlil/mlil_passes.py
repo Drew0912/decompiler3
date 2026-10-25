@@ -1,6 +1,6 @@
 """Falcom ED9 MLIL Passes"""
 
-from ir.mlil.mlil_passes import LLILToMLILPass
+from ir.mlil.passes import LLILToMLILPass
 from .mlil_translator import FalcomLLILToMLILTranslator
 
 

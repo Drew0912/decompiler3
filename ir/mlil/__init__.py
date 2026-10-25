@@ -7,7 +7,7 @@ from .mlil_optimizer import *
 from .mlil_ssa_optimizer import *
 from .mlil_ssa import *
 from .mlil_types import *
-from .mlil_passes import *
+from .passes import *
 from .mlil import *
 
 __all__ = [
@@ -20,8 +20,11 @@ __all__ = [
     # Builder, Translator, Formatter, and Optimizers
     'MLILBuilder',
     'LLILToMLILTranslator',
+    'BINARY_OP_TYPES',
+    'UNARY_OP_TYPES',
     'MLILFormatter',
     'SSAOptimizer',
+    'SSA_OPTIMIZER_MAX_ITERATIONS',
     'mlil_optimization_passes',
     'optimize_mlil',
 
@@ -29,14 +32,30 @@ __all__ = [
     'LLILToMLILPass',
     'SSAConversionPass',
     'SSAOptimizationPass',
-    'SSATypeInferencePass',
     'SSADeconstructionPass',
+    'NNFPass',
+    'SCCP',
+    'LatticeValue',
+    'ConstantPropagationPass',
+    'CopyPropagationPass',
+    'ExpressionSimplificationPass',
+    'ConditionSimplificationPass',
+    'ExpressionInliningPass',
+    'SSADeadCodeEliminationPass',
+    'DeadPhiSourceEliminationPass',
+    'SSATypeInferencePass',
+    'BlockMergePass',
+    'RegGlobalState',
+    'RegGlobalValuePropagator',
+    'RegGlobalValuePropagationPass',
 
     # SSA
     'MLILVariableSSA',
     'MLILVarSSA',
     'MLILSetVarSSA',
     'MLILPhi',
+    'iter_ssa_reads',
+    'iter_ssa_defs',
     'DominanceAnalysis',
     'SSAConstructor',
     'SSADeconstructor',
@@ -58,16 +77,19 @@ __all__ = [
     'MediumLevelILBasicBlock',
 
     # Variables
+    'UNASSIGNED_SLOT_INDEX',
     'MLILVariable',
 
     # Constants
     'MLILConst',
+    'MLILUndef',
 
     # Variable operations
     'MLILVar',
     'MLILSetVar',
 
     # Binary operations
+    'BINARY_OP_SYMBOLS',
     'MLILBinaryOp',
     'MLILAdd',
     'MLILSub',
@@ -81,6 +103,7 @@ __all__ = [
     'MLILShr',
     'MLILLogicalAnd',
     'MLILLogicalOr',
+    'DE_MORGAN',
 
     # Comparison operations
     'MLILEq',
@@ -89,13 +112,18 @@ __all__ = [
     'MLILLe',
     'MLILGt',
     'MLILGe',
+    'NEGATED_COMPARISON',
+    'COMPARISON_TYPES',
+    'negate_comparison',
 
     # Unary operations
+    'UNARY_OP_SYMBOLS',
     'MLILUnaryOp',
     'MLILNeg',
     'MLILLogicalNot',
     'MLILBitwiseNot',
     'MLILTestZero',
+    'MLILAddressOf',
 
     # Control flow
     'MLILGoto',
@@ -124,4 +152,8 @@ __all__ = [
     'MLILNop',
     'MLILDebug',
     'is_nop_instr',
+
+    # Traversal
+    'walk',
+    'map_operands',
 ]

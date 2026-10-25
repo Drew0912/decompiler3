@@ -18,11 +18,10 @@ from ir.mlil.mlil import (
     MLILAdd, MLILEq,
 )
 from ir.mlil.mlil_ssa import MLILVarSSA, MLILPhi
-from ir.mlil.mlil_passes import SSAConversionPass, SSADeconstructionPass
 from ir.mlil.mlil_optimizer import optimize_mlil
 from ir.mlil.passes import (
-    CopyPropagationPass, ExpressionInliningPass, SSADeadCodeEliminationPass,
-    RegGlobalValuePropagationPass,
+    SSAConversionPass, SSADeconstructionPass, CopyPropagationPass, ExpressionInliningPass,
+    SSADeadCodeEliminationPass, RegGlobalValuePropagationPass,
 )
 from ir.hlil.hlil import (
     HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock,

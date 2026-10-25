@@ -39,7 +39,6 @@ work happen upstream; HLIL favors explicit tree ownership and straightforward co
 | `ir/hlil/statement_printer.py` | `HLILStatementPrinter`, the statement printer the debug formatter and the TypeScript code generator share: each prints expressions its own way and overrides the hooks where its statements differ (assignments, unstructured jumps, an if's arms, switch case blocks). |
 | `ir/hlil/hlil_formatter.py` | Debug formatter for rendering an HLIL tree, on the shared statement printer. It is separate from the TypeScript code generator. |
 | `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: control-flow optimization, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
-| `ir/hlil/hlil_passes.py` | Compatibility re-export of `ir/hlil/passes/`. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, formatter, converter, and passes. |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry point, `convert_falcom_mlil_to_hlil()`, and its pass ordering/configuration. |
 | `tests/hlil_tests/test_hlil_branch_order_normalization.py` | Unit tests for source-order arm normalization and its pipeline flag. |
