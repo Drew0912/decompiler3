@@ -1,7 +1,5 @@
 """LLIL Formatter - the .llil.asm listing and the .llil.dot graph"""
 
-from typing import List, Optional
-
 from ir.core import CFGDotFormatter
 from .llil import *
 
@@ -37,7 +35,7 @@ class LLILFormatter(CFGDotFormatter):
     }
 
     @classmethod
-    def _format_binary_op_expanded(cls, binary_op: LowLevelILBinaryOp) -> List[str]:
+    def _format_binary_op_expanded(cls, binary_op: LowLevelILBinaryOp) -> list[str]:
         """Format binary operation with expanded pseudo-code"""
         template = cls.__expr_templates[binary_op.operation]
         expr = template.format(lhs='lhs', rhs='rhs')
@@ -48,7 +46,7 @@ class LLILFormatter(CFGDotFormatter):
         ]
 
     @classmethod
-    def _format_unary_op_expanded(cls, unary_op: 'LowLevelILUnaryOp') -> List[str]:
+    def _format_unary_op_expanded(cls, unary_op: LowLevelILUnaryOp) -> list[str]:
         """Format unary operation with expanded pseudo-code"""
         template = cls.__expr_templates[unary_op.operation]
         expr = template.format(operand='operand')
@@ -58,7 +56,7 @@ class LLILFormatter(CFGDotFormatter):
         ]
 
     @classmethod
-    def _format_simplified(cls, inst: LowLevelILInstruction) -> List[str]:
+    def _format_simplified(cls, inst: LowLevelILInstruction) -> list[str]:
         """One line: the instruction's own text; a stack store / load also shows its slot"""
         if isinstance(inst, (LowLevelILStackStore, LowLevelILStackLoad)):
             return [f'{inst} ; [{inst.slot_index}]']
@@ -66,7 +64,7 @@ class LLILFormatter(CFGDotFormatter):
         return [str(inst)]
 
     @classmethod
-    def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> Optional[List[str]]:
+    def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> list[str] | None:
         """A binary or unary operation, pushed or bare, as its pops, its computation and its push; None for any other
         instruction"""
         operation = inst.value if isinstance(inst, LowLevelILStackStore) and inst.offset == 0 else inst
@@ -79,7 +77,7 @@ class LLILFormatter(CFGDotFormatter):
         return None
 
     @classmethod
-    def format_instruction_sequence(cls, instructions: List[LowLevelILInstruction], indent: str = '  ') -> list[str]:
+    def format_instruction_sequence(cls, instructions: list[LowLevelILInstruction], indent: str = '  ') -> list[str]:
         """Format sequence of instructions - returns list of lines"""
         result = []
 

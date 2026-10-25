@@ -32,10 +32,10 @@ def struct_layout(fmt: str, endian: str = None) -> struct.Struct:
 class _PositionSaver:
     """Restores the stream position on exit"""
 
-    def __init__(self, fs: 'FileStream'):
+    def __init__(self, fs: FileStream):
         self.fs = fs
 
-    def __enter__(self) -> 'FileStream':
+    def __enter__(self) -> FileStream:
         self.pos = self.fs.Position
         return self.fs
 
@@ -58,7 +58,7 @@ class FileStream:
         if file is not None:
             self.Open(file, mode)
 
-    def __enter__(self) -> 'FileStream':
+    def __enter__(self) -> FileStream:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
@@ -68,14 +68,14 @@ class FileStream:
     def Stream(self) -> io.IOBase:
         return self._stream
 
-    def Open(self, file: str | bytes | bytearray, mode: str = 'rb') -> 'FileStream':
+    def Open(self, file: str | bytes | bytearray, mode: str = 'rb') -> FileStream:
         if isinstance(file, (bytes, bytearray)):
             return self.OpenMemory(file)
 
         self._stream = open(file, mode)
         return self
 
-    def OpenMemory(self, buffer: bytes = b'') -> 'FileStream':
+    def OpenMemory(self, buffer: bytes = b'') -> FileStream:
         self._stream = io.BytesIO(buffer)
         return self
 
@@ -105,7 +105,7 @@ class FileStream:
         self.Position = 0
         return self.Read()
 
-    def Write(self, *bufs: 'bytes | bytearray | FileStream') -> int:
+    def Write(self, *bufs: bytes | bytearray | FileStream) -> int:
         """Write each buffer (a FileStream contributes its whole content)"""
         written = 0
         for buf in bufs:

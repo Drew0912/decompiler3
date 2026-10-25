@@ -13,7 +13,6 @@ etc.
 Identities fire only on int constants
 """
 
-from typing import Optional
 from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
@@ -100,7 +99,7 @@ class ExpressionSimplificationPass(Pass):
 
         return expr
 
-    def _apply_algebraic_identity(self, op_type, lhs, rhs) -> Optional[MediumLevelILInstruction]:
+    def _apply_algebraic_identity(self, op_type, lhs, rhs) -> MediumLevelILInstruction | None:
         """Apply algebraic identity rules"""
         # Int constants only: x * 0.0 isn't int 0, and the VM's int/float mixing is unverified
         # (SCCP doesn't fold floats either)

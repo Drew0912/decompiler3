@@ -1,7 +1,7 @@
 """SCCP - Sparse Conditional Constant Propagation"""
 
 import operator
-from typing import Any, Dict, List, Set
+from typing import Any
 
 from ir.core import constant_values_equal
 from ..mlil import (
@@ -91,15 +91,15 @@ class LatticeValue:
         self.value = value  # Only valid when state == CONSTANT
 
     @classmethod
-    def top(cls) -> 'LatticeValue':
+    def top(cls) -> LatticeValue:
         return cls(cls.TOP)
 
     @classmethod
-    def constant(cls, value: Any) -> 'LatticeValue':
+    def constant(cls, value: Any) -> LatticeValue:
         return cls(cls.CONSTANT, value)
 
     @classmethod
-    def bottom(cls) -> 'LatticeValue':
+    def bottom(cls) -> LatticeValue:
         return cls(cls.BOTTOM)
 
     def is_top(self) -> bool:
@@ -111,7 +111,7 @@ class LatticeValue:
     def is_bottom(self) -> bool:
         return self.state == self.BOTTOM
 
-    def meet(self, other: 'LatticeValue') -> 'LatticeValue':
+    def meet(self, other: LatticeValue) -> LatticeValue:
         """Meet operation: combine two lattice values"""
         # TOP meet x = x
         if self.is_top():
@@ -158,25 +158,25 @@ class SCCP:
         self.function = function
 
         # Variables replaced with constants (for DCE to skip debug.string)
-        self.replaced_vars: Set[MLILVariableSSA] = set()
+        self.replaced_vars: set[MLILVariableSSA] = set()
 
         # Lattice values for SSA variables
-        self.var_values: Dict[MLILVariableSSA, LatticeValue] = {}
+        self.var_values: dict[MLILVariableSSA, LatticeValue] = {}
 
         # The CFG edges (from_block, to_block) and blocks found reachable so far
-        self.reachable_edges: Set[tuple] = set()
-        self.reachable_blocks: Set[MediumLevelILBasicBlock] = set()
+        self.reachable_edges: set[tuple] = set()
+        self.reachable_blocks: set[MediumLevelILBasicBlock] = set()
 
         # Worklists
-        self.ssa_worklist: List[MLILVariableSSA] = []
-        self.cfg_worklist: List[tuple] = []  # (from_block, to_block)
+        self.ssa_worklist: list[MLILVariableSSA] = []
+        self.cfg_worklist: list[tuple] = []  # (from_block, to_block)
 
         # SSA def-use chains
-        self.ssa_defs: Dict[MLILVariableSSA, MediumLevelILInstruction] = {}
-        self.ssa_uses: Dict[MLILVariableSSA, List[MediumLevelILInstruction]] = {}
+        self.ssa_defs: dict[MLILVariableSSA, MediumLevelILInstruction] = {}
+        self.ssa_uses: dict[MLILVariableSSA, list[MediumLevelILInstruction]] = {}
 
         # Block containing each instruction
-        self.inst_block: Dict[MediumLevelILInstruction, MediumLevelILBasicBlock] = {}
+        self.inst_block: dict[MediumLevelILInstruction, MediumLevelILBasicBlock] = {}
 
     def run(self) -> bool:
         """Run SCCP and return True if any changes were made"""

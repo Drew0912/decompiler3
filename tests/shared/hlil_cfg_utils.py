@@ -10,7 +10,7 @@ loops forever: with FUEL well above that, both levels run out of fuel exactly wh
 """
 from collections import Counter
 from itertools import count, product
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Sequence
 
 from ir.mlil.mlil import (MediumLevelILFunction, MLILIf, MLILGoto, MLILRet, MLILConst, MLILVar, MLILCall, MLILEq,
                           MLILDebug)
@@ -28,7 +28,7 @@ MARKER_FIRST_LINE = 1000
 # A block's list holds the functions it calls and, as ints, its line markers (debug.line(N)), in order
 # Terminals: ('ret', value), ('goto', label), ('if', condition, true label, false label); a condition is
 # a parameter name, a constant, or ('==', constant, constant)
-BlockSpec = Tuple[Sequence[Union[str, int]], tuple]
+BlockSpec = tuple[Sequence[str | int], tuple]
 
 # Shapes shared by the structuring and path-check tests
 
@@ -50,7 +50,7 @@ SHARED_LOOP = {
 SHARED_LOOP_COPY_STATEMENTS = 5
 
 
-def _condition(cond, variables: Dict[str, object]):
+def _condition(cond, variables: dict[str, object]):
     if isinstance(cond, str):
         return MLILVar(variables[cond])
 
@@ -60,7 +60,7 @@ def _condition(cond, variables: Dict[str, object]):
     return MLILConst(cond)
 
 
-def build_function(name: str, blocks: Dict[str, BlockSpec]) -> MediumLevelILFunction:
+def build_function(name: str, blocks: dict[str, BlockSpec]) -> MediumLevelILFunction:
     """An MLIL function from {label: (calls and markers, terminal)}; the first block is the entry"""
     func = MediumLevelILFunction(name, 0)
     params = sorted({terminal[1] for _, terminal in blocks.values()
@@ -90,17 +90,17 @@ def to_hlil(func: MediumLevelILFunction, **flags) -> HighLevelILFunction:
     return convert_falcom_mlil_to_hlil(func, **flags)
 
 
-def structure(blocks: Dict[str, BlockSpec], **limits) -> Tuple[MediumLevelILFunction, HighLevelILFunction]:
+def structure(blocks: dict[str, BlockSpec], **limits) -> tuple[MediumLevelILFunction, HighLevelILFunction]:
     """(MLIL, HLIL straight from the converter, with its clone limits overridden)"""
     func = build_function('f', blocks)
     return func, MLILToHLILConverter(func, **limits).convert()
 
 
-def parameters(func: MediumLevelILFunction) -> List[str]:
+def parameters(func: MediumLevelILFunction) -> list[str]:
     return [p.name for p in func.parameters if p is not None]
 
 
-def mlil_run(func: MediumLevelILFunction, env: Dict[str, bool]) -> Tuple[tuple, tuple, set]:
+def mlil_run(func: MediumLevelILFunction, env: dict[str, bool]) -> tuple[tuple, tuple, set]:
     """(calls, end, {(block label, calls made before entering it)})"""
     trace, entries, fuel = [], set(), FUEL
     block = func.basic_blocks[0]
@@ -129,12 +129,12 @@ def mlil_run(func: MediumLevelILFunction, env: Dict[str, bool]) -> Tuple[tuple, 
 
 
 class _Flow(Exception):
-    def __init__(self, kind: str, label: Optional[str] = None, value=None):
+    def __init__(self, kind: str, label: str | None = None, value=None):
         super().__init__(kind)
         self.kind, self.label, self.value = kind, label, value
 
 
-def _value(expr, env: Dict[str, bool]):
+def _value(expr, env: dict[str, bool]):
     if isinstance(expr, HLILConst):
         return expr.value
 
@@ -162,7 +162,7 @@ def _spend(state: dict):
         raise _Flow('fuel')
 
 
-def _run_block(block: Optional[HLILBlock], env: Dict[str, bool], state: dict):
+def _run_block(block: HLILBlock | None, env: dict[str, bool], state: dict):
     for stmt in (block.statements if block is not None else []):
         if isinstance(stmt, HLILUnstructured):
             raise _Flow('unstructured', value=stmt.target)
@@ -200,7 +200,7 @@ def _run_block(block: Optional[HLILBlock], env: Dict[str, bool], state: dict):
             raise _Flow('ret', value=_value(stmt.value, env) if stmt.value is not None else None)
 
 
-def hlil_run(hlil: HighLevelILFunction, env: Dict[str, bool]) -> Tuple[tuple, tuple]:
+def hlil_run(hlil: HighLevelILFunction, env: dict[str, bool]) -> tuple[tuple, tuple]:
     """(calls, end): ('ret', value), ('falloff',), ('fuel',), ('unstructured', target) or an escaping exit"""
     state = {'trace': [], 'fuel': FUEL}
     try:
@@ -213,7 +213,7 @@ def hlil_run(hlil: HighLevelILFunction, env: Dict[str, bool]) -> Tuple[tuple, tu
         return tuple(state['trace']), (flow.kind,) if flow.kind in ('break', 'continue') else (flow.kind, flow.value)
 
 
-def classify(func: MediumLevelILFunction, hlil: HighLevelILFunction) -> Tuple[str, Optional[dict]]:
+def classify(func: MediumLevelILFunction, hlil: HighLevelILFunction) -> tuple[str, dict | None]:
     """('ok' | 'loud' | 'wrong', the first assignment a wrong run was found for)
 
     ok: every run matches MLIL. loud: every run matches or stops at a node MLIL's run jumps to.
@@ -240,12 +240,12 @@ def classify(func: MediumLevelILFunction, hlil: HighLevelILFunction) -> Tuple[st
     return ('loud' if loud else 'ok'), None
 
 
-def unstructured_nodes(hlil: HighLevelILFunction, reachable_only: bool = True) -> List[HLILUnstructured]:
+def unstructured_nodes(hlil: HighLevelILFunction, reachable_only: bool = True) -> list[HLILUnstructured]:
     statements = reachable_statements(hlil.body) if reachable_only else iter_tree(hlil.body)
     return [stmt for stmt in statements if isinstance(stmt, HLILUnstructured)]
 
 
-def statements_in_two_places(hlil: HighLevelILFunction) -> List[str]:
+def statements_in_two_places(hlil: HighLevelILFunction) -> list[str]:
     """Statements the tree reaches more than once: a pass that moved one left it behind too"""
     reached = Counter(node for node in iter_tree(hlil.body) if isinstance(node, HLILStatement))
     return [str(node) for node, times in reached.items() if times > 1]
@@ -256,7 +256,7 @@ def calls_emitted(hlil: HighLevelILFunction, name: str) -> int:
     return sum(1 for node in iter_tree(hlil.body) if isinstance(node, HLILCall) and node.func_name == name)
 
 
-def with_markers(blocks: Dict[str, BlockSpec], every_block: bool = False) -> Dict[str, BlockSpec]:
+def with_markers(blocks: dict[str, BlockSpec], every_block: bool = False) -> dict[str, BlockSpec]:
     """blocks with a line marker before each call; with every_block also one in each block making no call
     (goto-only blocks, bare tests)"""
     lines = count(MARKER_FIRST_LINE)

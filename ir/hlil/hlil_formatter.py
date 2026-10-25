@@ -1,7 +1,5 @@
 """HLIL Formatter - Format HLIL for debugging"""
 
-from typing import List
-
 from dc3 import default_indent
 from .hlil import *
 from .statement_printer import HLILStatementPrinter
@@ -63,7 +61,7 @@ class HLILFormatter(HLILStatementPrinter):
             return str(expr)
 
     @classmethod
-    def format_function(cls, func: HighLevelILFunction) -> List[str]:
+    def format_function(cls, func: HighLevelILFunction) -> list[str]:
         """Format an HLIL function for debugging"""
         lines = []
 
@@ -86,5 +84,5 @@ class HLILFormatter(HLILStatementPrinter):
         return f'{cls._format_expr(stmt.dest)} = {cls._format_expr(stmt.src)};'
 
     @classmethod
-    def _format_unstructured(cls, stmt: HLILUnstructured) -> List[str]:
+    def _format_unstructured(cls, stmt: HLILUnstructured) -> list[str]:
         return [f'goto {stmt.target}; // unstructured ({stmt.reason})']

@@ -1,7 +1,7 @@
 """User-editable settings for scena2py.py. Edit the class attribute defaults below directly."""
 
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Callable
 
 from dc3 import StrictBase
 from .parser.scp_listing import ListingSections
@@ -57,4 +57,4 @@ class ScenaDecompileConfig(StrictBase):
     output_dir: Path = TOOL_DIR / 'out'
 
     # Optional function filter, forwarded to ScpParser.disasm_all_functions(filter_func=...)
-    filter_func: Optional[Callable[[Function], bool]] = None  # lambda f: f.name == 'TestCitySet'
+    filter_func: Callable[[Function], bool] | None = None  # lambda f: f.name == 'TestCitySet'

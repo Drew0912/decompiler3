@@ -32,7 +32,6 @@ import logging
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, FrozenSet, List, Optional, Set, Tuple
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -67,9 +66,9 @@ SHOWN_EDGES = 6
 class PathCheckResult:
     """Differences between one function's MLIL and HLIL control paths"""
 
-    missing: List[Tuple] = field(default_factory=list)      # (anchor, next) MLIL has and an HLIL copy lacks
-    extra: List[Tuple] = field(default_factory=list)        # (anchor, next) an HLIL copy has and MLIL lacks
-    uncovered: List[int] = field(default_factory=list)      # reachable calls/stores with no reachable HLIL copy
+    missing: list[tuple] = field(default_factory=list)      # (anchor, next) MLIL has and an HLIL copy lacks
+    extra: list[tuple] = field(default_factory=list)        # (anchor, next) an HLIL copy has and MLIL lacks
+    uncovered: list[int] = field(default_factory=list)      # reachable calls/stores with no reachable HLIL copy
     unstructured: int = 0                                   # reachable unstructured-jump nodes
 
     @property
@@ -87,7 +86,7 @@ def is_optional_anchor(inst: MediumLevelILInstruction) -> bool:
     return isinstance(inst, (MLILSetVar, MediumLevelILExpr))
 
 
-def mlil_value_key(value: Optional[MediumLevelILInstruction]) -> str:
+def mlil_value_key(value: MediumLevelILInstruction | None) -> str:
     if value is None:
         return 'RET'
 
@@ -127,11 +126,11 @@ class _UnstructuredJump:
 class _ExitTarget:
     """A loop or switch that break (for a loop, also continue) leaves: where each one goes"""
 
-    def __init__(self, label: Optional[str], is_switch: bool = False):
+    def __init__(self, label: str | None, is_switch: bool = False):
         self.label = label
         self.is_switch = is_switch
-        self.after: FrozenSet = frozenset()
-        self.cont: FrozenSet = frozenset()
+        self.after: frozenset = frozenset()
+        self.cont: frozenset = frozenset()
 
 
 class PathChecker:
@@ -140,27 +139,27 @@ class PathChecker:
     def __init__(self, mlil_func: MediumLevelILFunction, hlil_func: HighLevelILFunction):
         self.mlil_func = mlil_func
         self.hlil_func = hlil_func
-        self.instructions: Dict[int, MediumLevelILInstruction] = {
+        self.instructions: dict[int, MediumLevelILInstruction] = {
             inst.inst_index: inst for block in mlil_func.basic_blocks for inst in block.instructions
         }
-        self.position: Dict[int, Tuple[int, int]] = {
+        self.position: dict[int, tuple[int, int]] = {
             inst.inst_index: (b, i) for b, block in enumerate(mlil_func.basic_blocks)
             for i, inst in enumerate(block.instructions)
         }
         # One object per HLIL node, so loop fixpoints compare equal sets
-        self.copies: Dict[HLILInstruction, _Copy] = {}
-        self.jumps: Dict[HLILUnstructured, _UnstructuredJump] = {}
-        self.successors: Dict[object, Set] = {}
+        self.copies: dict[HLILInstruction, _Copy] = {}
+        self.jumps: dict[HLILUnstructured, _UnstructuredJump] = {}
+        self.successors: dict[object, set] = {}
 
     # === MLIL ===
 
-    def mlil_successors(self, anchors: Set[int]) -> Tuple[Set[int], Dict[object, Set]]:
+    def mlil_successors(self, anchors: set[int]) -> tuple[set[int], dict[object, set]]:
         """(anchors reachable from the entry, START or anchor -> anchors / return keys run next)"""
         blocks = self.mlil_func.basic_blocks
         if not blocks:
             return set(), {START: {'RET'}}
 
-        def next_from(b_idx: int, i: int) -> Set:
+        def next_from(b_idx: int, i: int) -> set:
             result, seen, stack = set(), set(), [(b_idx, i)]
             while stack:
                 b, j = stack.pop()
@@ -195,7 +194,7 @@ class PathChecker:
 
             return result
 
-        succ: Dict[object, Set] = {START: next_from(0, 0)}
+        succ: dict[object, set] = {START: next_from(0, 0)}
         todo = [a for a in succ[START] if isinstance(a, int)]
         while todo:
             anchor = todo.pop()
@@ -246,7 +245,7 @@ class PathChecker:
 
         return False
 
-    def hlil_value_key(self, value: Optional[HLILExpression]) -> str:
+    def hlil_value_key(self, value: HLILExpression | None) -> str:
         if value is None:
             return 'RET'
 
@@ -275,9 +274,9 @@ class PathChecker:
             self.copies[node] = _Copy(node.mlil_index)
         return self.copies[node]
 
-    def calls_in(self, expr: Optional[HLILExpression]) -> List[HLILExpression]:
+    def calls_in(self, expr: HLILExpression | None) -> list[HLILExpression]:
         """The anchored calls expr evaluates, in evaluation order (arguments first)"""
-        found: List[HLILExpression] = []
+        found: list[HLILExpression] = []
 
         def walk(node: HLILExpression):
             for child in expr_children(node):
@@ -291,7 +290,7 @@ class PathChecker:
 
         return found
 
-    def sequence(self, nodes: List[HLILInstruction], follow: FrozenSet) -> FrozenSet:
+    def sequence(self, nodes: list[HLILInstruction], follow: frozenset) -> frozenset:
         """First of running nodes in order, then follow; records each node's successors"""
         first = follow
         for node in reversed(nodes):
@@ -301,7 +300,7 @@ class PathChecker:
 
         return first
 
-    def evaluate(self, expr: Optional[HLILExpression], follow: FrozenSet) -> FrozenSet:
+    def evaluate(self, expr: HLILExpression | None, follow: frozenset) -> frozenset:
         """First of evaluating expr for its value; && and || skip their right side"""
         if isinstance(expr, HLILBinaryOp) and expr.op in (BinaryOp.AND, BinaryOp.OR):
             decided = constant_truth(expr.lhs)
@@ -316,7 +315,7 @@ class PathChecker:
 
         return self.sequence(self.calls_in(expr), follow)
 
-    def branch(self, cond: HLILExpression, on_true: FrozenSet, on_false: FrozenSet) -> FrozenSet:
+    def branch(self, cond: HLILExpression, on_true: frozenset, on_false: frozenset) -> frozenset:
         """First of evaluating a condition, then continuing at on_true or on_false"""
         truth = constant_truth(cond)
         if truth is not None:
@@ -333,14 +332,14 @@ class PathChecker:
 
         return self.evaluate(cond, on_true | on_false)
 
-    def block(self, statements: List[HLILStatement], follow: FrozenSet, targets: List[_ExitTarget]) -> FrozenSet:
+    def block(self, statements: list[HLILStatement], follow: frozenset, targets: list[_ExitTarget]) -> frozenset:
         first = follow
         for stmt in reversed(statements):
             first = self.statement(stmt, first, targets)
 
         return first
 
-    def statement(self, stmt: HLILStatement, follow: FrozenSet, targets: List[_ExitTarget]) -> FrozenSet:
+    def statement(self, stmt: HLILStatement, follow: frozenset, targets: list[_ExitTarget]) -> frozenset:
         """First of running stmt, then follow"""
         if isinstance(stmt, HLILUnstructured):
             return frozenset((self.jumps.setdefault(stmt, _UnstructuredJump(stmt.target)),))
@@ -349,7 +348,7 @@ class PathChecker:
             return follow
 
         if isinstance(stmt, (HLILAssign, HLILExprStmt)):
-            nodes: List[HLILInstruction] = []
+            nodes: list[HLILInstruction] = []
             for expr in ((stmt.dest, stmt.src) if isinstance(stmt, HLILAssign) else (stmt.expr,)):
                 nodes.extend(self.calls_in(expr))
 
@@ -376,7 +375,7 @@ class PathChecker:
         if isinstance(stmt, (HLILWhile, HLILDoWhile)):
             loop = _ExitTarget(stmt.label)
             loop.after = follow
-            start: FrozenSet = frozenset()
+            start: frozenset = frozenset()
 
             # Loops back onto itself: grow the loop's first set to a fixpoint
             while True:
@@ -396,7 +395,7 @@ class PathChecker:
         if isinstance(stmt, HLILSwitch):
             switch = _ExitTarget(None, is_switch=True)
             switch.after = follow
-            cases: FrozenSet = frozenset()
+            cases: frozenset = frozenset()
             for case in stmt.cases:
                 cases = cases | self.block(case.body.statements, follow, targets + [switch])
 
@@ -441,8 +440,8 @@ class PathChecker:
             todo.extend(t for t in self.successors.get(node, ()) if isinstance(t, _Copy))
 
         result = PathCheckResult()
-        covered: Set[int] = set()
-        reached_jumps: Set[_UnstructuredJump] = set()
+        covered: set[int] = set()
+        reached_jumps: set[_UnstructuredJump] = set()
         for node in seen:
             anchor = START if node == START else node.anchor
             if node != START:
@@ -466,7 +465,7 @@ def check_function(mlil_func: MediumLevelILFunction, hlil_func: HighLevelILFunct
     return PathChecker(mlil_func, hlil_func).check()
 
 
-def check_file(path: Path) -> List[Tuple[str, Optional[PathCheckResult], Optional[str]]]:
+def check_file(path: Path) -> list[tuple[str, PathCheckResult | None, str | None]]:
     """(function name, result or None, error or None) for every function in path"""
     raise_recursion_limit()
     rows = []

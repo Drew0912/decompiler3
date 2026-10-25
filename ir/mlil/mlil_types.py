@@ -46,27 +46,27 @@ class MLILType:
         return self.kind in (MLILTypeKind.INT, MLILTypeKind.FLOAT, MLILTypeKind.BOOL)
 
     @classmethod
-    def unknown(cls) -> 'MLILType':
+    def unknown(cls) -> MLILType:
         """Create unknown type"""
         return MLILType(MLILTypeKind.UNKNOWN)
 
     @classmethod
-    def int_type(cls) -> 'MLILType':
+    def int_type(cls) -> MLILType:
         """Create int type"""
         return MLILType(MLILTypeKind.INT)
 
     @classmethod
-    def string_type(cls) -> 'MLILType':
+    def string_type(cls) -> MLILType:
         """Create string type"""
         return MLILType(MLILTypeKind.STRING)
 
     @classmethod
-    def float_type(cls) -> 'MLILType':
+    def float_type(cls) -> MLILType:
         """Create float type"""
         return MLILType(MLILTypeKind.FLOAT)
 
     @classmethod
-    def pointer_type(cls) -> 'MLILType':
+    def pointer_type(cls) -> MLILType:
         """Create generic pointer type"""
         return MLILType(MLILTypeKind.POINTER)
 

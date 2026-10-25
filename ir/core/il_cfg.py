@@ -16,13 +16,13 @@ class ILBasicBlock:
         self.start = start
         self.label = label
         self.instructions: list[ILInstruction] = []
-        self.incoming_edges: list['ILBasicBlock'] = []
-        self.outgoing_edges: list['ILBasicBlock'] = []
+        self.incoming_edges: list[ILBasicBlock] = []
+        self.outgoing_edges: list[ILBasicBlock] = []
 
     def add_instruction(self, inst: ILInstruction):
         self.instructions.append(inst)
 
-    def add_outgoing_edge(self, target: 'ILBasicBlock'):
+    def add_outgoing_edge(self, target: ILBasicBlock):
         if target not in self.outgoing_edges:
             self.outgoing_edges.append(target)
         if self not in target.incoming_edges:

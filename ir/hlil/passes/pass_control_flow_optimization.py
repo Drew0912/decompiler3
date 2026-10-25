@@ -1,7 +1,7 @@
 """Control Flow Optimization Pass"""
 
 from enum import Enum, auto
-from typing import List, NamedTuple, Optional, Tuple
+from typing import NamedTuple
 from ir.core import is_int_zero
 from ir.pipeline import Pass
 from ..hlil import (
@@ -66,7 +66,7 @@ class ExitPath(NamedTuple):
     """
 
     kind: ExitKind
-    label: Optional[str]
+    label: str | None
     killed: bool
 
 
@@ -133,7 +133,7 @@ class ControlFlowOptimizationPass(Pass):
 
         block.statements = optimized
 
-    def _try_inline_condition(self, assign_stmt: HLILStatement, next_stmt: HLILStatement) -> Optional[HLILIf]:
+    def _try_inline_condition(self, assign_stmt: HLILStatement, next_stmt: HLILStatement) -> HLILIf | None:
         """
         Try to inline: var = bool_expr; if (var != 0) {...} -> if (bool_expr) {...}
         Returns new HLILIf if successful, None otherwise
@@ -196,7 +196,7 @@ class ControlFlowOptimizationPass(Pass):
         # if (var == 0) {A} -> if (!expr) {A}
         return HLILIf(negate_condition(condition_expr), next_stmt.true_block)
 
-    def _var_read_elsewhere(self, var: HLILVariable, exclude: Tuple[HLILStatement, ...]) -> bool:
+    def _var_read_elsewhere(self, var: HLILVariable, exclude: tuple[HLILStatement, ...]) -> bool:
         """Check if var is read anywhere in the function, outside the excluded nodes.
 
         No kill/reachability tracking, unlike _can_read_original_value - any read anywhere
@@ -206,7 +206,7 @@ class ControlFlowOptimizationPass(Pass):
         """
         return self._reads_var(var, self._func_body, exclude)
 
-    def _reads_var(self, var: HLILVariable, node: HLILInstruction, exclude: Tuple[HLILStatement, ...] = ()) -> bool:
+    def _reads_var(self, var: HLILVariable, node: HLILInstruction, exclude: tuple[HLILStatement, ...] = ()) -> bool:
         """Whether node reads var anywhere below it, outside the excluded nodes"""
         return any(isinstance(n, HLILVar) and n.var == var for n in iter_tree(node, read_children, exclude))
 
@@ -434,7 +434,7 @@ class ControlFlowOptimizationPass(Pass):
         after_loop = list(reaching_condition) + breaks_out
         return (body_reads or cond_reads, self._merge_fallthrough(after_loop), tuple(exit_paths))
 
-    def _loop_absorbs(self, exit_path: ExitPath, loop_label: Optional[str]) -> bool:
+    def _loop_absorbs(self, exit_path: ExitPath, loop_label: str | None) -> bool:
         """Whether a loop owns this exit: a bare break/continue always belongs to the
         nearest enclosing loop, a labeled one only to the loop carrying that label. A
         return belongs to no construct and is never absorbed."""
@@ -443,7 +443,7 @@ class ControlFlowOptimizationPass(Pass):
 
         return exit_path.label is None or exit_path.label == loop_label
 
-    def _merge_fallthrough(self, states: List[bool]) -> Optional[bool]:
+    def _merge_fallthrough(self, states: list[bool]) -> bool | None:
         """Killed-state where several paths rejoin. None when nothing arrives at all, so
         the construct structurally cannot fall through; otherwise killed only when every
         arriving path killed - one surviving path still holding the original value is
@@ -453,7 +453,7 @@ class ControlFlowOptimizationPass(Pass):
 
         return all(states)
 
-    def _remove_redundant_else_assign(self, if_stmt: HLILIf, preceding_stmts: List[HLILStatement]):
+    def _remove_redundant_else_assign(self, if_stmt: HLILIf, preceding_stmts: list[HLILStatement]):
         """Remove redundant var = source in else block for switch-case patterns.
 
         Pattern: if (var == A) { case_body } else { var = source; if (var == B) {...} }, where A
@@ -545,7 +545,7 @@ class ControlFlowOptimizationPass(Pass):
         false_stmts.pop(assign_idx)
 
     def _reaching_assignment_exists(self, var: HLILVariable, source: HLILExpression,
-                                    preceding_stmts: List[HLILStatement]) -> bool:
+                                    preceding_stmts: list[HLILStatement]) -> bool:
         """Walk preceding_stmts backward for a var = source-equivalent assignment, refusing if
         anything between it and here modifies var or (if source is itself a variable) source.
         source is already restricted to HLILConst or a plain local/param HLILVar by the caller.
@@ -586,7 +586,7 @@ class ControlFlowOptimizationPass(Pass):
 
         return any(modifies(n) for n in iter_tree(stmt, read_children))
 
-    def _equality_labels(self, cond) -> Optional[Tuple[HLILVar, List[int]]]:
+    def _equality_labels(self, cond) -> tuple[HLILVar, list[int]] | None:
         """Values a test accepts, for `x == k` or any || chain of those
 
         The scrutinee must be a plain variable: a folded call would be evaluated
@@ -637,7 +637,7 @@ class ControlFlowOptimizationPass(Pass):
 
         return None
 
-    def _try_convert_to_switch(self, if_stmt: HLILIf) -> Optional[HLILSwitch]:
+    def _try_convert_to_switch(self, if_stmt: HLILIf) -> HLILSwitch | None:
         """Convert a chain of equality tests on one variable into a switch
 
         Handles `==`, `!=` and ||-grouped links in any order, so a chain that

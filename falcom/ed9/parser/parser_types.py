@@ -85,11 +85,11 @@ class Function(StrictBase):
     call_written_argc : dict[int, int]  # local CALL offset -> args its debug record keeps, every paired local call
     call_debug_argc : dict[int, int]    # the same, only where that isn't the compiler's rule (canonical_argc)
     call_unrecorded : set[int]          # local CALL offsets the compiler left without a record (align_records)
-    entry_block     : BasicBlock | None
-    unreachable_blocks : list[BasicBlock]   # code no branch reaches, linearly decoded (not linked into the CFG)
+    entry_block     : 'BasicBlock | None'
+    unreachable_blocks : 'list[BasicBlock]'   # code no branch reaches, linearly decoded (not linked into the CFG)
     stack_layout    : StackLayout | None    # set by the parser; a hand-built function has none
-    runs_on         : Instruction | None    # the instruction that runs on past its end into the next function's code
-    backward_returns : dict[int, tuple[Instruction, str]]   # call offset -> (call, warning) of each backward return
+    runs_on         : 'Instruction | None'    # the instruction that runs on past its end into the next function's code
+    backward_returns : 'dict[int, tuple[Instruction, str]]'   # call offset -> (call, warning) of each backward return
 
     def __init__(self):
         self.index      = None

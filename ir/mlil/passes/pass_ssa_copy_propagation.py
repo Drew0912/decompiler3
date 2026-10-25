@@ -3,7 +3,6 @@
 Replace SSA variable copies (x#1 = x#0 -> use x#0)
 """
 
-from typing import Dict, List, Optional, Set, Tuple
 from ir.pipeline import Pass
 from ..mlil import (
     map_operands,
@@ -77,9 +76,9 @@ class CopyPropagationPass(Pass):
     """Replace SSA variable copies with original variables"""
 
     def __init__(self):
-        self.ssa_defs: Dict[MLILVariableSSA, MLILSetVarSSA] = {}
-        self.def_positions: Dict[MLILVariableSSA, Tuple[MediumLevelILBasicBlock, int]] = {}
-        self.use_counts: Dict[MLILVariableSSA, int] = {}
+        self.ssa_defs: dict[MLILVariableSSA, MLILSetVarSSA] = {}
+        self.def_positions: dict[MLILVariableSSA, tuple[MediumLevelILBasicBlock, int]] = {}
+        self.use_counts: dict[MLILVariableSSA, int] = {}
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         """Propagate copies through the function"""
@@ -110,7 +109,7 @@ class CopyPropagationPass(Pass):
                 self.use_counts[var] = self.use_counts.get(var, 0) + 1
 
     @classmethod
-    def _collect_uses(cls, node: MediumLevelILInstruction) -> List[MLILVariableSSA]:
+    def _collect_uses(cls, node: MediumLevelILInstruction) -> list[MLILVariableSSA]:
         """SSA variables node reads. A read under & is not counted: this pass never rewrites the
         operand of &."""
         return [var for var, _ in iter_ssa_reads(node, skip=(MLILAddressOf,))]
@@ -135,7 +134,7 @@ class CopyPropagationPass(Pass):
 
     def _resolve_effective_root(self, var: MLILVariableSSA, func: MediumLevelILFunction,
                                 use_block: MediumLevelILBasicBlock, use_idx: int,
-                                visiting: Optional[Set[MLILVariableSSA]] = None) -> MLILVariableSSA:
+                                visiting: set[MLILVariableSSA] | None = None) -> MLILVariableSSA:
         """Follow a chain of pure copies (x#n = y#m) back to its furthest safe ancestor.
 
         Stops at the first link that is not itself a plain copy, that is a register/global

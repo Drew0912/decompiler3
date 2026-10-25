@@ -18,7 +18,6 @@ from pathlib import Path
 import random
 import sys
 import unittest
-from typing import Dict, List, Set
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
@@ -43,7 +42,7 @@ CONSTANT_SHARE = 0.12
 PINNED_REDUCIBLE_WITH_NODES = [19, 54, 419, 754, 951, 969]
 
 
-def reachable_from_entry(successors: List[tuple]) -> Set[int]:
+def reachable_from_entry(successors: list[tuple]) -> set[int]:
     seen, todo = set(), [0]
     while todo:
         block = todo.pop()
@@ -54,7 +53,7 @@ def reachable_from_entry(successors: List[tuple]) -> Set[int]:
     return seen
 
 
-def random_cfg(seed: int) -> Dict[str, BlockSpec]:
+def random_cfg(seed: int) -> dict[str, BlockSpec]:
     rng = random.Random(seed)
     count = MIN_BLOCKS + seed % BLOCK_COUNTS
 
@@ -75,7 +74,7 @@ def random_cfg(seed: int) -> Dict[str, BlockSpec]:
         if reachable_from_entry(successors) == set(range(count)) and 'ret' in kinds:
             break
 
-    blocks: Dict[str, BlockSpec] = {}
+    blocks: dict[str, BlockSpec] = {}
     for i in range(count):
         passthrough = kinds[i] == 'goto' and i != 0 and rng.random() < PASSTHROUGH_SHARE
         calls = [] if passthrough else [f'A{i}']
@@ -93,7 +92,7 @@ def random_cfg(seed: int) -> Dict[str, BlockSpec]:
     return blocks
 
 
-def terminal_targets(terminal: tuple) -> List[str]:
+def terminal_targets(terminal: tuple) -> list[str]:
     if terminal[0] == 'if':
         return [terminal[2], terminal[3]]
 
@@ -103,7 +102,7 @@ def terminal_targets(terminal: tuple) -> List[str]:
     return []
 
 
-def is_reducible(blocks: Dict[str, BlockSpec]) -> bool:
+def is_reducible(blocks: dict[str, BlockSpec]) -> bool:
     """No cycle is left once every edge to a block dominating its source is removed"""
     labels = list(blocks)
     successors = {label: terminal_targets(terminal) for label, (_, terminal) in blocks.items()}
@@ -120,7 +119,7 @@ def is_reducible(blocks: Dict[str, BlockSpec]) -> bool:
                 dominators[label], changed = new, True
 
     forward = {label: [s for s in successors[label] if s not in dominators[label]] for label in labels}
-    state: Dict[str, int] = {}
+    state: dict[str, int] = {}
 
     def has_cycle(label: str) -> bool:
         state[label] = 1

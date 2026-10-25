@@ -1,7 +1,5 @@
 """LLIL to MLIL Translator - Stack elimination (core operations only)"""
 
-from typing import Dict, Optional
-
 from ir.llil import *
 from .mlil import *
 from .mlil_builder import *
@@ -38,8 +36,8 @@ class LLILToMLILTranslator:
 
     def __init__(self):
         self.builder = MLILBuilder()
-        self.llil_func: Optional[LowLevelILFunction] = None
-        self.block_map: Dict[LowLevelILBasicBlock, MediumLevelILBasicBlock] = {}
+        self.llil_func: LowLevelILFunction | None = None
+        self.block_map: dict[LowLevelILBasicBlock, MediumLevelILBasicBlock] = {}
 
     def translate(self, llil_func: LowLevelILFunction) -> MediumLevelILFunction:
         """Translate LLIL function to MLIL"""
@@ -141,7 +139,7 @@ class LLILToMLILTranslator:
         value = self._translate_expr(llil_inst.value)
         self.builder.store_deref(dest, value)
 
-    def _call_output(self) -> Optional[MLILVariable]:
+    def _call_output(self) -> MLILVariable | None:
         """Variable a call result is written to (architecture specific, none by default)"""
         return None
 

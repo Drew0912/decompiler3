@@ -7,7 +7,6 @@ Simplify conditionals:
 - !comparison → inverted comparison
 """
 
-from typing import Optional
 from ir.core import is_int_zero
 from ir.pipeline import Pass
 from ..mlil import (
@@ -40,7 +39,7 @@ class ConditionSimplificationPass(Pass):
 
         return func
 
-    def _simplify_condition(self, condition: MediumLevelILInstruction) -> Optional[MediumLevelILInstruction]:
+    def _simplify_condition(self, condition: MediumLevelILInstruction) -> MediumLevelILInstruction | None:
         """The simpler condition, or None if there is none"""
         if isinstance(condition, MLILLogicalNot):
             return negate_comparison(condition.operand)

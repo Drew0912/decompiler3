@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, replace
 from enum import Enum, auto
-from typing import List, NamedTuple, Optional, Tuple, Union
+from typing import NamedTuple
 from ir.llil import *
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from .constants import *
@@ -21,7 +21,7 @@ class SetupShape(NamedTuple):
 
     kind: str
     sp_before_call: int
-    return_block: Optional[str]
+    return_block: str | None
 
 
 @dataclass(frozen=True)
@@ -30,7 +30,7 @@ class PendingCallSetup:
 
     kind: CallSetupKind
     sp_before_call: int
-    return_block: Optional[LowLevelILBasicBlock]   # None while a LOCAL setup awaits PUSH_RET_ADDR
+    return_block: LowLevelILBasicBlock | None   # None while a LOCAL setup awaits PUSH_RET_ADDR
 
     def shape(self) -> SetupShape:
         return_name = None if self.return_block is None else self.return_block.block_name
@@ -39,15 +39,15 @@ class PendingCallSetup:
 
 class FalcomStackShape(NamedTuple):
     sp: int
-    slots: Tuple[int, ...]
-    setups: Tuple[SetupShape, ...]
+    slots: tuple[int, ...]
+    setups: tuple[SetupShape, ...]
 
 
 @dataclass
 class FalcomStackSnapshot(StackSnapshot):
     """Pending call setups are stack state too: a branch's arms each see the setups pushed before it"""
 
-    pending_setups: Tuple[PendingCallSetup, ...]
+    pending_setups: tuple[PendingCallSetup, ...]
 
     def shape(self) -> FalcomStackShape:
         return FalcomStackShape(*super().shape(), tuple(setup.shape() for setup in self.pending_setups))
@@ -61,9 +61,9 @@ class FalcomVMBuilder(LowLevelILBuilder):
     def __init__(self):
         """Create builder without function (call create_function first)"""
         super().__init__()
-        self._pending_setups: List[PendingCallSetup] = []   # Innermost last
+        self._pending_setups: list[PendingCallSetup] = []   # Innermost last
 
-    def finalize(self) -> 'LowLevelILFunction':
+    def finalize(self) -> LowLevelILFunction:
         """Finalize builder and return function"""
         self.function.build_cfg()
         self.function.reindex_in_block_order()
@@ -71,7 +71,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     # === Virtual Stack Management ===
 
-    def push(self, value: Union[LowLevelILExpr, int, float, str], *, hidden_for_formatter: bool = False):
+    def push(self, value: LowLevelILExpr | int | float | str, *, hidden_for_formatter: bool = False):
         if isinstance(value, LowLevelILConstScript):
             # The script pointer takes two slots
             super().push(value, hidden_for_formatter=hidden_for_formatter)

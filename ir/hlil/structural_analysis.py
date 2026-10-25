@@ -10,7 +10,6 @@ Based on:
 - No More Gotos (2015): Taming Control Flow
 """
 
-from typing import Dict, List, Set, Optional, Tuple
 from collections import deque
 from collections.abc import Container
 from dataclasses import dataclass, field
@@ -31,7 +30,7 @@ class Region:
     """A region in the control flow graph"""
 
     type: RegionType
-    exit: Optional[int] = None              # Exit block index (None for infinite loops)
+    exit: int | None = None              # Exit block index (None for infinite loops)
 
 
 @dataclass
@@ -39,8 +38,8 @@ class LoopInfo:
     """Information about a natural loop"""
 
     header: int
-    body: Set[int]
-    exits: Set[int] = field(default_factory=set)
+    body: set[int]
+    exits: set[int] = field(default_factory=set)
 
 
 class StructuralAnalyzer:
@@ -57,31 +56,31 @@ class StructuralAnalyzer:
     4. Repeat until no more reductions possible
     """
 
-    def __init__(self, num_blocks: int, successors: Dict[int, List[int]]):
+    def __init__(self, num_blocks: int, successors: dict[int, list[int]]):
         self.num_blocks = num_blocks
         self.original_successors = successors
 
         # Working copy of the graph, modified during reduction (the original graph until then)
-        self.working_successors: Dict[int, List[int]] = {k: list(v) for k, v in successors.items()}
-        self.working_predecessors: Dict[int, List[int]] = self._build_predecessors()
+        self.working_successors: dict[int, list[int]] = {k: list(v) for k, v in successors.items()}
+        self.working_predecessors: dict[int, list[int]] = self._build_predecessors()
 
         # Dominator tree (computed once on original graph)
-        self.idom: Dict[int, Optional[int]] = {}
+        self.idom: dict[int, int | None] = {}
 
         # Loop information
-        self.loops: Dict[int, LoopInfo] = {}
-        self.back_edges: Set[Tuple[int, int]] = set()
+        self.loops: dict[int, LoopInfo] = {}
+        self.back_edges: set[tuple[int, int]] = set()
 
         # Region information
-        self.regions: Dict[int, Region] = {}  # entry block -> Region
+        self.regions: dict[int, Region] = {}  # entry block -> Region
 
         # Active nodes (not collapsed into another region)
-        self.active_nodes: Set[int] = set(range(num_blocks))
+        self.active_nodes: set[int] = set(range(num_blocks))
 
         # Run analysis
         self._analyze()
 
-    def _build_predecessors(self) -> Dict[int, List[int]]:
+    def _build_predecessors(self) -> dict[int, list[int]]:
         preds = {i: [] for i in range(self.num_blocks)}
         for src, succs in self.working_successors.items():
             for dst in succs:
@@ -303,7 +302,7 @@ class StructuralAnalyzer:
 
         return False
 
-    def _get_region_blocks(self, start: int, stop: int) -> Set[int]:
+    def _get_region_blocks(self, start: int, stop: int) -> set[int]:
         """Get all blocks from start to stop (exclusive)"""
         if start == stop:
             return set()
@@ -328,8 +327,8 @@ class StructuralAnalyzer:
 
         return blocks
 
-    def _find_merge(self, successors: Dict[int, List[int]], active: Container[int], true_target: int,
-                    false_target: int) -> Optional[int]:
+    def _find_merge(self, successors: dict[int, list[int]], active: Container[int], true_target: int,
+                    false_target: int) -> int | None:
         """Merge point of the if-else branching to true_target and false_target, searched in successors through the
         active blocks only: the working graph during reduction, the original one (every block active) afterwards"""
         if true_target == false_target:
@@ -375,7 +374,7 @@ class StructuralAnalyzer:
         # Return nearest (minimum combined distance, then block order)
         return min(common, key=lambda b: (reach_true[b] + reach_false[b], b))
 
-    def _unconditional_reach(self, successors: Dict[int, List[int]], active: Container[int], start: int) -> Set[int]:
+    def _unconditional_reach(self, successors: dict[int, list[int]], active: Container[int], start: int) -> set[int]:
         """start and the blocks it reaches along unconditional (single-successor) edges
 
         Stops at the first 2-way branch instead of following either of its edges,
@@ -395,8 +394,8 @@ class StructuralAnalyzer:
 
         return reach
 
-    def _forward_reach(self, successors: Dict[int, List[int]], active: Container[int], start: int,
-                       barrier: int) -> Dict[int, int]:
+    def _forward_reach(self, successors: dict[int, list[int]], active: Container[int], start: int,
+                       barrier: int) -> dict[int, int]:
         """Distances of the active blocks reachable from start, skipping back edges
 
         barrier is never entered or traversed past - used to keep a branch's own
@@ -421,7 +420,7 @@ class StructuralAnalyzer:
     # ========== Public API ==========
 
     def find_merge_point(self, cond_block: int, true_target: int, false_target: int,
-                         stop: Optional[int] = None) -> Optional[int]:
+                         stop: int | None = None) -> int | None:
         """
         Merge point of the if ending cond_block, whose arms stop at stop (the enclosing merge or
         loop header, None at function level): the heuristic's answer when it is a real merge (see
@@ -437,7 +436,7 @@ class StructuralAnalyzer:
 
         return scope.nearest_valid_join(true_target, false_target)
 
-    def _heuristic_merge_point(self, cond_block: int, true_target: int, false_target: int) -> Optional[int]:
+    def _heuristic_merge_point(self, cond_block: int, true_target: int, false_target: int) -> int | None:
         """
         Merge point candidate for if-else.
 
@@ -483,7 +482,7 @@ class StructuralAnalyzer:
 
         return True
 
-    def get_loop_info(self, header: int) -> Optional[LoopInfo]:
+    def get_loop_info(self, header: int) -> LoopInfo | None:
         """Get loop information"""
         return self.loops.get(header)
 
@@ -500,7 +499,7 @@ class _MergeScope:
     path reaches the enclosing stop without passing M (falling out there would run M first).
     """
 
-    def __init__(self, analyzer: StructuralAnalyzer, cond_block: int, stop: Optional[int]):
+    def __init__(self, analyzer: StructuralAnalyzer, cond_block: int, stop: int | None):
         self.analyzer = analyzer
         self.cond_block = cond_block
         self.stop = stop
@@ -510,7 +509,7 @@ class _MergeScope:
         self.loop = min(loops, key=lambda loop: len(loop.body)) if loops else None
 
         self.stop_falls_out = stop is not None and not (self.loop is not None and stop == self.loop.header)
-        self._reach_cache: Dict[Tuple[int, Optional[int]], Dict[int, int]] = {}
+        self._reach_cache: dict[tuple[int, int | None], dict[int, int]] = {}
 
     def follows(self, src: int, dst: int) -> bool:
         """Whether a path inside the scope continues along src -> dst"""
@@ -519,14 +518,14 @@ class _MergeScope:
 
         return self.loop is None or (dst in self.loop.body and dst != self.loop.header)
 
-    def reach(self, start: int, barrier: Optional[int] = None) -> Dict[int, int]:
+    def reach(self, start: int, barrier: int | None = None) -> dict[int, int]:
         """Blocks reachable from start inside the scope without entering barrier, with distances"""
         key = (start, barrier)
         cached = self._reach_cache.get(key)
         if cached is not None:
             return cached
 
-        dist: Dict[int, int] = {}
+        dist: dict[int, int] = {}
         queue = deque([(start, 0)])
 
         while queue:
@@ -555,7 +554,7 @@ class _MergeScope:
 
         return not (before.keys() & self.reach(merge).keys())
 
-    def nearest_valid_join(self, true_target: int, false_target: int) -> Optional[int]:
+    def nearest_valid_join(self, true_target: int, false_target: int) -> int | None:
         """The nearest valid merge that both arms reach (an arm target itself counts), or None"""
         reach_true = self.reach(true_target) if self.follows(self.cond_block, true_target) else {}
         reach_false = self.reach(false_target) if self.follows(self.cond_block, false_target) else {}

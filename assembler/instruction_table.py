@@ -73,10 +73,10 @@ class OperandFormat:
 class OperandDescriptor:
     """Operand descriptor with read/write/format methods"""
 
-    format_table: dict[str, 'OperandDescriptor'] = {}
+    format_table: dict[str, OperandDescriptor] = {}
 
     @classmethod
-    def from_format_string(cls, fmtstr: str, format_table: dict | None = None) -> tuple['OperandDescriptor', ...]:
+    def from_format_string(cls, fmtstr: str, format_table: dict | None = None) -> tuple[OperandDescriptor, ...]:
         format_table = format_table or cls.format_table
         return tuple(format_table[f] for f in fmtstr)
 
@@ -98,7 +98,7 @@ class OperandDescriptor:
         OperandType.Offset  : fileio.FileStream.ReadULong,
     }
 
-    def read_value(self, fs: 'fileio.FileStream') -> Any:
+    def read_value(self, fs: fileio.FileStream) -> Any:
         """Read operand value from file stream"""
         return self.READER_BY_TYPE[self.format.type](fs)
 
@@ -113,7 +113,7 @@ class OperandDescriptor:
         OperandType.Offset  : fileio.FileStream.WriteULong,
     }
 
-    def write_value(self, fs: 'fileio.FileStream', value: Any):
+    def write_value(self, fs: fileio.FileStream, value: Any):
         """Write operand value to file stream"""
         self.WRITER_BY_TYPE[self.format.type](fs, value)
 
@@ -183,17 +183,17 @@ class BranchTarget:
     offset : int
 
     @classmethod
-    def unconditional(cls, offset: int) -> 'BranchTarget':
+    def unconditional(cls, offset: int) -> BranchTarget:
         """Create unconditional branch target"""
         return cls(BranchKind.UNCONDITIONAL, offset)
 
     @classmethod
-    def true_branch(cls, offset: int) -> 'BranchTarget':
+    def true_branch(cls, offset: int) -> BranchTarget:
         """Create true branch target"""
         return cls(BranchKind.TRUE, offset)
 
     @classmethod
-    def false_branch(cls, offset: int) -> 'BranchTarget':
+    def false_branch(cls, offset: int) -> BranchTarget:
         """Create false branch target"""
         return cls(BranchKind.FALSE, offset)
 
@@ -238,7 +238,7 @@ class InstructionTable(ABC):
     """Abstract interface for instruction tables"""
 
     @abstractmethod
-    def read_opcode(self, fs: 'fileio.FileStream') -> int:
+    def read_opcode(self, fs: fileio.FileStream) -> int:
         """Read opcode from file stream"""
 
     @abstractmethod
@@ -248,7 +248,7 @@ class InstructionTable(ABC):
     @abstractmethod
     def read_operands(
         self,
-        fs: 'fileio.FileStream',
+        fs: fileio.FileStream,
         inst: Instruction,
         offset: int
     ) -> list[Operand]:
@@ -256,7 +256,7 @@ class InstructionTable(ABC):
 
     def decode_instruction(
         self,
-        fs: 'fileio.FileStream',
+        fs: fileio.FileStream,
         offset: int
     ) -> Instruction:
         """Decode a complete instruction"""

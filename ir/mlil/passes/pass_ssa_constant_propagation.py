@@ -3,7 +3,6 @@
 Replace SSA variables with constant values (no folding)
 """
 
-from typing import Dict
 from ir.pipeline import Pass
 from ..mlil import (
     map_operands,
@@ -24,7 +23,7 @@ class ConstantPropagationPass(Pass):
     """Replace SSA variables with constant values"""
 
     def __init__(self):
-        self.constants: Dict[MLILVariableSSA, int] = {}
+        self.constants: dict[MLILVariableSSA, int] = {}
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         """Propagate constants through the function"""

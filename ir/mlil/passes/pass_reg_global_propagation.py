@@ -2,7 +2,6 @@
 
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
 
 from ir.core import constant_values_equal
 from ir.pipeline import Pass
@@ -14,7 +13,7 @@ from ..mlil import (
 
 
 # Each tracked slot (a register or global index) -> its closed-form value, or None once unknown
-SlotValues = Dict[int, Optional[MediumLevelILInstruction]]
+SlotValues = dict[int, MediumLevelILInstruction | None]
 
 
 @dataclass
@@ -24,7 +23,7 @@ class RegGlobalState:
     reg: SlotValues = field(default_factory=dict)
     global_: SlotValues = field(default_factory=dict)
 
-    def copy(self) -> 'RegGlobalState':
+    def copy(self) -> RegGlobalState:
         return RegGlobalState(
             reg=dict(self.reg),
             global_=dict(self.global_)
@@ -45,16 +44,16 @@ class RegGlobalValuePropagator:
         block_in_states = self._analyze()
         return self._transform(block_in_states)
 
-    def _analyze(self) -> Dict[MediumLevelILBasicBlock, RegGlobalState]:
+    def _analyze(self) -> dict[MediumLevelILBasicBlock, RegGlobalState]:
         """Phase 1: Dataflow analysis"""
-        block_in: Dict[MediumLevelILBasicBlock, RegGlobalState] = {}
-        block_out: Dict[MediumLevelILBasicBlock, RegGlobalState] = {}
+        block_in: dict[MediumLevelILBasicBlock, RegGlobalState] = {}
+        block_out: dict[MediumLevelILBasicBlock, RegGlobalState] = {}
 
         entry = self.func.basic_blocks[0]
         block_in[entry] = RegGlobalState()
 
         worklist: deque = deque([entry])
-        in_worklist: Set[MediumLevelILBasicBlock] = {entry}
+        in_worklist: set[MediumLevelILBasicBlock] = {entry}
 
         while worklist:
             block = worklist.popleft()
@@ -86,7 +85,7 @@ class RegGlobalValuePropagator:
 
         return block_in
 
-    def _transform(self, block_in_states: Dict[MediumLevelILBasicBlock, RegGlobalState]) -> bool:
+    def _transform(self, block_in_states: dict[MediumLevelILBasicBlock, RegGlobalState]) -> bool:
         """Phase 2: Transform instructions"""
         changed = False
 
@@ -106,12 +105,12 @@ class RegGlobalValuePropagator:
 
         return changed
 
-    def _merge_states(self, pred_states: List[RegGlobalState]) -> RegGlobalState:
+    def _merge_states(self, pred_states: list[RegGlobalState]) -> RegGlobalState:
         """Merge states from predecessors"""
         return RegGlobalState(reg=self._merge_slots([s.reg for s in pred_states]),
                               global_=self._merge_slots([s.global_ for s in pred_states]))
 
-    def _merge_slots(self, pred_slots: List[SlotValues]) -> SlotValues:
+    def _merge_slots(self, pred_slots: list[SlotValues]) -> SlotValues:
         """One kind of slot merged: a slot keeps its value only where every predecessor holds the same one"""
         merged = {}
         for key in set().union(*pred_slots):
@@ -155,7 +154,7 @@ class RegGlobalValuePropagator:
             return state
 
     def _transform_inst(self, inst: MediumLevelILInstruction,
-                        state: RegGlobalState) -> Tuple[MediumLevelILInstruction, RegGlobalState]:
+                        state: RegGlobalState) -> tuple[MediumLevelILInstruction, RegGlobalState]:
         """Transform instruction and update state"""
         new_inst = map_operands(inst, lambda expr: self._substitute(expr, state))
         # _simulate_inst substitutes the stored value again, which changes nothing: a known value is a closed form
@@ -191,12 +190,12 @@ class RegGlobalValuePropagator:
                 and all(self._expr_equal(s1.reg[k], s2.reg[k]) for k in s1.reg)
                 and all(self._expr_equal(s1.global_[k], s2.global_[k]) for k in s1.global_))
 
-    def _all_expr_equal(self, values: List[Optional[MediumLevelILInstruction]]) -> bool:
+    def _all_expr_equal(self, values: list[MediumLevelILInstruction | None]) -> bool:
         """Check if all values are equal"""
         return all(self._expr_equal(values[0], v) for v in values[1:])
 
-    def _expr_equal(self, a: Optional[MediumLevelILInstruction],
-                    b: Optional[MediumLevelILInstruction]) -> bool:
+    def _expr_equal(self, a: MediumLevelILInstruction | None,
+                    b: MediumLevelILInstruction | None) -> bool:
         """Check if two expressions are equal"""
         if a is None and b is None:
             return True

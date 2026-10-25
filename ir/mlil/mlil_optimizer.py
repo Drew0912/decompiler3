@@ -1,7 +1,5 @@
 """MLIL Optimizer - the one pass list that runs after LLIL->MLIL translation"""
 
-from typing import List
-
 from ir.pipeline import Pass, Pipeline
 from .mlil import MediumLevelILFunction
 from .passes import (
@@ -14,10 +12,10 @@ from .passes import (
 )
 
 
-def mlil_optimization_passes(infer_types: bool = True) -> List[Pass]:
+def mlil_optimization_passes(infer_types: bool = True) -> list[Pass]:
     """The MLIL passes that run after LLIL->MLIL translation, in production order"""
     # BlockMergePass must run before SSAConversionPass
-    passes: List[Pass] = [BlockMergePass(), SSAConversionPass(), SSAOptimizationPass()]
+    passes: list[Pass] = [BlockMergePass(), SSAConversionPass(), SSAOptimizationPass()]
 
     # Type inference runs on SSA form
     if infer_types:

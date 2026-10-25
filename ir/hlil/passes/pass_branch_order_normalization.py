@@ -19,8 +19,6 @@ emitted in, so it is optional - see `normalize_branch_order` in
 falcom/ed9/ir/hlil/hlil_converter.py.
 """
 
-from typing import Optional
-
 from ir.pipeline import Pass
 from ..hlil import (
     BinaryOp,
@@ -96,7 +94,7 @@ class BranchOrderNormalizationPass(Pass):
         return self._should_swap(stmt)
 
     @classmethod
-    def _chain_length(cls, block: Optional[HLILBlock]) -> int:
+    def _chain_length(cls, block: HLILBlock | None) -> int:
         """How many further else-if links follow from this lone-if block"""
         inner_if = sole_statement(block)
         if not isinstance(inner_if, HLILIf):
@@ -185,7 +183,7 @@ class BranchOrderNormalizationPass(Pass):
         return self._if_depth(stmt.true_block) > self._if_depth(stmt.false_block)
 
     @classmethod
-    def _if_depth(cls, block: Optional[HLILBlock]) -> int:
+    def _if_depth(cls, block: HLILBlock | None) -> int:
         """Maximum if nesting depth inside a block, ifs inside loops and switches included"""
         max_depth = 0
         stack = [(block, 0)]
@@ -208,15 +206,15 @@ class BranchOrderNormalizationPass(Pass):
         return max_depth
 
     @classmethod
-    def _has_statements(cls, block: Optional[HLILBlock]) -> bool:
+    def _has_statements(cls, block: HLILBlock | None) -> bool:
         return bool(block and block.statements)
 
     @classmethod
-    def _is_else_if_chain(cls, block: Optional[HLILBlock]) -> bool:
+    def _is_else_if_chain(cls, block: HLILBlock | None) -> bool:
         """An else branch that is nothing but the next test in a chain"""
         return isinstance(sole_statement(block), HLILIf)
 
-    def _first_line(self, block: Optional[HLILBlock]) -> Optional[int]:
+    def _first_line(self, block: HLILBlock | None) -> int | None:
         """First line number this block prints, nested statements included"""
         if not block or not block.statements:
             return None

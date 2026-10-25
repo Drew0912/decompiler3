@@ -1,8 +1,6 @@
 """MLIL - Stack-free IR (variables instead of stack operations)"""
 
-from __future__ import annotations
-
-from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, TYPE_CHECKING
+from typing import Any, Callable, Iterator, TYPE_CHECKING
 
 from dc3 import format_uint32_hex, IntEnum2, quote_string
 from ir.core import *
@@ -135,13 +133,13 @@ class MediumLevelILInstruction(ILInstruction):
     def __repr__(self) -> str:
         return f'<{self.__class__.__name__} {self.operation_name}>'
 
-    def operands(self) -> Tuple['MediumLevelILInstruction', ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         """Direct expression operands in evaluation order - none for a leaf. Every node holding
         an expression overrides this and rebuild(); walk(), map_operands() and the use collectors
         are built on them."""
         return ()
 
-    def copy_metadata_from(self, source: 'MediumLevelILInstruction') -> 'MediumLevelILInstruction':
+    def copy_metadata_from(self, source: MediumLevelILInstruction) -> MediumLevelILInstruction:
         """Copy address and index metadata from another MLIL instruction"""
         self.address = source.address
         self.inst_index = source.inst_index
@@ -234,10 +232,10 @@ class MLILSetVar(MediumLevelILStatement):
         self.var = var
         self.value = value
 
-    def rebuild(self, value: MediumLevelILInstruction) -> 'MLILSetVar':
+    def rebuild(self, value: MediumLevelILInstruction) -> MLILSetVar:
         return MLILSetVar(self.var, value).copy_metadata_from(self)
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return (self.value,)
 
     def __str__(self) -> str:
@@ -279,11 +277,11 @@ class MLILBinaryOp(MediumLevelILExpr):
         self.lhs = lhs
         self.rhs = rhs
 
-    def rebuild(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> 'MLILBinaryOp':
+    def rebuild(self, lhs: MediumLevelILInstruction, rhs: MediumLevelILInstruction) -> MLILBinaryOp:
         """Copy of this operation with new operands, keeping metadata"""
         return type(self)(lhs, rhs).copy_metadata_from(self)
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return (self.lhs, self.rhs)
 
     def __str__(self) -> str:
@@ -381,7 +379,7 @@ NEGATED_COMPARISON = {
 COMPARISON_TYPES = tuple(NEGATED_COMPARISON)
 
 
-def negate_comparison(expr: MediumLevelILInstruction) -> Optional[MediumLevelILInstruction]:
+def negate_comparison(expr: MediumLevelILInstruction) -> MediumLevelILInstruction | None:
     """The comparison with the opposite outcome over the same operands, or None if expr is not a comparison"""
     negated_type = NEGATED_COMPARISON.get(type(expr))
     return negated_type(expr.lhs, expr.rhs) if negated_type is not None else None
@@ -406,11 +404,11 @@ class MLILUnaryOp(MediumLevelILExpr):
         super().__init__(self.OPERATION, **kwargs)
         self.operand = operand
 
-    def rebuild(self, operand: MediumLevelILInstruction) -> 'MLILUnaryOp':
+    def rebuild(self, operand: MediumLevelILInstruction) -> MLILUnaryOp:
         """Copy of this operation with a new operand, keeping metadata"""
         return type(self)(operand).copy_metadata_from(self)
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return (self.operand,)
 
     def __str__(self) -> str:
@@ -453,7 +451,7 @@ class MLILAddressOf(MLILUnaryOp):
 class MLILGoto(MediumLevelILStatement, Terminal):
     """Unconditional jump"""
 
-    def __init__(self, target: 'MediumLevelILBasicBlock', **kwargs):
+    def __init__(self, target: MediumLevelILBasicBlock, **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_GOTO, **kwargs)
         self.target = target
 
@@ -464,17 +462,17 @@ class MLILGoto(MediumLevelILStatement, Terminal):
 class MLILIf(MediumLevelILStatement, Terminal):
     """Conditional branch"""
 
-    def __init__(self, condition: MediumLevelILInstruction, true_target: 'MediumLevelILBasicBlock',
-                 false_target: 'MediumLevelILBasicBlock', **kwargs):
+    def __init__(self, condition: MediumLevelILInstruction, true_target: MediumLevelILBasicBlock,
+                 false_target: MediumLevelILBasicBlock, **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_IF, **kwargs)
         self.condition = condition
         self.true_target = true_target
         self.false_target = false_target
 
-    def rebuild(self, condition: MediumLevelILInstruction) -> 'MLILIf':
+    def rebuild(self, condition: MediumLevelILInstruction) -> MLILIf:
         return MLILIf(condition, self.true_target, self.false_target).copy_metadata_from(self)
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return (self.condition,)
 
     def __str__(self) -> str:
@@ -484,14 +482,14 @@ class MLILIf(MediumLevelILStatement, Terminal):
 class MLILRet(MediumLevelILStatement, Terminal):
     """Return from function"""
 
-    def __init__(self, value: Optional[MediumLevelILInstruction] = None, **kwargs):
+    def __init__(self, value: MediumLevelILInstruction | None = None, **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_RET, **kwargs)
         self.value = value
 
-    def rebuild(self, value: MediumLevelILInstruction) -> 'MLILRet':
+    def rebuild(self, value: MediumLevelILInstruction) -> MLILRet:
         return MLILRet(value).copy_metadata_from(self)
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return (self.value,) if self.value is not None else ()
 
     def __str__(self) -> str:
@@ -517,14 +515,14 @@ class MediumLevelILCall(MediumLevelILStatement):
     nothing but its own output (if any) is treated as redefined.
     """
 
-    def __init__(self, operation: MediumLevelILOperation, args: List[MediumLevelILInstruction],
-                 output: Optional[Any] = None, *, clobbers_registers: bool = True, **kwargs):
+    def __init__(self, operation: MediumLevelILOperation, args: list[MediumLevelILInstruction],
+                 output: Any | None = None, *, clobbers_registers: bool = True, **kwargs):
         super().__init__(operation, **kwargs)
         self.args = args
         self.output = output
         self.clobbers_registers = clobbers_registers
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return tuple(self.args)
 
     def format_with_output(self, call_str: str) -> str:
@@ -534,7 +532,7 @@ class MediumLevelILCall(MediumLevelILStatement):
 
         return f'{self.output} = {call_str}'
 
-    def rebuild(self, *args: MediumLevelILInstruction) -> 'MediumLevelILCall':
+    def rebuild(self, *args: MediumLevelILInstruction) -> MediumLevelILCall:
         """Copy of this call with new arguments, keeping target, output, clobbers_registers and metadata"""
         raise NotImplementedError
 
@@ -542,13 +540,13 @@ class MediumLevelILCall(MediumLevelILStatement):
 class MLILCall(MediumLevelILCall):
     """Function call"""
 
-    def __init__(self, target: str, args: List[MediumLevelILInstruction], output: Optional[Any] = None,
+    def __init__(self, target: str, args: list[MediumLevelILInstruction], output: Any | None = None,
                  *, clobbers_registers: bool = True, **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_CALL, args, output, clobbers_registers=clobbers_registers,
                          **kwargs)
         self.target = target
 
-    def rebuild(self, *args: MediumLevelILInstruction) -> 'MLILCall':
+    def rebuild(self, *args: MediumLevelILInstruction) -> MLILCall:
         return MLILCall(self.target, list(args), self.output,
                         clobbers_registers=self.clobbers_registers).copy_metadata_from(self)
 
@@ -560,13 +558,13 @@ class MLILCall(MediumLevelILCall):
 class MLILSyscall(MediumLevelILCall):
     """System call"""
 
-    def __init__(self, subsystem: int, cmd: int, args: List[MediumLevelILInstruction], output: Optional[Any] = None,
+    def __init__(self, subsystem: int, cmd: int, args: list[MediumLevelILInstruction], output: Any | None = None,
                  **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_SYSCALL, args, output, **kwargs)
         self.subsystem = subsystem
         self.cmd = cmd
 
-    def rebuild(self, *args: MediumLevelILInstruction) -> 'MLILSyscall':
+    def rebuild(self, *args: MediumLevelILInstruction) -> MLILSyscall:
         return MLILSyscall(self.subsystem, self.cmd, list(args), self.output,
                            clobbers_registers=self.clobbers_registers).copy_metadata_from(self)
 
@@ -578,13 +576,13 @@ class MLILSyscall(MediumLevelILCall):
 class MLILCallScript(MediumLevelILCall):
     """Falcom script call"""
 
-    def __init__(self, module: str, func: str, args: List[MediumLevelILInstruction], output: Optional[Any] = None,
+    def __init__(self, module: str, func: str, args: list[MediumLevelILInstruction], output: Any | None = None,
                  **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_CALL_SCRIPT, args, output, **kwargs)
         self.module = module
         self.func = func
 
-    def rebuild(self, *args: MediumLevelILInstruction) -> 'MLILCallScript':
+    def rebuild(self, *args: MediumLevelILInstruction) -> MLILCallScript:
         return MLILCallScript(self.module, self.func, list(args), self.output,
                               clobbers_registers=self.clobbers_registers).copy_metadata_from(self)
 
@@ -614,10 +612,10 @@ class MLILStoreGlobal(MediumLevelILStatement):
         self.index = index
         self.value = value
 
-    def rebuild(self, value: MediumLevelILInstruction) -> 'MLILStoreGlobal':
+    def rebuild(self, value: MediumLevelILInstruction) -> MLILStoreGlobal:
         return MLILStoreGlobal(self.index, value).copy_metadata_from(self)
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return (self.value,)
 
     def __str__(self) -> str:
@@ -645,10 +643,10 @@ class MLILStoreReg(MediumLevelILStatement):
         self.index = index
         self.value = value
 
-    def rebuild(self, value: MediumLevelILInstruction) -> 'MLILStoreReg':
+    def rebuild(self, value: MediumLevelILInstruction) -> MLILStoreReg:
         return MLILStoreReg(self.index, value).copy_metadata_from(self)
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return (self.value,)
 
     def __str__(self) -> str:
@@ -717,11 +715,11 @@ class MLILStoreDeref(MediumLevelILStatement):
         self.dest = dest
         self.value = value
 
-    def rebuild(self, dest: MediumLevelILInstruction, value: MediumLevelILInstruction) -> 'MLILStoreDeref':
+    def rebuild(self, dest: MediumLevelILInstruction, value: MediumLevelILInstruction) -> MLILStoreDeref:
         """Copy of this store with a new dest/value, keeping metadata"""
         return MLILStoreDeref(dest, value).copy_metadata_from(self)
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return (self.dest, self.value)
 
     def __str__(self) -> str:
@@ -730,7 +728,7 @@ class MLILStoreDeref(MediumLevelILStatement):
 
 # === Traversal ===
 
-def walk(node: MediumLevelILInstruction, skip: Tuple[type, ...] = ()) -> Iterator[MediumLevelILInstruction]:
+def walk(node: MediumLevelILInstruction, skip: tuple[type, ...] = ()) -> Iterator[MediumLevelILInstruction]:
     """node and every expression below it, pre-order in evaluation order. A node that is an
     instance of a type in skip (subclasses included) is yielded but not descended into."""
     pending = [node]
@@ -778,17 +776,17 @@ class MediumLevelILBasicBlock(ILBasicBlock):
 class MediumLevelILFunction:
     """MLIL function container"""
 
-    def __init__(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None):
+    def __init__(self, name: str, start_addr: int = 0, params: list[IRParameter] = None):
         self.name = name
         self.start_addr = start_addr
-        self.source_params: List['IRParameter'] = params or []  # Original params from source
-        self.basic_blocks: List[MediumLevelILBasicBlock] = []
-        self.parameters: List[MLILVariable] = []  # Ordered parameter list (populated during translation)
-        self.locals: Dict[str, MLILVariable] = {}  # Local variables
-        self.register_vars: Dict[int, MLILVariable] = {}  # VM register index -> variable
-        self.global_vars: Dict[int, MLILVariable] = {}  # Global var table index -> variable
-        self.llil_function: Optional[LowLevelILFunction] = None
-        self.var_types: Dict[str, 'MLILType'] = {}  # Variable name -> inferred type
+        self.source_params: list[IRParameter] = params or []  # Original params from source
+        self.basic_blocks: list[MediumLevelILBasicBlock] = []
+        self.parameters: list[MLILVariable] = []  # Ordered parameter list (populated during translation)
+        self.locals: dict[str, MLILVariable] = {}  # Local variables
+        self.register_vars: dict[int, MLILVariable] = {}  # VM register index -> variable
+        self.global_vars: dict[int, MLILVariable] = {}  # Global var table index -> variable
+        self.llil_function: 'LowLevelILFunction | None' = None
+        self.var_types: dict[str, MLILType] = {}  # Variable name -> inferred type
 
     def add_basic_block(self, block: MediumLevelILBasicBlock):
         self.basic_blocks.append(block)
@@ -853,7 +851,7 @@ class MediumLevelILFunction:
     def is_global_var(self, var: MLILVariable) -> bool:
         return var in self.global_vars.values()
 
-    def call_may_clobber(self, call: 'MediumLevelILCall', var: MLILVariable) -> bool:
+    def call_may_clobber(self, call: MediumLevelILCall, var: MLILVariable) -> bool:
         """Whether `call` may clobber the register/global storage represented by `var`"""
         return call.clobbers_registers and (self.is_register_var(var) or self.is_global_var(var))
 

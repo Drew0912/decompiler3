@@ -30,7 +30,6 @@ import io
 import sys
 from itertools import pairwise
 from pathlib import Path
-from typing import List, Optional
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -58,7 +57,7 @@ class FunctionReport:
         self.sequences = sequences
 
     @classmethod
-    def backward_steps(cls, sequence: List[int]) -> int:
+    def backward_steps(cls, sequence: list[int]) -> int:
         """Adjacent pairs where the line number goes down"""
         return sum(1 for a, b in pairwise(sequence) if b < a)
 
@@ -75,7 +74,7 @@ class FunctionReport:
                 self.sequences['mlil'])
 
 
-def collect_dsl_lines(func) -> List[int]:
+def collect_dsl_lines(func) -> list[int]:
     """DEBUG_SET_LINENO operands in address order
 
     Walks the blocks the lifter lifts (reverse_post_order over succs, as the lifter calls it), so
@@ -89,12 +88,12 @@ def collect_dsl_lines(func) -> List[int]:
             if inst.opcode == ED9Opcode.DEBUG_SET_LINENO and inst.operands]
 
 
-def collect_llil_lines(llil_func) -> List[int]:
+def collect_llil_lines(llil_func) -> list[int]:
     return [int(inst.value) for block in llil_func.basic_blocks for inst in block.instructions
             if isinstance(inst, LowLevelILDebug) and inst.debug_type == 'line']
 
 
-def collect_mlil_lines(mlil_func) -> List[int]:
+def collect_mlil_lines(mlil_func) -> list[int]:
     """Line directives in address order
 
     Block order is not address order at MLIL: BlockMergePass splices a block onto
@@ -111,13 +110,13 @@ def collect_mlil_lines(mlil_func) -> List[int]:
     return [int(inst.value) for inst in directives]
 
 
-def collect_hlil_lines(hlil_func) -> List[int]:
+def collect_hlil_lines(hlil_func) -> list[int]:
     """Line comments in statement-tree order - the order they are printed in"""
     markers = (line_marker_number(node) for node in iter_tree(hlil_func.body))
     return [line for line in markers if line is not None]
 
 
-def analyse_file(path: Path) -> List[FunctionReport]:
+def analyse_file(path: Path) -> list[FunctionReport]:
     """Line sequences per function, from the pipeline scena2py.py decompiles with"""
     raise_recursion_limit()
     reports = []
@@ -154,7 +153,7 @@ def level_cell(steps: int, count: int) -> str:
     return f'{steps:>6}/{count:<6}'
 
 
-def print_function_table(reports: List[FunctionReport], worst: Optional[int]):
+def print_function_table(reports: list[FunctionReport], worst: int | None):
     shown = [r for r in reports if len(r.sequences['hlil']) > 1 or r.introduced]
 
     if worst is not None:
@@ -183,7 +182,7 @@ def print_function_table(reports: List[FunctionReport], worst: Optional[int]):
     print()
 
 
-def print_summary(label: str, reports: List[FunctionReport]):
+def print_summary(label: str, reports: list[FunctionReport]):
     steps = {level: sum(FunctionReport.backward_steps(r.sequences[level]) for r in reports) for level in LEVELS}
     counts = {level: sum(len(r.sequences[level]) for r in reports) for level in LEVELS}
     disagree = sum(not r.levels_agree for r in reports)
@@ -227,7 +226,7 @@ def main() -> int:
     print(header_line(''))
     print()
 
-    grand: List[FunctionReport] = []
+    grand: list[FunctionReport] = []
 
     for path in paths:
         try:

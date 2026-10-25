@@ -1,6 +1,6 @@
 """MLIL Builder - builds an MLIL function: its blocks, variables and statements (expressions are the node classes)"""
 
-from typing import Optional, List, TYPE_CHECKING
+from typing import TYPE_CHECKING
 
 from .mlil import *
 
@@ -12,8 +12,8 @@ class MLILBuilder:
     """Builder for constructing MLIL functions"""
 
     def __init__(self):
-        self.function: Optional[MediumLevelILFunction] = None
-        self.current_block: Optional[MediumLevelILBasicBlock] = None
+        self.function: MediumLevelILFunction | None = None
+        self.current_block: MediumLevelILBasicBlock | None = None
         self._current_address = 0  # Source SCP address for current instruction
         self._current_llil_index = UNASSIGNED_INST_INDEX
 
@@ -24,7 +24,7 @@ class MLILBuilder:
 
     # === Function Management ===
 
-    def create_function(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None):
+    def create_function(self, name: str, start_addr: int = 0, params: 'list[IRParameter]' = None):
         self.function = MediumLevelILFunction(name, start_addr, params)
 
     def finalize(self) -> MediumLevelILFunction:
@@ -96,19 +96,19 @@ class MLILBuilder:
         self.current_block.add_outgoing_edge(true_target)
         self.current_block.add_outgoing_edge(false_target)
 
-    def ret(self, value: Optional[MediumLevelILInstruction] = None):
+    def ret(self, value: MediumLevelILInstruction | None = None):
         self.add_instruction(MLILRet(value))
 
     # === Function Calls ===
 
-    def call(self, target: str, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None,
+    def call(self, target: str, args: list[MediumLevelILInstruction], output: MLILVariable | None = None,
              *, clobbers_registers: bool = True):
         self.add_instruction(MLILCall(target, args, output, clobbers_registers=clobbers_registers))
 
     def syscall(self, subsystem: int, cmd: int, args: list[MediumLevelILInstruction],
-                output: Optional[MLILVariable] = None):
+                output: MLILVariable | None = None):
         self.add_instruction(MLILSyscall(subsystem, cmd, args, output))
 
     def call_script(self, module: str, func: str, args: list[MediumLevelILInstruction],
-                    output: Optional[MLILVariable] = None):
+                    output: MLILVariable | None = None):
         self.add_instruction(MLILCallScript(module, func, args, output))

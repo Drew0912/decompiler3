@@ -23,10 +23,10 @@ class BasicBlock:
 
     offset          : int                                                   # Starting offset
     name            : str                 = ''                              # Block label (e.g., 'loc_1234')
-    instructions    : list['Instruction'] = field(default_factory=list)
-    succs           : list['BasicBlock']  = field(default_factory=list)     # All successors
-    true_succs      : list['BasicBlock']  = field(default_factory=list)     # True branch successors
-    false_succs     : list['BasicBlock']  = field(default_factory=list)     # False branch successors
+    instructions    : 'list[Instruction]' = field(default_factory=list)
+    succs           : list[BasicBlock]  = field(default_factory=list)     # All successors
+    true_succs      : list[BasicBlock]  = field(default_factory=list)     # True branch successors
+    false_succs     : list[BasicBlock]  = field(default_factory=list)     # False branch successors
 
     def __post_init__(self):
         if not self.name:
@@ -37,7 +37,7 @@ class BasicBlock:
         """Terminal instruction (last instruction in block)"""
         return self.instructions[-1] if self.instructions else None
 
-    def add_branch(self, target: 'BasicBlock', kind: BranchKind | None = None):
+    def add_branch(self, target: BasicBlock, kind: BranchKind | None = None):
         """Add a branch to target block"""
         if target not in self.succs:
             self.succs.append(target)
@@ -47,7 +47,7 @@ class BasicBlock:
         elif kind == BranchKind.FALSE and target not in self.false_succs:
             self.false_succs.append(target)
 
-    def insert_branch(self, target: 'BasicBlock') -> 'BasicBlock':
+    def insert_branch(self, target: BasicBlock) -> BasicBlock:
         """Insert branch at beginning of successors list"""
         if target not in self.succs:
             self.succs.insert(0, target)

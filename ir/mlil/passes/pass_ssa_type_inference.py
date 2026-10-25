@@ -6,8 +6,6 @@ Infer types for SSA variables using:
 3. Type propagation through assignments
 """
 
-from typing import Dict, Optional
-
 from ir.pipeline import Pass
 from ..mlil import *
 from ..mlil_ssa import *
@@ -35,7 +33,7 @@ class SSATypeInferencePass(Pass):
 
     def __init__(self):
         self.function: MediumLevelILFunction = None
-        self.var_types: Dict[MLILVariableSSA, MLILType] = {}
+        self.var_types: dict[MLILVariableSSA, MLILType] = {}
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         """Infer types and store in var_types"""
@@ -113,7 +111,7 @@ class SSATypeInferencePass(Pass):
                     self._infer_from_condition(inst.condition)
 
     @classmethod
-    def _ssa_var_from_address(cls, expr: MediumLevelILInstruction) -> Optional[MLILVariableSSA]:
+    def _ssa_var_from_address(cls, expr: MediumLevelILInstruction) -> MLILVariableSSA | None:
         """The lowered local an exact AddressOf(VarSSA) names - this codebase's *(&x)
         address-taken lowering (ir/mlil/mlil_ssa.py's _lower_address_taken_vars) always
         produces exactly this shape, never some other pointer expression. Used both as an
@@ -125,7 +123,7 @@ class SSATypeInferencePass(Pass):
         return None
 
     @classmethod
-    def _as_ssa_var(cls, expr: MediumLevelILInstruction) -> Optional[MLILVariableSSA]:
+    def _as_ssa_var(cls, expr: MediumLevelILInstruction) -> MLILVariableSSA | None:
         """An SSA variable read, direct or through this codebase's *(&x) address-taken
         lowering - so backward inference over a lowered local's comparisons/arithmetic works
         the same as over an ordinary scalar SSA variable"""
@@ -221,7 +219,7 @@ class SSATypeInferencePass(Pass):
 
         return False
 
-    def _map_to_base_types(self) -> Dict[str, MLILType]:
+    def _map_to_base_types(self) -> dict[str, MLILType]:
         """Map SSA types to base variable names"""
         base_types = {}
 

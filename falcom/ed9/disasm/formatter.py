@@ -45,7 +45,7 @@ class Formatter:
         self.formatted_labels: set[str] = set()
         self.unreachable_targets: set[int] = set()   # offsets unreachable code branches to - each needs a label
         self.referenced_offsets: set[int] = set()    # offsets real reachable-code operands point at - each needs a label
-        self.layout: StackLayout | None = None       # the stack and argument comments' source
+        self.layout: 'StackLayout | None' = None       # the stack and argument comments' source
         self.call_debug_argc: dict[int, int] = {}    # CALL offset -> args its debug record keeps, off the compiler's rule
         self.call_unrecorded: set[int] = set()       # CALL offsets without a debug record
 
@@ -155,7 +155,7 @@ class Formatter:
         return text
 
     @classmethod
-    def reachable_instructions(cls, entry_block: 'BasicBlock') -> list['Instruction']:
+    def reachable_instructions(cls, entry_block: 'BasicBlock') -> 'list[Instruction]':
         """Reachable instructions in offset order, deduplicated and with synthetic fall-through
         JMPs removed - the flat view of collect_blocks() that ScpParser.get_instructions and the
         common-function generator both need instead of walking blocks themselves"""
@@ -181,7 +181,7 @@ class Formatter:
         return {target for block in reachable_blocks for target in cls.branch_targets(block, real_only=True)}
 
     @classmethod
-    def collect_blocks(cls, entry: 'BasicBlock') -> list['BasicBlock']:
+    def collect_blocks(cls, entry: 'BasicBlock') -> 'list[BasicBlock]':
         """Collect all blocks reachable from entry"""
         blocks = []
         visited = set()

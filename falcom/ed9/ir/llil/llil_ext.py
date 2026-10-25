@@ -1,7 +1,6 @@
 """Falcom-specific LLIL Extensions"""
 
 from enum import IntEnum
-from typing import List
 from ir.llil import *
 
 
@@ -22,8 +21,8 @@ class LowLevelILCallScript(LowLevelILCall):
         self,
         module: str,
         func: str,
-        args: List['LowLevelILExpr'],
-        return_target: 'LowLevelILBasicBlock'
+        args: list[LowLevelILExpr],
+        return_target: LowLevelILBasicBlock
     ):
         target = f'{module}.{func}'
         super().__init__(target, return_target, args)
@@ -47,7 +46,7 @@ class LowLevelILCallScriptNoReturn(LowLevelILCall):
         self,
         module: str,
         func: str,
-        args: List['LowLevelILExpr'],
+        args: list[LowLevelILExpr],
     ):
         target = f'{module}.{func}'
         super().__init__(target, return_target=None, args=args, returns=False)
@@ -86,7 +85,7 @@ class LowLevelILGlobalStore(LowLevelILStatement):
 class LowLevelILDebugLog(LowLevelILStatement):
     """DEBUG_LOG - Debug print of the top argc stack values, message first (statement)"""
 
-    def __init__(self, args: List['LowLevelILExpr']):
+    def __init__(self, args: list[LowLevelILExpr]):
         super().__init__(LowLevelILFalcomOperation.LLIL_DEBUG_LOG)
         self.args = args    # Top of stack first (from vstack)
 

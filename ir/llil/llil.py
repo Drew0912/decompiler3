@@ -1,6 +1,6 @@
 """LLIL - Stack-based low-level IR"""
 
-from typing import Any, List, Optional, Union
+from typing import Any
 from dc3 import format_signed_hex, IntEnum2, quote_string
 from ir.core import *
 
@@ -122,7 +122,7 @@ def frame_offset_text(offset: int) -> str:
 class LowLevelILStackStore(LowLevelILStatement):
     """STACK[sp + offset] = value"""
 
-    def __init__(self, value: Union['LowLevelILInstruction', int, str], offset: int = 0, slot_index: int = None):
+    def __init__(self, value: LowLevelILInstruction | int | str, offset: int = 0, slot_index: int = None):
         super().__init__(LowLevelILOperation.LLIL_STACK_STORE)
         self.value = value
         self.offset = offset  # Byte offset
@@ -158,7 +158,7 @@ class LowLevelILFrameLoad(LowLevelILExpr):
 class LowLevelILFrameStore(LowLevelILStatement):
     """STACK[frame + offset] = value"""
 
-    def __init__(self, value: Union['LowLevelILInstruction', int, str], offset: int = 0):
+    def __init__(self, value: LowLevelILInstruction | int | str, offset: int = 0):
         super().__init__(LowLevelILOperation.LLIL_FRAME_STORE)
         self.value = value
         self.offset = offset  # Byte offset relative to frame
@@ -171,7 +171,7 @@ class LowLevelILLoad(LowLevelILExpr):
     """Load *src - generic pointer dereference (address computed at runtime, e.g. a parameter
     that itself holds a pointer, unlike StackLoad/FrameLoad whose slot is known statically)"""
 
-    def __init__(self, src: 'LowLevelILExpr'):
+    def __init__(self, src: LowLevelILExpr):
         super().__init__(LowLevelILOperation.LLIL_LOAD)
         self.src = src
 
@@ -182,7 +182,7 @@ class LowLevelILLoad(LowLevelILExpr):
 class LowLevelILStore(LowLevelILStatement):
     """*dest = value - generic pointer dereference store"""
 
-    def __init__(self, dest: 'LowLevelILExpr', value: 'LowLevelILExpr'):
+    def __init__(self, dest: LowLevelILExpr, value: LowLevelILExpr):
         super().__init__(LowLevelILOperation.LLIL_STORE)
         self.dest = dest
         self.value = value
@@ -237,7 +237,7 @@ class LowLevelILFrameAddr(LowLevelILExpr):
 class LowLevelILRegStore(LowLevelILStatement):
     """REG[index] = value (statement)"""
 
-    def __init__(self, reg_index: int, value: Union['LowLevelILInstruction', int]):
+    def __init__(self, reg_index: int, value: LowLevelILInstruction | int):
         super().__init__(LowLevelILOperation.LLIL_REG_STORE)
         self.reg_index = reg_index
         self.value = value
@@ -264,7 +264,7 @@ class LowLevelILBinaryOp(LowLevelILExpr):
 
     OPERATION: LowLevelILOperation
 
-    def __init__(self, lhs: 'LowLevelILExpr', rhs: 'LowLevelILExpr'):
+    def __init__(self, lhs: LowLevelILExpr, rhs: LowLevelILExpr):
         super().__init__(self.OPERATION)
         self.lhs = lhs  # Left operand expression
         self.rhs = rhs  # Right operand expression
@@ -348,7 +348,7 @@ class LowLevelILUnaryOp(LowLevelILExpr):
 
     OPERATION: LowLevelILOperation
 
-    def __init__(self, operand: 'LowLevelILExpr'):
+    def __init__(self, operand: LowLevelILExpr):
         super().__init__(self.OPERATION)
         self.operand = operand
 
@@ -379,7 +379,7 @@ class LowLevelILTestZero(LowLevelILUnaryOp):
 class LowLevelILJmp(LowLevelILStatement, Terminal):
     """Unconditional jump - target must be a BasicBlock (terminal)"""
 
-    def __init__(self, target: 'LowLevelILBasicBlock'):
+    def __init__(self, target: LowLevelILBasicBlock):
         super().__init__(LowLevelILOperation.LLIL_JMP)
         self.target = target
 
@@ -390,8 +390,8 @@ class LowLevelILJmp(LowLevelILStatement, Terminal):
 class LowLevelILIf(LowLevelILStatement, Terminal):
     """Conditional branch - targets must be BasicBlocks (terminal)"""
 
-    def __init__(self, condition: 'LowLevelILBinaryOp', true_target: 'LowLevelILBasicBlock',
-                 false_target: 'LowLevelILBasicBlock'):
+    def __init__(self, condition: LowLevelILBinaryOp, true_target: LowLevelILBasicBlock,
+                 false_target: LowLevelILBasicBlock):
         super().__init__(LowLevelILOperation.LLIL_BRANCH)
         self.condition = condition  # An instruction that produces a boolean value
         self.true_target = true_target
@@ -407,8 +407,8 @@ class LowLevelILCall(LowLevelILStatement, Terminal):
     def __init__(
         self,
         target: str,
-        return_target: Optional['LowLevelILBasicBlock'],
-        args: List['LowLevelILExpr'] = None,
+        return_target: LowLevelILBasicBlock | None,
+        args: list[LowLevelILExpr] = None,
         *,
         returns: bool = True,
     ):
@@ -440,7 +440,7 @@ class LowLevelILRet(LowLevelILStatement, Terminal):
 class LowLevelILConst(LowLevelILExpr, Constant):
     """Constant value (int, float, or string) (expression)"""
 
-    def __init__(self, value: Union[int, float, str], is_raw: bool = False):
+    def __init__(self, value: int | float | str, is_raw: bool = False):
         super().__init__(LowLevelILOperation.LLIL_CONST)
         self.value = value
         self.is_raw = is_raw  # True for raw values (type-less), False for typed constants
@@ -473,7 +473,7 @@ class LowLevelILDebug(LowLevelILStatement):
 class LowLevelILSyscall(LowLevelILStatement):
     """System call (statement)"""
 
-    def __init__(self, subsystem: int, cmd: int, argc: int, args: List['LowLevelILExpr'] = None):
+    def __init__(self, subsystem: int, cmd: int, argc: int, args: list[LowLevelILExpr] = None):
         super().__init__(LowLevelILOperation.LLIL_SYSCALL)
         self.subsystem = subsystem
         self.cmd = cmd
@@ -500,11 +500,11 @@ def default_label_for_addr(addr: int) -> str:
 class LowLevelILBasicBlock(ILBasicBlock):
     """Basic block containing LLIL instructions (following BN design)"""
 
-    def __init__(self, start: int, label: Optional[str] = None):
+    def __init__(self, start: int, label: str | None = None):
         # The index is set by LowLevelILFunction.add_basic_block
         super().__init__(0, start, label if label is not None else default_label_for_addr(start))
         self.sp_in = 0   # sp state at block entry
-        self.function: Optional['LowLevelILFunction'] = None  # Set when block added to a function
+        self.function: LowLevelILFunction | None = None  # Set when block added to a function
 
     def add_instruction(self, inst: LowLevelILInstruction):
         """Add instruction to this block, registered with its function once it has one"""
@@ -529,14 +529,14 @@ class LowLevelILBasicBlock(ILBasicBlock):
 class LowLevelILFunction:
     """Function containing LLIL basic blocks (following BN design)"""
 
-    def __init__(self, name: str, start_addr: int = 0, params: List['IRParameter'] = None):
+    def __init__(self, name: str, start_addr: int = 0, params: list[IRParameter] = None):
         self.name = name
         self.start_addr = start_addr
-        self.params: List['IRParameter'] = params or []
-        self.basic_blocks: List[LowLevelILBasicBlock] = []
+        self.params: list[IRParameter] = params or []
+        self.basic_blocks: list[LowLevelILBasicBlock] = []
         self._block_map: dict[int, LowLevelILBasicBlock] = {}  # addr -> block
         self._label_map: dict[str, LowLevelILBasicBlock] = {}  # label -> block
-        self.frame_base_sp: Optional[int] = None  # Frame pointer (sp at function entry)
+        self.frame_base_sp: int | None = None  # Frame pointer (sp at function entry)
         self._next_inst_index: int = 0
 
     @property
@@ -568,11 +568,11 @@ class LowLevelILFunction:
             for inst in block.instructions:
                 self._register_instruction(inst)
 
-    def get_block_by_addr(self, addr: int) -> Optional[LowLevelILBasicBlock]:
+    def get_block_by_addr(self, addr: int) -> LowLevelILBasicBlock | None:
         """Get basic block by start address"""
         return self._block_map.get(addr)
 
-    def get_block_by_label(self, label: str) -> Optional[LowLevelILBasicBlock]:
+    def get_block_by_label(self, label: str) -> LowLevelILBasicBlock | None:
         """Get block by label name (O(1) lookup using label map)"""
         return self._label_map.get(label)
 
@@ -587,7 +587,7 @@ class LowLevelILFunction:
         for block, target in edges:
             block.add_outgoing_edge(target)
 
-    def _successors(self, block: LowLevelILBasicBlock) -> List[LowLevelILBasicBlock]:
+    def _successors(self, block: LowLevelILBasicBlock) -> list[LowLevelILBasicBlock]:
         """Return the block's CFG successors; raise for an unsupported terminal"""
         if not block.instructions:
             return []

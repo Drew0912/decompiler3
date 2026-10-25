@@ -1,6 +1,6 @@
 """IR Pipeline - Pass Manager"""
 
-from typing import Any, List
+from typing import Any
 
 from dc3.logging import log
 
@@ -16,7 +16,7 @@ class Pass:
 class Pipeline:
     """Pass Pipeline"""
 
-    def __init__(self, passes: List[Pass] = None):
+    def __init__(self, passes: list[Pass] = None):
         """Initialize pipeline"""
         self.passes = passes or []
 

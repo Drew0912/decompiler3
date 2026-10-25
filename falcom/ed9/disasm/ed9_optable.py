@@ -360,7 +360,7 @@ class ED9InstructionTable(InstructionTable):
         return [Operand(descriptor=inst.descriptor.operand_descriptors[0], value=value)]
 
 
-def ed9_create_fallthrough_jump(offset: int, target: int, inst_table: 'InstructionTable') -> Instruction:
+def ed9_create_fallthrough_jump(offset: int, target: int, inst_table: InstructionTable) -> Instruction:
     """Create a synthetic JMP instruction for split blocks"""
     jmp_descriptor = inst_table.get_descriptor(ED9Opcode.JMP)
 

@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any
+from typing import Any
 
 import yaml
 
@@ -12,8 +12,8 @@ class ParamHint:
     """Parameter formatting hint"""
 
     name: str
-    type: Optional[str] = None    # "number", "string", "[string, number]" for union, etc.
-    format: Optional[str] = None  # "hex", enum name, etc.
+    type: str | None = None    # "number", "string", "[string, number]" for union, etc.
+    format: str | None = None  # "hex", enum name, etc.
     variadic: bool = False        # True for rest parameters
 
 
@@ -21,17 +21,17 @@ class ParamHint:
 class ReturnHint:
     """Return value hint"""
 
-    name: Optional[str] = None
-    type: Optional[str] = None
-    format: Optional[str] = None
+    name: str | None = None
+    type: str | None = None
+    format: str | None = None
 
 
 @dataclass
 class FunctionSig:
     """Function signature"""
 
-    params: List[ParamHint] = field(default_factory=list)
-    return_hint: Optional[ReturnHint] = None
+    params: list[ParamHint] = field(default_factory=list)
+    return_hint: ReturnHint | None = None
 
 
 @dataclass
@@ -41,18 +41,18 @@ class SyscallSig:
     name: str
     subsystem: int
     cmd: int
-    params: List[ParamHint] = field(default_factory=list)
-    return_hint: Optional[ReturnHint] = None
+    params: list[ParamHint] = field(default_factory=list)
+    return_hint: ReturnHint | None = None
 
 
 class FormatSignatureDB:
     """Database of function/syscall signatures for output formatting"""
 
     def __init__(self):
-        self.enums: Dict[str, Dict[int, str]] = {}
-        self.functions: Dict[str, FunctionSig] = {}
-        self.syscalls: Dict[str, SyscallSig] = {}
-        self._syscall_by_id: Dict[Tuple[int, int], SyscallSig] = {}
+        self.enums: dict[str, dict[int, str]] = {}
+        self.functions: dict[str, FunctionSig] = {}
+        self.syscalls: dict[str, SyscallSig] = {}
+        self._syscall_by_id: dict[tuple[int, int], SyscallSig] = {}
 
     def load_yaml(self, path: Path):
         """Load signatures from YAML file"""
@@ -66,7 +66,7 @@ class FormatSignatureDB:
         self._load_functions(data.get('functions', {}))
         self._load_syscalls(data.get('syscalls', {}))
 
-    def _load_enums(self, enums_data: Optional[Dict]):
+    def _load_enums(self, enums_data: dict | None):
         """Load enum definitions"""
         if not enums_data:
             return
@@ -74,7 +74,7 @@ class FormatSignatureDB:
         for name, values in enums_data.items():
             self.enums[name] = {int(k): v for k, v in values.items()}
 
-    def _load_functions(self, funcs_data: Optional[Dict]):
+    def _load_functions(self, funcs_data: dict | None):
         """Load function signatures"""
         if not funcs_data:
             return
@@ -82,7 +82,7 @@ class FormatSignatureDB:
         for name, sig_data in funcs_data.items():
             self.functions[name] = self._parse_function_sig(sig_data)
 
-    def _load_syscalls(self, syscalls_data: Optional[Dict]):
+    def _load_syscalls(self, syscalls_data: dict | None):
         """Load syscall signatures"""
         if not syscalls_data:
             return
@@ -93,20 +93,20 @@ class FormatSignatureDB:
             self._syscall_by_id[(sig.subsystem, sig.cmd)] = sig
 
     @classmethod
-    def _validate_params(cls, params: List[ParamHint], context: str):
+    def _validate_params(cls, params: list[ParamHint], context: str):
         """Validate parameter list - variadic must be last"""
         for i, p in enumerate(params):
             if p.variadic and i != len(params) - 1:
                 raise ValueError(f"{context}: variadic parameter '{p.name}' must be last")
 
-    def _parse_function_sig(self, data: Dict) -> FunctionSig:
+    def _parse_function_sig(self, data: dict) -> FunctionSig:
         """Parse function signature from dict"""
         params = [self._parse_param(p) for p in data.get('params', [])]
         self._validate_params(params, 'function')
         return_hint = self._parse_return(data.get('return'))
         return FunctionSig(params=params, return_hint=return_hint)
 
-    def _parse_syscall_sig(self, name: str, data: Dict) -> SyscallSig:
+    def _parse_syscall_sig(self, name: str, data: dict) -> SyscallSig:
         """Parse syscall signature from dict"""
         id_tuple = data.get('id', [0, 0])
         params = [self._parse_param(p) for p in data.get('params', [])]
@@ -143,7 +143,7 @@ class FormatSignatureDB:
         )
 
     @classmethod
-    def _parse_return(cls, data: Any) -> Optional[ReturnHint]:
+    def _parse_return(cls, data: Any) -> ReturnHint | None:
         """Parse return hint"""
         if data is None:
             return None
@@ -157,15 +157,15 @@ class FormatSignatureDB:
             format=data.get('format'),
         )
 
-    def get_function(self, name: str) -> Optional[FunctionSig]:
+    def get_function(self, name: str) -> FunctionSig | None:
         """Get function signature by name"""
         return self.functions.get(name)
 
-    def get_syscall(self, subsystem: int, cmd: int) -> Optional[SyscallSig]:
+    def get_syscall(self, subsystem: int, cmd: int) -> SyscallSig | None:
         """Get syscall signature by id"""
         return self._syscall_by_id.get((subsystem, cmd))
 
-    def get_enum_value(self, enum_name: str, value: int) -> Optional[str]:
+    def get_enum_value(self, enum_name: str, value: int) -> str | None:
         """Get enum value name"""
         enum = self.enums.get(enum_name)
         if enum:
@@ -173,7 +173,7 @@ class FormatSignatureDB:
 
         return None
 
-    def format_value(self, value: int, format_hint: Optional[str]) -> Optional[str]:
+    def format_value(self, value: int, format_hint: str | None) -> str | None:
         """Format a value according to hint, returns None if no formatting applied"""
         if format_hint is None:
             return None

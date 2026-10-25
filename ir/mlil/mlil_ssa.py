@@ -1,7 +1,6 @@
 """MLIL SSA - SSA form with dominance analysis and Phi placement"""
 
-from __future__ import annotations
-from typing import Dict, Iterator, List, Set, Optional, Tuple, Deque
+from typing import Iterator
 from collections import deque, defaultdict
 from ir.core import reverse_post_order
 from .mlil import *
@@ -56,10 +55,10 @@ class MLILSetVarSSA(MediumLevelILStatement):
         self.var = var
         self.value = value
 
-    def rebuild(self, value: MediumLevelILInstruction) -> 'MLILSetVarSSA':
+    def rebuild(self, value: MediumLevelILInstruction) -> MLILSetVarSSA:
         return MLILSetVarSSA(self.var, value).copy_metadata_from(self)
 
-    def operands(self) -> Tuple[MediumLevelILInstruction, ...]:
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return (self.value,)
 
     def __str__(self) -> str:
@@ -69,7 +68,7 @@ class MLILSetVarSSA(MediumLevelILStatement):
 class MLILPhi(MediumLevelILStatement):
     """Phi node: merge values from predecessors"""
 
-    def __init__(self, dest: MLILVariableSSA, sources: List[Tuple[MLILVariableSSA, MediumLevelILBasicBlock]], **kwargs):
+    def __init__(self, dest: MLILVariableSSA, sources: list[tuple[MLILVariableSSA, MediumLevelILBasicBlock]], **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_PHI, **kwargs)
         self.dest = dest
         self.sources = sources  # [(ssa_var, predecessor_block), ...]
@@ -83,7 +82,7 @@ class MLILPhi(MediumLevelILStatement):
 
 
 def iter_ssa_reads(node: MediumLevelILInstruction,
-                   skip: Tuple[type, ...] = ()) -> Iterator[Tuple[MLILVariableSSA, MediumLevelILInstruction]]:
+                   skip: tuple[type, ...] = ()) -> Iterator[tuple[MLILVariableSSA, MediumLevelILInstruction]]:
     """Every SSA variable node reads, as (variable, reader) in evaluation order: the reader is the
     MLILVarSSA expression, or the MLILPhi for each phi source. skip is passed to walk()."""
     for current in walk(node, skip):
@@ -94,7 +93,7 @@ def iter_ssa_reads(node: MediumLevelILInstruction,
                 yield source_var, current
 
 
-def iter_ssa_defs(function: MediumLevelILFunction) -> Iterator[Tuple[MLILVariableSSA, MediumLevelILInstruction,
+def iter_ssa_defs(function: MediumLevelILFunction) -> Iterator[tuple[MLILVariableSSA, MediumLevelILInstruction,
                                                                      MediumLevelILBasicBlock, int]]:
     """Every SSA variable a statement defines - an MLILSetVarSSA's var, an MLILPhi's dest - as (variable,
     definition, block, index in the block). A call's output is not included."""
@@ -119,15 +118,15 @@ class DominanceAnalysis:
         self.block_index = {block: i for i, block in enumerate(self.blocks)}
 
         # Predecessors among the reachable blocks only (not incoming_edges)
-        self.preds: Dict[MediumLevelILBasicBlock, List[MediumLevelILBasicBlock]] = defaultdict(list)
+        self.preds: dict[MediumLevelILBasicBlock, list[MediumLevelILBasicBlock]] = defaultdict(list)
         for block in self.blocks:
             for succ in block.outgoing_edges:
                 self.preds[succ].append(block)
 
         # Results
-        self.idom: Dict[MediumLevelILBasicBlock, Optional[MediumLevelILBasicBlock]] = {}
-        self.dom_tree: Dict[MediumLevelILBasicBlock, List[MediumLevelILBasicBlock]] = defaultdict(list)
-        self.dom_frontier: Dict[MediumLevelILBasicBlock, Set[MediumLevelILBasicBlock]] = defaultdict(set)
+        self.idom: dict[MediumLevelILBasicBlock, MediumLevelILBasicBlock | None] = {}
+        self.dom_tree: dict[MediumLevelILBasicBlock, list[MediumLevelILBasicBlock]] = defaultdict(list)
+        self.dom_frontier: dict[MediumLevelILBasicBlock, set[MediumLevelILBasicBlock]] = defaultdict(set)
 
     def analyze(self):
         """Run dominance analysis"""
@@ -205,7 +204,7 @@ class DominanceAnalysis:
                         break
 
 
-def _names_in_use(function: MediumLevelILFunction) -> Set[str]:
+def _names_in_use(function: MediumLevelILFunction) -> set[str]:
     """Every name a fresh local must not collide with: locals (registers included - a
     register's MLILVariable is created via get_or_create_local, so it lives in .locals too),
     parameters, and globals. Shared by every minted-name site in this file
@@ -228,14 +227,14 @@ class SSAConstructor:
         self.dom_analysis = DominanceAnalysis(function)
 
         # Variable tracking
-        self.var_defs: Dict[MLILVariable, Set[MediumLevelILBasicBlock]] = defaultdict(set)
-        self.var_versions: Dict[MLILVariable, int] = {}
-        self.var_stack: Dict[MLILVariable, List[int]] = defaultdict(list)
+        self.var_defs: dict[MLILVariable, set[MediumLevelILBasicBlock]] = defaultdict(set)
+        self.var_versions: dict[MLILVariable, int] = {}
+        self.var_stack: dict[MLILVariable, list[int]] = defaultdict(list)
 
         # Every local whose address is taken anywhere in the function - populated by
         # construct() before def-collection, since a deref store's conservative clobber
         # (see _collect_defs/_rename_inst) needs it
-        self.address_taken_vars: Set[MLILVariable] = set()
+        self.address_taken_vars: set[MLILVariable] = set()
 
     def construct(self) -> MediumLevelILFunction:
         """Convert function to SSA form (modifies in-place)"""
@@ -264,7 +263,7 @@ class SSAConstructor:
         self._rename_variables_iterative()
         return self.function
 
-    def _collect_address_taken_vars(self) -> Set[MLILVariable]:
+    def _collect_address_taken_vars(self) -> set[MLILVariable]:
         """Every local or parameter whose address is taken anywhere in the function.
 
         Deliberately function-wide rather than scoped to one AddressOf site, since a lowered
@@ -274,7 +273,7 @@ class SSAConstructor:
         No opcode takes the address of a register or a raised global (either would need a
         memory-form lowering of its own), so every variable collected is a local or parameter.
         """
-        address_taken: Set[MLILVariable] = set()
+        address_taken: set[MLILVariable] = set()
 
         for inst in self.function.iter_instructions():
             for node in walk(inst, skip=(MLILAddressOf,)):
@@ -394,7 +393,7 @@ class SSAConstructor:
                     for var in self._call_defined_vars(inst):
                         self.var_defs[var].add(block)
 
-    def _call_defined_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
+    def _call_defined_vars(self, inst: MediumLevelILCall) -> list[MLILVariable]:
         """Variables a call writes: its output, plus the registers/globals it clobbers.
 
         Address-taken locals need no entry here - they are lowered to explicit *(&x) memory
@@ -411,7 +410,7 @@ class SSAConstructor:
 
         return defined
 
-    def _clobbered_reg_global_vars(self, inst: MediumLevelILCall) -> List[MLILVariable]:
+    def _clobbered_reg_global_vars(self, inst: MediumLevelILCall) -> list[MLILVariable]:
         """Registers/globals a call may clobber, excluding its own output"""
         return [var for var in [*self.function.register_vars.values(), *self.function.global_vars.values()]
                 if var != inst.output and self.function.call_may_clobber(inst, var)]
@@ -419,8 +418,8 @@ class SSAConstructor:
     def _insert_phi_nodes(self):
         """Insert Phi nodes at dominance frontiers (worklist algorithm)"""
         for var, def_blocks in self.var_defs.items():
-            worklist: Deque[MediumLevelILBasicBlock] = deque(def_blocks)
-            phi_placed: Set[MediumLevelILBasicBlock] = set()
+            worklist: deque[MediumLevelILBasicBlock] = deque(def_blocks)
+            phi_placed: set[MediumLevelILBasicBlock] = set()
 
             while worklist:
                 block = worklist.popleft()
@@ -466,8 +465,8 @@ class SSAConstructor:
 
         # A block is entered once (renamed, then its versions added to its successors' phi sources)
         # and left after its dominator-tree children, popping the versions it pushed
-        stack: List[Tuple[MediumLevelILBasicBlock, bool, List[MLILVariable]]] = [(entry, False, [])]
-        visited: Set[MediumLevelILBasicBlock] = set()
+        stack: list[tuple[MediumLevelILBasicBlock, bool, list[MLILVariable]]] = [(entry, False, [])]
+        visited: set[MediumLevelILBasicBlock] = set()
 
         while stack:
             block, leaving, pushed = stack.pop()
@@ -507,7 +506,7 @@ class SSAConstructor:
             stack.append((block, True, pushed))
             stack.extend((child, False, []) for child in self.dom_analysis.dom_tree[block])
 
-    def _rename_inst(self, inst: MediumLevelILInstruction, pushed: List[MLILVariable]) -> MediumLevelILInstruction:
+    def _rename_inst(self, inst: MediumLevelILInstruction, pushed: list[MLILVariable]) -> MediumLevelILInstruction:
         """Rename variables in single instruction"""
         if isinstance(inst, MLILPhi):
             # Allocate new version for Phi dest
@@ -591,27 +590,27 @@ class SSADeconstructor:
 
     def __init__(self, function: MediumLevelILFunction):
         self.function = function
-        self.all_ssa_vars: Set[MLILVariableSSA] = set()
-        self.live_in: Dict[MediumLevelILBasicBlock, Set[MLILVariableSSA]] = {}
-        self.live_out: Dict[MediumLevelILBasicBlock, Set[MLILVariableSSA]] = {}
-        self.interference: Dict[MLILVariableSSA, Set[MLILVariableSSA]] = defaultdict(set)
-        self.var_mapping: Dict[MLILVariableSSA, MLILVariable] = {}
-        self.reg_index_by_var: Dict[MLILVariable, int] = {}
-        self.undefined_reg_versions: Set[MLILVariableSSA] = set()
+        self.all_ssa_vars: set[MLILVariableSSA] = set()
+        self.live_in: dict[MediumLevelILBasicBlock, set[MLILVariableSSA]] = {}
+        self.live_out: dict[MediumLevelILBasicBlock, set[MLILVariableSSA]] = {}
+        self.interference: dict[MLILVariableSSA, set[MLILVariableSSA]] = defaultdict(set)
+        self.var_mapping: dict[MLILVariableSSA, MLILVariable] = {}
+        self.reg_index_by_var: dict[MLILVariable, int] = {}
+        self.undefined_reg_versions: set[MLILVariableSSA] = set()
 
         # Defs whose value is a call-clobber MLILUndef placeholder (never emitted - see
         # _apply_mapping_to_inst) - excluded from _allocate_variables so they never consume a class
-        self.undef_defs: Set[MLILVariableSSA] = set()
+        self.undef_defs: set[MLILVariableSSA] = set()
 
         # dest <-> src edges from copy-shaped defs (MLILSetVarSSA(dest, MLILVarSSA(src))) - always
         # same-base-variable for phi-elimination copies, since phi sources are versions of the phi's
         # own variable. One dest can have several source partners (one copy per predecessor edge),
         # so this is many-to-many, not a single preferred partner.
-        self.copy_affinity: Dict[MLILVariableSSA, Set[MLILVariableSSA]] = defaultdict(set)
+        self.copy_affinity: dict[MLILVariableSSA, set[MLILVariableSSA]] = defaultdict(set)
 
         # Blocks added to carry a phi copy on a critical edge, dropped again if
         # the copy coalesces away
-        self.split_blocks: List[MediumLevelILBasicBlock] = []
+        self.split_blocks: list[MediumLevelILBasicBlock] = []
 
     def deconstruct(self) -> MediumLevelILFunction:
         """Convert from SSA to non-SSA (modifies in-place)"""
@@ -654,7 +653,7 @@ class SSADeconstructor:
         if not self.reg_index_by_var:
             return
 
-        defined: Set[MLILVariableSSA] = set()
+        defined: set[MLILVariableSSA] = set()
 
         for inst in self.function.iter_instructions():
             if isinstance(inst, MLILSetVarSSA):
@@ -668,7 +667,7 @@ class SSADeconstructor:
                 self.undefined_reg_versions.add(ssa_var)
 
     @classmethod
-    def _ssa_reads(cls, node: MediumLevelILInstruction) -> Set[MLILVariableSSA]:
+    def _ssa_reads(cls, node: MediumLevelILInstruction) -> set[MLILVariableSSA]:
         """SSA variables node reads (phis are already eliminated when this runs)"""
         return {var for var, _ in iter_ssa_reads(node)}
 
@@ -732,7 +731,7 @@ class SSADeconstructor:
                 else:
                     live |= self._ssa_reads(inst)
 
-    def _add_interference(self, defined_var: MLILVariableSSA, live: Set[MLILVariableSSA]):
+    def _add_interference(self, defined_var: MLILVariableSSA, live: set[MLILVariableSSA]):
         """Record interference between a defined variable and everything live at that point"""
         for live_var in live:
             if live_var != defined_var:
@@ -759,7 +758,7 @@ class SSADeconstructor:
         }
 
         # Group SSA vars by base variable
-        base_groups: Dict[str, List[MLILVariableSSA]] = defaultdict(list)
+        base_groups: dict[str, list[MLILVariableSSA]] = defaultdict(list)
         for ssa_var in allocatable_vars:
             base_groups[ssa_var.base_var.name].append(ssa_var)
 
@@ -774,7 +773,7 @@ class SSADeconstructor:
             # preferring one already holding a direct copy_affinity partner so the self-assignment
             # skip in _apply_mapping_to_inst can elide that copy. A new class is minted only when
             # nothing fits.
-            classes: List[List[MLILVariableSSA]] = [[]]
+            classes: list[list[MLILVariableSSA]] = [[]]
 
             for ssa_var in ssa_vars:
                 interferes_with = self.interference.get(ssa_var, set())
@@ -925,7 +924,7 @@ class SSADeconstructor:
 
     def _phi_copy_block(self, pred_block: MediumLevelILBasicBlock,
                         succ_block: MediumLevelILBasicBlock,
-                        split_cache: Dict) -> MediumLevelILBasicBlock:
+                        split_cache: dict) -> MediumLevelILBasicBlock:
         """Block a phi copy for the pred -> succ edge belongs in
 
         Putting it in pred_block is only correct when that edge is the only way
@@ -986,8 +985,7 @@ class SSADeconstructor:
         # Build set of parameter variables for quick lookup
         param_vars = set(self.function.parameters)
 
-        split_cache: Dict[Tuple[MediumLevelILBasicBlock, MediumLevelILBasicBlock],
-                          MediumLevelILBasicBlock] = {}
+        split_cache: dict[tuple[MediumLevelILBasicBlock, MediumLevelILBasicBlock], MediumLevelILBasicBlock] = {}
 
         for block in list(self.function.basic_blocks):
             phi_nodes = [inst for inst in block.instructions if isinstance(inst, MLILPhi)]

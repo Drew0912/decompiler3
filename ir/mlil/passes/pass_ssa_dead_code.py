@@ -3,7 +3,6 @@
 Remove SSA variable assignments that are never used
 """
 
-from typing import Dict, List, Set
 from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
@@ -20,7 +19,7 @@ from ..mlil_ssa import (
 )
 
 
-def string_debug_comment(inst: MLILSetVarSSA, sccp_replaced_vars: Set[MLILVariableSSA]) -> List[MLILDebug]:
+def string_debug_comment(inst: MLILSetVarSSA, sccp_replaced_vars: set[MLILVariableSSA]) -> list[MLILDebug]:
     """A removed assignment of a string constant, kept as a debug comment - unless SCCP replaced the variable,
     so the string already sits in its uses (a call's arguments)"""
     if isinstance(inst.value, MLILConst) and isinstance(inst.value.value, str) and inst.var not in sccp_replaced_vars:
@@ -32,8 +31,8 @@ def string_debug_comment(inst: MLILSetVarSSA, sccp_replaced_vars: Set[MLILVariab
 class SSADeadCodeEliminationPass(Pass):
     """Remove unused SSA variable assignments"""
 
-    def __init__(self, sccp_replaced_vars: Set[MLILVariableSSA] = None):
-        self.ssa_uses: Dict[MLILVariableSSA, List[MediumLevelILInstruction]] = {}
+    def __init__(self, sccp_replaced_vars: set[MLILVariableSSA] = None):
+        self.ssa_uses: dict[MLILVariableSSA, list[MediumLevelILInstruction]] = {}
         self.sccp_replaced_vars = sccp_replaced_vars or set()
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:

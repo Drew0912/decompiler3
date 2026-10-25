@@ -1,8 +1,6 @@
 """The statement printer HLIL's two text outputs share: the debug dump (hlil_formatter.py) and the TypeScript
 generator (codegen/typescript.py)"""
 
-from typing import List, Optional, Tuple
-
 from dc3 import default_indent
 from .hlil import *
 
@@ -24,20 +22,20 @@ class HLILStatementPrinter:
         raise NotImplementedError
 
     @classmethod
-    def _format_unstructured(cls, stmt: HLILUnstructured) -> List[str]:
+    def _format_unstructured(cls, stmt: HLILUnstructured) -> list[str]:
         raise NotImplementedError
 
     @classmethod
-    def _if_arms(cls, stmt: HLILIf) -> Tuple[HLILExpression, HLILBlock, Optional[HLILBlock]]:
+    def _if_arms(cls, stmt: HLILIf) -> tuple[HLILExpression, HLILBlock, HLILBlock | None]:
         """The condition and arms an if prints with"""
         return stmt.condition, stmt.true_block, stmt.false_block
 
     @classmethod
-    def _format_block(cls, block: HLILBlock, indent: int = 0) -> List[str]:
+    def _format_block(cls, block: HLILBlock, indent: int = 0) -> list[str]:
         return [line for stmt in block.statements for line in cls._format_statement(stmt, indent)]
 
     @classmethod
-    def _format_if_chain(cls, stmt: HLILIf, indent: int) -> List[str]:
+    def _format_if_chain(cls, stmt: HLILIf, indent: int) -> list[str]:
         """if / else if / else"""
         indent_str = default_indent() * indent
         condition, true_block, false_block = cls._if_arms(stmt)
@@ -64,7 +62,7 @@ class HLILStatementPrinter:
         return lines
 
     @classmethod
-    def _format_switch(cls, stmt: HLILSwitch, indent: int) -> List[str]:
+    def _format_switch(cls, stmt: HLILSwitch, indent: int) -> list[str]:
         indent_str = default_indent() * indent
         case_indent = indent_str + default_indent()
         lines = [f'{indent_str}switch ({cls._format_expr(stmt.scrutinee)}) {{']
@@ -95,7 +93,7 @@ class HLILStatementPrinter:
         return lines
 
     @classmethod
-    def _format_statement(cls, stmt: HLILStatement, indent: int = 0) -> List[str]:
+    def _format_statement(cls, stmt: HLILStatement, indent: int = 0) -> list[str]:
         indent_str = default_indent() * indent
         lines = []
 

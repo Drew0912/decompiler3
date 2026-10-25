@@ -30,7 +30,7 @@ class SourceSite(NamedTuple):
 
     code: CodeType
     lasti: int
-    trigger: 'SourceSite | None' = None
+    trigger: SourceSite | None = None
 
 
 class CompileCheckError(ValueError):

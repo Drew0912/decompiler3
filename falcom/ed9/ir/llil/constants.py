@@ -17,7 +17,7 @@ class LowLevelILConstFuncId(LowLevelILConst):
 class LowLevelILConstRetAddrBlock(LowLevelILConst):
     """Falcom VM return address constant (block-based)"""
 
-    def __init__(self, block: 'LowLevelILBasicBlock'):
+    def __init__(self, block: LowLevelILBasicBlock):
         # Store block reference as the value
         super().__init__(block)
         self.block = block

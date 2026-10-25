@@ -153,7 +153,7 @@ class ScpValue:
 
     @classmethod
     def decode_word(cls, word: int, *,
-                    fs: fileio.FileStream = None) -> tuple['ScpValue.Type', int | float | str | RawInt]:
+                    fs: fileio.FileStream = None) -> tuple[ScpValue.Type, int | float | str | RawInt]:
         """The type and value a stored word holds, without building an ScpValue; a String's text is read from fs"""
         typ = word >> cls.TYPE_SHIFT
 

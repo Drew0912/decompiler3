@@ -247,7 +247,7 @@ class ScpDisassemblyError(ScpFunctionError):
 class ScpDisassemblerContext(DisassemblerContext):
     """ED9/SCP disassembler context: the simulated stack and the state recorded for every edge"""
 
-    current_func     : 'Function | None' = None     # Function being disassembled
+    current_func     : Function | None = None     # Function being disassembled
     code_end         : int | None = None            # Where the next function's code starts (None: last function)
     known_code_end   : int | None = None            # Where the code ends, when known: nothing may run or jump past it
     reject_outside_stack : bool = False             # fail on a slot outside the live stack, a read past it
@@ -594,7 +594,7 @@ class ScpParser(StrictBase):
         round_trip: bool,
         keep_unreachable_code: bool,
         filter_func: Callable[[Function], bool] | None = None,
-    ) -> tuple['ScpParser', list[Function]]:
+    ) -> tuple[ScpParser, list[Function]]:
         """Read path, parse, and disassemble every function - the setup every caller (scena2py.py,
         the common-function generator, the round-trip validator, tests) otherwise repeats by hand.
         The parser stays fully usable afterward (get_instructions, get_func_name_from_func_id, etc.
@@ -614,7 +614,7 @@ class ScpParser(StrictBase):
         quiet: bool = False,
         reject_outside_stack: bool = False,
         known_code_end: int | None = None,
-    ) -> tuple['ScpParser', list[Function]]:
+    ) -> tuple[ScpParser, list[Function]]:
         """load() for a script already in memory, named name; quiet drops the per-function progress and error lines
         and the unusual-slot and backward-return warnings, for a caller that reports them itself (the compile check).
         reject_outside_stack and known_code_end are the compile check's (see the class attributes)."""

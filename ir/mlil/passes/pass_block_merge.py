@@ -1,7 +1,5 @@
 """Block merge pass - splice single-predecessor goto targets into the block that jumps to them"""
 
-from typing import Optional, Set
-
 from ir.pipeline import Pass
 from ..mlil import MediumLevelILFunction, MediumLevelILBasicBlock, MLILGoto
 
@@ -23,7 +21,7 @@ class BlockMergePass(Pass):
             return func
 
         entry = func.basic_blocks[0]
-        absorbed: Set[MediumLevelILBasicBlock] = set()
+        absorbed: set[MediumLevelILBasicBlock] = set()
 
         for head in func.basic_blocks:
             if head in absorbed:
@@ -45,7 +43,7 @@ class BlockMergePass(Pass):
         return func
 
     def _mergeable_target(self, head: MediumLevelILBasicBlock,
-                          entry: MediumLevelILBasicBlock) -> Optional[MediumLevelILBasicBlock]:
+                          entry: MediumLevelILBasicBlock) -> MediumLevelILBasicBlock | None:
         if not head.instructions:
             return None
 

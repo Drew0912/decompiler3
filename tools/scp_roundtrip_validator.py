@@ -125,7 +125,7 @@ class CheckResult:
     details : list[str] = field(default_factory=list)
 
     @classmethod
-    def build(cls, name: str, summary: str, failures: list[str], warnings: list[str] | None = None) -> 'CheckResult':
+    def build(cls, name: str, summary: str, failures: list[str], warnings: list[str] | None = None) -> CheckResult:
         warnings = warnings or []
 
         if failures:
@@ -709,7 +709,7 @@ class LogicSnapshot:
     dword_14: int
 
     @classmethod
-    def of(cls, parser: ScpParser, functions: list[Function]) -> 'LogicSnapshot':
+    def of(cls, parser: ScpParser, functions: list[Function]) -> LogicSnapshot:
         fingerprints = {func.name: (function_fingerprint(parser, func), func.is_common_func) for func in functions}
         globals_table = [(g.name, int(g.type)) for g in parser.global_vars]
         return cls(fingerprints, globals_table, parser.header.dword_14)

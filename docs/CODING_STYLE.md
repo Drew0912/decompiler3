@@ -29,6 +29,14 @@ open, plus the project's own rules. `CLAUDE.md` imports this file; `AGENTS.md` t
 - **Comments name the constant, not its value:** `(offset // WORD_SIZE)`, not `(offset // 4)`.
 - **Imports at module top level.** Two exceptions: a proven circular import inside a function, with a comment
   saying so; imports used only in type hints, under `if TYPE_CHECKING:`.
+- **Annotations** use the builtins and `|`: `list[int]`, `dict[str, Node]`, `tuple[int, ...]`, `Node | None`,
+  `int | str`, not `typing`'s `List`, `Dict`, `Tuple`, `Optional`, `Union`; type aliases too
+  (`SlotValues = dict[int, MediumLevelILInstruction | None]`). `typing` keeps what has no builtin (`Any`,
+  `Callable`, `Iterator`, `Sequence`, `NamedTuple`, `TYPE_CHECKING`).
+- **No quotes in annotations:** Python 3.14 evaluates them lazily, so a class defined further down needs none.
+  The exception: an annotation naming a `TYPE_CHECKING`-only import is one whole string (`'ScpParser | None'`,
+  `'list[Instruction]'`), since `inspect.signature` and `annotationlib` evaluate annotations and the name does not
+  exist at run time. No `from __future__ import annotations`.
 - **`=` as in PEP 8:** spaces around an assignment's `=` and an annotated default's (`x: int = 5`,
   `def f(x: int = 0)`); none around a keyword argument's or an unannotated default's (`f(key=value)`,
   `def f(arg=0)`).

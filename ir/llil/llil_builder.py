@@ -1,7 +1,7 @@
 """LLIL Builder"""
 
 from dataclasses import dataclass
-from typing import Union, Optional, List, NamedTuple, Tuple
+from typing import NamedTuple
 
 from ir.core import IRParameter
 from .llil import *
@@ -11,7 +11,7 @@ class _VirtualStack:
     """Encapsulates the builder's virtual stack with save/restore support"""
 
     def __init__(self):
-        self._items: List[LowLevelILExpr] = []
+        self._items: list[LowLevelILExpr] = []
 
     def push(self, expr: LowLevelILExpr):
         self._items.append(expr)
@@ -26,7 +26,7 @@ class _VirtualStack:
             raise RuntimeError('Vstack empty: cannot peek')
         return self._items[offset]
 
-    def peek_many(self, count: int) -> List[LowLevelILExpr]:
+    def peek_many(self, count: int) -> list[LowLevelILExpr]:
         """Peek last count items (LIFO order)"""
         if len(self._items) < count:
             raise RuntimeError(f'Vstack has only {len(self._items)} items, cannot peek {count}')
@@ -37,7 +37,7 @@ class _VirtualStack:
     def size(self) -> int:
         return len(self._items)
 
-    def index_of_slot(self, slot_index: int) -> Optional[int]:
+    def index_of_slot(self, slot_index: int) -> int | None:
         """List index of the entry tracking slot_index, or None if that slot is not tracked. The entries track
         consecutive slots ending at sp - 1 (push appends at sp, pops and _discard_vstack_to remove from the top), so
         the index is the slot's distance from the bottom entry's"""
@@ -54,10 +54,10 @@ class _VirtualStack:
 
         return index
 
-    def snapshot(self) -> List[LowLevelILExpr]:
+    def snapshot(self) -> list[LowLevelILExpr]:
         return list(self._items)
 
-    def restore(self, snapshot: List[LowLevelILExpr]):
+    def restore(self, snapshot: list[LowLevelILExpr]):
         self._items = list(snapshot)
 
 
@@ -66,13 +66,13 @@ class StackShape(NamedTuple):
     different values into one slot (SSA merges them), but must agree on the stack layout"""
 
     sp: int
-    slots: Tuple[int, ...]
+    slots: tuple[int, ...]
 
 
 @dataclass
 class StackSnapshot:
     sp: int
-    values: List[LowLevelILExpr]
+    values: list[LowLevelILExpr]
 
     def shape(self) -> StackShape:
         return StackShape(self.sp, tuple(value.slot_index for value in self.values))
@@ -83,11 +83,11 @@ class LowLevelILBuilder:
 
     PARAMETER_COPY_HINT = 'work on a copy instead'
 
-    def __init__(self, function: Optional[LowLevelILFunction] = None):
+    def __init__(self, function: LowLevelILFunction | None = None):
         self.function = function
-        self.current_block: Optional[LowLevelILBasicBlock] = None
+        self.current_block: LowLevelILBasicBlock | None = None
         self.__current_sp: int = 0  # Track current stack pointer state (for block sp_in) - PRIVATE
-        self.frame_base_sp: Optional[int] = None  # Stack pointer at function entry (for frame-relative access)
+        self.frame_base_sp: int | None = None  # Stack pointer at function entry (for frame-relative access)
         self.__vstack = _VirtualStack()  # Virtual stack for expression tracking
         self.saved_stacks: dict[int, StackSnapshot] = {}  # block start -> the state every edge into it must match
         self.__current_address: int = 0  # Current source instruction address
@@ -96,7 +96,7 @@ class LowLevelILBuilder:
 
     # === Function and Block Creation ===
 
-    def create_function(self, name: str, start_addr: int, params: List[IRParameter] = None):
+    def create_function(self, name: str, start_addr: int, params: list[IRParameter] = None):
         self.function = LowLevelILFunction(name, start_addr, params)
         self._seed_entry_state()
 
@@ -154,7 +154,7 @@ class LowLevelILBuilder:
         """Peek at top of vstack without popping (returns LowLevelILExpr)"""
         return self.__vstack.peek(offset)
 
-    def vstack_peek_many(self, count: int) -> List[LowLevelILExpr]:
+    def vstack_peek_many(self, count: int) -> list[LowLevelILExpr]:
         """Peek at multiple items from vstack in LIFO order"""
         self._require_tracked(count)
         return self.__vstack.peek_many(count)
@@ -163,7 +163,7 @@ class LowLevelILBuilder:
         """Get current vstack size"""
         return self.__vstack.size()
 
-    def vstack_entry_at_slot(self, slot_index: int) -> Optional[LowLevelILExpr]:
+    def vstack_entry_at_slot(self, slot_index: int) -> LowLevelILExpr | None:
         """The vstack entry tracking slot_index, or None if that slot is not on the vstack"""
         index = self.__vstack.index_of_slot(slot_index)
         return None if index is None else self.__vstack.peek(index)
@@ -204,11 +204,11 @@ class LowLevelILBuilder:
                 f'incoming {incoming}, expected {expected}'
             )
 
-    def get_block_by_addr(self, addr: int) -> Optional[LowLevelILBasicBlock]:
+    def get_block_by_addr(self, addr: int) -> LowLevelILBasicBlock | None:
         """Get block by start address"""
         return self.function.get_block_by_addr(addr)
 
-    def get_block_by_label(self, label: str) -> Optional[LowLevelILBasicBlock]:
+    def get_block_by_label(self, label: str) -> LowLevelILBasicBlock | None:
         """Get block by label name"""
         return self.function.get_block_by_label(label)
 
@@ -225,7 +225,7 @@ class LowLevelILBuilder:
 
     # === Virtual Stack Management ===
 
-    def _to_expr(self, value: Union[LowLevelILExpr, int, float, str]) -> LowLevelILExpr:
+    def _to_expr(self, value: LowLevelILExpr | int | float | str) -> LowLevelILExpr:
         """Convert value to expression (always returns LowLevelILExpr)"""
         if isinstance(value, LowLevelILExpr):
             return value
@@ -238,7 +238,7 @@ class LowLevelILBuilder:
         else:
             raise TypeError(f'Cannot convert {type(value)} to expression')
 
-    def push(self, value: Union[LowLevelILExpr, int, float, str], *,
+    def push(self, value: LowLevelILExpr | int | float | str, *,
              hidden_for_formatter: bool = False) -> LowLevelILExpr:
         """Push value onto stack: StackStore + SpAdd (see docs/llil/LLIL_DESIGN.md)"""
         expr = self._to_expr(value)
@@ -259,11 +259,11 @@ class LowLevelILBuilder:
 
     # === Stack and Frame Operations ===
 
-    def frame_load(self, offset: int) -> 'LowLevelILFrameLoad':
+    def frame_load(self, offset: int) -> LowLevelILFrameLoad:
         """STACK[frame + offset] - Frame-relative load (for function parameters)"""
         return LowLevelILFrameLoad(offset)
 
-    def frame_store(self, value: Union[LowLevelILExpr, int, str], offset: int):
+    def frame_store(self, value: LowLevelILExpr | int | str, offset: int):
         """STACK[frame + offset] = value - Frame-relative store (for function parameters)"""
         expr = self._to_expr(value)
         self.add_instruction(LowLevelILFrameStore(expr, offset))
@@ -273,7 +273,7 @@ class LowLevelILBuilder:
         frame_val = self.frame_load(offset)
         self.push(frame_val)
 
-    def frame_addr(self, offset: int) -> 'LowLevelILFrameAddr':
+    def frame_addr(self, offset: int) -> LowLevelILFrameAddr:
         """&STACK[frame + offset] - Frame-relative address (for function parameters)"""
         return LowLevelILFrameAddr(offset)
 
@@ -292,7 +292,7 @@ class LowLevelILBuilder:
         is in the highest slot"""
         return self.function.num_params - (slot_index - self.frame_base_sp)
 
-    def _describe_untracked_parameters(self, count: int) -> Optional[str]:
+    def _describe_untracked_parameters(self, count: int) -> str | None:
         """The parameter slots among the top count slots, described ('the slot of parameter 1 (arg1)'), when the vstack
         runs short of count only by them; None when it holds count entries or a missing slot isn't a parameter's"""
         sp = self.sp_get()
@@ -383,7 +383,7 @@ class LowLevelILBuilder:
 
     # === Register Operations ===
 
-    def reg_store(self, reg_index: int, value: Union[LowLevelILExpr, int]):
+    def reg_store(self, reg_index: int, value: LowLevelILExpr | int):
         """R[index] = value (store expression to register)"""
         expr = self._to_expr(value)
         self.add_instruction(LowLevelILRegStore(reg_index, expr))
@@ -533,7 +533,7 @@ class LowLevelILBuilder:
 
     # === Control Flow ===
 
-    def _resolve_block(self, target: Union[str, LowLevelILBasicBlock]) -> LowLevelILBasicBlock:
+    def _resolve_block(self, target: str | LowLevelILBasicBlock) -> LowLevelILBasicBlock:
         """A jump target given as a block or a label name; an undefined label raises"""
         if not isinstance(target, str):
             return target
@@ -544,7 +544,7 @@ class LowLevelILBuilder:
 
         return block
 
-    def jmp(self, target: Union[str, LowLevelILBasicBlock]):
+    def jmp(self, target: str | LowLevelILBasicBlock):
         """Unconditional jump - target can be label or block"""
         target = self._resolve_block(target)
         jmp_inst = LowLevelILJmp(target)
@@ -552,8 +552,8 @@ class LowLevelILBuilder:
         self._record_edge_state(target)
 
     def branch_if(self, condition: LowLevelILInstruction,
-                  true_target: Union[str, LowLevelILBasicBlock],
-                  false_target: Union[str, LowLevelILBasicBlock]):
+                  true_target: str | LowLevelILBasicBlock,
+                  false_target: str | LowLevelILBasicBlock):
         """Conditional branch - targets can be labels or blocks"""
         true_target = self._resolve_block(true_target)
         false_target = self._resolve_block(false_target)
@@ -564,7 +564,7 @@ class LowLevelILBuilder:
 
     def call(self, target: str,
              return_target: LowLevelILBasicBlock,
-             args: List[LowLevelILExpr] = None) -> LowLevelILCall:
+             args: list[LowLevelILExpr] = None) -> LowLevelILCall:
         """Function call (terminal instruction). Records no edge: the return edge's stack state is known only
         after the callee's cleanup, so the caller records it."""
         call_inst = LowLevelILCall(target, return_target, args)

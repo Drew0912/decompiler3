@@ -91,7 +91,7 @@ def string_offsets(data: bytes, positions: Iterable[int]) -> list[int]:
     return [offset for offset in offsets if offset is not None]
 
 
-def collect_string_refs(data: bytes, parser: ScpParser, records: list[list[ScpFunctionCallDebugInfo]]) -> StringRefs:
+def collect_string_refs(data: bytes, parser: 'ScpParser', records: list[list[ScpFunctionCallDebugInfo]]) -> StringRefs:
     """Every string reference of a parsed and disassembled file (data = its bytes), records = each function's raw debug
     records in table order. Code strings come in file order and include unreachable code when the parser decoded it
     (keep_unreachable_code); a debug record string that is also a code string is pooled once, with the code."""

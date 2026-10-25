@@ -2,7 +2,6 @@
 """Unit tests for HLIL control-flow optimization."""
 
 from pathlib import Path
-from typing import Optional
 import sys
 import unittest
 
@@ -314,7 +313,7 @@ def make_less_than() -> HLILBinaryOp:
     return HLILBinaryOp(BinaryOp.LT, HLILVar(HLILVariable('a')), HLILVar(HLILVariable('b')))
 
 
-def arm_calls(block: Optional[HLILBlock]) -> list:
+def arm_calls(block: HLILBlock | None) -> list:
     """The functions an arm calls, in order; an absent arm calls none"""
     return [stmt.expr.func_name for stmt in block.statements] if block else []
 

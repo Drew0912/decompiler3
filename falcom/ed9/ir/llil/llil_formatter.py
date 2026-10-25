@@ -1,7 +1,5 @@
 """Falcom LLIL Formatter - shows the pops the VM builder hides and a bytecode float's bits"""
 
-from typing import List, Optional
-
 from ir.core import Constant, SourceFloat
 from ir.llil import *
 from falcom.ed9.structs.scp_types import ScpValue
@@ -10,21 +8,21 @@ from .llil_ext import *
 
 class FalcomLLILFormatter(LLILFormatter):
     @classmethod
-    def _format_global_store_expanded(cls, global_store: 'LowLevelILGlobalStore') -> List[str]:
+    def _format_global_store_expanded(cls, global_store: LowLevelILGlobalStore) -> list[str]:
         """Format global store with expanded pseudo-code"""
         return [
             f'GLOBAL[{global_store.index}] = STACK[--sp] ; {global_store.value}',
         ]
 
     @classmethod
-    def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> Optional[List[str]]:
+    def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> list[str] | None:
         if isinstance(inst, LowLevelILGlobalStore):
             return cls._format_global_store_expanded(inst)
 
         return super().format_instruction_expanded(inst)
 
     @classmethod
-    def _format_simplified(cls, inst: LowLevelILInstruction) -> List[str]:
+    def _format_simplified(cls, inst: LowLevelILInstruction) -> list[str]:
         """SET_REG, POP_JMP_*, POP_TO and POP_TO_DEREF hide their pop (hidden_for_formatter): their line shows it"""
         # SET_REG
         if isinstance(inst, LowLevelILRegStore):

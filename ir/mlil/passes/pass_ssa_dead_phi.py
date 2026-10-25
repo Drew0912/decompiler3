@@ -4,7 +4,6 @@ Eliminate dead Phi nodes and their source definitions.
 A Phi node is "dead" if its result is never used except by other dead Phi nodes.
 """
 
-from typing import Dict, List, Set
 from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
@@ -22,8 +21,8 @@ from .pass_ssa_dead_code import string_debug_comment
 class DeadPhiSourceEliminationPass(Pass):
     """Eliminate dead Phi nodes and definitions feeding them"""
 
-    def __init__(self, sccp_replaced_vars: Set[MLILVariableSSA] = None):
-        self.ssa_uses: Dict[MLILVariableSSA, List[MediumLevelILInstruction]] = {}
+    def __init__(self, sccp_replaced_vars: set[MLILVariableSSA] = None):
+        self.ssa_uses: dict[MLILVariableSSA, list[MediumLevelILInstruction]] = {}
         self.sccp_replaced_vars = sccp_replaced_vars or set()
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
@@ -43,7 +42,7 @@ class DeadPhiSourceEliminationPass(Pass):
     def _eliminate_dead_phis(self, func: MediumLevelILFunction):
         """Eliminate dead Phi nodes and definitions feeding them"""
         # Find all Phi nodes with no real use
-        dead_phis: Set[MLILPhi] = set()
+        dead_phis: set[MLILPhi] = set()
         for inst in func.iter_instructions():
             if isinstance(inst, MLILPhi):
                 if not self._has_real_use(inst.dest):
@@ -53,7 +52,7 @@ class DeadPhiSourceEliminationPass(Pass):
             return
 
         # Find definitions that only feed dead Phis
-        dead_defs: Set[MLILVariableSSA] = set()
+        dead_defs: set[MLILVariableSSA] = set()
         for var, uses in self.ssa_uses.items():
             if not uses:
                 continue

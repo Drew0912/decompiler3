@@ -1,6 +1,5 @@
 """Falcom MLIL to HLIL Converter"""
 
-from typing import Optional
 from ir.mlil.mlil import MediumLevelILFunction
 from ir.hlil import HighLevelILFunction
 from ir.pipeline import Pipeline
@@ -17,7 +16,7 @@ from .hlil_passes import FalcomTypeInferencePass
 from ...parser.parser_types import Function
 
 
-def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Optional[Function] = None,
+def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Function | None = None,
                                  normalize_branch_order: bool = True,
                                  line_markers: bool = True) -> HighLevelILFunction:
     """Convert MLIL function to HLIL with Falcom-specific type information

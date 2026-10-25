@@ -1,7 +1,7 @@
 """TypeScript Code Generator - HLIL to production TypeScript"""
 
 import math
-from typing import Iterator, List, Optional, Tuple
+from typing import Iterator
 
 from dc3 import default_indent, quote_string
 from ir.core import constant_values_equal, is_int_zero
@@ -23,7 +23,7 @@ TYPESCRIPT_TYPES = {
 class TypeScriptGenerator(HLILStatementPrinter):
     CASE_BLOCKS = True
 
-    _current_func: 'HighLevelILFunction' = None
+    _current_func: HighLevelILFunction = None
     _callee_defaults: dict[str, tuple] = {}  # local callee name -> each parameter's default (None: none)
     _written_argc: dict[int, int] = {}       # local CALL offset -> args its debug record keeps (round trip)
 
@@ -278,7 +278,7 @@ class TypeScriptGenerator(HLILStatementPrinter):
         return text
 
     @classmethod
-    def generate_function(cls, func: HighLevelILFunction) -> List[str]:
+    def generate_function(cls, func: HighLevelILFunction) -> list[str]:
         cls._current_func = func
         lines = []
 
@@ -299,7 +299,7 @@ class TypeScriptGenerator(HLILStatementPrinter):
         return lines
 
     @classmethod
-    def _if_arms(cls, stmt: HLILIf) -> Tuple[HLILExpression, HLILBlock, Optional[HLILBlock]]:
+    def _if_arms(cls, stmt: HLILIf) -> tuple[HLILExpression, HLILBlock, HLILBlock | None]:
         """Arm order is decided in HLIL (BranchOrderNormalizationPass), so that this output and the HLIL dump agree -
         only an empty then-arm is still worth rewriting here, negated as the HLIL passes negate"""
         true_empty = not stmt.true_block or not stmt.true_block.statements
@@ -309,7 +309,7 @@ class TypeScriptGenerator(HLILStatementPrinter):
         return stmt.condition, stmt.true_block, stmt.false_block
 
     @classmethod
-    def _format_unstructured(cls, stmt: HLILUnstructured) -> List[str]:
+    def _format_unstructured(cls, stmt: HLILUnstructured) -> list[str]:
         # A jump HLIL could not express: say so, and end this path instead of falling through
         return [f'// {stmt}', f'throw new Error("unstructured: {stmt.target}");']
 

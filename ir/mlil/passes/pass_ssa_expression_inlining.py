@@ -4,7 +4,6 @@ Inline expressions that are only used once.
 Pattern: x#n = expr; ... use(x#n) -> ... use(expr)
 """
 
-from typing import Dict, List, Optional, Tuple
 from ir.pipeline import Pass
 from ..mlil import (
     map_operands,
@@ -34,10 +33,10 @@ class ExpressionInliningPass(Pass):
     """Inline single-use expressions"""
 
     def __init__(self):
-        self.ssa_defs: Dict[MLILVariableSSA, MLILSetVarSSA] = {}
-        self.def_positions: Dict[MLILVariableSSA, Tuple[MediumLevelILBasicBlock, int]] = {}
-        self.ssa_uses: Dict[MLILVariableSSA, List[MediumLevelILInstruction]] = {}
-        self.use_positions: Dict[MLILVariableSSA, List[Tuple[MediumLevelILBasicBlock, int]]] = {}
+        self.ssa_defs: dict[MLILVariableSSA, MLILSetVarSSA] = {}
+        self.def_positions: dict[MLILVariableSSA, tuple[MediumLevelILBasicBlock, int]] = {}
+        self.ssa_uses: dict[MLILVariableSSA, list[MediumLevelILInstruction]] = {}
+        self.use_positions: dict[MLILVariableSSA, list[tuple[MediumLevelILBasicBlock, int]]] = {}
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         """Inline single-use expressions"""
@@ -72,7 +71,7 @@ class ExpressionInliningPass(Pass):
 
     def _inline_once(self, func: MediumLevelILFunction) -> bool:
         """Single inlining pass"""
-        inlinable: Dict[MLILVariableSSA, MediumLevelILInstruction] = {}
+        inlinable: dict[MLILVariableSSA, MediumLevelILInstruction] = {}
 
         for ssa_var, defn in self.ssa_defs.items():
             if not isinstance(defn, MLILSetVarSSA):
@@ -145,7 +144,7 @@ class ExpressionInliningPass(Pass):
 
         return changed
 
-    def _impure_read_storages(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction) -> Optional[List]:
+    def _impure_read_storages(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction) -> list | None:
         """The register/global base variables expr reads, one entry per read in evaluation order;
         [] if it reads no mutable storage. `reg0 + global3` gives two: a hazard on either one alone
         makes forwarding the expression unsafe, so each needs its own reachability check.
@@ -167,8 +166,8 @@ class ExpressionInliningPass(Pass):
 
         return storages
 
-    def _is_immediate_use(self, def_pos: Tuple[MediumLevelILBasicBlock, int],
-                          use_pos: Tuple[MediumLevelILBasicBlock, int],
+    def _is_immediate_use(self, def_pos: tuple[MediumLevelILBasicBlock, int],
+                          use_pos: tuple[MediumLevelILBasicBlock, int],
                           use: MediumLevelILInstruction) -> bool:
         """Check if use immediately follows definition in the same block"""
         def_block, def_idx = def_pos
@@ -180,7 +179,7 @@ class ExpressionInliningPass(Pass):
         return any(node is use for node in walk(def_block.instructions[def_idx + 1]))
 
     def _inline_in_expr(self, expr: MediumLevelILInstruction,
-                        inlinable: Dict[MLILVariableSSA, MediumLevelILInstruction]) -> MediumLevelILInstruction:
+                        inlinable: dict[MLILVariableSSA, MediumLevelILInstruction]) -> MediumLevelILInstruction:
         """Inline single-use expressions"""
         if isinstance(expr, MLILVarSSA):
             return inlinable.get(expr.var, expr)

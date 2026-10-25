@@ -34,7 +34,7 @@ class TrackedValue:
     type        : ScpFunctionCallDebugInfoArg.Type
     payload     : ScpValue | None = None            # a constant's value
     string      : Any = None                        # the writer's pooled string of a String constant
-    calls       : tuple['TrackedCall', ...] = ()    # the outermost calls nested in this value, in evaluation order
+    calls       : tuple[TrackedCall, ...] = ()    # the outermost calls nested in this value, in evaluation order
 
 
 @dataclass(eq=False, slots=True)
@@ -46,8 +46,8 @@ class TrackedCall:
     ret_label   : Any                               # PUSH_RET_ADDR operand of a local CALL
     args        : list[TrackedValue]                # top of stack first (parameter order)
     recorded    : bool                              # has a debug record: made after line info, no debug_record=False
-    children    : list['TrackedCall'] = field(default_factory=list)  # the calls nested in its args, parameter order
-    parent      : 'TrackedCall | None' = None
+    children    : list[TrackedCall] = field(default_factory=list)  # the calls nested in its args, parameter order
+    parent      : TrackedCall | None = None
     debug_argc  : int | None = None                 # the writer's CALL(f, debug_argc=N): args its record keeps
 
 
@@ -186,7 +186,7 @@ class CallDebugInfoTracker:
 
     @classmethod
     def from_instructions(cls, instructions: list[Instruction], get_param_count: Callable[[Any], int],
-                          call_offsets: dict[TrackedCall, int] | None = None) -> 'CallDebugInfoTracker':
+                          call_offsets: dict[TrackedCall, int] | None = None) -> CallDebugInfoTracker:
         """A tracker fed decoded instructions in address order; call_offsets, when given, gets each call's instruction
         offset (the parser's pairing needs none)"""
         tracker = cls(get_param_count)
@@ -275,7 +275,7 @@ def canonical_argc(args: list[TrackedValue], defaults: list[ScpValue | None]) ->
     return count
 
 
-def read_debug_records(parser: ScpParser, data: bytes) -> list[list[ScpFunctionCallDebugInfo]]:
+def read_debug_records(parser: 'ScpParser', data: bytes) -> list[list[ScpFunctionCallDebugInfo]]:
     """Each function's raw records in table order, read from the file's bytes (without a round-trip parse)"""
     fs = fileio.FileStream().OpenMemory(data)
     return [parser.read_debug_info(fs, entry) for entry in parser.function_entries]

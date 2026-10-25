@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from itertools import pairwise
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, TextIO, Tuple, Union
+from typing import Any, Callable, TextIO
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -90,7 +90,7 @@ STATUS_SYMBOLS = {
 }
 
 
-ProvenanceKey = Tuple[str, int]  # (layer name, instruction index in that layer)
+ProvenanceKey = tuple[str, int]  # (layer name, instruction index in that layer)
 
 
 @dataclass
@@ -101,7 +101,7 @@ class SourceLocation:
     llil_index: int = UNASSIGNED_INST_INDEX
     mlil_index: int = UNASSIGNED_INST_INDEX
 
-    def provenance_keys(self) -> List[ProvenanceKey]:
+    def provenance_keys(self) -> list[ProvenanceKey]:
         """Instruction indices this location names, tagged by layer so indices of different layers never match"""
         keys = []
         if self.llil_index >= 0:
@@ -138,12 +138,12 @@ class SemanticOperation:
 
     kind: OperationKind
     operator: str           # Specific operator (ADD, SUB, EQ, etc.)
-    operands: List[SemanticOperand] = field(default_factory=list)
-    result: Optional[SemanticOperand] = None
+    operands: list[SemanticOperand] = field(default_factory=list)
+    result: SemanticOperand | None = None
     source_location: SourceLocation = field(default_factory=SourceLocation)
 
     @property
-    def provenance_keys(self) -> List[ProvenanceKey]:
+    def provenance_keys(self) -> list[ProvenanceKey]:
         return self.source_location.provenance_keys()
 
     def __str__(self) -> str:
@@ -159,8 +159,8 @@ class ComparisonResult:
     status: ComparisonStatus
     source_layer: IRLayer
     target_layer: IRLayer
-    source_op: Optional[SemanticOperation] = None
-    target_op: Optional[SemanticOperation] = None
+    source_op: SemanticOperation | None = None
+    target_op: SemanticOperation | None = None
     explanation: str = ""
     source_location: SourceLocation = field(default_factory=SourceLocation)
 
@@ -205,7 +205,7 @@ class MatchStatistics:
             + self.soft_signal
         )
 
-    def status_percentages(self) -> Dict[str, float]:
+    def status_percentages(self) -> dict[str, float]:
         total = self.total_classified
         if total == 0:
             return {s.name: 0.0 for s in ComparisonStatus}
@@ -217,7 +217,7 @@ class MatchStatistics:
             ComparisonStatus.INLINED.name: 100.0 * self.inlined / total,
         }
 
-    def accumulate(self, other: 'MatchStatistics') -> None:
+    def accumulate(self, other: MatchStatistics) -> None:
         """Add another MatchStatistics into this one"""
         self.total_source_blocks += other.total_source_blocks
         self.matched_blocks += other.matched_blocks
@@ -241,7 +241,7 @@ class BlockComparisonResult:
     similarity: float
     source_offset: int = 0
     target_offset: int = 0
-    results: List[ComparisonResult] = field(default_factory=list)
+    results: list[ComparisonResult] = field(default_factory=list)
 
 
 @dataclass
@@ -251,12 +251,12 @@ class ComparisonReport:
     source_layer: IRLayer
     target_layer: IRLayer
     function_name: str = ""
-    block_results: List[BlockComparisonResult] = field(default_factory=list)
-    unmatched_source_blocks: List[int] = field(default_factory=list)
-    unmatched_target_blocks: List[int] = field(default_factory=list)
-    hard_fail_violations: List[ComparisonResult] = field(default_factory=list)
-    soft_signal_warnings: List[ComparisonResult] = field(default_factory=list)
-    quality_metrics: Dict[str, Union[int, float, Dict[str, int]]] = field(default_factory=dict)
+    block_results: list[BlockComparisonResult] = field(default_factory=list)
+    unmatched_source_blocks: list[int] = field(default_factory=list)
+    unmatched_target_blocks: list[int] = field(default_factory=list)
+    hard_fail_violations: list[ComparisonResult] = field(default_factory=list)
+    soft_signal_warnings: list[ComparisonResult] = field(default_factory=list)
+    quality_metrics: dict[str, int | float | dict[str, int]] = field(default_factory=dict)
     statistics: MatchStatistics = field(default_factory=MatchStatistics)
     passed: bool = True
 
@@ -267,8 +267,8 @@ class SemanticAtom:
 
     kind: OperationKind
     operator: str
-    operands: List[SemanticOperand] = field(default_factory=list)
-    provenance_keys: List[ProvenanceKey] = field(default_factory=list)
+    operands: list[SemanticOperand] = field(default_factory=list)
+    provenance_keys: list[ProvenanceKey] = field(default_factory=list)
     fingerprint: str = ""
     critical: bool = False
 
@@ -282,7 +282,7 @@ class EffectEvent:
     family: str = ""
     target_key: str = ""
     source_location: SourceLocation = field(default_factory=SourceLocation)
-    provenance_keys: List[ProvenanceKey] = field(default_factory=list)
+    provenance_keys: list[ProvenanceKey] = field(default_factory=list)
 
 
 @dataclass
@@ -290,8 +290,8 @@ class FunctionReport:
     """Report for all layer comparisons of a single function"""
 
     function_name: str
-    llil_mlil: Optional[ComparisonReport] = None
-    mlil_hlil: Optional[ComparisonReport] = None
+    llil_mlil: ComparisonReport | None = None
+    mlil_hlil: ComparisonReport | None = None
 
 
 # =============================================================================
@@ -307,7 +307,7 @@ class IRPipeline:
         self.scp_path = scp_path
         self.parser = None
         self.fs = None
-        self.functions: List[Tuple[str, LowLevelILFunction, MediumLevelILFunction, HighLevelILFunction]] = []
+        self.functions: list[tuple[str, LowLevelILFunction, MediumLevelILFunction, HighLevelILFunction]] = []
         self.hlil_failed: set[str] = set()     # functions compared LLIL -> MLIL only
 
     def load(self) -> bool:
@@ -327,7 +327,7 @@ class IRPipeline:
             self.fs.Close()
             self.fs = None
 
-    def generate_ir(self, function_name: Optional[str] = None) -> bool:
+    def generate_ir(self, function_name: str | None = None) -> bool:
         if self.parser is None:
             return False
 
@@ -380,7 +380,7 @@ def report_unknown_operations() -> None:
         print(f"Unknown HLIL operations: {sorted(_unknown_hlil_ops)}", file=sys.stderr)
 
 
-def _kinds_by_name(groups: Dict[OperationKind, str]) -> Dict[str, OperationKind]:
+def _kinds_by_name(groups: dict[OperationKind, str]) -> dict[str, OperationKind]:
     """Operation name, its layer prefix dropped -> kind, from kind -> the names, space-separated"""
     return {name: kind for kind, names in groups.items() for name in names.split()}
 
@@ -452,7 +452,7 @@ def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
     )
 
 
-def normalize_llil_operations(instr: LowLevelILInstruction) -> List[SemanticOperation]:
+def normalize_llil_operations(instr: LowLevelILInstruction) -> list[SemanticOperation]:
     """instr's normalized operations: its own and, after a tail call, the return of the callee's result - MLIL
     translates a tail call as `return module.func(args)` (falcom/ed9/ir/mlil/mlil_translator.py)"""
     operations = [normalize_llil_operation(instr)]
@@ -470,7 +470,7 @@ def _expr_or_const_operand(value: Any, instruction_type: type) -> SemanticOperan
     return SemanticOperand(kind='const', value=value)
 
 
-def _extract_llil_operands(instr: LowLevelILInstruction) -> List[SemanticOperand]:
+def _extract_llil_operands(instr: LowLevelILInstruction) -> list[SemanticOperand]:
     """Extract operands from LLIL instruction"""
     operands = []
 
@@ -500,7 +500,7 @@ def _extract_llil_operands(instr: LowLevelILInstruction) -> List[SemanticOperand
 
 def normalize_mlil_operation(
     instr: MediumLevelILInstruction,
-    register_names: Optional[Dict[str, int]] = None,
+    register_names: dict[str, int] | None = None,
 ) -> SemanticOperation:
     """Convert MLIL instruction to normalized SemanticOperation
 
@@ -546,7 +546,7 @@ def normalize_mlil_operation(
     )
 
 
-def _extract_mlil_operands(instr: MediumLevelILInstruction) -> List[SemanticOperand]:
+def _extract_mlil_operands(instr: MediumLevelILInstruction) -> list[SemanticOperand]:
     """Extract operands from MLIL instruction"""
     operands = []
 
@@ -679,7 +679,7 @@ def _hlil_var_operand(var: Any) -> SemanticOperand:
     return SemanticOperand(kind='var', value=var.name)
 
 
-def _extract_hlil_operands(instr: HLILInstruction) -> List[SemanticOperand]:
+def _extract_hlil_operands(instr: HLILInstruction) -> list[SemanticOperand]:
     """Extract operands from HLIL instruction"""
     operands = []
 
@@ -714,7 +714,7 @@ def _extract_hlil_operands(instr: HLILInstruction) -> List[SemanticOperand]:
     return operands
 
 
-def _get_binary_op_kind(op: Optional[BinaryOp]) -> OperationKind:
+def _get_binary_op_kind(op: BinaryOp | None) -> OperationKind:
     """Map HLIL BinaryOp to OperationKind"""
     if op is None:
         return OperationKind.UNKNOWN
@@ -731,7 +731,7 @@ def _get_binary_op_kind(op: Optional[BinaryOp]) -> OperationKind:
     return OperationKind.UNKNOWN
 
 
-def _get_unary_op_kind(op: Optional[UnaryOp]) -> OperationKind:
+def _get_unary_op_kind(op: UnaryOp | None) -> OperationKind:
     """Map HLIL UnaryOp to OperationKind"""
     if op is None:
         return OperationKind.UNKNOWN
@@ -756,9 +756,9 @@ class CFGNode:
 
     id: int
     address: int = 0
-    operations: List[SemanticOperation] = field(default_factory=list)
-    successors: List[int] = field(default_factory=list)
-    predecessors: List[int] = field(default_factory=list)
+    operations: list[SemanticOperation] = field(default_factory=list)
+    successors: list[int] = field(default_factory=list)
+    predecessors: list[int] = field(default_factory=list)
     is_entry: bool = False
     is_exit: bool = False
 
@@ -767,7 +767,7 @@ class CFG:
     """Control Flow Graph representation"""
 
     def __init__(self) -> None:
-        self.nodes: Dict[int, CFGNode] = {}
+        self.nodes: dict[int, CFGNode] = {}
 
     def add_node(self, node: CFGNode) -> None:
         self.nodes[node.id] = node
@@ -779,7 +779,7 @@ class CFG:
             if from_id not in self.nodes[to_id].predecessors:
                 self.nodes[to_id].predecessors.append(from_id)
 
-    def get_node(self, node_id: int) -> Optional[CFGNode]:
+    def get_node(self, node_id: int) -> CFGNode | None:
         return self.nodes.get(node_id)
 
 
@@ -792,9 +792,9 @@ LLIL_STACK_OPERATIONS = (
 
 
 def _cfg_from_blocks(
-    basic_blocks: List[Any],
-    normalize: Callable[[Any], List[SemanticOperation]],
-    skipped_operations: Tuple[Any, ...] = (),
+    basic_blocks: list[Any],
+    normalize: Callable[[Any], list[SemanticOperation]],
+    skipped_operations: tuple[Any, ...] = (),
 ) -> CFG:
     """One node per basic block holding its normalized operations but the NOPs, the first block the entry. No edges
     on purpose: edges on one layer alone make block matching worse, so all three CFG builders get them together
@@ -820,7 +820,7 @@ def build_cfg_from_mlil(mlil_func: MediumLevelILFunction) -> CFG:
     return _cfg_from_blocks(mlil_func.basic_blocks, lambda instr: [normalize_mlil_operation(instr, register_names)])
 
 
-def _collect_call_expressions(node: Any, found: List[Any]) -> None:
+def _collect_call_expressions(node: Any, found: list[Any]) -> None:
     """Collect call expressions inside an expression, in evaluation order"""
     for child in expr_children(node):
         _collect_call_expressions(child, found)
@@ -829,7 +829,7 @@ def _collect_call_expressions(node: Any, found: List[Any]) -> None:
         found.append(node)
 
 
-def _statement_expressions(instr: HLILInstruction) -> List[Any]:
+def _statement_expressions(instr: HLILInstruction) -> list[Any]:
     """Expressions a statement evaluates, in evaluation order"""
     if hasattr(instr, 'condition'):
         return [instr.condition]
@@ -860,7 +860,7 @@ def _is_global_call_assignment(instr: HLILInstruction) -> bool:
     )
 
 
-def _statement_own_call(instr: HLILInstruction) -> Optional[Any]:
+def _statement_own_call(instr: HLILInstruction) -> Any | None:
     """Call expression the statement's own normalized operation already stands for"""
     if _is_global_call_assignment(instr):
         return None
@@ -874,7 +874,7 @@ def _statement_own_call(instr: HLILInstruction) -> Optional[Any]:
     return None
 
 
-def _folded_call_operations(instr: HLILInstruction) -> List[SemanticOperation]:
+def _folded_call_operations(instr: HLILInstruction) -> list[SemanticOperation]:
     """CALL operations for calls folded into a statement's expressions
 
     HLIL folds a call result into the instruction that reads it, so calls appear
@@ -882,7 +882,7 @@ def _folded_call_operations(instr: HLILInstruction) -> List[SemanticOperation]:
     before the statement that reads them.
     """
     own_call = _statement_own_call(instr)
-    found: List[Any] = []
+    found: list[Any] = []
 
     for expression in _statement_expressions(instr):
         _collect_call_expressions(expression, found)
@@ -900,7 +900,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
     """Construct CFG from HLILFunction (flatten structured control flow)"""
     cfg = CFG()
 
-    def extract_statements(body) -> List[Any]:
+    def extract_statements(body) -> list[Any]:
         """Extract statement list from HLIL body"""
         if body is None:
             return []
@@ -910,16 +910,16 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
             return list(body.statements)
         return [body]
 
-    def flatten_statements(stmts: List[HLILStatement], block_id: int) -> Tuple[int, List[int]]:
+    def flatten_statements(stmts: list[HLILStatement], block_id: int) -> tuple[int, list[int]]:
         """Flatten HLIL statements into CFG blocks, return (next_id, exit_ids)"""
         if not stmts:
             return block_id, []
 
-        current_ops: List[SemanticOperation] = []
+        current_ops: list[SemanticOperation] = []
         current_id = block_id
-        exits: List[int] = []
+        exits: list[int] = []
 
-        def save_current_block() -> Optional[int]:
+        def save_current_block() -> int | None:
             """The operations gathered so far as a block of their own: its id, or None when there are none"""
             nonlocal current_ops, current_id
             if not current_ops:
@@ -1025,7 +1025,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
 
                     # Body runs before the condition is first tested
                     body_start = current_id
-                    body_exits: List[int] = []
+                    body_exits: list[int] = []
                     body_stmts = extract_statements(stmt.body)
                     if body_stmts:
                         body_id, body_exits = flatten_statements(body_stmts, current_id)
@@ -1174,7 +1174,7 @@ class SimilarityMatrix:
     """Store pairwise block similarities"""
 
     def __init__(self, rows: int, cols: int):
-        self.matrix: List[List[float]] = [
+        self.matrix: list[list[float]] = [
             [0.0] * cols for _ in range(rows)
         ]
         self.rows = rows
@@ -1268,9 +1268,9 @@ def propagate_similarity(
     return matrix
 
 
-def greedy_block_matching(matrix: SimilarityMatrix) -> List[Tuple[int, int]]:
+def greedy_block_matching(matrix: SimilarityMatrix) -> list[tuple[int, int]]:
     """Each source block in turn takes its most similar unused target block, if the similarity is above 0.3"""
-    matches: List[Tuple[int, int]] = []
+    matches: list[tuple[int, int]] = []
     used_cols: set = set()
 
     for i in range(matrix.rows):
@@ -1296,9 +1296,9 @@ class CFGMatcher:
     def __init__(self, source_cfg: CFG, target_cfg: CFG):
         self.source_cfg = source_cfg
         self.target_cfg = target_cfg
-        self.matches: List[Tuple[int, int]] = []
+        self.matches: list[tuple[int, int]] = []
 
-    def match(self) -> List[Tuple[int, int]]:
+    def match(self) -> list[tuple[int, int]]:
         """Find optimal block matching between CFGs.
 
         Pass 1: match blocks by SCP address (exact, O(N)).
@@ -1312,7 +1312,7 @@ class CFGMatcher:
         matched_tgt: set = set()
 
         # Pass 1: address-based matching
-        src_by_addr: Dict[int, int] = {}
+        src_by_addr: dict[int, int] = {}
         for nid, node in self.source_cfg.nodes.items():
             if node.address != 0:
                 src_by_addr[node.address] = nid
@@ -1359,10 +1359,10 @@ GAP_PENALTY = -0.5     # align_operations: the score of an operation left unpair
 
 
 def align_operations(
-    source_ops: List[SemanticOperation], target_ops: List[SemanticOperation]
-) -> List[Tuple[Optional[SemanticOperation], Optional[SemanticOperation]]]:
+    source_ops: list[SemanticOperation], target_ops: list[SemanticOperation]
+) -> list[tuple[SemanticOperation | None, SemanticOperation | None]]:
     """Align operations within matched blocks using Needleman-Wunsch"""
-    aligned: List[Tuple[Optional[SemanticOperation], Optional[SemanticOperation]]] = []
+    aligned: list[tuple[SemanticOperation | None, SemanticOperation | None]] = []
 
     if not source_ops and not target_ops:
         return aligned
@@ -1460,7 +1460,7 @@ class TransformationRule:
 
 
 # LLIL to MLIL expected transformations
-LLIL_MLIL_TRANSFORMATIONS: List[TransformationRule] = [
+LLIL_MLIL_TRANSFORMATIONS: list[TransformationRule] = [
     TransformationRule('STACK_LOAD', 'VAR'),
     TransformationRule('STACK_STORE', 'SET_VAR'),
     TransformationRule('FRAME_LOAD', 'VAR'),
@@ -1475,7 +1475,7 @@ LLIL_MLIL_TRANSFORMATIONS: List[TransformationRule] = [
 ]
 
 # MLIL to HLIL expected transformations
-MLIL_HLIL_TRANSFORMATIONS: List[TransformationRule] = [
+MLIL_HLIL_TRANSFORMATIONS: list[TransformationRule] = [
     TransformationRule('IF', 'IF'),
     TransformationRule('GOTO', 'WHILE'),
     TransformationRule('SET_VAR', 'ASSIGN'),
@@ -1488,7 +1488,7 @@ MLIL_HLIL_TRANSFORMATIONS: List[TransformationRule] = [
 ]
 
 
-def is_expected_transformation(source_op: str, target_op: str, transformations: List[TransformationRule]) -> bool:
+def is_expected_transformation(source_op: str, target_op: str, transformations: list[TransformationRule]) -> bool:
     """Is source_op -> target_op one of the transformations expected between the two layers"""
     return any(rule.source_pattern == source_op and rule.target_pattern == target_op for rule in transformations)
 
@@ -1496,7 +1496,7 @@ def is_expected_transformation(source_op: str, target_op: str, transformations: 
 def classify_difference(
     source_op: SemanticOperation,
     target_op: SemanticOperation,
-    layer_transforms: List[TransformationRule]
+    layer_transforms: list[TransformationRule]
 ) -> ComparisonStatus:
     """Classify difference as EQUIVALENT, TRANSFORMED, or DIFFERENT"""
     if compare_expression_trees(source_op, target_op):
@@ -1560,12 +1560,12 @@ def semantic_operation_to_atom(op: SemanticOperation) -> SemanticAtom:
     )
 
 
-def extract_semantic_atoms(ops: List[SemanticOperation]) -> List[SemanticAtom]:
+def extract_semantic_atoms(ops: list[SemanticOperation]) -> list[SemanticAtom]:
     return [semantic_operation_to_atom(op) for op in ops]
 
 
-def _build_provenance_index(atoms: List[SemanticAtom]) -> Dict[ProvenanceKey, List[int]]:
-    provenance_index: Dict[ProvenanceKey, List[int]] = {}
+def _build_provenance_index(atoms: list[SemanticAtom]) -> dict[ProvenanceKey, list[int]]:
+    provenance_index: dict[ProvenanceKey, list[int]] = {}
     for atom_idx, atom in enumerate(atoms):
         for provenance in atom.provenance_keys:
             provenance_index.setdefault(provenance, []).append(atom_idx)
@@ -1588,7 +1588,7 @@ def _normalized_operator_family(operator: str) -> str:
     return operator
 
 
-def _has_provenance_overlap(left: List[ProvenanceKey], right: List[ProvenanceKey]) -> bool:
+def _has_provenance_overlap(left: list[ProvenanceKey], right: list[ProvenanceKey]) -> bool:
     return bool(set(left).intersection(right))
 
 
@@ -1615,17 +1615,17 @@ def _atom_match_score(source_atom: SemanticAtom, target_atom: SemanticAtom) -> i
 
 
 def _match_atoms_provenance_first(
-    source_atoms: List[SemanticAtom],
-    target_atoms: List[SemanticAtom],
-) -> Tuple[List[Tuple[int, int]], int, int]:
+    source_atoms: list[SemanticAtom],
+    target_atoms: list[SemanticAtom],
+) -> tuple[list[tuple[int, int]], int, int]:
     """Match source/target atoms by provenance first, then fingerprint fallback"""
-    matches: List[Tuple[int, int]] = []
+    matches: list[tuple[int, int]] = []
     used_target_indices: set[int] = set()
     provenance_matches = 0
     fallback_matches = 0
 
     target_by_provenance = _build_provenance_index(target_atoms)
-    target_by_fingerprint: Dict[str, List[int]] = {}
+    target_by_fingerprint: dict[str, list[int]] = {}
     for target_idx, atom in enumerate(target_atoms):
         target_by_fingerprint.setdefault(atom.fingerprint, []).append(target_idx)
 
@@ -1668,7 +1668,7 @@ def _match_atoms_provenance_first(
     return matches, provenance_matches, fallback_matches
 
 
-def _normalize_operand_key(operand: Optional[SemanticOperand]) -> str:
+def _normalize_operand_key(operand: SemanticOperand | None) -> str:
     if operand is None:
         return UNKNOWN_TARGET_KEY
     if operand.kind in ('var', 'reg', 'global', 'const'):
@@ -1699,7 +1699,7 @@ def _build_effect_event(op: SemanticOperation, category: str, family: str, targe
     )
 
 
-def semantic_op_to_effect_event(op: SemanticOperation) -> Optional[EffectEvent]:
+def semantic_op_to_effect_event(op: SemanticOperation) -> EffectEvent | None:
     if op.kind == OperationKind.CALL:
         target_key = _normalize_operand_key(op.operands[0] if op.operands else None)
         return _build_effect_event(op, EFFECT_CATEGORY_CALL, CALL_FAMILY, target_key)
@@ -1724,8 +1724,8 @@ def semantic_op_to_effect_event(op: SemanticOperation) -> Optional[EffectEvent]:
     return None
 
 
-def build_effect_event_sequence(ops: List[SemanticOperation]) -> List[EffectEvent]:
-    events: List[EffectEvent] = []
+def build_effect_event_sequence(ops: list[SemanticOperation]) -> list[EffectEvent]:
+    events: list[EffectEvent] = []
     for op in ops:
         event = semantic_op_to_effect_event(op)
         if event is not None:
@@ -1734,14 +1734,14 @@ def build_effect_event_sequence(ops: List[SemanticOperation]) -> List[EffectEven
 
 
 def _best_first_matches(
-    sources: List[Any],
-    targets: List[Any],
+    sources: list[Any],
+    targets: list[Any],
     score_of: Callable[[Any, Any], int],
     minimum_score: int,
-) -> List[Tuple[int, int]]:
+) -> list[tuple[int, int]]:
     """(source index, target index) pairs scoring at least minimum_score, taken greedily: best score first, then
     nearest indices; each index used once"""
-    candidates: List[Tuple[int, int, int]] = []
+    candidates: list[tuple[int, int, int]] = []
     for source_index, source in enumerate(sources):
         for target_index, target in enumerate(targets):
             score = score_of(source, target)
@@ -1749,7 +1749,7 @@ def _best_first_matches(
                 candidates.append((score, source_index, target_index))
 
     candidates.sort(key=lambda item: (-item[0], abs(item[1] - item[2])))
-    matches: List[Tuple[int, int]] = []
+    matches: list[tuple[int, int]] = []
     used_source_indices: set[int] = set()
     used_target_indices: set[int] = set()
 
@@ -1791,9 +1791,9 @@ def _effect_match_score(source_event: EffectEvent, target_event: EffectEvent) ->
 
 
 def _match_effect_events(
-    source_events: List[EffectEvent],
-    target_events: List[EffectEvent],
-) -> Tuple[List[Tuple[int, int]], List[int], List[int]]:
+    source_events: list[EffectEvent],
+    target_events: list[EffectEvent],
+) -> tuple[list[tuple[int, int]], list[int], list[int]]:
     matches = _best_first_matches(source_events, target_events, _effect_match_score, MIN_EFFECT_MATCH_SCORE)
     matched_sources = {source_index for source_index, _ in matches}
     matched_targets = {target_index for _, target_index in matches}
@@ -1878,8 +1878,8 @@ def _build_hard_fail(
     target_layer: IRLayer,
     explanation: str,
     source_location: SourceLocation,
-    source_op: Optional[SemanticOperation] = None,
-    target_op: Optional[SemanticOperation] = None,
+    source_op: SemanticOperation | None = None,
+    target_op: SemanticOperation | None = None,
 ) -> ComparisonResult:
     return ComparisonResult(
         status=ComparisonStatus.DIFFERENT,
@@ -1893,12 +1893,12 @@ def _build_hard_fail(
 
 
 def validate_hard_fail_semantics(
-    source_ops: List[SemanticOperation],
-    target_ops: List[SemanticOperation],
+    source_ops: list[SemanticOperation],
+    target_ops: list[SemanticOperation],
     source_layer: IRLayer,
     target_layer: IRLayer,
-) -> List[ComparisonResult]:
-    violations: List[ComparisonResult] = []
+) -> list[ComparisonResult]:
+    violations: list[ComparisonResult] = []
 
     source_events = build_effect_event_sequence(source_ops)
     target_events = build_effect_event_sequence(target_ops)
@@ -1975,10 +1975,10 @@ def _extract_hard_fail_category(explanation: str) -> str:
 
 
 def _compute_quality_metrics(
-    source_ops: List[SemanticOperation],
-    target_ops: List[SemanticOperation],
-    hard_fail_violations: List[ComparisonResult],
-) -> Dict[str, Union[int, float, Dict[str, int]]]:
+    source_ops: list[SemanticOperation],
+    target_ops: list[SemanticOperation],
+    hard_fail_violations: list[ComparisonResult],
+) -> dict[str, int | float | dict[str, int]]:
     source_atoms = extract_semantic_atoms(source_ops)
     target_atoms = extract_semantic_atoms(target_ops)
     critical_source_atoms = [atom for atom in source_atoms if atom.critical]
@@ -2000,7 +2000,7 @@ def _compute_quality_metrics(
     )
     unmatched_critical = len(critical_source_atoms) - matched_critical
 
-    hard_fail_counts: Dict[str, int] = {}
+    hard_fail_counts: dict[str, int] = {}
     for violation in hard_fail_violations:
         key = _extract_hard_fail_category(violation.explanation)
         hard_fail_counts[key] = hard_fail_counts.get(key, 0) + 1
@@ -2032,10 +2032,10 @@ class IRLayerComparator:
         target_cfg: CFG,
         source_layer: IRLayer,
         target_layer: IRLayer,
-        transform_rules: List[TransformationRule],
+        transform_rules: list[TransformationRule],
         min_provenance_coverage: float = 0.0,
         max_unmatched_critical: int = -1,
-        target_hard_fails: Optional[List[ComparisonResult]] = None,
+        target_hard_fails: list[ComparisonResult] | None = None,
     ):
         self.source_cfg = source_cfg
         self.target_cfg = target_cfg
@@ -2052,8 +2052,8 @@ class IRLayerComparator:
         self,
         status: ComparisonStatus,
         explanation: str,
-        source_op: Optional[SemanticOperation] = None,
-        target_op: Optional[SemanticOperation] = None,
+        source_op: SemanticOperation | None = None,
+        target_op: SemanticOperation | None = None,
     ) -> ComparisonResult:
         """A result for this layer pair, located at its source operation, else at its target operation"""
         located = source_op or target_op
@@ -2180,8 +2180,8 @@ class IRLayerComparator:
                 report.block_results.append(block_result)
 
         # Hard-fail and quality checks over every operation
-        all_source_ops: List[SemanticOperation] = []
-        all_target_ops: List[SemanticOperation] = []
+        all_source_ops: list[SemanticOperation] = []
+        all_target_ops: list[SemanticOperation] = []
         for node in self.source_cfg.nodes.values():
             all_source_ops.extend(node.operations)
         for node in self.target_cfg.nodes.values():
@@ -2250,7 +2250,7 @@ def compare_llil_mlil(
     return report
 
 
-def _unstructured_jump_failures(hlil_func: HighLevelILFunction) -> List[ComparisonResult]:
+def _unstructured_jump_failures(hlil_func: HighLevelILFunction) -> list[ComparisonResult]:
     """A HARD_FAIL for every jump HLIL could not express on a path that can run"""
     return [
         _build_hard_fail(
@@ -2348,7 +2348,7 @@ class Formatter:
 
     def comparison_report(self, report: ComparisonReport) -> str:
         """Format a comparison report as block-centric text output"""
-        lines: List[str] = []
+        lines: list[str] = []
 
         src_name = report.source_layer.name
         tgt_name = report.target_layer.name
@@ -2422,7 +2422,7 @@ class Formatter:
 
     def match_statistics(self, stats: MatchStatistics) -> str:
         """Format match statistics block"""
-        lines: List[str] = []
+        lines: list[str] = []
 
         lines.append("Match Statistics:")
         lines.append(
@@ -2447,7 +2447,7 @@ class Formatter:
 
         return "\n".join(lines)
 
-    def layer_summary(self, label: str, reports: List[ComparisonReport]) -> str:
+    def layer_summary(self, label: str, reports: list[ComparisonReport]) -> str:
         """Format aggregate summary for a list of comparison reports (one layer pair)"""
         aggregate = MatchStatistics()
         for r in reports:
@@ -2456,14 +2456,14 @@ class Formatter:
         passed = sum(1 for r in reports if r.passed)
         total = len(reports)
 
-        lines: List[str] = []
+        lines: list[str] = []
         lines.append(f"{label}: {passed}/{total} passed")
         lines.append(self.match_statistics(aggregate))
         return "\n".join(lines)
 
     def func_report(self, fr: FunctionReport) -> str:
         """Format a single function's batch result"""
-        lines: List[str] = []
+        lines: list[str] = []
         lines.append(f"  {self.cyan}{fr.function_name}{self.reset}")
 
         for label, report in (("LLIL->MLIL", fr.llil_mlil), ("MLIL->HLIL", fr.mlil_hlil)):
@@ -2480,7 +2480,7 @@ class Formatter:
         return "\n".join(lines)
 
     @classmethod
-    def report_to_json(cls, report: ComparisonReport) -> Dict[str, Any]:
+    def report_to_json(cls, report: ComparisonReport) -> dict[str, Any]:
         """Convert ComparisonReport to JSON-serializable dict"""
         s = report.statistics
         return {
@@ -2537,9 +2537,9 @@ class Formatter:
         }
 
     @classmethod
-    def function_report_to_json(cls, fr: FunctionReport) -> Dict[str, Any]:
+    def function_report_to_json(cls, fr: FunctionReport) -> dict[str, Any]:
         """Convert FunctionReport to JSON-serializable dict"""
-        result: Dict[str, Any] = {"function": fr.function_name}
+        result: dict[str, Any] = {"function": fr.function_name}
 
         if fr.llil_mlil:
             result["llil_mlil"] = cls.report_to_json(fr.llil_mlil)
@@ -2581,7 +2581,7 @@ class Validator:
         layer1 = layer1.lower()
         layer2 = layer2.lower()
 
-        all_reports: List[ComparisonReport] = []
+        all_reports: list[ComparisonReport] = []
         total = len(self.pipeline.functions)
         label = f"{layer1.upper()}->{layer2.upper()}"
 
@@ -2623,7 +2623,7 @@ class Validator:
             self._print(f"{self.fmt.cyan}=== Batch Validation: {self.pipeline.scp_path} ==={self.fmt.reset}")
             self._print(f"Functions: {total}\n")
 
-        all_func_reports: List[FunctionReport] = []
+        all_func_reports: list[FunctionReport] = []
 
         for idx, (func_name, llil, mlil, hlil) in enumerate(self.pipeline.functions, 1):
             self.progress.update(idx, total, f"Comparing {func_name}")
@@ -2756,7 +2756,7 @@ def compare_baseline(pipeline: IRPipeline, baseline_file: str) -> int:
         print(f"Error loading baseline: {e}", file=sys.stderr)
         return 1
 
-    current_results: Dict[str, Dict] = {}
+    current_results: dict[str, dict] = {}
     for func_name, llil, mlil, hlil in pipeline.functions:
         func_report = compare_function(pipeline, func_name, llil, mlil, hlil)
         current_results[func_name] = Formatter.function_report_to_json(func_report)
@@ -2766,7 +2766,7 @@ def compare_baseline(pipeline: IRPipeline, baseline_file: str) -> int:
     regressions = []
     improvements = []
 
-    def extract_gate_count(result: Dict[str, Any], layer_key: str) -> int:
+    def extract_gate_count(result: dict[str, Any], layer_key: str) -> int:
         layer = result.get(layer_key, {})
         stats = layer.get("statistics", {})
         status_counts = stats.get("status_counts", {})

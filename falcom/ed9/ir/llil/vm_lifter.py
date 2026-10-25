@@ -1,7 +1,6 @@
 """ED9 VM bytecode → Falcom LLIL lifter"""
 
 import math
-from typing import Dict
 
 from ir.llil.llil import *
 from ir.core import IRParameter, reverse_post_order, SourceFloat
@@ -114,7 +113,7 @@ class ED9VMLifter:
         builder: FalcomVMBuilder,
         inst: Instruction,
         block: BasicBlock,
-        llil_blocks: Dict[int, LowLevelILBasicBlock],
+        llil_blocks: dict[int, LowLevelILBasicBlock],
     ) -> None:
         match inst.opcode:
             case ED9Opcode.PUSH_INT:

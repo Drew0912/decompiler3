@@ -1,7 +1,5 @@
 """MLIL Formatter - Format MLIL for display"""
 
-from typing import List
-
 from ir.core import CFGDotFormatter
 from .mlil import *
 
@@ -14,7 +12,7 @@ class MLILFormatter(CFGDotFormatter):
     DOT_RETURN = MLILRet
 
     @classmethod
-    def format_function(cls, func: MediumLevelILFunction) -> List[str]:
+    def format_function(cls, func: MediumLevelILFunction) -> list[str]:
         result = [
             f'; ===== MLIL Function {func.name} @ 0x{func.start_addr:X} =====',
             f'; Parameters: {len([p for p in func.parameters if p])}, Locals: {len(func.locals)}',
@@ -57,7 +55,7 @@ class MLILFormatter(CFGDotFormatter):
         return result
 
     @classmethod
-    def format_block(cls, block: MediumLevelILBasicBlock) -> List[str]:
+    def format_block(cls, block: MediumLevelILBasicBlock) -> list[str]:
         result = [f'{block.label}:']
 
         for inst in block.instructions:
@@ -81,5 +79,5 @@ class MLILFormatter(CFGDotFormatter):
         return f'{block.label} @ 0x{block.start:X}'
 
     @classmethod
-    def _dot_lines(cls, block: MediumLevelILBasicBlock) -> List[str]:
+    def _dot_lines(cls, block: MediumLevelILBasicBlock) -> list[str]:
         return [cls.format_instruction(inst) for inst in block.instructions]
