@@ -423,7 +423,7 @@ HLIL_WITHOUT_OPERANDS = {'BREAK', 'CONTINUE', 'UNSTRUCTURED', 'BLOCK', 'COMMENT'
 
 
 def normalize_llil_operation(instr: LowLevelILInstruction) -> SemanticOperation:
-    """Convert LLIL instruction to normalized SemanticOperation. A tail call's is its script call:
+    """Convert LLIL instruction to normalized SemanticOperation. A tail call normalizes as its script call:
     normalize_llil_operations adds the return that follows it"""
     name = instr.operation.name.removeprefix('LLIL_')
     if instr.operation == LowLevelILFalcomOperation.LLIL_CALL_SCRIPT_NO_RETURN:

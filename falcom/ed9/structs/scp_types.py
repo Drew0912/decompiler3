@@ -50,10 +50,10 @@ class ScpParamFlags:
         self.flags = 0
 
         if typ is not None:
-            if typ not in self.FLAGS_BY_TYPE:
-                raise NotImplementedError(f'unsupported type: {typ}')
-
-            self.flags = self.FLAGS_BY_TYPE[typ]
+            try:
+                self.flags = self.FLAGS_BY_TYPE[typ]
+            except (KeyError, TypeError):   # TypeError: an unhashable annotation, e.g. [Value32]
+                raise NotImplementedError(f'unsupported type: {typ}') from None
 
         self.from_stream(fs)
 
