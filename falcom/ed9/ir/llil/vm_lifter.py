@@ -19,7 +19,7 @@ class ED9LiftError(ScpFunctionError):
 
 
 class ED9VMLifter:
-    """Lift ED9 VM bytecode (disassembled) into Falcom LLIL."""
+    """Lift ED9 VM bytecode (disassembled) into Falcom LLIL"""
 
     # Which builder operation each binary opcode lifts to (the opcode table says which opcodes are binary)
     BINARY_BUILDER_METHODS = {

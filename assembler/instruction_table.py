@@ -231,7 +231,7 @@ class InstructionDescriptor:
     def format_instruction(self, inst: Instruction, context: Any) -> str:
         """Format instruction for display"""
         ops = self.format_operands(inst.operands, context)
-        return f'{self.mnemonic}({", ".join(ops)})'
+        return f'{self.mnemonic}({', '.join(ops)})'
 
 
 class InstructionTable(ABC):

@@ -91,7 +91,7 @@ class SSAOptimizer:
         if isinstance(value, MediumLevelILBasicBlock):
             # Identity only - walking a target block's own attributes would inline its entire
             # instruction list into every jump/phi that names it, and blocks form cycles
-            # through loop back-edges.
+            # through loop back-edges
             return (MediumLevelILBasicBlock, value.index)
 
         if isinstance(value, float):

@@ -78,7 +78,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
 
         A tail call still delivers the callee's result to our own caller, so this MLIL shape
         satisfies the "every block ends in a terminal" invariant and reuses the existing
-        call/return path instead of needing a dedicated terminal call node.
+        call/return path instead of needing a dedicated terminal call node
         """
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
@@ -99,7 +99,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         No output, and clobbers_registers=False: a debug print has no VM register/global
         side effects at all, so it must not clobber reg0 (or anything else) either - it
         leaves every register alone (verified in the sample scripts, where no GET_REG ever
-        follows a DEBUG_LOG).
+        follows a DEBUG_LOG)
         """
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
         self.builder.call(DEBUG_LOG_CALL_TARGET, mlil_args, clobbers_registers=False)

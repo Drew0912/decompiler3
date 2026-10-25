@@ -136,7 +136,7 @@ class ControlFlowOptimizationPass(Pass):
     def _try_inline_condition(self, assign_stmt: HLILStatement, next_stmt: HLILStatement) -> Optional[HLILIf]:
         """
         Try to inline: var = bool_expr; if (var != 0) {...} -> if (bool_expr) {...}
-        Returns new HLILIf if successful, None otherwise.
+        Returns new HLILIf if successful, None otherwise
         """
         if not (isinstance(assign_stmt, HLILAssign) and isinstance(assign_stmt.dest, HLILVar)
                 and is_boolean_expr(assign_stmt.src)):
@@ -240,7 +240,7 @@ class ControlFlowOptimizationPass(Pass):
 
         # Expressions cannot contain a break/return/continue (those are statements) or kill
         # anything themselves, so killed is fixed across the whole subtree - walked with the
-        # shared iter_tree, so a new expression node type can't drift from the other walkers.
+        # shared iter_tree, so a new expression node type can't drift from the other walkers
         if isinstance(node, HLILExpression):
             return (not killed and self._reads_var(var, node), killed, ())
 
@@ -326,7 +326,7 @@ class ControlFlowOptimizationPass(Pass):
                     has_default = True
                 elif case.values:
                     # Case labels are expressions too (an OR-grouped chain of them, in
-                    # general) - a read here is as real as one in the case body.
+                    # general) - a read here is as real as one in the case body
                     for value in case.values:
                         value_reads, _, _ = self._can_read_original_value(var, value, killed)
                         if value_reads:
@@ -350,7 +350,7 @@ class ControlFlowOptimizationPass(Pass):
 
             # With no default, a scrutinee value matching none of the cases takes an
             # implicit path where nothing in the switch runs, reaching the code after it
-            # with var untouched, no matter what the explicit cases do.
+            # with var untouched, no matter what the explicit cases do
             if not has_default:
                 reaching_after.append(killed)
 
@@ -514,7 +514,7 @@ class ControlFlowOptimizationPass(Pass):
                 return
 
             # Self-referential (x = x): a textual match against an earlier x = x does not mean
-            # the same value was ever produced twice.
+            # the same value was ever produced twice
             if source_expr.var == outer_var:
                 return
         elif not isinstance(source_expr, HLILConst):
@@ -590,7 +590,7 @@ class ControlFlowOptimizationPass(Pass):
         """Values a test accepts, for `x == k` or any || chain of those
 
         The scrutinee must be a plain variable: a folded call would be evaluated
-        once by the switch but once per test by the chain it replaces.
+        once by the switch but once per test by the chain it replaces
         """
         if not isinstance(cond, HLILBinaryOp):
             return None
@@ -617,7 +617,7 @@ class ControlFlowOptimizationPass(Pass):
         """One link of a dispatch chain as (scrutinee, values, case body, continuation)
 
         should_invert_condition can pick either orientation per link, so a chain may
-        alternate between them; both are read here so one walk spans the whole chain.
+        alternate between them; both are read here so one walk spans the whole chain
         """
         cond = if_stmt.condition
 

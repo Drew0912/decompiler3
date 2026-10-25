@@ -92,7 +92,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def _consume_setup(self, setup: PendingCallSetup, call_slots: int):
         """After the call is emitted: the callee pops the setup and args, and the return edge continues
-        from that state - without the consumed setup."""
+        from that state - without the consumed setup"""
         self._cleanup_stack(call_slots)
         self._pending_setups.pop()
         self._record_edge_state(setup.return_block)
@@ -188,7 +188,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def _resolve_deref_param_ptr(self, slot_index: int, opcode_name: str):
         """The pointer a dereference goes through - only a caller-supplied one, in a parameter the function still
-        holds: a pointer in any other slot may point into this function's own frame."""
+        holds: a pointer in any other slot may point into this function's own frame"""
         if not self._holds_parameter(slot_index):
             raise NotImplementedError(
                 f'{opcode_name} requires a slot still holding a caller parameter, got slot {slot_index}'

@@ -288,7 +288,7 @@ class SSAConstructor:
         address-taken local, redirect it through a temp + MLILSetVar so the one general
         address-taken rewrite (_lower_address_taken_vars) handles it below, instead of leaving
         a second, unrewritten path back to the SSA-identity/storage-identity conflation this
-        class's memory-form lowering exists to close."""
+        class's memory-form lowering exists to close"""
         for block in self.function.basic_blocks:
             new_instructions = []
 
@@ -307,7 +307,7 @@ class SSAConstructor:
 
     def _mint_local(self, candidate: str) -> MLILVariable:
         """A fresh local guaranteed not to collide with any existing local/parameter/global
-        name, and actually registered on the function - not just proven collision-free."""
+        name, and actually registered on the function - not just proven collision-free"""
         names_in_use = _names_in_use(self.function)
 
         name = candidate
@@ -322,7 +322,7 @@ class SSAConstructor:
         """Rewrite every read/write of an address-taken local/parameter to explicit *(&x)
         memory form, so it renames to one stable address identity in
         _rename_variables_iterative instead of being versioned like an ordinary scalar value -
-        see _collect_address_taken_vars's docstring for why."""
+        see _collect_address_taken_vars's docstring for why"""
         if not self.address_taken_vars:
             return
 
@@ -647,7 +647,7 @@ class SSADeconstructor:
 
         A register read whose value comes from the caller, or from a callee that
         clobbered it, degrades to the literal REGS[n] form rather than becoming a
-        local variable that is used before it is assigned.
+        local variable that is used before it is assigned
         """
         self.reg_index_by_var = {var: index for index, var in self.function.register_vars.items()}
 
@@ -752,7 +752,7 @@ class SSADeconstructor:
         names into function.locals.
         """
         # Not just live vars - a defined-but-unused version still needs an interference-checked
-        # name here (see docstring above), so this only drops undef placeholders and globals.
+        # name here (see docstring above), so this only drops undef placeholders and globals
         allocatable_vars = {
             v for v in self.all_ssa_vars
             if v not in self.undef_defs and not self.function.is_global_var(v.base_var)
@@ -1008,7 +1008,7 @@ class SSADeconstructor:
                     # Skip version 0 only for a plain local (an undefined initial value) - a
                     # parameter, register, or global's version 0 is a real value already live
                     # at function entry (the caller's argument, the register's incoming value,
-                    # or the global's persisted value), not undefined.
+                    # or the global's persisted value), not undefined
                     if (ssa_var.version == 0 and ssa_var.base_var not in param_vars
                             and not self.function.is_register_var(ssa_var.base_var)
                             and not self.function.is_global_var(ssa_var.base_var)):

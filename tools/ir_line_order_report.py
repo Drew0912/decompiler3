@@ -79,7 +79,7 @@ def collect_dsl_lines(func) -> List[int]:
     """DEBUG_SET_LINENO operands in address order
 
     Walks the blocks the lifter lifts (reverse_post_order over succs, as the lifter calls it), so
-    this walk cannot drift out of step with the blocks the LLIL is built from.
+    this walk cannot drift out of step with the blocks the LLIL is built from
     """
     if func.entry_block is None:
         return []
@@ -98,7 +98,7 @@ def collect_mlil_lines(mlil_func) -> List[int]:
     """Line directives in address order
 
     Block order is not address order at MLIL: BlockMergePass splices a block onto
-    its only predecessor, wherever that sits in the block list.
+    its only predecessor, wherever that sits in the block list
     """
     directives = [
         inst
@@ -146,7 +146,7 @@ def analyse_file(path: Path) -> List[FunctionReport]:
 
 
 def header_line(first_column: str) -> str:
-    return f'{first_column:34}' + ''.join(f'{level:>13}' for level in LEVELS) + f'{"introduced":>12}'
+    return f'{first_column:34}' + ''.join(f'{level:>13}' for level in LEVELS) + f'{'introduced':>12}'
 
 
 def level_cell(steps: int, count: int) -> str:
@@ -197,10 +197,10 @@ def print_summary(label: str, reports: List[FunctionReport]):
     print(row)
 
     deltas = ' '.join(f'{lower}->{upper} {counts[upper] - counts[lower]:+d}' for lower, upper in pairwise(LEVELS))
-    print(f'{"":34}counts: {deltas}')
+    print(f'{'':34}counts: {deltas}')
 
     if disagree:
-        print(f'{"":34}!! {disagree} function(s) where py/llil/mlil disagree - a bug below HLIL')
+        print(f'{'':34}!! {disagree} function(s) where py/llil/mlil disagree - a bug below HLIL')
 
 
 def create_parser() -> argparse.ArgumentParser:

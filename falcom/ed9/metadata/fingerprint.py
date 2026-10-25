@@ -27,7 +27,8 @@ VALUE_TAG               = 'V'   # any other operand, by content
 DIGEST_ENCODING = 'utf-8'
 
 
-def operand_key(op: Operand, func_offset: int, ordinals: dict[int, int], get_func_name: Callable[[int], str], get_global_name: Callable[[int], str | None]) -> tuple:
+def operand_key(op: Operand, func_offset: int, ordinals: dict[int, int], get_func_name: Callable[[int], str],
+                get_global_name: Callable[[int], str | None]) -> tuple:
     match op.descriptor.type:
         case OperandType.Offset:
             if op.value in ordinals:
@@ -47,12 +48,14 @@ def operand_key(op: Operand, func_offset: int, ordinals: dict[int, int], get_fun
             return (VALUE_TAG, repr(op.value))
 
 
-def body_fingerprint(instructions: list[Instruction], func_offset: int, get_func_name: Callable[[int], str], get_global_name: Callable[[int], str | None]) -> tuple:
+def body_fingerprint(instructions: list[Instruction], func_offset: int, get_func_name: Callable[[int], str],
+                     get_global_name: Callable[[int], str | None]) -> tuple:
     """instructions: the function's reachable instructions in offset order (ScpParser.get_instructions)"""
     ordinals = {inst.offset: ordinal for ordinal, inst in enumerate(instructions)}
 
     return tuple(
-        (int(inst.opcode), *(operand_key(op, func_offset, ordinals, get_func_name, get_global_name) for op in inst.operands))
+        (int(inst.opcode),
+         *(operand_key(op, func_offset, ordinals, get_func_name, get_global_name) for op in inst.operands))
         for inst in instructions
     )
 
@@ -63,7 +66,8 @@ def signature_fingerprint(func: 'Function') -> tuple:
 
 
 def function_fingerprint(parser: 'ScpParser', func: 'Function') -> tuple:
-    body = body_fingerprint(parser.get_instructions(func), func.offset, parser.get_func_name_from_func_id, parser.get_global_name_from_index)
+    body = body_fingerprint(parser.get_instructions(func), func.offset, parser.get_func_name_from_func_id,
+                            parser.get_global_name_from_index)
     return (body, signature_fingerprint(func))
 
 

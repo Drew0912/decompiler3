@@ -60,7 +60,7 @@ class SlotRef:
             return f'slot {self.slot}'
 
         if kinds:
-            return f'slot {self.slot} = {" or ".join(kinds)}'
+            return f'slot {self.slot} = {' or '.join(kinds)}'
 
         return f'slot {self.slot} (below the stack)' if self.slot < 0 else f'slot {self.slot} (above the stack)'
 

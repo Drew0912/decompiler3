@@ -152,7 +152,8 @@ class ScpValue:
         self.type, self.value = self.decode_word(fs.ReadULong(), fs=fs)
 
     @classmethod
-    def decode_word(cls, word: int, *, fs: fileio.FileStream = None) -> tuple['ScpValue.Type', int | float | str | RawInt]:
+    def decode_word(cls, word: int, *,
+                    fs: fileio.FileStream = None) -> tuple['ScpValue.Type', int | float | str | RawInt]:
         """The type and value a stored word holds, without building an ScpValue; a String's text is read from fs"""
         typ = word >> cls.TYPE_SHIFT
 
@@ -265,7 +266,7 @@ class ScpValue:
 
     @classmethod
     def float_bits_text(cls, value: float) -> str:
-        """The float32 bits the VM computes with and the stored word: 'f32 0x41D99998, raw 0x90766666'."""
+        """The float32 bits the VM computes with and the stored word: 'f32 0x41D99998, raw 0x90766666'"""
         word = cls.encode_float(value)
         return f'f32 {format_uint32_hex(cls.word_float32_bits(word))}, raw {format_uint32_hex(word)}'
 

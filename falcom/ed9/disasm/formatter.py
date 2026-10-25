@@ -49,8 +49,9 @@ class Formatter:
         self.call_debug_argc: dict[int, int] = {}    # CALL offset -> args its debug record keeps, off the compiler's rule
         self.call_unrecorded: set[int] = set()       # CALL offsets without a debug record
 
-    def format_entry_block(self, entry_block: 'BasicBlock', unreachable_blocks: 'list[BasicBlock]' = (), layout: 'StackLayout | None' = None,
-                           call_debug_argc: dict[int, int] | None = None, call_unrecorded: set[int] | None = None) -> list[str]:
+    def format_entry_block(self, entry_block: 'BasicBlock', unreachable_blocks: 'list[BasicBlock]' = (),
+                           layout: 'StackLayout | None' = None, call_debug_argc: dict[int, int] | None = None,
+                           call_unrecorded: set[int] | None = None) -> list[str]:
         """Format blocks starting from entry block (without function header), plus unreachable blocks in offset order;
         layout gives the stack and argument comments, call_debug_argc the CALLs that write their debug_argc,
         call_unrecorded those that write debug_record=False"""
@@ -63,8 +64,8 @@ class Formatter:
 
         # Collect reachable blocks and every offset a real instruction's Offset operand points at -
         # only those offsets earn a label, so a JMP/POP_JMP_*/PUSH_RET_ADDR/PUSH_CALLER_FRAME target
-        # always resolves, and the synthetic fall-through block after a conditional branch (referenced by nothing)
-        # does not.
+        # always resolves, and the synthetic fall-through block after a conditional branch (referenced by
+        # nothing) does not
         reachable_blocks = self.collect_blocks(entry_block)
         self.referenced_offsets = self.find_referenced_offsets(entry_block, reachable_blocks=reachable_blocks)
 
@@ -76,7 +77,8 @@ class Formatter:
         lines = []
         for block in blocks:
             if block in unreachable:
-                block_lines = [UNREACHABLE_CODE_BEGIN, *self.format_block(block, unreachable=True), UNREACHABLE_CODE_END]
+                block_lines = [UNREACHABLE_CODE_BEGIN, *self.format_block(block, unreachable=True),
+                               UNREACHABLE_CODE_END]
             else:
                 block_lines = self.format_block(block)
 
@@ -143,7 +145,7 @@ class Formatter:
         """'argN: Type' or 'argN: Type = default' for one parameter (1-indexed, matching the DSL's
         own param naming) - shared by format_function and the common-function generator, which must
         render parameters identically since a divergent-signature function stays inline precisely
-        when this rendering would differ."""
+        when this rendering would differ"""
         text = f'arg{index + 1}: {param.type.get_python_type()}'
         if param.default_value is not None:
             default = param.default_value.value
@@ -156,7 +158,7 @@ class Formatter:
     def reachable_instructions(cls, entry_block: 'BasicBlock') -> list['Instruction']:
         """Reachable instructions in offset order, deduplicated and with synthetic fall-through
         JMPs removed - the flat view of collect_blocks() that ScpParser.get_instructions and the
-        common-function generator both need instead of walking blocks themselves."""
+        common-function generator both need instead of walking blocks themselves"""
         instructions = {}
         for block in cls.collect_blocks(entry_block):
             for inst in block.instructions:
@@ -169,7 +171,8 @@ class Formatter:
         return [instructions[offset] for offset in sorted(instructions)]
 
     @classmethod
-    def find_referenced_offsets(cls, entry_block: 'BasicBlock', *, reachable_blocks: 'list[BasicBlock] | None' = None) -> set[int]:
+    def find_referenced_offsets(cls, entry_block: 'BasicBlock', *,
+                                reachable_blocks: 'list[BasicBlock] | None' = None) -> set[int]:
         """Offsets a real (non-synthetic) Offset operand points at, among reachable blocks - each
         one needs a label. Each starts a reachable block, as every branch target and return address does"""
         if reachable_blocks is None:

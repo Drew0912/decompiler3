@@ -79,7 +79,7 @@ def stack_comments(layout: 'StackLayout', inst: 'Instruction') -> list[str]:
     comments = []
     ref = layout.slot_refs.get(inst.offset)
     if ref is not None:
-        comments.append(f'{SLOT_PREFIXES.get(inst.opcode, "")}{ref}')
+        comments.append(f'{SLOT_PREFIXES.get(inst.opcode, '')}{ref}')
 
     if inst.offset in layout.local_slots:
         comments.append(f'slot {layout.local_slots[inst.offset]} (local)')
@@ -105,4 +105,4 @@ def append_comment(text: str, comments: list[str]) -> str:
         return text
 
     gap = max(COMMENT_COLUMN - display_width(text), MIN_COMMENT_GAP)
-    return f'{text}{" " * gap}# {", ".join(comments)}'
+    return f'{text}{' ' * gap}# {', '.join(comments)}'

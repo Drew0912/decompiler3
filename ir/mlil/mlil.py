@@ -142,7 +142,7 @@ class MediumLevelILInstruction(ILInstruction):
         return ()
 
     def copy_metadata_from(self, source: 'MediumLevelILInstruction') -> 'MediumLevelILInstruction':
-        """Copy address and index metadata from another MLIL instruction."""
+        """Copy address and index metadata from another MLIL instruction"""
         self.address = source.address
         self.inst_index = source.inst_index
         self.llil_index = source.llil_index
@@ -464,7 +464,8 @@ class MLILGoto(MediumLevelILStatement, Terminal):
 class MLILIf(MediumLevelILStatement, Terminal):
     """Conditional branch"""
 
-    def __init__(self, condition: MediumLevelILInstruction, true_target: 'MediumLevelILBasicBlock', false_target: 'MediumLevelILBasicBlock', **kwargs):
+    def __init__(self, condition: MediumLevelILInstruction, true_target: 'MediumLevelILBasicBlock',
+                 false_target: 'MediumLevelILBasicBlock', **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_IF, **kwargs)
         self.condition = condition
         self.true_target = true_target
@@ -543,7 +544,8 @@ class MLILCall(MediumLevelILCall):
 
     def __init__(self, target: str, args: List[MediumLevelILInstruction], output: Optional[Any] = None,
                  *, clobbers_registers: bool = True, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_CALL, args, output, clobbers_registers=clobbers_registers, **kwargs)
+        super().__init__(MediumLevelILOperation.MLIL_CALL, args, output, clobbers_registers=clobbers_registers,
+                         **kwargs)
         self.target = target
 
     def rebuild(self, *args: MediumLevelILInstruction) -> 'MLILCall':
@@ -558,7 +560,8 @@ class MLILCall(MediumLevelILCall):
 class MLILSyscall(MediumLevelILCall):
     """System call"""
 
-    def __init__(self, subsystem: int, cmd: int, args: List[MediumLevelILInstruction], output: Optional[Any] = None, **kwargs):
+    def __init__(self, subsystem: int, cmd: int, args: List[MediumLevelILInstruction], output: Optional[Any] = None,
+                 **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_SYSCALL, args, output, **kwargs)
         self.subsystem = subsystem
         self.cmd = cmd
@@ -575,7 +578,8 @@ class MLILSyscall(MediumLevelILCall):
 class MLILCallScript(MediumLevelILCall):
     """Falcom script call"""
 
-    def __init__(self, module: str, func: str, args: List[MediumLevelILInstruction], output: Optional[Any] = None, **kwargs):
+    def __init__(self, module: str, func: str, args: List[MediumLevelILInstruction], output: Optional[Any] = None,
+                 **kwargs):
         super().__init__(MediumLevelILOperation.MLIL_CALL_SCRIPT, args, output, **kwargs)
         self.module = module
         self.func = func
@@ -683,7 +687,7 @@ def is_nop_instr(instr: MediumLevelILInstruction) -> bool:
 
 def _parenthesize_deref_operand(operand: MediumLevelILInstruction) -> str:
     """Wrap a compound address in parens so *p + 1 (meaning (*p) + 1) can't be confused with
-    the intended *(p + 1) - only debug/dump text, real codegen builds deref(...) calls instead."""
+    the intended *(p + 1) - only debug/dump text, real codegen builds deref(...) calls instead"""
     if isinstance(operand, MLILBinaryOp):
         return f'({operand})'
 
@@ -839,7 +843,7 @@ class MediumLevelILFunction:
         """Get existing global variable or create new one
 
         Unlike registers/locals, global variables are kept out of self.locals - they are
-        script-wide storage, not something that belongs in a locals-derived variable listing.
+        script-wide storage, not something that belongs in a locals-derived variable listing
         """
         if global_index not in self.global_vars:
             self.global_vars[global_index] = MLILVariable(mlil_global_var_name(global_index))

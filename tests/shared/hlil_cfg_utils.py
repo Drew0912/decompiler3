@@ -25,7 +25,7 @@ from tests.shared.ir_utils import connect
 FUEL = 400
 MARKER_FIRST_LINE = 1000
 
-# A block's list holds the functions it calls and, as ints, its line markers (debug.line(N)), in order.
+# A block's list holds the functions it calls and, as ints, its line markers (debug.line(N)), in order
 # Terminals: ('ret', value), ('goto', label), ('if', condition, true label, false label); a condition is
 # a parameter name, a constant, or ('==', constant, constant)
 BlockSpec = Tuple[Sequence[Union[str, int]], tuple]

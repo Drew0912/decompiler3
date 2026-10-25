@@ -128,7 +128,7 @@ class SSATypeInferencePass(Pass):
     def _as_ssa_var(cls, expr: MediumLevelILInstruction) -> Optional[MLILVariableSSA]:
         """An SSA variable read, direct or through this codebase's *(&x) address-taken
         lowering - so backward inference over a lowered local's comparisons/arithmetic works
-        the same as over an ordinary scalar SSA variable."""
+        the same as over an ordinary scalar SSA variable"""
         if isinstance(expr, MLILVarSSA):
             return expr.var
 

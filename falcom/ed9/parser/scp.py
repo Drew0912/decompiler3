@@ -78,7 +78,7 @@ PUSH_ENCODED_OPS = (*PUSH_CONSTANT_OPS, *opcodes_of(InstructionKind.PUSH_FUNC_ID
 
 OPCODE_SIZE             = 1     # every opcode is one byte, followed by its operands
 
-# The kinds the simulation handles alike: what they pop is a plain use, and what they push is the instruction itself.
+# The kinds the simulation handles alike: what they pop is a plain use, and what they push is the instruction itself
 # Kind groups on the simulation's path are tuples, most frequent first: a tuple compares identities in C, a frozenset
 # would call Enum's Python __hash__ for every instruction
 PLAIN_VALUE_KINDS = (
@@ -283,7 +283,8 @@ class ScpDisassemblerContext(DisassemblerContext):
     def falls_through(cls, inst: Instruction, end: int) -> bool:
         """inst may continue at end: it doesn't end its block, or one of its branches is the fall-through"""
         desc = inst.descriptor
-        return not desc.ends_block or any(target.kind == BranchKind.FALSE for target in desc.get_branch_targets(inst, end))
+        return not desc.ends_block or any(target.kind == BranchKind.FALSE
+                                          for target in desc.get_branch_targets(inst, end))
 
     def record_edge(self, source: int, target: int, state: tuple):
         """The first edge into a block records its state. Every later edge - also one arriving after the block was
@@ -536,7 +537,8 @@ class ScpDisassemblerContext(DisassemblerContext):
                             if isinstance(entry, Instruction):
                                 arguments.setdefault(entry.offset, []).append((inst.offset, len(state) - slot))
 
-        layout.arg_numbers = {offset: tuple(number for _, number in sorted(calls)) for offset, calls in arguments.items()}
+        layout.arg_numbers = {offset: tuple(number for _, number in sorted(calls))
+                              for offset, calls in arguments.items()}
         return layout
 
     def slot_ref(self, slot: int, entries: set, local_slots: dict[int, int]) -> SlotRef:
@@ -687,8 +689,8 @@ class ScpParser(StrictBase):
 
             functions.append(func)
 
-        # Call debug records only give each local CALL's explicit arg count (debug_argc), kept for a byte-exact round trip;
-        # paired with the calls against the file's bytes, as the listing and the validator do
+        # Call debug records only give each local CALL's explicit arg count (debug_argc), kept for a byte-exact round
+        # trip; paired with the calls against the file's bytes, as the listing and the validator do
         if not self.round_trip:
             return functions
 
@@ -736,7 +738,8 @@ class ScpParser(StrictBase):
         """The head falls through into the tail with the state the tail's first instruction was simulated with"""
         context.record_edge(source_offset, split_offset, context.inst_states[split_offset])
 
-    def on_instruction_decoded(self, context: ScpDisassemblerContext, inst: Instruction, block: BasicBlock) -> list[BranchTarget]:
+    def on_instruction_decoded(self, context: ScpDisassemblerContext, inst: Instruction,
+                               block: BasicBlock) -> list[BranchTarget]:
         """Simulate the instruction's stack effect; a call returns its return edge"""
         stack = context.stack_simulation
         context.current_inst = inst
@@ -997,7 +1000,8 @@ class ScpParser(StrictBase):
         return self.defaults_by_func_id
 
     def find_unreachable_code(self, functions: list[Function], has_all_functions: bool):
-        """Linearly decode the bytes no branch reaches (between reachable instructions and up to the next function) into func.unreachable_blocks"""
+        """Linearly decode the bytes no branch reaches (between reachable instructions and up to the next function)
+        into func.unreachable_blocks"""
         if not functions:
             return
 
@@ -1020,7 +1024,8 @@ class ScpParser(StrictBase):
             blocks = [block for block in blocks if block is not None]
             code_end = min([code_end, *self.get_string_refs([inst for block in blocks for inst in block.instructions])])
 
-            # The last function in code order runs up to the string pool, only known when every function's strings were seen
+            # The last function in code order runs up to the string pool, only known when every function's strings
+            # were seen
             end = next_starts.get(func.offset, code_end if has_all_functions else None)
             if end is not None and cursor < end:
                 tail = self._decode_unreachable_block(func, cursor, end)
@@ -1050,7 +1055,8 @@ class ScpParser(StrictBase):
 
     @classmethod
     def string_operand_positions(cls, instructions: list[Instruction]) -> list[int]:
-        """File positions of the operand words that may reference a string: PUSH_STR's value, CALL_SCRIPT's module and func"""
+        """File positions of the operand words that may reference a string: PUSH_STR's value, CALL_SCRIPT's module
+        and func"""
         return [position for inst in instructions if inst.opcode == ED9Opcode.PUSH_STR or inst.opcode in SCRIPT_CALL_OPS
                 for position in cls.value_positions(inst)]
 
@@ -1087,8 +1093,10 @@ class ScpParser(StrictBase):
         return block
 
     @classmethod
-    def _prune_unreachable_blocks(cls, func: Function, instructions: list[Instruction], blocks: list[BasicBlock]) -> list[BasicBlock]:
-        """Drop unreachable blocks that branch to an offset with no kept instruction - their label would never be emitted"""
+    def _prune_unreachable_blocks(cls, func: Function, instructions: list[Instruction],
+                                  blocks: list[BasicBlock]) -> list[BasicBlock]:
+        """Drop unreachable blocks that branch to an offset with no kept instruction - their label would never be
+        emitted"""
         reachable_offsets = {inst.offset for inst in instructions}
 
         while True:
@@ -1114,7 +1122,8 @@ class ScpParser(StrictBase):
         formatter = Formatter(formatter_context)
         return formatter.format_function(func)
 
-    def gen_python_script(self, functions: list[Function], *, preamble: list[str] = (), comments: CommentOptions = CommentOptions()) -> str:
+    def gen_python_script(self, functions: list[Function], *, preamble: list[str] = (),
+                          comments: CommentOptions = CommentOptions()) -> str:
         """Full generated .py text: header (incl. shared-library imports/manifest), an optional
         preamble (e.g. scena2py.py's common-functions-omitted warning), every function this script
         must still define itself, then the footer. match_library_functions runs once here and its
@@ -1132,7 +1141,8 @@ class ScpParser(StrictBase):
         lines.extend(self.gen_python_footer())
         return '\n'.join(lines) + '\n'
 
-    def gen_python_header(self, functions: list[Function] | None = None, *, matched: dict[str, str] | None = None) -> list[str]:
+    def gen_python_header(self, functions: list[Function] | None = None, *,
+                          matched: dict[str, str] | None = None) -> list[str]:
         """Generate Python header lines for output script execution.
 
         functions, when given, are this script's disassembled functions in code order - used to
@@ -1212,7 +1222,8 @@ scena = create_scp_writer('{self.name}')""".splitlines()
 
         return matched
 
-    def get_inline_functions(self, functions: list[Function], *, matched: dict[str, str] | None = None) -> list[Function]:
+    def get_inline_functions(self, functions: list[Function], *,
+                             matched: dict[str, str] | None = None) -> list[Function]:
         """functions this script must still define itself - everything not matched to the shared
         library. Returns functions unchanged when the library isn't active or nothing matched."""
         if matched is None:
@@ -1251,9 +1262,9 @@ scena = create_scp_writer('{self.name}')""".splitlines()
         return f'{pathlib.Path(self.name).stem.strip()}_hook'
 
     def gen_hook_import(self) -> str:
-        """The try/except block importing the optional <stem>_hook module - __import__ when the stem isn't a valid module
-        path (e.g. mon5078+). Only a missing hook is ignored (for a dotted stem, also a missing parent package); a failed
-        import inside the hook re-raises"""
+        """The try/except block importing the optional <stem>_hook module - __import__ when the stem isn't a valid
+        module path (e.g. mon5078+). Only a missing hook is ignored (for a dotted stem, also a missing parent package);
+        a failed import inside the hook re-raises"""
         module = self.hook_module_name()
         parts = module.split('.')
         if all(is_module_name(part) for part in parts):
@@ -1275,9 +1286,9 @@ except ModuleNotFoundError as e:
         raise"""
 
     def gen_hook_template(self) -> str:
-        """A starting <stem>_hook.py: every callback is a no-op even when registered, so it compiles to the same bytes as
-        no hook. Its TYPE_CHECKING block shows the script's names to Pylance; when no import can name the .py's stem,
-        a rename hint instead"""
+        """A starting <stem>_hook.py: every callback is a no-op even when registered, so it compiles to the same bytes
+        as no hook. Its TYPE_CHECKING block shows the script's names to Pylance; when no import can name the .py's
+        stem, a rename hint instead"""
         stem = pathlib.Path(self.name).stem
         if is_module_name(stem) and not shadows_another_module(stem):
             type_checking = f"""\

@@ -105,8 +105,10 @@ class MLILBuilder:
              *, clobbers_registers: bool = True):
         self.add_instruction(MLILCall(target, args, output, clobbers_registers=clobbers_registers))
 
-    def syscall(self, subsystem: int, cmd: int, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None):
+    def syscall(self, subsystem: int, cmd: int, args: list[MediumLevelILInstruction],
+                output: Optional[MLILVariable] = None):
         self.add_instruction(MLILSyscall(subsystem, cmd, args, output))
 
-    def call_script(self, module: str, func: str, args: list[MediumLevelILInstruction], output: Optional[MLILVariable] = None):
+    def call_script(self, module: str, func: str, args: list[MediumLevelILInstruction],
+                    output: Optional[MLILVariable] = None):
         self.add_instruction(MLILCallScript(module, func, args, output))

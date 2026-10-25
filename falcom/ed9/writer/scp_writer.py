@@ -68,7 +68,7 @@ def require_type(statement: str, name: str, value, kind: type | UnionType):
         return
 
     names = [member.__name__ for member in get_args(kind) or (kind,)]
-    expected = names[0] if len(names) == 1 else f'{", ".join(names[:-1])} or {names[-1]}'
+    expected = names[0] if len(names) == 1 else f'{', '.join(names[:-1])} or {names[-1]}'
     raise TypeError(get_scp_writer().at_statement(f'{statement} {name} is {value!r} ({type(value).__name__}), '
                                                   f'not {expected}'))
 
@@ -127,7 +127,8 @@ class ScpFunction:
     entry: ScpFunctionEntry
     calls: list[TrackedCall] = field(default_factory=list)
     debug_records: list[DebugRecord] = field(default_factory=list)
-    callback_bodies: list[Callable] = field(default_factory=list)  # from function callbacks, in chain order; may repeat or include the original
+    # From function callbacks, in chain order; may repeat or include the original
+    callback_bodies: list[Callable] = field(default_factory=list)
 
 
 class ScpWriter:
@@ -391,7 +392,8 @@ class ScpWriter:
 
     @infrequent_gc()
     def run(self, script_globals: dict):
-        """Compile the script and write the .dat - only once compiling succeeded, so a failure leaves an older .dat as it was"""
+        """Compile the script and write the .dat - only once compiling succeeded, so a failure leaves an older .dat as
+        it was"""
         data = self.build(script_globals)
         Path(self.dat_name).write_bytes(data)
 
@@ -423,7 +425,8 @@ class ScpWriter:
     # build()'s steps and their helpers
 
     def _build_function_table(self):
-        """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this index"""
+        """Sort the table by name bytes like the original compiler; CALL operands and PUSH_CURRENT_FUNC_ID use this
+        index"""
         encoding = default_encoding()
         self.function_table = sorted(self.functions, key=lambda f: f.name.encode(encoding))
 
@@ -433,7 +436,8 @@ class ScpWriter:
             name.xref_offsets.append(ScpHeader.SIZE + index * ScpFunctionEntry.SIZE + NAME_OFFSET_FIELD_OFFSET)
 
     def _compile_functions(self) -> fileio.FileStream:
-        """Compile every function in script (source) order into a memory buffer; offsets are relative until _relocate_code()"""
+        """Compile every function in script (source) order into a memory buffer; offsets are relative until
+        _relocate_code()"""
         code = fileio.FileStream().OpenMemory()
         self.fs = code
         self.opcode_emitter_code_ids = {id(emitter_code) for emitter_code in self._opcode_emitter_codes()}
@@ -813,7 +817,8 @@ class ScpWriter:
         self.fs.WriteByte(ED9Opcode.PUSH)
         self.fs.WriteByte(PUSH_SIZE_BYTE)
 
-    def _write_scp_value(self, value: ScpValue, section: StringPoolSection = StringPoolSection.Code) -> PooledString | None:
+    def _write_scp_value(self, value: ScpValue,
+                         section: StringPoolSection = StringPoolSection.Code) -> PooledString | None:
         """Write a ScpValue's on-disk bytes, deferring String-typed values through the string pool"""
         if value.type == ScpValue.Type.String:
             return self._write_string_ref(value.value, section)
@@ -895,7 +900,8 @@ class ScpWriter:
         return string
 
     def _add_string(self, text: str, section: StringPoolSection) -> PooledString:
-        """String-pool entry for text - the original compiler never deduplicates, so entries are only shared without round_trip"""
+        """String-pool entry for text - the original compiler never deduplicates, so entries are only shared without
+        round_trip"""
         if not self.round_trip and text in self.strings_by_text:
             return self.strings_by_text[text]
 

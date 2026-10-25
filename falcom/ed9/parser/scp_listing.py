@@ -1,6 +1,6 @@
-"""The readable .dat listing (.debug.txt): the whole file as the VM sees it - the header, the global vars, each function's
-table entry, code (offset, raw bytes, the real opcode with its operands as encoded, the meaning as a comment) and call-site
-debug records, the code bytes no instruction covers, and the string pool with each string's section"""
+"""The readable .dat listing (.debug.txt): the whole file as the VM sees it - the header, the global vars, each
+function's table entry, code (offset, raw bytes, the real opcode with its operands as encoded, the meaning as a comment)
+and call-site debug records, the code bytes no instruction covers, and the string pool with each string's section"""
 
 from bisect import bisect_left
 from dataclasses import astuple, dataclass
@@ -121,7 +121,8 @@ class ScpListing:
         lines = [f'=== Global vars ({len(self.parser.global_vars)}) ===']
         for var in self.parser.global_vars:
             type_name = GLOBAL_TYPE_NAMES.get(var.type)
-            lines.append(f'[{var.index}] {quote_string(var.name)}, type {int(var.type)}' + (f' ({type_name})' if type_name else ''))
+            lines.append(f'[{var.index}] {quote_string(var.name)}, type {int(var.type)}'
+                         + (f' ({type_name})' if type_name else ''))
 
         return lines
 
@@ -136,7 +137,8 @@ class ScpListing:
         start = code_start(self.parser.header)
         first_start = min(groups, default=self.refs.pool_start)
         if sections.code and start < first_start:
-            lines += ['', f'=== Outside every function: 0x{start:X}..0x{first_start:X} ===', *self.raw_lines(start, first_start)]
+            lines += ['', f'=== Outside every function: 0x{start:X}..0x{first_start:X} ===',
+                      *self.raw_lines(start, first_start)]
 
         for start, (end, members) in groups.items():
             if selected is None or any(func.index in selected for func in members):
@@ -147,8 +149,8 @@ class ScpListing:
     def group_lines(self, sections: ListingSections, start: int, end: int, members: list[Function]) -> list[str]:
         shared = len(members) > 1
         ids = ', '.join(f'0x{func.index:04X}' for func in members)
-        lines = [f'=== {" + ".join(func.name for func in members)} (id{"s" if shared else ""} {ids}, '
-                 f'{"shared " if shared else ""}code 0x{start:X}..0x{end:X}) ===']
+        lines = [f'=== {' + '.join(func.name for func in members)} (id{'s' if shared else ''} {ids}, '
+                 f'{'shared ' if shared else ''}code 0x{start:X}..0x{end:X}) ===']
 
         owners = {func.index: f'{func.name} ' if shared else '' for func in members}   # names a shared range's member
         pairings = [(func, *self.pairing(func)) for func in members] if sections.call_records else []
@@ -159,7 +161,8 @@ class ScpListing:
             tags = {}
             for func, call_offsets, unrecorded, _ in pairings:
                 for i, offset in call_offsets.items():
-                    tags.setdefault(offset, []).append(f'{owners[func.index]}record {i}: {self.record_text(self.records[func.index][i])}')
+                    tags.setdefault(offset, []).append(
+                        f'{owners[func.index]}record {i}: {self.record_text(self.records[func.index][i])}')
 
                 for offset in unrecorded:
                     tags.setdefault(offset, []).append(f'{owners[func.index]}no record')
@@ -170,14 +173,16 @@ class ScpListing:
             records = self.records[func.index]
             lines.append(f'--- {owners[func.index]}call records ({len(records)}) ---' + (f'  ; {note}' if note else ''))
             for i, record in enumerate(records):
-                lines.append(f'[{i:2}] {self.record_text(record)}' + (f' @ 0x{call_offsets[i]:X}' if i in call_offsets else ''))
+                lines.append(f'[{i:2}] {self.record_text(record)}'
+                             + (f' @ 0x{call_offsets[i]:X}' if i in call_offsets else ''))
 
         return lines
 
     def entry_text(self, func: Function) -> str:
         entry = self.parser.function_entries[func.index]
         params = ', '.join(Formatter.format_param(i, param) for i, param in enumerate(func.params))
-        return (f'code 0x{entry.offset:X}; {entry.param_count} params [{params}]; {entry.default_params_count} defaults; '
+        return (f'code 0x{entry.offset:X}; {entry.param_count} params [{params}]; '
+                f'{entry.default_params_count} defaults; '
                 f'common {entry.is_common_func}; byte06 {entry.byte06}; name {quote_string(func.name)} '
                 f'(pool 0x{string_offset(entry.name_offset):X}, hash 0x{entry.name_hash:08X}); '
                 f'{entry.debug_info_count} debug records at 0x{entry.debug_info_offset:X}')
@@ -190,7 +195,8 @@ class ScpListing:
             choices = self.decoded[offset]
             listed.append(next(((inst, func) for inst, func in choices if func.index in indices), choices[0]))
 
-        gaps = [(gap_start, gap_end) for gap_start, gap_end, _ in dropped_ranges([inst for inst, _ in listed], start, end)]
+        gaps = [(gap_start, gap_end)
+                for gap_start, gap_end, _ in dropped_ranges([inst for inst, _ in listed], start, end)]
         lines = []
         for inst, func in listed:
             while gaps and gaps[0][0] < inst.offset:
@@ -198,7 +204,8 @@ class ScpListing:
 
             if inst.offset in self.targets:
                 depth = label_comments(func.stack_layout, inst.offset, LISTING_COMMENTS)
-                lines.append(self.with_comments(f'{"":<{self.asm_column}}{default_label_for_addr(inst.offset)}:', depth))
+                lines.append(self.with_comments(f'{'':<{self.asm_column}}{default_label_for_addr(inst.offset)}:',
+                                                depth))
 
             text, notes = self.asm_text(inst)
             comments = ['unreachable'] if inst in self.unreachable else []
@@ -207,10 +214,11 @@ class ScpListing:
 
             others = [other.name for _, other in self.decoded[inst.offset] if other is not func]
             if others:
-                comments.append(f'also decoded by {", ".join(others)}')
+                comments.append(f'also decoded by {', '.join(others)}')
 
             comments += notes + instruction_comments(func.stack_layout, inst, LISTING_COMMENTS)
-            lines.append(self.with_comments(self.code_prefix(inst.offset, self.data[inst.offset:inst.offset + inst.size]) + text, comments))
+            lines.append(self.with_comments(
+                self.code_prefix(inst.offset, self.data[inst.offset:inst.offset + inst.size]) + text, comments))
             lines += [self.with_comments('', [f'  {tag}']) for tag in tags.get(inst.offset, [])]
 
         for gap in gaps:
@@ -247,13 +255,15 @@ class ScpListing:
                 notes += [text] if text else []
             else:
                 operands.append(operand.descriptor.format_operand(operand, OPERAND_CONTEXT))
-                name = self.parser.get_global_name_from_index(operand.value) if kind == ED9OperandType.GlobalVar else None
+                name = (self.parser.get_global_name_from_index(operand.value) if kind == ED9OperandType.GlobalVar
+                        else None)
                 notes += [quote_string(name)] if name is not None else []
 
-        return f'{inst.mnemonic} {", ".join(operands)}'.rstrip(), notes
+        return f'{inst.mnemonic} {', '.join(operands)}'.rstrip(), notes
 
     def value_text(self, word: int) -> tuple[str, str | None]:
-        """An encoded ScpValue as Type(payload), and a string's text (read like the pool section, invalid bytes shown)"""
+        """An encoded ScpValue as Type(payload), and a string's text (read like the pool section, invalid bytes
+        shown)"""
         offset = string_offset(word)
         if offset is not None:
             return f'Str(0x{offset:X})', quote_string(read_text(self.data, offset))
@@ -289,7 +299,7 @@ class ScpListing:
 
         is_local = record.call_type == ScpFunctionCallDebugInfo.CallType.Local
         callee = f' {self.parser.get_func_name_from_func_id(record.func_id)}' if is_local else ''
-        return f'{record.call_type.name}{callee}({", ".join(args)})'
+        return f'{record.call_type.name}{callee}({', '.join(args)})'
 
     def string_pool_lines(self) -> list[str]:
         sections = {}
@@ -301,18 +311,19 @@ class ScpListing:
         lines = [f'=== String pool ({len(offsets)} strings from 0x{self.refs.pool_start:X}) ===']
         for offset in offsets:
             section = sections.get(offset, '-')
-            lines.append(f'0x{offset:0{self.offset_width}X}{" " * COLUMN_GAP}{section:<{SECTION_WIDTH}}{" " * COLUMN_GAP}'
-                         f'{quote_string(read_text(self.data, offset))}')
+            lines.append(f'0x{offset:0{self.offset_width}X}{' ' * COLUMN_GAP}{section:<{SECTION_WIDTH}}'
+                         f'{' ' * COLUMN_GAP}{quote_string(read_text(self.data, offset))}')
 
         return lines
 
     def raw_lines(self, start: int, end: int, note: str | None = None) -> list[str]:
         """[start, end) as raw bytes, BYTES_PER_LINE a line"""
-        return [self.with_comments(self.code_prefix(offset, self.data[offset:min(offset + BYTES_PER_LINE, end)]), [note] if note else [])
+        return [self.with_comments(self.code_prefix(offset, self.data[offset:min(offset + BYTES_PER_LINE, end)]),
+                                   [note] if note else [])
                 for offset in range(start, end, BYTES_PER_LINE)]
 
     def code_prefix(self, offset: int, raw: bytes) -> str:
-        return f'0x{offset:0{self.offset_width}X}{" " * COLUMN_GAP}{raw.hex(" "):<{BYTES_WIDTH}}{" " * COLUMN_GAP}'
+        return f'0x{offset:0{self.offset_width}X}{' ' * COLUMN_GAP}{raw.hex(' '):<{BYTES_WIDTH}}{' ' * COLUMN_GAP}'
 
     def with_comments(self, text: str, comments: list[str]) -> str:
-        return f'{text:<{self.comment_column}} ; {", ".join(comments)}' if comments else text.rstrip()
+        return f'{text:<{self.comment_column}} ; {', '.join(comments)}' if comments else text.rstrip()

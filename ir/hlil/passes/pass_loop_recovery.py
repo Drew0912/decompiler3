@@ -7,7 +7,7 @@ Turn the while(1) shape that structuring produces back into a tested loop:
     while (1) { if (c) return x; body } ->  while (!c) { body } return x
 
 Also folds constant loop conditions and drops a trailing continue, which says
-nothing at the end of a loop body.
+nothing at the end of a loop body
 """
 
 from typing import List, Optional
@@ -152,7 +152,7 @@ class LoopRecoveryPass(Pass):
         """Leading `if (c) { return x; }` becomes the test, with the return after the loop
 
         Only sound while nothing in the body breaks out of this loop: a break leaves
-        it without returning, and the hoisted return would then swallow that path.
+        it without returning, and the hoisted return would then swallow that path
         """
         index = self._first_real_statement(body)
         if index is None:

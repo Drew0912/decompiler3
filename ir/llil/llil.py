@@ -562,7 +562,7 @@ class LowLevelILFunction:
 
     def reindex_in_block_order(self):
         """Renumber the instructions in basic-block list order, regardless of the order they were originally
-        registered in."""
+        registered in"""
         self._next_inst_index = 0
         for block in self.basic_blocks:
             for inst in block.instructions:

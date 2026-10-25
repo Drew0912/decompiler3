@@ -1,6 +1,6 @@
 """Dead Code Elimination Pass
 
-Remove SSA variable assignments that are never used.
+Remove SSA variable assignments that are never used
 """
 
 from typing import Dict, List, Set
@@ -40,7 +40,7 @@ class SSADeadCodeEliminationPass(Pass):
         """Eliminate dead code
 
         Removing an assignment or phi can leave the definitions it read unread too, so one sweep
-        only removes the unread end of a dead chain - sweep until a sweep removes none.
+        only removes the unread end of a dead chain - sweep until a sweep removes none
         """
         while self._sweep(func):
             pass
@@ -51,7 +51,7 @@ class SSADeadCodeEliminationPass(Pass):
         """Remove every assignment and phi nothing reads now; whether any was removed
 
         Clearing an unread call output does not count: it drops no read, so it cannot make
-        anything else dead.
+        anything else dead
         """
         self._build_use_chains(func)
         removed = False

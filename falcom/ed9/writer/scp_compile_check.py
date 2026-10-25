@@ -206,7 +206,8 @@ class CompileCheck:
         return STACK_ENTRY.sub(with_line, text)
 
     def _failure_prefix(self, function_name: str | None, offset: int | None) -> str:
-        """'file:line: ' of the opcode compiled at a file offset, else of the function's def; '' when neither is known"""
+        """'file:line: ' of the opcode compiled at a file offset, else of the function's def; '' when neither is
+        known"""
         site = self._site_at(offset)
         if site is not None:
             return location_prefix(site)

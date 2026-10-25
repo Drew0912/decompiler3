@@ -253,7 +253,8 @@ def debug_records(*records: tuple) -> tuple[bytes, list[ScpFunctionCallDebugInfo
     raw = []
     for call_type, func_id, args in records:
         record = ScpFunctionCallDebugInfo()
-        record.func_id, record.call_type, record.arg_count, record.info_offset = func_id, call_type, len(args), len(args_bytes)
+        record.func_id, record.call_type, record.arg_count, record.info_offset = (func_id, call_type, len(args),
+                                                                                 len(args_bytes))
         for arg_type, value in args:
             if isinstance(value, str):
                 offset = arg_count * ScpFunctionCallDebugInfoArg.SIZE + len(strings)

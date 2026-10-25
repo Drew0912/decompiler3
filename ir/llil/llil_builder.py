@@ -8,7 +8,7 @@ from .llil import *
 
 
 class _VirtualStack:
-    """Encapsulates the builder's virtual stack with save/restore support."""
+    """Encapsulates the builder's virtual stack with save/restore support"""
 
     def __init__(self):
         self._items: List[LowLevelILExpr] = []
@@ -63,7 +63,7 @@ class _VirtualStack:
 
 class StackShape(NamedTuple):
     """What code after an edge observes of a stack state apart from slot values: predecessors may push
-    different values into one slot (SSA merges them), but must agree on the stack layout."""
+    different values into one slot (SSA merges them), but must agree on the stack layout"""
 
     sp: int
     slots: Tuple[int, ...]
@@ -144,7 +144,7 @@ class LowLevelILBuilder:
         return sp_add
 
     def _discard_vstack_to(self, new_sp: int):
-        """Sync the vstack after a bulk stack-pointer decrease."""
+        """Sync the vstack after a bulk stack-pointer decrease"""
         while self.__vstack.size() and self.__vstack.peek().slot_index >= new_sp:
             self.__vstack.pop()
 
@@ -183,7 +183,7 @@ class LowLevelILBuilder:
         return StackSnapshot(self.sp_get(), self.__vstack.snapshot())
 
     def restore_stack_state(self, snapshot: StackSnapshot):
-        """Restore a trusted snapshot; its tracked slots determine slot storage."""
+        """Restore a trusted snapshot; its tracked slots determine slot storage"""
         self.__current_sp = snapshot.sp
         self.__vstack.restore(snapshot.values)
 
@@ -238,7 +238,8 @@ class LowLevelILBuilder:
         else:
             raise TypeError(f'Cannot convert {type(value)} to expression')
 
-    def push(self, value: Union[LowLevelILExpr, int, float, str], *, hidden_for_formatter: bool = False) -> LowLevelILExpr:
+    def push(self, value: Union[LowLevelILExpr, int, float, str], *,
+             hidden_for_formatter: bool = False) -> LowLevelILExpr:
         """Push value onto stack: StackStore + SpAdd (see docs/llil/LLIL_DESIGN.md)"""
         expr = self._to_expr(value)
         slot_index = self.sp_get()

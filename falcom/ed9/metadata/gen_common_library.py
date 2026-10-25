@@ -63,7 +63,7 @@ NOT_A_SCRIPT_FOLDER = "expected a game's script folder (script or script_<lang>,
 LIBRARY_COMMENTS = CommentOptions()     # the stack comments, always; the opt-in kinds are for scripts only
 
 # Every name a generated module's own "from ...scp_writer_helper import *" line brings into scope -
-# a canonical function reusing one would silently shadow it for the rest of that module's file.
+# a canonical function reusing one would silently shadow it for the rest of that module's file
 RESERVED_HELPER_NAMES = {name for name in vars(scp_writer_helper) if not name.startswith('_')}
 
 # Names every generated .py script's own header/footer bind at module scope (scp.py's
@@ -139,7 +139,8 @@ def select_canonical(occurrences: dict[str, list[Occurrence]]) -> dict[str, Occu
     return canonical
 
 
-def verified_render_inputs(parser: ScpParser, func: Function, path: Path, expected_digest: str) -> tuple[list[Instruction], set[int]]:
+def verified_render_inputs(parser: ScpParser, func: Function, path: Path,
+                           expected_digest: str) -> tuple[list[Instruction], set[int]]:
     """func's reachable instructions and referenced offsets, for render_function, once its fingerprint is checked
     against pass 1's selection: a mismatch fails here instead of as a confusing error in a later stage"""
     digest = fingerprint_digest(function_fingerprint(parser, func))
@@ -215,7 +216,8 @@ def validate_names(included: set[str], name_to_module: dict[str, str]):
             raise RuntimeError(f'{name!r} ({name_to_module[name]}) collides with a reserved name (opcode helper, cross-module alias, or emitted-script binding)')
 
 
-def render_function(parser: ScpParser, func: Function, path: Path, expected_digest: str, name_to_module: dict[str, str]) -> list[str]:
+def render_function(parser: ScpParser, func: Function, path: Path, expected_digest: str,
+                    name_to_module: dict[str, str]) -> list[str]:
     """The function's final lines: branch targets become genLabel() locals, CALL targets a bare name or common_N.name,
     every other operand its formatted text; the stack comments the scripts get (llil_dsl_comments), always on"""
     instructions, referenced_offsets = verified_render_inputs(parser, func, path, expected_digest)
@@ -237,7 +239,8 @@ def render_function(parser: ScpParser, func: Function, path: Path, expected_dige
     for inst in instructions:
         if inst.offset in offset_to_local:
             label_line = f'label({offset_to_local[inst.offset]})'
-            lines.append(indent + append_comment(label_line, label_comments(func.stack_layout, inst.offset, LIBRARY_COMMENTS)))
+            lines.append(indent + append_comment(label_line,
+                                                 label_comments(func.stack_layout, inst.offset, LIBRARY_COMMENTS)))
 
         args = []
         for op in inst.operands:
@@ -250,7 +253,7 @@ def render_function(parser: ScpParser, func: Function, path: Path, expected_dige
             else:
                 args.append(op.descriptor.format_operand(op, formatter_context))
 
-        code = f'{inst.descriptor.mnemonic}({", ".join(args)})'
+        code = f'{inst.descriptor.mnemonic}({', '.join(args)})'
         lines.append(indent + append_comment(code, instruction_comments(func.stack_layout, inst, LIBRARY_COMMENTS)))
 
     if not instructions:
@@ -275,12 +278,14 @@ def render_included_functions(canonical: dict[str, Occurrence], included: set[st
         functions_by_name = {func.name: func for func in functions}
 
         for name in names:
-            rendered[name] = render_function(parser, functions_by_name[name], path, canonical[name].digest, name_to_module)
+            rendered[name] = render_function(parser, functions_by_name[name], path, canonical[name].digest,
+                                             name_to_module)
 
     return rendered
 
 
-def render_module(module_key: str, names: list[str], rendered: dict[str, list[str]], facts: dict[str, FunctionFacts], name_to_module: dict[str, str]) -> str:
+def render_module(module_key: str, names: list[str], rendered: dict[str, list[str]], facts: dict[str, FunctionFacts],
+                  name_to_module: dict[str, str]) -> str:
     imported_modules = sorted({
         name_to_module[callee]
         for name in names
@@ -362,7 +367,8 @@ def render_all(module_keys: list[str]) -> str:
     return '\n'.join(lines) + '\n'
 
 
-def write_output(canonical: dict[str, Occurrence], facts: dict[str, FunctionFacts], rendered: dict[str, list[str]], name_to_module: dict[str, str]):
+def write_output(canonical: dict[str, Occurrence], facts: dict[str, FunctionFacts], rendered: dict[str, list[str]],
+                 name_to_module: dict[str, str]):
     for stale in OUTPUT_DIR.glob('*.py'):
         stale.unlink()
 

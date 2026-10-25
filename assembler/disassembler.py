@@ -14,15 +14,23 @@ from .basic_block import *
 class DisassemblerContext:
     """Context for disassembler with callbacks"""
 
-    instruction_table      : 'InstructionTable' = None
-    get_func_argc          : Callable[[int], int | None] = None  # func_id -> argc
-    create_fallthrough_jump: Callable[[int, int, 'InstructionTable'], 'Instruction'] = None  # offset, target, inst_table -> synthetic_jmp
-    on_disasm_function      : Callable[['DisassemblerContext', int, str], None] = None  # context, offset, name
-    on_block_start          : Callable[['DisassemblerContext', int], None] = None  # context, offset
-    on_instruction_decoded  : Callable[['DisassemblerContext', 'Instruction', 'BasicBlock'], list[BranchTarget]] = None  # context, current_inst, block -> branch_targets
-    on_pre_add_branch       : Callable[['DisassemblerContext', BranchTarget], None] = None  # context, target - a branch, or a fall-through into an allocated block
-    on_block_split          : Callable[['DisassemblerContext', int, int], None] = None  # context, source_offset, split_offset - the head's fall-through into the tail
-    declares_call_returns   : bool = False  # on_instruction_decoded returns every call's return edge, so START_BLOCK targets are skipped
+    instruction_table       : 'InstructionTable' = None
+    # func_id -> argc
+    get_func_argc           : Callable[[int], int | None] = None
+    # offset, target, inst_table -> synthetic_jmp
+    create_fallthrough_jump : Callable[[int, int, 'InstructionTable'], 'Instruction'] = None
+    # context, offset, name
+    on_disasm_function      : Callable[['DisassemblerContext', int, str], None] = None
+    # context, offset
+    on_block_start          : Callable[['DisassemblerContext', int], None] = None
+    # context, current_inst, block -> branch_targets
+    on_instruction_decoded  : Callable[['DisassemblerContext', 'Instruction', 'BasicBlock'], list[BranchTarget]] = None
+    # context, target - a branch, or a fall-through into an allocated block
+    on_pre_add_branch       : Callable[['DisassemblerContext', BranchTarget], None] = None
+    # context, source_offset, split_offset - the head's fall-through into the tail
+    on_block_split          : Callable[['DisassemblerContext', int, int], None] = None
+    # on_instruction_decoded returns every call's return edge, so START_BLOCK targets are skipped
+    declares_call_returns   : bool = False
 
 
 class Disassembler:

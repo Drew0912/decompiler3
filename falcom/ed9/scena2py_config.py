@@ -11,7 +11,7 @@ TOOL_DIR = Path(__file__).resolve().parent
 
 
 class ScenaDecompileConfig(StrictBase):
-    """Output and parser flags for scena2py.py, read directly off this instance's attributes."""
+    """Output and parser flags for scena2py.py, read directly off this instance's attributes"""
 
     # Primary outputs
     write_py: bool = True   # round-trippable VM-bytecode Python DSL (.py)

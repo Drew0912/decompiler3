@@ -110,7 +110,7 @@ class BranchOrderNormalizationPass(Pass):
 
         Conservative by design: stays True (protect the chain) whenever either side's
         scrutinee can't be identified, since the cost of a missed swap is just a less
-        tidy chain, while wrongly reordering a real dispatch chain would bury it again.
+        tidy chain, while wrongly reordering a real dispatch chain would bury it again
         """
         inner_if = sole_statement(chain_block)
         if not isinstance(inner_if, HLILIf):

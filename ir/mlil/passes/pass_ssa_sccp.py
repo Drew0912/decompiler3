@@ -418,7 +418,8 @@ class SCCP:
 
         return changed
 
-    def _replace_constants_in_expr(self, expr: MediumLevelILInstruction, is_bitwise: bool = False) -> MediumLevelILInstruction:
+    def _replace_constants_in_expr(self, expr: MediumLevelILInstruction,
+                                   is_bitwise: bool = False) -> MediumLevelILInstruction:
         """Replace constant SSA variables with constants"""
         if isinstance(expr, MLILVarSSA):
             val = self.var_values.get(expr.var, LatticeValue.bottom())

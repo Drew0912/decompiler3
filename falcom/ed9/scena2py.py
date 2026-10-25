@@ -38,7 +38,8 @@ COMMON_FUNCTIONS_OMITTED_COMMENT = (
 )
 
 
-def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *, comments: CommentOptions = CommentOptions(), common_functions_omitted: bool = False) -> None:
+def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *,
+                     comments: CommentOptions = CommentOptions(), common_functions_omitted: bool = False) -> None:
     preamble = [*COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines(), ''] if common_functions_omitted else []
     write_text_lf(out_path, parser.gen_python_script(functions, preamble=preamble, comments=comments))
 
@@ -65,7 +66,9 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
     output_dir = config.output_dir / path.stem
     out = output_dir / path.name
 
-    parser, functions = ScpParser.load(path, round_trip=config.round_trip, keep_unreachable_code=config.keep_unreachable_code, filter_func=config.filter_func)
+    parser, functions = ScpParser.load(path, round_trip=config.round_trip,
+                                       keep_unreachable_code=config.keep_unreachable_code,
+                                       filter_func=config.filter_func)
 
     common_functions_omitted = not config.include_common_functions
     if common_functions_omitted:
@@ -81,7 +84,8 @@ def process_file(path: Path, config: ScenaDecompileConfig) -> None:
             function_ids=config.function_id_comments,
             call_args=config.call_arg_comments,
         )
-        write_python_dsl(parser, functions, out.with_suffix('.py'), comments=comments, common_functions_omitted=common_functions_omitted)
+        write_python_dsl(parser, functions, out.with_suffix('.py'), comments=comments,
+                         common_functions_omitted=common_functions_omitted)
         if config.write_hook_template:
             write_hook_template(parser, output_dir)
 
@@ -101,7 +105,8 @@ def callee_default_values(parser: ScpParser) -> dict[str, tuple]:
             for func in parser.functions}
 
 
-def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScenaDecompileConfig, out: Path) -> None:
+def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScenaDecompileConfig,
+                     out: Path) -> None:
     """The .llil.asm, .mlil.asm, .hlil.ts, .ts and .dot outputs the config asks for"""
     output_dir = out.parent
 
@@ -132,7 +137,8 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if not need_mlil:
                 continue
 
-            mlil_func = convert_falcom_llil_to_mlil(llil_func, optimize=config.optimize_mlil, infer_types=config.infer_types)
+            mlil_func = convert_falcom_llil_to_mlil(llil_func, optimize=config.optimize_mlil,
+                                                    infer_types=config.infer_types)
 
             if config.write_mlil_asm:
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
@@ -149,7 +155,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
                                     if isinstance(stmt, HLILUnstructured)]
             if unstructured_targets:
                 log.warning(f'{path} [{func.name}]: {len(unstructured_targets)} unstructured jump(s) to '
-                            f'{", ".join(unstructured_targets)}')
+                            f'{', '.join(unstructured_targets)}')
 
             if config.write_hlil_ts:
                 hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))

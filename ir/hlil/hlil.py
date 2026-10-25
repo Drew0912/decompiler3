@@ -127,8 +127,9 @@ class VariableKind(IntEnum2):
 class HLILVariable:
     """HLIL variable with optional type information"""
 
-    def __init__(self, name: Optional[str] = None, type_hint: Optional[HLILTypeKind] = None, default_value: Optional[str] = None,
-                 kind: VariableKind = VariableKind.LOCAL, index: Optional[int] = None):
+    def __init__(self, name: Optional[str] = None, type_hint: Optional[HLILTypeKind] = None,
+                 default_value: Optional[str] = None, kind: VariableKind = VariableKind.LOCAL,
+                 index: Optional[int] = None):
         self.name = name
         self.type_hint = type_hint
         self.default_value = default_value
@@ -365,7 +366,7 @@ class HLILDeref(HLILExpression):
 
     def __str__(self) -> str:
         # Wrap a compound address so *p + 1 (meaning (*p) + 1) can't be confused with the
-        # intended *(p + 1) - only debug text, real codegen builds a deref(...) call instead.
+        # intended *(p + 1) - only debug text, real codegen builds a deref(...) call instead
         operand_str = f'({self.operand})' if isinstance(self.operand, HLILBinaryOp) else str(self.operand)
         return f'*{operand_str}'
 
@@ -501,7 +502,7 @@ class HLILSwitchCase:
     """Switch case: one body, reached by one or more labels
 
     Several values share a body when the source tested them against one another
-    with ||, which is what a fall-through group of case labels means.
+    with ||, which is what a fall-through group of case labels means
     """
 
     def __init__(self, values: Optional[List[HLILExpression]], body: 'HLILBlock'):
@@ -881,7 +882,7 @@ def contains_escaping_exit(block: Optional[HLILBlock], exit_type: type, include_
     """Whether block holds an exit_type statement (HLILBreak or HLILContinue) that leaves it: a
     bare one that no construct inside block owns - a loop owns both kinds, a switch only a
     break - or, with include_labeled, a labeled one anywhere, since its label may name a loop
-    outside block."""
+    outside block"""
     return _contains_escaping_exit(block, exit_type, include_labeled, owned=False)
 
 
@@ -899,14 +900,15 @@ def _contains_escaping_exit(block: Optional[HLILBlock], exit_type: type, include
         if owner and not include_labeled:
             continue
 
-        if any(_contains_escaping_exit(child, exit_type, include_labeled, owned or owner) for child in sub_blocks(stmt)):
+        if any(_contains_escaping_exit(child, exit_type, include_labeled, owned or owner)
+               for child in sub_blocks(stmt)):
             return True
 
     return False
 
 
 def contains_bare_break(block: Optional[HLILBlock]) -> bool:
-    """Whether block contains a bare break not owned by a nested loop or switch."""
+    """Whether block contains a bare break not owned by a nested loop or switch"""
     return contains_escaping_exit(block, HLILBreak)
 
 

@@ -10,7 +10,7 @@ Apply algebraic simplifications:
 - x | -1 → -1
 etc.
 
-Identities fire only on int constants.
+Identities fire only on int constants
 """
 
 from typing import Optional

@@ -22,7 +22,7 @@ class SourceFloat(float):
 def constant_values_equal(a, b) -> bool:
     """Whether two IL constant values are the same constant: same type (int, float and SourceFloat never
     merge) and, for floats, the same bits and the same printed text (-0.0 is not 0.0; NaN, which binary
-    data can decode to, equals itself)."""
+    data can decode to, equals itself)"""
     if type(a) != type(b):
         return False
 

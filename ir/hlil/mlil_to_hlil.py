@@ -50,7 +50,7 @@ _MLIL_TYPE_MAP = {
 }
 
 # Re-emitting a block reached from several conditions is the only faithful option
-# without goto, but it grows output, so cap how far it can run per function.
+# without goto, but it grows output, so cap how far it can run per function
 CLONE_STATEMENT_BUDGET   = 400  # total statements re-emitted per function
 CLONE_MAX_REGION_BLOCKS  = 48   # blocks in one re-emitted region
 
@@ -329,7 +329,7 @@ class CallResultFolder:
         """Variable names this instruction reads, in evaluation order
 
         Folding several calls into one expression makes that expression's
-        operand order their execution order, so the two have to agree.
+        operand order their execution order, so the two have to agree
         """
         return [node.var.name for node in walk(instr) if isinstance(node, MLILVar)]
 
@@ -740,7 +740,7 @@ class MLILToHLILConverter:
                 branch_stop = stop_at
 
         # A branch reaching this merge falls through to it once the if ends, so
-        # meeting it again is not a lost path and must not be re-emitted.
+        # meeting it again is not a lost path and must not be re-emitted
         if branch_stop is not None:
             self.pending_merges.append(PendingMerge(branch_stop, len(self.loop_stack)))
 
@@ -750,7 +750,8 @@ class MLILToHLILConverter:
         # C true -> true_target, C false -> false_target
         true_block = HLILBlock()
         if not true_is_empty:
-            true_block = self._emit_branch(true_target_idx, saved_visited, stop_at, merge_block_idx, branch_stop, if_instr)
+            true_block = self._emit_branch(true_target_idx, saved_visited, stop_at, merge_block_idx, branch_stop,
+                                           if_instr)
 
         # Taken from visited_blocks, not rebuilt from saved_visited: a branch can remove
         # blocks as well as add them
@@ -758,7 +759,8 @@ class MLILToHLILConverter:
 
         false_block = HLILBlock()
         if not false_is_empty:
-            false_block = self._emit_branch(false_target_idx, saved_visited, stop_at, merge_block_idx, branch_stop, if_instr)
+            false_block = self._emit_branch(false_target_idx, saved_visited, stop_at, merge_block_idx, branch_stop,
+                                            if_instr)
             all_visited |= self.visited_blocks
 
         if branch_stop is not None:
@@ -1034,7 +1036,7 @@ class MLILToHLILConverter:
             if block_idx in self.visited_blocks or block_idx in self.globally_processed:
                 # An enclosing if emits its merge point after itself, so control reaches it by
                 # falling out of this branch - unless a loop or a nearer merge lies in between,
-                # and then the merge is repeated here like any other block emitted elsewhere.
+                # and then the merge is repeated here like any other block emitted elsewhere
                 if self.pending_merges and self._falls_out_to(block_idx):
                     return None
 

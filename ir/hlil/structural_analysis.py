@@ -380,7 +380,7 @@ class StructuralAnalyzer:
 
         Stops at the first 2-way branch instead of following either of its edges,
         so a block reached only through one outcome of a decision made along the
-        way is never mistaken for start's own empty/trivial continuation.
+        way is never mistaken for start's own empty/trivial continuation
         """
         reach = {start}
         block = start
@@ -401,7 +401,7 @@ class StructuralAnalyzer:
 
         barrier is never entered or traversed past - used to keep a branch's own
         reachable set from including whatever lies beyond the other branch's
-        target once the two eventually converge.
+        target once the two eventually converge
         """
         reach = {}
         queue = deque([(start, 0)])
@@ -425,7 +425,7 @@ class StructuralAnalyzer:
         """
         Merge point of the if ending cond_block, whose arms stop at stop (the enclosing merge or
         loop header, None at function level): the heuristic's answer when it is a real merge (see
-        _MergeScope), else the nearest real merge both arms reach, else None.
+        _MergeScope), else the nearest real merge both arms reach, else None
         """
         merge = self._heuristic_merge_point(cond_block, true_target, false_target)
         if true_target == false_target or (merge is not None and merge == stop):

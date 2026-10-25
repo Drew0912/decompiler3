@@ -48,7 +48,8 @@ class FileStream:
 
     STRUCT_FORMATS = 'bBhHlLf'
 
-    def __init__(self, file: str | bytes | bytearray = None, mode: str = 'rb', *, endian: str = None, encoding: str = None):
+    def __init__(self, file: str | bytes | bytearray = None, mode: str = 'rb', *, endian: str = None,
+                 encoding: str = None):
         endian = endian or default_endian()
         self._stream = None
         self._structs = {fmt: struct_layout(fmt, endian) for fmt in self.STRUCT_FORMATS}

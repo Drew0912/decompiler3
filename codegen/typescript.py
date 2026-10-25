@@ -258,7 +258,7 @@ class TypeScriptGenerator(HLILStatementPrinter):
             return f'{expr.func_name}({args})'
         elif isinstance(expr, HLILSyscall):
             args = [str(expr.subsystem), str(expr.cmd), *[cls._format_expr(arg) for arg in expr.args]]
-            return f'syscall({", ".join(args)})'
+            return f'syscall({', '.join(args)})'
         elif isinstance(expr, HLILExternCall):
             args = [
                 quote_string(expr.target, "'"),

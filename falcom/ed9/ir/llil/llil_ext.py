@@ -40,7 +40,7 @@ class LowLevelILCallScriptNoReturn(LowLevelILCall):
     """CALL_SCRIPT_NO_RETURN - tail call to a script function; caller never regains control (statement)
 
     Unlike CALL_SCRIPT, the bytecode emits no PUSH_CALLER_FRAME before this opcode - the compiler
-    only pushes the arguments, since the callee's frame takes over instead of returning here.
+    only pushes the arguments, since the callee's frame takes over instead of returning here
     """
 
     def __init__(

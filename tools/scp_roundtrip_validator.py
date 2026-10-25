@@ -102,7 +102,7 @@ DETAIL_INDENT           = ' ' * 10
 # Reachability audit (--logic-round-trip): a dropped byte range is provably dead only when the
 # reachable instruction right before it can't fall through - RETURN/JMP/CALL_SCRIPT_NO_RETURN never
 # link a continuation at all, and CALL/CALL_SCRIPT only do so via a paired PUSH_RET_ADDR/
-# PUSH_CALLER_FRAME (checked separately, per function) - so a range after an unpaired one is unproven.
+# PUSH_CALLER_FRAME (checked separately, per function) - so a range after an unpaired one is unproven
 REACHABLE_TERMINATORS   = (ED9Opcode.RETURN, ED9Opcode.JMP, ED9Opcode.CALL_SCRIPT_NO_RETURN)
 PAIRED_CALL_OPS         = {ED9Opcode.CALL: ED9Opcode.PUSH_RET_ADDR, ED9Opcode.CALL_SCRIPT: ED9Opcode.PUSH_CALLER_FRAME}
 MAX_CONVERGENCE_ROUNDS  = 4  # --logic-round-trip: give up if compile/decompile hasn't hit a fixed point by then
@@ -275,7 +275,8 @@ def check_function_order(ctx: ScriptContext) -> CheckResult:
     previous = None
     for index in ctx.code_order:
         func = ctx.parser.functions[index]
-        lines = [inst.operands[0].value for inst in ctx.instructions[index] if inst.opcode == ED9Opcode.DEBUG_SET_LINENO]
+        lines = [inst.operands[0].value for inst in ctx.instructions[index]
+                 if inst.opcode == ED9Opcode.DEBUG_SET_LINENO]
 
         if func.is_common_func:
             common_count += 1
@@ -340,9 +341,12 @@ def check_string_pool(ctx: ScriptContext, refs: StringRefs) -> CheckResult:
 
     expected = refs.expected_pool
     if actual != expected:
-        mismatch = next((i for i, (a, b) in enumerate(zip(actual, expected)) if a != b), min(len(actual), len(expected)))
-        actual_text = f'0x{actual[mismatch]:X} {ascii(ctx.read_text(actual[mismatch]))}' if mismatch < len(actual) else 'end of file'
-        expected_text = f'0x{expected[mismatch]:X} {ascii(ctx.read_text(expected[mismatch]))}' if mismatch < len(expected) else 'end of references'
+        mismatch = next((i for i, (a, b) in enumerate(zip(actual, expected)) if a != b),
+                        min(len(actual), len(expected)))
+        actual_text = (f'0x{actual[mismatch]:X} {ascii(ctx.read_text(actual[mismatch]))}' if mismatch < len(actual)
+                       else 'end of file')
+        expected_text = (f'0x{expected[mismatch]:X} {ascii(ctx.read_text(expected[mismatch]))}'
+                         if mismatch < len(expected) else 'end of references')
         failures.append(f'pool string #{mismatch}: found {actual_text}, expected {expected_text} ({len(actual)} strings, {len(expected)} references)')
 
     summary = f'{len(actual)} strings: {len(refs.code)} code, {len(refs.names)} names, {len(refs.defaults)} defaults, {len(refs.debug)} debug-only, {len(refs.global_names)} global names'
@@ -357,8 +361,8 @@ def check_debug_records(ctx: ScriptContext) -> CheckResult:
 
     for index, func in enumerate(ctx.parser.functions):
         # Dead calls have records too: pair over the code the .py prints, reachable and dead
-        pairing = pair_records(ctx.data, ctx.parser.code_instructions(func), ctx.records[index], ctx.parser.get_func_argc,
-                               ctx.parser.get_func_index)
+        pairing = pair_records(ctx.data, ctx.parser.code_instructions(func), ctx.records[index],
+                               ctx.parser.get_func_argc, ctx.parser.get_func_index)
         if pairing.call_count != pairing.record_count and not pairing.paired:
             failures.append(f'{func.name}: {pairing.call_count} call sites with line info, {pairing.record_count} debug records')
             continue
@@ -448,7 +452,7 @@ def is_range_provably_dead(prev_opcode: int | None, paired: dict[int, bool]) -> 
 
 def check_reachability(ctx: ScriptContext, pool_start: int) -> CheckResult:
     """Every dropped byte range must be provably dead - never assumed, and never trusted just
-    because it happens to fail to disassemble as instructions."""
+    because it happens to fail to disassemble as instructions"""
     failures = []
     dropped_bytes = 0
 
@@ -508,7 +512,8 @@ def check_common_order(common_orders: dict[Path, list[str]]) -> CheckResult:
     return CheckResult.build('common order', summary, [], warnings)
 
 
-def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = True, keep_unreachable_code: bool = True) -> tuple[ScpParser, list[Function]]:
+def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = True,
+                        keep_unreachable_code: bool = True) -> tuple[ScpParser, list[Function]]:
     """Same DSL emission as scena2py.py's write_python_dsl. Explicit flags rather than relying on
     ScpParser's class defaults, which happen to match round_trip=True today but aren't guaranteed to.
     Returns the parser and its disassembled functions so callers can fingerprint them without
@@ -523,7 +528,7 @@ def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = Tru
 def compile_dsl(py_path: Path, run_dir: Path) -> tuple[int, list[str]]:
     """Compile a generated .py in a subprocess: (exit code, the last lines of its output, ascii-escaped). -P keeps
     run_dir off sys.path, so a script named after a top-level package (e.g. dc3.dat) can't shadow the real one; the
-    script puts the repo root on sys.path itself."""
+    script puts the repo root on sys.path itself"""
     env = dict(os.environ)
     env['PYTHONIOENCODING'] = 'utf-8'
 
@@ -580,7 +585,8 @@ def describe_difference(original: bytes, rebuilt: bytes) -> tuple[str, list[str]
     """The round trip's summary of two differing files and its detail lines: where the bytes first differ, and how
     the debug records differ (compare_file_records). Records the comparison can't read keep the summary - otherwise
     the exception would reach main(), which reports it in place of the whole result."""
-    first_diff = next((i for i, (a, b) in enumerate(zip(original, rebuilt)) if a != b), min(len(original), len(rebuilt)))
+    first_diff = next((i for i, (a, b) in enumerate(zip(original, rebuilt)) if a != b),
+                      min(len(original), len(rebuilt)))
     summary = f'differs at 0x{first_diff:X} (original {len(original)} bytes, rebuilt {len(rebuilt)} bytes)'
     try:
         lines = compare_file_records(original, rebuilt)
@@ -590,7 +596,7 @@ def describe_difference(original: bytes, rebuilt: bytes) -> tuple[str, list[str]
     if not lines:
         return f'{summary}, records identical', []
 
-    return f'{summary}, records differ in {len(lines)} function{"" if len(lines) == 1 else "s"}', lines
+    return f'{summary}, records differ in {len(lines)} function{'' if len(lines) == 1 else 's'}', lines
 
 
 def compare_file_records(original: bytes, rebuilt: bytes) -> list[str]:
@@ -646,7 +652,7 @@ def view_difference(original: RecordView, rebuilt: RecordView) -> str | None:
         return f'{rebuilt.call_type.name}, original {original.call_type.name}'
 
     if rebuilt.callee != original.callee:
-        return f'callee {rebuilt.callee or "none"}, original {original.callee or "none"}'
+        return f'callee {rebuilt.callee or 'none'}, original {original.callee or 'none'}'
 
     if len(rebuilt.args) != len(original.args):
         return f'{len(rebuilt.args)} args, original {len(original.args)}'
@@ -696,7 +702,7 @@ def arg_text(arg: tuple[int, int | str]) -> str:
 class LogicSnapshot:
     """Everything the 'game logic' definition covers for one decompile: per-function (fingerprint,
     is_common_func) by name, the global table in index order (bytecode refers to globals by index,
-    so order matters), and header dword_14."""
+    so order matters), and header dword_14"""
 
     fingerprints: dict[str, tuple]
     globals_table: list[tuple[str, int]]
@@ -774,7 +780,8 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
 
     file_dir = Path(tempfile.mkdtemp(prefix=f'{stem}_logic_', dir=work_dir))
 
-    source_parser, source_functions = decompile_to_python(path, file_dir / f'{stem}.py', round_trip=False, keep_unreachable_code=False)
+    source_parser, source_functions = decompile_to_python(path, file_dir / f'{stem}.py', round_trip=False,
+                                                          keep_unreachable_code=False)
     source_snapshot = LogicSnapshot.of(source_parser, source_functions)
     py_texts = [(file_dir / f'{stem}.py').read_text(encoding='utf-8')]
     dat_bytes = []
@@ -794,11 +801,12 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
 
         results.extend(struct_results)
 
-        round_parser, round_functions = decompile_to_python(dat_path, round_dir / f'{stem}_out.py', round_trip=False, keep_unreachable_code=False)
+        round_parser, round_functions = decompile_to_python(dat_path, round_dir / f'{stem}_out.py', round_trip=False,
+                                                            keep_unreachable_code=False)
         py_texts.append((round_dir / f'{stem}_out.py').read_text(encoding='utf-8'))
 
         # Checked every round, not just round 1: a file that only diverges after round 1 but still
-        # happens to reach a byte-level fixed point must still fail here.
+        # happens to reach a byte-level fixed point must still fail here
         logic_result = compare_logic(source_snapshot, LogicSnapshot.of(round_parser, round_functions))
         logic_result.name = f'round {round_num} {logic_result.name}'
         results.append(logic_result)

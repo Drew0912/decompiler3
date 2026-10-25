@@ -125,7 +125,7 @@ class LLILToMLILTranslator:
         """Frame slot to 1-based parameter index
 
         Arguments are pushed right-to-left, so the first declared parameter sits in
-        the highest frame slot and STACK[fp + 0] holds the last one.
+        the highest frame slot and STACK[fp + 0] holds the last one
         """
         return self.llil_func.num_params - offset // WORD_SIZE
 

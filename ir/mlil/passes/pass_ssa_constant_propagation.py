@@ -1,6 +1,6 @@
 """Constant Propagation Pass
 
-Replace SSA variables with constant values (no folding).
+Replace SSA variables with constant values (no folding)
 """
 
 from typing import Dict

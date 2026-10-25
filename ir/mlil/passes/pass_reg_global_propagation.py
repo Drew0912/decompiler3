@@ -72,7 +72,7 @@ class RegGlobalValuePropagator:
             # Simulate block execution
             out_state = self._simulate_block(block, in_state)
 
-            # Retain the latest input even when the block's output is already stable.
+            # Retain the latest input even when the block's output is already stable
             block_in[block] = in_state
 
             # Check if out_state changed - only this decides whether successors need revisiting
@@ -173,7 +173,7 @@ class RegGlobalValuePropagator:
             return map_operands(expr, lambda operand: self._substitute(operand, state))
 
     def _is_closed_form(self, expr: MediumLevelILInstruction) -> bool:
-        """Return whether expr is a constant expression with no mutable inputs."""
+        """Return whether expr is a constant expression with no mutable inputs"""
         if isinstance(expr, MLILConst):
             return True
         elif isinstance(expr, MLILDeref):

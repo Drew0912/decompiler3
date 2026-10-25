@@ -95,7 +95,8 @@ def collect_string_refs(data: bytes, parser: ScpParser, records: list[list[ScpFu
     """Every string reference of a parsed and disassembled file (data = its bytes), records = each function's raw debug
     records in table order. Code strings come in file order and include unreachable code when the parser decoded it
     (keep_unreachable_code); a debug record string that is also a code string is pooled once, with the code."""
-    # Each operand once: functions that share code (one starting where another does, a jump into another) decode it twice
+    # Each operand once: functions that share code (one starting where another does, a jump into another) decode it
+    # twice
     positions = {position for func in parser.functions
                  for position in parser.string_operand_positions(parser.code_instructions(func))}
     code = string_offsets(data, sorted(positions))
@@ -112,7 +113,9 @@ def collect_string_refs(data: bytes, parser: ScpParser, records: list[list[ScpFu
     debug = [offset for offset in record_strings if offset not in code_set]
 
     header = parser.header
-    global_names = string_offsets(data, (header.global_var_offset + i * ScpGlobalVar.SIZE for i in range(header.global_var_count)))
+    global_names = string_offsets(data, (header.global_var_offset + i * ScpGlobalVar.SIZE
+                                         for i in range(header.global_var_count)))
 
     pool_start = min(code + names + defaults + debug + global_names, default=len(data))
-    return StringRefs(code=code, names=names, defaults=defaults, debug=debug, global_names=global_names, pool_start=pool_start)
+    return StringRefs(code=code, names=names, defaults=defaults, debug=debug, global_names=global_names,
+                      pool_start=pool_start)

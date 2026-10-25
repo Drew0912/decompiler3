@@ -161,7 +161,7 @@ class CallDebugInfoTracker:
                 self.add_call(CallType.Script, (module, func), None, args, returns=True)
 
             case InstructionKind.TAIL_CALL:
-                # No caller frame precedes it (the table pops no setup): closing one would take an enclosing call's.
+                # No caller frame precedes it (the table pops no setup): closing one would take an enclosing call's
                 # It never returns here, so register 0 keeps what it held
                 module, func, _ = operands
                 args = self.pop(effect.pop_count(operands))
@@ -171,7 +171,8 @@ class CallDebugInfoTracker:
                 raise NotImplementedError(f'the tracker never tracks {kind.name}')
 
     def ordered_calls(self) -> list[TrackedCall]:
-        """Recorded calls in debug-info record order: statements in evaluation order, each one's call tree in pre-order"""
+        """Recorded calls in debug-info record order: statements in evaluation order, each one's call tree in
+        pre-order"""
         ordered = []
         pending = [call for call in reversed(self.calls) if call.parent is None]
         while pending:
@@ -198,7 +199,8 @@ class CallDebugInfoTracker:
         return tracker
 
     @classmethod
-    def replay(cls, instructions: list[Instruction], get_param_count: Callable[[Any], int]) -> list[tuple[TrackedCall, int]]:
+    def replay(cls, instructions: list[Instruction],
+               get_param_count: Callable[[Any], int]) -> list[tuple[TrackedCall, int]]:
         """Each recorded call of decoded instructions in record order, with the offset of its call instruction"""
         call_offsets = {}
         tracker = cls.from_instructions(instructions, get_param_count, call_offsets)
@@ -264,7 +266,8 @@ def canonical_argc(args: list[TrackedValue], defaults: list[ScpValue | None]) ->
     while count:
         arg = args[count - 1]
         default = defaults[count - 1]
-        if arg.type != ScpFunctionCallDebugInfoArg.Type.Constant or default is None or not same_constant(arg.payload, default):
+        if (arg.type != ScpFunctionCallDebugInfoArg.Type.Constant or default is None
+                or not same_constant(arg.payload, default)):
             break
 
         count -= 1
@@ -364,7 +367,7 @@ class RecordPairing:
 
         counts = f'{self.call_count} calls, {self.record_count} records'
         if self.call_count > self.record_count:
-            return f'{counts}, {"no alignment" if self.alignments == 0 else "more than one alignment"}'
+            return f'{counts}, {'no alignment' if self.alignments == 0 else 'more than one alignment'}'
 
         if self.call_count != self.record_count:
             return counts
@@ -468,7 +471,8 @@ def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebug
         expected_func_id, name = script_call_identity(call.call_type, module.value, func.value, table_index)
         leading_constants = [ScpValue(name)]
 
-    expected = [(ArgType.Constant, value) for value in leading_constants] + [(arg.type, arg.payload) for arg in call_args]
+    expected = ([(ArgType.Constant, value) for value in leading_constants]
+                + [(arg.type, arg.payload) for arg in call_args])
 
     if record.call_type != call.call_type or record.func_id != expected_func_id or record.arg_count != len(expected):
         return f'record ({record.call_type.name}, func_id 0x{record.func_id:X}, {record.arg_count} args) != call ({call.call_type.name}, func_id 0x{expected_func_id:X}, {len(expected)} args)'

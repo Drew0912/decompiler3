@@ -505,7 +505,7 @@ def normalize_mlil_operation(
     """Convert MLIL instruction to normalized SemanticOperation
 
     MLIL models VM registers as variables, so reads and writes of one are
-    normalized back to LOAD_REG/STORE_REG and stay comparable with LLIL.
+    normalized back to LOAD_REG/STORE_REG and stay comparable with LLIL
     """
     register_names = register_names or {}
     name = instr.operation.name.removeprefix('MLIL_')
@@ -700,7 +700,7 @@ def _extract_hlil_operands(instr: HLILInstruction) -> List[SemanticOperand]:
 
     # A plain var dest (e.g. HLIL_ASSIGN's x = ...) is already captured via that
     # operation's own `result` field - only a compound dest (e.g. *ptr = ...) needs
-    # capturing here, so it is not silently dropped from validation coverage.
+    # capturing here, so it is not silently dropped from validation coverage
     if hasattr(instr, 'dest') and isinstance(instr.dest, HLILInstruction) and not hasattr(instr.dest, 'var'):
         operands.append(SemanticOperand(kind='expr', value=str(instr.dest)))
 
@@ -1001,7 +1001,8 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                     save_current_block()
 
                     # Create loop header (condition calls run on each iteration)
-                    header_node = CFGNode(id=current_id, address=op.source_location.scp_offset, operations=folded_ops + [op])
+                    header_node = CFGNode(id=current_id, address=op.source_location.scp_offset,
+                                          operations=folded_ops + [op])
                     cfg.add_node(header_node)
                     header_id = current_id
                     current_id += 1
@@ -1031,7 +1032,8 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
                         current_id = max(body_id, current_id)
 
                     # Condition block (condition calls run after the body on each iteration)
-                    cond_node = CFGNode(id=current_id, address=op.source_location.scp_offset, operations=folded_ops + [op])
+                    cond_node = CFGNode(id=current_id, address=op.source_location.scp_offset,
+                                        operations=folded_ops + [op])
                     cfg.add_node(cond_node)
                     cond_id = current_id
                     current_id += 1
@@ -1077,7 +1079,7 @@ def build_cfg_from_hlil(hlil_func: HighLevelILFunction) -> CFG:
 def compute_operation_similarity(op1: SemanticOperation, op2: SemanticOperation) -> float:
     """Compare two SemanticOperations (0.0-1.0 score)"""
     score = 0.0
-    # Provenance-first bonus to stabilize mapping under HLIL restructuring.
+    # Provenance-first bonus to stabilize mapping under HLIL restructuring
     if _has_provenance_overlap(op1.provenance_keys, op2.provenance_keys):
         score += 0.3
 
@@ -1616,7 +1618,7 @@ def _match_atoms_provenance_first(
     source_atoms: List[SemanticAtom],
     target_atoms: List[SemanticAtom],
 ) -> Tuple[List[Tuple[int, int]], int, int]:
-    """Match source/target atoms by provenance first, then fingerprint fallback."""
+    """Match source/target atoms by provenance first, then fingerprint fallback"""
     matches: List[Tuple[int, int]] = []
     used_target_indices: set[int] = set()
     provenance_matches = 0
@@ -1630,7 +1632,7 @@ def _match_atoms_provenance_first(
     for source_idx, source_atom in enumerate(source_atoms):
         matched_target_idx = -1
 
-        # Pass 1: provenance-first mapping.
+        # Pass 1: provenance-first mapping
         for provenance in source_atom.provenance_keys:
             candidate_indices = target_by_provenance.get(provenance, [])
             for candidate_idx in candidate_indices:
@@ -1649,7 +1651,7 @@ def _match_atoms_provenance_first(
             provenance_matches += 1
             continue
 
-        # Pass 2: semantic-fingerprint fallback.
+        # Pass 2: semantic-fingerprint fallback
         for candidate_idx in target_by_fingerprint.get(source_atom.fingerprint, []):
             if candidate_idx in used_target_indices:
                 continue
@@ -1678,7 +1680,7 @@ def _apply_location_fallback(
     op: SemanticOperation,
     source_location: SourceLocation,
 ) -> SemanticOperation:
-    """Preserve statement source info when HLIL expressions drop it."""
+    """Preserve statement source info when HLIL expressions drop it"""
     if op.source_location.scp_offset == 0 and source_location.scp_offset != 0:
         op.source_location.scp_offset = source_location.scp_offset
     if op.source_location.mlil_index < 0 and source_location.mlil_index >= 0:
@@ -2066,7 +2068,7 @@ class IRLayerComparator:
         )
 
     def compare(self) -> ComparisonReport:
-        """Run full CFG-based comparison and return a ComparisonReport."""
+        """Run full CFG-based comparison and return a ComparisonReport"""
         report = ComparisonReport(
             source_layer=self.source_layer,
             target_layer=self.target_layer,
