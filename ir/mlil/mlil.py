@@ -735,8 +735,13 @@ def walk(node: MediumLevelILInstruction, skip: tuple[type, ...] = ()) -> Iterato
     while pending:
         current = pending.pop()
         yield current
-        if not isinstance(current, skip):
-            pending.extend(reversed(current.operands()))
+        if skip and isinstance(current, skip):
+            continue
+        operands = current.operands()
+        if len(operands) == 1:
+            pending.append(operands[0])
+        elif operands:
+            pending.extend(reversed(operands))
 
 
 def map_operands(node: MediumLevelILInstruction,
