@@ -3,17 +3,24 @@
 get_inline_functions, gen_common_imports and gen_python_script must all agree on which functions got
 matched to the shared library, in the script's own code order, only outside strict round-trip
 mode and only with a game. Uses a real corpus file (TEST_FILE) and sora2's library rather than a fake
-index, since its common/source split is already exercised (and known) elsewhere in this test suite."""
+index, since its common/source split is already exercised (and known) elsewhere in this test suite; the game
+selection uses stand-in games instead (TestEachGameMatchesItsOwnLibrary)."""
 
 from pathlib import Path
 import sys
+import types
 import unittest
+from unittest import mock
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.metadata import COMMON_ALL_MODULE, COMMON_INDEX_MODULE, game_metadata_module
+from falcom.ed9.metadata.fingerprint import function_fingerprint, fingerprint_digest
+from falcom.ed9.parser.scp import ScpParser, common_library_index
+from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.corpus import SORA2_SCRIPTS, require, require_library
+from tests.shared.scp_writer_test_utils import WriterTestCase
 
 TEST_FILE = SORA2_SCRIPTS / 'ai/ai_chr0100_e00.dat'
 GAME = 'sora2'
@@ -109,6 +116,40 @@ class TestEmissionContract(unittest.TestCase):
         self.assertNotIn('CommonImports', script)
         self.assertIn(f'def {MATCHED_COMMON_FUNC}(', script)
         self.assertIn(f'def {SOURCE_FUNC}(', script)
+
+
+class TestEachGameMatchesItsOwnLibrary(WriterTestCase):
+    """A parser matches against its own game's index only, and its script imports that game's common_all: two
+    stand-in games whose indexes (planted in sys.modules, where the parser's import finds them) list the same common
+    function, only one of them with its fingerprint"""
+
+    def test_the_parsers_game_picks_the_index(self):
+        @self.writer.LLILCommonCode()
+        def Shared():
+            RETURN()
+
+        parser, functions = ScpParser.load_bytes(self.writer.build({}), 'test.dat', round_trip=False,
+                                                 keep_unreachable_code=False, quiet=True)
+        digest = fingerprint_digest(function_fingerprint(parser, functions[0]))
+        indexes = {
+            'stand_in_a': {'Shared': ('module_a', digest)},
+            'stand_in_b': {'Shared': ('module_b', 'another digest')},
+        }
+        planted = {}
+        for game, index in indexes.items():
+            module = types.ModuleType(game_metadata_module(game, COMMON_INDEX_MODULE))
+            module.COMMON_FUNCTIONS = index
+            planted[module.__name__] = module
+
+        self.enterContext(mock.patch.dict(sys.modules, planted))
+        self.addCleanup(common_library_index.cache_clear)
+
+        for game, expected in (('stand_in_a', {'Shared': 'module_a'}), ('stand_in_b', {})):
+            with self.subTest(game=game):
+                parser.game = game
+                self.assertEqual(parser.match_library_functions(functions), expected)
+                self.assertIn(f'    from {game_metadata_module(game, COMMON_ALL_MODULE)} import *',
+                              parser.gen_python_script(functions))
 
 
 if __name__ == '__main__':
