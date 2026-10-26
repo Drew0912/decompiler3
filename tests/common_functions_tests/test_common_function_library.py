@@ -193,8 +193,9 @@ class TestGenerator(unittest.TestCase):
         """generate() replaces the game's whole library: it must stop first on a file, a missing path, a folder not
         named script(_<lang>) (the game folder, extracted/, a subfolder of the script folder), a script folder whose
         path names no game here with no --game (the old <game>/script_en, a game folder without its package), a path
-        and a --game naming different games, a --game naming no game, and a script folder with no .dat. Parsing is
-        stubbed out, so only the input checks can stop it"""
+        and a --game naming different games (the path's game in another case too), a --game naming no game (a game's
+        name in another case included: argparse takes only the folder's spelling), and a script folder with no .dat.
+        Parsing is stubbed out, so only the input checks can stop it"""
         with tempfile.TemporaryDirectory() as tmp, \
              mock.patch.object(gen, 'collect_occurrences', return_value=({}, {})), \
              mock.patch.object(gen, 'write_output') as write_output:
@@ -202,6 +203,7 @@ class TestGenerator(unittest.TestCase):
             game = self.game_folder(games)
             self.game_folder(games, 'second')
             script_en = self.script_folder(game / 'extracted' / 'script_en')
+            other_case = self.script_folder(Path(tmp) / 'copies' / 'GAME' / 'extracted' / 'script_en')
             old_layout = self.script_folder(Path(tmp) / 'game' / 'script_en')
             no_package = self.script_folder(games / 'other' / 'extracted' / 'script_en')
             empty = game / 'extracted' / 'script_fr'
@@ -210,7 +212,8 @@ class TestGenerator(unittest.TestCase):
                      (game / 'missing', None, NotADirectoryError), (game, None, ValueError),
                      (game / 'extracted', None, ValueError), (script_en / 'ai', 'game', ValueError),
                      (old_layout, None, ValueError), (no_package, None, ValueError), (script_en, 'second', ValueError),
-                     (old_layout, 'missing', ValueError), (empty, None, FileNotFoundError))
+                     (other_case, 'second', ValueError), (old_layout, 'missing', ValueError),
+                     (old_layout, 'GAME', ValueError), (empty, None, FileNotFoundError))
             with mock.patch.object(gen, 'GAMES_DIR', games):
                 for corpus_root, game_name, error in cases:
                     with self.subTest(corpus_root=corpus_root.relative_to(tmp).as_posix(), game=game_name):
@@ -220,22 +223,27 @@ class TestGenerator(unittest.TestCase):
                         write_output.assert_not_called()
 
     def test_game_from_the_path_wherever_it_is_else_from_the_game_argument(self):
-        """<game>/extracted/script_<lang> names its game outside games/ too (a copy, a junction's target); a path that
-        names no game here takes --game; a --game agreeing with the path is accepted"""
+        """<game>/extracted/script_<lang> names its game outside games/ too (a copy, a junction's target), its names in
+        any case (as the Windows file system takes them), the game spelled as its folder (its modules import the
+        game's package by that name, and imports do not ignore case); a path that names no game here takes --game; a
+        --game agreeing with the path is accepted"""
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()), \
              mock.patch.object(gen, 'collect_occurrences', return_value=({}, {})), \
              mock.patch.object(gen, 'write_output') as write_output:
             games = Path(tmp) / 'games'
             game = self.game_folder(games)
             copy = self.script_folder(Path(tmp) / 'copies' / 'game' / 'extracted' / 'script_en')
+            other_case = self.script_folder(Path(tmp) / 'cased' / 'GAME' / 'Extracted' / 'Script_EN')
             bare = self.script_folder(Path(tmp) / 'copies' / 'script_en')
             unknown = self.script_folder(Path(tmp) / 'copies' / 'other' / 'extracted' / 'script_en')
             with mock.patch.object(gen, 'GAMES_DIR', games):
-                for corpus_root, game_name in ((copy, None), (copy, 'game'), (bare, 'game'), (unknown, 'game')):
+                for corpus_root, game_name in ((copy, None), (copy, 'game'), (other_case, None), (other_case, 'game'),
+                                               (bare, 'game'), (unknown, 'game')):
                     with self.subTest(corpus_root=corpus_root.relative_to(tmp).as_posix(), game=game_name):
                         write_output.reset_mock()
                         gen.generate(corpus_root, game_name)
-                        self.assertEqual(write_output.call_args.args[0], game)
+                        # As strings: Windows paths compare equal in any case
+                        self.assertEqual(str(write_output.call_args.args[0]), str(game))
 
     def test_script_folder_of_any_language_is_accepted(self):
         """The language in script_<lang> is not fixed (script_en today), and a bare script folder passes too; the
