@@ -7,8 +7,6 @@ from dc3 import StrictBase
 from .parser.scp_listing import ListingSections
 from .parser.parser_types import Function
 
-TOOL_DIR = Path(__file__).resolve().parent
-
 
 class ScenaDecompileConfig(StrictBase):
     """Output and parser flags for scena2py.py, read directly off this instance's attributes"""
@@ -53,8 +51,8 @@ class ScenaDecompileConfig(StrictBase):
     optimize_mlil: bool = True
     infer_types: bool = True
 
-    # Output location
-    output_dir: Path = TOOL_DIR / 'out'
+    # Output location: None is the game's out/ (falcom/ed9/games/<game>/out); -o sets it for one run
+    output_dir: Path | None = None
 
     # Optional function filter, forwarded to ScpParser.disasm_all_functions(filter_func=...)
     filter_func: Callable[[Function], bool] | None = None  # lambda f: f.name == 'TestCitySet'

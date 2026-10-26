@@ -242,7 +242,7 @@ This separation keeps graph algorithms isolated from MLIL-to-HLIL node translati
 branch arms and loop bodies only: the code after an if or a loop (its merge block or exit) is
 returned as a `FollowOn` and continued in `_reconstruct_control_flow`'s loop, so recursion depth
 grows with nesting, not with function length. Deep nesting still recurses - a long `else if`
-cascade nests one level per test - so `falcom/ed9/scena2py.py` and `tools/ir_semantic_validator.py`
+cascade nests one level per test - so `falcom/ed9/scena2py_base.py` and `tools/ir_semantic_validator.py`
 raise Python's recursion limit to 10,000.
 
 Before reconstruction, `CallResultFolder` computes its folding decisions. The converter then

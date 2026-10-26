@@ -13,7 +13,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.scena2py import process_file
+from falcom.ed9.scena2py_base import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_writer_test_utils import fresh_writer
@@ -64,7 +64,7 @@ def decompile(filter_func=None) -> str:
         config = ScenaDecompileConfig()
         config.output_dir = Path(tmp) / 'out'
         config.filter_func = filter_func
-        process_file(dat, config)
+        process_file(dat, config, game='sora2')
         return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding='utf-8')
 
 
@@ -98,7 +98,7 @@ def decompile_written(round_trip: bool) -> str:
         config = ScenaDecompileConfig()
         config.output_dir = Path(tmp) / 'out'
         config.round_trip = round_trip
-        process_file(dat, config)
+        process_file(dat, config, game='sora2')
         return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding='utf-8')
 
 

@@ -19,7 +19,7 @@ from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.code_layout import code_start
 from falcom.ed9.parser.scp_listing import BYTES_WIDTH, COLUMN_GAP, ListingSections, ScpListing
 from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo
-from falcom.ed9.scena2py import process_file
+from falcom.ed9.scena2py_base import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.corpus import SORA2_SCRIPTS, require
@@ -382,7 +382,7 @@ class TestProcessFile(unittest.TestCase):
         for name, value in settings.items():
             setattr(config, name, value)
 
-        process_file(dat, config)
+        process_file(dat, config, game='sora2')
         return (config.output_dir / dat.stem / f'{dat.stem}.debug.txt').read_text(encoding='utf-8')
 
     def test_listing_alone_in_both_modes(self):

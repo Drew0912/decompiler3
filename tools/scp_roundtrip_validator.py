@@ -514,7 +514,7 @@ def check_common_order(common_orders: dict[Path, list[str]]) -> CheckResult:
 
 def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = True,
                         keep_unreachable_code: bool = True) -> tuple[ScpParser, list[Function]]:
-    """Same DSL emission as scena2py.py's write_python_dsl. Explicit flags rather than relying on
+    """Same DSL emission as scena2py_base.py's write_python_dsl. Explicit flags rather than relying on
     ScpParser's class defaults, which happen to match round_trip=True today but aren't guaranteed to.
     Returns the parser and its disassembled functions so callers can fingerprint them without
     re-parsing."""

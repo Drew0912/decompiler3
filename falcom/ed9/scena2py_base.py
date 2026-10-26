@@ -1,7 +1,8 @@
-"""Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps.
+"""The decompile pipeline each game's scena2py.py runs: ED9 .dat scripts into the Python DSL, TypeScript, and optional
+IR debug dumps.
 
-Usage:
-    python falcom/ed9/scena2py.py {file_path} [-o {output_dir}]
+Usage, from a game's launcher:
+    python falcom/ed9/games/{game}/scena2py.py {file_path} [-o {output_dir}]
 
 Flags live in scena2py_config.py, not on the command line (only the output folder has an
 override, -o) - edit scena2py_config.py to change which outputs are written and which
@@ -9,10 +10,7 @@ ScpParser/MLIL flags are used.
 """
 
 import argparse
-import sys
 from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
@@ -30,6 +28,9 @@ from ir.hlil.hlil import HLILUnstructured, reachable_statements
 from ir.hlil.hlil_formatter import HLILFormatter
 from codegen import generate_typescript, generate_typescript_header
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
+
+GAMES_DIR = Path(__file__).resolve().parent / 'games'
+GAME_OUTPUT_FOLDER = 'out'      # a game's default output folder, beside its launcher
 
 COMMON_FUNCTIONS_OMITTED_COMMENT = (
     '# Common/shared functions were omitted (include_common_functions = False).\n'
@@ -59,11 +60,19 @@ def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
         log.info(f'{path} exists - not overwritten')
 
 
+def output_root(config: ScenaDecompileConfig, game: str) -> Path:
+    """config.output_dir, or the game's out/ when it is None"""
+    if config.output_dir is None:
+        return GAMES_DIR / game / GAME_OUTPUT_FOLDER
+
+    return config.output_dir
+
+
 @infrequent_gc()
-def process_file(path: Path, config: ScenaDecompileConfig) -> None:
+def process_file(path: Path, config: ScenaDecompileConfig, *, game: str) -> None:
     raise_recursion_limit()
 
-    output_dir = config.output_dir / path.stem
+    output_dir = output_root(config, game) / path.stem
     out = output_dir / path.name
 
     parser, functions = ScpParser.load(path, round_trip=config.round_trip,
@@ -179,10 +188,12 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
         write_text_lf(out.with_suffix('.ts'), generate_typescript_header() + '\n'.join(ts_chunks))
 
 
-def main() -> int:
-    arg_parser = argparse.ArgumentParser(description='Decompile ED9 .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
+def main(game: str) -> int:
+    arg_parser = argparse.ArgumentParser(
+        description=f'Decompile {game} .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
     arg_parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
-    arg_parser.add_argument('-o', '--output-dir', type=Path, help="output folder (default: scena2py_config.py's output_dir)")
+    arg_parser.add_argument('-o', '--output-dir', type=Path,
+                            help=f"output folder (default: scena2py_config.py's output_dir, or {game}'s out/)")
 
     args = arg_parser.parse_args()
     files = collect_paths(args.paths)
@@ -195,14 +206,10 @@ def main() -> int:
         log.info(f'Decompiling {path}')
 
         try:
-            process_file(path, config)
+            process_file(path, config, game=game)
         except Exception as e:
             log.error(f'{path}: {type(e).__name__}: {e}')
             failures += 1
 
     log.info(f'{len(files) - failures}/{len(files)} succeeded')
     return 1 if failures else 0
-
-
-if __name__ == '__main__':
-    sys.exit(main())

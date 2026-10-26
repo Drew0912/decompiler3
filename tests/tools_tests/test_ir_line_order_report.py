@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for tools/ir_line_order_report.py: MLIL line directives are read in address order, and
-analyse_file gives itself scena2py.py's recursion headroom. BlockMergePass splices a block onto its only
+analyse_file gives itself scena2py_base.py's recursion headroom. BlockMergePass splices a block onto its only
 predecessor wherever that sits in the block list, so reading MLIL in block order reports line
 reorders the bytecode does not have."""
 

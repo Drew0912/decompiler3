@@ -256,7 +256,7 @@ checks only).
 
 **Generation** (bytecode → `.py`): `Formatter.format_function`/`format_block`
 (`falcom/ed9/disasm/formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
-`scena2py.write_python_dsl` (`falcom/ed9/scena2py.py`). `ScpParser.gen_python_script(functions,
+`scena2py_base.write_python_dsl` (`falcom/ed9/scena2py_base.py`). `ScpParser.gen_python_script(functions,
 comments = CommentOptions(...))` picks the optional comments (`falcom/ed9/disasm/llil_dsl_comments.py`;
 `scena2py` builds them from its config); the validator keeps the defaults, so the logic round trip
 checks that the stack comments reach the fixed point too. A generated script first puts the repo root on `sys.path` (`import sys` and

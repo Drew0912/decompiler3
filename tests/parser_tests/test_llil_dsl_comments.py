@@ -17,7 +17,7 @@ from falcom.ed9.disasm.llil_dsl_comments import COMMENT_COLUMN, MIN_COMMENT_GAP,
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import SlotRef
 from falcom.ed9.structs.scp_types import ScpValue
-from falcom.ed9.scena2py import process_file
+from falcom.ed9.scena2py_base import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import RETURN
 from ir.llil.llil import WORD_SIZE
@@ -381,7 +381,7 @@ class TestRealScript(unittest.TestCase):
                 if flipped is not None:
                     setattr(config, flipped, not getattr(config, flipped))
 
-                process_file(CHECK_ALGO_USE_FILE, config)
+                process_file(CHECK_ALGO_USE_FILE, config, game='sora2')
                 text = (Path(tmp_dir) / CHECK_ALGO_USE_FILE.stem / f'{CHECK_ALGO_USE_FILE.stem}.py').read_text(encoding='utf-8')
                 self.assertEqual({flag: marker in text for flag, marker in markers.items()},
                                  {flag: getattr(config, flag) for flag in markers})

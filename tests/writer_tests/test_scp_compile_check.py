@@ -16,7 +16,7 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.ir.llil import ED9LiftError, ED9VMLifter
 from falcom.ed9.parser.scp import ScpDisassemblyError, ScpParser
-from falcom.ed9.scena2py import main
+from falcom.ed9.scena2py_base import main
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_compile_check import CompileCheckError, definition_line
 from falcom.ed9.writer.scp_writer_helper import *
@@ -1139,7 +1139,7 @@ class TestErrors(CheckTestCase):
                     mock.patch.object(ScenaDecompileConfig, 'output_dir', self.tmp / 'out'),
                     self.assertLogs(log, level) as logs,
                 ):
-                    self.assertEqual(main(), exit_code)
+                    self.assertEqual(main('sora2'), exit_code)
 
                 messages = [record.getMessage() for record in logs.records if record.levelname == level]
                 self.assertTrue(any(re.search(expected, message) for message in messages), messages)

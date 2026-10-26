@@ -18,7 +18,7 @@ from codegen.typescript import TypeScriptGenerator
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.structs.scp_types import ScpValue
-from falcom.ed9.scena2py import process_file
+from falcom.ed9.scena2py_base import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
 from ir.core import SourceFloat, constant_values_equal
@@ -162,7 +162,7 @@ class TestDecompiledFloats(unittest.TestCase):
             config.output_dir = Path(tmp) / 'out'
             config.write_llil_asm = True
             config.write_hlil_ts = True
-            process_file(dat, config)
+            process_file(dat, config, game='sora2')
             out = config.output_dir / dat.stem
             cls.outputs = {suffix: (out / f'{dat.stem}{suffix}').read_text(encoding='utf-8')
                            for suffix in ('.llil.asm', '.mlil.asm', '.hlil.ts', '.ts')}

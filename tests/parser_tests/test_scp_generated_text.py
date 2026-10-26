@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Text of the generated LLIL DSL .py (header, hook import, label spacers, footer, the omitted-commons comment),
 scena2py's recursion limit and summary, the opt-in hook template, a fidelity script compiling back to its bytes,
-and LF line endings in every generated text file (scena2py.process_file, the common-library generator, the round-trip
-validator's intermediate scripts)."""
+and LF line endings in every generated text file (scena2py_base.process_file, the common-library generator, the
+round-trip validator's intermediate scripts)."""
 
 from pathlib import Path
 import importlib
@@ -28,7 +28,7 @@ from falcom.ed9.metadata.common_index import COMMON_FUNCTIONS
 from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
 from falcom.ed9.parser.parser_types import GlobalVar
 from falcom.ed9.structs.scp_types import ScpGlobalVar
-from falcom.ed9.scena2py import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file
+from falcom.ed9.scena2py_base import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 import scp_roundtrip_validator
 from scp_roundtrip_validator import compile_round, decompile_to_python
@@ -257,7 +257,7 @@ class TestHookTemplateWritten(unittest.TestCase):
         return sorted(self.out.rglob('*_hook.py'))
 
     def test_not_written_by_default(self):
-        process_file(SMALL_FILE, self.config)
+        process_file(SMALL_FILE, self.config, game='sora2')
         self.assertTrue((self.out / 'e0000' / 'e0000.py').exists())
         self.assertEqual(self.hooks(), [])
 
@@ -266,14 +266,14 @@ class TestHookTemplateWritten(unittest.TestCase):
         self.config.write_hook_template = True
         dat = self.out / ' ai.dat'
         dat.write_bytes(SMALL_FILE.read_bytes())
-        process_file(dat, self.config)
+        process_file(dat, self.config, game='sora2')
         self.assertEqual(self.hooks(), [self.out / ' ai' / 'ai_hook.py'])
         self.assertIn('    import ai_hook\n', (self.out / ' ai' / ' ai.py').read_text(encoding='utf-8'))
 
     def test_only_with_write_py(self):
         self.config.write_hook_template = True
         self.config.write_py = False
-        process_file(SMALL_FILE, self.config)
+        process_file(SMALL_FILE, self.config, game='sora2')
         self.assertEqual(self.hooks(), [])
 
     def test_existing_hook_kept(self):
@@ -282,7 +282,7 @@ class TestHookTemplateWritten(unittest.TestCase):
         hook.parent.mkdir()
         hook.write_bytes(b'# mine\r\n')
         with self.assertLogs(log, 'INFO') as logs:
-            process_file(SMALL_FILE, self.config)
+            process_file(SMALL_FILE, self.config, game='sora2')
 
         self.assertEqual(hook.read_bytes(), b'# mine\r\n')
         self.assertIn(f'{hook} exists - not overwritten', '\n'.join(logs.output))
@@ -292,7 +292,7 @@ class TestHookTemplateWritten(unittest.TestCase):
         dat = self.out / 'X.original.dat'
         dat.write_bytes(SMALL_FILE.read_bytes())
         with self.assertLogs(log, 'WARNING') as logs:
-            process_file(dat, self.config)
+            process_file(dat, self.config, game='sora2')
 
         self.assertTrue((self.out / 'X.original' / 'X.original.py').exists())
         self.assertEqual(self.hooks(), [])
@@ -311,7 +311,7 @@ class TestHookTemplateCompiles(unittest.TestCase):
         config.output_dir = out
         config.write_ts = config.write_mlil_asm = False
         config.write_hook_template = True
-        process_file(SMALL_FILE, config)
+        process_file(SMALL_FILE, config, game='sora2')
 
         self.script = out / 'e0000' / 'e0000.py'
         self.hook = out / 'e0000' / 'e0000_hook.py'
@@ -424,7 +424,7 @@ class TestLineEndings(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp:
             config.output_dir = Path(tmp)
-            process_file(TEST_FILE, config)
+            process_file(TEST_FILE, config, game='sora2')
             outputs = sorted(Path(tmp).rglob('*.*'))
             self.assertEqual({''.join(path.suffixes[-2:]) for path in outputs},
                              {'.py', '.ts', '.hlil.ts', '.llil.asm', '.mlil.asm', '.llil.dot', '.mlil.dot', '.debug.txt'})
@@ -480,14 +480,14 @@ class TestScena2py(unittest.TestCase):
     def test_omitted_common_functions_comment_only_when_they_are_omitted(self):
         for include, expected in ((True, False), (False, True)):
             with self.subTest(include_common_functions=include):
-                process_file(SMALL_FILE, self.config(include_common_functions=include))
+                process_file(SMALL_FILE, self.config(include_common_functions=include), game='sora2')
                 self.assertEqual(COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines()[0] in self.py_text(), expected)
 
     def test_line_markers_reach_both_hlil_outputs(self):
         """On by default; off, neither .hlil.ts nor .ts has a // line(N) comment"""
         for settings, expected in (({}, True), ({'line_markers': False}, False)):
             with self.subTest(**settings):
-                process_file(SMALL_FILE, self.config(write_hlil_ts=True, write_ts=True, **settings))
+                process_file(SMALL_FILE, self.config(write_hlil_ts=True, write_ts=True, **settings), game='sora2')
                 for suffix in ('.hlil.ts', '.ts'):
                     text = (self.tmp / SMALL_FILE.stem / f'{SMALL_FILE.stem}{suffix}').read_text(encoding='utf-8')
                     self.assertEqual('// line(' in text, expected, suffix)
@@ -495,7 +495,7 @@ class TestScena2py(unittest.TestCase):
     def test_process_file_raises_the_recursion_limit(self):
         self.addCleanup(sys.setrecursionlimit, sys.getrecursionlimit())
         sys.setrecursionlimit(PYTHON_DEFAULT_RECURSION_LIMIT)
-        process_file(SMALL_FILE, self.config())
+        process_file(SMALL_FILE, self.config(), game='sora2')
 
         self.assertGreaterEqual(sys.getrecursionlimit(), RECURSION_LIMIT)
 
@@ -505,7 +505,7 @@ class TestScena2py(unittest.TestCase):
             mock.patch.object(ScenaDecompileConfig, 'output_dir', self.tmp),
             self.assertLogs(log, logging.INFO) as logs,
         ):
-            self.assertEqual(main(), 0)
+            self.assertEqual(main('sora2'), 0)
 
         self.assertIn('1/1 succeeded', [record.getMessage() for record in logs.records])
 

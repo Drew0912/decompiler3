@@ -1125,7 +1125,7 @@ class ScpParser(StrictBase):
     def gen_python_script(self, functions: list[Function], *, preamble: list[str] = (),
                           comments: CommentOptions = CommentOptions()) -> str:
         """Full generated .py text: header (incl. shared-library imports/manifest), an optional
-        preamble (e.g. scena2py.py's common-functions-omitted warning), every function this script
+        preamble (e.g. scena2py_base.py's common-functions-omitted warning), every function this script
         must still define itself, then the footer. match_library_functions runs once here and its
         result feeds both the header and the inline-function filter, so the two never disagree about
         which functions are imported"""

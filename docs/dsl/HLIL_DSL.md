@@ -178,7 +178,7 @@ function at LLIL level only when it has to.
   it does not compile back to its original opcodes. The decompiler runs that check while writing the
   file, so an exact-mode file recompiles exactly by construction.
 - **File names.** The mixed file is `<stem>.py`, and the pure LLIL listing becomes `<stem>_llil.py`
-  (named in `falcom/ed9/scena2py.py`). Both compile to `<stem>.dat` and import the same
+  (named in `falcom/ed9/scena2py_base.py`). Both compile to `<stem>.dat` and import the same
   `<stem>_hook.py`, whose name comes from the `.dat` name (`gen_hook_import`,
   `falcom/ed9/parser/scp.py`). The round-trip validator's `{stem}.py` and `{stem}_out.py` are internal
   run files and can keep their names.
