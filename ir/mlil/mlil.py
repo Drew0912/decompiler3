@@ -749,11 +749,20 @@ def map_operands(node: MediumLevelILInstruction,
     """node rebuilt over transform(operand) for each direct operand, in evaluation order - node
     itself when every operand comes back unchanged, so `is` tells a pass whether anything changed"""
     operands = node.operands()
-    new_operands = [transform(operand) for operand in operands]
-    if all(new is old for new, old in zip(new_operands, operands)):
+    if not operands:
         return node
 
-    return node.rebuild(*new_operands)
+    if len(operands) == 1:
+        operand = operands[0]
+        new_operand = transform(operand)
+        return node if new_operand is operand else node.rebuild(new_operand)
+
+    new_operands = [transform(operand) for operand in operands]
+    for new, old in zip(new_operands, operands):
+        if new is not old:
+            return node.rebuild(*new_operands)
+
+    return node
 
 
 # === Basic Block ===
