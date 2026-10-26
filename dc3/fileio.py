@@ -8,14 +8,15 @@ Ported from the external ml (Ouroboros PyLibs) FileStream; round trips rely on t
 """
 
 import io
+import math
 import struct
-from ctypes import c_float
 from .config import default_encoding, default_endian
 from .logging import log
 
 LITTLE_ENDIAN = '<'
 BIG_ENDIAN = '>'
 BITS_PER_BYTE = 8
+FLOAT_QUIET_NAN_BIT = 0x00400000    # binary32's quiet bit, which a C cast to float sets on every NaN
 
 _ENDIAN_NAMES = {
     'little': LITTLE_ENDIAN,
@@ -195,8 +196,24 @@ class FileStream:
         return self._write_int('L', values)
 
     def WriteFloat(self, *values: float) -> int:
-        # Round through a C float first: an out-of-range value becomes inf instead of raising
-        return sum(self._stream.write(self._structs['f'].pack(c_float(float(v)).value)) for v in values)
+        """Write each value as a C cast to float does: an out-of-range value becomes inf instead of raising, a NaN
+        comes out quiet"""
+        layout = self._structs['f']
+        word = self._structs['L']
+        written = 0
+        for v in values:
+            v = float(v)
+            try:
+                packed = layout.pack(v)
+            except OverflowError:
+                packed = layout.pack(math.copysign(math.inf, v))
+
+            if math.isnan(v):
+                packed = word.pack(word.unpack(packed)[0] | FLOAT_QUIET_NAN_BIT)
+
+            written += self._stream.write(packed)
+
+        return written
 
 
 def str_to_bytes(s: str) -> bytes:
