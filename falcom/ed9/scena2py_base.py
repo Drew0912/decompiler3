@@ -16,6 +16,7 @@ from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
 from dc3.utils import collect_paths, raise_recursion_limit, write_text_lf
 from falcom.ed9.disasm import CommentOptions
+from falcom.ed9.games import GAMES_DIR
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.scp_listing import write_listing
 from falcom.ed9.parser.parser_types import Function
@@ -29,7 +30,6 @@ from ir.hlil.hlil_formatter import HLILFormatter
 from codegen import generate_typescript, generate_typescript_header
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 
-GAMES_DIR = Path(__file__).resolve().parent / 'games'
 GAME_OUTPUT_FOLDER = 'out'      # a game's default output folder, beside its launcher
 
 COMMON_FUNCTIONS_OMITTED_COMMENT = (
@@ -76,7 +76,7 @@ def process_file(path: Path, config: ScenaDecompileConfig, *, game: str) -> None
     out = output_dir / path.name
 
     parser, functions = ScpParser.load(path, round_trip=config.round_trip,
-                                       keep_unreachable_code=config.keep_unreachable_code,
+                                       keep_unreachable_code=config.keep_unreachable_code, game=game,
                                        filter_func=config.filter_func)
 
     common_functions_omitted = not config.include_common_functions

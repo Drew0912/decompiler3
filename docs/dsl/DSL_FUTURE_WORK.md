@@ -374,6 +374,6 @@ Decided against on 2026-10-01 (reasons in the handoff):
   scripts always use the same flags, fidelity output is recognizable without it (no library manifest,
   unreachable code kept), and it adds lines to every file.
 
-Known and left as is: `common_all.py`'s own `except ModuleNotFoundError` swallows a failed import inside
-a library module, the way the hook import did before Step 2a; `ScpValue` quiets signaling-NaN float words
-(none in the corpus).
+Known and left as is: `ScpValue` quiets signaling-NaN float words (none in the corpus). (`common_all.py`'s own
+`except ModuleNotFoundError`, which swallowed a failed import inside a library module, went in 3f-2: a script's
+library import now re-raises it, like the hook import.)

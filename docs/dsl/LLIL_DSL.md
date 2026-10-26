@@ -325,66 +325,82 @@ also compares the two files' debug records function by function and reports the 
 function they used. Across the 1082-file sora2_1.0 corpus: 953 distinct common-function names,
 43,185 total copies, up to 290 in a single script (`mp2000.py`).
 
-**Design:** `falcom/ed9/metadata/gen_common_library.py` walks the corpus once and generates
-`falcom/ed9/metadata/common/scp_writer_common_{N}.py` (one module per first-syscall
-subsystem, or `scp_writer_common_no_syscall.py`), plus `falcom/ed9/metadata/common_index.py`
-(pure data: `name -> (module, fingerprint digest)`) and `falcom/ed9/metadata/common_all.py`
-(re-exports every generated module via `import *`, see Gating below for its `try`/`except`). Each
-module lists only its own functions in `__all__`, so `common_all` exports library functions and
-`COMMON_LIBRARY_GENERATED` and nothing else: re-exporting the helper's names a second time made type
-checkers treat aliases like `Value32` as variables. At
-decompile time, `ScpParser` (`scp.py`) matches each of a script's own common functions against the
-index by name *and* fingerprint (`match_library_functions`) — a name whose body diverges from the
-canonical library variant is left inline, unchanged. **Every generated script unconditionally
-imports the whole library** (`gen_python_header` emits `from
-falcom.ed9.metadata.common_all import *`) — every mode, every script, whether or not its
-own source used any common functions — so a human editing the script has every common function in
-scope for `CALL()`/autocomplete even when adding one the original bytecode never used. Only the
-matched subset is declared in a `@scena.CommonImports()` manifest, in the script's own code order,
-since that (not the import) is what actually gets baked into the compiled bytecode; the import
+**Design:** `falcom/ed9/metadata/gen_common_library.py` walks one game's scripts once and generates
+that game's library in its metadata package `falcom/ed9/games/<game>/metadata/` (tracked, the generated
+files in it gitignored; later the game's chr table too): `common/scp_writer_common_{N}.py`
+(one module per first-syscall subsystem, or `scp_writer_common_no_syscall.py`), plus
+`common_index.py` (pure data: `name -> (module, fingerprint digest)`) and `common_all.py`
+(re-exports every generated module via `import *`). Each module lists only its own functions in
+`__all__`, so `common_all` exports library functions and nothing else: re-exporting the helper's
+names a second time made type checkers treat aliases like `Value32` as variables. A parser knows its
+game (`ScpParser.load(..., game=...)`; each game's `scena2py.py` passes its own, `None` means no
+library). At decompile time, `ScpParser` (`scp.py`) matches each of a script's own common functions
+against its game's index by name *and* fingerprint (`match_library_functions`) — a name whose body
+diverges from the canonical library variant is left inline, unchanged. **Every script decompiled for
+a game imports that game's whole library** (`gen_library_import`, after the hook import) — every
+mode, every script, whether or not its own source used any common functions — so a human editing
+the script has every common function in scope for `CALL()`/autocomplete even when adding one the
+original bytecode never used:
+
+```python
+try:
+    from falcom.ed9.games.sora2.metadata.common_all import *
+except ModuleNotFoundError as e:
+    if e.name != 'falcom.ed9.games.sora2.metadata.common_all':
+        raise
+```
+
+Only the matched subset is declared in a `@scena.CommonImports()` manifest, in the script's own code
+order, since that (not the import) is what actually gets baked into the compiled bytecode; the import
 itself has zero effect on compiled output; it's inert until the manifest (or, in strict mode, this
 script's own inline definitions, which always take precedence) actually references a name.
 Everything else — non-matching commons and this script's own functions — is still emitted inline
 as today.
 
-**Gating:** the *import* is unconditional (see above) and needs no `try`/`except` of its own in the
-generated script's header — `common_all.py` is a tracked project file (always present) that wraps
-its *own* internal imports of the gitignored, locally-generated `metadata/common/` package in
-`try`/`except ModuleNotFoundError`, logging a hint to run the generator and setting
-`COMMON_LIBRARY_GENERATED = False` if that package doesn't exist yet, `True` otherwise. The
-*manifest* — i.e. what actually gets matched and baked into bytecode — stays gated on two things
-in `match_library_functions`: `not (self.round_trip or self.keep_unreachable_code)` (the everyday
-`scena2py_config.py` default; the library was generated with unreachable code already stripped, so
-either fidelity flag falls back to inlining everything, exactly as before this existed), and
-`common_library_generated()` in `parser/scp.py`: every module `common_index.py` names has its file
-in `metadata/common/` (needed because `common_index.py` is tracked in git and would otherwise claim
-matches that don't actually exist on a fresh checkout, leaving the manifest referencing an undefined
-name). That second check **looks for the files instead of importing `common_all`**: the import would
-load the whole library and the writer, none of which a decompile uses. When a module is missing, it logs
-the same "run the generator" hint `common_all` does, matching returns `{}` and every function falls
-back to fully inline, same as strict mode.
+**Gating:** the *import* is a `try`/`except` like the hook import's: only the game's missing
+`common_all` is ignored (its library not generated: the script has every common function inline,
+below; every game folder has its tracked `metadata/__init__.py`, so a game without a library lacks
+only `common_all`, never the package), and any other failure — a module under `common/` missing,
+a failed import inside the library — re-raises instead of being swallowed. A script decompiled
+without a game (`game=None`: the
+round-trip validator without `--game`, most tests) has no library import at all. The *manifest* —
+i.e. what actually gets matched and baked into bytecode — is gated in `match_library_functions` on
+a game, on `not (self.round_trip or self.keep_unreachable_code)` (the everyday `scena2py_config.py`
+default; the library was generated with unreachable code already stripped, so either fidelity flag
+falls back to inlining everything, exactly as before this existed), and on the game's index
+(`common_library_index` in `parser/scp.py`, loaded once per game per process). It **imports the
+index, not `common_all`**: that would load the whole library and the writer, none of which a
+decompile uses. The generator writes the index with the modules, so a missing index means no
+library: the parser logs a hint to run the generator (once per game), matching returns `{}` and
+every function falls back to fully inline, same as strict mode. A manifest naming a function the
+script's game doesn't define (a misspelled name, or a library deleted after the decompile) fails
+with a `NameError`, to which `CommonImports` adds a note naming both causes and the generator
+command.
 
 **Regenerating the library:** `python falcom/ed9/metadata/gen_common_library.py
-falcom/ed9/games/sora2/extracted/script_en` walks the corpus (round_trip=False, keep_unreachable_code=False), fingerprints every
+falcom/ed9/games/sora2/extracted/script_en` walks the game's scripts (round_trip=False,
+keep_unreachable_code=False), fingerprints every
 `is_common_func` occurrence (noting, once per fingerprint, whether it touches a global, what it
 calls and its first syscall), picks the majority fingerprint per name as canonical (ties → first
 occurrence in sorted order), excludes any function touching `LOAD_GLOBAL`/`SET_GLOBAL` plus the
 closure of anything calling an excluded function (asserting the closure holds) and assigns modules.
 Only then does it re-parse the files holding an included function's canonical copy, rendering each
-function's final text, stack comments included (§1). Every run is a full rewrite of the output
-directory — hand edits to generated files don't survive regeneration. Anything but a game's script
-folder (`script` or `script_<lang>`) of `.dat` scripts (a file, the game folder, a subfolder like
-`script_en/ai`) stops it before anything is written.
+function's final text, stack comments included (§1). Every run is a full rewrite of the game's
+library — hand edits to generated files don't survive regeneration. The game is the one the path
+names, `<game>/extracted/script` or `script_<lang>` wherever the folder is (a copy, a junction's
+target) for a game in `falcom/ed9/games/`; else `--game <game>`, for any `script` or `script_<lang>`
+folder; both given, they must agree. Anything else stops it before anything is written: a file, a
+folder not named `script(_<lang>)` (the game folder, a subfolder like `script_en/ai`), no game, a
+path and `--game` naming different games, a folder with no `.dat` scripts.
 
-**`falcom/ed9/metadata/common/` is gitignored, not checked in** — like the game scripts
-under `falcom/ed9/games/<game>/extracted/` it is generated from, its generated modules are a substantive translation of the game's own
-script content (real function bodies, not original project code), so it's treated the same way:
-regenerated locally, never committed. `metadata/common_index.py` and `metadata/common_all.py`
-(pure data/import-statements — names, module keys, fingerprint digests, `import *` lines, no
-translated code) are checked in normally. **This means a fresh checkout needs the generator run
-once, against a local copy of the corpus, before the default (`round_trip=False`) `scena2py.py`
-path imports common functions from the library** — until then `common_index.py`/`common_all.py`
-reference modules that don't exist on disk yet, so the gate above keeps every function inline.
+**A game's library is gitignored, not checked in** (`metadata/common/`, `metadata/common_index.py`,
+`metadata/common_all.py`; only the package's `__init__.py` is tracked) — like the game scripts
+under `falcom/ed9/games/<game>/extracted/` it is generated from, its generated modules are a substantive translation of the game's own script content (real function
+bodies, not original project code), so it's treated the same way: regenerated locally, never
+committed. **This means a fresh checkout needs the generator run once per game, against a local
+copy of its scripts, before that game's default (`round_trip=False`) decompile imports common
+functions from the library** — until then the gate above keeps every function inline and the
+scripts skip their library import.
 
 **The four questions this section used to leave open, now closed:**
 

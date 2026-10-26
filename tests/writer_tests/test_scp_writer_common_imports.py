@@ -75,6 +75,20 @@ class TestCommonImportsRegistrationOrder(CompileTestCase):
 
         self.assertEqual([f.name for f in writer.functions], ['imported_a', 'imported_b'])
 
+    def test_undefined_name_is_noted_as_a_typo_or_a_missing_library(self):
+        """A script whose game library is not generated skips its star import, so its manifest's names are undefined;
+        so is a misspelled one. The writer can't tell which: the note names both, and the generator command"""
+        with self.assertRaises(NameError) as raised:
+            @self.writer.CommonImports()
+            def commonImports():
+                return [not_a_library_function]
+
+        self.assertEqual(raised.exception.name, 'not_a_library_function')
+        note = scp_writer.COMMON_IMPORTS_NAME_ERROR_NOTE
+        self.assertEqual(raised.exception.__notes__, [note])
+        self.assertIn('misspelled', note)
+        self.assertIn('gen_common_library.py falcom/ed9/games/<game>/extracted/', note)
+
 
 class TestCallByName(WriterTestCase):
     """The decompiler emits @scena.LLILCommonCode() for a common function the library didn't match, and other

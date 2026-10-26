@@ -2,6 +2,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Callable, NamedTuple
 import bisect
+import functools
+import importlib
 import keyword
 import pathlib
 import struct
@@ -18,9 +20,8 @@ from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_O
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
 from ..structs.call_debug_records import PUSH_CONSTANT_OPS, canonical_argc, pair_records
 from ..structs.string_pool import string_offset
-from ..metadata import (COMMON_LIBRARY_ALL_IMPORT, COMMON_LIBRARY_DIR, COMMON_LIBRARY_MISSING_HINT,
-                        SCP_WRITER_HELPER_IMPORT)
-from ..metadata.common_index import COMMON_FUNCTIONS
+from ..metadata import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_MISSING_HINT, SCP_WRITER_HELPER_IMPORT,
+                        game_metadata_module)
 from ..metadata.fingerprint import function_fingerprint, fingerprint_digest
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT
@@ -32,18 +33,21 @@ SYS_PATH_SETUP_LINES = ['import sys', f'sys.path.insert(0, {str(PROJECT_ROOT)!r}
 # PEP 8's two blank lines after each top-level definition of a generated script, and after its header
 DEFINITION_SPACING = ['', '']
 
-# The generated library modules common_index.py names: the ones common_all.py imports
-COMMON_LIBRARY_MODULES = frozenset(module for module, _ in COMMON_FUNCTIONS.values())
 
+@functools.cache
+def common_library_index(game: str) -> dict[str, tuple[str, str]]:
+    """game's library index (name -> module, fingerprint digest), loaded once per game per process; {} when the library
+    is not generated, with the hint logged that once. The index only, not common_all: the modules load the writer,
+    which a decompile never uses. A missing game package re-raises, as in a script's library import"""
+    module = game_metadata_module(game, COMMON_INDEX_MODULE)
+    try:
+        return importlib.import_module(module).COMMON_FUNCTIONS
+    except ModuleNotFoundError as e:
+        if e.name != module:
+            raise
 
-def common_library_generated() -> bool:
-    """Every generated library module's file exists. Checked, not imported: importing them (common_all) loads the
-    whole library and the writer, which a decompile never uses"""
-    generated = all((COMMON_LIBRARY_DIR / f'{module}.py').is_file() for module in COMMON_LIBRARY_MODULES)
-    if not generated:
-        log.info(COMMON_LIBRARY_MISSING_HINT)
-
-    return generated
+    log.info(f'Every common function inline: {COMMON_LIBRARY_MISSING_HINT.format(game=game)}')
+    return {}
 
 
 def is_module_name(name: str) -> bool:
@@ -567,6 +571,10 @@ class ScpParser(StrictBase):
     # Decode code no branch reaches (e.g. a JMP right after RETURN) so the .py keeps it for a byte-exact round trip
     keep_unreachable_code : bool = True
 
+    # The game (its folder under falcom/ed9/games/) whose common-function library the everyday decompile matches
+    # against and the .py imports; None: no library, every common function inline, no library import
+    game            : str | None = None
+
     # The compile check's stricter reading of bytes it just compiled: a slot outside the live stack fails instead of
     # only warning, so does a read past the stack, and no code may run or jump past the known end of the code
     reject_outside_stack : bool = False
@@ -593,6 +601,7 @@ class ScpParser(StrictBase):
         *,
         round_trip: bool,
         keep_unreachable_code: bool,
+        game: str | None = None,
         filter_func: Callable[[Function], bool] | None = None,
     ) -> tuple[ScpParser, list[Function]]:
         """Read path, parse, and disassemble every function - the setup every caller (scena2py.py,
@@ -600,7 +609,7 @@ class ScpParser(StrictBase):
         The parser stays fully usable afterward (get_instructions, get_func_name_from_func_id, etc.
         are all in-memory)."""
         return cls.load_bytes(path.read_bytes(), path.name, round_trip=round_trip,
-                              keep_unreachable_code=keep_unreachable_code, filter_func=filter_func)
+                              keep_unreachable_code=keep_unreachable_code, game=game, filter_func=filter_func)
 
     @classmethod
     def load_bytes(
@@ -610,6 +619,7 @@ class ScpParser(StrictBase):
         *,
         round_trip: bool,
         keep_unreachable_code: bool,
+        game: str | None = None,
         filter_func: Callable[[Function], bool] | None = None,
         quiet: bool = False,
         reject_outside_stack: bool = False,
@@ -622,6 +632,7 @@ class ScpParser(StrictBase):
             parser = cls(fs, name)
             parser.round_trip = round_trip
             parser.keep_unreachable_code = keep_unreachable_code
+            parser.game = game
             parser.reject_outside_stack = reject_outside_stack
             parser.known_code_end = known_code_end
             parser.parse()
@@ -1151,23 +1162,16 @@ class ScpParser(StrictBase):
         matched lets gen_python_script pass in an already-computed match set instead of this
         recomputing it.
 
-        The whole-library import is unconditional - every script gets it, regardless of fidelity
-        mode or whether it has a function list at all, so a human editing the script has every
-        common function in scope for CALL()/autocomplete even when adding one this script never
-        originally used. Unlike the hook import above it, this one needs no try/except of its own:
-        common_all.py is a tracked project file (always present) whose own internal imports of the
-        gitignored, locally-generated metadata/common/ package are what can fail on a fresh checkout - it
-        catches that itself and logs a hint to run the generator, so importing common_all here
-        always succeeds even when the library behind it doesn't exist yet.
+        With a game, the whole-library import (gen_library_import) follows the hook import, whatever
+        the fidelity mode and whether or not there is a function list, so a human editing the script
+        has every common function in scope for CALL()/autocomplete even when adding one this script
+        never originally used.
         """
-        lines = [*SYS_PATH_SETUP_LINES]
-        lines += f"""\
-{SCP_WRITER_HELPER_IMPORT}
-{self.gen_hook_import()}
+        lines = [*SYS_PATH_SETUP_LINES, SCP_WRITER_HELPER_IMPORT, *self.gen_hook_import().splitlines(), '']
+        if self.game is not None:
+            lines += [*self.gen_library_import().splitlines(), '']
 
-{COMMON_LIBRARY_ALL_IMPORT}
-
-scena = create_scp_writer('{self.name}')""".splitlines()
+        lines.append(f"scena = create_scp_writer('{self.name}')")
         lines.extend(DEFINITION_SPACING)
 
         if self.global_vars:
@@ -1185,8 +1189,8 @@ scena = create_scp_writer('{self.name}')""".splitlines()
         return lines
 
     def match_library_functions(self, functions: list[Function]) -> dict[str, str]:
-        """This script's common functions whose body+signature exactly match the shared library's
-        canonical variant (falcom/ed9/metadata/common_index.py) - name -> library module key.
+        """This script's common functions whose body+signature exactly match the canonical variant in
+        its game's library (falcom/ed9/games/<game>/metadata/common_index.py) - name -> library module key.
 
         Only meaningful in the everyday (non-fidelity) mode: a byte-exact recompile needs every
         function inline and every byte of it kept, so this always returns {} when self.round_trip
@@ -1196,23 +1200,20 @@ scena = create_scp_writer('{self.name}')""".splitlines()
         diverges from the library (different body, signature, or subsystem) is left out here and
         stays inline as an ordinary @scena.LLILCommonCode() definition, same as a non-common one.
 
-        Also returns {} if any library module isn't actually generated on disk yet (fresh
-        checkout, generator never run) - common_index.py is tracked and would otherwise claim
-        matches that don't actually exist, leaving a matched name referenced by the
-        @scena.CommonImports() manifest but never defined anywhere.
+        Also returns {} without a game, and when the game's library isn't generated (fresh checkout,
+        generator never run): the index is generated with the modules, so a missing index means no
+        library to import from.
         """
-        if self.round_trip or self.keep_unreachable_code:
+        if self.game is None or self.round_trip or self.keep_unreachable_code:
             return {}
 
-        if not common_library_generated():
-            return {}
-
+        index = common_library_index(self.game)
         matched = {}
         for func in functions:
             if not func.is_common_func:
                 continue
 
-            entry = COMMON_FUNCTIONS.get(func.name)
+            entry = index.get(func.name)
             if entry is None:
                 continue
 
@@ -1237,8 +1238,8 @@ scena = create_scp_writer('{self.name}')""".splitlines()
     def gen_common_imports(self, functions: list[Function], *, matched: dict[str, str] | None = None) -> list[str]:
         """The @scena.CommonImports() manifest, in this script's own code order, for every function
         matched to the shared library. Empty when nothing matched - including strict round-trip
-        mode and an ungenerated library, both handled by match_library_functions returning {}.
-        The whole-library import itself lives in gen_python_header instead, unconditionally - it's
+        mode, no game and an ungenerated library, all handled by match_library_functions returning {}.
+        The whole-library import itself is gen_library_import, written whenever there is a game - it's
         pure name resolution for autocomplete/hand-editing, so it doesn't need to track fidelity
         mode or match state the way the manifest (what's actually compiled in) does."""
         if matched is None:
@@ -1283,6 +1284,18 @@ try:
     {statement}
 except ModuleNotFoundError as e:
     if {check}:
+        raise"""
+
+    def gen_library_import(self) -> str:
+        """The try/except block star-importing the game's whole common-function library (common_all). Like the hook
+        import, only a missing common_all is ignored (the library is not generated, so every common function is
+        inline); a failed import inside the library re-raises"""
+        module = game_metadata_module(self.game, COMMON_ALL_MODULE)
+        return f"""\
+try:
+    from {module} import *
+except ModuleNotFoundError as e:
+    if e.name != {module!r}:
         raise"""
 
     def gen_hook_template(self) -> str:

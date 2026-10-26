@@ -21,10 +21,9 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT, RECURSION_LIMIT, write_text_lf
-from falcom.ed9.metadata import SCP_WRITER_HELPER_IMPORT
-from falcom.ed9.metadata import common_all
+from falcom.ed9.metadata import (COMMON_ALL_MODULE, COMMON_LIBRARY_FOLDER, SCP_WRITER_HELPER_IMPORT,
+                                 game_metadata_module)
 from falcom.ed9.metadata import gen_common_library as gen
-from falcom.ed9.metadata.common_index import COMMON_FUNCTIONS
 from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
 from falcom.ed9.parser.parser_types import GlobalVar
 from falcom.ed9.structs.scp_types import ScpGlobalVar
@@ -32,7 +31,7 @@ from falcom.ed9.scena2py_base import COMMON_FUNCTIONS_OMITTED_COMMENT, main, pro
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 import scp_roundtrip_validator
 from scp_roundtrip_validator import compile_round, decompile_to_python
-from tests.shared.corpus import SORA2_SCRIPTS, require
+from tests.shared.corpus import SORA2_SCRIPTS, require, require_library
 from tests.shared.scp_writer_test_utils import fresh_writer
 
 TEST_FILE = SORA2_SCRIPTS / 'ai/ai_chr5122_e00.dat'
@@ -102,10 +101,11 @@ def HookExtra():
 """
 
 
-def named_parser(name: str) -> ScpParser:
-    """A parser with only what the header needs: a name and no global vars"""
+def named_parser(name: str, game: str | None = None) -> ScpParser:
+    """A parser with only what the header needs: a name, no global vars, and the game"""
     parser = ScpParser(None, name)
     parser.global_vars = []
+    parser.game = game
     return parser
 
 
@@ -163,6 +163,27 @@ class TestHeader(unittest.TestCase):
             "    if e.name not in ('X', 'X.original_hook'):",
             '        raise',
         ])
+
+    def test_library_import_after_the_hook_reraises_unless_common_all_is_missing(self):
+        header = named_parser('e0000.dat', 'sora2').gen_python_header()
+        library_start = header.index('try:', header.index('try:') + 1)     # the second block, after the hook's
+        self.assertEqual(header[library_start - 1:], [
+            '',
+            'try:',
+            '    from falcom.ed9.games.sora2.metadata.common_all import *',
+            'except ModuleNotFoundError as e:',
+            "    if e.name != 'falcom.ed9.games.sora2.metadata.common_all':",
+            '        raise',
+            '',
+            "scena = create_scp_writer('e0000.dat')",
+            '',
+            '',
+        ])
+
+    def test_no_library_import_without_a_game(self):
+        header = named_parser('e0000.dat').gen_python_header()
+        hook_end = header.index('', header.index('try:'))
+        self.assertEqual(header[hook_end:], ['', "scena = create_scp_writer('e0000.dat')", '', ''])
 
 
 class TestHookImportRuns(unittest.TestCase):
@@ -395,7 +416,8 @@ class TestFooter(unittest.TestCase):
 class TestGeneratedScript(unittest.TestCase):
     def assert_clean_whitespace(self, round_trip: bool):
         require(TEST_FILE)
-        parser, functions = ScpParser.load(TEST_FILE, round_trip=round_trip, keep_unreachable_code=round_trip)
+        parser, functions = ScpParser.load(TEST_FILE, round_trip=round_trip, keep_unreachable_code=round_trip,
+                                           game='sora2')
         lines = parser.gen_python_script(functions).split('\n')
         self.assertEqual([line for line in lines if line != line.rstrip()], [])
 
@@ -435,15 +457,10 @@ class TestLineEndings(unittest.TestCase):
         text = 'line 1\nline 2\n'
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp)
-            with mock.patch.object(gen, 'OUTPUT_DIR', out / 'common'), \
-                 mock.patch.object(gen, 'INDEX_PATH', out / 'common_index.py'), \
-                 mock.patch.object(gen, 'ALL_PATH', out / 'common_all.py'), \
-                 mock.patch.object(gen, 'render_module', return_value=text), \
+            with mock.patch.object(gen, 'render_module', return_value=text), \
                  mock.patch.object(gen, 'render_index', return_value=text), \
                  mock.patch.object(gen, 'render_all', return_value=text):
-                # write_output deletes every .py in OUTPUT_DIR: never let it reach the real library
-                self.assertEqual(gen.OUTPUT_DIR, out / 'common')
-                gen.write_output({}, {}, {'f': []}, {'f': 'scp_writer_common_0'})
+                gen.write_output(out, {}, {}, {'f': []}, {'f': 'scp_writer_common_0'})
 
             paths = sorted(out.rglob('*.py'))
             self.assertEqual({path.name for path in paths}, {'__init__.py', 'scp_writer_common_0.py', 'common_index.py', 'common_all.py'})
@@ -522,21 +539,16 @@ class TestLibraryExports(unittest.TestCase):
         rendered = {name: [f'def {name}():', '    pass'] for name in names}
         facts = {name: gen.FunctionFacts(touches_global=False, call_targets=set(), subsystem=None) for name in names}
         namespace = {}
-        exec(gen.render_module(f'{gen.MODULE_PREFIX}0', names, rendered, facts, {}), namespace)
+        package = game_metadata_module('sora2', COMMON_LIBRARY_FOLDER)
+        exec(gen.render_module(package, f'{gen.MODULE_PREFIX}0', names, rendered, facts, {}), namespace)
 
         self.assertEqual(namespace['__all__'], ('Alpha', 'Zeta'))
 
-    def test_all_module_keeps_its_logger_private(self):
-        namespace = {}
-        exec(gen.render_all(['not_generated']), namespace)
-
-        self.assertEqual(self.public_names(namespace), {'COMMON_LIBRARY_GENERATED'})
-
     def test_generated_library_exports_only_library_functions(self):
-        if not common_all.COMMON_LIBRARY_GENERATED:
-            raise unittest.SkipTest('common-function library not generated')
+        index = require_library('sora2')
+        common_all = importlib.import_module(game_metadata_module('sora2', COMMON_ALL_MODULE))
 
-        self.assertEqual(self.public_names(vars(common_all)), set(COMMON_FUNCTIONS) | {'COMMON_LIBRARY_GENERATED'})
+        self.assertEqual(self.public_names(vars(common_all)), set(index))
 
 
 if __name__ == '__main__':

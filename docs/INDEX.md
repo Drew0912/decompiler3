@@ -29,9 +29,10 @@ Each game has its own launcher, as in decompiler2: `python falcom/ed9/games/<gam
 decompiles that game's `.dat` scripts (folders are searched recursively; the game's own are in
 `falcom/ed9/games/<game>/extracted/`) with the settings in `falcom/ed9/scena2py_config.py` (`ScenaDecompileConfig`:
 which outputs, the parser flags; one config for every game) into the game's `out/<stem>/`, or `<folder>/<stem>/` with
-`-o <folder>`. Every launcher runs the shared pipeline in `falcom/ed9/scena2py_base.py`, so it is the way to check a
-decompile: write the outputs before a change, again after it, and diff them. Like the tests and generated scripts, the
-launchers and the `tools/` and `demos/` scripts put the repo root on `sys.path` themselves: no `PYTHONPATH`.
+`-o <folder>`, matching common functions against the game's own library once it is generated (`dsl/LLIL_DSL.md` §3).
+Every launcher runs the shared pipeline in `falcom/ed9/scena2py_base.py`, so it is the way to check a decompile: write
+the outputs before a change, again after it, and diff them. Like the tests and generated scripts, the launchers and the
+`tools/` and `demos/` scripts put the repo root on `sys.path` themselves: no `PYTHONPATH`.
 
 A test or verification run writes nothing inside the repo:
 - `scena2py`: `python falcom/ed9/games/<game>/scena2py.py <file or folder> -o <scratch folder>`. A run that needs
@@ -50,7 +51,8 @@ A test or verification run writes nothing inside the repo:
   ```
 
 - `tools/scp_roundtrip_validator.py --round-trip` / `--logic-round-trip`: `--work-dir <scratch folder>` (the default
-  is a new temp folder); `tools/ir_semantic_validator.py --output-dir <scratch folder>` when it writes files.
+  is a new temp folder), `--game <game>` to decompile with that game's library (without it none: every common
+  function inline); `tools/ir_semantic_validator.py --output-dir <scratch folder>` when it writes files.
 - IR checks: `tools/ir_semantic_validator.py <dat> --export-regression <scratch folder>/before.json` before a change,
   `--compare-regression <scratch folder>/before.json` after; judge the output with `VALIDATOR_GUIDE.md`.
 - A generated script writes its `.dat` to a relative name: run it from a scratch folder.

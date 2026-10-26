@@ -105,8 +105,8 @@ and Disassembler come into play when *generating* a `.py` file from an existing 
 round-trip check), and in the compile check, which parses and lifts the compiled bytes again so a
 stack mistake fails the compile with the `.py` line that caused it (`ScpWriter.check_compiled`).
 An automated byte-exact round-trip check exists and works; fidelity settings are opt-in rather
-than default. A shared common-function library
-(`falcom/ed9/metadata/common/`, generated from the corpus) is implemented and active by
+than default. A shared common-function library per game
+(`falcom/ed9/games/<game>/metadata/common/`, generated from that game's scripts) is implemented and active by
 default, so generated `.py` files import shared game functions instead of embedding full copies of
 them. A `<stem>_hook.py` next to a script can replace or add functions and rewrite opcodes when it
 compiles (`scp_writer_hooks.py`; `docs/dsl/HOOKS.md`). Compiling from MLIL/HLIL DSL forms instead of

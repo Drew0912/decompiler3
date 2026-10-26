@@ -17,6 +17,7 @@ from dc3.logging import log
 from assembler import OperandDescriptor, OperandFormat, OperandType
 from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from ..disasm.ed9_optable import ED9OperandType
+from ..metadata import COMMON_LIBRARY_MISSING_HINT
 from ..structs.crc32 import hash_function_name
 from ..structs.call_debug_records import (PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue,
                                           canonical_argc, script_call_identity)
@@ -54,6 +55,10 @@ GLOBAL_VAR_TYPES = tuple(ScpGlobalVar.Type)
 
 # The engine passes arguments by position; param_count counts every parameter
 POSITIONAL_KINDS = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+
+# Added to a NameError from a script's manifest: the writer can't tell a typo from a library that isn't there
+COMMON_IMPORTS_NAME_ERROR_NOTE = ('a name @scena.CommonImports() lists is not defined: it is misspelled, or '
+                                  + COMMON_LIBRARY_MISSING_HINT.format(game='<game>'))
 
 
 def in_range(value: int, bounds: range) -> bool:
@@ -208,7 +213,13 @@ class ScpWriter:
         registered the same way an inline @scena.LLILCommonCode() definition would be.
         """
         def wrapper(func):
-            for common_func in func():
+            try:
+                common_funcs = func()
+            except NameError as e:
+                e.add_note(COMMON_IMPORTS_NAME_ERROR_NOTE)
+                raise
+
+            for common_func in common_funcs:
                 self._register_function(common_func, is_common_func=True)
 
             return func

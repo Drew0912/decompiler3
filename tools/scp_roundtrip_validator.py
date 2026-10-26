@@ -7,8 +7,11 @@ round trip, and optionally decompiles, recompiles and byte-compares each file.
 Usage:
     python tools/scp_roundtrip_validator.py falcom/ed9/games/sora2/extracted/script_en/scena/e2000.dat
     python tools/scp_roundtrip_validator.py falcom/ed9/games/sora2/extracted/script_en --verbose
-    python tools/scp_roundtrip_validator.py falcom/ed9/games/sora2/extracted/script_en/scena/e0000.dat --round-trip
-    python tools/scp_roundtrip_validator.py falcom/ed9/games/sora2/extracted/script_en/scena/e0000.dat --logic-round-trip
+    python tools/scp_roundtrip_validator.py falcom/ed9/games/sora2/extracted/script_en/scena/e0000.dat --round-trip --game sora2
+    python tools/scp_roundtrip_validator.py falcom/ed9/games/sora2/extracted/script_en/scena/e0000.dat --logic-round-trip --game sora2
+
+--game <game>: the game whose common-function library the decompiles of --round-trip and --logic-round-trip use
+(falcom/ed9/games/<game>/); without it none: every common function inline, no library import in the .py.
 
 Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler limitation):
     layout          default params, param flags, debug records and debug args are contiguous in table
@@ -75,6 +78,7 @@ from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
 from assembler import Instruction, OperandType
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
+from falcom.ed9.games import game_names
 from falcom.ed9.metadata.fingerprint import function_fingerprint
 from falcom.ed9.structs.call_debug_records import RecordView, pair_records, read_debug_records, record_view
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
@@ -512,14 +516,15 @@ def check_common_order(common_orders: dict[Path, list[str]]) -> CheckResult:
     return CheckResult.build('common order', summary, [], warnings)
 
 
-def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = True,
-                        keep_unreachable_code: bool = True) -> tuple[ScpParser, list[Function]]:
+def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = True, keep_unreachable_code: bool = True,
+                        game: str | None = None) -> tuple[ScpParser, list[Function]]:
     """Same DSL emission as scena2py_base.py's write_python_dsl. Explicit flags rather than relying on
     ScpParser's class defaults, which happen to match round_trip=True today but aren't guaranteed to.
     Returns the parser and its disassembled functions so callers can fingerprint them without
     re-parsing."""
     with contextlib.redirect_stdout(io.StringIO()):
-        parser, functions = ScpParser.load(dat_path, round_trip=round_trip, keep_unreachable_code=keep_unreachable_code)
+        parser, functions = ScpParser.load(dat_path, round_trip=round_trip, keep_unreachable_code=keep_unreachable_code,
+                                           game=game)
 
     write_text_lf(py_path, parser.gen_python_script(functions))
     return parser, functions
@@ -556,14 +561,14 @@ def exception_text(exc: Exception) -> str:
     return f'{type(exc).__name__}: {ascii(str(exc))}'
 
 
-def check_round_trip(path: Path, work_dir: Path) -> CheckResult:
+def check_round_trip(path: Path, work_dir: Path, *, game: str | None = None) -> CheckResult:
     stem = script_stem(path)
     run_dir = Path(tempfile.mkdtemp(prefix=f'{stem}_', dir=work_dir))
     dat_path = run_dir / f'{stem}.dat'
     py_path = run_dir / f'{stem}.py'
 
     shutil.copyfile(path, dat_path)
-    decompile_to_python(dat_path, py_path, round_trip=True, keep_unreachable_code=True)
+    decompile_to_python(dat_path, py_path, round_trip=True, keep_unreachable_code=True, game=game)
     dat_path.unlink()
 
     returncode, tail = compile_dsl(py_path, run_dir)
@@ -759,7 +764,7 @@ def compile_round(stem: str, round_dir: Path, py_text: str) -> tuple[list[str], 
     return tail, (dat_path if returncode == 0 and dat_path.exists() else None)
 
 
-def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
+def check_logic_round_trip(path: Path, work_dir: Path, *, game: str | None = None) -> list[CheckResult]:
     """Decompile with round_trip=False (the everyday config), then iterate compile -> decompile
     until output stabilizes. Game logic must match the source on every round (function order and
     label names may differ); byte layout only needs to reach a fixed point within
@@ -781,7 +786,7 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
     file_dir = Path(tempfile.mkdtemp(prefix=f'{stem}_logic_', dir=work_dir))
 
     source_parser, source_functions = decompile_to_python(path, file_dir / f'{stem}.py', round_trip=False,
-                                                          keep_unreachable_code=False)
+                                                          keep_unreachable_code=False, game=game)
     source_snapshot = LogicSnapshot.of(source_parser, source_functions)
     py_texts = [(file_dir / f'{stem}.py').read_text(encoding='utf-8')]
     dat_bytes = []
@@ -802,7 +807,7 @@ def check_logic_round_trip(path: Path, work_dir: Path) -> list[CheckResult]:
         results.extend(struct_results)
 
         round_parser, round_functions = decompile_to_python(dat_path, round_dir / f'{stem}_out.py', round_trip=False,
-                                                            keep_unreachable_code=False)
+                                                            keep_unreachable_code=False, game=game)
         py_texts.append((round_dir / f'{stem}_out.py').read_text(encoding='utf-8'))
 
         # Checked every round, not just round 1: a file that only diverges after round 1 but still
@@ -860,6 +865,8 @@ def create_parser() -> argparse.ArgumentParser:
     arg_parser.add_argument('--round-trip', action='store_true', help='decompile, recompile and byte-compare each file')
     arg_parser.add_argument('--logic-round-trip', action='store_true', help='decompile with round_trip=False and verify game logic is preserved and compile/decompile reaches a fixed point')
     arg_parser.add_argument('--work-dir', metavar='DIR', help='where --round-trip / --logic-round-trip write their files (default: a new temp dir)')
+    arg_parser.add_argument('--game', choices=game_names(),
+                            help="the game whose common-function library --round-trip / --logic-round-trip's decompiles use (default: none, every common function inline)")
     arg_parser.add_argument('--verbose', action='store_true', help='print every detail, including for passing checks')
     return arg_parser
 
@@ -873,6 +880,7 @@ def main() -> int:
         work_dir = Path(args.work_dir) if args.work_dir else Path(tempfile.mkdtemp(prefix='scp_roundtrip_'))
         work_dir.mkdir(parents=True, exist_ok=True)
         print(f'work dir: {work_dir}')
+        print(f'game: {args.game or 'none'}')
 
     totals = Counter()
     common_orders = {}
@@ -887,13 +895,13 @@ def main() -> int:
 
         if args.round_trip:
             try:
-                results.append(check_round_trip(path, work_dir))
+                results.append(check_round_trip(path, work_dir, game=args.game))
             except Exception as e:
                 results.append(CheckResult('round trip', Status.FAIL, exception_text(e)))
 
         if args.logic_round_trip:
             try:
-                results.extend(check_logic_round_trip(path, work_dir))
+                results.extend(check_logic_round_trip(path, work_dir, game=args.game))
             except Exception as e:
                 results.append(CheckResult('logic round trip', Status.FAIL, exception_text(e)))
 

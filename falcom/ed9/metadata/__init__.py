@@ -1,18 +1,27 @@
-"""Common-function library support: fingerprints, the generated index, and the generated modules"""
+"""Common-function library support: fingerprints, the generator, and where a game's generated library lives"""
 
-from pathlib import Path
+from ..games import GAMES_PACKAGE
 
-COMMON_LIBRARY_PACKAGE = 'falcom.ed9.metadata.common'  # dotted path to the generated modules
-COMMON_LIBRARY_DIR = Path(__file__).resolve().parent / 'common'  # the same modules on disk (gitignored)
+# A game's generated data (its common-function library; later its chr table): falcom/ed9/games/<game>/metadata/, a
+# tracked package whose generated files are gitignored
+GAME_METADATA_FOLDER = 'metadata'
 
-# Logged by common_all.py when a script imports it, and by the parser when it decompiles, while modules are missing
-COMMON_LIBRARY_MISSING_HINT = ('Shared common-function library not generated - run '
-                               'falcom/ed9/metadata/gen_common_library.py <game>/script_<lang> to build it')
+# The library in it: the modules, one per syscall subsystem, in COMMON_LIBRARY_FOLDER; the index (name -> module,
+# fingerprint digest); the module re-exporting them all
+COMMON_LIBRARY_FOLDER = 'common'
+COMMON_INDEX_MODULE   = 'common_index'
+COMMON_ALL_MODULE     = 'common_all'
+
+# Logged by the parser, once per game, when a decompile finds no library for its game; noted by the writer on a
+# NameError in a script's @scena.CommonImports() manifest, with '<game>' (it knows no game)
+COMMON_LIBRARY_MISSING_HINT = ('the common-function library of {game} is not generated - run '
+                               'falcom/ed9/metadata/gen_common_library.py '
+                               'falcom/ed9/games/{game}/extracted/script_<lang> to build it')
 
 # Every generated module and every emitted script needs this - one place both sides spell it
 SCP_WRITER_HELPER_IMPORT = 'from falcom.ed9.writer.scp_writer_helper import *'
 
-# Every emitted script imports the whole library unconditionally, not just the functions its own
-# source matched - so a human editing the script has every common function in scope for
-# autocomplete/CALL() even when adding one the original bytecode never used
-COMMON_LIBRARY_ALL_IMPORT = 'from falcom.ed9.metadata.common_all import *'
+
+def game_metadata_module(game: str, name: str) -> str:
+    """The dotted path of name, a module or package in game's metadata package"""
+    return f'{GAMES_PACKAGE}.{game}.{GAME_METADATA_FOLDER}.{name}'

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Unit tests for ScpParser's selection-to-emission contract: match_library_functions,
 get_inline_functions, gen_common_imports and gen_python_script must all agree on which functions got
-matched to the shared library, in the script's own code order, and only outside strict round-trip
-mode. Uses a real corpus file (TEST_FILE) rather than a fake index,
-since its common/source split is already exercised (and known) elsewhere in this test suite."""
+matched to the shared library, in the script's own code order, only outside strict round-trip
+mode and only with a game. Uses a real corpus file (TEST_FILE) and sora2's library rather than a fake
+index, since its common/source split is already exercised (and known) elsewhere in this test suite."""
 
 from pathlib import Path
 import sys
@@ -13,16 +13,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.parser.scp import ScpParser
-from tests.shared.corpus import SORA2_SCRIPTS, require
+from tests.shared.corpus import SORA2_SCRIPTS, require, require_library
 
 TEST_FILE = SORA2_SCRIPTS / 'ai/ai_chr0100_e00.dat'
+GAME = 'sora2'
+LIBRARY_IMPORT = 'from falcom.ed9.games.sora2.metadata.common_all import *'
 
 MATCHED_COMMON_FUNC = 'chr_info'   # canonical-matching common function - imported, not inlined
 SOURCE_FUNC = 'SkillTable'         # this script's own function - always inlined
 
 
-def load() -> tuple[ScpParser, list]:
-    return ScpParser.load(require(TEST_FILE), round_trip=False, keep_unreachable_code=False)
+def load(game: str | None = GAME) -> tuple[ScpParser, list]:
+    require_library(GAME)
+    return ScpParser.load(require(TEST_FILE), round_trip=False, keep_unreachable_code=False, game=game)
 
 
 class TestLibraryMatching(unittest.TestCase):
@@ -52,6 +55,15 @@ class TestLibraryMatching(unittest.TestCase):
         parser.keep_unreachable_code = True
 
         self.assertEqual(parser.match_library_functions(functions), {})
+
+    def test_no_game_matches_nothing_and_imports_no_library(self):
+        """game=None (the validator without --game, most tests): every common function inline, no library import"""
+        parser, functions = load(game=None)
+        script = parser.gen_python_script(functions)
+
+        self.assertEqual(parser.match_library_functions(functions), {})
+        self.assertNotIn('common_all', script)
+        self.assertIn(f'def {MATCHED_COMMON_FUNC}(', script)
 
 
 class TestEmissionContract(unittest.TestCase):
@@ -84,7 +96,7 @@ class TestEmissionContract(unittest.TestCase):
         script = parser.gen_python_script(functions)
         header = script.split('\n@scena.CommonImports()')[0]
 
-        self.assertIn('from falcom.ed9.metadata.common_all import *', header)
+        self.assertIn(f'    {LIBRARY_IMPORT}', header)
         self.assertIn(f'{MATCHED_COMMON_FUNC},', script.split('def commonImports():')[1].split(']')[0])
         self.assertIn(f'def {SOURCE_FUNC}(', script)
         self.assertNotIn(f'def {MATCHED_COMMON_FUNC}(', script)

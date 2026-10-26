@@ -23,7 +23,10 @@ script_en
 *.ts
 out
 
-**/metadata/common/
+# each game's generated common-function library (falcom/ed9/metadata/gen_common_library.py)
+falcom/ed9/games/*/metadata/common/
+falcom/ed9/games/*/metadata/common_index.py
+falcom/ed9/games/*/metadata/common_all.py
 
 decompiler2
 notes
