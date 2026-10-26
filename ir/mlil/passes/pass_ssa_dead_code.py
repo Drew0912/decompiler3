@@ -6,7 +6,6 @@ Remove SSA variable assignments that are never used
 from ir.pipeline import Pass
 from ..mlil import (
     MediumLevelILFunction,
-    MediumLevelILInstruction,
     MediumLevelILCall,
     MLILConst,
     MLILDebug,
@@ -32,7 +31,7 @@ class SSADeadCodeEliminationPass(Pass):
     """Remove unused SSA variable assignments"""
 
     def __init__(self, sccp_replaced_vars: set[MLILVariableSSA] = None):
-        self.ssa_uses: dict[MLILVariableSSA, list[MediumLevelILInstruction]] = {}
+        self.read_vars: set[MLILVariableSSA] = set()
         self.sccp_replaced_vars = sccp_replaced_vars or set()
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
@@ -52,7 +51,7 @@ class SSADeadCodeEliminationPass(Pass):
         Clearing an unread call output does not count: it drops no read, so it cannot make
         anything else dead
         """
-        self._build_use_chains(func)
+        self._collect_read_vars(func)
         removed = False
 
         for block in func.basic_blocks:
@@ -62,20 +61,20 @@ class SSADeadCodeEliminationPass(Pass):
                 if isinstance(inst, MLILSetVarSSA):
                     # A global write is an observable cross-function side effect - keep it even
                     # with zero in-function reads, unlike an ordinary dead local assignment
-                    if self.ssa_uses.get(inst.var) or func.is_global_var(inst.var.base_var):
+                    if inst.var in self.read_vars or func.is_global_var(inst.var.base_var):
                         new_instructions.append(inst)
                     else:
                         removed = True
                         new_instructions.extend(string_debug_comment(inst, self.sccp_replaced_vars))
                 elif isinstance(inst, MLILPhi):
-                    if self.ssa_uses.get(inst.dest):
+                    if inst.dest in self.read_vars:
                         new_instructions.append(inst)
                     else:
                         removed = True
                 else:
                     # An unread call result is dropped, the call itself stays
                     if isinstance(inst, MediumLevelILCall) and inst.output is not None:
-                        if not self.ssa_uses.get(inst.output):
+                        if inst.output not in self.read_vars:
                             inst.output = None
 
                     new_instructions.append(inst)
@@ -84,10 +83,6 @@ class SSADeadCodeEliminationPass(Pass):
 
         return removed
 
-    def _build_use_chains(self, func: MediumLevelILFunction):
-        """Build SSA use chains"""
-        self.ssa_uses = {}
-
-        for inst in func.iter_instructions():
-            for var, reader in iter_ssa_reads(inst):
-                self.ssa_uses.setdefault(var, []).append(reader)
+    def _collect_read_vars(self, func: MediumLevelILFunction):
+        """The SSA variables func reads anywhere: a sweep only asks whether a variable is read"""
+        self.read_vars = {var for inst in func.iter_instructions() for var, _ in iter_ssa_reads(inst)}

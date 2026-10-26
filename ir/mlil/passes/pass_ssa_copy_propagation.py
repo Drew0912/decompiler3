@@ -101,18 +101,13 @@ class CopyPropagationPass(Pass):
             self.def_positions[var] = (block, index)
 
     def _count_uses(self, func: MediumLevelILFunction):
-        """Count reads of every SSA variable"""
+        """Count reads of every SSA variable. A read under & is not counted: this pass never
+        rewrites the operand of &"""
         self.use_counts = {}
 
         for inst in func.iter_instructions():
-            for var in self._collect_uses(inst):
+            for var, _ in iter_ssa_reads(inst, skip=(MLILAddressOf,)):
                 self.use_counts[var] = self.use_counts.get(var, 0) + 1
-
-    @classmethod
-    def _collect_uses(cls, node: MediumLevelILInstruction) -> list[MLILVariableSSA]:
-        """SSA variables node reads. A read under & is not counted: this pass never rewrites the
-        operand of &."""
-        return [var for var, _ in iter_ssa_reads(node, skip=(MLILAddressOf,))]
 
     def _propagate_once(self, func: MediumLevelILFunction) -> bool:
         """Single copy propagation pass - resolves each read to its effective root"""

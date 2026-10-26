@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILCall,
+    MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILCall, MediumLevelILFunction,
     MLILVariable, MLILConst, MLILUndef, MLILVar, MLILSetVar, MLILBinaryOp, MLILUnaryOp, MLILAdd, MLILMul,
     MLILNeg, MLILAddressOf, MLILGoto, MLILIf, MLILRet, MLILCall, MLILSyscall, MLILCallScript,
     MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILNop, MLILDebug, MLILStoreDeref,
@@ -187,9 +187,12 @@ class TestWalkerRulesKept(unittest.TestCase):
     def test_copy_propagation_does_not_count_a_read_under_address_of(self):
         # it never rewrites the operand of &, so that read is not one of its uses
         x1 = MLILVariableSSA(MLILVariable('x'), 1)
-        call = MLILCall('f', [MLILVarSSA(x1), MLILAddressOf(MLILVarSSA(x1))])
+        func = MediumLevelILFunction('f')
+        func.create_block().add_instruction(MLILCall('f', [MLILVarSSA(x1), MLILAddressOf(MLILVarSSA(x1))]))
+        copy_propagation = CopyPropagationPass()
+        copy_propagation._count_uses(func)
 
-        self.assertEqual(CopyPropagationPass._collect_uses(call), [x1])
+        self.assertEqual(copy_propagation.use_counts, {x1: 1})
 
     def test_call_types_are_exactly_the_three_call_classes(self):
         # passes rely on MediumLevelILCall covering exactly these three call classes
