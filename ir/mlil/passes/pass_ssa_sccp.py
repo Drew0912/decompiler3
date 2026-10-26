@@ -1,6 +1,7 @@
 """SCCP - Sparse Conditional Constant Propagation"""
 
 import operator
+from collections import deque
 from typing import Any
 
 from ir.core import constant_values_equal
@@ -92,7 +93,7 @@ class LatticeValue:
 
     @classmethod
     def top(cls) -> LatticeValue:
-        return cls(cls.TOP)
+        return _TOP
 
     @classmethod
     def constant(cls, value: Any) -> LatticeValue:
@@ -100,7 +101,7 @@ class LatticeValue:
 
     @classmethod
     def bottom(cls) -> LatticeValue:
-        return cls(cls.BOTTOM)
+        return _BOTTOM
 
     def is_top(self) -> bool:
         return self.state == self.TOP
@@ -151,6 +152,11 @@ class LatticeValue:
             return f'C({self.value})'
 
 
+# One shared TOP and BOTTOM: a LatticeValue is never changed after __init__
+_TOP = LatticeValue(LatticeValue.TOP)
+_BOTTOM = LatticeValue(LatticeValue.BOTTOM)
+
+
 class SCCP:
     """Sparse Conditional Constant Propagation"""
 
@@ -168,8 +174,8 @@ class SCCP:
         self.reachable_blocks: set[MediumLevelILBasicBlock] = set()
 
         # Worklists
-        self.ssa_worklist: list[MLILVariableSSA] = []
-        self.cfg_worklist: list[tuple] = []  # (from_block, to_block)
+        self.ssa_worklist: deque[MLILVariableSSA] = deque()
+        self.cfg_worklist: deque[tuple] = deque()  # (from_block, to_block)
 
         # SSA def-use chains
         self.ssa_defs: dict[MLILVariableSSA, MediumLevelILInstruction] = {}
@@ -213,7 +219,7 @@ class SCCP:
         while self.ssa_worklist or self.cfg_worklist:
             # Process CFG edges first
             while self.cfg_worklist:
-                from_block, to_block = self.cfg_worklist.pop(0)
+                from_block, to_block = self.cfg_worklist.popleft()
 
                 if (from_block, to_block) in self.reachable_edges:
                     continue
@@ -233,7 +239,7 @@ class SCCP:
 
             # Process SSA worklist
             while self.ssa_worklist:
-                var = self.ssa_worklist.pop(0)
+                var = self.ssa_worklist.popleft()
 
                 for user in self.ssa_uses.get(var, []):
                     user_block = self.inst_block.get(user)
