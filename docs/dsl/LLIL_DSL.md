@@ -236,7 +236,7 @@ measured.
 --logic-round-trip`, before the common-function library existed): all 1082 files reach the fixed
 point at round 2 (`c1 == c2`, `out2 == out3`); all preserve game logic against the source;
 `out1`/`out2` differ only in `loc_` label lines. Re-checked after the library landed (§3) on a
-132-file subset (`sora2_1.0/script_en/battle/`, chosen for subsystem diversity) plus the two
+132-file subset (sora2's `script_en/battle/`, chosen for subsystem diversity) plus the two
 previously-broken edge cases (`common.dat`, `mon5078+.dat`): identical result, 100% converge at
 round 2, no logic regressions. **Full 1082-file re-run with the library active, completed
 2026-09-22:** 0 logic round-trip failures and 0 errors — every file's `logic round trip` check
@@ -306,8 +306,8 @@ defaults. Anyone using `scena2py.py` directly for byte-exact recompilation needs
 to `True`.
 
 **What's actually verified, and what isn't:** `--round-trip` is byte-identical on the validator's 5
-baseline samples (`sora2_1.0/script_en/scena/e0000.dat`, `e2000.dat`, `mp0000_ev.dat`, `system.dat`,
-and `sora2_1.0/script_en/ai/ai_chr0100_e00.dat`), and `--logic-round-trip` converges at round 2 on
+baseline samples (sora2's `script_en/scena/e0000.dat`, `e2000.dat`, `mp0000_ev.dat`, `system.dat`,
+and `script_en/ai/ai_chr0100_e00.dat`), and `--logic-round-trip` converges at round 2 on
 all 5 (2026-10-01). On a 300-file quota sample of `sora2_1.0` that includes them (list and results
 in the gitignored `notes/validator300/`), 298 files are byte-identical and all 300 converge at round 2
 (2026-10-16). The logic round trip is also measured corpus-wide (above), and so is the byte-exact one:
@@ -365,7 +365,7 @@ the same "run the generator" hint `common_all` does, matching returns `{}` and e
 back to fully inline, same as strict mode.
 
 **Regenerating the library:** `python falcom/ed9/metadata/gen_common_library.py
-sora2_1.0/script_en` walks the corpus (round_trip=False, keep_unreachable_code=False), fingerprints every
+falcom/ed9/games/sora2/extracted/script_en` walks the corpus (round_trip=False, keep_unreachable_code=False), fingerprints every
 `is_common_func` occurrence (noting, once per fingerprint, whether it touches a global, what it
 calls and its first syscall), picks the majority fingerprint per name as canonical (ties → first
 occurrence in sorted order), excludes any function touching `LOAD_GLOBAL`/`SET_GLOBAL` plus the
@@ -376,8 +376,8 @@ directory — hand edits to generated files don't survive regeneration. Anything
 folder (`script` or `script_<lang>`) of `.dat` scripts (a file, the game folder, a subfolder like
 `script_en/ai`) stops it before anything is written.
 
-**`falcom/ed9/metadata/common/` is gitignored, not checked in** — like the `sora2_1.0/`
-scripts it is generated from, its generated modules are a substantive translation of the game's own
+**`falcom/ed9/metadata/common/` is gitignored, not checked in** — like the game scripts
+under `falcom/ed9/games/<game>/extracted/` it is generated from, its generated modules are a substantive translation of the game's own
 script content (real function bodies, not original project code), so it's treated the same way:
 regenerated locally, never committed. `metadata/common_index.py` and `metadata/common_all.py`
 (pure data/import-statements — names, module keys, fingerprint digests, `import *` lines, no

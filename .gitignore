@@ -13,8 +13,10 @@ CLAUDE.local.md
 .codex
 
 # game scripts
+falcom/ed9/games/*/extracted/
 script_en
 *.dat
+*.tbl
 *.asm
 *.dot
 *.debug.txt
@@ -25,5 +27,3 @@ out
 
 decompiler2
 notes
-sora2_1.0
-sora1

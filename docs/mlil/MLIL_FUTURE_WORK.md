@@ -8,7 +8,7 @@
 SCCP (`ir/mlil/passes/pass_ssa_sccp.py`) deliberately does not fold `MLIL_DIV`/`MLIL_MOD`, or any
 op with a float operand, and no pass decides a branch from a float (LLIL DSL neatening plan, Step
 3b) - see the Optimization Passes section of `docs/mlil/MLIL_DESIGN.md`. The one live, corpus-confirmed
-bad fold the DIV/MOD part closed: `sora2_1.0/script_en/scena/mp0000_ev.dat`'s `MayaEvented_22_test`
+bad fold the DIV/MOD part closed: sora2's `script_en/scena/mp0000_ev.dat`'s `MayaEvented_22_test`
 used to print `13.0` for `400 / 30.0` (Python floor-division), which is wrong for VM float division
 no matter what the VM's exact answer turns out to be. The float part closed `chr0000`'s
 `AniBtlCraft01Main` printing `0.4 * 0.8` as `0.32` (a double-precision fold).

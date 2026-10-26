@@ -6,7 +6,7 @@ import unittest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]     # tests/shared/corpus.py -> the repo
-SORA2_SCRIPTS = REPO_ROOT / 'sora2_1.0' / 'script_en'
+SORA2_SCRIPTS = REPO_ROOT / 'falcom' / 'ed9' / 'games' / 'sora2' / 'extracted' / 'script_en'
 
 
 def require(path: Path) -> Path:

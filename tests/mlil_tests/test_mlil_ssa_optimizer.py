@@ -45,7 +45,7 @@ def make_double_negation_func(name: str) -> tuple:
 
 
 class TestFixpointReachesTrueConvergence(unittest.TestCase):
-    """Minimized from the real corpus bug (ai_chr5106p.CheckAlgoUse, sora2_1.0/script_en/ai,
+    """Minimized from the real corpus bug (ai_chr5106p.CheckAlgoUse, sora2's script_en/ai,
     confirmed by instrumenting the production pass order): `if (!(reg0#19 != 0))` only reaches
     its fully-simplified form (`if (!reg0#19)`) because ConditionSimplificationPass rewrites it
     to `(reg0#19 == 0)` on one outer iteration, then to `!reg0#19` on the next. The old

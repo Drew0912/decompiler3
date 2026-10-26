@@ -39,7 +39,7 @@ need goes in `tests/shared/`.
 
 | Module | Gives |
 |---|---|
-| `corpus.py` | `SORA2_SCRIPTS`, the `sora2_1.0` scripts folder (a script is `SORA2_SCRIPTS / 'ai/x.dat'`), and `require(path)` for the corpus skip (below) |
+| `corpus.py` | `SORA2_SCRIPTS`, sora2's scripts folder `falcom/ed9/games/sora2/extracted/script_en` (a script is `SORA2_SCRIPTS / 'ai/x.dat'`), and `require(path)` for the corpus skip (below) |
 | `llil_utils.py` | `make_builder(num_params)`: a `FalcomVMBuilder` with one function and its entry block open; `lift_asm(asm)`: `scp_asm` bytecode disassembled and lifted; `instructions_of(func, kind)` |
 | `ir_utils.py` | `connect(func)`: an MLIL function's edges from its blocks' last instructions; `concrete_subclasses(base)` |
 | `hlil_cfg_utils.py` | `build_function` and `structure`: small MLIL CFGs from a block spec, and their HLIL; `classify` and `hlil_run`: an oracle that runs MLIL and HLIL side by side |
@@ -49,11 +49,11 @@ need goes in `tests/shared/`.
 ## Corpus and generated files
 
 - A test that reads a real script passes its path through `require(path)`, which skips the test when the file is
-  missing (no `sora2_1.0/`).
+  missing (no `falcom/ed9/games/sora2/extracted/`).
 - A few tests need the generated common-function library (`falcom/ed9/metadata/common/`, gitignored); without it they
-  fail (one class skips). Make it with `python falcom/ed9/metadata/gen_common_library.py sora2_1.0/script_en`. It
-  also rewrites the tracked `falcom/ed9/metadata/common_index.py` and `common_all.py`, so run it on
-  `sora2_1.0/script_en` only.
+  fail (one class skips). Make it with
+  `python falcom/ed9/metadata/gen_common_library.py falcom/ed9/games/sora2/extracted/script_en`. It also rewrites the
+  tracked `falcom/ed9/metadata/common_index.py` and `common_all.py`, so run it on sora2's `script_en` only.
 
 ## Adding tests
 
