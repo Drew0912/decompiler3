@@ -673,7 +673,9 @@ class MLILToHLILConverter:
         drop_trailing_continue(loop_body)
         self.loop_stack.pop()
 
+        # The loop's provenance is its header's last instruction: the test or the jump into the body
         while_stmt = HLILWhile(condition, loop_body, label=stack_entry.label)
+        self._set_hlil_source_info(while_stmt, last_instr)
         target_block.add_statement(while_stmt)
 
         # The caller carries on after the loop (outside the popped loop context)

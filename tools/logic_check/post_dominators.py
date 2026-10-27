@@ -1,8 +1,9 @@
-"""Post-dominators and control dependence over any layer's control-flow graph
+"""Dominators, post-dominators and control dependence over any layer's control-flow graph
 
-Immediate post-dominators by Cooper, Harvey and Kennedy's iterative algorithm ("A Simple, Fast Dominance Algorithm",
-2001) on the reversed graph, rooted at a virtual EXIT; then the branches each block runs under (Ferrante, Ottenstein
-and Warren's control dependence, read off the post-dominator tree)"""
+Immediate dominators by Cooper, Harvey and Kennedy's iterative algorithm ("A Simple, Fast Dominance Algorithm", 2001);
+post-dominators by the same on the reversed graph, rooted at a virtual EXIT; then the branches each block runs under
+(Ferrante, Ottenstein and Warren's control dependence, read off the post-dominator tree), over the whole graph or
+within one iteration of a block's innermost loop"""
 
 from typing import Callable, Hashable, Sequence
 
@@ -96,16 +97,21 @@ def immediate_post_dominators(blocks: Sequence, successors: Callable,
             reversed_successors.setdefault(successor, []).append(block)
 
     order = reverse_post_order(EXIT, lambda node: reversed_successors[node])
-    number = {node: index for index, node in enumerate(order)}
     reversed_predecessors = {block: [*successors(block), *((EXIT,) if block in exits else ())] for block in blocks}
-    ipdom = {EXIT: EXIT}
+    return immediate_dominators(order, reversed_predecessors.__getitem__)
+
+
+def immediate_dominators(order: Sequence, predecessors: Callable) -> dict[Hashable, Hashable]:
+    """Each block's immediate dominator over blocks in reverse post-order from order[0], the root (its own)"""
+    number = {node: index for index, node in enumerate(order)}
+    idom = {order[0]: order[0]}
 
     def intersect(a, b):
         while a is not b:
             while number[a] > number[b]:
-                a = ipdom[a]
+                a = idom[a]
             while number[b] > number[a]:
-                b = ipdom[b]
+                b = idom[b]
         return a
 
     changed = True
@@ -113,14 +119,14 @@ def immediate_post_dominators(blocks: Sequence, successors: Callable,
         changed = False
         for node in order[1:]:
             new = None
-            for predecessor in reversed_predecessors[node]:
-                if predecessor in ipdom:
+            for predecessor in predecessors(node):
+                if predecessor in idom:
                     new = predecessor if new is None else intersect(predecessor, new)
-            if ipdom.get(node) is not new:
-                ipdom[node] = new
+            if idom.get(node) is not new:
+                idom[node] = new
                 changed = True
 
-    return ipdom
+    return idom
 
 
 def control_dependence(blocks: Sequence, successors: Callable, branches: Callable,
@@ -150,3 +156,65 @@ def control_dependence(blocks: Sequence, successors: Callable, branches: Callabl
                 runner = ipdom[runner]
 
     return {block: frozenset(dependence.get(block, ())) for block in blocks}
+
+
+def loop_bodies(order: Sequence, successors: Callable, predecessors: Callable) -> dict[Hashable, set]:
+    """header -> its loop's blocks, those reaching a back edge into it without passing it; headers by the edges that
+    go back in order (a reverse post-order)"""
+    position = {block: index for index, block in enumerate(order)}
+    latches = {}
+    for source in order:
+        for target in successors(source):
+            if position[target] <= position[source]:
+                latches.setdefault(target, []).append(source)
+    bodies = {}
+    for header, sources in latches.items():
+        body, pending = {header}, list(sources)
+        while pending:
+            block = pending.pop()
+            if block not in body:
+                body.add(block)
+                pending.extend(predecessor for predecessor in predecessors(block) if predecessor in position)
+        bodies[header] = body
+    return bodies
+
+
+def iteration_dependence(order: Sequence, successors: Callable, predecessors: Callable, branches: Callable,
+                         start: Callable | None = None) -> tuple[dict, dict, dict]:
+    """(block -> the (branch address, 't' / 'f') it runs under directly within one iteration of its innermost loop,
+    block -> that loop's header, header -> its loop's blocks). Control dependence over the loop's blocks, its back
+    edges and exits ending the
+    iteration, so an arm the block misses in this iteration is one it depends on even where a later iteration reaches
+    it; a block in no loop, and a loop's header (in its enclosing loop), as control_dependence gives them over the
+    blocks around it"""
+    bodies = loop_bodies(order, successors, predecessors)
+    region = {}                 # block -> the header of the innermost loop whose iteration it runs in
+    for header in sorted(bodies, key=lambda header: len(bodies[header]), reverse=True):
+        for block in bodies[header]:
+            if block is not header:
+                region[block] = header
+
+    whole = control_dependence(order, successors, branches, start)
+    dependence = {block: whole[block] for block in order if block not in region}
+    for header, body in bodies.items():
+        end = IterationEnd()
+
+        def inside(target, body=body, header=header, end=end):
+            """target within the iteration, or its end: a back edge to the header, an edge out of the loop"""
+            return target if target in body and target is not header else end
+
+        def iteration_successors(block, inside=inside, end=end):
+            return [] if block is end else list(dict.fromkeys(map(inside, successors(block))))
+
+        def iteration_branch(block, inside=inside, end=end):
+            branch = None if block is end else branches(block)
+            return None if branch is None else (branch[0], inside(branch[1]), inside(branch[2]))
+
+        members = [*(block for block in order if block in body), end]
+        local = control_dependence(members, iteration_successors, iteration_branch)
+        dependence.update((block, local[block]) for block in members if region.get(block) is header)
+    return dependence, region, bodies
+
+
+class IterationEnd:
+    """The end of one iteration of a loop, where its back edges and exits lead (iteration_dependence)"""

@@ -1,66 +1,90 @@
 """The logic check over a script: every function lifted and converted as the decompiler does (round_trip off,
-unreachable code left out), its LLIL against its MLIL"""
+unreachable code left out), its LLIL against its MLIL and its MLIL against its HLIL"""
 
 import time
 from pathlib import Path
 from typing import NamedTuple
 
 from dc3.utils import raise_recursion_limit
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.parser.scp import ScpParser
-from .compare import Difference, compare_facts
+from .compare import Difference, compare_facts, compare_gated
 from .evaluation import analyze
+from .hlil_layer import HLILLayer
 from .llil_layer import LLILLayer
 from .mlil_layer import MLILLayer
 
 
 class FunctionResult(NamedTuple):
     name: str
-    differences: list[Difference]
-    decompile_error: str | None     # the function did not lift or convert: nothing compared
+    differences: list[Difference]   # LLIL -> MLIL
+    hlil_differences: list[Difference]  # MLIL -> HLIL
+    decompile_error: str | None     # the function did not lift or convert: nothing compared (from there on)
     internal_error: str | None      # the check itself failed
     seconds: float                  # the check's own time, the decompile's left out
 
 
 def check_script(path: Path, game: str | None, *, infer_types: bool = True) -> list[FunctionResult]:
-    """Each function's LLIL -> MLIL differences; a script the parser rejects raises"""
+    """Each function's LLIL -> MLIL and MLIL -> HLIL differences; a script the parser rejects raises"""
     raise_recursion_limit()     # a value tree nests as deep as a chain of pushes, an eager || chain's
     parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False, game=game)
     lifter = ED9VMLifter(parser=parser)
-    results = []
-    for func in functions:
-        try:
-            llil = lifter.lift_function(func)
-        except Exception as e:
-            results.append(FunctionResult(func.name, [], f'{type(e).__name__}: {e}', None, 0.0))
-            continue
+    return [check_function(lifter, func, infer_types) for func in functions]
 
+
+def check_function(lifter: ED9VMLifter, func, infer_types: bool) -> FunctionResult:
+    seconds = 0.0
+
+    def timed(task):
+        nonlocal seconds
         started = time.perf_counter()
         try:
-            reference = analyze(LLILLayer(llil))    # before the conversion, so nothing it does to the LLIL counts
-        except Exception as e:
-            results.append(FunctionResult(func.name, [], None, f'LLIL: {type(e).__name__}: {e}', 0.0))
-            continue
-        seconds = time.perf_counter() - started
+            return task()
+        finally:
+            seconds += time.perf_counter() - started
 
-        try:
-            mlil = convert_falcom_llil_to_mlil(llil, optimize=True, infer_types=infer_types)
-        except Exception as e:
-            results.append(FunctionResult(func.name, [], f'{type(e).__name__}: {e}', None, seconds))
-            continue
+    try:
+        llil = lifter.lift_function(func)
+    except Exception as e:
+        return FunctionResult(func.name, [], [], f'{type(e).__name__}: {e}', None, 0.0)
 
-        started = time.perf_counter()
-        try:
-            differences = compare_facts(reference, analyze(MLILLayer(mlil)))
-        except Exception as e:
-            results.append(FunctionResult(func.name, [], None, f'MLIL: {type(e).__name__}: {e}', seconds))
-            continue
-        results.append(FunctionResult(func.name, differences, None, None, seconds + time.perf_counter() - started))
+    try:
+        reference = timed(lambda: analyze(LLILLayer(llil)))  # before the conversion: nothing it does to the LLIL counts
+    except Exception as e:
+        return FunctionResult(func.name, [], [], None, f'LLIL: {type(e).__name__}: {e}', seconds)
 
-    return results
+    try:
+        mlil = convert_falcom_llil_to_mlil(llil, optimize=True, infer_types=infer_types)
+    except Exception as e:
+        return FunctionResult(func.name, [], [], f'{type(e).__name__}: {e}', None, seconds)
+
+    try:
+        differences = timed(lambda: compare_facts(reference, analyze(MLILLayer(mlil))))
+        gated = timed(lambda: analyze(MLILLayer(mlil, hlil_view=True), gated=True))
+    except Exception as e:
+        return FunctionResult(func.name, [], [], None, f'MLIL: {type(e).__name__}: {e}', seconds)
+
+    try:
+        hlil = convert_falcom_mlil_to_hlil(mlil, func)
+    except Exception as e:
+        return FunctionResult(func.name, differences, [], f'HLIL: {type(e).__name__}: {e}', None, seconds)
+
+    try:
+        hlil_differences = timed(lambda: compare_gated(gated, analyze(HLILLayer(hlil, mlil), gated=True)))
+    except Exception as e:
+        return FunctionResult(func.name, differences, [], None, f'HLIL: {type(e).__name__}: {e}', seconds)
+
+    return FunctionResult(func.name, differences, hlil_differences, None, None, seconds)
 
 
 def compare_llil_mlil(llil_func, mlil_func) -> list[Difference]:
     """One function's differences, its LLIL the reference"""
     return compare_facts(analyze(LLILLayer(llil_func)), analyze(MLILLayer(mlil_func)))
+
+
+def compare_mlil_hlil(mlil_func, hlil_func) -> list[Difference]:
+    """One function's differences, its MLIL the reference"""
+    return compare_gated(analyze(MLILLayer(mlil_func, hlil_view=True), gated=True),
+                         analyze(HLILLayer(hlil_func, mlil_func), gated=True))

@@ -3,15 +3,16 @@
 A tree is ('const', type name, value[, spelling]), ('op', operation name, operands), or a leaf naming what was read:
 ('param', n); ('call', address), a call's result; ('reg', n, after), ('global', n, after), ('deref', pointer, after),
 a read after a given write (`ENTRY` for none); ('slot_after', key, address), an address-taken local after a call;
-('phi', join, ((terminal address, value), ...)), past a depth ('deep_phi', join, key, fingerprint, kept leaves)
-(state.merge); ('loop', header, key), a value at a loop header; ('undef', key); ('absent', key), storage a
-predecessor of a join never wrote; ('address', key); ('frame',), a call setup constant. Leaves never name a layer's
-own variables, so equal trees mean the same value on every layer"""
+('phi', join, ((terminal address, value), ...)), or gated ('gamma', ((path condition, value), ...)), past a depth
+('deep_phi', join, key, fingerprint, kept leaves) (state.merge); ('loop', header, key), a value at a loop header;
+('undef', key); ('absent', key), storage a predecessor of a join never wrote; ('address', key); ('frame',), a call
+setup constant. Leaves name a layer's own storage only where the comparison renames them (compare.Namer), so equal
+trees mean the same value on every layer"""
 
 from typing import Iterator
 
 ENTRY = 'entry'                 # no write since the function started
-ORDERING_INVERSES = {'LT': 'GE', 'LE': 'GT', 'GT': 'LE', 'GE': 'LT'}
+ORDERING_REPRESENTATIVES = {'GE': 'LT', 'GT': 'LE'}  # a >= b read as !(a < b), a > b as !(a <= b): inexact for NaN
 EQUALITIES = ('EQ', 'NE')
 SHORT_LOGIC = ('LOGICAL_AND', 'LOGICAL_OR')
 TRUTH_TESTS = ('TEST_ZERO', 'LOGICAL_NOT')     # LLIL's EZ; MLIL's TestZero and LogicalNot
@@ -26,10 +27,11 @@ def const(value) -> tuple:
 
 
 def op(name: str, operands) -> tuple:
-    """An operation's tree; == and != are commutative, so their operands come in one order"""
+    """An operation's tree; `!c`, `EZ c` and `c == 0` are one value (HLIL writes the first two as the third). == and
+    != are commutative: the comparison orders their operands (state.Fingerprints, compare.Namer)"""
     operands = tuple(operands)
-    if name in EQUALITIES:
-        operands = tuple(sorted(operands, key=repr))
+    if name in TRUTH_TESTS:
+        name, operands = 'EQ', (operands[0], const(0))
 
     return ('op', name, operands)
 
@@ -39,12 +41,13 @@ def is_zero(tree: tuple) -> bool:
 
 
 def tagged_leaves(tree, tag: str) -> Iterator[tuple]:
-    """Every leaf of the given tag in tree"""
-    pending = [tree]
+    """Every leaf of the given tag in tree, a subtree it shares walked once"""
+    pending, seen = [tree], set()
     while pending:
         node = pending.pop()
-        if not isinstance(node, tuple):
+        if not isinstance(node, tuple) or id(node) in seen:
             continue
+        seen.add(id(node))
         if node and node[0] == tag:
             yield node
         else:
@@ -58,19 +61,14 @@ def loop_leaves(tree) -> Iterator[tuple]:
 # === Condition normal form ===
 
 def strip_truth_tests(tree: tuple) -> tuple[tuple, bool]:
-    """(core, negated): the truth-test spellings stripped - `c == 0`, `EZ c` and `!c` negate, `c != 0` does not"""
+    """(core, negated): the truth-test spellings stripped - `c == 0` (also `EZ c` and `!c`, as op writes them)
+    negates, `c != 0` does not"""
     negated = False
-    while tree[0] == 'op':
-        name, operands = tree[1], tree[2]
-        if name in EQUALITIES and any(is_zero(operand) for operand in operands):
-            others = [operand for operand in operands if not is_zero(operand)]
-            tree = others[0] if others else operands[0]     # `0 == 0` tests the constant 0 too
-            negated ^= name == 'EQ'
-        elif name in TRUTH_TESTS:
-            tree = operands[0]
-            negated = not negated
-        else:
-            break
+    while tree[0] == 'op' and tree[1] in EQUALITIES and any(is_zero(operand) for operand in tree[2]):
+        operands = tree[2]
+        others = [operand for operand in operands if not is_zero(operand)]
+        negated ^= tree[1] == 'EQ'
+        tree = others[0] if others else operands[0]     # `0 == 0` tests the constant 0 too
 
     return tree, negated
 
@@ -93,27 +91,61 @@ def negation_normal_form(tree: tuple, negated: bool = False) -> tuple:
     return ('not', core) if negated else core
 
 
-def invert_negated_orderings(tree: tuple) -> tuple:
-    """Every negated ordering inverted (`!(a < b)` to `a >= b`, inexact for NaN): two conditions equal only after this
-    differ by an ordering inversion"""
-    if tree[0] == 'not' and tree[1][0] == 'op' and tree[1][1] in ORDERING_INVERSES:
-        inner = tree[1]
-        return ('op', ORDERING_INVERSES[inner[1]], tuple(invert_negated_orderings(operand) for operand in inner[2]))
+def representative_orderings(tree: tuple) -> tuple:
+    """Every ordering as the one of its inverse pair in ORDERING_REPRESENTATIVES' values, negated where it was the other
+    (`a >= b` as `!(a < b)`, inexact for NaN): two conditions equal only after this differ by an ordering inversion"""
     if tree[0] == 'not':
-        return ('not', invert_negated_orderings(tree[1]))
+        inner = representative_orderings(tree[1])
+        return inner[1] if inner[0] == 'not' else ('not', inner)
     if tree[0] == 'op':
-        return ('op', tree[1], tuple(invert_negated_orderings(operand) for operand in tree[2]))
+        operands = tuple(representative_orderings(operand) for operand in tree[2])
+        if tree[1] in ORDERING_REPRESENTATIVES:
+            return ('not', ('op', ORDERING_REPRESENTATIVES[tree[1]], operands))
+        return ('op', tree[1], operands)
 
     return tree
 
 
-def truth(tree: tuple, *, invert_orderings: bool = False) -> tuple[tuple, bool]:
-    """(core, negated) of a branch condition in normal form, its top-level negation the polarity; with
-    invert_orderings, negated orderings inverted first, so an inversion counts once (as the condition's difference),
-    not again as a polarity or target difference"""
+CONSTANT_COMPARISONS = {
+    'EQ' : lambda a, b: a == b,
+    'NE' : lambda a, b: a != b,
+    'LT' : lambda a, b: a < b,
+    'LE' : lambda a, b: a <= b,
+    'GT' : lambda a, b: a > b,
+    'GE' : lambda a, b: a >= b,
+}
+
+
+def constant_truth(tree: tuple) -> bool | None:
+    """The value a condition always has - an int constant, a comparison of two, or !, && and || over such conditions
+    (ir/hlil's constant_truth on trees) - else None"""
+    if tree[0] == 'const':
+        return bool(tree[2]) if tree[1] in ZERO_TYPES else None
+    if tree[0] != 'op':
+        return None
+
+    name, operands = tree[1], tree[2]
+    if name in CONSTANT_COMPARISONS:
+        if all(operand[0] == 'const' and operand[1] in ZERO_TYPES for operand in operands):
+            return CONSTANT_COMPARISONS[name](operands[0][2], operands[1][2])
+        return None
+    if name in SHORT_LOGIC:
+        decisive = name == 'LOGICAL_OR'     # true decides ||, false decides &&
+        sides = [constant_truth(operand) for operand in operands]
+        if decisive in sides:
+            return decisive
+        return (not decisive) if all(side == (not decisive) for side in sides) else None
+
+    return None
+
+
+def truth(tree: tuple, *, representative: bool = False) -> tuple[tuple, bool]:
+    """(core, negated) of a branch condition in normal form, its top-level negation the polarity; with representative,
+    its orderings as representative_orderings gives them, so an inversion counts once (as the condition's difference),
+    not again as a polarity or target difference, and a negation dropped by swapping the targets is no difference"""
     normal = negation_normal_form(tree)
-    if invert_orderings:
-        normal = invert_negated_orderings(normal)
+    if representative:
+        normal = representative_orderings(normal)
     if normal[0] == 'not':
         return normal[1], True
 

@@ -5,6 +5,7 @@ storage with no counterpart (a renamed variable) keeps a key of its own, and onl
 
 import hashlib
 
+from .formulas import FALSE_KEY, FormulaKeys, disjunction
 from .trees import ENTRY, EQUALITIES, tagged_leaves
 
 REGISTER_COUNT = 16
@@ -103,6 +104,8 @@ def phi_depth(tree) -> int:
         return 0
     if tree[0] == 'phi':
         return 1 + max((phi_depth(value) for _, value in tree[2]), default=0)
+    if tree[0] == 'gamma':
+        return 1 + max((phi_depth(value) for _, value in tree[1]), default=0)
     if tree[0] == 'op':
         return max((phi_depth(operand) for operand in tree[2]), default=0)
 
@@ -110,13 +113,15 @@ def phi_depth(tree) -> int:
 
 
 class Fingerprints:
-    """A layer's value trees digested the way the comparison sees them: a layer's own storage keys under neutral names,
-    == and != operands in any order; equal digests mean equal trees. Memoised by identity, so a subtree shared by many
-    trees is digested once"""
+    """A layer's value trees and formulas digested the way the comparison sees them: a layer's own storage keys under
+    neutral names, == and != operands and those of a formula's and / or in any order, a gated choice by its values
+    and the function choosing each (gated_choice); equal digests mean equal trees. Memoised by identity, so a subtree
+    shared by many trees is digested once"""
 
     def __init__(self, neutral_key):
         self.neutral_key = neutral_key
         self.memo = {}
+        self.keys = FormulaKeys(self)
 
     def __call__(self, tree) -> bytes:
         if not isinstance(tree, tuple):
@@ -135,11 +140,38 @@ class Fingerprints:
             parts = list(tree[:4])      # its fingerprint stands for the phi; the kept leaves repeat what it holds
         elif tag == 'op' and tree[1] in EQUALITIES:
             parts = [tag, tree[1], *sorted(self(operand) for operand in tree[2])]
+        elif tag in ('and', 'or'):
+            parts = [tag, *sorted(self(item) for item in tree[1])]
+        elif tag == 'gamma':
+            parts = [tag, *sorted(((key, self(value)) for key, value in gated_choice(tree, self, self.keys)), key=repr)]
         else:
             parts = [self(item) for item in tree]
-        digest = hashlib.blake2b(repr(parts).encode(), digest_size=FINGERPRINT_BYTES).digest()
+        if tag == 'gamma' and len(parts) == 2:
+            digest = parts[1][1]        # one value wherever the join is reached
+        else:
+            digest = hashlib.blake2b(repr(parts).encode(), digest_size=FINGERPRINT_BYTES).digest()
         self.memo[id(tree)] = (tree, digest)    # the tree kept alive, so its id is not reused
         return digest
+
+
+def gated_choice(gamma: tuple, digest, keys: FormulaKeys) -> list[tuple]:
+    """A gated merge's (key, value) pairs: its values told apart by digest, each with the key (FormulaKeys) of the
+    formulas it arrives under joined, one that never arrives left out; one pair is that value wherever the join is
+    reached. A formula past ROW_CAP rows is keyed by its own digest: equal only to one built the same way"""
+    formulas, values = {}, {}
+    for formula, value in gamma[1]:
+        found = digest(value)
+        formulas.setdefault(found, []).append(formula)
+        values[found] = value
+    choice = []
+    for found, arriving in formulas.items():
+        joined = disjunction(arriving)
+        key = keys(joined)
+        if key is None:
+            key = ('unchecked', digest(joined))
+        if key != FALSE_KEY:
+            choice.append((key, values[found]))
+    return choice
 
 
 def incoming_value(key: tuple, neutral_key) -> tuple:
@@ -153,26 +185,33 @@ def incoming_value(key: tuple, neutral_key) -> tuple:
     return ('absent', neutral_key(key))
 
 
-def merge(join: tuple, states: list[tuple[int, State]], fingerprints: Fingerprints) -> State:
-    """A join's entry state from its predecessors' (terminal address, exit state): a key on which they agree keeps its
-    value, any other a phi over the predecessors ordered by terminal address. Past PHI_DEPTH the phi becomes a leaf,
-    ('deep_phi', join, key, fingerprint, kept leaves): its fingerprint compares it whole, and its loop leaves and
-    addresses stay visible, so the loop values and pointees it reads are still compared"""
-    neutral_key = fingerprints.neutral_key
+def merge(join, states: list[tuple], fingerprints: Fingerprints) -> State:
+    """A join's entry state from its predecessors' (edge name, exit state), as merged_value merges each key"""
     keys = set().union(*(state.items.keys() for _, state in states))
     merged = State()
     for key in keys:
-        values = [(address, state.items.get(key, incoming_value(key, neutral_key))) for address, state in states]
-        first = values[0][1]
-        if all(value == first for _, value in values[1:]):
-            merged.items[key] = first
-            continue
-
-        phi = ('phi', join, tuple(sorted(values, key=lambda pair: pair[0])))
-        if phi_depth(phi) <= PHI_DEPTH:
-            merged.items[key] = phi
-        else:
-            kept = dict.fromkeys(leaf for tag in DEEP_PHI_KEPT_LEAVES for leaf in tagged_leaves(phi, tag))
-            merged.items[key] = ('deep_phi', join, neutral_key(key), fingerprints(phi), tuple(kept))
-
+        merged.items[key] = merged_value(join, key, states, fingerprints)
     return merged
+
+
+def merged_value(join, key: tuple, states: list[tuple], fingerprints: Fingerprints):
+    """key's value at a join from its predecessors' (edge name, exit state): the value they agree on, else a phi over
+    the predecessors ordered by edge name, the terminal address (join an identity), or a gated choice over the path
+    conditions the edges are taken under (join None; FormulaKeys compares them). Past PHI_DEPTH the merge becomes a
+    leaf, ('deep_phi', join, key, fingerprint, kept leaves): its fingerprint compares it whole, and its loop leaves and
+    addresses stay visible, so the loop values and pointees it reads are still compared"""
+    neutral_key = fingerprints.neutral_key
+    values = [(name, state.items.get(key, incoming_value(key, neutral_key))) for name, state in states]
+    first = values[0][1]
+    if all(value == first for _, value in values[1:]):
+        return first
+
+    if join is None:
+        phi = ('gamma', tuple(values))
+    else:
+        phi = ('phi', join, tuple(sorted(values, key=lambda pair: pair[0])))
+    if phi_depth(phi) <= PHI_DEPTH:
+        return phi
+
+    kept = dict.fromkeys(leaf for tag in DEEP_PHI_KEPT_LEAVES for leaf in tagged_leaves(phi, tag))
+    return ('deep_phi', join, neutral_key(key), fingerprints(phi), tuple(kept))

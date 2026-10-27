@@ -54,8 +54,8 @@ structured control flow; the Falcom entry point chooses the production pass sequ
 Every tree node derives from `HLILInstruction`, which stores an `HLILOperation`, a source bytecode
 `address`, and an `mlil_index`. `HLILStatement` and `HLILExpression` are marker subclasses that
 separate side-effecting tree positions from value-producing ones. Directly translated statements
-receive source metadata from their MLIL instruction; synthesized control-flow nodes and expressions
-can retain the base defaults.
+receive source metadata from their MLIL instruction, a loop its header block's last instruction's;
+the other synthesized control-flow nodes and expressions can retain the base defaults.
 
 The concrete model is small and source-oriented:
 

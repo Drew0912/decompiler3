@@ -39,8 +39,10 @@ All nodes derive from `HLILInstruction`, split into `HLILStatement` (side effect
 `HLILExpression` (produces a value); both have `address`/`mlil_index` back-references to the
 source MLIL. A statement converted from an MLIL statement fills them in, and so does a call
 expression - its own MLIL call's, also where the call folded into another statement or a
-condition; the `if`/`while`/`switch` nodes structuring builds do not (`docs/FUTURE_WORK.md`,
-"Static Game-Logic Check").
+condition. A loop (`while`, and the `do`-`while` `LoopRecoveryPass` makes of one) carries its
+MLIL header block's last instruction, the test or the jump into the body: the logic check
+(`tools/logic_check/`) names a loop by it on both layers. The `if`/`switch` nodes structuring
+builds carry none (`docs/FUTURE_WORK.md`, "Static Game-Logic Check").
 
 **Control flow statements:** `HLILIf`, `HLILWhile` (optional label), `HLILDoWhile` (optional
 label), `HLILSwitch`/`HLILSwitchCase` (supports multi-value case labels for merged `||` tests),

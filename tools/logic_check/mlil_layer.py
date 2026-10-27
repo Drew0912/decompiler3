@@ -4,6 +4,7 @@ storage of its own, named like its base where a loop value needs a name on every
 
 import re
 
+from ir.core import reverse_post_order
 from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILAddressOf, MLILBinaryOp, MLILCallScript, MLILConst, MLILDebug,
     MLILDeref, MLILGoto, MLILIf, MLILLoadGlobal, MLILLoadReg, MLILNop, MLILRet, MLILSetVar, MLILStoreDeref,
@@ -12,21 +13,38 @@ from ir.mlil.mlil import (
 )
 from .evaluation import Branch, Effect, Facts
 from .state import MEMORY_EPOCH, RESULT_REGISTER, State
-from .trees import ENTRY, const, op
+from .trees import ENTRY, const, constant_truth, op
 
 SPLIT_SUFFIX = re.compile(r'_v\d+$')
 PARAMETER_NAME = re.compile(r'^arg(\d+)$')
 STACK_NAME = re.compile(r'^var_s(\d+)$')
 IGNORED = (MLILGoto, MLILDebug, MLILNop)
 COPIES = (MLILSetVar, *IGNORED)
+CONSTANT_EXPRESSIONS = (MLILConst, MLILBinaryOp, MLILUnaryOp)
 
 
 class MLILLayer:
+    """The MLIL's graph as written, or with hlil_view as HLIL structures it (against HLIL): a branch on a constant
+    condition is a jump to the target it always takes (HLIL folds a loop's constant test), and a block holding only
+    jumps, line markers and nops, a loop's header aside, passes control on to where it leads (the converter skips such
+    a block, so HLIL joins arms where they lead)"""
+
     OWN_STORAGE_NAMES = True        # a split range or a minted local
 
-    def __init__(self, func: MediumLevelILFunction):
+    def __init__(self, func: MediumLevelILFunction, *, hlil_view: bool = False):
         self.func = func
         self.entry = func.basic_blocks[0]
+        self.edges = {block: list(block.outgoing_edges) for block in func.basic_blocks}
+        self.targets = {block: (block.instructions[-1].true_target, block.instructions[-1].false_target)
+                        for block in func.basic_blocks if isinstance(block.instructions[-1], MLILIf)}
+        if hlil_view:
+            self.follow_constant_branches()
+            self.pass_empty_blocks()
+        self.incoming = {block: [] for block in func.basic_blocks}
+        for block, successors in self.edges.items():
+            for successor in successors:
+                self.incoming[successor].append(block)
+
         self.register_of = {var.name: index for index, var in func.register_vars.items()}
         self.parameter_of = {var.name: position for position, var in enumerate(func.parameters, 1) if var is not None}
         self.neutral_of: dict[str, tuple] = {}
@@ -36,25 +54,68 @@ class MLILLayer:
                 if isinstance(node, MLILAddressOf) and isinstance(node.operand, MLILVar):
                     self.address_taken.add(self.key(node.operand.var))
 
-    @classmethod
-    def successors(cls, block) -> list:
-        return block.outgoing_edges
+    def follow_constant_branches(self):
+        for block in list(self.targets):
+            target = self.constant_target(block)
+            if target is not None:
+                self.edges[block] = [target]
+                del self.targets[block]
 
-    @classmethod
-    def predecessors(cls, block) -> list:
-        return block.incoming_edges
+    def pass_empty_blocks(self):
+        order = reverse_post_order(self.entry, self.edges.__getitem__)
+        position = {block: index for index, block in enumerate(order)}
+        headers = {target for source in order for target in self.edges[source] if position[target] <= position[source]}
+        passed = {block for block in order if block is not self.entry and block not in headers
+                  and len(self.edges[block]) == 1 and all(isinstance(inst, IGNORED) for inst in block.instructions)}
+
+        def through(block):
+            seen = set()
+            while block in passed and block not in seen:
+                seen.add(block)
+                block = self.edges[block][0]
+            return block
+
+        for block in order:
+            if block in passed:
+                self.edges[block] = []
+            else:
+                self.edges[block] = list(dict.fromkeys(map(through, self.edges[block])))
+                if block in self.targets:
+                    self.targets[block] = tuple(map(through, self.targets[block]))
+
+    def successors(self, block) -> list:
+        return self.edges[block]
+
+    def predecessors(self, block) -> list:
+        return self.incoming[block]
 
     @classmethod
     def terminal_address(cls, block) -> int:
         return block.instructions[-1].address
 
     @classmethod
-    def branch(cls, block) -> tuple | None:
-        terminal = block.instructions[-1]
-        if isinstance(terminal, MLILIf):
-            return terminal.address, terminal.true_target, terminal.false_target
+    def header_name(cls, block) -> int:
+        """A loop header's terminal address, the stamp HLIL's loop built from it carries"""
+        return cls.terminal_address(block)
+
+    def branch(self, block) -> tuple | None:
+        targets = self.targets.get(block)
+        if targets is not None:
+            return block.instructions[-1].address, *targets
 
         return None
+
+    def constant_target(self, block):
+        """The target a branch on a constant condition always takes, or None"""
+        terminal = block.instructions[-1]
+        if not all(isinstance(node, CONSTANT_EXPRESSIONS) for node in walk(terminal.condition)):
+            return None
+
+        always = constant_truth(self.evaluate(terminal.condition, State()))
+        if always is None:
+            return None
+
+        return terminal.true_target if always else terminal.false_target
 
     @classmethod
     def only_copies(cls, block) -> bool:
