@@ -4,7 +4,7 @@ Simplify conditionals:
 - (expr == 0) → !expr
 - (expr != 0) → expr
   (int 0 only: a float's truth in the VM is unverified)
-- !comparison → inverted comparison
+- !(x == y) → x != y; an ordering keeps its NOT (negate_comparison)
 """
 
 from ir.core import is_int_zero

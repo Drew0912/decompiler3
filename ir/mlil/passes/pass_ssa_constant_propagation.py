@@ -24,6 +24,9 @@ class ConstantPropagationPass(Pass):
 
     def __init__(self):
         self.constants: dict[MLILVariableSSA, int] = {}
+        # Every variable substituted in any run: its string already sits in its uses, so a removed string assignment
+        # of it needs no debug comment (string_debug_comment)
+        self.replaced_vars: set[MLILVariableSSA] = set()
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         """Propagate constants through the function"""
@@ -66,6 +69,7 @@ class ConstantPropagationPass(Pass):
         """Replace SSA variables with constants"""
         if isinstance(expr, MLILVarSSA):
             if expr.var in self.constants:
+                self.replaced_vars.add(expr.var)
                 return MLILConst(self.constants[expr.var], is_hex=False)
 
             return expr

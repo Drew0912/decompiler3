@@ -6,10 +6,8 @@ from dc3.logging import log
 from .mlil import MediumLevelILBasicBlock, MediumLevelILFunction, MediumLevelILInstruction
 from .passes import (
     NNFPass,
-    SCCP,
     ConstantPropagationPass,
     CopyPropagationPass,
-    ExpressionSimplificationPass,
     ConditionSimplificationPass,
     ExpressionInliningPass,
     SSADeadCodeEliminationPass,
@@ -64,21 +62,19 @@ class SSAOptimizer:
         self.function = function
 
     def optimize(self) -> MediumLevelILFunction:
-        """Run all optimization passes"""
-        # Run SCCP once, before the fixpoint passes
-        sccp = SCCP(self.function)
-        sccp.run()
+        """Run the passes to a fixpoint. None computes a value the bytecode does not hold: SCCP and
+        ExpressionSimplificationPass (folds, algebraic identities) are left out but kept (docs/mlil/MLIL_DESIGN.md)"""
+        constant_propagation = ConstantPropagationPass()
 
         # Passes to run iteratively until fixpoint
         passes = [
-            ConstantPropagationPass(),
-            ExpressionSimplificationPass(),
+            constant_propagation,
             ConditionSimplificationPass(),
             NNFPass(),
             CopyPropagationPass(),
             ExpressionInliningPass(),
-            SSADeadCodeEliminationPass(sccp_replaced_vars=sccp.replaced_vars),
-            DeadPhiSourceEliminationPass(sccp_replaced_vars=sccp.replaced_vars),
+            SSADeadCodeEliminationPass(replaced_vars=constant_propagation.replaced_vars),
+            DeadPhiSourceEliminationPass(replaced_vars=constant_propagation.replaced_vars),
         ]
 
         # Iterative optimization until fixpoint

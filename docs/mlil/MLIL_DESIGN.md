@@ -27,7 +27,7 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
 | `ir/mlil/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
 | `ir/mlil/mlil_optimizer.py` | `mlil_optimization_passes()`, the one list of passes that runs after LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
-| `ir/mlil/passes/` | The actual pass implementations (14 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_block_merge.py`. |
+| `ir/mlil/passes/` | The actual pass implementations (15 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_block_merge.py`, `pass_bitwise_hex.py`; SCCP, expression simplification and register/global propagation are out of the pipeline (see "LLIL → MLIL Pipeline"). |
 | `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function's blocks, variables and statements; expressions are built with the node classes. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging) and the `.mlil.dot` graphs, with the DOT writer LLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`). |
 | `ir/mlil/mlil_types.py` | Type-kind/unification support. |
@@ -104,7 +104,8 @@ function popped the parameter is a `var_sN`, like any other push.
 SSA is not optional or a future addition — it's where essentially all real optimization work
 happens. The shared pass list (`mlil_optimization_passes()` in `ir/mlil/mlil_optimizer.py`) merges
 call-split blocks, converts to SSA, runs the full `SSAOptimizer` pass suite plus optional type
-inference, deconstructs back to non-SSA, then propagates register/global values. HLIL's converter (`falcom/ed9/ir/hlil/hlil_converter.py`) imports and consumes
+inference, deconstructs back to non-SSA, then marks bitwise constants for hex display (`BitwiseHexPass`). HLIL's
+converter (`falcom/ed9/ir/hlil/hlil_converter.py`) imports and consumes
 non-SSA `MediumLevelILFunction` — it does not read SSA form directly; by the time HLIL sees a
 function, SSA construction/optimization/deconstruction has already happened upstream in the MLIL
 pipeline.
@@ -166,7 +167,7 @@ The real production entry point is `convert_falcom_llil_to_mlil()`
 
 ```
 ED9LLILToMLILPass → BlockMergePass (optimize only) → SSAConversionPass → SSAOptimizationPass →
-SSATypeInferencePass (optional) → SSADeconstructionPass → RegGlobalValuePropagationPass
+SSATypeInferencePass (optional) → SSADeconstructionPass → BitwiseHexPass
 ```
 
 Every pass after `ED9LLILToMLILPass` comes from `mlil_optimization_passes()`
@@ -175,18 +176,33 @@ function, so tests that call it run what production runs. No dead-code pass runs
 deconstruction: a census of production output found no unread local assignment (500-file sample,
 2026-09-26).
 
+Since 2026-10-27 no pass computes a value the bytecode does not hold, so MLIL keeps the LLIL's values as
+written: SCCP, `ExpressionSimplificationPass` and `RegGlobalValuePropagationPass` (constant folding, algebraic
+identities, a register's or global's value carried forward) are out of the pipeline, their code and direct tests
+kept. A constant expression prints as written (`1 | 32768`, `40000 + 200`), a branch on one keeps both arms
+(`if ((1024 & 1024) != 0)`), and a register read stays `REG[n]`.
+
+`BitwiseHexPass` (`pass_bitwise_hex.py`) runs last and only marks constants for display: a bitwise operation
+(`& | ^ << >>`) whose other operand is not constant prints its int constant operand in hex, under a `~` too
+(`arg3 & 0x00000800`, `x & ~0x00000010`), and a union of single-bit flags there as well (`x & (0x00000001 |
+0x00000008)`); any other expression made only of constants prints as written (`1 | 32768`). It sets only
+`MLILConst.is_hex`, which the HLIL converter copies, so `.mlil.asm`, `.hlil.ts` and `.ts` agree.
+
 ### Optimization Passes (inside `SSAOptimizer`)
 
-Run on SSA form, in `ir/mlil/mlil_ssa_optimizer.py`'s configured order: sparse conditional constant
-propagation (SCCP), then constant propagation, expression simplification, condition simplification,
-negation normal form, copy propagation, expression inlining, dead-code elimination, and dead-`Phi`
-elimination.
-SCCP runs once; the other passes repeat until a round changes nothing, for at most
-`SSA_OPTIMIZER_MAX_ITERATIONS` (10) rounds - hitting the cap prints a "did not converge" warning.
+Run on SSA form, in `ir/mlil/mlil_ssa_optimizer.py`'s configured order: constant propagation (a
+variable's one constant definition substituted into its reads), condition simplification, negation
+normal form, copy propagation, expression inlining, dead-code elimination, and dead-`Phi` elimination.
+They repeat until a round changes nothing, for at most `SSA_OPTIMIZER_MAX_ITERATIONS` (10) rounds -
+hitting the cap prints a "did not converge" warning.
 Dead-code elimination repeats its own sweep until nothing more is removed, so a dead chain goes in
-one round rather than one link per round.
-Register/global value propagation (`pass_reg_global_propagation.py`) runs as its own pipeline stage
-in the Falcom entry point, after SSA deconstruction.
+one round rather than one link per round. A removed string assignment stays as a `debug.string`
+comment unless constant propagation put the string into its uses: both dead-code passes read the
+variables it substituted (`ConstantPropagationPass.replaced_vars`, `string_debug_comment`).
+
+Condition simplification and negation normal form negate only `==` / `!=` (`negate_comparison`): an
+ordering keeps its NOT (`!(a < b)`), since `!(a < b)` and `a >= b` differ when an operand is NaN.
+HLIL's structuring still inverts orderings (`negate_condition`, `ir/hlil/hlil.py`).
 
 Copy propagation and expression inlining never move a register/global read past anything that may
 redefine that storage: an explicit definition, a call's own output, or any call that may clobber it
@@ -199,9 +215,9 @@ so a later optimizer round must still see it (without this, a saved `reg0` value
 the next call in ~1,800 places across the corpus). Call results only ever land in the result
 register, so dropping an unread call output never loses a global write.
 
-SCCP folds constant `+ - * & | ^ << >>`, unary `- ! ~`, `&&`/`||`, and comparisons on ints, but
-deliberately never evaluates `MLIL_DIV`/`MLIL_MOD`, or any op with a float operand, to a lattice
-constant (`pass_ssa_sccp.py`'s `_eval_binary_op`/`_eval_unary_op`), and a float constant decides no
+SCCP (out of the pipeline, above) folds constant `+ - * & | ^ << >>`, unary `- ! ~`, `&&`/`||`, and
+comparisons on ints, but deliberately never evaluates `MLIL_DIV`/`MLIL_MOD`, or any op with a float operand,
+to a lattice constant (`pass_ssa_sccp.py`'s `_eval_binary_op`/`_eval_unary_op`), and a float constant decides no
 branch (`_visit_branch`) - Python's arithmetic doesn't match the VM's actual number format
 (`ScpValue`'s 30-bit-int/float32 shape describes the constant *encoding*, not the runtime arithmetic
 width), and the real semantics (float32 rounding, int/float mixing, a float's truth, int truncation,
@@ -215,7 +231,7 @@ identities likewise fire only on int constants (`0.0 * x` used to become the int
 simplify an int DIV by 1, even a constant one (`10 / 1 → 10`), since that identity holds regardless of
 numeric semantics. See `docs/mlil/MLIL_FUTURE_WORK.md` for what a verified SCCP fix would need.
 
-A phi of constants folds to a constant only when `constant_values_equal` (`ir/core/il_literals.py`)
+In SCCP, a phi of constants folds to a constant only when `constant_values_equal` (`ir/core/il_literals.py`)
 says they are equal: same type (`1`, `1.0` and a `SourceFloat` all differ) and, for floats, same bits
 and same printed text (`0.0` and `-0.0` differ, NaN equals NaN).
 

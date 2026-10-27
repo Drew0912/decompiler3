@@ -11,7 +11,9 @@ op with a float operand, and no pass decides a branch from a float (LLIL DSL nea
 bad fold the DIV/MOD part closed: sora2's `script_en/scena/mp0000_ev.dat`'s `MayaEvented_22_test`
 used to print `13.0` for `400 / 30.0` (Python floor-division), which is wrong for VM float division
 no matter what the VM's exact answer turns out to be. The float part closed `chr0000`'s
-`AniBtlCraft01Main` printing `0.4 * 0.8` as `0.32` (a double-precision fold).
+`AniBtlCraft01Main` printing `0.4 * 0.8` as `0.32` (a double-precision fold). Since 2026-10-27 neither SCCP nor
+expression simplification runs (`docs/mlil/MLIL_DESIGN.md`, "LLIL → MLIL Pipeline"): no pass folds, so this matters
+again only where folding comes back.
 
 **Not started** - a real fix needs more than not-folding:
 - `ScpValue` (`falcom/ed9/structs/scp_types.py`) describes the *constant encoding* (30-bit int

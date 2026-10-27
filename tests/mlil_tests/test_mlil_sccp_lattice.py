@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Unit tests for SCCP constant equality in lattice values and phi merges: int and float constants stay
-distinct at equal numeric value, and NaN equals itself (constant_values_equal)."""
+"""Unit tests for SCCP constant equality in lattice values and phi merges: int and float constants, and a Raw and
+an Integer, stay distinct at equal numeric value, and NaN equals itself (constant_values_equal)."""
 
 import math
 from pathlib import Path
@@ -10,6 +10,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from falcom.ed9.structs.scp_types import RawInt
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILGoto,
 )
@@ -19,6 +20,7 @@ from ir.mlil.passes.pass_ssa_sccp import SCCP, LatticeValue
 
 INT_VALUE = 1
 FLOAT_VALUE = 1.0
+RAW_VALUE = RawInt(INT_VALUE)
 NAN_VALUE = float('nan')
 
 
@@ -71,13 +73,19 @@ class TestPhiMerge(unittest.TestCase):
             with self.subTest(arms=arms):
                 self.assertIsInstance(run_sccp_on_phi(*arms), MLILVarSSA)
 
+    def test_raw_and_integer_arms_do_not_fold(self):
+        """A Raw and an Integer are different words (PUSH_RAW against PUSH_INT)"""
+        for arms in ((RAW_VALUE, INT_VALUE), (INT_VALUE, RAW_VALUE)):
+            with self.subTest(arms=arms):
+                self.assertIsInstance(run_sccp_on_phi(*arms), MLILVarSSA)
+
     def test_nan_arms_fold(self):
         result = run_sccp_on_phi(NAN_VALUE, float('nan'))
         self.assertIsInstance(result, MLILConst)
         self.assertTrue(math.isnan(result.value))
 
     def test_equal_arms_still_fold(self):
-        for value in (INT_VALUE, FLOAT_VALUE):
+        for value in (INT_VALUE, FLOAT_VALUE, RAW_VALUE):
             with self.subTest(value=value):
                 result = run_sccp_on_phi(value, value)
                 self.assertIsInstance(result, MLILConst)

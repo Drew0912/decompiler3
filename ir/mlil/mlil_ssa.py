@@ -452,7 +452,7 @@ class SSAConstructor:
         # allocate, and 0 is already taken by this entry seed (pushed below via var_stack). Seeding
         # it to 0 would make the first real definition (e.g. a Phi) ALSO get version 0, colliding
         # with the entry seed's identity - two unrelated definitions sharing one MLILVariableSSA,
-        # so SSA-based passes (e.g. SCCP) can propagate the later definition's value backward into
+        # so SSA-based passes (e.g. constant propagation) can propagate the later definition's value backward into
         # reads of the entry seed. var_stack[var] is unaffected: 0 remains the correct version for a
         # read before any real definition. Globals live outside function.locals (see
         # get_or_create_global_var), so they are seeded too.

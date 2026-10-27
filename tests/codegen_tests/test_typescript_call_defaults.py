@@ -13,6 +13,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
+from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.scena2py_base import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
@@ -23,8 +24,9 @@ DEFAULT_INT = 3
 DEFAULT_FLOAT = 0.3
 DEFAULT_TEXT = 'x'
 FIRST_ARG = 1
-FOLDED_LEFT = 1
-FOLDED_RIGHT = DEFAULT_INT - FOLDED_LEFT
+ARGS_BEFORE_ARG2 = 2    # arg4 and arg3: the last argument is pushed first
+# LOAD_STACK's offset, in arg2's place, to a local pushed just before the call setup
+LOCAL_UNDER_ARGS = -(LOCAL_SETUP_SLOTS + ARGS_BEFORE_ARG2 + 1) * WORD_SIZE
 
 
 def call_callee(callee, ret: str, arg2_push):
@@ -41,7 +43,7 @@ def call_callee(callee, ret: str, arg2_push):
 
 def decompile(filter_func=None) -> str:
     """The .ts of a script whose Main calls Callee(arg1, arg2 = 3, arg3 = 0.3, arg4 = 'x') three times: arg2 pushed
-    as an Integer 3, as a Raw 3, and as 1 + 2 (folded)"""
+    as an Integer 3, as a Raw 3, and read from a local holding an Integer 3 (constant propagation substitutes it)"""
     with tempfile.TemporaryDirectory() as tmp:
         dat = Path(tmp) / 'defaults.dat'
         writer = fresh_writer(dat)
@@ -56,7 +58,9 @@ def decompile(filter_func=None) -> str:
         def Main():
             call_callee(Callee, 'integer', lambda: PUSH_INT(DEFAULT_INT))
             call_callee(Callee, 'raw', lambda: PUSH_RAW(RawInt(DEFAULT_INT)))
-            call_callee(Callee, 'folded', lambda: (PUSH_INT(FOLDED_LEFT), PUSH_INT(FOLDED_RIGHT), ADD()))
+            PUSH_INT(DEFAULT_INT)
+            call_callee(Callee, 'local', lambda: LOAD_STACK(LOCAL_UNDER_ARGS))
+            POP(WORD_SIZE)
             RETURN()
 
         writer.run({'Callee': Callee, 'Main': Main})
@@ -120,7 +124,8 @@ class TestCallDefaultsEndToEnd(unittest.TestCase):
 
         self.assertIn(f'function Callee(arg1: number, arg2: number = {DEFAULT_INT}, arg3: number = {DEFAULT_FLOAT}, '
                       f'arg4: string = "{DEFAULT_TEXT}")', ts)
-        # Integer and folded arg2 go with the float and string defaults; a Raw 3 is another word than Integer 3
+        # An Integer arg2, pushed or read from the local, goes with the float and string defaults; a Raw 3 is
+        # another word than Integer 3
         self.assertEqual(ts.count(f'Callee({FIRST_ARG});'), 2)
         self.assertIn(f'Callee({FIRST_ARG}, {DEFAULT_INT});', ts)
 

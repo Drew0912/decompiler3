@@ -21,9 +21,10 @@ from .pass_ssa_dead_code import string_debug_comment
 class DeadPhiSourceEliminationPass(Pass):
     """Eliminate dead Phi nodes and definitions feeding them"""
 
-    def __init__(self, sccp_replaced_vars: set[MLILVariableSSA] = None):
+    def __init__(self, replaced_vars: set[MLILVariableSSA] | None = None):
         self.ssa_uses: dict[MLILVariableSSA, list[MediumLevelILInstruction]] = {}
-        self.sccp_replaced_vars = sccp_replaced_vars or set()
+        # Kept even while empty: the optimizer hands in constant propagation's set, which fills up later
+        self.replaced_vars = set() if replaced_vars is None else replaced_vars
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         """Run dead phi elimination"""
@@ -75,7 +76,7 @@ class DeadPhiSourceEliminationPass(Pass):
                 # observable cross-function side effect regardless of whether the phi is read
                 if isinstance(inst, MLILSetVarSSA) and inst.var in dead_defs \
                         and not func.is_global_var(inst.var.base_var):
-                    new_instructions.extend(string_debug_comment(inst, self.sccp_replaced_vars))
+                    new_instructions.extend(string_debug_comment(inst, self.replaced_vars))
                     continue
 
                 new_instructions.append(inst)

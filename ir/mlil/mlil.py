@@ -367,20 +367,18 @@ class MLILGe(MLILBinaryOp):
     OPERATION = MediumLevelILOperation.MLIL_GE
 
 
-# Each comparison and the comparison with the opposite outcome
+COMPARISON_TYPES = (MLILEq, MLILNe, MLILLt, MLILLe, MLILGt, MLILGe)
+
+# Each equality test and the test with the opposite outcome. An ordering has none: !(a < b) is not a >= b when an
+# operand is NaN, so MLIL keeps its NOT
 NEGATED_COMPARISON = {
     MLILEq  : MLILNe,
     MLILNe  : MLILEq,
-    MLILLt  : MLILGe,
-    MLILLe  : MLILGt,
-    MLILGt  : MLILLe,
-    MLILGe  : MLILLt,
 }
-COMPARISON_TYPES = tuple(NEGATED_COMPARISON)
 
 
 def negate_comparison(expr: MediumLevelILInstruction) -> MediumLevelILInstruction | None:
-    """The comparison with the opposite outcome over the same operands, or None if expr is not a comparison"""
+    """The equality test with the opposite outcome over the same operands, or None if expr is not == or !="""
     negated_type = NEGATED_COMPARISON.get(type(expr))
     return negated_type(expr.lhs, expr.rhs) if negated_type is not None else None
 

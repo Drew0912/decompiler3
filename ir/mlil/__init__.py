@@ -48,6 +48,7 @@ __all__ = [
     'RegGlobalState',
     'RegGlobalValuePropagator',
     'RegGlobalValuePropagationPass',
+    'BitwiseHexPass',
 
     # SSA
     'MLILVariableSSA',

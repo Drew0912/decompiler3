@@ -23,7 +23,7 @@ from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugLog, LowLevelILFalcomOper
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET, RESULT_REG_INDEX
 from falcom.ed9.structs.scp_types import RawInt, ScpValue
-from ir.hlil.hlil import HLILCall, HLILConst, HLILVar, iter_tree
+from ir.hlil.hlil import HighLevelILFunction, HLILAssign, HLILCall, HLILConst, HLILVar, iter_tree
 from ir.llil import WORD_SIZE
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.mlil.mlil_formatter import MLILFormatter
@@ -165,15 +165,18 @@ class TestRawPushKeepsItsType(unittest.TestCase):
                 self.assertIn(f'return {RAW_VALUE}', text)
                 self.assertNotIn('RawInt', text)
 
-    def hlil_call(self, asm: Asm, callee_argc: int) -> HLILCall:
-        """The one call in asm's function, lifted to HLIL beside a callee taking callee_argc arguments"""
+    def hlil_function(self, asm: Asm, callee_argc: int) -> HighLevelILFunction:
+        """asm's function lifted to HLIL beside a callee taking callee_argc arguments"""
         _, llil_func = lift_asm(asm, others=(returning_callee(callee_argc),))
-        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil(llil_func))
-        [call] = [node for node in iter_tree(hlil_func.body) if isinstance(node, HLILCall)]
+        return convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil(llil_func))
+
+    def hlil_call(self, asm: Asm, callee_argc: int) -> HLILCall:
+        """The one call in asm's function in HLIL"""
+        [call] = [node for node in iter_tree(self.hlil_function(asm, callee_argc).body) if isinstance(node, HLILCall)]
         return call
 
     def test_call_argument_stays_raw(self):
-        """Pushed as the argument, or stored in a local first (SCCP substitutes the constant)"""
+        """Pushed as the argument, or stored in a local first (constant propagation substitutes the constant)"""
         direct = Asm()
         direct.push_raw(CALLER_ID); direct.push_raw('back'); direct.push_raw(RAW_VALUE); direct.push_int(FIRST_VALUE)
         direct.call(CALLEE_ID); direct.label('back'); direct.ret()
@@ -191,24 +194,24 @@ class TestRawPushKeepsItsType(unittest.TestCase):
                 self.assertEqual({arg.value: type(arg.value) for arg in call.args}, expected)
 
     def test_raw_and_integer_constants_do_not_merge(self):
-        """A Raw 0 and an Integer 0 are different words: where they meet the variable stays (two Raw 0s fold)"""
-        for case, else_push, folds in (('Raw and Integer', 'push_int', False), ('both Raw', 'push_raw', True)):
-            with self.subTest(case):
-                asm = Asm()
-                asm.push_int(FIRST_VALUE)
-                asm.get_reg(REG_INDEX); asm.jz('else')
-                asm.push_raw(MERGED_VALUE); asm.pop_to(-WORD_SIZE); asm.jmp('join')
-                asm.label('else'); getattr(asm, else_push)(MERGED_VALUE); asm.pop_to(-WORD_SIZE)
-                asm.label('join')
-                asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.load_stack(LOCAL_UNDER_CALL_SETUP)
-                asm.call(CALLEE_ID); asm.label('back'); asm.pop(WORD_SIZE); asm.ret()
+        """A Raw 0 and an Integer 0 are different words: where they meet the variable stays, each arm's constant
+        with its own type (SCCP, out of the pipeline, folds two Raw 0s: test_mlil_sccp_lattice.py)"""
+        asm = Asm()
+        asm.push_int(FIRST_VALUE)
+        asm.get_reg(REG_INDEX); asm.jz('else')
+        asm.push_raw(MERGED_VALUE); asm.pop_to(-WORD_SIZE); asm.jmp('join')
+        asm.label('else'); asm.push_int(MERGED_VALUE); asm.pop_to(-WORD_SIZE)
+        asm.label('join')
+        asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.load_stack(LOCAL_UNDER_CALL_SETUP)
+        asm.call(CALLEE_ID); asm.label('back'); asm.pop(WORD_SIZE); asm.ret()
 
-                [arg] = self.hlil_call(asm, 1).args
+        body = self.hlil_function(asm, 1).body
+        [call] = [node for node in iter_tree(body) if isinstance(node, HLILCall)]
+        arm_values = [node.src.value for node in iter_tree(body)
+                      if isinstance(node, HLILAssign) and isinstance(node.src, HLILConst)]
 
-                if folds:
-                    self.assertIs(type(arg.value), RawInt)
-                else:
-                    self.assertIsInstance(arg, HLILVar)
+        self.assertIsInstance(call.args[0], HLILVar)
+        self.assertCountEqual([type(value) for value in arm_values], [RawInt, int])
 
     def test_raw_parameter_default_prints_as_a_number(self):
         """It printed `= RawInt(0x00000005)` in .ts; the .py keeps that spelling, the one the writer takes"""

@@ -2,14 +2,13 @@
 
 Push all NOT operators down to comparison leaves:
 - !(!x) → x (double negation elimination)
-- !(x == y) → x != y
+- !(x == y) → x != y; an ordering keeps its NOT, !(x < y) (negate_comparison)
 - !(x && y) → !x || !y (De Morgan)
 - !(x || y) → !x && !y (De Morgan)
 """
 
 from ir.pipeline import Pass
 from ..mlil import (
-    COMPARISON_TYPES,
     DE_MORGAN,
     MediumLevelILFunction,
     MediumLevelILInstruction,
@@ -71,8 +70,7 @@ class NNFPass(Pass):
         elif isinstance(expr, MLILTestZero):
             # !TestZero(x) = (x != 0)
             return MLILNe(expr.operand, MLILConst(0, is_hex=False))
-        elif isinstance(expr, COMPARISON_TYPES):
-            return negate_comparison(expr)
 
-        # Any other negated expression is wrapped with NOT
-        return MLILLogicalNot(expr)
+        # Any other negated expression, an ordering included, is wrapped with NOT
+        negated_comparison = negate_comparison(expr)
+        return negated_comparison if negated_comparison is not None else MLILLogicalNot(expr)

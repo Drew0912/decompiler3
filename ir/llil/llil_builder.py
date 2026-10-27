@@ -246,7 +246,7 @@ class LowLevelILBuilder:
         self.add_instruction(LowLevelILStackStore(expr, offset=0, slot_index=slot_index))
         self.emit_sp_add(1, hidden_for_formatter=hidden_for_formatter)
         # Track on vstack: always use StackLoad reference
-        # SCCP will propagate constants where needed
+        # MLIL's constant propagation substitutes a constant where needed
         self.__vstack.push(LowLevelILStackLoad(offset=0, slot_index=slot_index))
 
         return expr

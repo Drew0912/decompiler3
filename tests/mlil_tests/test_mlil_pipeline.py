@@ -15,7 +15,7 @@ from ir.mlil.mlil_formatter import MLILFormatter
 from ir.mlil.mlil_optimizer import mlil_optimization_passes, optimize_mlil
 from ir.mlil.passes import (
     BlockMergePass, SSAConversionPass, SSAOptimizationPass, SSATypeInferencePass, SSADeconstructionPass,
-    RegGlobalValuePropagationPass,
+    BitwiseHexPass,
 )
 
 
@@ -26,7 +26,7 @@ ONE_ARG = 1
 
 EXPECTED_PASS_TYPES = [
     BlockMergePass, SSAConversionPass, SSAOptimizationPass, SSATypeInferencePass, SSADeconstructionPass,
-    RegGlobalValuePropagationPass,
+    BitwiseHexPass,
 ]
 
 

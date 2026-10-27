@@ -8,12 +8,13 @@ from .passes import (
     SSAOptimizationPass,
     SSATypeInferencePass,
     SSADeconstructionPass,
-    RegGlobalValuePropagationPass,
+    BitwiseHexPass,
 )
 
 
 def mlil_optimization_passes(infer_types: bool = True) -> list[Pass]:
-    """The MLIL passes that run after LLIL->MLIL translation, in production order"""
+    """The MLIL passes that run after LLIL->MLIL translation, in production order (RegGlobalValuePropagationPass,
+    which carries a register's or global's value forward, is left out but kept: docs/mlil/MLIL_DESIGN.md)"""
     # BlockMergePass must run before SSAConversionPass
     passes: list[Pass] = [BlockMergePass(), SSAConversionPass(), SSAOptimizationPass()]
 
@@ -22,7 +23,8 @@ def mlil_optimization_passes(infer_types: bool = True) -> list[Pass]:
         passes.append(SSATypeInferencePass())
 
     passes.append(SSADeconstructionPass())
-    passes.append(RegGlobalValuePropagationPass())
+    # Display only, on the final expressions
+    passes.append(BitwiseHexPass())
     return passes
 
 

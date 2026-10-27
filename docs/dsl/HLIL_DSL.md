@@ -21,11 +21,13 @@
   A syscall lowers its argc and the `POP` right after it from one count: the compile check warns when they
   differ.
 - **What HLIL must keep for exact recompiles:** raw vs typed constants (kept: past LLIL's `is_raw`, a
-  Raw constant stays a `RawInt` through MLIL and HLIL, and prints as its number; a folded one becomes an
-  `int`, and a Raw and an Integer constant never merge, since `constant_values_equal` compares types); which
+  Raw constant stays a `RawInt` through MLIL and HLIL, and prints as its number, not as `RawInt(...)` (in hex
+  beside a bitwise operation's value, as an Integer does); no pass folds it, and a
+  Raw and an Integer constant never merge, since `constant_values_equal` compares types); which
   jump opcode was used (a "true arm is the fall-through" bit); block-scoped locals,
   including never-read ones and unused stores; stack temporaries rather than named locals; `reg0` as a
-  register; constant expressions unfolded (`1 | 32768`); bare truth tests vs `!= 0`; eager vs
+  register; constant expressions unfolded (`1 | 32768`; kept since 2026-10-27, no pass folds); bare truth tests
+  vs `!= 0`; eager vs
   short-circuit logic; a tail-call node; the compiler's switch pattern. Loop rotation, switch recovery,
   return hoisting and region cloning are not worth inverting; the comparator covers those functions.
 - **Shared stack model.** The lowering reads the opcode table's stack effects

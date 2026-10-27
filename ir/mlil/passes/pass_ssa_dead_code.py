@@ -18,10 +18,10 @@ from ..mlil_ssa import (
 )
 
 
-def string_debug_comment(inst: MLILSetVarSSA, sccp_replaced_vars: set[MLILVariableSSA]) -> list[MLILDebug]:
-    """A removed assignment of a string constant, kept as a debug comment - unless SCCP replaced the variable,
-    so the string already sits in its uses (a call's arguments)"""
-    if isinstance(inst.value, MLILConst) and isinstance(inst.value.value, str) and inst.var not in sccp_replaced_vars:
+def string_debug_comment(inst: MLILSetVarSSA, replaced_vars: set[MLILVariableSSA]) -> list[MLILDebug]:
+    """A removed assignment of a string constant, kept as a debug comment - unless constant propagation replaced
+    the variable, so the string already sits in its uses (a call's arguments)"""
+    if isinstance(inst.value, MLILConst) and isinstance(inst.value.value, str) and inst.var not in replaced_vars:
         return [MLILDebug('string', inst.value.value).copy_metadata_from(inst)]
 
     return []
@@ -30,9 +30,10 @@ def string_debug_comment(inst: MLILSetVarSSA, sccp_replaced_vars: set[MLILVariab
 class SSADeadCodeEliminationPass(Pass):
     """Remove unused SSA variable assignments"""
 
-    def __init__(self, sccp_replaced_vars: set[MLILVariableSSA] = None):
+    def __init__(self, replaced_vars: set[MLILVariableSSA] | None = None):
         self.read_vars: set[MLILVariableSSA] = set()
-        self.sccp_replaced_vars = sccp_replaced_vars or set()
+        # Kept even while empty: the optimizer hands in constant propagation's set, which fills up later
+        self.replaced_vars = set() if replaced_vars is None else replaced_vars
 
     def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
         """Eliminate dead code
@@ -65,7 +66,7 @@ class SSADeadCodeEliminationPass(Pass):
                         new_instructions.append(inst)
                     else:
                         removed = True
-                        new_instructions.extend(string_debug_comment(inst, self.sccp_replaced_vars))
+                        new_instructions.extend(string_debug_comment(inst, self.replaced_vars))
                 elif isinstance(inst, MLILPhi):
                     if inst.dest in self.read_vars:
                         new_instructions.append(inst)

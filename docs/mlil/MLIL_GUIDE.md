@@ -104,12 +104,14 @@ call. It builds a `Pipeline` and runs:
 
 ```
 ED9LLILToMLILPass → BlockMergePass (optimize only) → SSAConversionPass → SSAOptimizationPass →
-SSATypeInferencePass (optional) → SSADeconstructionPass → RegGlobalValuePropagationPass
+SSATypeInferencePass (optional) → SSADeconstructionPass → BitwiseHexPass
 ```
 
 Every pass after `ED9LLILToMLILPass` comes from `mlil_optimization_passes()`
 (`ir/mlil/mlil_optimizer.py`), and `optimize_mlil()` runs that same list on an already translated
-function - there is one MLIL pipeline, not a production one and a test one.
+function - there is one MLIL pipeline, not a production one and a test one. No pass computes a value the
+bytecode does not hold: SCCP, expression simplification and register/global value propagation are left out but kept
+(`docs/mlil/MLIL_DESIGN.md`, "LLIL → MLIL Pipeline"), so a constant expression prints as written (`1 | 32768`).
 
 `BlockMergePass` splices any block whose only way in is another block's unconditional goto into
 that block - mainly undoing the call-return split every `LowLevelILCall` forces (it is a block
@@ -117,12 +119,16 @@ terminator), but it also removes real bytecode `JMP`s that happen to land on a s
 target. Only runs when `optimize=True`; `optimize=False` keeps the untouched, block-per-LLIL-
 boundary translation.
 
-`SSAOptimizationPass` internally runs the `SSAOptimizer` (`ir/mlil/mlil_ssa_optimizer.py`): sparse
-conditional constant propagation once, then, in this order until a round changes nothing (at most
-`SSA_OPTIMIZER_MAX_ITERATIONS` = 10 rounds), constant
-propagation, expression simplification, condition simplification, negation normal form conversion,
-copy propagation, expression inlining, and two flavors of dead-code elimination (dead statements,
-dead `Phi` nodes) — all defined under `ir/mlil/passes/`.
+`SSAOptimizationPass` internally runs the `SSAOptimizer` (`ir/mlil/mlil_ssa_optimizer.py`): in this
+order until a round changes nothing (at most `SSA_OPTIMIZER_MAX_ITERATIONS` = 10 rounds), constant
+propagation, condition simplification, negation normal form conversion, copy propagation, expression
+inlining, and two flavors of dead-code elimination (dead statements, dead `Phi` nodes) — all defined
+under `ir/mlil/passes/`. The condition passes negate only `==` / `!=`: an ordering keeps its NOT
+(`!(a < b)`).
+
+`BitwiseHexPass` runs last and only marks constants for display: a bitwise operation on a value prints its
+constant operand in hex (`arg3 & 0x00000800`, `x & ~0x00000010`, a union of single-bit flags
+`x & (0x00000001 | 0x00000008)`).
 
 No dead-code pass runs after SSA deconstruction: a census of production output found no unread
 local assignment (500-file sample, 2026-09-26).

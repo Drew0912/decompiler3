@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Unit tests for SSA dead-code elimination: one run removes a whole dead chain. Removing an unread
 definition can leave the definitions it read unread too, and a single sweep removes only the unread
-end - so a chain would lose one link per optimizer round, and a long one would hit the round cap."""
+end - so a chain would lose one link per optimizer round, and a long one would hit the round cap. A
+removed string assignment leaves a debug comment unless constant propagation put the string into its uses."""
 
 from pathlib import Path
 import sys
@@ -12,12 +13,13 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import MediumLevelILFunction, MLILCall, MLILConst, MLILGoto, MLILVariable
 from ir.mlil.mlil_ssa import MLILIf, MLILPhi, MLILRet, MLILSetVarSSA, MLILVariableSSA, MLILVarSSA
-from ir.mlil.passes import SSADeadCodeEliminationPass
+from ir.mlil.passes import ConstantPropagationPass, SSADeadCodeEliminationPass
 
 
 FUNC_START = 0x1000
 BLOCK_STRIDE = 0x10
 VALUE = 7
+TEXT = 'text'
 
 
 def ssa_var(func: MediumLevelILFunction, name: str, version: int) -> MLILVariableSSA:
@@ -77,6 +79,24 @@ class TestDeadChainRemovedInOneRun(unittest.TestCase):
 
         self.assertEqual(kinds(block), [MLILCall, MLILRet])
         self.assertIsNone(call.output)
+
+
+class TestSubstitutedStringLeavesNoComment(unittest.TestCase):
+
+    def test_set_empty_when_the_passes_are_built(self):
+        # s#1 = 'text'; Foo(s#1): the optimizer builds the passes before constant propagation records s#1
+        func = MediumLevelILFunction('substituted_string', FUNC_START)
+        s1 = ssa_var(func, 's', 1)
+        block = func.create_block(FUNC_START, 'entry')
+        block.instructions = [MLILSetVarSSA(s1, MLILConst(TEXT)), MLILCall('Foo', [MLILVarSSA(s1)]), MLILRet()]
+        constant_propagation = ConstantPropagationPass()
+        dead_code = SSADeadCodeEliminationPass(replaced_vars=constant_propagation.replaced_vars)
+
+        constant_propagation.run(func)
+        dead_code.run(func)
+
+        self.assertEqual(kinds(block), [MLILCall, MLILRet])
+        self.assertEqual([arg.value for arg in block.instructions[0].args], [TEXT])
 
 
 if __name__ == '__main__':

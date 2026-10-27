@@ -25,6 +25,7 @@ from .pass_reg_global_propagation import (
     RegGlobalValuePropagator,
     RegGlobalValuePropagationPass,
 )
+from .pass_bitwise_hex import BitwiseHexPass
 
 __all__ = [
     # Lifting
@@ -50,4 +51,5 @@ __all__ = [
     'RegGlobalState',
     'RegGlobalValuePropagator',
     'RegGlobalValuePropagationPass',
+    'BitwiseHexPass',
 ]
