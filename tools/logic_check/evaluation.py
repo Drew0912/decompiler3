@@ -3,15 +3,16 @@ across layers - each effect with its argument trees and guard, each branch with 
 effect can run next, and each value a loop carries into its header
 
 A layer adapter (llil_layer.py, mlil_layer.py) offers: entry; successors(block); predecessors(block);
-terminal_address(block); branch(block) -> (address, true target, false target) or None; step(inst, state, facts) ->
-the effects inst has (it records a branch in facts and changes state); neutral_key(key); OWN_STORAGE_NAMES"""
+terminal_address(block); branch(block) -> (address, true target, false target) or None; only_copies(block), whether
+it holds nothing but writes to stack, parameters and registers and its jump; step(inst, state, facts) -> the effects
+inst has (it records a branch in facts and changes state); neutral_key(key); OWN_STORAGE_NAMES"""
 
 from dataclasses import dataclass, field
 from typing import Callable, Hashable
 
 from ir.core import reverse_post_order
 from .post_dominators import control_dependence
-from .state import Fingerprints, State, merge
+from .state import Fingerprints, State, incoming_value, merge
 
 MAX_ROUNDS = 64             # widening at loop headers converges in a few; past this the walk is an internal error
 FUNCTION_ENTRY = -1         # the terminal address of the function entry's virtual predecessor
@@ -50,10 +51,21 @@ class Facts:
     neutral_key: Callable[[tuple], tuple] | None = None     # a layer's own storage key the way every layer names it
 
 
+def edge_address(layer, predecessor) -> int:
+    """The address naming the edge from predecessor on every layer: its terminal's (block merging and edge splitting
+    keep the terminal instructions), or FUNCTION_ENTRY from an entry block that only copies and passes control on to
+    one block: a preheader one layer puts in front of a loop at the function's start is the other's function entry
+    edge"""
+    if (predecessor is layer.entry and not layer.predecessors(predecessor)
+            and len(layer.successors(predecessor)) == 1 and layer.only_copies(predecessor)):
+        return FUNCTION_ENTRY
+
+    return layer.terminal_address(predecessor)
+
+
 def join_identity(layer, block, reachable: dict) -> tuple:
-    """A join's identity on every layer: the terminal addresses of the edges into it from reachable blocks (block
-    merging and edge splitting keep the terminal instructions)"""
-    identity = sorted(layer.terminal_address(predecessor) for predecessor in layer.predecessors(block)
+    """A join's identity on every layer: the addresses of the edges into it from reachable blocks"""
+    identity = sorted(edge_address(layer, predecessor) for predecessor in layer.predecessors(block)
                       if predecessor in reachable)
     return tuple(([FUNCTION_ENTRY] if block is layer.entry else []) + identity)
 
@@ -101,21 +113,21 @@ def analyze(layer) -> Facts:
         for effect in effects_of[block]:
             facts.effects.setdefault(effect.key, []).append(effect)
 
-    guards = control_dependence(order, layer.successors, layer.branch)
+    guards = control_dependence(order, layer.successors, layer.branch, start=lambda block: block.start)
     for block, effects in effects_of.items():
         for effect in effects:
             effect.guard = guards[block]
 
     facts.next_effects = next_effects(layer, order, effects_of)
     for header, keys in widened.items():
-        incoming = [(layer.terminal_address(predecessor), exit_states[predecessor])
+        incoming = [(edge_address(layer, predecessor), exit_states[predecessor])
                     for predecessor in layer.predecessors(header) if predecessor in position]
         if header is layer.entry:
             incoming.append((FUNCTION_ENTRY, State()))
         for key in keys:
             for address, state in incoming:
                 facts.loop_values[(joins[header], key, address)] = \
-                    state.items.get(key, ('absent', layer.neutral_key(key)))
+                    state.items.get(key, incoming_value(key, layer.neutral_key))
 
     return facts
 
@@ -126,7 +138,7 @@ def walk_forward(layer, order: list, position: dict, joins: dict, widened: dict,
     nothing), each widened key of a loop header its leaf"""
     entry_states, exit_states = {}, {}
     for block in order:
-        incoming = [(layer.terminal_address(predecessor), exit_states[predecessor])
+        incoming = [(edge_address(layer, predecessor), exit_states[predecessor])
                     for predecessor in layer.predecessors(block)
                     if predecessor in position and position[predecessor] < position[block]]
         if block is layer.entry:

@@ -11,6 +11,7 @@ from ..mlil import (
     MediumLevelILInstruction,
     MediumLevelILCall,
     MLILAddressOf,
+    MLILStoreReg,
 )
 from ..mlil_ssa import (
     iter_ssa_defs,
@@ -24,9 +25,10 @@ from ..mlil_ssa import (
 def reaches_without_redefinition(func: MediumLevelILFunction, base_var, def_block: MediumLevelILBasicBlock,
                                  def_idx: int, use_block: MediumLevelILBasicBlock, use_idx: int) -> bool:
     """True if nothing between (def_block, def_idx) and (use_block, use_idx) redefines base_var:
-    an explicit definition, a call's own output, or a call that may clobber it
-    (func.call_may_clobber). The call itself counts, not its `<undef>` pseudo-defs, which
-    dead-code elimination can drop while the clobber remains.
+    an explicit definition, a store to its register (the stores SSA construction puts before a
+    return), a call's own output, or a call that may clobber it (func.call_may_clobber). The call
+    itself counts, not its `<undef>` pseudo-defs, which dead-code elimination can drop while the
+    clobber remains.
 
     Across blocks, use_block's prefix is scanned first, then the walk follows single-predecessor
     edges back to def_block. Only in-degree matters: a def block that branches still forwards
@@ -36,6 +38,9 @@ def reaches_without_redefinition(func: MediumLevelILFunction, base_var, def_bloc
     def redefines(inst) -> bool:
         if isinstance(inst, MLILSetVarSSA):
             return inst.var.base_var == base_var
+
+        if isinstance(inst, MLILStoreReg):
+            return func.register_vars.get(inst.index) == base_var
 
         if isinstance(inst, MediumLevelILCall):
             return ((inst.output is not None and inst.output.base_var == base_var)

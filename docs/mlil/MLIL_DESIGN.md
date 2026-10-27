@@ -94,7 +94,10 @@ Two coexisting representations, not a single evolving one:
   in this form both before and after the optimizer runs.
 - **SSA** (`ir/mlil/mlil_ssa.py`): `MLILVariableSSA`, `MLILVarSSA`, `MLILSetVarSSA`, and `MLILPhi`.
   SSA construction is dominance-based (`SSAConstructor`) and includes critical-edge splitting;
-  deconstruction (`SSADeconstructor`) converts back to non-SSA form afterward.
+  deconstruction (`SSADeconstructor`) converts back to non-SSA form afterward. An entry block a back
+  edge enters (a loop at the function's very start) first gets an empty block in front of it
+  (`SSAConstructor._add_entry_preheader`): the dominance frontier counts only real predecessors, so
+  without one the loop header had no phi and the loop's writes to a parameter or register were lost.
 
 Stack slots are named `var_sN` and parameters `argN`. Which one an access gets is decided by the
 LLIL builder from the slot's current lifetime (`LowLevelILBuilder._holds_parameter`): a parameter
@@ -140,8 +143,10 @@ before each return, every register whose version there is the function's own wri
 an `MLILStoreReg`, an ordinary read no pass drops, which HLIL prints as the register. Left out: the
 result register (`MediumLevelILFunction.result_register`, from the translator's `RESULT_REGISTER`),
 which the return passes as its value; a version a call may have clobbered, the callee's; a phi
-over only incoming and callees' values. Real bytecode has none: its registers do not cross a call
-boundary but through the result register.
+over only incoming and callees' values. Each store stores what the registers held before any of
+them: an `MLILStoreReg` redefines its register for copy propagation and inlining (below), so a
+read of a register another store overwrites stays before that store. Real bytecode has none: its
+registers do not cross a call boundary but through the result register.
 
 ## Basic Blocks & Functions
 
@@ -215,7 +220,8 @@ ordering keeps its NOT (`!(a < b)`), since `!(a < b)` and `a >= b` differ when a
 HLIL's structuring still inverts orderings (`negate_condition`, `ir/hlil/hlil.py`).
 
 Copy propagation and expression inlining never move a register/global read past anything that may
-redefine that storage: an explicit definition, a call's own output, or any call that may clobber it
+redefine that storage: an explicit definition, a store to the register (`MLILStoreReg`), a call's
+own output, or any call that may clobber it
 (`MediumLevelILFunction.call_may_clobber`, the same rule SSA construction uses for its `<undef>`
 pseudo-definitions). Both passes share one check, `reaches_without_redefinition`
 (`pass_ssa_copy_propagation.py`), which also scans the use block's own instructions before the use.

@@ -307,6 +307,9 @@ class SSAConstructor:
 
     def construct(self) -> MediumLevelILFunction:
         """Convert function to SSA form (modifies in-place)"""
+        if self._add_entry_preheader():
+            self.dom_analysis = DominanceAnalysis(self.function)
+
         # Raise stored globals into variables, so the rest of SSA construction tracks them
         # exactly like registers (versions, phis, call clobbers)
         self._raise_globals()
@@ -332,6 +335,23 @@ class SSAConstructor:
         self._rename_variables_iterative()
         self._store_registers_left_by_returns()
         return self.function
+
+    def _add_entry_preheader(self) -> bool:
+        """An entry block something branches back to (a loop at the function's start) gets an empty block in front
+        of it, so the function's start is an edge of its own: the dominance frontier counts only real predecessors,
+        and without one the loop header had no phi, and its incoming values no block for their phi copies. Whether
+        one was added"""
+        blocks = self.function.basic_blocks
+        if not blocks or not blocks[0].incoming_edges:
+            return False
+
+        entry = blocks[0]
+        preheader = MediumLevelILBasicBlock(0, entry.start, f'{entry.label}_entry')
+        preheader.instructions.append(MLILGoto(entry).copy_metadata_from(entry.instructions[0]))
+        preheader.add_outgoing_edge(entry)
+        blocks.insert(0, preheader)
+        self.function.renumber_blocks()
+        return True
 
     def _store_registers_left_by_returns(self):
         """A caller can read a register after the call (a register outlives the function, as a global does): each

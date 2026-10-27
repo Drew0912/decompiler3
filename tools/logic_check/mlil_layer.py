@@ -18,6 +18,7 @@ SPLIT_SUFFIX = re.compile(r'_v\d+$')
 PARAMETER_NAME = re.compile(r'^arg(\d+)$')
 STACK_NAME = re.compile(r'^var_s(\d+)$')
 IGNORED = (MLILGoto, MLILDebug, MLILNop)
+COPIES = (MLILSetVar, *IGNORED)
 
 
 class MLILLayer:
@@ -54,6 +55,16 @@ class MLILLayer:
             return terminal.address, terminal.true_target, terminal.false_target
 
         return None
+
+    @classmethod
+    def only_copies(cls, block) -> bool:
+        return all(isinstance(inst, COPIES) or cls.local_memory_write(inst) for inst in block.instructions)
+
+    @classmethod
+    def local_memory_write(cls, inst) -> bool:
+        """The memory form of a variable's write, *(&v) = x"""
+        return (isinstance(inst, MLILStoreDeref) and isinstance(inst.dest, MLILAddressOf)
+                and isinstance(inst.dest.operand, MLILVar))
 
     def neutral_key(self, key: tuple) -> tuple:
         return self.neutral_of.get(key[1], key) if key[0] == 'name' else key
@@ -121,20 +132,26 @@ class MLILLayer:
     def step(self, inst, state: State, facts: Facts) -> list[Effect]:
         address = inst.address
         if isinstance(inst, MLILSetVar):
-            state.set(self.key(inst.var), self.evaluate(inst.value, state))
+            key, value = self.key(inst.var), self.evaluate(inst.value, state)
+            if key[0] == 'reg':
+                state.escape(value, self.address_taken, self.neutral_key)
+            state.set(key, value)
         elif isinstance(inst, MLILStoreReg):
-            state.set(('reg', inst.index), self.evaluate(inst.value, state))
+            value = self.evaluate(inst.value, state)
+            state.escape(value, self.address_taken, self.neutral_key)
+            state.set(('reg', inst.index), value)
         elif isinstance(inst, MLILStoreGlobal):
             value = self.evaluate(inst.value, state)
+            state.escape(value, self.address_taken, self.neutral_key)
             state.set(('global', inst.index), value)
             return [Effect(address, 'store global', inst.index, (value,))]
         elif isinstance(inst, MLILStoreDeref):
-            # The memory form of a variable's write, *(&v) = x, writes v
-            if isinstance(inst.dest, MLILAddressOf) and isinstance(inst.dest.operand, MLILVar):
+            if self.local_memory_write(inst):
                 state.set(self.key(inst.dest.operand.var), self.evaluate(inst.value, state))
                 return []
-            effect = Effect(address, 'store deref', None,
-                            (self.evaluate(inst.dest, state), self.evaluate(inst.value, state)))
+            value = self.evaluate(inst.value, state)
+            effect = Effect(address, 'store deref', None, (self.evaluate(inst.dest, state), value))
+            state.escape(value, self.address_taken, self.neutral_key)
             state.store_through_pointer(address)
             return [effect]
         elif isinstance(inst, MediumLevelILCall):
@@ -160,7 +177,7 @@ class MLILLayer:
 
         effect = Effect(inst.address, kind, target, tuple(self.evaluate(arg, state) for arg in inst.args))
         if inst.clobbers_registers:
-            pointed = state.pointed_locals(effect.args, self.address_taken, self.neutral_key)
+            pointed = state.reachable_locals(effect.args, self.address_taken, self.neutral_key)
             effect.storage = state.local_values(pointed, self.neutral_key)
             state.clobber(inst.address, pointed)
             state.set(('reg', RESULT_REGISTER), ('call', inst.address))

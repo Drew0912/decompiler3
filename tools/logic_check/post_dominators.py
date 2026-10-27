@@ -11,10 +11,11 @@ from ir.core import reverse_post_order
 EXIT = 'exit'
 
 
-def exit_blocks(blocks: Sequence, successors: Callable) -> set:
+def exit_blocks(blocks: Sequence, successors: Callable, start: Callable | None = None) -> set:
     """The blocks given an edge to EXIT: those without a successor, and of each region that reaches none of them and
-    that no edge leaves (an endless loop) its first block in the order of blocks, the same way on every layer. Only the
-    region gets the edge, so a block on the way into it keeps its post-dominators and its guards"""
+    that no edge leaves (an endless loop) its block of the lowest start(block), the same on every layer, ties (and no
+    start) by the order of blocks. Only the region gets the edge, so a block on the way into it keeps its
+    post-dominators and its guards"""
     ends = {block for block in blocks if not successors(block)}
     predecessors = {block: [] for block in blocks}
     for block in blocks:
@@ -30,11 +31,12 @@ def exit_blocks(blocks: Sequence, successors: Callable) -> set:
                 pending.append(predecessor)
 
     position = {block: index for index, block in enumerate(blocks)}
+    rank = (lambda block: (start(block), position[block])) if start else position.__getitem__
     exits = set(ends)
     for component in strongly_connected_components([block for block in blocks if block not in reaching], successors):
         members = set(component)
         if all(successor in members for block in component for successor in successors(block)):
-            exits.add(min(component, key=position.__getitem__))
+            exits.add(min(component, key=rank))
 
     return exits
 
@@ -83,9 +85,10 @@ def strongly_connected_components(blocks: Sequence, successors: Callable) -> lis
     return components
 
 
-def immediate_post_dominators(blocks: Sequence, successors: Callable) -> dict[Hashable, Hashable]:
-    """Each block's immediate post-dominator (EXIT's is EXIT)"""
-    exits = exit_blocks(blocks, successors)
+def immediate_post_dominators(blocks: Sequence, successors: Callable,
+                              start: Callable | None = None) -> dict[Hashable, Hashable]:
+    """Each block's immediate post-dominator (EXIT's is EXIT); start as exit_blocks takes it"""
+    exits = exit_blocks(blocks, successors, start)
     reversed_successors = {EXIT: list(exits)}
     for block in blocks:
         reversed_successors.setdefault(block, [])
@@ -120,12 +123,13 @@ def immediate_post_dominators(blocks: Sequence, successors: Callable) -> dict[Ha
     return ipdom
 
 
-def control_dependence(blocks: Sequence, successors: Callable, branches: Callable) -> dict[Hashable, frozenset]:
+def control_dependence(blocks: Sequence, successors: Callable, branches: Callable,
+                       start: Callable | None = None) -> dict[Hashable, frozenset]:
     """block -> the (branch address, 't' / 'f') it runs under directly. branches(block) is (address, true target,
-    false target) for a block ending in a two-way branch, else None. A block depends on an arm when it post-dominates
-    the arm's target but not, strictly, the branch: the post-dominator tree's path from the target up to the branch's
-    own immediate post-dominator"""
-    ipdom = immediate_post_dominators(blocks, successors)
+    false target) for a block ending in a two-way branch, else None; start as exit_blocks takes it. A block depends on
+    an arm when it post-dominates the arm's target but not, strictly, the branch: the post-dominator tree's path from
+    the target up to the branch's own immediate post-dominator"""
+    ipdom = immediate_post_dominators(blocks, successors, start)
     dependence = {}
     for block in blocks:
         branch = branches(block)

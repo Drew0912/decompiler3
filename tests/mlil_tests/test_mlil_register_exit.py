@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """A register a function writes and its return leaves is the caller's to read after the call (registers outlive a
 function, as globals do): SSA construction stores it before the return, so the .ts writes the register itself
-(`REGS[n] = v`), not a local, on every arm that writes it. The result register's write is the return's value, not
-stored beside it; a call between the write and the return leaves the callee's value, and a loop of calls merges only
-callees' values, so nothing of the function's to store"""
+(`REGS[n] = v`), not a local, on every arm that writes it, each store storing what the registers held before any of
+them. The result register's write is the return's value, not stored beside it; a call between the write and the
+return leaves the callee's value, and a loop of calls merges only callees' values, so nothing of the function's to
+store"""
 
 from pathlib import Path
 import sys
@@ -24,7 +25,9 @@ LEFT_VALUE = 7
 ARM_VALUES = (1, 2)
 GLOBAL_READ, GLOBAL_WRITTEN = 1, 0
 TAIL_CALL_ARGC = 1
+OTHER_REG_INDEX = 6
 REGISTER = f'REGS[{REG_INDEX}]'
+OTHER_REGISTER = f'REGS[{OTHER_REG_INDEX}]'
 LOCAL = f'reg{REG_INDEX}'
 
 
@@ -32,10 +35,24 @@ def return_nothing(asm: Asm):
     asm.push_raw(0); asm.set_reg(RESULT_REG_INDEX); asm.ret()
 
 
-def typescript_of(asm: Asm) -> str:
+def typescript_of(asm: Asm, *, infer_types: bool = False) -> str:
     _, llil = lift_asm(asm, others=(returning_callee(),))
-    mlil = convert_falcom_llil_to_mlil(llil, optimize=True, infer_types=False)
+    mlil = convert_falcom_llil_to_mlil(llil, optimize=True, infer_types=infer_types)
     return generate_typescript(convert_falcom_mlil_to_hlil(mlil))
+
+
+def read_after_its_write(ts: str, register: str) -> bool:
+    """Whether a statement reads register after one writes it: the stores before a return must store what the
+    registers held before any of them"""
+    written = False
+    for line in ts.splitlines():
+        target, _, value = line.strip().partition(' = ')
+        if written and register in value:
+            return True
+        if target == register:
+            written = True
+
+    return False
 
 
 def call_callee(asm: Asm):
@@ -51,6 +68,45 @@ class TestRegisterLeftForTheCaller(unittest.TestCase):
         ts = typescript_of(asm)
         self.assertIn(f'{REGISTER} = {LEFT_VALUE};', ts)
         self.assertNotIn(LOCAL, ts)
+
+    def test_write_before_the_return_with_types(self):
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.set_reg(REG_INDEX)
+        return_nothing(asm)
+        ts = typescript_of(asm, infer_types=True)
+        self.assertIn(f'{REGISTER} = {LEFT_VALUE};', ts)
+        self.assertNotIn(LOCAL, ts)
+
+    def test_copy_of_a_register_another_store_overwrites(self):
+        """REG[6] = REG[5]; REG[5] = 7: REGS[6] gets REG[5]'s value from before the store to REGS[5]"""
+        asm = Asm()
+        asm.get_reg(REG_INDEX); asm.set_reg(OTHER_REG_INDEX); asm.push_int(LEFT_VALUE); asm.set_reg(REG_INDEX)
+        return_nothing(asm)
+        ts = typescript_of(asm)
+        self.assertIn(f'{REGISTER} = {LEFT_VALUE};', ts)
+        self.assertIn(f'{OTHER_REGISTER} =', ts)
+        self.assertFalse(read_after_its_write(ts, REGISTER), ts)
+
+    def test_registers_swapped(self):
+        asm = Asm()
+        asm.get_reg(REG_INDEX); asm.get_reg(OTHER_REG_INDEX); asm.set_reg(REG_INDEX); asm.set_reg(OTHER_REG_INDEX)
+        return_nothing(asm)
+        ts = typescript_of(asm)
+        self.assertIn(f'{REGISTER} =', ts)
+        self.assertIn(f'{OTHER_REGISTER} =', ts)
+        for register in (REGISTER, OTHER_REGISTER):
+            self.assertFalse(read_after_its_write(ts, register), ts)
+
+    def test_loop_at_the_function_start_writing_the_register(self):
+        """The loop header is the entry block: the zero-iteration path leaves the incoming value"""
+        asm = Asm()
+        asm.label('head'); asm.load_global(GLOBAL_READ); asm.jz('done')
+        asm.push_int(LEFT_VALUE); asm.set_reg(REG_INDEX); asm.jmp('head')
+        asm.label('done'); return_nothing(asm)
+        ts = typescript_of(asm)
+        self.assertIn(f'{LOCAL} = {REGISTER};', ts)
+        self.assertIn(f'{LOCAL} = {LEFT_VALUE};', ts)
+        self.assertIn(f'{REGISTER} = {LOCAL};', ts)
 
     def test_each_arm_of_a_join_writes_the_register(self):
         asm = Asm()

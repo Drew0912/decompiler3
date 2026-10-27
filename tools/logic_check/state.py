@@ -14,6 +14,7 @@ MEMORY_EPOCH = ('epoch', 'memory')      # the same for memory behind a pointer
 PHI_DEPTH = 3                           # a deeper phi becomes a leaf of its join holding the phi's fingerprint
 FINGERPRINT_BYTES = 16
 DEEP_PHI_KEPT_LEAVES = ('loop', 'address')  # what a deep phi's leaf keeps of the phi, for the comparison to find
+ESCAPED = 'escaped'                     # (ESCAPED, key) is set for a local whose address escaped
 
 
 class State:
@@ -37,14 +38,35 @@ class State:
     def global_value(self, index: int) -> tuple:
         return self.items.get(('global', index), ('global', index, self.items.get(GLOBAL_EPOCH, ENTRY)))
 
-    @classmethod
-    def pointed_locals(cls, args: tuple, address_taken: set, neutral_key) -> list[tuple]:
-        """The address-taken locals the arguments hold the address of, by neutral key: all of the function's storage a
-        callee can reach. A local's address reaches a callee only in its arguments (no stored value holds one), and
-        an address-taken local's slot may hold a call's setup elsewhere, after the local's scope ends"""
-        pointed = {leaf[1] for leaf in tagged_leaves(args, 'address')}
-        return sorted((key for key in address_taken if neutral_key(key) in pointed),
-                      key=lambda key: repr(neutral_key(key)))
+    def reachable_locals(self, args: tuple, address_taken: set, neutral_key) -> list[tuple]:
+        """The address-taken locals a callee can reach, by neutral key: those the arguments hold the address of and
+        those whose address escaped before (State.escape), then, to a fixed point, those a reached local's value holds
+        the address of (a pointer to a pointer). Not every address-taken local: its slot may hold a call's setup
+        elsewhere, after the local's scope ends"""
+        owners = {}                     # neutral key -> the layer's own keys
+        for key in address_taken:
+            owners.setdefault(neutral_key(key), []).append(key)
+
+        def pointed_by(tree) -> list[tuple]:
+            return [key for leaf in tagged_leaves(tree, 'address') for key in owners.get(leaf[1], ())]
+
+        reached = set()
+        pending = [key for key in address_taken if (ESCAPED, key) in self.items] + pointed_by(args)
+        while pending:
+            key = pending.pop()
+            if key not in reached:
+                reached.add(key)
+                pending.extend(pointed_by(self.items.get(key)))
+
+        return sorted(reached, key=lambda key: repr(neutral_key(key)))
+
+    def escape(self, value, address_taken: set, neutral_key):
+        """A local's address stored outside a call's arguments (in a global, through a pointer, in a register)
+        escapes: every later call can reach the local. Real bytecode stores none (a census of validator-300)"""
+        stored = {leaf[1] for leaf in tagged_leaves(value, 'address')}
+        for key in address_taken:
+            if neutral_key(key) in stored:
+                self.items[(ESCAPED, key)] = (ESCAPED,)
 
     def local_values(self, keys: list[tuple], neutral_key) -> tuple:
         """(neutral key, value) of each local: what a callee can read behind its pointers"""
@@ -59,7 +81,7 @@ class State:
 
     def clobber(self, address: int, pointed: list[tuple]):
         """What a call may change: every register but the result, which the caller sets; every global; memory behind
-        a pointer; the locals its arguments point to (State.pointed_locals)"""
+        a pointer; the locals it can reach (State.reachable_locals)"""
         for index in range(REGISTER_COUNT):
             if index != RESULT_REGISTER:
                 self.items[('reg', index)] = ('reg', index, ('after', address))
@@ -120,6 +142,17 @@ class Fingerprints:
         return digest
 
 
+def incoming_value(key: tuple, neutral_key) -> tuple:
+    """A key's value on a path that never wrote it: a register's or a parameter's the function came in with, as a read
+    finds it (one layer may copy it, the other leave it), anything else absent"""
+    if key[0] == 'reg':
+        return ('reg', key[1], ENTRY)
+    if key[0] == 'param':
+        return key
+
+    return ('absent', neutral_key(key))
+
+
 def merge(join: tuple, states: list[tuple[int, State]], fingerprints: Fingerprints) -> State:
     """A join's entry state from its predecessors' (terminal address, exit state): a key on which they agree keeps its
     value, any other a phi over the predecessors ordered by terminal address. Past PHI_DEPTH the phi becomes a leaf,
@@ -129,7 +162,7 @@ def merge(join: tuple, states: list[tuple[int, State]], fingerprints: Fingerprin
     keys = set().union(*(state.items.keys() for _, state in states))
     merged = State()
     for key in keys:
-        values = [(address, state.items.get(key, ('absent', neutral_key(key)))) for address, state in states]
+        values = [(address, state.items.get(key, incoming_value(key, neutral_key))) for address, state in states]
         first = values[0][1]
         if all(value == first for _, value in values[1:]):
             merged.items[key] = first

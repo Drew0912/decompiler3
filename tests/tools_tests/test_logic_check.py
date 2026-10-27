@@ -24,7 +24,7 @@ from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 import logic_check
 from logic_check.evaluation import FUNCTION_ENTRY, Branch, Effect, Facts
-from logic_check.post_dominators import EXIT, control_dependence, immediate_post_dominators
+from logic_check.post_dominators import EXIT, control_dependence, exit_blocks, immediate_post_dominators
 from logic_check.state import PHI_DEPTH
 from logic_check.trees import const, op, truth
 
@@ -34,6 +34,7 @@ LOOP_LIMIT = 3
 OUT_INITIAL = 1
 UNRELATED_ARG = 9
 REG_INDEX = 5
+REG_OUT = 7
 DEEP_INITIAL = 1
 ENDLESS_TAIL_PARAMETERS = 2
 
@@ -105,6 +106,35 @@ def unrelated_call_function() -> tuple[Asm, int]:
     asm.push_raw(CALLER_ID); asm.push_raw('second'); asm.push_stack_offset(-3 * WORD_SIZE); asm.call(CALLEE_ID)
     asm.label('second'); asm.pop(WORD_SIZE); return_nothing(asm)
     return asm, 1
+
+
+def escaped_address_function() -> tuple[Asm, int]:
+    """v = OUT_INITIAL; GLOBAL_A = &v; callee(); GLOBAL_B = v: the callee is given no pointer, but can reach v through
+    the global"""
+    asm = Asm()
+    asm.push_int(OUT_INITIAL); asm.push_stack_offset(-WORD_SIZE); asm.set_global(GLOBAL_A)
+    call(asm, 'back')
+    asm.load_stack(-WORD_SIZE); asm.set_global(GLOBAL_B)
+    asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 0
+
+
+def pointer_to_pointer_function() -> tuple[Asm, int]:
+    """v = OUT_INITIAL; q = &v; callee(&q): the callee is given q's address, and reaches v through q"""
+    asm = Asm()
+    asm.push_int(OUT_INITIAL); asm.push_stack_offset(-WORD_SIZE)
+    asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.push_stack_offset(-3 * WORD_SIZE); asm.call(CALLEE_ID)
+    asm.label('back'); asm.pop(2 * WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
+def one_arm_register_function() -> tuple[Asm, int]:
+    """if GLOBAL_A: REG = REG_OUT; returned: the other arm leaves the register's incoming value for the caller"""
+    asm = Asm()
+    asm.load_global(GLOBAL_A); asm.jz('end')
+    asm.push_int(REG_OUT); asm.set_reg(REG_INDEX)
+    asm.label('end'); return_nothing(asm)
+    return asm, 0
 
 
 def loop_function() -> tuple[Asm, int]:
@@ -346,6 +376,30 @@ class TestPlantedBugs(unittest.TestCase):
             init.value = MLILConst(OUT_INITIAL + 1)
         self.check(unrelated_call_function, mutate, 'arg_differs')
 
+    def test_read_after_a_call_that_reaches_it_through_a_global_made_stale(self):
+        """GLOBAL_B = v after the call read as v's value before it: the call can write v through GLOBAL_A"""
+        def mutate(mlil):
+            store = first(mlil, lambda inst: isinstance(inst, MLILStoreGlobal) and inst.index == GLOBAL_B)[2]
+            store.value = MLILConst(OUT_INITIAL)
+        self.check(escaped_address_function, mutate, 'arg_differs')
+
+    def test_value_behind_a_pointer_to_a_pointer_changed(self):
+        """v's initial value changed before callee(&q), q = &v: the callee can read v through q"""
+        def mutate(mlil):
+            init = first(mlil, lambda inst: isinstance(inst, MLILStoreDeref)    # v's memory form, *&v = OUT_INITIAL
+                         and isinstance(inst.value, MLILConst) and inst.value.value == OUT_INITIAL)[2]
+            init.value = MLILConst(OUT_INITIAL + 1)
+        self.check(pointer_to_pointer_function, mutate, 'arg_differs')
+
+    def test_register_one_arm_leaves_changed(self):
+        """The arm's write changed; the other arm's incoming value compares clean on both layers (MLIL copies it, LLIL
+        leaves it)"""
+        def mutate(mlil):
+            write = first(mlil, lambda inst: isinstance(inst, MLILSetVar) and isinstance(inst.value, MLILConst)
+                          and inst.value.value == REG_OUT)[2]
+            write.value = MLILConst(REG_OUT + 1)
+        self.check(one_arm_register_function, mutate, 'return_differs')
+
     def test_call_hoisted_out_of_an_endless_tail(self):
         """The outer arm's second call moved before the branch: it now runs on both arms"""
         def mutate(mlil):
@@ -472,6 +526,13 @@ class TestPostDominators(unittest.TestCase):
         ipdom = immediate_post_dominators(blocks, successors)
         self.assertEqual(ipdom['b'], EXIT)
         self.assertEqual(ipdom['a'], EXIT)
+
+    def test_endless_region_exit_by_start_address(self):
+        """A region entered at two blocks: the block with the lowest start gets the EXIT edge, whatever the order"""
+        blocks, successors = self.graph({'e': ['c', 'b'], 'c': ['b'], 'b': ['c']})
+        start = {'e': 0, 'b': 1, 'c': 2}.get
+        self.assertEqual(exit_blocks(blocks, successors, start), {'b'})
+        self.assertEqual(exit_blocks(blocks, successors), {'c'})
 
     def test_block_before_an_endless_loop_keeps_its_guard(self):
         """d runs only on a's true arm, and every path ends in the endless loop e"""

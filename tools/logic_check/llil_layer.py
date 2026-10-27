@@ -21,6 +21,7 @@ from .trees import ENTRY, const, op
 
 FRAME_CONSTANTS = (LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstScriptName)
 IGNORED = (LowLevelILSpAdd, LowLevelILDebug, LowLevelILJmp)
+COPIES = (LowLevelILStackStore, LowLevelILFrameStore, LowLevelILRegStore, *IGNORED)
 
 
 class LLILLayer:
@@ -57,6 +58,10 @@ class LLILLayer:
             return terminal.address, terminal.true_target, terminal.false_target
 
         return None
+
+    @classmethod
+    def only_copies(cls, block) -> bool:
+        return all(isinstance(inst, COPIES) for inst in block.instructions)
 
     @classmethod
     def neutral_key(cls, key: tuple) -> tuple:
@@ -101,14 +106,18 @@ class LLILLayer:
         elif isinstance(inst, LowLevelILFrameStore):
             state.set(('param', self.param_position(inst.offset)), self.evaluate(inst.value, state))
         elif isinstance(inst, LowLevelILRegStore):
-            state.set(('reg', inst.reg_index), self.evaluate(inst.value, state))
+            value = self.evaluate(inst.value, state)
+            state.escape(value, self.address_taken, self.neutral_key)
+            state.set(('reg', inst.reg_index), value)
         elif isinstance(inst, LowLevelILGlobalStore):
             value = self.evaluate(inst.value, state)
+            state.escape(value, self.address_taken, self.neutral_key)
             state.set(('global', inst.index), value)
             return [Effect(address, 'store global', inst.index, (value,))]
         elif isinstance(inst, LowLevelILStore):
-            effect = Effect(address, 'store deref', None,
-                            (self.evaluate(inst.dest, state), self.evaluate(inst.value, state)))
+            value = self.evaluate(inst.value, state)
+            effect = Effect(address, 'store deref', None, (self.evaluate(inst.dest, state), value))
+            state.escape(value, self.address_taken, self.neutral_key)
             state.store_through_pointer(address)
             return [effect]
         elif isinstance(inst, LowLevelILDebugLog):
@@ -138,7 +147,7 @@ class LLILLayer:
 
     def call(self, inst, kind: str, target, state: State) -> Effect:
         args = self.arguments(inst, state)
-        pointed = state.pointed_locals(args, self.address_taken, self.neutral_key)
+        pointed = state.reachable_locals(args, self.address_taken, self.neutral_key)
         effect = Effect(inst.address, kind, target, args, storage=state.local_values(pointed, self.neutral_key))
         state.clobber(inst.address, pointed)
         state.set(('reg', RESULT_REGISTER), ('call', inst.address))
