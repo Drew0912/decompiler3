@@ -105,26 +105,26 @@ def iter_ssa_defs(function: MediumLevelILFunction) -> Iterator[tuple[MLILVariabl
                 yield inst.dest, inst, block, index
 
 
-def exit_register_versions(function: MediumLevelILFunction) -> set[MLILVariableSSA]:
-    """The register versions the function's returns leave for its caller, which can read a register after the call:
-    live although nothing in the function reads them (a register outlives the function, as a global does). The result
-    register is left out: a return passes it as its value"""
-    registers = [var for index, var in function.register_vars.items() if index != function.result_register]
+def registers_left_by_returns(function: MediumLevelILFunction) -> dict[MediumLevelILBasicBlock,
+                                                                         list[tuple[int, MLILVariableSSA]]]:
+    """Each block ending in a return -> the registers (index, version) the return leaves holding the function's own
+    write, for its caller to read after the call. The result register is left out: a return passes it as its value"""
+    registers = sorted((index, var) for index, var in function.register_vars.items()
+                       if index != function.result_register)
     if not registers:
-        return set()
+        return {}
 
     definitions = {var: definition for var, definition, _, _ in iter_ssa_defs(function)}
     outputs = {inst.output for inst in function.iter_instructions()
                if isinstance(inst, MediumLevelILCall) and inst.output is not None}
-    versions = set()
+    left = {}
     for block in function.basic_blocks:
         if block.instructions and isinstance(block.instructions[-1], MLILRet):
-            for var in registers:
-                version = reaching_version(function, block, var)
-                if version is not None and holds_own_write(version, definitions, outputs):
-                    versions.add(version)
+            versions = [(index, reaching_version(function, block, var)) for index, var in registers]
+            left[block] = [(index, version) for index, version in versions
+                           if version is not None and holds_own_write(version, definitions, outputs)]
 
-    return versions
+    return left
 
 
 def holds_own_write(version: MLILVariableSSA, definitions: dict, outputs: set) -> bool:
@@ -150,9 +150,9 @@ def holds_own_write(version: MLILVariableSSA, definitions: dict, outputs: set) -
 def reaching_version(function: MediumLevelILFunction, block: MediumLevelILBasicBlock,
                      var: MLILVariable) -> MLILVariableSSA | None:
     """var's version at the end of block if this function wrote it: None for the value the function came in with or
-    one a call may have clobbered (the callee's). The call is the barrier, not its pseudo-definition, which dead-code
-    elimination drops while the call stays. Where the predecessors bring different versions SSA put a phi, so without
-    one every predecessor brings the same: the first definition found walking back is it"""
+    one a call may have clobbered (the callee's; the call itself ends the walk, its pseudo-definition aside). On the
+    fresh SSA form, where the predecessors bring different versions there is a phi, so without one every predecessor
+    brings the same: the first definition found walking back is it"""
     pending, visited = [block], {block}
     while pending:
         current = pending.pop()
@@ -330,7 +330,18 @@ class SSAConstructor:
         self._collect_defs()
         self._insert_phi_nodes()
         self._rename_variables_iterative()
+        self._store_registers_left_by_returns()
         return self.function
+
+    def _store_registers_left_by_returns(self):
+        """A caller can read a register after the call (a register outlives the function, as a global does): each
+        register a return leaves holding the function's own write is stored before it, REGS[n] = version, an
+        ordinary read of that version, so no pass drops the write and the output writes the register itself. Done on
+        the fresh SSA form, where every join has its phis"""
+        for block, registers in registers_left_by_returns(self.function).items():
+            ret = block.instructions[-1]
+            block.instructions[-1:-1] = [MLILStoreReg(index, MLILVarSSA(version)).copy_metadata_from(ret)
+                                         for index, version in registers]
 
     def _collect_address_taken_vars(self) -> set[MLILVariable]:
         """Every local or parameter whose address is taken anywhere in the function.

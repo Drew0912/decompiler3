@@ -135,7 +135,7 @@ class MLILLayer:
                 return []
             effect = Effect(address, 'store deref', None,
                             (self.evaluate(inst.dest, state), self.evaluate(inst.value, state)))
-            state.clobber(address, self.address_taken, registers=False, globals_=False)
+            state.store_through_pointer(address)
             return [effect]
         elif isinstance(inst, MediumLevelILCall):
             return [self.call(inst, state)]
@@ -160,8 +160,9 @@ class MLILLayer:
 
         effect = Effect(inst.address, kind, target, tuple(self.evaluate(arg, state) for arg in inst.args))
         if inst.clobbers_registers:
-            effect.storage = state.pointee_values(effect.args, self.address_taken, self.neutral_key)
-            state.clobber(inst.address, self.address_taken)
+            pointed = state.pointed_locals(effect.args, self.address_taken, self.neutral_key)
+            effect.storage = state.local_values(pointed, self.neutral_key)
+            state.clobber(inst.address, pointed)
             state.set(('reg', RESULT_REGISTER), ('call', inst.address))
         if inst.output is not None:
             state.set(self.key(inst.output), ('call', inst.address))

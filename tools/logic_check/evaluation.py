@@ -26,7 +26,7 @@ class Effect:
     args: tuple
     guard: frozenset = frozenset()
     storage: tuple = ()     # what it passes on besides args, (neutral key, value) pairs: a call the locals they point
-                            # to (State.pointee_values), a return the other registers (State.return_registers)
+                            # to (State.local_values), a return the other registers (State.return_registers)
 
     @property
     def key(self) -> tuple:

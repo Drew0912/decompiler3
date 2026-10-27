@@ -10,7 +10,6 @@ from ..mlil import (
     MediumLevelILInstruction,
 )
 from ..mlil_ssa import (
-    exit_register_versions,
     iter_ssa_reads,
     MLILVariableSSA,
     MLILSetVarSSA,
@@ -24,7 +23,6 @@ class DeadPhiSourceEliminationPass(Pass):
 
     def __init__(self, replaced_vars: set[MLILVariableSSA] | None = None):
         self.ssa_uses: dict[MLILVariableSSA, list[MediumLevelILInstruction]] = {}
-        self.exit_versions: set[MLILVariableSSA] = set()    # read by the caller after a return: a real use
         # Kept even while empty: the optimizer hands in constant propagation's set, which fills up later
         self.replaced_vars = set() if replaced_vars is None else replaced_vars
 
@@ -35,14 +33,12 @@ class DeadPhiSourceEliminationPass(Pass):
         return func
 
     def _build_info(self, func: MediumLevelILFunction):
-        """Build SSA use chains, and the register versions the returns leave for the caller"""
+        """Build SSA use chains"""
         self.ssa_uses = {}
 
         for inst in func.iter_instructions():
             for var, _ in iter_ssa_reads(inst):
                 self.ssa_uses.setdefault(var, []).append(inst)
-
-        self.exit_versions = exit_register_versions(func)
 
     def _eliminate_dead_phis(self, func: MediumLevelILFunction):
         """Eliminate dead Phi nodes and definitions feeding them"""
@@ -59,7 +55,7 @@ class DeadPhiSourceEliminationPass(Pass):
         # Find definitions that only feed dead Phis
         dead_defs: set[MLILVariableSSA] = set()
         for var, uses in self.ssa_uses.items():
-            if not uses or var in self.exit_versions:
+            if not uses:
                 continue
 
             # Check if all uses are dead Phi nodes
@@ -88,7 +84,7 @@ class DeadPhiSourceEliminationPass(Pass):
             block.instructions = new_instructions
 
     def _has_real_use(self, start_var: MLILVariableSSA) -> bool:
-        """Check if variable has any real (non-Phi) use through Phi chains: a read, or a return leaving it"""
+        """Check if variable has any real (non-Phi) use through Phi chains"""
         visited = set()
         queue = [start_var]
 
@@ -98,8 +94,6 @@ class DeadPhiSourceEliminationPass(Pass):
                 continue
 
             visited.add(var)
-            if var in self.exit_versions:
-                return True
 
             for use in self.ssa_uses.get(var, []):
                 if isinstance(use, MLILPhi):

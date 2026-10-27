@@ -109,7 +109,7 @@ class LLILLayer:
         elif isinstance(inst, LowLevelILStore):
             effect = Effect(address, 'store deref', None,
                             (self.evaluate(inst.dest, state), self.evaluate(inst.value, state)))
-            state.clobber(address, self.address_taken, registers=False, globals_=False)
+            state.store_through_pointer(address)
             return [effect]
         elif isinstance(inst, LowLevelILDebugLog):
             # As MLIL translates it: a debug.log call with no output that changes nothing
@@ -138,9 +138,9 @@ class LLILLayer:
 
     def call(self, inst, kind: str, target, state: State) -> Effect:
         args = self.arguments(inst, state)
-        effect = Effect(inst.address, kind, target, args,
-                        storage=state.pointee_values(args, self.address_taken, self.neutral_key))
-        state.clobber(inst.address, self.address_taken)
+        pointed = state.pointed_locals(args, self.address_taken, self.neutral_key)
+        effect = Effect(inst.address, kind, target, args, storage=state.local_values(pointed, self.neutral_key))
+        state.clobber(inst.address, pointed)
         state.set(('reg', RESULT_REGISTER), ('call', inst.address))
         return effect
 

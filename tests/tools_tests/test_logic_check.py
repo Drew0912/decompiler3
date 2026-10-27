@@ -32,6 +32,7 @@ GLOBAL_A, GLOBAL_B, GLOBAL_C = 1, 2, 3
 MESSAGE = 'this'
 LOOP_LIMIT = 3
 OUT_INITIAL = 1
+UNRELATED_ARG = 9
 REG_INDEX = 5
 DEEP_INITIAL = 1
 ENDLESS_TAIL_PARAMETERS = 2
@@ -91,6 +92,18 @@ def out_parameter_function() -> tuple[Asm, int]:
     asm.push_raw(CALLER_ID); asm.push_raw('after'); asm.push_stack_offset(-3 * WORD_SIZE); asm.call(CALLEE_ID)
     asm.label('after'); asm.load_stack(-WORD_SIZE); asm.set_global(0)
     asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
+def unrelated_call_function() -> tuple[Asm, int]:
+    """v = OUT_INITIAL; callee(UNRELATED_ARG); GLOBAL[0] = v; callee(&v): the first call is given no pointer to v, so
+    v holds its value across it"""
+    asm = Asm()
+    asm.push_int(OUT_INITIAL)
+    call(asm, 'first', UNRELATED_ARG)
+    asm.load_stack(-WORD_SIZE); asm.set_global(0)
+    asm.push_raw(CALLER_ID); asm.push_raw('second'); asm.push_stack_offset(-3 * WORD_SIZE); asm.call(CALLEE_ID)
+    asm.label('second'); asm.pop(WORD_SIZE); return_nothing(asm)
     return asm, 1
 
 
@@ -324,6 +337,14 @@ class TestPlantedBugs(unittest.TestCase):
             block, index, _ = first(mlil, lambda inst: isinstance(inst, MLILRet))
             block.instructions.insert(index, MLILStoreReg(REG_INDEX, MLILConst(1)))
         self.check(calls_function, mutate, 'return_differs')
+
+    def test_value_held_across_an_unrelated_call_changed(self):
+        """v's initial value changed: read after a call that is given no pointer to v, which a later call is"""
+        def mutate(mlil):
+            init = first(mlil, lambda inst: isinstance(inst, MLILStoreDeref)    # v's memory form, *&v = OUT_INITIAL
+                         and isinstance(inst.value, MLILConst) and inst.value.value == OUT_INITIAL)[2]
+            init.value = MLILConst(OUT_INITIAL + 1)
+        self.check(unrelated_call_function, mutate, 'arg_differs')
 
     def test_call_hoisted_out_of_an_endless_tail(self):
         """The outer arm's second call moved before the branch: it now runs on both arms"""

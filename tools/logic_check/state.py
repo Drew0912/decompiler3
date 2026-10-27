@@ -37,14 +37,19 @@ class State:
     def global_value(self, index: int) -> tuple:
         return self.items.get(('global', index), ('global', index, self.items.get(GLOBAL_EPOCH, ENTRY)))
 
-    def pointee_values(self, args: tuple, address_taken: set, neutral_key) -> tuple:
-        """(neutral key, value) of each local the arguments hold the address of, sorted by key: what the callee can
-        read behind its pointers. Only those: an address-taken local's slot may hold a call's setup elsewhere, after
-        the local's scope ends"""
+    @classmethod
+    def pointed_locals(cls, args: tuple, address_taken: set, neutral_key) -> list[tuple]:
+        """The address-taken locals the arguments hold the address of, by neutral key: all of the function's storage a
+        callee can reach. A local's address reaches a callee only in its arguments (no stored value holds one), and
+        an address-taken local's slot may hold a call's setup elsewhere, after the local's scope ends"""
         pointed = {leaf[1] for leaf in tagged_leaves(args, 'address')}
-        values = [(neutral_key(key), self.items.get(key, key if key[0] == 'param' else ('undef', neutral_key(key))))
-                  for key in address_taken if neutral_key(key) in pointed]
-        return tuple(sorted(values, key=lambda pair: repr(pair[0])))
+        return sorted((key for key in address_taken if neutral_key(key) in pointed),
+                      key=lambda key: repr(neutral_key(key)))
+
+    def local_values(self, keys: list[tuple], neutral_key) -> tuple:
+        """(neutral key, value) of each local: what a callee can read behind its pointers"""
+        return tuple((neutral_key(key), self.items.get(key, key if key[0] == 'param' else ('undef', neutral_key(key))))
+                     for key in keys)
 
     def return_registers(self) -> tuple:
         """(key, value) of every register but the result, which the return passes on: VM state the caller can read
@@ -52,20 +57,23 @@ class State:
         return tuple((('reg', index), self.register(index)) for index in range(REGISTER_COUNT)
                      if index != RESULT_REGISTER)
 
-    def clobber(self, address: int, address_taken: set, *, registers: bool = True, globals_: bool = True):
-        """What a call (or, with registers and globals_ off, a store through a pointer) may change: every register but
-        the result, which the caller sets; every global; memory behind a pointer; every address-taken local"""
-        if registers:
-            for index in range(REGISTER_COUNT):
-                if index != RESULT_REGISTER:
-                    self.items[('reg', index)] = ('reg', index, ('after', address))
-        if globals_:
-            for key in [key for key in self.items if key[0] == 'global']:
-                del self.items[key]
-            self.items[GLOBAL_EPOCH] = address
-        self.items[MEMORY_EPOCH] = address
-        for key in address_taken:
+    def clobber(self, address: int, pointed: list[tuple]):
+        """What a call may change: every register but the result, which the caller sets; every global; memory behind
+        a pointer; the locals its arguments point to (State.pointed_locals)"""
+        for index in range(REGISTER_COUNT):
+            if index != RESULT_REGISTER:
+                self.items[('reg', index)] = ('reg', index, ('after', address))
+        for key in [key for key in self.items if key[0] == 'global']:
+            del self.items[key]
+        self.items[GLOBAL_EPOCH] = address
+        self.store_through_pointer(address)
+        for key in pointed:
             self.items[key] = ('slot_after', key, address)
+
+    def store_through_pointer(self, address: int):
+        """A store through a pointer changes memory behind pointers, none of the function's locals: LLIL dereferences
+        only a caller's pointer, and MLIL writes a local's memory form as the local"""
+        self.items[MEMORY_EPOCH] = address
 
 
 def phi_depth(tree) -> int:
