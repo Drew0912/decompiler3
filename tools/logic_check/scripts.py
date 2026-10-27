@@ -19,7 +19,7 @@ from .mlil_layer import MLILLayer
 
 class FunctionResult(NamedTuple):
     name: str
-    differences: list[Difference]   # LLIL -> MLIL
+    mlil_differences: list[Difference]  # LLIL -> MLIL
     hlil_differences: list[Difference]  # MLIL -> HLIL
     decompile_error: str | None     # the function did not lift or convert: nothing compared (from there on)
     internal_error: str | None      # the check itself failed

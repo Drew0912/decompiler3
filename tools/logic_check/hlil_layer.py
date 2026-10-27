@@ -4,6 +4,10 @@ continue and return - with one test per operand of a condition's && and ||, as t
 named through the MLIL function the HLIL came from, whose variable names HLIL keeps; evaluated gated
 (evaluation.GatedNaming), a loop header named by its loop's stamp"""
 
+from dataclasses import dataclass
+from itertools import count
+
+from ir.core.il_literals import is_int_zero
 from ir.hlil.hlil import (
     BinaryOp, HighLevelILFunction, HLILAddressOf, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall,
     HLILComment, HLILConst, HLILContinue, HLILDeref, HLILDoWhile, HLILExprStmt, HLILExternCall, HLILIf, HLILReturn,
@@ -64,32 +68,26 @@ class Node:
         return f'Node({self.index})'
 
 
+@dataclass(slots=True, eq=False)
 class Test:
     """A node's last step: condition decides between two nodes"""
+    branch: int
+    condition: object
+    true_node: Node
+    false_node: Node
 
-    __slots__ = ('branch', 'condition', 'true_node', 'false_node')
 
-    def __init__(self, branch: int, condition, true_node: Node, false_node: Node):
-        self.branch, self.condition, self.true_node, self.false_node = branch, condition, true_node, false_node
-
-
+@dataclass(slots=True, eq=False)
 class Scrutinee:
     """A switch's scrutinee, evaluated once into ('switch', switch) for its case tests"""
-
-    __slots__ = ('switch', 'expr')
-
-    def __init__(self, switch: int, expr):
-        self.switch, self.expr = switch, expr
+    switch: int
+    expr: object
 
 
+@dataclass(slots=True, eq=False)
 class CaseTest(Test):
-    """A switch's test of one case label, a node's last step"""
-
-    __slots__ = ('switch',)
-
-    def __init__(self, branch: int, switch: int, value, true_node: Node, false_node: Node):
-        super().__init__(branch, value, true_node, false_node)
-        self.switch = switch
+    """A switch's test of one case label (its condition), a node's last step"""
+    switch: int
 
 
 class ExitTarget:
@@ -106,7 +104,6 @@ class HLILLayer:
     OWN_STORAGE_NAMES = True        # MLIL's split ranges and minted locals, kept by HLIL
 
     def __init__(self, func: HighLevelILFunction, mlil: MediumLevelILFunction):
-        self.func = func
         self.naming = MLILLayer(mlil)
         self.variables = {var.name: var for var in [*mlil.parameters, *mlil.locals.values(),
                                                     *mlil.register_vars.values()] if var is not None}
@@ -124,7 +121,7 @@ class HLILLayer:
         self.address_taken = {self.key(node.operand.var) for node in iter_tree(func.body)
                               if isinstance(node, HLILAddressOf) and isinstance(node.operand, HLILVar)}
         self.nodes: list[Node] = []
-        self.counts = {'branch': 0, 'switch': 0}
+        self.branch_numbers, self.switch_numbers = count(), count()
         end = self.node()           # falling off the end of the body
         self.entry = self.node(successors=[self.block(func.body.statements, end, [])])   # never a loop header
 
@@ -143,11 +140,6 @@ class HLILLayer:
         if target not in source.outgoing_edges:
             source.outgoing_edges.append(target)
             target.incoming_edges.append(source)
-
-    def count(self, kind: str) -> int:
-        number = self.counts[kind]
-        self.counts[kind] += 1
-        return number
 
     def block(self, statements: list, follow: Node, targets: list) -> Node:
         """The node statements start at, follow after them"""
@@ -209,7 +201,7 @@ class HLILLayer:
             if always is not None:
                 return true_node if always else false_node
 
-        return self.node([Test(self.count('branch'), expr, true_node, false_node)], [true_node, false_node])
+        return self.node([Test(next(self.branch_numbers), expr, true_node, false_node)], [true_node, false_node])
 
     @classmethod
     def truth_test(cls, expr) -> tuple:
@@ -219,18 +211,14 @@ class HLILLayer:
             if isinstance(expr, HLILUnaryOp) and expr.op == UnaryOp.NOT:
                 expr, negated = expr.operand, not negated
             elif (isinstance(expr, HLILBinaryOp) and expr.op in (BinaryOp.EQ, BinaryOp.NE)
-                  and cls.is_zero(expr.rhs)):
+                  and isinstance(expr.rhs, HLILConst) and is_int_zero(expr.rhs.value)):
                 expr, negated = expr.lhs, negated ^ (expr.op == BinaryOp.EQ)
             else:
                 return expr, negated
 
-    @classmethod
-    def is_zero(cls, expr) -> bool:
-        return isinstance(expr, HLILConst) and isinstance(expr.value, int) and expr.value == 0
-
     def switch(self, stmt: HLILSwitch, follow: Node, targets: list) -> Node:
         """The scrutinee, then each label's test in case order, the default case after the last"""
-        switch = self.count('switch')
+        switch = next(self.switch_numbers)
         inner = targets + [ExitTarget(stmt, follow, None)]
         chain = follow
         for case in stmt.cases:
@@ -239,7 +227,7 @@ class HLILLayer:
         for case in reversed([case for case in stmt.cases if not case.is_default()]):
             body = self.block(case.body.statements, follow, inner)
             for value in reversed(case.values):
-                chain = self.node([CaseTest(self.count('branch'), switch, value, body, chain)], [body, chain])
+                chain = self.node([CaseTest(next(self.branch_numbers), value, body, chain, switch)], [body, chain])
         return self.node([Scrutinee(switch, stmt.scrutinee)], [chain])
 
     # === The adapter ===
@@ -273,7 +261,7 @@ class HLILLayer:
         if var.kind == VariableKind.GLOBAL:
             return ('global', var.index)
 
-        return self.naming.key(self.variables.get(var.name) or MLILVariable(var.name))
+        return self.naming.key(self.mlil_variable(var))
 
     def read(self, var: HLILVariable, state: State) -> tuple:
         if var.kind == VariableKind.REG:
@@ -281,7 +269,11 @@ class HLILLayer:
         if var.kind == VariableKind.GLOBAL:
             return state.global_value(var.index)
 
-        return self.naming.read(self.variables.get(var.name) or MLILVariable(var.name), state)
+        return self.naming.read(self.mlil_variable(var), state)
+
+    def mlil_variable(self, var: HLILVariable) -> MLILVariable:
+        """The MLIL variable var names, whose storage it is"""
+        return self.variables.get(var.name) or MLILVariable(var.name)
 
     def step(self, inst, state: State, facts: Facts) -> list[Effect]:
         effects = []
@@ -369,9 +361,6 @@ class HLILLayer:
         effect = Effect(expr.address, kind, target, args)
         source = self.calls.get(expr.mlil_index)
         if source is None or source.clobbers_registers:
-            pointed = state.reachable_locals(args, self.address_taken, self.neutral_key)
-            effect.storage = state.local_values(pointed, self.neutral_key)
-            state.clobber(expr.address, pointed)
-            state.set(('reg', RESULT_REGISTER), ('call', expr.address))
+            effect.storage = state.call(expr.address, args, self.address_taken, self.neutral_key)
         effects.append(effect)
         return ('call', expr.address)

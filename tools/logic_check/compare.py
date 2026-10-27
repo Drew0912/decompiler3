@@ -7,9 +7,9 @@ import hashlib
 import reprlib
 from typing import Callable, Hashable, NamedTuple
 
-from .evaluation import RETURN_KEY, Effect, Facts
+from .evaluation import Effect, Facts
 from .formulas import FALSE_KEY, TRUE, DiagramOverflow, Diagrams, FormulaKeys, conjunction, disjunction
-from .state import FINGERPRINT_BYTES, Fingerprints, gated_choice
+from .state import FINGERPRINT_BYTES, Fingerprints, gated_choice, neutral_leaf
 from .trees import EQUALITIES, loop_leaves, truth
 
 LIFTED_CHOICES = 256            # gated choices lifted into an occurrence's formulas, at most (lifted)
@@ -74,12 +74,9 @@ class Namer:
             return found[1]
 
         tag = tree[0]
-        if tag == 'loop':
-            result = ('loop', tree[1], self.neutral_key(tree[2]))
-        elif tag == 'slot_after':
-            result = ('slot_after', self.neutral_key(tree[1]), tree[2])
-        elif tag == 'deep_phi':
-            result = tree[:4]       # the fingerprint is under neutral names; the kept leaves are the layer's own
+        leaf = neutral_leaf(tree, self.neutral_key)
+        if leaf is not None:
+            result = leaf
         elif tag == 'op':
             operands = sorted(tree[2], key=self.fingerprints) if tree[1] in EQUALITIES else tree[2]
             result = ('op', tree[1], tuple(self(operand) for operand in operands))
@@ -127,7 +124,7 @@ def compare_effects(reference: Facts, checked: Facts, namers: tuple[Namer, Namer
         for a, b in zip(expected, found):
             if a.target != b.target:
                 differences.append(Difference('target_differs', key, (a.target, b.target)))
-            category = 'return_differs' if a.kind == 'return' else 'arg_differs'
+            category = value_category(a)
             if len(a.args) != len(b.args):
                 differences.append(Difference('argc_differs', key, (len(a.args), len(b.args))))
             else:
@@ -172,6 +169,11 @@ def compare_branches(reference: Facts, checked: Facts, namers: tuple[Namer, Name
         targets_b = canonical_targets(b, condition_b)
         if targets_a != targets_b:
             differences.append(Difference('branch_targets_differ', key, (targets_a, targets_b)))
+
+
+def value_category(effect: Effect) -> str:
+    """The category of a difference in what effect passes"""
+    return 'return_differs' if effect.kind == 'return' else 'arg_differs'
 
 
 def canonical_targets(branch, condition: tuple) -> tuple[int, int]:
@@ -282,13 +284,10 @@ def compare_loop_copies(group: tuple, copies: tuple[dict, dict], namers: tuple[N
 
 # === MLIL against HLIL ===
 
-class GatedSide:
-    """One side of a gated comparison: its facts, and its namers as written and with representative orderings"""
-
-    def __init__(self, facts: Facts):
-        self.facts = facts
-        self.exact = Namer(facts)
-        self.representative = Namer(facts, representative=True)
+class Namings(NamedTuple):
+    """A gated comparison's namers, a pair (reference, checked) as written and one with representative orderings"""
+    exact: tuple[Namer, Namer]
+    representative: tuple[Namer, Namer]
 
 
 def compare_gated(reference: Facts, checked: Facts) -> list[Difference]:
@@ -299,7 +298,8 @@ def compare_gated(reference: Facts, checked: Facts) -> list[Difference]:
     unstructured jump. A difference that goes once orderings are read as representative ones
     (trees.representative_orderings) is condition_ordering_inverted"""
     differences = []
-    sides = (GatedSide(reference), GatedSide(checked))
+    namings = Namings((Namer(reference), Namer(checked)),
+                      (Namer(reference, representative=True), Namer(checked, representative=True)))
     for key in sorted(reference.effects.keys() | checked.effects.keys(), key=repr):
         expected, found = reference.effects.get(key, []), checked.effects.get(key, [])
         if not expected or not found:
@@ -317,17 +317,17 @@ def compare_gated(reference: Facts, checked: Facts) -> list[Difference]:
 
         formulas = (disjunction(effect.condition for effect in expected),
                     disjunction(effect.condition for effect in found))
-        category = compare_formulas(sides, formulas)
+        category = compare_formulas(namings, formulas)
         if category is not None:
             differences.append(Difference(category, key, tuple(render(formula) for formula in formulas)))
-        compare_passed(sides, key, (expected, found), differences)
+        compare_passed(namings, key, (expected, found), differences)
 
     compare_order(reference, checked, differences)
     exact = []
-    compare_loop_values(reference, checked, (sides[0].exact, sides[1].exact), exact)
+    compare_loop_values(reference, checked, namings.exact, exact)
     if exact:
         representative = []
-        compare_loop_values(reference, checked, (sides[0].representative, sides[1].representative), representative)
+        compare_loop_values(reference, checked, namings.representative, representative)
         kept = {difference.key for difference in representative}
         differences.extend(difference if difference.key in kept else
                            Difference('condition_ordering_inverted', difference.key, difference.detail)
@@ -337,15 +337,16 @@ def compare_gated(reference: Facts, checked: Facts) -> list[Difference]:
     return differences
 
 
-def compare_formulas(sides: tuple[GatedSide, GatedSide], formulas: tuple) -> str | None:
+def compare_formulas(namings: Namings, formulas: tuple) -> str | None:
     """None when the two sides' formulas are one function, else the category of their difference"""
-    if sides[0].exact.fingerprints(formulas[0]) == sides[1].exact.fingerprints(formulas[1]):
+    exact = namings.exact
+    if exact[0].fingerprints(formulas[0]) == exact[1].fingerprints(formulas[1]):
         return None
 
     try:
-        if equivalent(sides, formulas, 'exact'):
+        if equivalent(exact, formulas):
             return None
-        if equivalent(sides, formulas, 'representative'):
+        if equivalent(namings.representative, formulas):
             return 'condition_ordering_inverted'
     except DiagramOverflow:
         return 'guard_unchecked'
@@ -353,10 +354,10 @@ def compare_formulas(sides: tuple[GatedSide, GatedSide], formulas: tuple) -> str
     return 'guard_differs'
 
 
-def equivalent(sides: tuple[GatedSide, GatedSide], formulas: tuple, namers: str) -> bool:
+def equivalent(namers: tuple[Namer, Namer], formulas: tuple) -> bool:
     """Whether the formulas are one function: by their truth tables, or, past ROW_CAP rows, by one decision diagram in
     the order the formulas meet their variables"""
-    keys = (getattr(sides[0], namers).keys, getattr(sides[1], namers).keys)
+    keys = (namers[0].keys, namers[1].keys)
     found = (keys[0].table_key(formulas[0]), keys[1].table_key(formulas[1]))
     if None not in found:
         return found[0] == found[1]
@@ -364,24 +365,24 @@ def equivalent(sides: tuple[GatedSide, GatedSide], formulas: tuple, namers: str)
     return Diagrams().same(keys[0].structure(formulas[0], {}), keys[1].structure(formulas[1], {}))
 
 
-def compare_passed(sides: tuple[GatedSide, GatedSide], key: tuple, occurrences: tuple, differences: list):
+def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences: list):
     """The values an effect's occurrences pass, each argument and storage key on its own: equal under neutral names,
     or, a gated choice lifted into the formula its value is passed under (HLIL may pass from one return what MLIL
     passes from two, merged at the join before it), the same values each under one formula"""
-    category = 'return_differs' if key == RETURN_KEY else 'arg_differs'
     expected, found = occurrences
+    category = value_category(expected[0])
     single = len(expected) == len(found) == 1
-    if single and not value_differences(sides, expected[0], found[0], 'exact'):
+    if single and not value_differences(namings.exact, expected[0], found[0]):
         return
 
     storage = sorted({storage for effects in occurrences for effect in effects for storage, _ in effect.storage},
                      key=repr)
-    outcomes = {component: compare_component(sides, occurrences, component)
+    outcomes = {component: compare_component(namings, occurrences, component)
                 for component in [*range(len(expected[0].args)), *storage]}
     differing = [component for component, outcome in outcomes.items() if outcome == category]
     unchecked = [component for component, outcome in outcomes.items() if outcome == 'guard_unchecked']
     if differing:
-        details = (value_differences(sides, expected[0], found[0], 'exact') if single
+        details = (value_differences(namings.exact, expected[0], found[0]) if single
                    else [('occurrences', len(expected), len(found), differing)])
         differences.append(Difference(category, key, details))
     elif unchecked:
@@ -391,13 +392,13 @@ def compare_passed(sides: tuple[GatedSide, GatedSide], key: tuple, occurrences: 
                                                                            in outcomes.items() if outcome]))
 
 
-def compare_component(sides: tuple[GatedSide, GatedSide], occurrences: tuple, component) -> str | None:
+def compare_component(namings: Namings, occurrences: tuple, component) -> str | None:
     """None when both sides pass the same values for component (an argument's index or a storage key) under the same
     formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted"""
-    category = 'return_differs' if occurrences[0][0].kind == 'return' else 'arg_differs'
+    category = value_category(occurrences[0][0])
     capped = False                  # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
-    for namers in ('exact', 'representative'):
-        lifts = [passed_under(getattr(side, namers), effects, component) for side, effects in zip(sides, occurrences)]
+    for namers in namings:
+        lifts = [passed_under(namer, effects, component) for namer, effects in zip(namers, occurrences)]
         passed = [found for found, _ in lifts]
         capped = capped or any(cut for _, cut in lifts)
         if passed[0].keys() != passed[1].keys():
@@ -405,10 +406,10 @@ def compare_component(sides: tuple[GatedSide, GatedSide], occurrences: tuple, co
         if len(passed[0]) == 1:
             outcomes = set()        # one value, passed wherever the effect runs: its formula compared already
         else:
-            outcomes = {compare_formulas(sides, (disjunction(passed[0][value]), disjunction(passed[1][value])))
+            outcomes = {compare_formulas(namings, (disjunction(passed[0][value]), disjunction(passed[1][value])))
                         for value in passed[0]} - {None}
         if not outcomes:
-            return None if namers == 'exact' else 'condition_ordering_inverted'
+            return None if namers is namings.exact else 'condition_ordering_inverted'
         if outcomes == {'condition_ordering_inverted'}:
             return 'condition_ordering_inverted'
         return 'guard_unchecked' if capped or outcomes == {'guard_unchecked'} else category
@@ -416,9 +417,9 @@ def compare_component(sides: tuple[GatedSide, GatedSide], occurrences: tuple, co
     return 'guard_unchecked' if capped else category
 
 
-def value_differences(sides: tuple[GatedSide, GatedSide], a: Effect, b: Effect, namers: str) -> list:
+def value_differences(namers: tuple[Namer, Namer], a: Effect, b: Effect) -> list:
     """(index or storage key, a's value, b's value) of each argument and storage the two occurrences differ in"""
-    name_a, name_b = getattr(sides[0], namers), getattr(sides[1], namers)
+    name_a, name_b = namers
     pairs = list(enumerate(zip(a.args, b.args)))
     storage_a, storage_b = dict(a.storage), dict(b.storage)
     pairs += [(storage, (storage_a.get(storage), storage_b.get(storage)))
@@ -470,21 +471,19 @@ def render(formula, budget: int = 400) -> str:
     parts, pending, length = [], [formula], 0
     while pending and length < budget:
         item = pending.pop()
-        if isinstance(item, str):
-            parts.append(item)
-        elif item[0] == 'lit':
-            parts.append(('' if item[2] else '!') + brief(item[1]))
-        elif item[0] in ('and', 'or'):
+        if isinstance(item, tuple) and item[0] in ('and', 'or'):
             joiner = ' && ' if item[0] == 'and' else ' || '
-            pending.append(')')
-            for index, child in enumerate(reversed(item[1])):
-                pending.append(child)
-                if index + 1 < len(item[1]):
-                    pending.append(joiner)
-            pending.append('(')
+            spaced = [part for child in item[1] for part in (joiner, child)][1:]
+            pending.extend(reversed(['(', *spaced, ')']))
+            continue
+
+        if isinstance(item, str):
+            part = item
+        elif item[0] == 'lit':
+            part = ('' if item[2] else '!') + brief(item[1])
         else:
-            parts.append(item[0])
-        if isinstance(item, str) or item[0] not in ('and', 'or'):
-            length += len(parts[-1])
+            part = item[0]
+        parts.append(part)
+        length += len(part)
     text = ''.join(parts)
     return text if len(text) <= budget else text[:budget] + '...'

@@ -147,11 +147,8 @@ class LLILLayer:
 
     def call(self, inst, kind: str, target, state: State) -> Effect:
         args = self.arguments(inst, state)
-        pointed = state.reachable_locals(args, self.address_taken, self.neutral_key)
-        effect = Effect(inst.address, kind, target, args, storage=state.local_values(pointed, self.neutral_key))
-        state.clobber(inst.address, pointed)
-        state.set(('reg', RESULT_REGISTER), ('call', inst.address))
-        return effect
+        return Effect(inst.address, kind, target, args,
+                      storage=state.call(inst.address, args, self.address_taken, self.neutral_key))
 
     @classmethod
     def ret(cls, address: int, state: State) -> Effect:

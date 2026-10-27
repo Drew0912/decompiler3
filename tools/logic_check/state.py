@@ -80,9 +80,12 @@ class State:
         return tuple((('reg', index), self.register(index)) for index in range(REGISTER_COUNT)
                      if index != RESULT_REGISTER)
 
-    def clobber(self, address: int, pointed: list[tuple]):
-        """What a call may change: every register but the result, which the caller sets; every global; memory behind
-        a pointer; the locals it can reach (State.reachable_locals)"""
+    def call(self, address: int, args: tuple, address_taken: set, neutral_key) -> tuple:
+        """A call's passing and changing: returns the locals it can reach (reachable_locals) as local_values gives them,
+        then changes every register (the result to the call's), every global, memory behind a pointer and those
+        locals"""
+        pointed = self.reachable_locals(args, address_taken, neutral_key)
+        passed = self.local_values(pointed, neutral_key)
         for index in range(REGISTER_COUNT):
             if index != RESULT_REGISTER:
                 self.items[('reg', index)] = ('reg', index, ('after', address))
@@ -92,11 +95,28 @@ class State:
         self.store_through_pointer(address)
         for key in pointed:
             self.items[key] = ('slot_after', key, address)
+        self.items[('reg', RESULT_REGISTER)] = ('call', address)
+        return passed
 
     def store_through_pointer(self, address: int):
         """A store through a pointer changes memory behind pointers, none of the function's locals: LLIL dereferences
         only a caller's pointer, and MLIL writes a local's memory form as the local"""
         self.items[MEMORY_EPOCH] = address
+
+
+def neutral_leaf(tree: tuple, neutral_key) -> tuple | None:
+    """A leaf naming a layer's own storage under neutral names - a loop value, an address-taken local after a call -
+    or a deep phi's leaf as its fingerprint stands for it (its kept leaves are the layer's own); None for any other
+    tree. Fingerprints and compare.Namer both rename by it, so a digest and a renamed tree agree"""
+    tag = tree[0] if tree else None
+    if tag == 'loop':
+        return ('loop', tree[1], neutral_key(tree[2]))
+    if tag == 'slot_after':
+        return ('slot_after', neutral_key(tree[1]), tree[2])
+    if tag == 'deep_phi':
+        return tree[:4]
+
+    return None
 
 
 def phi_depth(tree, memo: dict | None = None) -> int:
@@ -140,12 +160,9 @@ class Fingerprints:
             return found[1]
 
         tag = tree[0] if tree else None
-        if tag == 'loop':
-            parts = [tag, tree[1], self.neutral_key(tree[2])]
-        elif tag == 'slot_after':
-            parts = [tag, self.neutral_key(tree[1]), tree[2]]
-        elif tag == 'deep_phi':
-            parts = list(tree[:4])      # its fingerprint stands for the phi; the kept leaves repeat what it holds
+        leaf = neutral_leaf(tree, self.neutral_key)
+        if leaf is not None:
+            parts = list(leaf)
         elif tag == 'op' and tree[1] in EQUALITIES:
             parts = [tag, tree[1], *sorted(self(operand) for operand in tree[2])]
         elif tag in ('and', 'or'):

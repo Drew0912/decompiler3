@@ -10,6 +10,7 @@ setup constant. Leaves name a layer's own storage only where the comparison rena
 trees mean the same value on every layer"""
 
 from typing import Iterator
+import operator
 
 ENTRY = 'entry'                 # no write since the function started
 ORDERING_REPRESENTATIVES = {'GE': 'LT', 'GT': 'LE'}  # a >= b read as !(a < b), a > b as !(a <= b): inexact for NaN
@@ -118,12 +119,12 @@ def representative_orderings(tree: tuple, memo: dict | None = None) -> tuple:
 
 
 CONSTANT_COMPARISONS = {
-    'EQ' : lambda a, b: a == b,
-    'NE' : lambda a, b: a != b,
-    'LT' : lambda a, b: a < b,
-    'LE' : lambda a, b: a <= b,
-    'GT' : lambda a, b: a > b,
-    'GE' : lambda a, b: a >= b,
+    'EQ' : operator.eq,
+    'NE' : operator.ne,
+    'LT' : operator.lt,
+    'LE' : operator.le,
+    'GT' : operator.gt,
+    'GE' : operator.ge,
 }
 
 

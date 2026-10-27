@@ -158,15 +158,19 @@ def control_dependence(blocks: Sequence, successors: Callable, branches: Callabl
     return {block: frozenset(dependence.get(block, ())) for block in blocks}
 
 
-def loop_bodies(order: Sequence, successors: Callable, predecessors: Callable) -> dict[Hashable, set]:
-    """header -> its loop's blocks, those reaching a back edge into it without passing it; headers by the edges that
-    go back in order (a reverse post-order)"""
+def back_edges(order: Sequence, successors: Callable) -> list[tuple]:
+    """(source, header) of each edge that goes back in order, a reverse post-order"""
     position = {block: index for index, block in enumerate(order)}
+    return [(source, target) for source in order for target in successors(source)
+            if position[target] <= position[source]]
+
+
+def loop_bodies(order: Sequence, successors: Callable, predecessors: Callable) -> dict[Hashable, set]:
+    """header -> its loop's blocks, those reaching a back edge (back_edges) into it without passing it"""
+    reachable = set(order)
     latches = {}
-    for source in order:
-        for target in successors(source):
-            if position[target] <= position[source]:
-                latches.setdefault(target, []).append(source)
+    for source, header in back_edges(order, successors):
+        latches.setdefault(header, []).append(source)
     bodies = {}
     for header, sources in latches.items():
         body, pending = {header}, list(sources)
@@ -174,7 +178,7 @@ def loop_bodies(order: Sequence, successors: Callable, predecessors: Callable) -
             block = pending.pop()
             if block not in body:
                 body.add(block)
-                pending.extend(predecessor for predecessor in predecessors(block) if predecessor in position)
+                pending.extend(predecessor for predecessor in predecessors(block) if predecessor in reachable)
         bodies[header] = body
     return bodies
 
@@ -199,14 +203,14 @@ def iteration_dependence(order: Sequence, successors: Callable, predecessors: Ca
     for header, body in bodies.items():
         end = IterationEnd()
 
-        def inside(target, body=body, header=header, end=end):
+        def inside(target):
             """target within the iteration, or its end: a back edge to the header, an edge out of the loop"""
             return target if target in body and target is not header else end
 
-        def iteration_successors(block, inside=inside, end=end):
+        def iteration_successors(block):
             return [] if block is end else list(dict.fromkeys(map(inside, successors(block))))
 
-        def iteration_branch(block, inside=inside, end=end):
+        def iteration_branch(block):
             branch = None if block is end else branches(block)
             return None if branch is None else (branch[0], inside(branch[1]), inside(branch[2]))
 

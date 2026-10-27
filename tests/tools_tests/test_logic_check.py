@@ -1171,7 +1171,7 @@ class TestRealScript(unittest.TestCase):
             with self.subTest(function=result.name):
                 self.assertIsNone(result.internal_error)
                 self.assertIsNone(result.decompile_error)
-                self.assertEqual(result.differences, [])
+                self.assertEqual(result.mlil_differences, [])
                 self.assertEqual(result.hlil_differences, [])
 
 

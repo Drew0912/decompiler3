@@ -12,6 +12,7 @@ from ir.mlil.mlil import (
     UNASSIGNED_SLOT_INDEX, walk,
 )
 from .evaluation import Branch, Effect, Facts
+from .post_dominators import back_edges
 from .state import MEMORY_EPOCH, RESULT_REGISTER, State
 from .trees import ENTRY, const, constant_truth, op
 
@@ -32,7 +33,6 @@ class MLILLayer:
     OWN_STORAGE_NAMES = True        # a split range or a minted local
 
     def __init__(self, func: MediumLevelILFunction, *, hlil_view: bool = False):
-        self.func = func
         self.entry = func.basic_blocks[0]
         self.edges = {block: list(block.outgoing_edges) for block in func.basic_blocks}
         self.targets = {block: (block.instructions[-1].true_target, block.instructions[-1].false_target)
@@ -63,8 +63,7 @@ class MLILLayer:
 
     def pass_empty_blocks(self):
         order = reverse_post_order(self.entry, self.edges.__getitem__)
-        position = {block: index for index, block in enumerate(order)}
-        headers = {target for source in order for target in self.edges[source] if position[target] <= position[source]}
+        headers = {header for _, header in back_edges(order, self.edges.__getitem__)}
         passed = {block for block in order if block is not self.entry and block not in headers
                   and len(self.edges[block]) == 1 and all(isinstance(inst, IGNORED) for inst in block.instructions)}
 
@@ -124,8 +123,15 @@ class MLILLayer:
     @classmethod
     def local_memory_write(cls, inst) -> bool:
         """The memory form of a variable's write, *(&v) = x"""
-        return (isinstance(inst, MLILStoreDeref) and isinstance(inst.dest, MLILAddressOf)
-                and isinstance(inst.dest.operand, MLILVar))
+        return isinstance(inst, MLILStoreDeref) and cls.memory_form_variable(inst.dest) is not None
+
+    @classmethod
+    def memory_form_variable(cls, pointer) -> MLILVariable | None:
+        """v of a pointer &v, the memory form's: *(&v) reads v, *(&v) = x writes it"""
+        if isinstance(pointer, MLILAddressOf) and isinstance(pointer.operand, MLILVar):
+            return pointer.operand.var
+
+        return None
 
     def neutral_key(self, key: tuple) -> tuple:
         return self.neutral_of.get(key[1], key) if key[0] == 'name' else key
@@ -173,9 +179,9 @@ class MLILLayer:
         if isinstance(expr, MLILLoadGlobal):
             return state.global_value(expr.index)
         if isinstance(expr, MLILDeref):
-            # The memory form of a variable's read, *(&v), reads v
-            if isinstance(expr.operand, MLILAddressOf) and isinstance(expr.operand.operand, MLILVar):
-                return self.read(expr.operand.operand.var, state)
+            var = self.memory_form_variable(expr.operand)
+            if var is not None:
+                return self.read(var, state)
             return ('deref', self.evaluate(expr.operand, state), state.get(MEMORY_EPOCH, ENTRY))
         if isinstance(expr, MLILAddressOf):
             if isinstance(expr.operand, MLILVar):
@@ -208,7 +214,7 @@ class MLILLayer:
             return [Effect(address, 'store global', inst.index, (value,))]
         elif isinstance(inst, MLILStoreDeref):
             if self.local_memory_write(inst):
-                state.set(self.key(inst.dest.operand.var), self.evaluate(inst.value, state))
+                state.set(self.key(self.memory_form_variable(inst.dest)), self.evaluate(inst.value, state))
                 return []
             value = self.evaluate(inst.value, state)
             effect = Effect(address, 'store deref', None, (self.evaluate(inst.dest, state), value))
@@ -238,10 +244,7 @@ class MLILLayer:
 
         effect = Effect(inst.address, kind, target, tuple(self.evaluate(arg, state) for arg in inst.args))
         if inst.clobbers_registers:
-            pointed = state.reachable_locals(effect.args, self.address_taken, self.neutral_key)
-            effect.storage = state.local_values(pointed, self.neutral_key)
-            state.clobber(inst.address, pointed)
-            state.set(('reg', RESULT_REGISTER), ('call', inst.address))
+            effect.storage = state.call(inst.address, effect.args, self.address_taken, self.neutral_key)
         if inst.output is not None:
             state.set(self.key(inst.output), ('call', inst.address))
         return effect

@@ -15,7 +15,7 @@ from typing import Callable, Hashable
 from ir.core import reverse_post_order
 from .formulas import TRUE, conjunction, disjunction, literal
 from .post_dominators import (
-    control_dependence, immediate_dominators, immediate_post_dominators, iteration_dependence,
+    back_edges, control_dependence, immediate_dominators, immediate_post_dominators, iteration_dependence,
 )
 from .state import Fingerprints, State, incoming_value, merge, merged_value
 
@@ -137,8 +137,7 @@ class GatedNaming:
     def __init__(self, layer, order: list, position: dict):
         self.layer = layer
         self.position = position
-        self.dominators = immediate_dominators(
-            order, lambda block: [predecessor for predecessor in layer.predecessors(block) if predecessor in position])
+        self.dominators = immediate_dominators(order, layer.predecessors)
         self.span = self.dominator_tree_span(order)
         block_of = {}
         for block in order:
@@ -338,15 +337,14 @@ def analyze(layer, *, gated: bool = False) -> Facts:
     and pairs loop leaves by the trees that read them"""
     order = reverse_post_order(layer.entry, layer.successors)
     position = {block: index for index, block in enumerate(order)}
-    back_edges = [(source, target) for source in order for target in layer.successors(source)
-                  if position[target] <= position[source]]
+    loops = back_edges(order, layer.successors)
     naming = (GatedNaming if gated else AddressNaming)(layer, order, position)
-    widened = {header: set() for _, header in back_edges}
+    widened = {header: set() for _, header in loops}
     fingerprints = Fingerprints(layer.neutral_key)
     for _ in range(MAX_ROUNDS):
         entry_states, exit_states = walk_forward(layer, order, position, naming, widened, fingerprints)
         added = False
-        for source, header in back_edges:
+        for source, header in loops:
             carried, entering = exit_states[source].items, entry_states[header].items
             for key in carried.keys() | entering.keys():
                 if key not in widened[header] and carried.get(key) != entering.get(key):
