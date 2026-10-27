@@ -24,7 +24,52 @@ COPIES = (MLILSetVar, *IGNORED)
 CONSTANT_EXPRESSIONS = (MLILConst, MLILBinaryOp, MLILUnaryOp)
 
 
-class MLILLayer:
+class MLILStorage:
+    """The storage an MLIL function's variables stand for (the module docstring), which HLIL names through too"""
+
+    def __init__(self, func: MediumLevelILFunction):
+        self.register_of = {var.name: index for index, var in func.register_vars.items()}
+        self.parameter_of = {var.name: position for position, var in enumerate(func.parameters, 1) if var is not None}
+        self.split_base_key: dict[str, tuple] = {}  # a split range's name -> its base's key, filled as key() meets it
+
+    def neutral_key(self, key: tuple) -> tuple:
+        return self.split_base_key.get(key[1], key) if key[0] == 'name' else key
+
+    def key(self, var: MLILVariable) -> tuple:
+        name = var.name
+        if name in self.register_of:
+            return ('reg', self.register_of[name])
+        if name in self.parameter_of:
+            return ('param', self.parameter_of[name])
+
+        split = SPLIT_SUFFIX.search(name)
+        if split is not None:
+            if name not in self.split_base_key:
+                self.split_base_key[name] = self.key(MLILVariable(name[:split.start()], var.slot_index))
+            return ('name', name)
+
+        match = PARAMETER_NAME.match(name)
+        if match is not None:
+            return ('param', int(match.group(1)))
+        if var.slot_index != UNASSIGNED_SLOT_INDEX:
+            return ('stack', var.slot_index)
+        match = STACK_NAME.match(name)
+        if match is not None:
+            return ('stack', int(match.group(1)))
+
+        return ('name', name)       # a local minted by a pass
+
+    def read(self, var: MLILVariable, state: State) -> tuple:
+        key = self.key(var)
+        if key[0] == 'param':
+            return state.get(key, key)
+        if key[0] == 'reg':
+            return state.register(key[1])
+
+        return state.get(key, ('undef', self.neutral_key(key)))
+
+
+class MLILLayer(MLILStorage):
     """The MLIL's graph as written, or with hlil_view as HLIL structures it (against HLIL): a branch on a constant
     condition is a jump to the target it always takes (HLIL folds a loop's constant test), and a block holding only
     jumps, line markers and nops, a loop's header aside, passes control on to where it leads (the converter skips such
@@ -33,6 +78,7 @@ class MLILLayer:
     OWN_STORAGE_NAMES = True        # a split range or a minted local
 
     def __init__(self, func: MediumLevelILFunction, *, hlil_view: bool = False):
+        super().__init__(func)
         self.entry = func.basic_blocks[0]
         self.edges = {block: list(block.outgoing_edges) for block in func.basic_blocks}
         self.targets = {block: (block.instructions[-1].true_target, block.instructions[-1].false_target)
@@ -45,9 +91,6 @@ class MLILLayer:
             for successor in successors:
                 self.incoming[successor].append(block)
 
-        self.register_of = {var.name: index for index, var in func.register_vars.items()}
-        self.parameter_of = {var.name: position for position, var in enumerate(func.parameters, 1) if var is not None}
-        self.neutral_of: dict[str, tuple] = {}
         self.address_taken = set()
         for inst in func.iter_instructions():
             for node in walk(inst):
@@ -132,42 +175,6 @@ class MLILLayer:
             return pointer.operand.var
 
         return None
-
-    def neutral_key(self, key: tuple) -> tuple:
-        return self.neutral_of.get(key[1], key) if key[0] == 'name' else key
-
-    def key(self, var: MLILVariable) -> tuple:
-        name = var.name
-        if name in self.register_of:
-            return ('reg', self.register_of[name])
-        if name in self.parameter_of:
-            return ('param', self.parameter_of[name])
-
-        split = SPLIT_SUFFIX.search(name)
-        if split is not None:
-            if name not in self.neutral_of:
-                self.neutral_of[name] = self.key(MLILVariable(name[:split.start()], var.slot_index))
-            return ('name', name)
-
-        match = PARAMETER_NAME.match(name)
-        if match is not None:
-            return ('param', int(match.group(1)))
-        if var.slot_index != UNASSIGNED_SLOT_INDEX:
-            return ('stack', var.slot_index)
-        match = STACK_NAME.match(name)
-        if match is not None:
-            return ('stack', int(match.group(1)))
-
-        return ('name', name)       # a local minted by a pass
-
-    def read(self, var: MLILVariable, state: State) -> tuple:
-        key = self.key(var)
-        if key[0] == 'param':
-            return state.get(key, key)
-        if key[0] == 'reg':
-            return state.register(key[1])
-
-        return state.get(key, ('undef', self.neutral_key(key)))
 
     def evaluate(self, expr, state: State) -> tuple:
         if isinstance(expr, MLILConst):

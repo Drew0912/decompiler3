@@ -10,12 +10,13 @@ from typing import Callable, Hashable, Sequence
 from ir.core import reverse_post_order
 
 EXIT = 'exit'
+TRUE_ARM, FALSE_ARM = 't', 'f'    # an arm's polarity: the branch's true or false target
 
 
-def exit_blocks(blocks: Sequence, successors: Callable, start: Callable | None = None) -> set:
+def exit_blocks(blocks: Sequence, successors: Callable, exit_rank: Callable | None = None) -> set:
     """The blocks given an edge to EXIT: those without a successor, and of each region that reaches none of them and
-    that no edge leaves (an endless loop) its block of the lowest start(block), the same on every layer, ties (and no
-    start) by the order of blocks. Only the region gets the edge, so a block on the way into it keeps its
+    that no edge leaves (an endless loop) its block of the lowest exit_rank(block), the same on every layer, ties (and
+    no exit_rank) by the order of blocks. Only the region gets the edge, so a block on the way into it keeps its
     post-dominators and its guards"""
     ends = {block for block in blocks if not successors(block)}
     predecessors = {block: [] for block in blocks}
@@ -32,7 +33,7 @@ def exit_blocks(blocks: Sequence, successors: Callable, start: Callable | None =
                 pending.append(predecessor)
 
     position = {block: index for index, block in enumerate(blocks)}
-    rank = (lambda block: (start(block), position[block])) if start else position.__getitem__
+    rank = (lambda block: (exit_rank(block), position[block])) if exit_rank else position.__getitem__
     exits = set(ends)
     for component in strongly_connected_components([block for block in blocks if block not in reaching], successors):
         members = set(component)
@@ -87,9 +88,9 @@ def strongly_connected_components(blocks: Sequence, successors: Callable) -> lis
 
 
 def immediate_post_dominators(blocks: Sequence, successors: Callable,
-                              start: Callable | None = None) -> dict[Hashable, Hashable]:
-    """Each block's immediate post-dominator (EXIT's is EXIT); start as exit_blocks takes it"""
-    exits = exit_blocks(blocks, successors, start)
+                              exit_rank: Callable | None = None) -> dict[Hashable, Hashable]:
+    """Each block's immediate post-dominator (EXIT's is EXIT); exit_rank as exit_blocks takes it"""
+    exits = exit_blocks(blocks, successors, exit_rank)
     reversed_successors = {EXIT: list(exits)}
     for block in blocks:
         reversed_successors.setdefault(block, [])
@@ -130,12 +131,12 @@ def immediate_dominators(order: Sequence, predecessors: Callable) -> dict[Hashab
 
 
 def control_dependence(blocks: Sequence, successors: Callable, branches: Callable,
-                       start: Callable | None = None) -> dict[Hashable, frozenset]:
-    """block -> the (branch address, 't' / 'f') it runs under directly. branches(block) is (address, true target,
-    false target) for a block ending in a two-way branch, else None; start as exit_blocks takes it. A block depends on
-    an arm when it post-dominates the arm's target but not, strictly, the branch: the post-dominator tree's path from
-    the target up to the branch's own immediate post-dominator"""
-    ipdom = immediate_post_dominators(blocks, successors, start)
+                       exit_rank: Callable | None = None) -> dict[Hashable, frozenset]:
+    """block -> the (branch address, TRUE_ARM / FALSE_ARM) it runs under directly. branches(block) is (address, true
+    target, false target) for a block ending in a two-way branch, else None; exit_rank as exit_blocks takes it. A block
+    depends on an arm when it post-dominates the arm's target but not, strictly, the branch: the post-dominator tree's
+    path from the target up to the branch's own immediate post-dominator"""
+    ipdom = immediate_post_dominators(blocks, successors, exit_rank)
     dependence = {}
     for block in blocks:
         branch = branches(block)
@@ -147,7 +148,7 @@ def control_dependence(blocks: Sequence, successors: Callable, branches: Callabl
             continue
 
         stop = ipdom[block]
-        for target, polarity in ((true_target, 't'), (false_target, 'f')):
+        for target, polarity in ((true_target, TRUE_ARM), (false_target, FALSE_ARM)):
             runner = target
             while runner is not stop:
                 if runner is EXIT:
@@ -184,13 +185,12 @@ def loop_bodies(order: Sequence, successors: Callable, predecessors: Callable) -
 
 
 def iteration_dependence(order: Sequence, successors: Callable, predecessors: Callable, branches: Callable,
-                         start: Callable | None = None) -> tuple[dict, dict, dict]:
-    """(block -> the (branch address, 't' / 'f') it runs under directly within one iteration of its innermost loop,
-    block -> that loop's header, header -> its loop's blocks). Control dependence over the loop's blocks, its back
-    edges and exits ending the
-    iteration, so an arm the block misses in this iteration is one it depends on even where a later iteration reaches
-    it; a block in no loop, and a loop's header (in its enclosing loop), as control_dependence gives them over the
-    blocks around it"""
+                         exit_rank: Callable | None = None) -> tuple[dict, dict, dict]:
+    """(block -> the (branch address, TRUE_ARM / FALSE_ARM) it runs under directly within one iteration of its
+    innermost loop, block -> that loop's header, header -> its loop's blocks). Control dependence over the loop's
+    blocks, its back edges and exits ending the iteration, so an arm the block misses in this iteration is one it
+    depends on even where a later iteration reaches it; a block in no loop, and a loop's header (in its enclosing
+    loop), as control_dependence gives them over the blocks around it"""
     bodies = loop_bodies(order, successors, predecessors)
     region = {}                 # block -> the header of the innermost loop whose iteration it runs in
     for header in sorted(bodies, key=lambda header: len(bodies[header]), reverse=True):
@@ -198,7 +198,7 @@ def iteration_dependence(order: Sequence, successors: Callable, predecessors: Ca
             if block is not header:
                 region[block] = header
 
-    whole = control_dependence(order, successors, branches, start)
+    whole = control_dependence(order, successors, branches, exit_rank)
     dependence = {block: whole[block] for block in order if block not in region}
     for header, body in bodies.items():
         end = IterationEnd()

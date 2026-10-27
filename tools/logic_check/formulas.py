@@ -66,8 +66,8 @@ class FormulaKeys:
         self.atoms = {}             # id(core) -> (core, its structure over atoms)
 
     def __call__(self, formula) -> tuple | None:
-        structure, variables = self.atoms_of(formula)
-        key = self.reduced_table(structure, variables)
+        structure, variables = self.structure_and_variables(formula)
+        key = self.reduced_table_key(structure, variables)
         if key is not None:
             return key
 
@@ -77,26 +77,26 @@ class FormulaKeys:
             return None
         # A formula with few variables once those it does not depend on are left out has its table's key, whichever
         # way it was written
-        return self.reduced_table(structure, variables) or key
+        return self.reduced_table_key(structure, variables) or key
 
     def table_key(self, formula) -> tuple | None:
         """formula's key by truth table, None past ROW_CAP rows"""
-        return self.reduced_table(*self.atoms_of(formula))
+        return self.reduced_table_key(*self.structure_and_variables(formula))
 
-    def atoms_of(self, formula) -> tuple:
+    def structure_and_variables(self, formula) -> tuple:
         """(formula's structure over atoms, its variables: ('eq', value digest) -> {constant digest})"""
         structure = self.structure(formula, {})
         variables = {}
-        self.collect(structure, variables, set())
+        self.collect_variables(structure, variables, set())
         return structure, variables
 
-    def reduced_table(self, structure, variables: dict) -> tuple | None:
-        key = self.table(structure, variables)
+    def reduced_table_key(self, structure, variables: dict) -> tuple | None:
+        key = self.truth_table(structure, variables)
         if key is None:
             return None
 
         # Left out: a value the table does not depend on, a constant the table reads as any other value
-        described, table = self.table(structure, dict(self.relevant(key, variables)))
+        described, table = self.truth_table(structure, dict(self.relevant_variables(key, variables)))
         return described, table.to_bytes((table.bit_length() + 7) // 8, 'little')
 
     # === Atoms ===
@@ -110,7 +110,7 @@ class FormulaKeys:
 
         tag = formula[0]
         if tag == 'lit':
-            result = self.condition(formula[1])
+            result = self.condition_structure(formula[1])
             if not formula[2]:
                 result = ('not', result)
         elif tag in ('and', 'or'):
@@ -120,7 +120,7 @@ class FormulaKeys:
         memo[id(formula)] = result
         return result
 
-    def condition(self, core: tuple):
+    def condition_structure(self, core: tuple):
         found = self.atoms.get(id(core))
         if found is not None:
             return found[1]
@@ -128,15 +128,16 @@ class FormulaKeys:
         normal = negation_normal_form(core)
         if self.representative:
             normal = representative_orderings(normal)
-        result = self.split(normal)
+        result = self.split_short_logic(normal)
         self.atoms[id(core)] = (core, result)  # the core kept alive, so its id is not reused
         return result
 
-    def split(self, normal: tuple):
+    def split_short_logic(self, normal: tuple):
         if normal[0] == 'not':
-            return ('not', self.split(normal[1]))
+            return ('not', self.split_short_logic(normal[1]))
         if normal[0] == 'op' and normal[1] in SHORT_LOGIC:
-            return ('and' if normal[1] == 'LOGICAL_AND' else 'or', tuple(self.split(item) for item in normal[2]))
+            return ('and' if normal[1] == 'LOGICAL_AND' else 'or',
+                    tuple(self.split_short_logic(item) for item in normal[2]))
 
         return self.atom(normal)
 
@@ -155,7 +156,7 @@ class FormulaKeys:
         return ('not', ('eq', self.digest(core), self.digest(ZERO)))
 
     @classmethod
-    def collect(cls, structure, variables: dict, seen: set):
+    def collect_variables(cls, structure, variables: dict, seen: set):
         if id(structure) in seen:
             return
         seen.add(id(structure))
@@ -163,10 +164,10 @@ class FormulaKeys:
         if tag == 'eq':
             variables.setdefault(('eq', structure[1]), set()).add(structure[2])
         elif tag == 'not':
-            cls.collect(structure[1], variables, seen)
+            cls.collect_variables(structure[1], variables, seen)
         elif tag in ('and', 'or'):
             for item in structure[1]:
-                cls.collect(item, variables, seen)
+                cls.collect_variables(item, variables, seen)
 
     # === Truth tables ===
 
@@ -191,7 +192,7 @@ class FormulaKeys:
         unit = ((1 << stride) - 1) << (value * stride)
         return unit * (((1 << rows) - 1) // ((1 << period) - 1))
 
-    def table(self, structure, variables: dict) -> tuple | None:
+    def truth_table(self, structure, variables: dict) -> tuple | None:
         """(variables, table) over variables; an equality with a constant they leave out reads as false (the value is
         any other)"""
         found = self.layout(variables)
@@ -233,7 +234,7 @@ class FormulaKeys:
 
         return tuple((*variable, constants) for variable, constants, _, _ in layout), evaluate(structure)
 
-    def relevant(self, key: tuple, variables: dict):
+    def relevant_variables(self, key: tuple, variables: dict):
         """(variable, constants) of each value key's table depends on, with the constants it tells from any other"""
         layout, rows = self.layout(variables)
         _, table = key
@@ -263,7 +264,7 @@ class Diagrams:
         self.cache = {}
         self.codes = {}             # ('eq', value digest) -> (first level, bits, {constant digest: code})
 
-    def order(self, variables: list[tuple]):
+    def assign_levels(self, variables: list[tuple]):
         """Each variable's levels, in the order given: (variable, its constants)"""
         level = 0
         for variable, constants in variables:
@@ -275,8 +276,8 @@ class Diagrams:
         """Whether structures a and b are one function, its variables in the order the structures meet them"""
         variables = {}
         for structure in (a, b):
-            FormulaKeys.collect(structure, variables, set())
-        self.order(list(variables.items()))
+            FormulaKeys.collect_variables(structure, variables, set())
+        self.assign_levels(list(variables.items()))
         memo = {}
         return self.build(a, memo) == self.build(b, memo)
 
@@ -287,34 +288,43 @@ class Diagrams:
         them"""
         while True:
             diagrams = cls(DIAGRAM_KEY_NODE_CAP)
-            diagrams.order(sorted(variables.items()))
+            diagrams.assign_levels(sorted(variables.items()))
             root = diagrams.build(structure, {})
-            relevant = {}
-            for variable, constants in variables.items():
-                other = diagrams.restrict(root, variable, len(constants), {})
-                kept = {constant for constant, code in diagrams.codes[variable][2].items()
-                        if diagrams.restrict(root, variable, code, {}) != other}
-                if kept:
-                    relevant[variable] = kept
+            relevant = diagrams.relevant_variables(root, variables)
             if relevant == variables:
                 break
             variables = relevant
 
+        described = tuple((*variable, tuple(sorted(constants))) for variable, constants in sorted(variables.items()))
+        return variables, (described, ('diagram', *diagrams.numbered_nodes(root)))
+
+    def relevant_variables(self, root: int, variables: dict) -> dict:
+        """variable -> the constants root tells from any other value, of each variable root depends on"""
+        relevant = {}
+        for variable, constants in variables.items():
+            other = self.restrict(root, variable, len(constants), {})
+            kept = {constant for constant, code in self.codes[variable][2].items()
+                    if self.restrict(root, variable, code, {}) != other}
+            if kept:
+                relevant[variable] = kept
+        return relevant
+
+    def numbered_nodes(self, root: int) -> tuple[tuple, int]:
+        """(root's nodes as (level, low, high), numbered as a depth-first walk meets them; root's number)"""
         numbers, nodes, pending = {FALSE_NODE: FALSE_NODE, TRUE_NODE: TRUE_NODE}, [], [root]
         while pending:
             node = pending[-1]
             if node in numbers:
                 pending.pop()
                 continue
-            level, low, high = diagrams.nodes[node]
+            level, low, high = self.nodes[node]
             if low in numbers and high in numbers:
                 pending.pop()
                 numbers[node] = len(nodes) + 2
                 nodes.append((level, numbers[low], numbers[high]))
             else:
                 pending.extend(child for child in (high, low) if child not in numbers)
-        described = tuple((*variable, tuple(sorted(constants))) for variable, constants in sorted(variables.items()))
-        return variables, (described, ('diagram', tuple(nodes), numbers[root]))
+        return tuple(nodes), numbers[root]
 
     def restrict(self, node: int, variable: tuple, code: int, memo: dict) -> int:
         """node with variable's value the one of code"""

@@ -18,7 +18,7 @@ from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILSetVar, MLILVar, MLILVariable, walk,
 )
 from .evaluation import Branch, Effect, Facts
-from .mlil_layer import MLILLayer
+from .mlil_layer import MLILStorage
 from .state import MEMORY_EPOCH, RESULT_REGISTER, State
 from .trees import ENTRY, const, constant_truth, op
 
@@ -55,14 +55,14 @@ CONSTANT_EXPRESSIONS = (HLILConst, HLILBinaryOp, HLILUnaryOp)
 class Node:
     """A node of the graph: its steps, its edges, and the stamp naming its loop where it is a loop's header"""
 
-    __slots__ = ('index', 'instructions', 'outgoing_edges', 'incoming_edges', 'loop')
+    __slots__ = ('index', 'instructions', 'outgoing_edges', 'incoming_edges', 'loop_stamp')
 
     def __init__(self, index: int):
         self.index = index
         self.instructions = []
         self.outgoing_edges: list[Node] = []
         self.incoming_edges: list[Node] = []
-        self.loop: int | None = None
+        self.loop_stamp: int | None = None
 
     def __repr__(self) -> str:
         return f'Node({self.index})'
@@ -71,7 +71,7 @@ class Node:
 @dataclass(slots=True, eq=False)
 class Test:
     """A node's last step: condition decides between two nodes"""
-    branch: int
+    branch_number: int
     condition: object
     true_node: Node
     false_node: Node
@@ -93,41 +93,50 @@ class CaseTest(Test):
 class ExitTarget:
     """A loop or switch a break (for a loop, also a continue) leaves, and where each goes"""
 
-    def __init__(self, stmt, after: Node, cont: Node | None):
+    def __init__(self, stmt, break_node: Node, continue_node: Node | None):
         self.label = getattr(stmt, 'label', None)
         self.is_switch = isinstance(stmt, HLILSwitch)
-        self.after = after
-        self.cont = cont
+        self.break_node = break_node
+        self.continue_node = continue_node
+
+
+def mlil_variables_by_name(mlil: MediumLevelILFunction) -> dict[str, MLILVariable]:
+    """Every variable of the MLIL function by name: its parameters, locals and register variables, and any other an
+    instruction reads or writes"""
+    variables = {var.name: var for var in [*mlil.parameters, *mlil.locals.values(), *mlil.register_vars.values()]
+                 if var is not None}
+    for inst in mlil.iter_instructions():
+        for node in walk(inst):
+            if isinstance(node, MLILVar):
+                variables.setdefault(node.var.name, node.var)
+        written = inst.var if isinstance(inst, MLILSetVar) else getattr(inst, 'output', None)
+        if isinstance(written, MLILVariable):
+            variables.setdefault(written.name, written)
+    return variables
+
+
+def mlil_calls_by_index(mlil: MediumLevelILFunction) -> dict[int, MediumLevelILCall]:
+    """MLIL instruction index -> its call, which says whether the call clobbers"""
+    return {inst.inst_index: inst for inst in mlil.iter_instructions() if isinstance(inst, MediumLevelILCall)}
 
 
 class HLILLayer:
     OWN_STORAGE_NAMES = True        # MLIL's split ranges and minted locals, kept by HLIL
 
     def __init__(self, func: HighLevelILFunction, mlil: MediumLevelILFunction):
-        self.naming = MLILLayer(mlil)
-        self.variables = {var.name: var for var in [*mlil.parameters, *mlil.locals.values(),
-                                                    *mlil.register_vars.values()] if var is not None}
-        self.calls = {}             # MLIL instruction index -> its call: whether the call clobbers
-        for inst in mlil.iter_instructions():
-            if isinstance(inst, MediumLevelILCall):
-                self.calls[inst.inst_index] = inst
-            for node in walk(inst):
-                if isinstance(node, MLILVar):
-                    self.variables.setdefault(node.var.name, node.var)
-            written = inst.var if isinstance(inst, MLILSetVar) else getattr(inst, 'output', None)
-            if isinstance(written, MLILVariable):
-                self.variables.setdefault(written.name, written)
-
+        self.mlil_storage = MLILStorage(mlil)
+        self.variables = mlil_variables_by_name(mlil)
+        self.calls = mlil_calls_by_index(mlil)
         self.address_taken = {self.key(node.operand.var) for node in iter_tree(func.body)
                               if isinstance(node, HLILAddressOf) and isinstance(node.operand, HLILVar)}
         self.nodes: list[Node] = []
         self.branch_numbers, self.switch_numbers = count(), count()
-        end = self.node()           # falling off the end of the body
-        self.entry = self.node(successors=[self.block(func.body.statements, end, [])])   # never a loop header
+        end = self.new_node()           # falling off the end of the body
+        self.entry = self.new_node(successors=[self.build_block(func.body.statements, end, [])])   # never a loop header
 
     # === The graph ===
 
-    def node(self, instructions=(), successors=()) -> Node:
+    def new_node(self, instructions=(), successors=()) -> Node:
         node = Node(len(self.nodes))
         node.instructions.extend(instructions)
         self.nodes.append(node)
@@ -141,70 +150,72 @@ class HLILLayer:
             source.outgoing_edges.append(target)
             target.incoming_edges.append(source)
 
-    def block(self, statements: list, follow: Node, targets: list) -> Node:
+    def build_block(self, statements: list, follow: Node, exit_targets: list) -> Node:
         """The node statements start at, follow after them"""
         entry = follow
         for stmt in reversed(statements):
-            entry = self.statement(stmt, entry, targets)
+            entry = self.build_statement(stmt, entry, exit_targets)
         return entry
 
-    def statement(self, stmt, follow: Node, targets: list) -> Node:
+    def build_statement(self, stmt, follow: Node, exit_targets: list) -> Node:
         if isinstance(stmt, HLILComment):
             return follow
         if isinstance(stmt, (HLILAssign, HLILExprStmt)):
-            return self.node([stmt], [follow])
+            return self.new_node([stmt], [follow])
         if isinstance(stmt, (HLILReturn, HLILUnstructured)):
-            return self.node([stmt])
+            return self.new_node([stmt])
         if isinstance(stmt, (HLILBreak, HLILContinue)):
-            target = resolve_exit_target(targets, stmt.label, loop_only=isinstance(stmt, HLILContinue))
+            target = resolve_exit_target(exit_targets, stmt.label, loop_only=isinstance(stmt, HLILContinue))
             if target is None:
                 raise RuntimeError(f'{stmt} leaves no loop or switch')
-            return target.after if isinstance(stmt, HLILBreak) else target.cont
+            return target.break_node if isinstance(stmt, HLILBreak) else target.continue_node
         if isinstance(stmt, HLILIf):
-            true_entry = self.block(stmt.true_block.statements, follow, targets)
-            false_entry = self.block(stmt.false_block.statements, follow, targets) if stmt.false_block else follow
-            return self.condition(stmt.condition, true_entry, false_entry)
+            true_entry = self.build_block(stmt.true_block.statements, follow, exit_targets)
+            false_entry = (self.build_block(stmt.false_block.statements, follow, exit_targets) if stmt.false_block
+                           else follow)
+            return self.build_condition(stmt.condition, true_entry, false_entry)
         if isinstance(stmt, HLILWhile):
-            header = self.loop_header(stmt)
-            body = self.block(stmt.body.statements, header, targets + [ExitTarget(stmt, follow, header)])
-            self.edge(header, self.condition(stmt.condition, body, follow))
+            header = self.new_loop_header(stmt)
+            body = self.build_block(stmt.body.statements, header, exit_targets + [ExitTarget(stmt, follow, header)])
+            self.edge(header, self.build_condition(stmt.condition, body, follow))
             return header
         if isinstance(stmt, HLILDoWhile):
-            header = self.loop_header(stmt)
-            test = self.condition(stmt.condition, header, follow)
-            self.edge(header, self.block(stmt.body.statements, test, targets + [ExitTarget(stmt, follow, test)]))
+            header = self.new_loop_header(stmt)
+            test = self.build_condition(stmt.condition, header, follow)
+            self.edge(header, self.build_block(stmt.body.statements, test,
+                                               exit_targets + [ExitTarget(stmt, follow, test)]))
             return header
         if isinstance(stmt, HLILSwitch):
-            return self.switch(stmt, follow, targets)
+            return self.build_switch(stmt, follow, exit_targets)
         if isinstance(stmt, HLILBlock):
-            return self.block(stmt.statements, follow, targets)
+            return self.build_block(stmt.statements, follow, exit_targets)
 
         raise RuntimeError(f'no HLIL graph rule for {type(stmt).__name__}')
 
-    def loop_header(self, loop) -> Node:
-        node = self.node()
-        node.loop = loop.address
+    def new_loop_header(self, loop) -> Node:
+        node = self.new_node()
+        node.loop_stamp = loop.address
         return node
 
-    def condition(self, expr, true_node: Node, false_node: Node) -> Node:
+    def build_condition(self, expr, true_node: Node, false_node: Node) -> Node:
         """The tests deciding expr, one per operand of && and ||, entered at the first; a constant one is none, its arm
         taken (as MLILLayer follows a constant branch)"""
-        expr, negated = self.truth_test(expr)
+        expr, negated = self.strip_truth_tests(expr)
         if negated:
             true_node, false_node = false_node, true_node
         if isinstance(expr, HLILBinaryOp) and expr.op == BinaryOp.AND:
-            return self.condition(expr.lhs, self.condition(expr.rhs, true_node, false_node), false_node)
+            return self.build_condition(expr.lhs, self.build_condition(expr.rhs, true_node, false_node), false_node)
         if isinstance(expr, HLILBinaryOp) and expr.op == BinaryOp.OR:
-            return self.condition(expr.lhs, true_node, self.condition(expr.rhs, true_node, false_node))
+            return self.build_condition(expr.lhs, true_node, self.build_condition(expr.rhs, true_node, false_node))
         if all(isinstance(node, CONSTANT_EXPRESSIONS) for node in iter_tree(expr)):
             always = constant_truth(self.evaluate(expr, State(), []))
             if always is not None:
                 return true_node if always else false_node
 
-        return self.node([Test(next(self.branch_numbers), expr, true_node, false_node)], [true_node, false_node])
+        return self.new_node([Test(next(self.branch_numbers), expr, true_node, false_node)], [true_node, false_node])
 
     @classmethod
-    def truth_test(cls, expr) -> tuple:
+    def strip_truth_tests(cls, expr) -> tuple:
         """(expr, negated) with `x == 0`, `x != 0` and `!x` stripped, so a && or || under them is split too"""
         negated = False
         while True:
@@ -216,19 +227,19 @@ class HLILLayer:
             else:
                 return expr, negated
 
-    def switch(self, stmt: HLILSwitch, follow: Node, targets: list) -> Node:
+    def build_switch(self, stmt: HLILSwitch, follow: Node, exit_targets: list) -> Node:
         """The scrutinee, then each label's test in case order, the default case after the last"""
         switch = next(self.switch_numbers)
-        inner = targets + [ExitTarget(stmt, follow, None)]
+        inner = exit_targets + [ExitTarget(stmt, follow, None)]
         chain = follow
         for case in stmt.cases:
             if case.is_default():
-                chain = self.block(case.body.statements, follow, inner)
+                chain = self.build_block(case.body.statements, follow, inner)
         for case in reversed([case for case in stmt.cases if not case.is_default()]):
-            body = self.block(case.body.statements, follow, inner)
+            body = self.build_block(case.body.statements, follow, inner)
             for value in reversed(case.values):
-                chain = self.node([CaseTest(next(self.branch_numbers), value, body, chain, switch)], [body, chain])
-        return self.node([Scrutinee(switch, stmt.scrutinee)], [chain])
+                chain = self.new_node([CaseTest(next(self.branch_numbers), value, body, chain, switch)], [body, chain])
+        return self.new_node([Scrutinee(switch, stmt.scrutinee)], [chain])
 
     # === The adapter ===
 
@@ -244,16 +255,16 @@ class HLILLayer:
     def branch(cls, node: Node) -> tuple | None:
         last = node.instructions[-1] if node.instructions else None
         if isinstance(last, Test):
-            return last.branch, last.true_node, last.false_node
+            return last.branch_number, last.true_node, last.false_node
 
         return None
 
     @classmethod
     def header_name(cls, node: Node) -> int | None:
-        return node.loop
+        return node.loop_stamp
 
     def neutral_key(self, key: tuple) -> tuple:
-        return self.naming.neutral_key(key)
+        return self.mlil_storage.neutral_key(key)
 
     def key(self, var: HLILVariable) -> tuple:
         if var.kind == VariableKind.REG:
@@ -261,7 +272,7 @@ class HLILLayer:
         if var.kind == VariableKind.GLOBAL:
             return ('global', var.index)
 
-        return self.naming.key(self.mlil_variable(var))
+        return self.mlil_storage.key(self.mlil_variable(var))
 
     def read(self, var: HLILVariable, state: State) -> tuple:
         if var.kind == VariableKind.REG:
@@ -269,7 +280,7 @@ class HLILLayer:
         if var.kind == VariableKind.GLOBAL:
             return state.global_value(var.index)
 
-        return self.naming.read(self.mlil_variable(var), state)
+        return self.mlil_storage.read(self.mlil_variable(var), state)
 
     def mlil_variable(self, var: HLILVariable) -> MLILVariable:
         """The MLIL variable var names, whose storage it is"""
@@ -280,10 +291,12 @@ class HLILLayer:
         if isinstance(inst, CaseTest):
             condition = op('EQ', [state.get(('switch', inst.switch), None),
                                   self.evaluate(inst.condition, state, effects)])
-            facts.branches[inst.branch] = Branch(inst.branch, condition, inst.true_node.index, inst.false_node.index)
+            facts.branches[inst.branch_number] = Branch(inst.branch_number, condition, inst.true_node.index,
+                                                        inst.false_node.index)
         elif isinstance(inst, Test):
-            facts.branches[inst.branch] = Branch(inst.branch, self.evaluate(inst.condition, state, effects),
-                                                 inst.true_node.index, inst.false_node.index)
+            facts.branches[inst.branch_number] = Branch(inst.branch_number,
+                                                        self.evaluate(inst.condition, state, effects),
+                                                        inst.true_node.index, inst.false_node.index)
         elif isinstance(inst, Scrutinee):
             state.set(('switch', inst.switch), self.evaluate(inst.expr, state, effects))
         elif isinstance(inst, HLILAssign):
@@ -354,7 +367,7 @@ class HLILLayer:
         if isinstance(expr, HLILSyscall):
             kind, target = 'syscall', (expr.subsystem, expr.cmd)
         elif isinstance(expr, HLILExternCall):
-            kind, target = 'script call', '.'.join(expr.target.split(':', 1))
+            kind, target = 'script call', expr.target.replace(':', '.', 1)    # MLILLayer's `module.func`
         else:
             kind, target = 'call', expr.func_name
 

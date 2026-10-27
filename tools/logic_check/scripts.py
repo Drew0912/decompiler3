@@ -25,6 +25,18 @@ class FunctionResult(NamedTuple):
     internal_error: str | None      # the check itself failed
     seconds: float                  # the check's own time, the decompile's left out
 
+    @classmethod
+    def decompile_failed(cls, name: str, stage: str, error: Exception, mlil_differences: list | None = None,
+                         seconds: float = 0.0) -> FunctionResult:
+        """The function did not lift or convert at stage: nothing compared from there on"""
+        return cls(name, mlil_differences or [], [], f'{stage}: {type(error).__name__}: {error}', None, seconds)
+
+    @classmethod
+    def check_failed(cls, name: str, stage: str, error: Exception, mlil_differences: list | None = None,
+                     seconds: float = 0.0) -> FunctionResult:
+        """The check itself failed at stage"""
+        return cls(name, mlil_differences or [], [], None, f'{stage}: {type(error).__name__}: {error}', seconds)
+
 
 def check_script(path: Path, game: str | None, *, infer_types: bool = True) -> list[FunctionResult]:
     """Each function's LLIL -> MLIL and MLIL -> HLIL differences; a script the parser rejects raises"""
@@ -48,37 +60,37 @@ def check_function(lifter: ED9VMLifter, func, infer_types: bool) -> FunctionResu
     try:
         llil = lifter.lift_function(func)
     except Exception as e:
-        return FunctionResult(func.name, [], [], f'{type(e).__name__}: {e}', None, 0.0)
+        return FunctionResult.decompile_failed(func.name, 'LLIL', e)
 
     try:
         reference = timed(lambda: analyze(LLILLayer(llil)))  # before the conversion: nothing it does to the LLIL counts
     except Exception as e:
-        return FunctionResult(func.name, [], [], None, f'LLIL: {type(e).__name__}: {e}', seconds)
+        return FunctionResult.check_failed(func.name, 'LLIL', e, seconds=seconds)
 
     try:
         mlil = convert_falcom_llil_to_mlil(llil, optimize=True, infer_types=infer_types)
     except Exception as e:
-        return FunctionResult(func.name, [], [], f'{type(e).__name__}: {e}', None, seconds)
+        return FunctionResult.decompile_failed(func.name, 'MLIL', e, seconds=seconds)
 
     try:
         differences = timed(lambda: compare_facts(reference, analyze(MLILLayer(mlil))))
     except Exception as e:
-        return FunctionResult(func.name, [], [], None, f'MLIL: {type(e).__name__}: {e}', seconds)
+        return FunctionResult.check_failed(func.name, 'MLIL', e, seconds=seconds)
 
     try:
         gated = timed(lambda: analyze(MLILLayer(mlil, hlil_view=True), gated=True))
     except Exception as e:
-        return FunctionResult(func.name, differences, [], None, f'MLIL gated: {type(e).__name__}: {e}', seconds)
+        return FunctionResult.check_failed(func.name, 'MLIL gated', e, differences, seconds)
 
     try:
         hlil = convert_falcom_mlil_to_hlil(mlil, func)
     except Exception as e:
-        return FunctionResult(func.name, differences, [], f'HLIL: {type(e).__name__}: {e}', None, seconds)
+        return FunctionResult.decompile_failed(func.name, 'HLIL', e, differences, seconds)
 
     try:
         hlil_differences = timed(lambda: compare_gated(gated, analyze(HLILLayer(hlil, mlil), gated=True)))
     except Exception as e:
-        return FunctionResult(func.name, differences, [], None, f'HLIL: {type(e).__name__}: {e}', seconds)
+        return FunctionResult.check_failed(func.name, 'HLIL', e, differences, seconds)
 
     return FunctionResult(func.name, differences, hlil_differences, None, None, seconds)
 
