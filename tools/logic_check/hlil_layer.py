@@ -322,7 +322,7 @@ class HLILLayer:
         elif isinstance(dest, HLILVar):
             value = self.evaluate(inst.src, state, effects)
             key = self.key(dest.var)
-            if key[0] in ('reg', 'global'):
+            if self.neutral_key(key)[0] in ('reg', 'global'):   # a de-SSA split of a register too
                 state.escape(value, self.address_taken, self.neutral_key)
             if key[0] == 'global':
                 effects.append(Effect(inst.address, 'store global', key[1], (value,)))

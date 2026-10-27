@@ -194,7 +194,7 @@ class MLILLayer:
         address = inst.address
         if isinstance(inst, MLILSetVar):
             key, value = self.key(inst.var), self.evaluate(inst.value, state)
-            if key[0] == 'reg':
+            if self.neutral_key(key)[0] == 'reg':   # a register, or a de-SSA split of one
                 state.escape(value, self.address_taken, self.neutral_key)
             state.set(key, value)
         elif isinstance(inst, MLILStoreReg):

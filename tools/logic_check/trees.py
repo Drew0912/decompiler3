@@ -1,6 +1,6 @@
 """Value trees - the nested tuples every layer's expressions evaluate to - and the normal form conditions compare in
 
-A tree is ('const', type name, value[, spelling]), ('op', operation name, operands), or a leaf naming what was read:
+A tree is ('const', type name, value), ('op', operation name, operands), or a leaf naming what was read:
 ('param', n); ('call', address), a call's result; ('reg', n, after), ('global', n, after), ('deref', pointer, after),
 a read after a given write (`ENTRY` for none); ('slot_after', key, address), an address-taken local after a call;
 ('phi', join, ((terminal address, value), ...)), or gated ('gamma', ((path condition, value), ...)), past a depth
@@ -20,8 +20,10 @@ ZERO_TYPES = ('int', 'bool')
 
 
 def const(value) -> tuple:
+    """A float by its bits (float.hex keeps the sign of zero), whatever its class or spelling: a SourceFloat's spelling
+    is the output's, the game sees the bits"""
     if isinstance(value, float):
-        return ('const', type(value).__name__, value.hex(), str(value))
+        return ('const', 'float', value.hex())
 
     return ('const', type(value).__name__, value)
 
@@ -91,19 +93,28 @@ def negation_normal_form(tree: tuple, negated: bool = False) -> tuple:
     return ('not', core) if negated else core
 
 
-def representative_orderings(tree: tuple) -> tuple:
+def representative_orderings(tree: tuple, memo: dict | None = None) -> tuple:
     """Every ordering as the one of its inverse pair in ORDERING_REPRESENTATIVES' values, negated where it was the other
-    (`a >= b` as `!(a < b)`, inexact for NaN): two conditions equal only after this differ by an ordering inversion"""
-    if tree[0] == 'not':
-        inner = representative_orderings(tree[1])
-        return inner[1] if inner[0] == 'not' else ('not', inner)
-    if tree[0] == 'op':
-        operands = tuple(representative_orderings(operand) for operand in tree[2])
-        if tree[1] in ORDERING_REPRESENTATIVES:
-            return ('not', ('op', ORDERING_REPRESENTATIVES[tree[1]], operands))
-        return ('op', tree[1], operands)
+    (`a >= b` as `!(a < b)`, inexact for NaN): two conditions equal only after this differ by an ordering inversion.
+    Memoised by identity: a tree shares its subtrees"""
+    memo = {} if memo is None else memo
+    found = memo.get(id(tree))
+    if found is not None:
+        return found
 
-    return tree
+    if tree[0] == 'not':
+        inner = representative_orderings(tree[1], memo)
+        result = inner[1] if inner[0] == 'not' else ('not', inner)
+    elif tree[0] == 'op':
+        operands = tuple(representative_orderings(operand, memo) for operand in tree[2])
+        if tree[1] in ORDERING_REPRESENTATIVES:
+            result = ('not', ('op', ORDERING_REPRESENTATIVES[tree[1]], operands))
+        else:
+            result = ('op', tree[1], operands)
+    else:
+        result = tree
+    memo[id(tree)] = result
+    return result
 
 
 CONSTANT_COMPARISONS = {
@@ -128,6 +139,9 @@ def constant_truth(tree: tuple) -> bool | None:
     if name in CONSTANT_COMPARISONS:
         if all(operand[0] == 'const' and operand[1] in ZERO_TYPES for operand in operands):
             return CONSTANT_COMPARISONS[name](operands[0][2], operands[1][2])
+        if name == 'EQ' and is_zero(operands[1]):  # `!c`, as op writes it
+            inner = constant_truth(operands[0])
+            return None if inner is None else not inner
         return None
     if name in SHORT_LOGIC:
         decisive = name == 'LOGICAL_OR'     # true decides ||, false decides &&

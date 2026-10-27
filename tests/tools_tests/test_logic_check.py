@@ -17,6 +17,7 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
+from ir.core.il_literals import SourceFloat
 from ir.hlil.hlil import (
     BinaryOp, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall, HLILConst, HLILContinue, HLILIf, HLILReturn,
     HLILSwitch, HLILUnstructured, HLILVar, HLILVariable, HLILWhile, VariableKind, iter_tree,
@@ -35,7 +36,7 @@ from logic_check.compare import Namer
 from logic_check.evaluation import FUNCTION_ENTRY, RETURN_KEY, Branch, Effect, Facts
 from logic_check.post_dominators import EXIT, control_dependence, exit_blocks, immediate_post_dominators
 from logic_check.state import PHI_DEPTH, Fingerprints
-from logic_check.trees import const, op, truth
+from logic_check.trees import const, constant_truth, op, truth
 
 GLOBAL_A, GLOBAL_B, GLOBAL_C = 1, 2, 3
 MESSAGE = 'this'
@@ -710,6 +711,16 @@ class TestPlantedHLILBugs(unittest.TestCase):
             step.value = 2
         self.check(calls_then_loop_function, mutate, 'loop_value_differs')
 
+    def test_loop_copy_leaving_at_once(self):
+        """The loop rebuilt in both arms, the second copy's test made `test && c`, c the arms' condition, false in that
+        arm: that copy never goes round, which the first copy going round must not hide"""
+        def mutate(hlil):
+            TestHLILStructures.rebuild_in_both_arms(hlil)
+            if_stmt = first_node(hlil, HLILIf)
+            loop = next(node for node in iter_tree(if_stmt.false_block) if isinstance(node, HLILWhile))
+            loop.condition = HLILBinaryOp(BinaryOp.AND, loop.condition, copy.deepcopy(if_stmt.condition))
+        self.check(calls_then_loop_function, mutate, 'guard_differs')
+
     def test_arms_swapped_in_a_loop(self):
         """The call's arm swapped with the skip's: it runs in other iterations, a guard within one iteration differs"""
         def mutate(hlil):
@@ -915,6 +926,17 @@ class TestHLILStructures(unittest.TestCase):
         self.extract_common_return(hlil)
         self.assertEqual(hlil_categories(mlil, hlil), set())
 
+    def test_choices_past_the_lifting_cap(self):
+        """A merged choice left whole past LIFTED_CHOICES, a common return's value or a loop's entry choice its copies
+        carry in one value each: unchecked, not a difference"""
+        mlil, hlil = mlil_and_hlil(two_returns_function)
+        self.extract_common_return(hlil)
+        loop_mlil, loop_hlil = mlil_and_hlil(branch_then_loop_function)
+        self.rebuild_in_both_arms(loop_hlil)
+        with mock.patch.object(compare, 'LIFTED_CHOICES', 1):
+            self.assertEqual(hlil_categories(mlil, hlil), {'guard_unchecked'})
+            self.assertEqual(hlil_categories(loop_mlil, loop_hlil), {'guard_unchecked'})
+
     def test_common_return_after_a_loop(self):
         """One arm reaches the return through the loop's exit, the only way out of its test"""
         mlil, hlil = mlil_and_hlil(return_after_a_loop_function)
@@ -966,6 +988,10 @@ class TestConditionNormalForm(unittest.TestCase):
 
     A, B = ('param', 1), ('param', 2)
     ZERO = const(0)
+
+    def test_a_constant_condition_negated(self):
+        """`!c` of a constant c is decided, as ir/hlil's constant_truth decides it: HLIL folds its branch"""
+        self.assertIs(constant_truth(op('LOGICAL_NOT', [op('LT', [const(1), const(2)])])), False)
 
     def test_truth_test_spellings(self):
         condition = op('EQ', [self.A, self.B])
@@ -1047,12 +1073,14 @@ class TestFormulaKeys(unittest.TestCase):
 
     def test_float_constants_that_compare_equal(self):
         """0.0 and -0.0 are two constants equal under float ==, as are 1 and 1.0: tests of one value against them may
-        both hold, and a test of two of them is not decided"""
-        for first, second in ((0.0, -0.0), (1, 1.0)):
+        both hold, and a test of two of them is not decided. Floats as scripts decode them, SourceFloat, as well"""
+        zero, negative_zero, one = SourceFloat(0.0, '0.0'), SourceFloat(-0.0, '-0.0'), SourceFloat(1.0, '1.0')
+        for first, second in ((0.0, -0.0), (1, 1.0), (zero, negative_zero), (1, one)):
             both = formulas.conjunction(self.equals(self.X, first), self.equals(self.X, second, False))
-            self.assertNotEqual(self.keys(both), self.keys(self.equals(self.X, first)))
-        constants = formulas.literal(op('EQ', [const(0.0), const(-0.0)]), True)
+            self.assertNotEqual(self.keys(both), self.keys(self.equals(self.X, first)), (first, second))
+        constants = formulas.literal(op('EQ', [const(zero), const(negative_zero)]), True)
         self.assertNotEqual(self.keys(constants), formulas.FALSE_KEY)
+        self.assertEqual(const(SourceFloat(0.2999999523162842, '0.3')), const(0.2999999523162842))
 
     def test_a_condition_nothing_depends_on_left_out(self):
         less = formulas.literal(op('LT', [self.X, self.Y]), True)

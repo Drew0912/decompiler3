@@ -8,7 +8,7 @@ import reprlib
 from typing import Callable, Hashable, NamedTuple
 
 from .evaluation import RETURN_KEY, Effect, Facts
-from .formulas import TRUE, DiagramOverflow, Diagrams, FormulaKeys, conjunction, disjunction
+from .formulas import FALSE_KEY, TRUE, DiagramOverflow, Diagrams, FormulaKeys, conjunction, disjunction
 from .state import FINGERPRINT_BYTES, Fingerprints, gated_choice
 from .trees import EQUALITIES, loop_leaves, truth
 
@@ -133,12 +133,12 @@ def compare_effects(reference: Facts, checked: Facts, namers: tuple[Namer, Namer
             else:
                 for index, (x, y) in enumerate(zip(a.args, b.args)):
                     x, y = name_a(x), name_b(y)
-                    if x != y:
+                    if name_a.digest(x) != name_b.digest(y):    # trees share subtrees: compared, they may not
                         differences.append(Difference(category, key, (index, x, y)))
             storage_a, storage_b = dict(a.storage), dict(b.storage)
             for storage in sorted(storage_a.keys() | storage_b.keys(), key=repr):
                 x, y = name_a(storage_a.get(storage)), name_b(storage_b.get(storage))
-                if x != y:
+                if name_a.digest(x) != name_b.digest(y):
                     differences.append(Difference(category, key, (storage, x, y)))
             guard_a = {(address, canonical_polarity(reference, name_a, address, polarity))
                        for address, polarity in a.guard}
@@ -259,22 +259,25 @@ def compare_loop_values(reference: Facts, checked: Facts, namers: tuple[Namer, N
 def compare_loop_copies(group: tuple, copies: tuple[dict, dict], namers: tuple[Namer, Namer], differences: list):
     """A loop HLIL rebuilds on several paths, its copies under one stamp: each own key's values along each incoming
     edge, lifted into the formulas the copies carry them under (lifted), so copies on exclusive paths compare with the
-    reference's one loop; both ways, as compare_loop_values compares"""
-    told = (set(), set())
+    reference's one loop; both ways, as compare_loop_values compares. A value carried under a formula that never holds
+    (a copy's back edge it never takes) is left out"""
+    told, capped = (set(), set()), False
     for side in (0, 1):
         for edges in copies[side].values():
             described = []
             for along in edges:
-                carried = {digest: namers[side].keys(disjunction(formulas))
-                           for digest, formulas in lifted(namers[side], along).items()}
+                values, cut = lifted(namers[side], along)
+                capped = capped or cut
+                carried = {digest: namers[side].keys(disjunction(formulas)) for digest, formulas in values.items()}
                 if None in carried.values():
                     differences.append(Difference('guard_unchecked', group, 'loop copies'))
                     return
-                described.append(frozenset(carried.items()))
+                described.append(frozenset((digest, key) for digest, key in carried.items() if key != FALSE_KEY))
             told[side].add(tuple(described))
     if told[0] != told[1]:
         counts = [max(len(along) for edges in copies[side].values() for along in edges) for side in (0, 1)]
-        differences.append(Difference('loop_value_differs', group, [('copies', *counts)]))
+        category = 'guard_unchecked' if capped else 'loop_value_differs'
+        differences.append(Difference(category, group, [('copies', *counts)]))
 
 
 # === MLIL against HLIL ===
@@ -392,8 +395,11 @@ def compare_component(sides: tuple[GatedSide, GatedSide], occurrences: tuple, co
     """None when both sides pass the same values for component (an argument's index or a storage key) under the same
     formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted"""
     category = 'return_differs' if occurrences[0][0].kind == 'return' else 'arg_differs'
+    capped = False                  # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
     for namers in ('exact', 'representative'):
-        passed = [passed_under(getattr(side, namers), effects, component) for side, effects in zip(sides, occurrences)]
+        lifts = [passed_under(getattr(side, namers), effects, component) for side, effects in zip(sides, occurrences)]
+        passed = [found for found, _ in lifts]
+        capped = capped or any(cut for _, cut in lifts)
         if passed[0].keys() != passed[1].keys():
             continue
         if len(passed[0]) == 1:
@@ -405,9 +411,9 @@ def compare_component(sides: tuple[GatedSide, GatedSide], occurrences: tuple, co
             return None if namers == 'exact' else 'condition_ordering_inverted'
         if outcomes == {'condition_ordering_inverted'}:
             return 'condition_ordering_inverted'
-        return 'guard_unchecked' if outcomes == {'guard_unchecked'} else category
+        return 'guard_unchecked' if capped or outcomes == {'guard_unchecked'} else category
 
-    return category
+    return 'guard_unchecked' if capped else category
 
 
 def value_differences(sides: tuple[GatedSide, GatedSide], a: Effect, b: Effect, namers: str) -> list:
@@ -425,29 +431,32 @@ def value_differences(sides: tuple[GatedSide, GatedSide], a: Effect, b: Effect, 
     return details
 
 
-def passed_under(namer: Namer, effects: list[Effect], component) -> dict:
+def passed_under(namer: Namer, effects: list[Effect], component) -> tuple[dict, bool]:
     """What the occurrences pass as component, each value's digest under neutral names -> the formulas it is passed
-    under (lifted)"""
+    under, and whether a choice was left whole (lifted)"""
     return lifted(namer, [(effect.condition, effect.args[component] if isinstance(component, int)
                            else dict(effect.storage).get(component)) for effect in effects])
 
 
-def lifted(namer: Namer, held: list[tuple]) -> dict:
+def lifted(namer: Namer, held: list[tuple]) -> tuple[dict, bool]:
     """(formula, value) pairs as each value's digest under neutral names -> the formulas it holds under, a gated choice
-    lifted into them (to LIFTED_CHOICES alternatives a pair)"""
-    passed = {}
+    lifted into them to LIFTED_CHOICES alternatives a pair; and whether a choice was left whole past them, so that a
+    mismatch is unchecked, not a difference"""
+    passed, capped = {}, False
     for formula, value in held:
         alternatives, pending = [], [(formula, value)]
         while pending:
             condition, value = pending.pop()
-            if (isinstance(value, tuple) and value and value[0] == 'gamma'
-                    and len(alternatives) + len(pending) + len(value[1]) <= LIFTED_CHOICES):
-                pending.extend((conjunction(condition, choice_formula), choice) for choice_formula, choice in value[1])
-            else:
-                alternatives.append((condition, value))
+            if isinstance(value, tuple) and value and value[0] == 'gamma':
+                if len(alternatives) + len(pending) + len(value[1]) <= LIFTED_CHOICES:
+                    pending.extend((conjunction(condition, choice_formula), choice)
+                                   for choice_formula, choice in value[1])
+                    continue
+                capped = True
+            alternatives.append((condition, value))
         for condition, value in alternatives:
             passed.setdefault(namer.digest(namer(value)), []).append(condition)
-    return passed
+    return passed, capped
 
 
 def brief(tree) -> str:

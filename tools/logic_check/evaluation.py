@@ -128,8 +128,9 @@ class GatedNaming:
     """MLIL against HLIL, whose structured statements keep no jump addresses: a merged value is a gated choice over the
     formulas each incoming edge is taken under once the join's immediate dominator has run (gated, within), a loop
     header is named by the layer (header_name), and a loop carries one value in along its entry edges and one round
-    along its back edges, those gated from the header, each copy of a loop under the formula it runs under. No branch
-    is compared on its own, so a loop's running and going round again are pseudo-effects (loop_effects)"""
+    along its back edges, those gated from the header, each copy of a loop under the formula it runs or goes round
+    under. No branch is compared on its own, so a loop's running and going round again are pseudo-effects
+    (loop_effects)"""
 
     start = None            # a sink region's EXIT edge from its first block in reverse post-order, its loop's header
 
@@ -287,31 +288,36 @@ class GatedNaming:
     def condition(self, block, facts: Facts) -> tuple:
         return self.within(self.layer.entry, block, facts)
 
+    def latches(self, header) -> list:
+        return [predecessor for predecessor in self.layer.predecessors(header)
+                if predecessor in self.position and self.position[predecessor] >= self.position[header]]
+
+    def going_round(self, header, facts: Facts) -> tuple:
+        """The formula a loop goes round again under: it runs, and an iteration ends on a back edge (gated from the
+        header). The running part tells copies of a loop HLIL rebuilds on several paths (one stamp) apart"""
+        again = disjunction(self.arrival(header, latch, header, facts) for latch in self.latches(header))
+        return conjunction(self.condition(header, facts), again)
+
     def loop_effects(self, header, facts: Facts) -> list[Effect]:
         """A loop's pseudo-effects, named by its header: 'loop' under the formula the loop runs under, 'loop continue'
-        under the one an iteration goes round again under (its back edges', from the header)"""
+        under the one it goes round again under"""
         name = self.header(header)
-        back = [predecessor for predecessor in self.layer.predecessors(header)
-                if predecessor in self.position and self.position[predecessor] >= self.position[header]]
-        again = disjunction(self.arrival(header, latch, header, facts) for latch in back)
         return [Effect(name, 'loop', None, (), condition=self.condition(header, facts)),
-                Effect(name, 'loop continue', None, (), condition=again)]
+                Effect(name, 'loop continue', None, (), condition=self.going_round(header, facts))]
 
     def loop_values(self, header, keys: set, exit_states: dict, facts: Facts, fingerprints: Fingerprints):
-        """The values the loop carries in and round, under the formula it runs under: each copy of a loop HLIL rebuilds
-        on several paths (one stamp) adds its own"""
-        predecessors = [predecessor for predecessor in self.layer.predecessors(header) if predecessor in self.position]
-        forward = [(predecessor, exit_states[predecessor]) for predecessor in predecessors
-                   if self.position[predecessor] < self.position[header]]
-        back = [(predecessor, exit_states[predecessor]) for predecessor in predecessors
-                if self.position[predecessor] >= self.position[header]]
-        groups = ((LOOP_ENTRY, self.incoming(header, forward, facts)),
-                  (LOOP_BACK, self.gated(header, header, back, facts)))
-        name, running = self.header(header), self.condition(header, facts)
+        """The values the loop carries in under the formula it runs under, and round under the one it goes round again
+        under: each copy of a loop HLIL rebuilds on several paths (one stamp) adds its own"""
+        forward = [(predecessor, exit_states[predecessor]) for predecessor in self.layer.predecessors(header)
+                   if predecessor in self.position and self.position[predecessor] < self.position[header]]
+        back = [(latch, exit_states[latch]) for latch in self.latches(header)]
+        groups = ((LOOP_ENTRY, self.condition(header, facts), self.incoming(header, forward, facts)),
+                  (LOOP_BACK, self.going_round(header, facts), self.gated(header, header, back, facts)))
+        name = self.header(header)
         for key in keys:
-            for edges, incoming in groups:
+            for edges, formula, incoming in groups:
                 facts.loop_values.setdefault((name, key, edges), []).append(
-                    (running, merged_value(None, key, incoming, fingerprints)))
+                    (formula, merged_value(None, key, incoming, fingerprints)))
 
 
 def run_block(layer, block, entry: State, facts: Facts) -> tuple[State, list[Effect]]:

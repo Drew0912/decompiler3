@@ -99,17 +99,25 @@ class State:
         self.items[MEMORY_EPOCH] = address
 
 
-def phi_depth(tree) -> int:
+def phi_depth(tree, memo: dict | None = None) -> int:
+    """Joins nested in tree; memoised by identity: a tree shares its subtrees"""
     if not isinstance(tree, tuple):     # an epoch is a plain address
         return 0
-    if tree[0] == 'phi':
-        return 1 + max((phi_depth(value) for _, value in tree[2]), default=0)
-    if tree[0] == 'gamma':
-        return 1 + max((phi_depth(value) for _, value in tree[1]), default=0)
-    if tree[0] == 'op':
-        return max((phi_depth(operand) for operand in tree[2]), default=0)
+    memo = {} if memo is None else memo
+    found = memo.get(id(tree))
+    if found is not None:
+        return found
 
-    return 0
+    if tree[0] == 'phi':
+        depth = 1 + max((phi_depth(value, memo) for _, value in tree[2]), default=0)
+    elif tree[0] == 'gamma':
+        depth = 1 + max((phi_depth(value, memo) for _, value in tree[1]), default=0)
+    elif tree[0] == 'op':
+        depth = max((phi_depth(operand, memo) for operand in tree[2]), default=0)
+    else:
+        depth = 0
+    memo[id(tree)] = depth
+    return depth
 
 
 class Fingerprints:

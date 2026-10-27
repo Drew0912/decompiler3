@@ -62,9 +62,13 @@ def check_function(lifter: ED9VMLifter, func, infer_types: bool) -> FunctionResu
 
     try:
         differences = timed(lambda: compare_facts(reference, analyze(MLILLayer(mlil))))
-        gated = timed(lambda: analyze(MLILLayer(mlil, hlil_view=True), gated=True))
     except Exception as e:
         return FunctionResult(func.name, [], [], None, f'MLIL: {type(e).__name__}: {e}', seconds)
+
+    try:
+        gated = timed(lambda: analyze(MLILLayer(mlil, hlil_view=True), gated=True))
+    except Exception as e:
+        return FunctionResult(func.name, differences, [], None, f'MLIL gated: {type(e).__name__}: {e}', seconds)
 
     try:
         hlil = convert_falcom_mlil_to_hlil(mlil, func)
