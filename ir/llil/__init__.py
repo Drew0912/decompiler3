@@ -70,6 +70,9 @@ __all__ = [
     'LowLevelILDebug',
     'LowLevelILSyscall',
 
+    # Traversal
+    'walk',
+
     # Containers
     'default_label_for_addr',
     'LowLevelILBasicBlock',

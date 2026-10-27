@@ -78,6 +78,9 @@ class LowLevelILGlobalStore(LowLevelILStatement):
         self.index = index
         self.value = value  # Expression popped from stack
 
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return (self.value,)
+
     def __str__(self) -> str:
         return f'GLOBAL[{self.index}] = {self.value}'
 
@@ -88,6 +91,9 @@ class LowLevelILDebugLog(LowLevelILStatement):
     def __init__(self, args: list[LowLevelILExpr]):
         super().__init__(LowLevelILFalcomOperation.LLIL_DEBUG_LOG)
         self.args = args    # Top of stack first (from vstack)
+
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return tuple(self.args)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)

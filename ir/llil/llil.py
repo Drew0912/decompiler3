@@ -1,6 +1,6 @@
 """LLIL - Stack-based low-level IR"""
 
-from typing import Any
+from typing import Any, Iterator
 from dc3 import format_signed_hex, IntEnum2, quote_string
 from ir.core import *
 
@@ -83,6 +83,11 @@ class LowLevelILInstruction(ILInstruction):
         """Get operation name without LLIL_ prefix (e.g., 'LLIL_ADD' -> 'ADD')"""
         return self.operation.name.replace('LLIL_', '')
 
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        """Direct expression operands in evaluation order - none for a leaf. Every node holding an expression
+        overrides this; walk() is built on it"""
+        return ()
+
     def __str__(self) -> str:
         raise NotImplementedError
 
@@ -128,6 +133,9 @@ class LowLevelILStackStore(LowLevelILStatement):
         self.offset = offset  # Byte offset
         self.slot_index = slot_index  # Absolute stack slot index
 
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return (self.value,)
+
     def __str__(self) -> str:
         return f'STACK[{sp_offset_text(self.offset)}] = {self.value}'
 
@@ -163,6 +171,9 @@ class LowLevelILFrameStore(LowLevelILStatement):
         self.value = value
         self.offset = offset  # Byte offset relative to frame
 
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return (self.value,)
+
     def __str__(self) -> str:
         return f'STACK[{frame_offset_text(self.offset)}] = {self.value}'
 
@@ -175,6 +186,9 @@ class LowLevelILLoad(LowLevelILExpr):
         super().__init__(LowLevelILOperation.LLIL_LOAD)
         self.src = src
 
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return (self.src,)
+
     def __str__(self) -> str:
         return f'*{self.src}'
 
@@ -186,6 +200,9 @@ class LowLevelILStore(LowLevelILStatement):
         super().__init__(LowLevelILOperation.LLIL_STORE)
         self.dest = dest
         self.value = value
+
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return (self.dest, self.value)
 
     def __str__(self) -> str:
         return f'*{self.dest} = {self.value}'
@@ -242,6 +259,9 @@ class LowLevelILRegStore(LowLevelILStatement):
         self.reg_index = reg_index
         self.value = value
 
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return (self.value,)
+
     def __str__(self) -> str:
         return f'REG[{self.reg_index}] = {self.value}'
 
@@ -268,6 +288,9 @@ class LowLevelILBinaryOp(LowLevelILExpr):
         super().__init__(self.OPERATION)
         self.lhs = lhs  # Left operand expression
         self.rhs = rhs  # Right operand expression
+
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return (self.lhs, self.rhs)
 
     def __str__(self) -> str:
         return f'{self.operation_name}({self.lhs}, {self.rhs})'
@@ -352,6 +375,9 @@ class LowLevelILUnaryOp(LowLevelILExpr):
         super().__init__(self.OPERATION)
         self.operand = operand
 
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return (self.operand,)
+
     def __str__(self) -> str:
         return f'{self.operation_name}({self.operand})'
 
@@ -397,6 +423,9 @@ class LowLevelILIf(LowLevelILStatement, Terminal):
         self.true_target = true_target
         self.false_target = false_target
 
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return (self.condition,)
+
     def __str__(self) -> str:
         return f'if {self.condition} goto {self.true_target.block_name} else {self.false_target.block_name}'
 
@@ -417,6 +446,9 @@ class LowLevelILCall(LowLevelILStatement, Terminal):
         self.return_target = return_target  # Where to return after call (None if returns is False)
         self.args = args if args is not None else []  # Argument expressions
         self.returns = returns  # False for a tail call that never gives control back to this function
+
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return tuple(self.args)
 
     def __str__(self) -> str:
         if self.args:
@@ -480,12 +512,33 @@ class LowLevelILSyscall(LowLevelILStatement):
         self.argc = argc
         self.args = args if args is not None else []  # Argument expressions (from vstack)
 
+    def operands(self) -> tuple[LowLevelILInstruction, ...]:
+        return tuple(self.args)
+
     def __str__(self) -> str:
         if self.args:
             args_str = ', '.join(str(arg) for arg in self.args)
             return f'SYSCALL({self.subsystem}, 0x{self.cmd:02x}, {args_str})'
         else:
             return f'SYSCALL({self.subsystem}, 0x{self.cmd:02x}, {self.argc})'
+
+
+# === Traversal ===
+
+def walk(node: LowLevelILInstruction, skip: tuple[type, ...] = ()) -> Iterator[LowLevelILInstruction]:
+    """node and every expression below it, pre-order in evaluation order; a node that is an instance of a type in skip
+    (subclasses included) is yielded but not descended into"""
+    pending = [node]
+    while pending:
+        current = pending.pop()
+        yield current
+        if skip and isinstance(current, skip):
+            continue
+        operands = current.operands()
+        if len(operands) == 1:
+            pending.append(operands[0])
+        elif operands:
+            pending.extend(reversed(operands))
 
 
 # === Helper Functions ===

@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import (
     LowLevelILCall, LowLevelILConst, LowLevelILFrameStore, LowLevelILIf, LowLevelILOperation, LowLevelILStackLoad,
-    LowLevelILStackStore, LowLevelILStore, UNASSIGNED_INST_INDEX, WORD_SIZE,
+    LowLevelILStackStore, LowLevelILStore, UNASSIGNED_INST_INDEX, WORD_SIZE, walk,
 )
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn, LowLevelILFalcomOperation
@@ -273,18 +273,6 @@ class TestMoreDebugText(unittest.TestCase):
         self.assertEqual(str(store), '*STACK[fp + 0] = STACK[sp<1>]')
 
 
-def nested_expressions(inst) -> list:
-    """The expression nodes under inst"""
-    children = []
-    for attribute in ('value', 'condition', 'lhs', 'rhs', 'operand', 'src', 'dest'):
-        child = getattr(inst, attribute, None)
-        if hasattr(child, 'operation'):
-            children.append(child)
-            children.extend(nested_expressions(child))
-
-    return children
-
-
 class TestNodeKinds(unittest.TestCase):
     """Every operation code is its own value and every node carries the one that names it"""
 
@@ -328,11 +316,9 @@ class TestNodeKinds(unittest.TestCase):
         for llil_func in (lifted_text_function(), lifted_pointer_function(), tail_call_function(1)):
             for block in llil_func.basic_blocks:
                 for inst in block.instructions:
-                    seen[type(inst).__name__] = inst
                     self.assertNotEqual(inst.inst_index, UNASSIGNED_INST_INDEX)
-
-                    for expr in nested_expressions(inst):
-                        seen[type(expr).__name__] = expr
+                    for node in walk(inst):
+                        seen[type(node).__name__] = node
 
         for name, operation in self.EXPECTED.items():
             self.assertEqual(seen[name].operation, operation, name)

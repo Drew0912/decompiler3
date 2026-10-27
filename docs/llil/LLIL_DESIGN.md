@@ -63,6 +63,14 @@ came from, `inst_index`, `options.hidden_for_formatter`). Nodes are either a
 Offsets are **bytes** (`slot * WORD_SIZE`); `slot_index` is an absolute slot number. Stack offsets
 count from the current `sp`, frame offsets from the frame base.
 
+**Reading is shared**, as in MLIL. Every node's `operands()` returns the expressions it holds, in
+evaluation order (a binary operation its `lhs` and `rhs`, a store its `value`, a pointer store its
+`dest` and `value`, a branch its `condition`, a call, syscall or `DEBUG_LOG` its arguments; a leaf
+none); the Falcom nodes answer the same way (`falcom/ed9/ir/llil/`). `walk()` (`ir/llil/llil.py`)
+visits a node and everything below it, pre-order, with an optional `skip` of types it yields but does
+not descend into. A search over LLIL expressions is built on them, so a new node type needs only its
+own `operands()`; nothing rewrites LLIL, so there is no `map_operands`.
+
 **Terminals.** A block ends with exactly one terminal, as its last instruction. Conditional
 jumps become `If(Eq(value, 0), ...)`: `POP_JMP_ZERO` takes the targets as given, `POP_JMP_NOT_ZERO`
 swaps them. A call is a terminal too - its block ends at the call and the return block continues
@@ -196,7 +204,8 @@ the listing's block header and lines.
 order, per-edge state, numbering), `tests/llil_tests/test_llil_stack_sync.py` (`POP`/`POP_N` and the virtual stack),
 `tests/parser_tests/test_scp_stack_simulation.py` (the parser's simulation), and
 `tests/parser_tests/test_stack_effects.py` (the lifter, the parser and the debug-record tracker against the opcode
-table's stack effects).
+table's stack effects), `tests/llil_tests/test_llil_traversal.py` (`operands()` against every node type of both
+packages, `walk()`).
 `demos/llil_demo.py` builds small functions by hand.
 
 ## Open Items

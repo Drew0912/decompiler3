@@ -7,11 +7,12 @@ paths:
 # Working in `ir/` and `falcom/ed9/ir/`
 
 ## Shared Walkers
-HLIL and MLIL each have one set of shared walkers, named in `docs/hlil/HLIL_DESIGN.md` and `docs/mlil/MLIL_DESIGN.md`
-(under "Operations & Node Types": "Tree walking is shared the same way", "Reading is shared the same way"). Build every
-search, predicate and collector on them: a new node type is then one edit in the walkers, and no copy of a walker
-misses it. A new hand-rolled walker needs a stated reason. Tests use the same walkers: `docs/TESTS_GUIDE.md`, "Adding
-tests". A new HLIL node type also needs its case in the printers: a statement in the statement printer both share
+HLIL, MLIL and LLIL each have one set of shared walkers, named in `docs/hlil/HLIL_DESIGN.md` and
+`docs/mlil/MLIL_DESIGN.md` (under "Operations & Node Types": "Tree walking is shared the same way", "Reading is shared
+the same way") and `docs/llil/LLIL_DESIGN.md` ("Node Model": "Reading is shared"). Build every search, predicate and
+collector on them: a new node type is then one edit in the walkers, and no copy of a walker misses it. A new
+hand-rolled walker needs a stated reason. Tests use the same walkers: `docs/TESTS_GUIDE.md`, "Adding tests". A new
+HLIL node type also needs its case in the printers: a statement in the statement printer both share
 (`ir/hlil/statement_printer.py`, with a hook where their text differs), an expression in each one's `_format_expr`
 (`ir/hlil/hlil_formatter.py`, `codegen/typescript.py`); they print an unknown node as text instead of failing.
 
