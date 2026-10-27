@@ -11,7 +11,7 @@ from typing import Callable, Hashable
 
 from ir.core import reverse_post_order
 from .post_dominators import control_dependence
-from .state import State, merge
+from .state import Fingerprints, State, merge
 
 MAX_ROUNDS = 64             # widening at loop headers converges in a few; past this the walk is an internal error
 FUNCTION_ENTRY = -1         # the terminal address of the function entry's virtual predecessor
@@ -79,8 +79,9 @@ def analyze(layer) -> Facts:
                   if position[target] <= position[source]]
     joins = {block: join_identity(layer, block, position) for block in order}
     widened = {header: set() for _, header in back_edges}
+    fingerprints = Fingerprints(layer.neutral_key)
     for _ in range(MAX_ROUNDS):
-        entry_states, exit_states = walk_forward(layer, order, position, joins, widened)
+        entry_states, exit_states = walk_forward(layer, order, position, joins, widened, fingerprints)
         added = False
         for source, header in back_edges:
             carried, entering = exit_states[source].items, entry_states[header].items
@@ -119,7 +120,8 @@ def analyze(layer) -> Facts:
     return facts
 
 
-def walk_forward(layer, order: list, position: dict, joins: dict, widened: dict) -> tuple[dict, dict]:
+def walk_forward(layer, order: list, position: dict, joins: dict, widened: dict,
+                 fingerprints: Fingerprints) -> tuple[dict, dict]:
     """Every block's entry and exit state, over forward edges only (the function entry's virtual predecessor holds
     nothing), each widened key of a loop header its leaf"""
     entry_states, exit_states = {}, {}
@@ -129,7 +131,7 @@ def walk_forward(layer, order: list, position: dict, joins: dict, widened: dict)
                     if predecessor in position and position[predecessor] < position[block]]
         if block is layer.entry:
             incoming.append((FUNCTION_ENTRY, State()))
-        state = incoming[0][1].copy() if len(incoming) == 1 else merge(joins[block], incoming, layer.neutral_key)
+        state = incoming[0][1].copy() if len(incoming) == 1 else merge(joins[block], incoming, fingerprints)
         for key in widened.get(block, ()):
             state.items[key] = ('loop', joins[block], key)
 

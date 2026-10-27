@@ -43,6 +43,8 @@ def renamed(tree, neutral_key: Callable[[tuple], tuple], memo: dict):
         result = ('loop', tree[1], neutral_key(tree[2]))
     elif tag == 'slot_after':
         result = ('slot_after', neutral_key(tree[1]), tree[2])
+    elif tag == 'deep_phi':
+        result = tree[:4]       # the fingerprint is under neutral names; the kept leaves are the layer's own
     elif tag == 'op':
         operands = tuple(renamed(operand, neutral_key, memo) for operand in tree[2])
         result = op(tree[1], operands) if tree[1] in EQUALITIES else ('op', tree[1], operands)
@@ -60,11 +62,11 @@ class Namer:
     """A side's trees under neutral names, renamed once each"""
 
     def __init__(self, facts: Facts):
-        self.neutral_key = facts.neutral_key
+        self.neutral_key = facts.neutral_key or (lambda key: key)   # a deep phi is cut to its fingerprint either way
         self.memo = {}
 
     def __call__(self, tree):
-        return tree if self.neutral_key is None else renamed(tree, self.neutral_key, self.memo)
+        return renamed(tree, self.neutral_key, self.memo)
 
 
 def compare_facts(reference: Facts, checked: Facts) -> list[Difference]:

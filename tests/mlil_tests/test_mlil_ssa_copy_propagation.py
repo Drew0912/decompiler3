@@ -20,6 +20,7 @@ from ir.mlil.passes.pass_ssa_copy_propagation import reaches_without_redefinitio
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.mlil.mlil_translator import RESULT_REG_INDEX
 from tests.shared.corpus import SORA2_SCRIPTS, require
 
 
@@ -614,9 +615,11 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
     reachability check must still treat it as a redefinition."""
 
     def reg0_func(self, name):
+        """A function whose reg0 is the result register, as Falcom's translator makes it"""
         func = make_func(name)
         reg0 = MLILVariable('reg0')
-        func.register_vars[0] = reg0
+        func.register_vars[RESULT_REG_INDEX] = reg0
+        func.result_register = RESULT_REG_INDEX
         func.locals['t'] = MLILVariable('t')
         return func, reg0, MLILVariableSSA(func.locals['t'], 1)
 

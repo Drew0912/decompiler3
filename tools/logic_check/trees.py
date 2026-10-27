@@ -3,10 +3,10 @@
 A tree is ('const', type name, value[, spelling]), ('op', operation name, operands), or a leaf naming what was read:
 ('param', n); ('call', address), a call's result; ('reg', n, after), ('global', n, after), ('deref', pointer, after),
 a read after a given write (`ENTRY` for none); ('slot_after', key, address), an address-taken local after a call;
-('phi', join, ((terminal address, value), ...)), past a depth ('deep_phi', join, key); ('loop', header, key), a value
-at a loop header; ('undef', key); ('absent', key), storage a predecessor of a join never wrote; ('address', key);
-('frame',), a call setup constant. Leaves never name a layer's own variables, so equal trees mean the
-same value on every layer"""
+('phi', join, ((terminal address, value), ...)), past a depth ('deep_phi', join, key, fingerprint, kept leaves)
+(state.merge); ('loop', header, key), a value at a loop header; ('undef', key); ('absent', key), storage a
+predecessor of a join never wrote; ('address', key); ('frame',), a call setup constant. Leaves never name a layer's
+own variables, so equal trees mean the same value on every layer"""
 
 from typing import Iterator
 

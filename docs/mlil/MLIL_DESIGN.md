@@ -199,6 +199,13 @@ Dead-code elimination repeats its own sweep until nothing more is removed, so a 
 one round rather than one link per round. A removed string assignment stays as a `debug.string`
 comment unless constant propagation put the string into its uses: both dead-code passes read the
 variables it substituted (`ConstantPropagationPass.replaced_vars`, `string_debug_comment`).
+A register write a return leaves stays although nothing in the function reads it: the caller can
+read a register after the call, as it reads a global. Both dead-code passes count each return's
+reaching register versions as read (`exit_register_versions`, `ir/mlil/mlil_ssa.py`) - not the
+result register's (`MediumLevelILFunction.result_register`, from the translator's
+`RESULT_REGISTER`), which the return passes as its value, nor a call's clobber, the callee's value
+(the call is the barrier, its pseudo-definition may be gone), nor a phi over only incoming and
+callees' values.
 
 Condition simplification and negation normal form negate only `==` / `!=` (`negate_comparison`): an
 ordering keeps its NOT (`!(a < b)`), since `!(a < b)` and `a >= b` differ when an operand is NaN.

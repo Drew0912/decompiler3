@@ -11,6 +11,7 @@ from ..mlil import (
     MLILDebug,
 )
 from ..mlil_ssa import (
+    exit_register_versions,
     iter_ssa_reads,
     MLILVariableSSA,
     MLILSetVarSSA,
@@ -85,5 +86,7 @@ class SSADeadCodeEliminationPass(Pass):
         return removed
 
     def _collect_read_vars(self, func: MediumLevelILFunction):
-        """The SSA variables func reads anywhere: a sweep only asks whether a variable is read"""
+        """The SSA variables func reads anywhere, and the register versions its returns leave for the caller: a sweep
+        only asks whether a variable is read"""
         self.read_vars = {var for inst in func.iter_instructions() for var, _ in iter_ssa_reads(inst)}
+        self.read_vars |= exit_register_versions(func)

@@ -79,10 +79,45 @@ def phi_depth(tree) -> int:
     return 0
 
 
-def merge(join: tuple, states: list[tuple[int, State]], neutral_key) -> State:
+class Fingerprints:
+    """A layer's value trees digested the way the comparison sees them: a layer's own storage keys under neutral names,
+    == and != operands in any order; equal digests mean equal trees. Memoised by identity, so a subtree shared by many
+    trees is digested once"""
+
+    def __init__(self, neutral_key):
+        self.neutral_key = neutral_key
+        self.memo = {}
+
+    def __call__(self, tree) -> bytes:
+        if not isinstance(tree, tuple):
+            return repr(tree).encode()
+
+        found = self.memo.get(id(tree))
+        if found is not None:
+            return found[1]
+
+        tag = tree[0] if tree else None
+        if tag == 'loop':
+            parts = [tag, tree[1], self.neutral_key(tree[2])]
+        elif tag == 'slot_after':
+            parts = [tag, self.neutral_key(tree[1]), tree[2]]
+        elif tag == 'deep_phi':
+            parts = list(tree[:4])      # its fingerprint stands for the phi; the kept leaves repeat what it holds
+        elif tag == 'op' and tree[1] in EQUALITIES:
+            parts = [tag, tree[1], *sorted(self(operand) for operand in tree[2])]
+        else:
+            parts = [self(item) for item in tree]
+        digest = hashlib.blake2b(repr(parts).encode(), digest_size=FINGERPRINT_BYTES).digest()
+        self.memo[id(tree)] = (tree, digest)    # the tree kept alive, so its id is not reused
+        return digest
+
+
+def merge(join: tuple, states: list[tuple[int, State]], fingerprints: Fingerprints) -> State:
     """A join's entry state from its predecessors' (terminal address, exit state): a key on which they agree keeps its
-    value, any other a phi over the predecessors ordered by terminal address (past PHI_DEPTH an opaque leaf of the
-    join). neutral_key names a layer's key the way every layer does"""
+    value, any other a phi over the predecessors ordered by terminal address. Past PHI_DEPTH the phi becomes a leaf,
+    ('deep_phi', join, key, fingerprint, kept leaves): its fingerprint compares it whole, and its loop leaves and
+    addresses stay visible, so the loop values and pointees it reads are still compared"""
+    neutral_key = fingerprints.neutral_key
     keys = set().union(*(state.items.keys() for _, state in states))
     merged = State()
     for key in keys:
@@ -93,6 +128,10 @@ def merge(join: tuple, states: list[tuple[int, State]], neutral_key) -> State:
             continue
 
         phi = ('phi', join, tuple(sorted(values, key=lambda pair: pair[0])))
-        merged.items[key] = phi if phi_depth(phi) <= PHI_DEPTH else ('deep_phi', join, neutral_key(key))
+        if phi_depth(phi) <= PHI_DEPTH:
+            merged.items[key] = phi
+        else:
+            kept = dict.fromkeys(leaf for tag in DEEP_PHI_KEPT_LEAVES for leaf in tagged_leaves(phi, tag))
+            merged.items[key] = ('deep_phi', join, neutral_key(key), fingerprints(phi), tuple(kept))
 
     return merged

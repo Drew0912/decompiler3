@@ -57,6 +57,7 @@ __all__ = [
     'MLILPhi',
     'iter_ssa_reads',
     'iter_ssa_defs',
+    'exit_register_versions',
     'DominanceAnalysis',
     'SSAConstructor',
     'SSADeconstructor',

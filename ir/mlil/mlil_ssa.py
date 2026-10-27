@@ -105,6 +105,75 @@ def iter_ssa_defs(function: MediumLevelILFunction) -> Iterator[tuple[MLILVariabl
                 yield inst.dest, inst, block, index
 
 
+def exit_register_versions(function: MediumLevelILFunction) -> set[MLILVariableSSA]:
+    """The register versions the function's returns leave for its caller, which can read a register after the call:
+    live although nothing in the function reads them (a register outlives the function, as a global does). The result
+    register is left out: a return passes it as its value"""
+    registers = [var for index, var in function.register_vars.items() if index != function.result_register]
+    if not registers:
+        return set()
+
+    definitions = {var: definition for var, definition, _, _ in iter_ssa_defs(function)}
+    outputs = {inst.output for inst in function.iter_instructions()
+               if isinstance(inst, MediumLevelILCall) and inst.output is not None}
+    versions = set()
+    for block in function.basic_blocks:
+        if block.instructions and isinstance(block.instructions[-1], MLILRet):
+            for var in registers:
+                version = reaching_version(function, block, var)
+                if version is not None and holds_own_write(version, definitions, outputs):
+                    versions.add(version)
+
+    return versions
+
+
+def holds_own_write(version: MLILVariableSSA, definitions: dict, outputs: set) -> bool:
+    """Whether version can hold a value the function wrote: an assignment, a call's output, or a phi over one. A phi
+    over only the incoming value and calls' clobbers (a loop the return follows) holds none of the function's"""
+    pending, seen = [version], {version}
+    while pending:
+        current = pending.pop()
+        if current in outputs:
+            return True
+        definition = definitions.get(current)
+        if isinstance(definition, MLILSetVarSSA) and not isinstance(definition.value, MLILUndef):
+            return True
+        if isinstance(definition, MLILPhi):
+            for source, _ in definition.sources:
+                if source not in seen:
+                    seen.add(source)
+                    pending.append(source)
+
+    return False
+
+
+def reaching_version(function: MediumLevelILFunction, block: MediumLevelILBasicBlock,
+                     var: MLILVariable) -> MLILVariableSSA | None:
+    """var's version at the end of block if this function wrote it: None for the value the function came in with or
+    one a call may have clobbered (the callee's). The call is the barrier, not its pseudo-definition, which dead-code
+    elimination drops while the call stays. Where the predecessors bring different versions SSA put a phi, so without
+    one every predecessor brings the same: the first definition found walking back is it"""
+    pending, visited = [block], {block}
+    while pending:
+        current = pending.pop()
+        for inst in reversed(current.instructions):
+            if isinstance(inst, MLILSetVarSSA) and inst.var.base_var == var:
+                return None if isinstance(inst.value, MLILUndef) else inst.var
+            if isinstance(inst, MLILPhi) and inst.dest.base_var == var:
+                return inst.dest
+            if isinstance(inst, MediumLevelILCall):
+                if inst.output is not None and inst.output.base_var == var:
+                    return inst.output
+                if function.call_may_clobber(inst, var):
+                    return None
+        for predecessor in current.incoming_edges:
+            if predecessor not in visited:
+                visited.add(predecessor)
+                pending.append(predecessor)
+
+    return None
+
+
 # ============================================================================
 # Dominance Analysis (Iterative)
 # ============================================================================

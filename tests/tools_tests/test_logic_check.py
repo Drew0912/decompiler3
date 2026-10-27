@@ -25,6 +25,7 @@ from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 import logic_check
 from logic_check.evaluation import FUNCTION_ENTRY, Branch, Effect, Facts
 from logic_check.post_dominators import EXIT, control_dependence, immediate_post_dominators
+from logic_check.state import PHI_DEPTH
 from logic_check.trees import const, op, truth
 
 GLOBAL_A, GLOBAL_B, GLOBAL_C = 1, 2, 3
@@ -32,6 +33,7 @@ MESSAGE = 'this'
 LOOP_LIMIT = 3
 OUT_INITIAL = 1
 REG_INDEX = 5
+DEEP_INITIAL = 1
 ENDLESS_TAIL_PARAMETERS = 2
 
 
@@ -111,6 +113,20 @@ def initialised_out_parameter_function() -> tuple[Asm, int]:
     asm.label('after'); asm.load_stack(-WORD_SIZE); asm.set_global(0)
     asm.pop(WORD_SIZE); return_nothing(asm)
     return asm, 1
+
+
+def deep_join_function() -> tuple[Asm, int]:
+    """v = DEEP_INITIAL; then PHI_DEPTH + 1 times: if GLOBAL[i]: v = DEEP_INITIAL + i + 1; GLOBAL[0] = v: the value
+    stored merges more joins deep than a phi is spelled out"""
+    asm = Asm()
+    asm.push_int(DEEP_INITIAL)
+    for index in range(PHI_DEPTH + 1):
+        asm.load_global(index); asm.jz(f'skip{index}')
+        asm.push_int(DEEP_INITIAL + index + 1); asm.pop_to(-WORD_SIZE)
+        asm.label(f'skip{index}')
+    asm.load_stack(-WORD_SIZE); asm.set_global(0)
+    asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 0
 
 
 def endless_tail_function() -> tuple[Asm, int]:
@@ -293,6 +309,14 @@ class TestPlantedBugs(unittest.TestCase):
                          and isinstance(inst.value, MLILConst) and inst.value.value == OUT_INITIAL)[2]
             init.value = MLILConst(OUT_INITIAL + 1)
         self.check(initialised_out_parameter_function, mutate, 'arg_differs')
+
+    def test_value_merged_past_the_phi_depth_changed(self):
+        """v's initial value changed: it reaches the store only through more joins than a phi spells out"""
+        def mutate(mlil):
+            init = first(mlil, lambda inst: isinstance(inst, MLILSetVar) and isinstance(inst.value, MLILConst)
+                         and inst.value.value == DEEP_INITIAL)[2]
+            init.value = MLILConst(DEEP_INITIAL + PHI_DEPTH + 2)
+        self.check(deep_join_function, mutate, 'arg_differs')
 
     def test_register_written_before_the_return(self):
         """A register the bytecode leaves alone written before the return: the caller can read it after the call"""

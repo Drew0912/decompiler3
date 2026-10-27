@@ -797,6 +797,7 @@ class MediumLevelILFunction:
         self.locals: dict[str, MLILVariable] = {}  # Local variables
         self.register_vars: dict[int, MLILVariable] = {}  # VM register index -> variable
         self.global_vars: dict[int, MLILVariable] = {}  # Global var table index -> variable
+        self.result_register: int | None = None  # The register a return's value travels in, passed as that value
         self.llil_function: 'LowLevelILFunction | None' = None
         self.var_types: dict[str, MLILType] = {}  # Variable name -> inferred type
 

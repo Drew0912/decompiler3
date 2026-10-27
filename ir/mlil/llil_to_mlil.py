@@ -34,6 +34,8 @@ UNARY_OP_TYPES = {
 class LLILToMLILTranslator:
     """LLIL to MLIL translator (base class)"""
 
+    RESULT_REGISTER: int | None = None      # the VM's result register, if a return's value travels in one
+
     def __init__(self):
         self.builder = MLILBuilder()
         self.llil_func: LowLevelILFunction | None = None
@@ -44,6 +46,7 @@ class LLILToMLILTranslator:
         self.llil_func = llil_func
         self.builder.create_function(llil_func.name, llil_func.start_addr, llil_func.params)
         self.builder.function.llil_function = llil_func
+        self.builder.function.result_register = self.RESULT_REGISTER
 
         for llil_block in llil_func.basic_blocks:
             self.block_map[llil_block] = self.builder.create_block(llil_block.start, llil_block.label)

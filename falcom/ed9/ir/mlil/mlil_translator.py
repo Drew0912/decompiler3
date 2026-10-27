@@ -15,6 +15,8 @@ RESULT_REG_INDEX = 0
 class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
     """Falcom-specific LLIL to MLIL translator"""
 
+    RESULT_REGISTER = RESULT_REG_INDEX
+
     def _result_reg_var(self) -> MLILVariable:
         """Variable modelling the VM result register"""
         return self.builder.get_or_create_register_var(RESULT_REG_INDEX)
