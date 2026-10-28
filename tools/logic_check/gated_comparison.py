@@ -10,7 +10,7 @@ from .compare import (
 )
 from .decision_diagrams import DiagramOverflow, Diagrams
 from .facts import Effect, Facts
-from .formulas import disjunction
+from .formulas import TRUE, conjunction, disjunction, negation
 from .neutral_names import Namer
 
 RENDERED_FORMULA_CHARACTERS = 400   # a gated detail's formula, cut (render)
@@ -57,10 +57,11 @@ def compare_gated_effects(reference: Facts, checked: Facts, namings: Namings, di
 
         formulas = (disjunction(effect.guard_formula for effect in expected),
                     disjunction(effect.guard_formula for effect in found))
-        category = compare_formulas(namings, formulas)
+        premises = termination_premises(reference, checked, [*expected, *found])
+        category = compare_under(namings, formulas, premises)
         if category is not None:
             differences.append(Difference(category, key, tuple(render(formula) for formula in formulas)))
-        compare_passed(namings, key, (expected, found), differences)
+        compare_passed(namings, key, (expected, found), differences, premises)
 
 
 def compare_gated_loop_values(reference: Facts, checked: Facts, namings: Namings, differences: list):
@@ -81,6 +82,30 @@ def compare_unstructured(checked: Facts, differences: list):
     """Every reachable jump HLIL could not express"""
     for jump in checked.unstructured:
         differences.append(Difference('unstructured_jump', (jump.address, 'unstructured'), jump.target))
+
+
+def termination_premises(reference: Facts, checked: Facts, occurrences: list[Effect]) -> tuple:
+    """Each side's premise that the loops before an effect end: a loop that runs ends through one of its exits, since an
+    iteration that goes round is never the last, and the atoms of a formula stand for no iteration in particular. The
+    loops are those some occurrence is after and none, on either side, is inside: an effect inside a loop runs in the
+    iterations that go round"""
+    after = set().union(*(effect.after for effect in occurrences))
+    inside = set().union(*(effect.inside for effect in occurrences))
+    names = sorted(after - inside, key=repr)
+    return tuple(conjunction(*(disjunction([negation(run), ends]) for run, ends in
+                               (facts.loop_runs[name] for name in names if name in facts.loop_runs)))
+                 for facts in (reference, checked))
+
+
+def compare_under(namings: Namings, formulas: tuple, premises: tuple) -> str | None:
+    """compare_formulas, and where it finds a difference, again with each side's formula under its premise: that
+    answer is the answer"""
+    category = compare_formulas(namings, formulas)
+    if category in (None, 'guard_unchecked') or premises == (TRUE, TRUE):
+        return category
+
+    under = tuple(conjunction(formula, premise) for formula, premise in zip(formulas, premises))
+    return compare_formulas(namings, under)
 
 
 def compare_formulas(namings: Namings, formulas: tuple) -> str | None:
@@ -111,7 +136,7 @@ def equivalent(namers: tuple[Namer, Namer], formulas: tuple) -> bool:
     return Diagrams().same(keys[0].structure(formulas[0], {}), keys[1].structure(formulas[1], {}))
 
 
-def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences: list):
+def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences: list, premises: tuple):
     """The values an effect's occurrences pass, each argument and storage key on its own: equal under neutral names,
     or, a gated choice lifted into the formula its value is passed under (HLIL may pass from one return what MLIL
     passes from two, merged at the join before it), the same values each under one formula"""
@@ -121,7 +146,7 @@ def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences
     if single and not value_differences(namings.exact, expected[0], found[0]):
         return
 
-    outcomes = {component: compare_component(namings, occurrences, component)
+    outcomes = {component: compare_component(namings, occurrences, component, premises)
                 for component in effect_components([*expected, *found])}
     differing = [component for component, outcome in outcomes.items() if outcome == category]
     unchecked = [component for component, outcome in outcomes.items() if outcome == 'guard_unchecked']
@@ -136,7 +161,7 @@ def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences
                                                                            in outcomes.items() if outcome]))
 
 
-def compare_component(namings: Namings, occurrences: tuple, component) -> str | None:
+def compare_component(namings: Namings, occurrences: tuple, component, premises: tuple) -> str | None:
     """None when both sides pass the same values for component (an argument's index or a storage key) under the same
     formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted"""
     category = value_category(occurrences[0][0])
@@ -150,7 +175,7 @@ def compare_component(namings: Namings, occurrences: tuple, component) -> str | 
         if len(passed[0]) == 1:
             outcomes = set()        # one value, passed wherever the effect runs: its formula compared already
         else:
-            outcomes = {compare_formulas(namings, (disjunction(passed[0][value]), disjunction(passed[1][value])))
+            outcomes = {compare_under(namings, (disjunction(passed[0][value]), disjunction(passed[1][value])), premises)
                         for value in passed[0]} - {None}
         if not outcomes:
             return None if namers is namings.exact else 'condition_ordering_inverted'

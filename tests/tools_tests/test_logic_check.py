@@ -20,8 +20,8 @@ from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
 from ir.core.il_literals import SourceFloat
 from ir.hlil.hlil import (
     BinaryOp, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall, HLILConst, HLILContinue, HLILDoWhile,
-    HLILExprStmt, HLILIf, HLILReturn, HLILSwitch, HLILUnstructured, HLILVar, HLILVariable, HLILWhile, VariableKind,
-    iter_tree,
+    HLILExprStmt, HLILIf, HLILReturn, HLILSwitch, HLILUnaryOp, HLILUnstructured, HLILVar, HLILVariable, HLILWhile,
+    UnaryOp, VariableKind, iter_tree,
 )
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
@@ -43,7 +43,8 @@ from logic_check.post_dominators import (
 from logic_check.state import PHI_DEPTH
 from logic_check.trees import const, constant_truth, op, truth
 
-GLOBAL_A, GLOBAL_B, GLOBAL_C = 1, 2, 3
+GLOBAL_A, GLOBAL_B, GLOBAL_C, GLOBAL_D = 1, 2, 3, 4
+STARTED = 5
 MESSAGE = 'this'
 LOOP_LIMIT = 3
 STORED = 3
@@ -406,6 +407,59 @@ def store_then_wait_loop_function() -> tuple[Asm, int]:
     return asm, 1
 
 
+def split_exit_value_function() -> tuple[Asm, int]:
+    """x = 0; if GLOBAL_A: (x = STARTED; while GLOBAL_B && x < LOOP_LIMIT: callee(1)); callee(x): the && exit HLIL
+    splits in two tests, x merged after the loop from both exits and from the skip"""
+    asm = Asm()
+    asm.push_int(0)
+    asm.load_global(GLOBAL_A); asm.jz('join')
+    asm.push_int(STARTED); asm.pop_to(-WORD_SIZE)
+    asm.label('head'); asm.load_global(GLOBAL_B); asm.load_stack(-WORD_SIZE); asm.push_int(LOOP_LIMIT); asm.lt()
+    asm.logical_and(); asm.jz('join')
+    call(asm, 'body', 1); asm.jmp('head')
+    asm.label('join'); asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.load_stack(-3 * WORD_SIZE)
+    asm.call(CALLEE_ID)
+    asm.label('back'); asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
+def two_exits_two_targets_function() -> tuple[Asm, int]:
+    """while 1: (callee(1); if GLOBAL_A: break; callee(2); if GLOBAL_B: return); callee(3): the code after the loop
+    and the return are reached by different exits"""
+    asm = Asm()
+    asm.label('head'); call(asm, 'one', 1)
+    asm.load_global(GLOBAL_A); asm.jnz('out')
+    call(asm, 'two', 2)
+    asm.load_global(GLOBAL_B); asm.jnz('ret')
+    asm.jmp('head')
+    asm.label('out'); call(asm, 'three', 3)
+    asm.label('ret'); return_nothing(asm)
+    return asm, 1
+
+
+def split_inner_in_outer_function() -> tuple[Asm, int]:
+    """while GLOBAL_A: (while GLOBAL_B && GLOBAL_C: callee(1)): the outer loop goes round when the inner one ends"""
+    asm = Asm()
+    asm.label('outer'); asm.load_global(GLOBAL_A); asm.jz('done')
+    asm.label('inner'); asm.load_global(GLOBAL_B); asm.load_global(GLOBAL_C); asm.logical_and(); asm.jz('outer')
+    call(asm, 'body', 1); asm.jmp('inner')
+    asm.label('done'); return_nothing(asm)
+    return asm, 1
+
+
+def guarded_store_before_wait_function() -> tuple[Asm, int]:
+    """while GLOBAL_A: (callee(1); if GLOBAL_D: GLOBAL_C = 1; while GLOBAL_B: ;): a store before an effect-free inner
+    loop, in an outer loop"""
+    asm = Asm()
+    asm.label('outer'); asm.load_global(GLOBAL_A); asm.jz('done')
+    call(asm, 'body', 1)
+    asm.load_global(GLOBAL_D); asm.jz('inner')
+    asm.push_int(1); asm.set_global(GLOBAL_C)
+    asm.label('inner'); asm.load_global(GLOBAL_B); asm.jz('outer'); asm.jmp('inner')
+    asm.label('done'); return_nothing(asm)
+    return asm, 1
+
+
 def branch_then_loop_function() -> tuple[Asm, int]:
     """x = 1 if GLOBAL_A else 2; while x < LOOP_LIMIT: x = x + 1; callee(x)"""
     asm = Asm()
@@ -717,6 +771,14 @@ def first_node(hlil, kind: type, predicate: Callable = lambda node: True):
     return found[0]
 
 
+def replace_expression(hlil, old, new):
+    """new in place of old, wherever the HLIL holds it"""
+    for node in iter_tree(hlil.body):
+        for field in ('lhs', 'rhs', 'operand', 'condition'):
+            if getattr(node, field, None) is old:
+                setattr(node, field, new)
+
+
 def makes_a_call(block) -> bool:
     return any(isinstance(node, HLILCall) for node in iter_tree(block))
 
@@ -916,6 +978,27 @@ class TestPlantedHLILBugs(unittest.TestCase):
             first_node(hlil, HLILIf).true_block.statements.clear()
         self.check(and_condition_function, mutate, 'missing_effect')
 
+    def test_store_before_an_inner_wait_made_depend_on_it(self):
+        """The loop after the store ends in no iteration this check models, but only the wait's end orders them: the
+        premise that a loop ends is for what comes after the loop's exits, not for what runs before it in an
+        enclosing iteration"""
+        def mutate(hlil):
+            is_store_test = lambda node: node.false_block is None and not makes_a_call(node.true_block)
+            store = first_node(hlil, HLILIf, is_store_test)
+            wait = HLILUnaryOp(UnaryOp.NOT, HLILVar(HLILVariable(kind=VariableKind.GLOBAL, index=GLOBAL_B)))
+            store.condition = HLILBinaryOp(BinaryOp.AND, store.condition, wait)
+        self.check(guarded_store_before_wait_function, mutate, 'guard_differs')
+
+    def test_call_after_a_split_exit_loop_made_depend_on_it(self):
+        """A test of the loop, GLOBAL_B, made the guard of the call after it: not the same function even once a loop
+        that runs ends"""
+        def mutate(hlil):
+            statements = hlil.body.statements
+            index = next(index for index, stmt in enumerate(statements) if isinstance(stmt, HLILExprStmt))
+            gate = HLILVar(HLILVariable(kind=VariableKind.GLOBAL, index=GLOBAL_B))
+            statements[index] = HLILIf(gate, HLILBlock([statements[index]]))
+        self.check(split_exit_value_function, mutate, 'guard_differs')
+
     def test_effect_free_loop_moved_under_a_condition(self):
         """The wait made conditional: it runs no more whenever GLOBAL_B is 0"""
         def mutate(hlil):
@@ -953,6 +1036,25 @@ class TestHLILStructures(unittest.TestCase):
 
     def test_inner_arms_joined_first(self):
         self.assertEqual(hlil_categories(*mlil_and_hlil(nested_arms_function)), set())
+
+    def test_value_after_a_split_exit_loop(self):
+        """The value merged after the loop from the two tests HLIL splits its exit into, each taken in one iteration:
+        a loop that runs ends through one of them"""
+        self.assertEqual(hlil_categories(*mlil_and_hlil(split_exit_value_function)), set())
+
+    def test_split_exit_with_an_ordering_inverted(self):
+        """The same, with HLIL's own inversion of an ordering: counted as that, not as a difference of the value"""
+        mlil, hlil = mlil_and_hlil(split_exit_value_function)
+        ordering = first_node(hlil, HLILBinaryOp, lambda node: node.op == BinaryOp.LT)
+        inverted = HLILBinaryOp(BinaryOp.EQ, HLILBinaryOp(BinaryOp.GE, ordering.lhs, ordering.rhs), HLILConst(0))
+        replace_expression(hlil, ordering, inverted)
+        self.assertEqual(hlil_categories(mlil, hlil), {'condition_ordering_inverted'})
+
+    def test_loop_with_two_exits_to_two_targets(self):
+        self.assertEqual(hlil_categories(*mlil_and_hlil(two_exits_two_targets_function)), set())
+
+    def test_inner_loop_split_in_an_outer_one(self):
+        self.assertEqual(hlil_categories(*mlil_and_hlil(split_inner_in_outer_function)), set())
 
     def test_constant_loop_test(self):
         self.assertEqual(hlil_categories(*mlil_and_hlil(constant_loop_test_function)), set())

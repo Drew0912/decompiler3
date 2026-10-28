@@ -58,6 +58,8 @@ def analyze(layer, *, gated: bool = False) -> Facts:
             if gated:
                 effect.guard_formula = naming.guard_formula(block, facts)
 
+    if gated:
+        naming.mark_loops(order, effects_of, facts)
     loop_effects = {header: naming.loop_effects(header, facts) for header in widened}
     # A loop is a place in the order even where it makes no effect of its own: a store moved past a wait loop
     runs_first = {block: [*loop_effects.get(block, [])[:1], *effects] for block, effects in effects_of.items()}

@@ -17,6 +17,8 @@ class Effect:
     target: Hashable
     args: tuple
     guard: frozenset = frozenset()
+    inside: frozenset = frozenset()     # gated: the loops (names) whose body it is in (GatedNaming.mark_loops)
+    after: frozenset = frozenset()      # gated: the loops (names) whose exits lead to it
     storage: tuple = ()     # what it passes on besides args, (neutral key, value) pairs: a call the locals they point
                             # to (State.local_values), a return the other registers (State.return_registers)
     guard_formula: tuple = TRUE     # gated: the formula it runs under (GatedNaming.guard_formula)
@@ -42,6 +44,8 @@ class Facts:
     # (header, key, incoming edge) -> each copy of the loop's (formula it runs under, value): HLIL may rebuild one
     loop_values: dict[tuple, list[tuple]] = field(default_factory=dict)
     neutral_key: Callable[[tuple], tuple] | None = None    # a layer's own storage key the way every layer names it
+    # gated: loop name -> (the formula it runs under, the formula it ends under: an edge leaving its body is taken)
+    loop_runs: dict[Hashable, tuple] = field(default_factory=dict)
     unstructured: list = field(default_factory=list)        # HLIL: the reachable jumps it could not express
 
     def neutral(self, key: tuple) -> tuple:

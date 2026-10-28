@@ -108,6 +108,7 @@ class GatedNaming:
         self.left_loops = {}    # (branch block, target) -> the header of the outermost loop that edge leaves, or None
         self.arms = self.earlier_arms(order, dependence)
         self.within_memo, self.within_memo_facts = {}, None
+        self.inside_of, self.after_of = {}, {}     # block -> the loops (names) it is in, the loops it follows
 
     def branch_blocks(self, order: list) -> dict:
         """branch address -> the block ending in it"""
@@ -266,6 +267,66 @@ class GatedNaming:
         """The formula block runs under"""
         return self.within(self.layer.entry, block, facts)
 
+    def mark_loops(self, order: list, effects_of: dict, facts: Facts):
+        """Each loop's formulas (facts.loop_runs) and, for every effect, the loops it is inside and after (place)"""
+        for header, body in self.bodies.items():
+            name = self.header(header)
+            if name is None:
+                continue
+
+            run = self.guard_formula(header, facts)
+            ends = disjunction(self.exit_taken(block, successor, facts) for block, successor in self.exit_edges(body))
+            copies = facts.loop_runs.get(name)      # HLIL may rebuild a loop: its copies share one stamp
+            facts.loop_runs[name] = (run, ends) if copies is None else (disjunction([copies[0], run]),
+                                                                        disjunction([copies[1], ends]))
+            for block in body:
+                self.inside_of.setdefault(block, set()).add(name)
+            for block in self.after_loop(header, body):
+                self.after_of.setdefault(block, set()).add(name)
+
+        for block in order:
+            for effect in effects_of[block]:
+                self.place(effect, block)
+
+    def exit_edges(self, body: set) -> list[tuple]:
+        """(block, successor) of each edge leaving the loop's body"""
+        return [(block, successor) for block in sorted(body, key=self.position.__getitem__)
+                for successor in dict.fromkeys(self.layer.successors(block)) if successor not in body]
+
+    def after_loop(self, header, body: set) -> set:
+        """The blocks reached from the loop's exits within one iteration of the loops around it: an enclosing loop's
+        header ends that iteration, so it is reached and not passed, and what runs before the loop in the iteration is
+        not after it"""
+        enclosing = {other for other, other_body in self.bodies.items() if other is not header and header in other_body}
+        reached = {successor for _, successor in self.exit_edges(body)}
+        pending = list(reached)
+        while pending:
+            block = pending.pop()
+            if block in enclosing or block in body:
+                continue
+
+            for successor in self.layer.successors(block):
+                if successor not in reached:
+                    reached.add(successor)
+                    pending.append(successor)
+
+        return reached - body
+
+    def exit_taken(self, source, target, facts: Facts) -> tuple:
+        """The formula the edge from source to target is taken under in some iteration"""
+        branch = self.layer.branch(source)
+        inside = self.guard_formula(source, facts)
+        if branch is None or branch[1] is branch[2]:
+            return inside
+
+        return conjunction(inside, literal(facts.branches[branch[0]].condition, target is branch[1]))
+
+    def place(self, effect: Effect, block, own=None):
+        """Which loops effect, made in block, is inside and after; a loop's pseudo-effect (own: its name) is neither of
+        its own loop"""
+        effect.inside = frozenset(self.inside_of.get(block, ())) - {own}
+        effect.after = frozenset(self.after_of.get(block, ())) - {own}
+
     def latches(self, header) -> list:
         return [predecessor for predecessor in self.layer.predecessors(header)
                 if predecessor in self.position and self.position[predecessor] >= self.position[header]]
@@ -280,8 +341,12 @@ class GatedNaming:
         """A loop's pseudo-effects, named by its header: 'loop' under the formula the loop runs under, 'loop continue'
         under the one it goes round again under"""
         name = self.header(header)
-        return [Effect(name, 'loop', None, (), guard_formula=self.guard_formula(header, facts)),
-                Effect(name, 'loop continue', None, (), guard_formula=self.going_round(header, facts))]
+        effects = [Effect(name, 'loop', None, (), guard_formula=self.guard_formula(header, facts)),
+                   Effect(name, 'loop continue', None, (), guard_formula=self.going_round(header, facts))]
+        for effect in effects:
+            self.place(effect, header, own=name)
+
+        return effects
 
     def loop_values(self, header, keys: set, exit_states: dict, facts: Facts, fingerprints: Fingerprints):
         """The values the loop carries in under the formula it runs under, and round under the one it goes round again

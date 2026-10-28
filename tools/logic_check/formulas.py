@@ -53,6 +53,26 @@ def disjunction(formulas) -> tuple:
     return items[0] if len(items) == 1 else ('or', tuple(items))
 
 
+def negation(formula, memo: dict | None = None) -> tuple:
+    """formula's negation, moved to its literals (De Morgan's)"""
+    memo = {} if memo is None else memo
+    found = memo.get(id(formula))
+    if found is not None:
+        return found[1]
+
+    if formula == TRUE:
+        result = FALSE
+    elif formula == FALSE:
+        result = TRUE
+    elif formula[0] == 'lit':
+        result = ('lit', formula[1], not formula[2])
+    else:
+        negated = [negation(item, memo) for item in formula[1]]
+        result = disjunction(negated) if formula[0] == 'and' else conjunction(*negated)
+    memo[id(formula)] = (formula, result)       # the formula kept alive, so its id is not reused
+    return result
+
+
 class FormulaKeys:
     """One side's formulas' keys: (variables, table), the table a bit per row of the variables' values, the first
     variable the fastest, as little-endian bytes; a variable is ('eq', value digest, constant digests), whose values are

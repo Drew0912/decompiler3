@@ -59,11 +59,10 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
 - **The check's own artifacts** (no HLIL bug among them; Step 5c removes them, one kind a sub-step; K1, a dead arm
   of `if (x != 0 && 0 != 0)` counted in `AniBtlKnockDown`, `-Loop`, `-End` of sora1 `ani/chr5004.dat` and `TKFront` of
   `scena/a1011.dat` in kuro1, kuro2 and kai1, is gone since 5c-1: MLIL's view folds a condition with a decisive constant
-  operand as HLIL does):
+  operand as HLIL does; K3, a value after a loop whose exit HLIL splits in two tests, in `AniBtlChaseAttack` of sora2
+  `ani/chr0003`, `chr0125`, `chr5006` and `chr5106`, is gone since 5c-2: a loop that runs ends, see the limitations):
   - K2, the registers at a return HLIL merges with another (`return_differs`): `MayaEvent*` (sora2 `mp5005`,
     `mp1051`; kai1 `e5000`), `Archive01`, `-02`, `-04`, `Svis00`, `Dlc00`, `Etc00` (kai1, kuro2 `scena/a1018.dat`).
-  - K3, a value after a loop whose exit HLIL splits in two tests (`arg_differs`): `AniBtlChaseAttack` (sora2
-    `ani/chr0003`, `chr0125`, `chr5006`, `chr5106`).
   - K4, a gated choice inside a condition, compared by its shape (`guard_differs`, `arg_differs`):
     `FdungeonStartVoicePlay`, `OnQuestEnd` (kai1 `scena/system.dat`).
   - K5, formulas too large: `guard_unchecked` in `MapJumpCheck` (kuro1 `system.dat`), `InitBGM` (kuro2 `sound.dat`),
@@ -93,6 +92,11 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
   already covers adds nothing the check sees (the full corpus has 445 calls HLIL repeats, in 26 functions).
 - A loop is a place in the order of effects even where it makes no effect of its own: an effect moved past one is
   `order_differs` (6 such loops on the full corpus).
+- A loop that runs is taken to end (a formula's atoms stand for no iteration in particular): where the formulas of an
+  effect after a loop differ, they are compared again with each side's premise that every loop before the effect, and
+  none it is inside of, takes one of its exits when it runs. So the iterations that go round again are never the last,
+  and HLIL splitting a loop's `&&` exit in two tests, or repeating the code after the loop in each exit, is no finding.
+  A loop that never ends is not checked.
 - Only natural loops (a header dominating the edge back to it) have a body. In an irreducible region, which no
   real script has, the formulas of the blocks outside natural loops are those of one pass through the region, so a
   clean result there proves less (the fuzz's irreducible graphs compare without error).

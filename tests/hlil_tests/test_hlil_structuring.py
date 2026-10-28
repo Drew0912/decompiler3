@@ -429,6 +429,7 @@ class TestLoopExitsReachingAnOuterMerge(unittest.TestCase):
                 self.assertEqual(classify(func, hlil), ('ok', None))
                 self.assertEqual(unstructured_nodes(hlil, reachable_only=False), [])
                 self.assertTrue(check_function(func, hlil).ok)
+                self.assertEqual(compare_mlil_hlil(func, hlil), [])
 
 
 class TestUnstructuredNodes(unittest.TestCase):

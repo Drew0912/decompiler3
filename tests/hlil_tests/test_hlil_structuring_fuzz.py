@@ -175,14 +175,17 @@ class TestStructuringFuzz(unittest.TestCase):
         self.assertEqual(disagree, [])
 
     def test_logic_check_agrees_with_the_runs(self):
-        """It fails on no CFG (an irreducible one included), and reports an unstructured jump where HLIL left a node
-        and nowhere else"""
+        """It fails on no CFG (an irreducible one included), reports an unstructured jump where HLIL left a node and
+        nowhere else, and finds nothing in a reducible CFG whose runs HLIL keeps (an irreducible region's formulas
+        are not proved: docs/VALIDATOR_GUIDE.md)"""
         disagree = []
-        for (seed, _, _, _, _, nodes), categories in zip(self.results, self.logic_categories):
+        for (seed, blocks, verdict, _, _, nodes), categories in zip(self.results, self.logic_categories):
             if isinstance(categories, Exception):
                 disagree.append((seed, 'the check raised', repr(categories)[:80]))
             elif ('unstructured_jump' in categories) != bool(nodes):
                 disagree.append((seed, 'nodes', len(nodes), 'reported', sorted(categories)))
+            elif verdict == 'ok' and is_reducible(blocks) and categories:
+                disagree.append((seed, 'an ok run on a reducible CFG, reported', sorted(categories)))
 
         self.assertEqual(disagree, [])
 
