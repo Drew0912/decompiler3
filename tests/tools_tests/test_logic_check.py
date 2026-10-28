@@ -31,11 +31,12 @@ from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 import logic_check
-from logic_check import compare, formulas
-from logic_check.compare import Namer
-from logic_check.evaluation import FUNCTION_ENTRY, RETURN_KEY, Branch, Effect, Facts
+from logic_check import compare, decision_diagrams, formulas
+from logic_check.facts import RETURN_KEY, Branch, Effect, Facts
+from logic_check.naming import FUNCTION_ENTRY
+from logic_check.neutral_names import Fingerprints, Namer
 from logic_check.post_dominators import EXIT, control_dependence, exit_blocks, immediate_post_dominators
-from logic_check.state import PHI_DEPTH, Fingerprints
+from logic_check.state import PHI_DEPTH
 from logic_check.trees import const, constant_truth, op, truth
 
 GLOBAL_A, GLOBAL_B, GLOBAL_C = 1, 2, 3
@@ -51,7 +52,7 @@ EARLY_ARG = 9
 SKIPPED = 1
 CHAIN_CASES = 3                 # HLIL's if-to-switch takes a chain of at least SWITCH_MIN_CASES tests
 NESTED_TESTS = 17               # conditions one guard runs under: past formulas.ROW_CAP's 2 ** 16 rows
-DIAGRAM_NODES_TOO_FEW = 2       # a formulas.DIAGRAM_NODE_CAP no decision diagram fits in (its two terminals)
+DIAGRAM_NODES_TOO_FEW = 2       # a decision_diagrams.DIAGRAM_NODE_CAP no decision diagram fits in (its two terminals)
 
 
 # === Assembled functions ===
@@ -794,7 +795,7 @@ class TestPlantedHLILBugs(unittest.TestCase):
 
         mlil, hlil = mlil_and_hlil(nested_tests_function)
         mutate(hlil)
-        with mock.patch.object(formulas, 'DIAGRAM_NODE_CAP', DIAGRAM_NODES_TOO_FEW):
+        with mock.patch.object(decision_diagrams, 'DIAGRAM_NODE_CAP', DIAGRAM_NODES_TOO_FEW):
             self.assertIn('guard_unchecked', hlil_categories(mlil, hlil))
 
     def test_unstructured_jump(self):
@@ -861,7 +862,8 @@ class TestPlantedHLILBugs(unittest.TestCase):
         test.condition = HLILBinaryOp(BinaryOp.AND, test.condition,
                                       HLILBinaryOp(BinaryOp.OR, copy.deepcopy(test.condition), other))
         self.assertEqual(hlil_categories(mlil, hlil), set())
-        with mock.patch.multiple(formulas, ROW_CAP=1, DIAGRAM_NODE_CAP=DIAGRAM_NODES_TOO_FEW):
+        with (mock.patch.object(formulas, 'ROW_CAP', 1),
+              mock.patch.object(decision_diagrams, 'DIAGRAM_NODE_CAP', DIAGRAM_NODES_TOO_FEW)):
             found = logic_check.compare_mlil_hlil(mlil, hlil)
         # The returned values' difference (its detail their components), not the return's guard's (its two formulas)
         values = [difference.category for difference in found
@@ -1105,11 +1107,12 @@ class TestFormulaKeys(unittest.TestCase):
                                             formulas.conjunction(formulas.literal(value, False), chained)])
         self.assertIsNone(self.keys.table_key(flat))
         self.assertEqual(self.keys(flat), self.keys(chained))
-        self.assertTrue(formulas.Diagrams().same(self.keys.structure(flat, {}), self.keys.structure(chained, {})))
+        structure = self.keys.structure
+        self.assertTrue(decision_diagrams.Diagrams().same(structure(flat, {}), structure(chained, {})))
 
         flipped = formulas.disjunction(formulas.literal(value, index != 0) for index, value in enumerate(values))
         self.assertNotEqual(self.keys(flipped), self.keys(flat))
-        self.assertFalse(formulas.Diagrams().same(self.keys.structure(flat, {}), self.keys.structure(flipped, {})))
+        self.assertFalse(decision_diagrams.Diagrams().same(structure(flat, {}), structure(flipped, {})))
 
 
 class TestPostDominators(unittest.TestCase):

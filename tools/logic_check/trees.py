@@ -6,7 +6,7 @@ a read after a given write (`ENTRY` for none); ('slot_after', key, address), an 
 ('phi', join, ((terminal address, value), ...)), or gated ('gamma', ((path condition, value), ...)), past a depth
 ('deep_phi', join, key, fingerprint, kept leaves) (state.merge); ('loop', header, key), a value at a loop header;
 ('undef', key); ('absent', key), storage a predecessor of a join never wrote; ('address', key); ('frame',), a call
-setup constant. Leaves name a layer's own storage only where the comparison renames them (compare.Namer), so equal
+setup constant. Leaves name a layer's own storage only where the comparison renames them (neutral_names.Namer), so equal
 trees mean the same value on every layer"""
 
 from typing import Iterator
@@ -31,7 +31,7 @@ def const(value) -> tuple:
 
 def op(name: str, operands) -> tuple:
     """An operation's tree; `!c`, `EZ c` and `c == 0` are one value (HLIL writes the first two as the third). == and
-    != are commutative: the comparison orders their operands (state.Fingerprints, compare.Namer)"""
+    != are commutative: the comparison orders their operands (neutral_names.Fingerprints, neutral_names.Namer)"""
     operands = tuple(operands)
     if name in TRUTH_TESTS:
         name, operands = 'EQ', (operands[0], const(0))

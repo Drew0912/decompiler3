@@ -11,7 +11,7 @@ from ir.mlil.mlil import (
     MLILStoreGlobal, MLILStoreReg, MLILSyscall, MLILUnaryOp, MLILUndef, MLILVar, MLILVariable,
     UNASSIGNED_SLOT_INDEX, walk,
 )
-from .evaluation import Branch, Effect, Facts
+from .facts import Branch, Effect, Facts
 from .post_dominators import back_edges
 from .state import MEMORY_EPOCH, RESULT_REGISTER, State
 from .trees import ENTRY, const, constant_truth, op

@@ -3,17 +3,14 @@
 Storage keys mean the same on every layer: ('stack', slot), ('param', n), ('reg', n), ('global', n); a layer's own
 storage with no counterpart (a renamed variable) keeps a key of its own, and only values read from it are compared"""
 
-import hashlib
-
-from .formulas import FALSE_KEY, FormulaKeys, disjunction
-from .trees import ENTRY, EQUALITIES, tagged_leaves
+from .neutral_names import Fingerprints
+from .trees import ENTRY, tagged_leaves
 
 REGISTER_COUNT = 16
 RESULT_REGISTER = 0
 GLOBAL_EPOCH = ('epoch', 'global')      # the address of the last call that may have written any global
 MEMORY_EPOCH = ('epoch', 'memory')      # the same for memory behind a pointer
 PHI_DEPTH = 3                           # a deeper phi becomes a leaf of its join holding the phi's fingerprint
-FINGERPRINT_BYTES = 16
 DEEP_PHI_KEPT_LEAVES = ('loop', 'address')  # what a deep phi's leaf keeps of the phi, for the comparison to find
 ESCAPED = 'escaped'                     # (ESCAPED, key) is set for a local whose address escaped
 
@@ -104,21 +101,6 @@ class State:
         self.items[MEMORY_EPOCH] = address
 
 
-def neutral_leaf(tree: tuple, neutral_key) -> tuple | None:
-    """A leaf naming a layer's own storage under neutral names - a loop value, an address-taken local after a call -
-    or a deep phi's leaf as its fingerprint stands for it (its kept leaves are the layer's own); None for any other
-    tree. Fingerprints and compare.Namer both rename by it, so a digest and a renamed tree agree"""
-    tag = tree[0] if tree else None
-    if tag == 'loop':
-        return ('loop', tree[1], neutral_key(tree[2]))
-    if tag == 'slot_after':
-        return ('slot_after', neutral_key(tree[1]), tree[2])
-    if tag == 'deep_phi':
-        return tree[:4]
-
-    return None
-
-
 def phi_depth(tree, memo: dict | None = None) -> int:
     """Joins nested in tree; memoised by identity: a tree shares its subtrees"""
     if not isinstance(tree, tuple):     # an epoch is a plain address
@@ -138,65 +120,6 @@ def phi_depth(tree, memo: dict | None = None) -> int:
         depth = 0
     memo[id(tree)] = depth
     return depth
-
-
-class Fingerprints:
-    """A layer's value trees and formulas digested the way the comparison sees them: a layer's own storage keys under
-    neutral names, == and != operands and those of a formula's and / or in any order, a gated choice by its values
-    and the function choosing each (gated_choice); equal digests mean equal trees. Memoised by identity, so a subtree
-    shared by many trees is digested once"""
-
-    def __init__(self, neutral_key):
-        self.neutral_key = neutral_key
-        self.memo = {}
-        self.keys = FormulaKeys(self)
-
-    def __call__(self, tree) -> bytes:
-        if not isinstance(tree, tuple):
-            return repr(tree).encode()
-
-        found = self.memo.get(id(tree))
-        if found is not None:
-            return found[1]
-
-        tag = tree[0] if tree else None
-        leaf = neutral_leaf(tree, self.neutral_key)
-        if leaf is not None:
-            parts = list(leaf)
-        elif tag == 'op' and tree[1] in EQUALITIES:
-            parts = [tag, tree[1], *sorted(self(operand) for operand in tree[2])]
-        elif tag in ('and', 'or'):
-            parts = [tag, *sorted(self(item) for item in tree[1])]
-        elif tag == 'gamma':
-            parts = [tag, *sorted(((key, self(value)) for key, value in gated_choice(tree, self, self.keys)), key=repr)]
-        else:
-            parts = [self(item) for item in tree]
-        if tag == 'gamma' and len(parts) == 2:
-            digest = parts[1][1]        # one value wherever the join is reached
-        else:
-            digest = hashlib.blake2b(repr(parts).encode(), digest_size=FINGERPRINT_BYTES).digest()
-        self.memo[id(tree)] = (tree, digest)    # the tree kept alive, so its id is not reused
-        return digest
-
-
-def gated_choice(gamma: tuple, digest, keys: FormulaKeys) -> list[tuple]:
-    """A gated merge's (key, value) pairs: its values told apart by digest, each with the key (FormulaKeys) of the
-    formulas it arrives under joined, one that never arrives left out; one pair is that value wherever the join is
-    reached. A formula past ROW_CAP rows is keyed by its own digest: equal only to one built the same way"""
-    formulas, values = {}, {}
-    for formula, value in gamma[1]:
-        found = digest(value)
-        formulas.setdefault(found, []).append(formula)
-        values[found] = value
-    choice = []
-    for found, arriving in formulas.items():
-        joined = disjunction(arriving)
-        key = keys(joined)
-        if key is None:
-            key = ('unchecked', digest(joined))
-        if key != FALSE_KEY:
-            choice.append((key, values[found]))
-    return choice
 
 
 def incoming_value(key: tuple, neutral_key) -> tuple:

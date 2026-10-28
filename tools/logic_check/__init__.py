@@ -5,8 +5,10 @@ LLIL against MLIL, the LLIL the trust root, and MLIL against HLIL. Read-only on 
 
 The package imports the decompiler as `ir` and `falcom`: the repo root on sys.path"""
 
-from .compare import CATEGORIES, Difference, compare_facts, compare_gated
-from .evaluation import Facts, analyze
+from .compare import CATEGORIES, Difference, compare_facts
+from .evaluation import analyze
+from .facts import Facts
+from .gated_comparison import compare_gated
 from .hlil_layer import HLILLayer
 from .llil_layer import LLILLayer
 from .mlil_layer import MLILLayer

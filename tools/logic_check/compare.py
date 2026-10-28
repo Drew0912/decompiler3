@@ -1,21 +1,19 @@
 """The comparison of two layers' facts, the reference first and the layer checked second: every difference with its
 category. LLIL against MLIL (compare_facts; the LLIL is the trust root) matches effects and branches by address and
-guards by the branches they depend on; MLIL against HLIL (compare_gated), whose structure HLIL rebuilds, matches
-effects by address and compares the formulas they run under"""
+guards by the branches they depend on; MLIL against HLIL is gated_comparison.py's; the effect order, the loop values
+and the parts of an effect's values both modes compare are here"""
 
-import hashlib
 import reprlib
 from typing import Hashable, NamedTuple
 
-from .evaluation import Effect, Facts
-from .formulas import FALSE_KEY, TRUE, DiagramOverflow, Diagrams, FormulaKeys, conjunction, disjunction
+from .facts import Effect, Facts
+from .formulas import FALSE_KEY, TRUE, conjunction, disjunction
+from .neutral_names import Namer
 from .post_dominators import FALSE_ARM, TRUE_ARM
-from .state import FINGERPRINT_BYTES, Fingerprints, gated_choice, neutral_leaf
-from .trees import EQUALITIES, loop_leaves, truth
+from .trees import loop_leaves, truth
 
 LIFTED_CHOICES = 256            # gated choices lifted into an occurrence's formulas, at most (lift_choices)
 SHOWN = reprlib.Repr(maxlevel=8, maxtuple=6, maxstring=40, maxother=40)  # a gated detail's trees, cut (brief)
-RENDERED_FORMULA_CHARACTERS = 400   # a gated detail's formula, cut (render)
 
 CATEGORIES = (
     'missing_effect',               # an effect of the reference absent, or fewer times (gated: absent)
@@ -25,7 +23,7 @@ CATEGORIES = (
     'arg_differs',                  # an argument, or a local an argument points to
     'return_differs',               # the result, or another register, at a return
     'guard_differs',                # the branches an effect runs under, or their polarity (gated: its formula)
-    'guard_unchecked',              # gated: formulas past a diagram node cap (formulas.DIAGRAM_*NODE_CAP), not compared
+    'guard_unchecked',              # gated: formulas past a diagram node cap (decision_diagrams), not compared
     'condition_differs',            # a branch's condition, or a branch on one side only
     'condition_ordering_inverted',  # equal once orderings are read as representative ones (`!(a < b)`, `a >= b`)
     'branch_targets_differ',
@@ -41,63 +39,7 @@ class Difference(NamedTuple):
     detail: object
 
 
-class Namer:
-    """A side's trees under neutral names, renamed once each: every storage key a leaf names in the layer's own way (a
-    loop value, an address-taken local after a call) the way every layer names it, == and != operands in their
-    fingerprints' order, a gated choice by its values and the function choosing each (state.gated_choice), with
-    orderings read as representative ones where representative"""
-
-    def __init__(self, facts: Facts, representative: bool = False):
-        self.neutral_key = facts.neutral      # a deep phi is cut to its fingerprint either way
-        self.fingerprints = Fingerprints(self.neutral_key)
-        self.keys = FormulaKeys(self.fingerprints, representative)
-        self.memo = {}
-        self.digests = {}
-
-    def digest(self, renamed) -> bytes:
-        """A renamed tree's digest, memoised by identity (a tree shares its parts): equal digests mean equal trees"""
-        if not isinstance(renamed, tuple):
-            return repr(renamed).encode()
-        found = self.digests.get(id(renamed))
-        if found is not None:
-            return found[1]
-
-        parts = repr([self.digest(item) for item in renamed]).encode()
-        digest = hashlib.blake2b(parts, digest_size=FINGERPRINT_BYTES).digest()
-        self.digests[id(renamed)] = (renamed, digest)
-        return digest
-
-    def __call__(self, tree):
-        if not isinstance(tree, tuple) or not tree:
-            return tree
-
-        found = self.memo.get(id(tree))
-        if found is not None:
-            return found[1]
-
-        tag = tree[0]
-        leaf = neutral_leaf(tree, self.neutral_key)
-        if leaf is not None:
-            result = leaf
-        elif tag == 'op':
-            operands = sorted(tree[2], key=self.fingerprints) if tree[1] in EQUALITIES else tree[2]
-            result = ('op', tree[1], tuple(self(operand) for operand in operands))
-        elif tag == 'phi':
-            result = ('phi', tree[1], tuple((address, self(value)) for address, value in tree[2]))
-        elif tag == 'gamma':
-            choice = gated_choice(tree, self.fingerprints, self.keys)
-            if len(choice) == 1:
-                result = self(choice[0][1])
-            else:
-                result = ('gamma', tuple(sorted(((key, self(value)) for key, value in choice),
-                                                key=lambda pair: repr(pair[0]))))
-        elif tag in ('deref', 'reg', 'global'):
-            result = (tag, *(self(item) for item in tree[1:]))
-        else:
-            result = tree
-        self.memo[id(tree)] = (tree, result)    # the tree kept alive, so its id is not reused
-        return result
-
+# === LLIL against MLIL ===
 
 def compare_facts(reference: Facts, checked: Facts) -> list[Difference]:
     differences = []
@@ -107,13 +49,6 @@ def compare_facts(reference: Facts, checked: Facts) -> list[Difference]:
     compare_order(reference, checked, differences)
     compare_loop_values(reference, checked, namers, differences)
     return differences
-
-
-def compare_order(reference: Facts, checked: Facts, differences: list):
-    for key in sorted(reference.next_effects.keys() | checked.next_effects.keys(), key=repr):
-        expected, found = reference.next_effects.get(key), checked.next_effects.get(key)
-        if expected is not None and found is not None and expected != found:
-            differences.append(Difference('order_differs', key, (sorted(expected, key=repr), sorted(found, key=repr))))
 
 
 def compare_effects(reference: Facts, checked: Facts, namers: tuple[Namer, Namer], differences: list):
@@ -133,7 +68,8 @@ def compare_effects(reference: Facts, checked: Facts, namers: tuple[Namer, Namer
                 components = [component for component in components if not isinstance(component, int)]
             for component in components:
                 x, y = name_a(component_value(a, component)), name_b(component_value(b, component))
-                if name_a.digest(x) != name_b.digest(y):    # trees share subtrees: compared, they may not
+                # By digest: trees share subtrees, and compared as trees they may not
+                if name_a.renamed_digest(x) != name_b.renamed_digest(y):
                     differences.append(Difference(category, key, (component, x, y)))
             guard_a = {(address, canonical_polarity(reference, name_a, address, polarity))
                        for address, polarity in a.guard}
@@ -171,23 +107,6 @@ def compare_branches(reference: Facts, checked: Facts, namers: tuple[Namer, Name
             differences.append(Difference('branch_targets_differ', key, (targets_a, targets_b)))
 
 
-def value_category(effect: Effect) -> str:
-    """The category of a difference in what effect passes"""
-    return 'return_differs' if effect.kind == 'return' else 'arg_differs'
-
-
-def effect_components(effects: list[Effect]) -> list:
-    """What effects pass, each part on its own: the argument indexes (as the first has them), then every storage
-    key"""
-    storage = sorted({key for effect in effects for key, _ in effect.storage}, key=repr)
-    return [*range(len(effects[0].args)), *storage]
-
-
-def component_value(effect: Effect, component):
-    """What effect passes as component, an argument's index or a storage key (None where it passes none)"""
-    return effect.args[component] if isinstance(component, int) else dict(effect.storage).get(component)
-
-
 def canonical_targets(branch, condition: tuple) -> tuple[int, int]:
     _, negated = truth(condition, representative=True)
     if negated:
@@ -204,6 +123,32 @@ def canonical_polarity(facts: Facts, namer: Namer, address: int, polarity: str) 
         return polarity
 
     return FALSE_ARM if polarity == TRUE_ARM else TRUE_ARM
+
+
+# === Both modes ===
+
+def compare_order(reference: Facts, checked: Facts, differences: list):
+    for key in sorted(reference.next_effects.keys() | checked.next_effects.keys(), key=repr):
+        expected, found = reference.next_effects.get(key), checked.next_effects.get(key)
+        if expected is not None and found is not None and expected != found:
+            differences.append(Difference('order_differs', key, (sorted(expected, key=repr), sorted(found, key=repr))))
+
+
+def value_category(effect: Effect) -> str:
+    """The category of a difference in what effect passes"""
+    return 'return_differs' if effect.kind == 'return' else 'arg_differs'
+
+
+def effect_components(effects: list[Effect]) -> list:
+    """What effects pass, each part on its own: the argument indexes (as the first has them), then every storage
+    key"""
+    storage = sorted({key for effect in effects for key, _ in effect.storage}, key=repr)
+    return [*range(len(effects[0].args)), *storage]
+
+
+def component_value(effect: Effect, component):
+    """What effect passes as component, an argument's index or a storage key (None where it passes none)"""
+    return effect.args[component] if isinstance(component, int) else dict(effect.storage).get(component)
 
 
 def compare_loop_values(reference: Facts, checked: Facts, namers: tuple[Namer, Namer], differences: list):
@@ -286,14 +231,14 @@ def compare_carried_values(group: tuple, edges: list, copies: tuple[dict, dict],
     ways, so a checked split carrying a wrong value is not hidden by another split carrying the right one"""
     carried = [{key: tuple(namers[side](edge_copies[0][1]) for edge_copies in per_edge)
                 for key, per_edge in copies[side].items()} for side in (0, 1)]
-    by_digest = [{tuple(map(namers[side].digest, values)): values for values in carried[side].values()}
+    by_digest = [{tuple(map(namers[side].renamed_digest, values)): values for values in carried[side].values()}
                  for side in (0, 1)]
     expected, found = by_digest[0].keys(), by_digest[1].keys()
     if expected != found:
         a = by_digest[0][min(expected - found or expected)]
         b = by_digest[1][min(found - expected or found)]
         detail = [(edge, brief(x), brief(y)) for edge, x, y in zip(edges, a, b)
-                  if namers[0].digest(x) != namers[1].digest(y)]
+                  if namers[0].renamed_digest(x) != namers[1].renamed_digest(y)]
         differences.append(Difference('loop_value_differs', group, detail))
 
 
@@ -309,7 +254,8 @@ def compare_loop_copies(group: tuple, copies: tuple[dict, dict], namers: tuple[N
             for edge_copies in per_edge:
                 values, cut = lift_choices(namers[side], edge_copies)
                 capped = capped or cut
-                carried = {digest: namers[side].keys(disjunction(formulas)) for digest, formulas in values.items()}
+                carried = {digest: namers[side].formula_keys(disjunction(formulas))
+                           for digest, formulas in values.items()}
                 if None in carried.values():
                     differences.append(Difference('guard_unchecked', group, 'loop copies'))
                     return
@@ -320,170 +266,6 @@ def compare_loop_copies(group: tuple, copies: tuple[dict, dict], namers: tuple[N
                   for side in (0, 1)]
         category = 'guard_unchecked' if capped else 'loop_value_differs'
         differences.append(Difference(category, group, [('copies', *counts)]))
-
-
-# === MLIL against HLIL ===
-
-class Namings(NamedTuple):
-    """A gated comparison's namers, a pair (reference, checked) as written and one with representative orderings"""
-    exact: tuple[Namer, Namer]
-    representative: tuple[Namer, Namer]
-
-
-def compare_gated(reference: Facts, checked: Facts) -> list[Difference]:
-    """MLIL against HLIL, both analyzed gated: the effects, the effects that can run next, the loop values, every
-    reachable unstructured jump"""
-    differences = []
-    namings = Namings((Namer(reference), Namer(checked)),
-                      (Namer(reference, representative=True), Namer(checked, representative=True)))
-    compare_gated_effects(reference, checked, namings, differences)
-    compare_order(reference, checked, differences)
-    compare_gated_loop_values(reference, checked, namings, differences)
-    compare_unstructured(checked, differences)
-    return differences
-
-
-def compare_gated_effects(reference: Facts, checked: Facts, namings: Namings, differences: list):
-    """Each effect key's occurrences together, since HLIL may repeat an effect (a cloned region) or make two one (a
-    common return), and an occurrence count is no finding: the formulas they run under joined (compare_formulas), the
-    values they pass, each with the formula it is passed under (compare_passed); a loop's running and going round
-    again, as its pseudo-effects"""
-    for key in sorted(reference.effects.keys() | checked.effects.keys(), key=repr):
-        expected, found = reference.effects.get(key, []), checked.effects.get(key, [])
-        if not expected or not found:
-            category = 'missing_effect' if expected else 'added_effect'
-            differences.append(Difference(category, key, (len(expected), len(found))))
-            continue
-
-        targets = ({effect.target for effect in expected}, {effect.target for effect in found})
-        if targets[0] != targets[1]:
-            differences.append(Difference('target_differs', key, tuple(sorted(side, key=repr) for side in targets)))
-        argcs = ({len(effect.args) for effect in expected}, {len(effect.args) for effect in found})
-        if argcs[0] != argcs[1]:
-            differences.append(Difference('argc_differs', key, (sorted(argcs[0]), sorted(argcs[1]))))
-            continue
-
-        formulas = (disjunction(effect.guard_formula for effect in expected),
-                    disjunction(effect.guard_formula for effect in found))
-        category = compare_formulas(namings, formulas)
-        if category is not None:
-            differences.append(Difference(category, key, tuple(render(formula) for formula in formulas)))
-        compare_passed(namings, key, (expected, found), differences)
-
-
-def compare_gated_loop_values(reference: Facts, checked: Facts, namings: Namings, differences: list):
-    """The loop values (compare_loop_values) as written; a difference that goes once orderings are read as
-    representative ones (trees.representative_orderings) is condition_ordering_inverted"""
-    exact = []
-    compare_loop_values(reference, checked, namings.exact, exact)
-    if exact:
-        representative = []
-        compare_loop_values(reference, checked, namings.representative, representative)
-        kept = {difference.key for difference in representative}
-        differences.extend(difference if difference.key in kept else
-                           Difference('condition_ordering_inverted', difference.key, difference.detail)
-                           for difference in exact)
-
-
-def compare_unstructured(checked: Facts, differences: list):
-    """Every reachable jump HLIL could not express"""
-    for jump in checked.unstructured:
-        differences.append(Difference('unstructured_jump', (jump.address, 'unstructured'), jump.target))
-
-
-def compare_formulas(namings: Namings, formulas: tuple) -> str | None:
-    """None when the two sides' formulas are one function, else the category of their difference"""
-    exact = namings.exact
-    if exact[0].fingerprints(formulas[0]) == exact[1].fingerprints(formulas[1]):
-        return None
-
-    try:
-        if equivalent(exact, formulas):
-            return None
-        if equivalent(namings.representative, formulas):
-            return 'condition_ordering_inverted'
-    except DiagramOverflow:
-        return 'guard_unchecked'
-
-    return 'guard_differs'
-
-
-def equivalent(namers: tuple[Namer, Namer], formulas: tuple) -> bool:
-    """Whether the formulas are one function: by their truth tables, or, past ROW_CAP rows, by one decision diagram in
-    the order the formulas meet their variables"""
-    keys = (namers[0].keys, namers[1].keys)
-    found = (keys[0].table_key(formulas[0]), keys[1].table_key(formulas[1]))
-    if None not in found:
-        return found[0] == found[1]
-
-    return Diagrams().same(keys[0].structure(formulas[0], {}), keys[1].structure(formulas[1], {}))
-
-
-def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences: list):
-    """The values an effect's occurrences pass, each argument and storage key on its own: equal under neutral names,
-    or, a gated choice lifted into the formula its value is passed under (HLIL may pass from one return what MLIL
-    passes from two, merged at the join before it), the same values each under one formula"""
-    expected, found = occurrences
-    category = value_category(expected[0])
-    single = len(expected) == len(found) == 1
-    if single and not value_differences(namings.exact, expected[0], found[0]):
-        return
-
-    outcomes = {component: compare_component(namings, occurrences, component)
-                for component in effect_components([*expected, *found])}
-    differing = [component for component, outcome in outcomes.items() if outcome == category]
-    unchecked = [component for component, outcome in outcomes.items() if outcome == 'guard_unchecked']
-    if differing:
-        details = (value_differences(namings.exact, expected[0], found[0]) if single
-                   else [('occurrences', len(expected), len(found), differing)])
-        differences.append(Difference(category, key, details))
-    elif unchecked:
-        differences.append(Difference('guard_unchecked', key, unchecked))
-    elif 'condition_ordering_inverted' in outcomes.values():
-        differences.append(Difference('condition_ordering_inverted', key, [component for component, outcome
-                                                                           in outcomes.items() if outcome]))
-
-
-def compare_component(namings: Namings, occurrences: tuple, component) -> str | None:
-    """None when both sides pass the same values for component (an argument's index or a storage key) under the same
-    formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted"""
-    category = value_category(occurrences[0][0])
-    capped = False                  # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
-    for namers in namings:
-        lifts = [passed_under(namer, effects, component) for namer, effects in zip(namers, occurrences)]
-        passed = [found for found, _ in lifts]
-        capped = capped or any(cut for _, cut in lifts)
-        if passed[0].keys() != passed[1].keys():
-            continue
-        if len(passed[0]) == 1:
-            outcomes = set()        # one value, passed wherever the effect runs: its formula compared already
-        else:
-            outcomes = {compare_formulas(namings, (disjunction(passed[0][value]), disjunction(passed[1][value])))
-                        for value in passed[0]} - {None}
-        if not outcomes:
-            return None if namers is namings.exact else 'condition_ordering_inverted'
-        if outcomes == {'condition_ordering_inverted'}:
-            return 'condition_ordering_inverted'
-        return 'guard_unchecked' if capped or outcomes == {'guard_unchecked'} else category
-
-    return 'guard_unchecked' if capped else category
-
-
-def value_differences(namers: tuple[Namer, Namer], a: Effect, b: Effect) -> list:
-    """(index or storage key, a's value, b's value) of each argument and storage the two occurrences differ in"""
-    name_a, name_b = namers
-    details = []
-    for component in effect_components([a, b]):
-        x, y = name_a(component_value(a, component)), name_b(component_value(b, component))
-        if name_a.digest(x) != name_b.digest(y):
-            details.append((component, brief(x), brief(y)))
-    return details
-
-
-def passed_under(namer: Namer, effects: list[Effect], component) -> tuple[dict, bool]:
-    """What the occurrences pass as component, each value's digest under neutral names -> the formulas it is passed
-    under, and whether a choice was left whole (lift_choices)"""
-    return lift_choices(namer, [(effect.guard_formula, component_value(effect, component)) for effect in effects])
 
 
 def lift_choices(namer: Namer, formula_values: list[tuple]) -> tuple[dict, bool]:
@@ -503,7 +285,7 @@ def lift_choices(namer: Namer, formula_values: list[tuple]) -> tuple[dict, bool]
                 capped = True
             alternatives.append((condition, value))
         for condition, value in alternatives:
-            formulas_by_digest.setdefault(namer.digest(namer(value)), []).append(condition)
+            formulas_by_digest.setdefault(namer.renamed_digest(namer(value)), []).append(condition)
     return formulas_by_digest, capped
 
 
@@ -511,26 +293,3 @@ def brief(tree) -> str:
     """tree as text, cut in depth and width: a tree shares its parts (a gated choice's formulas hold earlier ones) and
     may print exponentially"""
     return SHOWN.repr(tree)
-
-
-def render(formula) -> str:
-    """formula as text, cut at RENDERED_FORMULA_CHARACTERS, its conditions brief"""
-    parts, pending, length = [], [formula], 0
-    while pending and length < RENDERED_FORMULA_CHARACTERS:
-        item = pending.pop()
-        if isinstance(item, tuple) and item[0] in ('and', 'or'):
-            joiner = ' && ' if item[0] == 'and' else ' || '
-            spaced = [part for child in item[1] for part in (joiner, child)][1:]
-            pending.extend(reversed(['(', *spaced, ')']))
-            continue
-
-        if isinstance(item, str):
-            part = item
-        elif item[0] == 'lit':
-            part = ('' if item[2] else '!') + brief(item[1])
-        else:
-            part = item[0]
-        parts.append(part)
-        length += len(part)
-    text = ''.join(parts)
-    return text if len(text) <= RENDERED_FORMULA_CHARACTERS else text[:RENDERED_FORMULA_CHARACTERS] + '...'

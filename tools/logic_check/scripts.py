@@ -10,8 +10,9 @@ from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.parser.scp import ScpParser
-from .compare import Difference, compare_facts, compare_gated
+from .compare import Difference, compare_facts
 from .evaluation import analyze
+from .gated_comparison import compare_gated
 from .hlil_layer import HLILLayer
 from .llil_layer import LLILLayer
 from .mlil_layer import MLILLayer

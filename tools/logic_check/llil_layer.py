@@ -15,7 +15,7 @@ from ir.llil.llil import (
     LowLevelILRegStore, LowLevelILRet, LowLevelILSpAdd, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore,
     LowLevelILStore, LowLevelILSyscall, LowLevelILUnaryOp, WORD_SIZE, walk,
 )
-from .evaluation import Branch, Effect, Facts
+from .facts import Branch, Effect, Facts
 from .state import MEMORY_EPOCH, RESULT_REGISTER, State
 from .trees import ENTRY, const, op
 

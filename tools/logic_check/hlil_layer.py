@@ -2,7 +2,7 @@
 an if's arms and their join, a loop's header, body, back and exit edges, a switch's tests in case order, break,
 continue and return - with one test per operand of a condition's && and ||, as the .ts evaluates them. Storage is
 named through the MLIL function the HLIL came from, whose variable names HLIL keeps; evaluated gated
-(evaluation.GatedNaming), a loop header named by its loop's stamp"""
+(naming.GatedNaming), a loop header named by its loop's stamp"""
 
 from dataclasses import dataclass
 from itertools import count
@@ -17,7 +17,7 @@ from ir.hlil.hlil import (
 from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILSetVar, MLILVar, MLILVariable, walk,
 )
-from .evaluation import Branch, Effect, Facts
+from .facts import Branch, Effect, Facts
 from .mlil_layer import MLILStorage
 from .state import MEMORY_EPOCH, RESULT_REGISTER, State
 from .trees import ENTRY, const, constant_truth, op
