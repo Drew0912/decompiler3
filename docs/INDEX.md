@@ -15,7 +15,7 @@ languages, touches the generic / Falcom boundary, or the pipeline is not known y
 | `HARDENING_POLICY.md` | which inputs deserve a test, a guard or a finding (threat model) | tests, guards, reviews, bug hunts |
 | `CODING_STYLE.md` | the house style: code, line endings, commit messages (imported by `CLAUDE.md`) | all code |
 | `TESTS_GUIDE.md` | running the tests, layout, shared helpers, the corpus skip, moving tests | test work |
-| `VALIDATOR_GUIDE.md` | `tools/ir_semantic_validator.py` HARD_FAIL categories: known noise vs real signal | judging validator output |
+| `VALIDATOR_GUIDE.md` | `tools/ir_semantic_validator.py` (the logic check): its categories, the known findings, the regression workflow | judging validator output |
 | `FUTURE_WORK.md` | the index of future work, and the ideas that span folders | proposing or planning new work |
 | `falcom/ed9/` | the ED9 script format: parser, disassembler, opcode table, per-game differences | `falcom/ed9/parser/`, `falcom/ed9/structs/`, `falcom/ed9/disasm/`, `assembler/` |
 | `llil/` | LLIL design | `ir/llil/`, `falcom/ed9/ir/llil/` |

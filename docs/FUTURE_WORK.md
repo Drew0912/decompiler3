@@ -17,51 +17,27 @@
 | `docs/hlil/HLIL_FUTURE_WORK.md` | HLIL nesting depth, TypeScript output readability, the remaining reducible shapes |
 | this file | the static game-logic check, generic / Falcom boundary leftovers, ED8 support, `kuro1` byte-exact debug records |
 
-## Static Game-Logic Check (`tools/ir_semantic_validator.py`)
+## Static Game-Logic Check (`tools/logic_check/`, `tools/ir_semantic_validator.py`)
 
-The validator already tracks game logic as *effect events* — engine/script calls, global writes,
-returns — plus branch conditions, and matches them LLIL → MLIL → HLIL on the in-memory IR that the
-`.llil.asm`/`.mlil.asm` dumps are printed from (it should keep reading the IR objects; parsing the dump
-text back would be fragile). Its known-noise and real-signal categories are documented in
-`docs/VALIDATOR_GUIDE.md`, including its current limitations: it builds no LLIL/MLIL control-flow edges
-and links only some HLIL ones (edges feed block matching only, never a pass/fail gate - fix all three
-builders together, since fixing one side alone makes block matching worse), and branch conditions
-carry no expression, so a changed condition is not detected. Global writes are matched on all three
-layers (a dropped one shows as `missing_write_anchor`). For MLIL -> HLIL, `tools/hlil_path_check.py`
-already checks control paths: every reachable call and store appears, and each HLIL occurrence of a
-statement is followed by exactly what MLIL runs next - but it cannot see which way a condition sends
-control either, so a negated condition passes both tools. **Not started:**
+**Step A, the structural check, is built** (the IR rewrite's part 1, 2026-10-27/28): per function, the logic check
+compares the LLIL against the MLIL and the MLIL against the HLIL on the in-memory IR - the effects with their argument
+values, the conditions they run under, branches, the order of effects and the values loops carry - and
+`tools/ir_semantic_validator.py` runs it per script, with a regression export and compare (`docs/VALIDATOR_GUIDE.md`:
+its categories, the known findings, its limits). It replaced the block matcher the validator had. **Not started:**
 
-- **Compare effect arguments and values**, resolved to layer-neutral expressions over inputs
-  (parameters, global reads, earlier call results). Today events are keyed `family:target` only, so a
-  call with changed arguments, or a return with a changed value, still matches.
-- **Compare each effect's guard** — the branch conditions it runs under (control dependence, which needs
-  real CFG edges, condition expressions and a post-dominator analysis - none of which the validator has
-  today), treating the right side of HLIL `&&`/`||` as
-  conditional. This catches an always-run call becoming conditional, and should also remove two
-  known-noise categories (matches paired across mutually exclusive branches; duplicated calls counted
-  as "added").
-- **Provenance for HLIL `if`/`switch`** (deferred from the Codex IR review plan's Step E,
-  2026-09-27; loops carry their header's last instruction since the IR rewrite's part 1, Step 4,
-  which the logic check names them by). No HLIL `if`/`switch` carries an `mlil_index`, so no branch
-  condition is ever provenance-matched MLIL -> HLIL by the validator. A prototype that stamped
-  them from their MLIL branch (the `mlil_to_hlil.py` construction sites and the control-flow pass's
-  rebuilt `if`/new `switch`) changed no HARD_FAIL on 7 files, since conditions compare no operands; it
-  only moved per-operation statuses (`mp2000`: 55 MLIL `IF` vs HLIL `SWITCH` and 17 `IF` vs `WHILE`
-  newly "different", for lack of a transformation rule). Do it together with comparing condition
-  expressions and add `IF` -> `WHILE` / `IF` -> `SWITCH` rules (a call folded into a condition already
-  keeps its own MLIL call's index, since 2026-09-28). With it, and a note of which arm is the
-  condition's true side, `tools/hlil_path_check.py` could check condition polarity as well.
-- **Cross-program mode** for compile-back: source `.dat` vs recompiled `.dat`, both at LLIL — the
+- **Step B, the value layer:** values computed, not compared as trees, so an equal value written another way
+  (`1 + 1` for `2`) and an ordering inverted (`!(a < b)` for `a >= b`, which differs only for NaN) are decided.
+  Waits for the user's own analysis of the game executable (the VM's arithmetic and comparisons).
+- **Cross-program mode** for compile-back: source `.dat` vs recompiled `.dat`, both at LLIL - the
   least-transformed level, so decompiler bugs and lowering bugs both show. There are no provenance
   links across two programs, so matching leans on order, guards and arguments; legitimate
   restructuring (a switch vs an if-chain, duplicated regions) needs normalizing.
 
-**Limits:** it flags differences but can't prove equivalence; heuristic matching can pair the wrong
-events; loops are approximate. With arguments and guards compared it is a strong regression net —
-both live bugs found by the 2026-09-23 review (a deleted global restore; an always-run call folded
-under a short-circuiting `&&`) would have been flagged. Useful for the decompiler today (within one
-decompilation), and the correctness gate for the HLIL DSL (`docs/dsl/DSL_FUTURE_WORK.md`, Recompilation Pipeline §1).
+**Limits:** it flags differences but proves equivalence only up to its normal form. With arguments and guards
+compared it is a strong regression net - both live bugs found by the 2026-09-23 review (a deleted global restore; an
+always-run call folded under a short-circuiting `&&`) are the kinds it reports. Useful for the decompiler today
+(within one decompilation), and the correctness gate for the HLIL DSL (`docs/dsl/DSL_FUTURE_WORK.md`, Recompilation
+Pipeline §1).
 
 ## Generic/Falcom Boundary (`docs/ARCHITECTURE.md`)
 

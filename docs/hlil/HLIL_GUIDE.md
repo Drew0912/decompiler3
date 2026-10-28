@@ -56,8 +56,9 @@ markers that the branch-order pass reads to recover original source ordering; wi
 (a jump the tree cannot express - HLIL has no goto; terminal: the path ends there visibly instead
 of falling through. TypeScript renders it as a comment plus `throw new Error("unstructured: loc_X")`,
 the `.hlil.ts` listing as `goto loc_X;`. `falcom/ed9/scena2py_base.py` warns about every one on a path that
-can run (`reachable_statements`), and `tools/ir_semantic_validator.py` reports it as the hard fail
-`unstructured_jump`; none occurs in the sora2_1.0 corpus).
+can run (`reachable_statements`), and the logic check (`tools/logic_check/`, run by `tools/ir_semantic_validator.py`)
+reports it as the difference `unstructured_jump`; none occurs in the sora2_1.0 corpus, two in `TestEmotion` of
+`scena/a0000.dat` in kuro1, kuro2 and kai1).
 
 **Expressions:** `HLILVar`/`HLILConst`, `HLILBinaryOp`/`HLILUnaryOp`, `HLILAddressOf`, `HLILDeref`
 (`*ptr`, from `MLILDeref` - a runtime-computed address, e.g. an out-parameter; not a subclass of

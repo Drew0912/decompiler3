@@ -19,8 +19,8 @@ from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
 from ir.core.il_literals import SourceFloat
 from ir.hlil.hlil import (
-    BinaryOp, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall, HLILConst, HLILContinue, HLILIf, HLILReturn,
-    HLILSwitch, HLILUnstructured, HLILVar, HLILVariable, HLILWhile, VariableKind, iter_tree,
+    BinaryOp, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall, HLILConst, HLILContinue, HLILExprStmt, HLILIf,
+    HLILReturn, HLILSwitch, HLILUnstructured, HLILVar, HLILVariable, HLILWhile, VariableKind, iter_tree,
 )
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
@@ -49,6 +49,7 @@ REG_OUT = 7
 DEEP_INITIAL = 1
 ENDLESS_TAIL_PARAMETERS = 2
 EARLY_ARG = 9
+TAIL_CALL_ARG = 6
 SKIPPED = 1
 CHAIN_CASES = 3                 # HLIL's if-to-switch takes a chain of at least SWITCH_MIN_CASES tests
 NESTED_TESTS = 17               # conditions one guard runs under: past formulas.ROW_CAP's 2 ** 16 rows
@@ -412,6 +413,15 @@ def calls_then_loop_function() -> tuple[Asm, int]:
     return asm, 1
 
 
+def tail_call_function() -> tuple[Asm, int]:
+    """callee(1); then a tail call (CALL_SCRIPT_NO_RETURN) of another script's function, which MLIL writes as the
+    script call and the return of its result"""
+    asm = Asm()
+    call(asm, 'first', 1)
+    asm.push_int(TAIL_CALL_ARG); asm.call_script_no_return(1)
+    return asm, 1
+
+
 def reference_and_mlil(build, argc: int = 0) -> tuple:
     """The function's LLIL facts (taken before the conversion) and its MLIL as the decompiler makes it; argc its
     parameters"""
@@ -643,6 +653,13 @@ class TestPlantedBugs(unittest.TestCase):
                 .copy_metadata_from(update)
         self.check(loop_function, mutate, 'loop_value_differs')
 
+    def test_tail_call(self):
+        """The tail call compares clean with MLIL's script call and return; the call's result not returned differs"""
+        def mutate(mlil):
+            block, index, ret = first(mlil, lambda inst: isinstance(inst, MLILRet))
+            block.instructions[index] = MLILRet(MLILConst(0)).copy_metadata_from(ret)
+        self.check(tail_call_function, mutate, 'return_differs')
+
     def test_ordering_inverted(self):
         """!(i < LIMIT) written i >= LIMIT: equal but for NaN, its own category"""
         def mutate(mlil):
@@ -744,6 +761,14 @@ class TestPlantedHLILBugs(unittest.TestCase):
         def mutate(hlil):
             arm_with_a_call(first_node(hlil, HLILIf))[0].statements.clear()
         self.check(branch_function, mutate, 'missing_effect')
+
+    def test_global_assigned_a_call_kept_as_the_bare_call(self):
+        """GLOBALS[1] = callee(8, 7) made callee(8, 7): the call kept, the global's write gone"""
+        def mutate(hlil):
+            assignment = first_node(hlil, HLILAssign, lambda node: isinstance(node.src, HLILCall))
+            statements = hlil.body.statements
+            statements[statements.index(assignment)] = HLILExprStmt(assignment.src)
+        self.check(calls_function, mutate, 'missing_effect')
 
     def test_region_cloned_under_a_wrong_guard(self):
         """The arm's call repeated in the other arm: an occurrence count is no finding, the joined guard is"""

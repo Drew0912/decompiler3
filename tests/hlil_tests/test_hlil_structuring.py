@@ -12,7 +12,7 @@ kind, and every test runs the result against its MLIL for every parameter assign
   exits reach the merge of an if or a loop around it (btl_EV_00_12_00 edited) - also when the
   copies this needs run out of clone budget;
 - a jump HLIL cannot express becomes an HLILUnstructured node, never a fall-through: the node's
-  reachability, its handling in the passes, its rendering and the validator's report;
+  reachability, its handling in the passes, its rendering and the logic check's report;
 - converter details: a join after an if emitted once, a loop of goto-only blocks (fuzz seed 1208), a
   one-block loop, the locals declared (each once, parameters excluded), loop labels, a logical not,
   provenance;
@@ -46,7 +46,7 @@ from ir.hlil.passes.pass_dead_code_elimination import DeadCodeEliminationPass
 from ir.hlil.passes.pass_loop_recovery import LoopRecoveryPass
 from codegen.typescript import generate_typescript
 from hlil_path_check import check_function
-from ir_semantic_validator import compare_mlil_hlil
+from logic_check import compare_mlil_hlil
 from tests.shared.hlil_cfg_utils import (
     EARLY_EXIT, SHARED_LOOP, SHARED_LOOP_COPY_STATEMENTS, build_function, to_hlil, structure, classify, hlil_run,
     parameters, unstructured_nodes, calls_emitted, with_markers,
@@ -553,17 +553,17 @@ class TestNodeRendering(unittest.TestCase):
         self.assertIn(f'goto {TARGET}; // unstructured ({REASON})', lines)
 
 
-class TestNodeReportedByTheValidator(unittest.TestCase):
+class TestNodeReportedByTheLogicCheck(unittest.TestCase):
 
-    def hard_fails(self, blocks: dict) -> list:
+    def categories(self, blocks: dict) -> set[str]:
         func, hlil = structure(blocks, clone_budget=0)
-        return [v.explanation for v in compare_mlil_hlil(func, hlil).hard_fail_violations]
+        return {difference.category for difference in compare_mlil_hlil(func, hlil)}
 
-    def test_reachable_node_is_a_hard_fail(self):
-        self.assertTrue(any('unstructured_jump' in e for e in self.hard_fails(LOOP_REENTERED)))
+    def test_reachable_node_is_reported(self):
+        self.assertIn('unstructured_jump', self.categories(LOOP_REENTERED))
 
     def test_unreachable_node_is_not(self):
-        self.assertFalse(any('unstructured_jump' in e for e in self.hard_fails(CONSTANT_COMPARE)))
+        self.assertNotIn('unstructured_jump', self.categories(CONSTANT_COMPARE))
 
 
 class TestConstantTruth(unittest.TestCase):

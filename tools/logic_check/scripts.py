@@ -39,10 +39,14 @@ class FunctionResult(NamedTuple):
         return cls(name, mlil_differences or [], [], None, f'{stage}: {type(error).__name__}: {error}', seconds)
 
 
-def check_script(path: Path, game: str | None, *, infer_types: bool = True) -> list[FunctionResult]:
-    """Each function's LLIL -> MLIL and MLIL -> HLIL differences; a script the parser rejects raises"""
+def check_script(path: Path, game: str | None, *, infer_types: bool = True,
+                 function_name: str | None = None) -> list[FunctionResult]:
+    """Each function's LLIL -> MLIL and MLIL -> HLIL differences, or function_name's alone; a script the parser rejects
+    raises"""
     raise_recursion_limit()     # a value tree nests as deep as a chain of pushes, an eager || chain's
-    parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False, game=game)
+    only = None if function_name is None else (lambda func: func.name == function_name)
+    parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False, game=game,
+                                       filter_func=only)
     lifter = ED9VMLifter(parser=parser)
     return [check_function(lifter, func, infer_types) for func in functions]
 

@@ -1,262 +1,63 @@
 #!/usr/bin/env python3
-"""Unit tests for tools/ir_semantic_validator.py: HLIL global/register operands, do-while flattening,
-missing_write_anchor detection for dropped global writes, layer-tagged provenance keys, and tail calls"""
+"""Unit tests for tools/ir_semantic_validator.py: a regression export compared with a run of the same script reports
+no change; the comparison goes by difference (category and key), so one difference replaced by another of its category
+is a regression and an improvement both; a new internal error is a regression"""
 
 from pathlib import Path
+import contextlib
+import io
 import sys
+import tempfile
 import unittest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from ir.hlil import (
-    HighLevelILFunction,
-    HLILAssign,
-    HLILCall,
-    HLILConst,
-    HLILDoWhile,
-    HLILBlock,
-    HLILExprStmt,
-    HLILExternCall,
-    HLILVar,
-    HLILVariable,
-    VariableKind,
-)
-from ir.llil import LowLevelILConst
-from ir.mlil import (
-    MLILAddressOf,
-    MLILCall,
-    MLILCallScript,
-    MLILConst,
-    MLILLoadGlobal,
-    MLILRet,
-    MLILStoreDeref,
-    MLILStoreGlobal,
-    MLILVar,
-    MLILVariable,
-)
-from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn, LowLevelILGlobalStore
-from ir_semantic_validator import (
-    EFFECT_CATEGORY_CALL,
-    EFFECT_CATEGORY_WRITE_GLOBAL,
-    IRLayer,
-    OperationKind,
-    SemanticOperand,
-    _extract_hard_fail_category,
-    _match_atoms_provenance_first,
-    _extract_hlil_operands,
-    build_cfg_from_hlil,
-    normalize_hlil_operation,
-    normalize_llil_operation,
-    normalize_llil_operations,
-    normalize_mlil_operation,
-    semantic_op_to_effect_event,
-    semantic_operation_to_atom,
-    validate_hard_fail_semantics,
-)
+from tests.shared.corpus import SORA2_SCRIPTS, require
+from ir_semantic_validator import BASELINE_VERSION, CHECK, IRPipeline, changes, compare_baseline, export_baseline
 
-GLOBAL_INDEX = 5
-REG_INDEX = 0
-STORED_VALUE = 7
-MISSING_WRITE_ANCHOR = 'missing_write_anchor'
-LLIL_INDEX = 3
-CALL_TARGET = 'get_value'
-MLIL_INDEX = 8
-SCRIPT_MODULE = 'other_script'
+SCRIPT = 'ai/ai_chr0100_e00.dat'    # 18 functions
+FUNCTION = 'f'
+FIRST_KEY = "(4772, 'call')"
+OTHER_KEY = "(4800, 'call')"
 
 
-def hlil_global_var() -> HLILVariable:
-    return HLILVariable(kind=VariableKind.GLOBAL, index=GLOBAL_INDEX)
+def document(*functions: dict) -> dict:
+    """A report_json document of functions"""
+    return {'version': BASELINE_VERSION, 'check': CHECK, 'file': 'f.dat', 'functions': list(functions)}
 
 
-def hlil_global_store_op():
-    return normalize_hlil_operation(HLILAssign(HLILVar(hlil_global_var()), HLILConst(STORED_VALUE)))
+def function(hlil_differences: tuple = (), internal_error: str | None = None) -> dict:
+    return {'function': FUNCTION, 'llil_mlil': [], 'mlil_hlil': [list(difference) for difference in hlil_differences],
+            'decompile_error': None, 'internal_error': internal_error}
 
 
-def mlil_global_store_op(llil_index: int = -1, inst_index: int = -1):
-    store = MLILStoreGlobal(GLOBAL_INDEX, MLILConst(STORED_VALUE))
-    store.llil_index = llil_index
-    store.inst_index = inst_index
-    return normalize_mlil_operation(store)
+class TestRegressionBaseline(unittest.TestCase):
 
+    def test_export_then_compare_reports_no_change(self):
+        pipeline = IRPipeline(str(require(SORA2_SCRIPTS / SCRIPT)))
+        self.assertTrue(pipeline.check())
+        shown = io.StringIO()
+        with tempfile.TemporaryDirectory() as folder:
+            baseline = str(Path(folder) / 'before.json')
+            self.assertTrue(export_baseline(pipeline, baseline))
+            with contextlib.redirect_stdout(shown):
+                self.assertEqual(compare_baseline(pipeline, baseline), 0)
+        self.assertIn('No changes detected from baseline', shown.getvalue())
 
-def llil_global_store_op(inst_index: int = -1):
-    store = LowLevelILGlobalStore(GLOBAL_INDEX, LowLevelILConst(STORED_VALUE))
-    store.inst_index = inst_index
-    return normalize_llil_operation(store)
+    def test_a_difference_by_its_category_and_key(self):
+        """A guard_differs for another at another key: its category's count unchanged, yet a regression and an
+        improvement"""
+        found = changes(document(function([('guard_differs', FIRST_KEY, '')])),
+                        document(function([('guard_differs', OTHER_KEY, '')])))
+        self.assertEqual([change.found for change in found['regressions']], [f'guard_differs {OTHER_KEY}'])
+        self.assertEqual([change.found for change in found['improvements']], [f'guard_differs {FIRST_KEY}'])
 
-
-def hard_fail_categories(source_ops, target_ops, source_layer, target_layer) -> list[str]:
-    violations = validate_hard_fail_semantics(source_ops, target_ops, source_layer, target_layer)
-    return [_extract_hard_fail_category(violation.explanation) for violation in violations]
-
-
-class TestHLILVariableOperands(unittest.TestCase):
-    """HLIL globals and registers have no name - they must normalize by kind and slot index"""
-
-    def test_global_read_is_global_operand(self):
-        operands = _extract_hlil_operands(HLILVar(hlil_global_var()))
-        self.assertIn(SemanticOperand(kind='global', value=f'GLOBALS[{GLOBAL_INDEX}]'), operands)
-
-    def test_register_read_is_register_operand(self):
-        reg_var = HLILVariable(kind=VariableKind.REG, index=REG_INDEX)
-        operands = _extract_hlil_operands(HLILVar(reg_var))
-        self.assertIn(SemanticOperand(kind='reg', value=f'REGS[{REG_INDEX}]'), operands)
-
-    def test_local_read_keeps_its_name(self):
-        operands = _extract_hlil_operands(HLILVar(HLILVariable('var_s0')))
-        self.assertIn(SemanticOperand(kind='var', value='var_s0'), operands)
-
-    def test_global_assignment_is_global_write_event(self):
-        event = semantic_op_to_effect_event(hlil_global_store_op())
-        self.assertIsNotNone(event)
-        self.assertEqual(event.category, EFFECT_CATEGORY_WRITE_GLOBAL)
-        self.assertEqual(event.target_key, f'GLOBALS[{GLOBAL_INDEX}]')
-
-
-class TestGlobalWriteAnchors(unittest.TestCase):
-    def test_intact_global_write_matches_mlil_to_hlil(self):
-        categories = hard_fail_categories(
-            [mlil_global_store_op()], [hlil_global_store_op()], IRLayer.MLIL, IRLayer.HLIL,
-        )
-        self.assertEqual(categories, [])
-
-    def test_global_write_dropped_in_hlil_is_missing(self):
-        categories = hard_fail_categories([mlil_global_store_op()], [], IRLayer.MLIL, IRLayer.HLIL)
-        self.assertEqual(categories, [MISSING_WRITE_ANCHOR])
-
-    def test_intact_global_write_matches_llil_to_mlil(self):
-        categories = hard_fail_categories(
-            [llil_global_store_op()], [mlil_global_store_op()], IRLayer.LLIL, IRLayer.MLIL,
-        )
-        self.assertEqual(categories, [])
-
-    def test_global_write_dropped_in_mlil_is_missing(self):
-        categories = hard_fail_categories([llil_global_store_op()], [], IRLayer.LLIL, IRLayer.MLIL)
-        self.assertEqual(categories, [MISSING_WRITE_ANCHOR])
-
-
-class TestGlobalAssignedCallResult(unittest.TestCase):
-    """`GLOBALS[n] = f()` both calls f and writes the global - the call runs first"""
-
-    def build_events(self, call) -> list[tuple[str, str]]:
-        func = HighLevelILFunction('f')
-        func.body.add_statement(HLILAssign(HLILVar(hlil_global_var()), call))
-        cfg = build_cfg_from_hlil(func)
-        ops = [op for node_id in sorted(cfg.nodes) for op in cfg.nodes[node_id].operations]
-        events = [semantic_op_to_effect_event(op) for op in ops]
-        return [(event.category, event.target_key) for event in events if event is not None]
-
-    def test_call_then_global_write(self):
-        events = self.build_events(HLILCall('get_value', []))
-        self.assertEqual(events, [
-            (EFFECT_CATEGORY_CALL, 'var:get_value'),
-            (EFFECT_CATEGORY_WRITE_GLOBAL, f'GLOBALS[{GLOBAL_INDEX}]'),
-        ])
-
-    def test_extern_call_then_global_write(self):
-        events = self.build_events(HLILExternCall('module:get_value', []))
-        self.assertEqual([category for category, _ in events], [EFFECT_CATEGORY_CALL, EFFECT_CATEGORY_WRITE_GLOBAL])
-
-    def test_register_assigned_call_result_stays_one_call(self):
-        func = HighLevelILFunction('f')
-        reg_var = HLILVariable(kind=VariableKind.REG, index=REG_INDEX)
-        func.body.add_statement(HLILAssign(HLILVar(reg_var), HLILCall('get_value', [])))
-        cfg = build_cfg_from_hlil(func)
-        operators = [op.operator for node in cfg.nodes.values() for op in node.operations]
-        self.assertEqual(operators, ['CALL'])
-
-
-class TestGlobalReadIsNotWrite(unittest.TestCase):
-    """A store whose value reads a global is not a global write"""
-
-    def test_deref_store_of_global_read(self):
-        local = MLILVariable('var_s2')
-        store = MLILStoreDeref(MLILAddressOf(MLILVar(local)), MLILLoadGlobal(GLOBAL_INDEX))
-        event = semantic_op_to_effect_event(normalize_mlil_operation(store))
-        self.assertIsNone(event)
-
-
-class TestDoWhileFlattening(unittest.TestCase):
-    """A do-while body runs before its condition, and both must reach the HLIL CFG"""
-
-    def build_ops(self, condition) -> list[str]:
-        func = HighLevelILFunction('f')
-        body = HLILBlock([HLILExprStmt(HLILCall('body_call', []))])
-        func.body.add_statement(HLILDoWhile(condition, body))
-        cfg = build_cfg_from_hlil(func)
-        return [
-            (op.operator, op.operands[0].value if op.operands else None)
-            for node_id in sorted(cfg.nodes)
-            for op in cfg.nodes[node_id].operations
-        ]
-
-    def test_body_effects_come_before_condition(self):
-        ops = self.build_ops(HLILVar(HLILVariable('var_s0')))
-        self.assertEqual([operator for operator, _ in ops], ['CALL', 'DO_WHILE'])
-
-    def test_condition_call_runs_after_body(self):
-        ops = self.build_ops(HLILCall('cond_call', []))
-        calls = [target for operator, target in ops if operator == 'CALL']
-        self.assertEqual(calls, ['body_call', 'cond_call'])
-
-
-class TestProvenanceKeys(unittest.TestCase):
-    """Provenance keys are tagged by layer: LLIL->MLIL matches on the LLIL index, MLIL->HLIL on the MLIL index,
-    and equal numbers of different layers never match"""
-
-    def provenance_match_count(self, source_op, target_op) -> int:
-        source, target = semantic_operation_to_atom(source_op), semantic_operation_to_atom(target_op)
-        _, provenance_matches, _ = _match_atoms_provenance_first([source], [target])
-        return provenance_matches
-
-    def test_mlil_operation_carries_both_layers(self):
-        atom = semantic_operation_to_atom(mlil_global_store_op(LLIL_INDEX, MLIL_INDEX))
-        self.assertEqual(atom.provenance_keys, [(IRLayer.LLIL.name, LLIL_INDEX), (IRLayer.MLIL.name, MLIL_INDEX)])
-
-    def test_llil_to_mlil_matches_on_the_llil_index(self):
-        source = llil_global_store_op(LLIL_INDEX)
-        self.assertEqual(self.provenance_match_count(source, mlil_global_store_op(LLIL_INDEX, MLIL_INDEX)), 1)
-
-    def test_equal_index_of_another_layer_does_not_match(self):
-        source = llil_global_store_op(MLIL_INDEX)
-        self.assertEqual(self.provenance_match_count(source, mlil_global_store_op(LLIL_INDEX, MLIL_INDEX)), 0)
-
-    def test_mlil_to_hlil_matches_on_the_mlil_index(self):
-        mlil_call = MLILCall(CALL_TARGET, [])
-        mlil_call.llil_index = LLIL_INDEX
-        mlil_call.inst_index = MLIL_INDEX
-        hlil_call = HLILExprStmt(HLILCall(CALL_TARGET, []))
-        hlil_call.mlil_index = MLIL_INDEX
-        source, target = normalize_mlil_operation(mlil_call), normalize_hlil_operation(hlil_call)
-        self.assertEqual(self.provenance_match_count(source, target), 1)
-
-
-class TestTailCall(unittest.TestCase):
-    """A tail call is a script call and the return of its result: MLIL translates it as `return module.func(args)`"""
-
-    def tail_call_ops(self):
-        tail_call = LowLevelILCallScriptNoReturn(SCRIPT_MODULE, CALL_TARGET, [])
-        tail_call.inst_index = LLIL_INDEX
-        return normalize_llil_operations(tail_call)
-
-    def mlil_call_and_return_ops(self):
-        result = MLILVariable('reg0')
-        call, ret = MLILCallScript(SCRIPT_MODULE, CALL_TARGET, [], result), MLILRet(MLILVar(result))
-        for inst in (call, ret):
-            inst.llil_index = LLIL_INDEX
-        return [normalize_mlil_operation(call), normalize_mlil_operation(ret)]
-
-    def test_tail_call_is_a_script_call_then_a_return(self):
-        self.assertEqual([(op.kind, op.operator) for op in self.tail_call_ops()],
-                         [(OperationKind.CALL, 'CALL_SCRIPT'), (OperationKind.RETURN, 'RET')])
-
-    def test_tail_call_matches_the_mlil_call_and_return(self):
-        categories = hard_fail_categories(
-            self.tail_call_ops(), self.mlil_call_and_return_ops(), IRLayer.LLIL, IRLayer.MLIL,
-        )
-        self.assertEqual(categories, [])
+    def test_new_internal_error_is_a_regression(self):
+        found = changes(document(function()), document(function(internal_error='HLIL: RuntimeError: planted')))
+        self.assertEqual([(change.what, change.found) for change in found['regressions']],
+                         [('internal error', 'HLIL: RuntimeError: planted')])
 
 
 if __name__ == '__main__':
