@@ -58,10 +58,13 @@ def analyze(layer, *, gated: bool = False) -> Facts:
             if gated:
                 effect.guard_formula = naming.guard_formula(block, facts)
 
-    facts.next_effects = next_effects(layer, order, effects_of, naming.effect_key)
+    loop_effects = {header: naming.loop_effects(header, facts) for header in widened}
+    # A loop is a place in the order even where it makes no effect of its own: a store moved past a wait loop
+    runs_first = {block: [*loop_effects.get(block, [])[:1], *effects] for block, effects in effects_of.items()}
+    facts.next_effects = next_effects(layer, order, runs_first, naming.effect_key)
     for header, keys in widened.items():
         naming.loop_values(header, keys, exit_states, facts, fingerprints)
-        for effect in naming.loop_effects(header, facts):   # out of the next-effect relation
+        for effect in loop_effects[header]:
             facts.effects.setdefault(naming.effect_key(effect), []).append(effect)
 
     return facts

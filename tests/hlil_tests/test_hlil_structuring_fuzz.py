@@ -5,7 +5,8 @@ Each CFG has 4-10 blocks ending in a return, a goto or an if; most blocks make o
 gotos only jump on (passthrough chains) and some ifs test a constant (dead arms). For every
 assignment of the parameters the HLIL must make the same calls and end the same way as the
 MLIL, or stop at an unstructured-jump node exactly where the MLIL run jumps to its target
-(hlil_cfg_utils.classify). tools/hlil_path_check.py must agree with that verdict. Line markers in every
+(hlil_cfg_utils.classify). tools/hlil_path_check.py must agree with that verdict, and tools/logic_check/ must
+never fail on one and report an unstructured jump exactly where HLIL left a node. Line markers in every
 block (goto-only blocks too) change no run and no node.
 
 Irreducible CFGs may need nodes (HLIL has no goto). A reducible one could always be structured,
@@ -24,6 +25,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from hlil_path_check import check_function
+from logic_check import compare_mlil_hlil
 from ir.hlil.hlil import (
     HLILBreak, HLILCall, HLILContinue, HLILDoWhile, HLILIf, HLILReturn, HLILUnstructured, HLILWhile, iter_tree,
 )
@@ -138,6 +140,7 @@ class TestStructuringFuzz(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.results = []
+        cls.logic_categories = []       # per seed: the categories the logic check reports, or the error it raised
         cls.marked = []
         cls.in_two_places = []
         for seed in range(SEEDS):
@@ -146,6 +149,10 @@ class TestStructuringFuzz(unittest.TestCase):
             hlil = to_hlil(func)
             verdict, env = classify(func, hlil)
             cls.results.append((seed, blocks, verdict, env, check_function(func, hlil), unstructured_nodes(hlil)))
+            try:
+                cls.logic_categories.append({difference.category for difference in compare_mlil_hlil(func, hlil)})
+            except Exception as e:
+                cls.logic_categories.append(e)
             marked_func = build_function(f'fuzz_{seed}', with_markers(blocks, every_block=True))
             marked = to_hlil(marked_func)
             cls.marked.append((marked_func, marked))
@@ -164,6 +171,18 @@ class TestStructuringFuzz(unittest.TestCase):
 
             if verdict == 'loud' and not check.unstructured:
                 disagree.append((seed, 'loud run, check sees no node'))
+
+        self.assertEqual(disagree, [])
+
+    def test_logic_check_agrees_with_the_runs(self):
+        """It fails on no CFG (an irreducible one included), and reports an unstructured jump where HLIL left a node
+        and nowhere else"""
+        disagree = []
+        for (seed, _, _, _, _, nodes), categories in zip(self.results, self.logic_categories):
+            if isinstance(categories, Exception):
+                disagree.append((seed, 'the check raised', repr(categories)[:80]))
+            elif ('unstructured_jump' in categories) != bool(nodes):
+                disagree.append((seed, 'nodes', len(nodes), 'reported', sorted(categories)))
 
         self.assertEqual(disagree, [])
 

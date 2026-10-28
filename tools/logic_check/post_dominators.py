@@ -167,11 +167,22 @@ def back_edges(order: Sequence, successors: Callable) -> list[tuple]:
 
 
 def loop_bodies(order: Sequence, successors: Callable, predecessors: Callable) -> dict[Hashable, set]:
-    """header -> its loop's blocks, those reaching a back edge (back_edges) into it without passing it"""
+    """header -> its loop's blocks, those reaching a back edge (back_edges) into it without passing it. Natural loops
+    only: the header dominates the edge's source. A retreating edge into a block that does not (an irreducible
+    region's entry) has no body: walking back from its source would pass the header and reach the function's entry,
+    and two such edges would contain each other's header"""
     reachable = set(order)
+    dominators = immediate_dominators(order, predecessors)
+
+    def dominates(a, b) -> bool:
+        while a is not b and dominators[b] is not b:
+            b = dominators[b]
+        return a is b
+
     latches = {}
     for source, header in back_edges(order, successors):
-        latches.setdefault(header, []).append(source)
+        if dominates(header, source):
+            latches.setdefault(header, []).append(source)
     bodies = {}
     for header, sources in latches.items():
         body, pending = {header}, list(sources)
@@ -190,7 +201,8 @@ def iteration_dependence(order: Sequence, successors: Callable, predecessors: Ca
     innermost loop, block -> that loop's header, header -> its loop's blocks). Control dependence over the loop's
     blocks, its back edges and exits ending the iteration, so an arm the block misses in this iteration is one it
     depends on even where a later iteration reaches it; a block in no loop, and a loop's header (in its enclosing
-    loop), as control_dependence gives them over the blocks around it"""
+    loop), as control_dependence gives them over the blocks around it. Only natural loops (loop_bodies) count: a block
+    in an irreducible region outside any of them has its whole-graph dependence"""
     bodies = loop_bodies(order, successors, predecessors)
     region = {}                 # block -> the header of the innermost loop whose iteration it runs in
     for header in sorted(bodies, key=lambda header: len(bodies[header]), reverse=True):

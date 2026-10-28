@@ -56,10 +56,10 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
 
 - **Real:** `TestEmotion` in `scena/a0000.dat` of `kuro1`, `kuro2` and `kai1`: two unstructured jumps lose paths
   (`unstructured_jump`, and the `guard_differs`, `loop_value_differs` and `order_differs` the lost paths bring).
-- **The check's own artifacts** (no HLIL bug among them; Step 5c removes them, one kind a sub-step):
-  - K1, an effect under a condition that is never true counted (`missing_effect`, `order_differs`): HLIL drops the
-    arm of `if (x != 0 && 0 != 0)`, MLIL keeps it under a FALSE formula. `AniBtlKnockDown`, `-Loop`, `-End` (sora1
-    `ani/chr5004.dat`); `TKFront` (`scena/a1011.dat`, kuro1, kuro2, kai1).
+- **The check's own artifacts** (no HLIL bug among them; Step 5c removes them, one kind a sub-step; K1, a dead arm
+  of `if (x != 0 && 0 != 0)` counted in `AniBtlKnockDown`, `-Loop`, `-End` of sora1 `ani/chr5004.dat` and `TKFront` of
+  `scena/a1011.dat` in kuro1, kuro2 and kai1, is gone since 5c-1: MLIL's view folds a condition with a decisive constant
+  operand as HLIL does):
   - K2, the registers at a return HLIL merges with another (`return_differs`): `MayaEvent*` (sora2 `mp5005`,
     `mp1051`; kai1 `e5000`), `Archive01`, `-02`, `-04`, `Svis00`, `Dlc00`, `Etc00` (kai1, kuro2 `scena/a1018.dat`).
   - K3, a value after a loop whose exit HLIL splits in two tests (`arg_differs`): `AniBtlChaseAttack` (sora2
@@ -91,8 +91,11 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
 - MLIL -> HLIL compares no branch on its own: a branch shows only through the guards of the effects after it.
 - An effect HLIL repeats is compared by the disjunction of its copies' guards, so a copy on a path another copy
   already covers adds nothing the check sees (the full corpus has 445 calls HLIL repeats, in 26 functions).
-- An effect moved past a loop that makes no effect of its own compares clean (6 such loops on the full corpus; Step
-  5c adds the loop to the order).
+- A loop is a place in the order of effects even where it makes no effect of its own: an effect moved past one is
+  `order_differs` (6 such loops on the full corpus).
+- Only natural loops (a header dominating the edge back to it) have a body. In an irreducible region, which no
+  real script has, the formulas of the blocks outside natural loops are those of one pass through the region, so a
+  clean result there proves less (the fuzz's irreducible graphs compare without error).
 - A formula past the decision diagram's cap is `guard_unchecked`, not compared.
 
 ## Keeping this doc current

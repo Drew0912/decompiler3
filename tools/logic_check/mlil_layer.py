@@ -21,7 +21,6 @@ PARAMETER_NAME = re.compile(r'^arg(\d+)$')
 STACK_NAME = re.compile(r'^var_s(\d+)$')
 IGNORED = (MLILGoto, MLILDebug, MLILNop)
 COPIES = (MLILSetVar, *IGNORED)
-CONSTANT_EXPRESSIONS = (MLILConst, MLILBinaryOp, MLILUnaryOp)
 
 
 class MLILStorage:
@@ -70,8 +69,9 @@ class MLILStorage:
 
 
 class MLILLayer(MLILStorage):
-    """The MLIL's graph as written, or with hlil_view as HLIL structures it (against HLIL): a branch on a constant
-    condition is a jump to the target it always takes (HLIL folds a loop's constant test), and a block holding only
+    """The MLIL's graph as written, or with hlil_view as HLIL structures it (against HLIL): a branch on a decided
+    condition is a jump to the target it always takes (HLIL folds a loop's constant test, and the constant operand of a
+    split && or ||, so the arm it never reaches is dead), and a block holding only
     jumps, line markers and nops, a loop's header aside, passes control on to where it leads (the converter skips such
     a block, so HLIL joins arms where they lead)"""
 
@@ -148,11 +148,9 @@ class MLILLayer(MLILStorage):
         return None
 
     def constant_target(self, block):
-        """The target a branch on a constant condition always takes, or None"""
+        """The target a branch whose condition is decided always takes, or None: a constant, or an && / || with a
+        decisive constant operand (`x && 0`), as HLIL folds each operand of a split condition"""
         terminal = block.instructions[-1]
-        if not all(isinstance(node, CONSTANT_EXPRESSIONS) for node in walk(terminal.condition)):
-            return None
-
         always = constant_truth(self.evaluate(terminal.condition, State()))
         if always is None:
             return None

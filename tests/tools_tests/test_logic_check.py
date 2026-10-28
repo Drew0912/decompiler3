@@ -29,6 +29,7 @@ from ir.mlil.mlil import (
     MLILRet, MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILVar, map_operands, walk,
 )
 from tests.shared.corpus import SORA2_SCRIPTS, require
+from tests.shared.hlil_cfg_utils import build_function
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 import logic_check
@@ -36,13 +37,16 @@ from logic_check import compare, decision_diagrams, formulas
 from logic_check.facts import RETURN_KEY, Branch, Effect, Facts
 from logic_check.naming import FUNCTION_ENTRY
 from logic_check.neutral_names import Fingerprints, Namer
-from logic_check.post_dominators import EXIT, control_dependence, exit_blocks, immediate_post_dominators
+from logic_check.post_dominators import (
+    EXIT, control_dependence, exit_blocks, immediate_post_dominators, loop_bodies,
+)
 from logic_check.state import PHI_DEPTH
 from logic_check.trees import const, constant_truth, op, truth
 
 GLOBAL_A, GLOBAL_B, GLOBAL_C = 1, 2, 3
 MESSAGE = 'this'
 LOOP_LIMIT = 3
+STORED = 3
 OUT_INITIAL = 1
 UNRELATED_ARG = 9
 REG_INDEX = 5
@@ -215,6 +219,16 @@ def and_condition_function() -> tuple[Asm, int]:
     return asm, 1
 
 
+def dead_arm_function() -> tuple[Asm, int]:
+    """x = callee(1); if x && 0: callee(3) else callee(2): the game's eager &&, one MLIL branch whose arm never runs"""
+    asm = Asm()
+    call(asm, 'first', 1); asm.get_reg(0); asm.push_int(0); asm.logical_and(); asm.jz('else')
+    call(asm, 'dead', 3); asm.jmp('done')
+    asm.label('else'); call(asm, 'live', 2)
+    asm.label('done'); return_nothing(asm)
+    return asm, 1
+
+
 def loop_call_function() -> tuple[Asm, int]:
     """i = 0; while i < LOOP_LIMIT: callee(i); i = i + 1"""
     asm = Asm()
@@ -380,6 +394,15 @@ def return_after_a_loop_function() -> tuple[Asm, int]:
     asm.jmp('head')
     asm.label('done'); asm.pop(WORD_SIZE); return_nothing(asm)
     asm.label('early'); call(asm, 'early', EARLY_ARG); return_nothing(asm)
+    return asm, 1
+
+
+def store_then_wait_loop_function() -> tuple[Asm, int]:
+    """GLOBAL_B = STORED; while GLOBAL_A: ; callee(2): a store, then a loop with no effect of its own"""
+    asm = Asm()
+    asm.push_int(STORED); asm.set_global(GLOBAL_B)
+    asm.label('head'); asm.load_global(GLOBAL_A); asm.jz('done'); asm.jmp('head')
+    asm.label('done'); call(asm, 'after', 2); return_nothing(asm)
     return asm, 1
 
 
@@ -879,6 +902,20 @@ class TestPlantedHLILBugs(unittest.TestCase):
             statements[statements.index(loop)] = tested_first
         self.check(bottom_test_function, mutate, 'order_differs')
 
+    def test_store_moved_past_an_effect_free_loop(self):
+        """Nothing the loop reads changes, so the loop's place in the order is the only witness"""
+        def mutate(hlil):
+            statements = hlil.body.statements
+            index = statements.index(first_node(hlil, HLILWhile))
+            statements[index - 1], statements[index] = statements[index], statements[index - 1]
+        self.check(store_then_wait_loop_function, mutate, 'order_differs')
+
+    def test_arm_of_a_live_eager_and_dropped(self):
+        """The fold of a decided condition leaves the arm of `GLOBAL_A && x` to the comparison"""
+        def mutate(hlil):
+            first_node(hlil, HLILIf).true_block.statements.clear()
+        self.check(and_condition_function, mutate, 'missing_effect')
+
     def test_effect_free_loop_moved_under_a_condition(self):
         """The wait made conditional: it runs no more whenever GLOBAL_B is 0"""
         def mutate(hlil):
@@ -927,6 +964,20 @@ class TestHLILStructures(unittest.TestCase):
 
     def test_condition_split_at_its_short_circuit(self):
         self.assertEqual(hlil_categories(*mlil_and_hlil(and_condition_function)), set())
+
+    def test_hand_built_instructions_have_addresses(self):
+        """tests.shared.ir_utils.connect gives each its own: the check keys effects and branches by address"""
+        func = build_function('f', {'E': (['first', 'second'], ('if', 'p', 'T', 'F')), 'T': ([], ('ret', 1)),
+                                    'F': ([], ('ret', 2))})
+        addresses = [inst.address for inst in func.iter_instructions()]
+        self.assertEqual(len(set(addresses)), len(addresses))
+        self.assertNotIn(0, addresses)
+
+    def test_arm_a_decided_condition_never_reaches(self):
+        """HLIL splits `x && 0` and folds the 0, so its arm has no predecessor; the MLIL branch is decided alike"""
+        mlil, hlil = mlil_and_hlil(dead_arm_function)
+        self.assertEqual(sum(isinstance(inst, MLILIf) for inst in mlil.iter_instructions()), 1)  # the && stays whole
+        self.assertEqual(hlil_categories(mlil, hlil), set())
 
     @classmethod
     def extract_common_return(cls, hlil):
@@ -1167,6 +1218,15 @@ class TestPostDominators(unittest.TestCase):
         branches = lambda block: (1, 'b', 'c') if block == 'a' else None
         dependence = control_dependence(blocks, successors, branches)
         self.assertEqual(dependence, {'a': frozenset(), 'b': {(1, 't')}, 'c': {(1, 'f')}, 'd': frozenset()})
+
+    def test_loop_bodies_are_natural_loops(self):
+        def bodies(edges: dict) -> dict:
+            blocks, successors = self.graph(edges)
+            return loop_bodies(blocks, successors, lambda block: [other for other in blocks if block in edges[other]])
+
+        self.assertEqual(bodies({'e': ['h'], 'h': ['b', 'x'], 'b': ['h'], 'x': []}), {'h': {'h', 'b'}})
+        # Two entries into a cycle: the edge back to `a` is no loop's, neither of its ends dominates the other
+        self.assertEqual(bodies({'e': ['a', 'b'], 'a': ['b'], 'b': ['a', 'x'], 'x': []}), {})
 
     def test_loop_test_controls_the_body_and_itself(self):
         blocks, successors = self.graph({'entry': ['head'], 'head': ['body', 'exit'], 'body': ['head'], 'exit': []})
