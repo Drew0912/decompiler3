@@ -40,7 +40,7 @@ from logic_check.neutral_names import Fingerprints, Namer
 from logic_check.post_dominators import (
     EXIT, control_dependence, exit_blocks, immediate_post_dominators, loop_bodies,
 )
-from logic_check.state import PHI_DEPTH
+from logic_check.state import PHI_DEPTH, State, merged_value
 from logic_check.trees import const, constant_truth, op, truth
 
 GLOBAL_A, GLOBAL_B, GLOBAL_C, GLOBAL_D = 1, 2, 3, 4
@@ -60,6 +60,11 @@ SKIPPED = 1
 CHAIN_CASES = 3                 # HLIL's if-to-switch takes a chain of at least SWITCH_MIN_CASES tests
 NESTED_TESTS = 17               # conditions one guard runs under: past formulas.ROW_CAP's 2 ** 16 rows
 DIAGRAM_NODES_TOO_FEW = 2       # a decision_diagrams.DIAGRAM_NODE_CAP no decision diagram fits in (its two terminals)
+CHAIN_GLOBAL = 10               # the first global a chain of register writes tests (register_chain)
+ARM_VALUE, OTHER_ARM_VALUE = 100, 200
+# Writes whose merges, opened, are more alternatives than are lifted; a length both layers cut alike, so they compare
+# whole (past the cap a length they cut differently stays a difference: VALIDATOR_GUIDE.md, Limitations)
+LONG_CHAIN = compare.LIFTED_CHOICES + 1
 
 
 # === Assembled functions ===
@@ -497,6 +502,55 @@ def tail_call_function() -> tuple[Asm, int]:
     asm = Asm()
     call(asm, 'first', 1)
     asm.push_int(TAIL_CALL_ARG); asm.call_script_no_return(1)
+    return asm, 1
+
+
+def register_chain(asm: Asm, depth: int):
+    """depth times: if GLOBAL[CHAIN_GLOBAL + i]: REG = i + 1"""
+    for index in range(depth):
+        asm.load_global(CHAIN_GLOBAL + index); asm.jz(f'skip{index}')
+        asm.push_int(index + 1); asm.set_reg(REG_INDEX)
+        asm.label(f'skip{index}')
+
+
+def chain_then_early_return_function(depth: int = PHI_DEPTH) -> tuple[Asm, int]:
+    """if GLOBAL_A: (register_chain; return) else return: a common return merges the chain's value once more"""
+    asm = Asm()
+    asm.load_global(GLOBAL_A); asm.jz('early')
+    register_chain(asm, depth); return_nothing(asm)
+    asm.label('early'); return_nothing(asm)
+    return asm, 0
+
+
+def arms_then_chain_function() -> tuple[Asm, int]:
+    """REG = ARM_VALUE if GLOBAL_A else OTHER_ARM_VALUE; register_chain; return: the arms' merge is one more under the
+    chain's, which HLIL repeating the chain and the return in each arm does without"""
+    asm = Asm()
+    asm.load_global(GLOBAL_A); asm.jz('other')
+    asm.push_int(ARM_VALUE); asm.set_reg(REG_INDEX); asm.jmp('join')
+    asm.label('other'); asm.push_int(OTHER_ARM_VALUE); asm.set_reg(REG_INDEX)
+    asm.label('join'); register_chain(asm, PHI_DEPTH); return_nothing(asm)
+    return asm, 0
+
+
+def chain_arm_then_loop_function(depth: int = PHI_DEPTH + 1) -> tuple[Asm, int]:
+    """x = 0; if GLOBAL_A: (depth times: if GLOBAL[CHAIN_GLOBAL + i]: x = i + 1) else x = OTHER_ARM_VALUE;
+    while x < LOOP_LIMIT: x = x + 1; callee(x): the loop entered with the arms' merge, one more than the chain's"""
+    asm = Asm()
+    asm.push_int(0)
+    asm.load_global(GLOBAL_A); asm.jz('other')
+    for index in range(depth):
+        asm.load_global(CHAIN_GLOBAL + index); asm.jz(f'skip{index}')
+        asm.push_int(index + 1); asm.pop_to(-WORD_SIZE)
+        asm.label(f'skip{index}')
+    asm.jmp('head')
+    asm.label('other'); asm.push_int(OTHER_ARM_VALUE); asm.pop_to(-WORD_SIZE)
+    asm.label('head'); asm.load_stack(-WORD_SIZE); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('done')
+    asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.pop_to(-WORD_SIZE)
+    asm.jmp('head')
+    asm.label('done'); asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.load_stack(-3 * WORD_SIZE)
+    asm.call(CALLEE_ID)
+    asm.label('back'); asm.pop(WORD_SIZE); return_nothing(asm)
     return asm, 1
 
 
@@ -1027,6 +1081,42 @@ class TestPlantedHLILBugs(unittest.TestCase):
                   if difference.key == RETURN_KEY and isinstance(difference.detail, list)]
         self.assertEqual(values, ['guard_unchecked'])
 
+    @classmethod
+    def change_write(cls, hlil, value: int):
+        """The first write of the constant value made value + 1, which nothing else writes"""
+        write = first_node(hlil, HLILAssign, lambda node: isinstance(node.src, HLILConst) and node.src.value == value)
+        write.src.value += 1
+
+    def test_register_wrong_under_a_common_return(self):
+        """The chain's last write changed, its return made one with the other arm's: the merge past the phi depth,
+        opened, still differs in one alternative"""
+        def mutate(hlil):
+            TestHLILStructures.extract_common_return(hlil)
+            self.change_write(hlil, PHI_DEPTH)
+        self.check(chain_then_early_return_function, mutate, 'return_differs')
+
+    def test_register_wrong_in_one_repeated_arm(self):
+        """The chain and the return repeated in each arm, the first copy's last write changed"""
+        def mutate(hlil):
+            TestHLILStructures.repeat_tail_in_arms(hlil)
+            self.change_write(hlil, PHI_DEPTH)
+        self.check(arms_then_chain_function, mutate, 'return_differs')
+
+    def test_register_wrong_past_the_lifting_cap(self):
+        """The long chain's last write changed: the merges opened are more alternatives than are lifted, so the
+        difference found with them whole stands, not an unchecked one"""
+        mlil, hlil = mlil_and_hlil(lambda: chain_then_early_return_function(LONG_CHAIN))
+        TestHLILStructures.extract_common_return(hlil)
+        self.change_write(hlil, LONG_CHAIN)
+        self.assertEqual(hlil_categories(mlil, hlil), {'return_differs'})
+
+    def test_loop_entered_with_a_wrong_value_past_the_phi_depth(self):
+        """The loop rebuilt in both arms, the chain's last write in the first arm changed: that copy carries it in"""
+        def mutate(hlil):
+            TestHLILStructures.rebuild_in_both_arms(hlil)
+            self.change_write(hlil, PHI_DEPTH + 1)
+        self.check(chain_arm_then_loop_function, mutate, 'loop_value_differs')
+
 
 class TestHLILStructures(unittest.TestCase):
     """Structures HLIL builds otherwise than MLIL writes them, compared clean: the same logic"""
@@ -1107,6 +1197,52 @@ class TestHLILStructures(unittest.TestCase):
         if_stmt.false_block.statements.extend(copy.deepcopy(rest))
         hlil.body.statements = body[:index + 1]
 
+    @classmethod
+    def repeat_tail_in_arms(cls, hlil):
+        """if (c) {A} else {B}; rest; return made if (c) {A; rest; return} else {B; rest; return}, as the converter
+        repeats a region on each path into it (_clone_region_blocks)"""
+        body = hlil.body.statements
+        index = next(index for index, stmt in enumerate(body) if isinstance(stmt, HLILIf))
+        if_stmt, rest = body[index], body[index + 1:]
+        if if_stmt.false_block is None or not isinstance(rest[-1], HLILReturn):
+            raise AssertionError('the rewrite found no two arms and a return after them: the HLIL shape changed')
+        if_stmt.true_block.statements.extend(rest)
+        if_stmt.false_block.statements.extend(copy.deepcopy(rest))
+        hlil.body.statements = body[:index + 1]
+
+    def test_common_return_merging_past_the_phi_depth(self):
+        """The chain's value merged once more at the common return: past the phi depth on HLIL only, so the merge is
+        opened (Namer.opened) and compared with MLIL's two returns alternative by alternative"""
+        mlil, hlil = mlil_and_hlil(chain_then_early_return_function)
+        self.extract_common_return(hlil)
+        self.assertEqual(hlil_categories(mlil, hlil), set())
+
+    def test_common_return_past_the_lifting_cap(self):
+        """Both layers cut the long chain alike, so its merges compare whole: opened, they would be more alternatives
+        than are lifted, and unchecked"""
+        mlil, hlil = mlil_and_hlil(lambda: chain_then_early_return_function(LONG_CHAIN))
+        self.extract_common_return(hlil)
+        self.assertEqual(hlil_categories(mlil, hlil), set())
+
+    def test_tail_repeated_in_arms_past_the_phi_depth(self):
+        """MLIL merges the arms under the chain, past the phi depth; HLIL's copies of the chain do not"""
+        mlil, hlil = mlil_and_hlil(arms_then_chain_function)
+        self.repeat_tail_in_arms(hlil)
+        self.assertEqual(hlil_categories(mlil, hlil), set())
+
+    def test_loop_rebuilt_in_arms_entered_past_the_phi_depth(self):
+        """MLIL's loop entered with the arms' merge, past the phi depth; each copy with its arm's value, not past it"""
+        mlil, hlil = mlil_and_hlil(chain_arm_then_loop_function)
+        self.rebuild_in_both_arms(hlil)
+        self.assertEqual(hlil_categories(mlil, hlil), set())
+
+    def test_loop_rebuilt_in_arms_past_the_lifting_cap(self):
+        """The copies' values compare whole: opened, the long chain's merges would be more alternatives than are lifted,
+        cut short at other places on the two layers, and unchecked"""
+        mlil, hlil = mlil_and_hlil(lambda: chain_arm_then_loop_function(LONG_CHAIN))
+        self.rebuild_in_both_arms(hlil)
+        self.assertEqual(hlil_categories(mlil, hlil), set())
+
     def test_loop_rebuilt_in_both_arms(self):
         """Each copy carries in its arm's value: lifted into their formulas, the one MLIL loop's entry choice"""
         mlil, hlil = mlil_and_hlil(branch_then_loop_function)
@@ -1172,6 +1308,41 @@ class TestSplitLoopValues(unittest.TestCase):
 
     def test_wrong_split_beside_a_right_one(self):
         self.assertEqual(self.compare(3), {'loop_value_differs'})
+
+
+class TestCutMerges(unittest.TestCase):
+    """A merge past PHI_DEPTH is cut to a leaf; a gated one's gamma is kept for the comparison to open, a phi's (LLIL
+    against MLIL, compared by its joins) is not"""
+
+    KEY = ('reg', REG_INDEX)
+
+    def chain(self, gated: bool) -> tuple[tuple, Fingerprints]:
+        """PHI_DEPTH + 1 merges, each of a new constant and the value before it"""
+        fingerprints = Fingerprints(lambda key: key)
+        value = const(0)
+        for index in range(PHI_DEPTH + 1):
+            written = ('param', index)
+            if gated:
+                edges = (formulas.literal(written, True), formulas.literal(written, False))
+            else:
+                edges = (2 * index, 2 * index + 1)      # terminal addresses
+            join = None if gated else (index,)
+            states = [(edges[0], State({self.KEY: const(index + 1)})), (edges[1], State({self.KEY: value}))]
+            value = merged_value(join, self.KEY, states, fingerprints)
+        return value, fingerprints
+
+    def test_gated_merge_opened(self):
+        value, fingerprints = self.chain(gated=True)
+        self.assertEqual(value[0], 'deep_phi')
+        opened = Namer(Facts(deep_choices=fingerprints.deep_choices)).opened(value)
+        self.assertEqual(opened[0], 'gamma')
+        self.assertEqual(Fingerprints(lambda key: key)(opened), value[3])
+
+    def test_phi_kept_whole(self):
+        value, fingerprints = self.chain(gated=False)
+        self.assertEqual(value[0], 'deep_phi')
+        self.assertEqual(fingerprints.deep_choices, {})
+        self.assertIs(Namer(Facts(deep_choices=fingerprints.deep_choices)).opened(value), value)
 
 
 class TestConditionNormalForm(unittest.TestCase):

@@ -60,9 +60,10 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
   of `if (x != 0 && 0 != 0)` counted in `AniBtlKnockDown`, `-Loop`, `-End` of sora1 `ani/chr5004.dat` and `TKFront` of
   `scena/a1011.dat` in kuro1, kuro2 and kai1, is gone since 5c-1: MLIL's view folds a condition with a decisive constant
   operand as HLIL does; K3, a value after a loop whose exit HLIL splits in two tests, in `AniBtlChaseAttack` of sora2
-  `ani/chr0003`, `chr0125`, `chr5006` and `chr5106`, is gone since 5c-2: a loop that runs ends, see the limitations):
-  - K2, the registers at a return HLIL merges with another (`return_differs`): `MayaEvent*` (sora2 `mp5005`,
-    `mp1051`; kai1 `e5000`), `Archive01`, `-02`, `-04`, `Svis00`, `Dlc00`, `Etc00` (kai1, kuro2 `scena/a1018.dat`).
+  `ani/chr0003`, `chr0125`, `chr5006` and `chr5106`, is gone since 5c-2: a loop that runs ends, see the limitations;
+  K2, the registers at a return HLIL merges with another or repeats in two arms, in `MayaEvent*` (sora2 `mp5005`,
+  `mp1051`; kai1 `e5000`), `Archive01`, `-02`, `-04`, `Svis00`, `Dlc00`, `Etc00` (kai1, kuro2 `scena/a1018.dat`), is
+  gone since 5c-3: a merge cut at the phi depth is opened where the layers cut it at different depths):
   - K4, a gated choice inside a condition, compared by its shape (`guard_differs`, `arg_differs`):
     `FdungeonStartVoicePlay`, `OnQuestEnd` (kai1 `scena/system.dat`).
   - K5, formulas too large: `guard_unchecked` in `MapJumpCheck` (kuro1 `system.dat`), `InitBGM` (kuro2 `sound.dat`),
@@ -97,6 +98,10 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
   none it is inside of, takes one of its exits when it runs. So the iterations that go round again are never the last,
   and HLIL splitting a loop's `&&` exit in two tests, or repeating the code after the loop in each exit, is no finding.
   A loop that never ends is not checked.
+- A merged value more than three merges deep is compared by its fingerprint, and the two layers may merge it at
+  different depths (HLIL's common return, a region repeated in two arms). Where a value an effect passes or a loop copy
+  carries then differs, the cut merges are opened and compared alternative by alternative, up to 256 alternatives;
+  past that, or for a cut merge inside an operation or a condition (K4), the difference stays.
 - Only natural loops (a header dominating the edge back to it) have a body. In an irreducible region, which no
   real script has, the formulas of the blocks outside natural loops are those of one pass through the region, so a
   clean result there proves less (the fuzz's irreducible graphs compare without error).

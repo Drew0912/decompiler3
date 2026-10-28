@@ -30,11 +30,13 @@ class Fingerprints:
     """A layer's value trees and formulas digested the way the comparison sees them: a layer's own storage keys under
     neutral names, == and != operands and those of a formula's and / or in any order, a gated choice by its values
     and the function choosing each (gated_choice); equal digests mean equal trees. Memoised by identity, so a subtree
-    shared by many trees is digested once"""
+    shared by many trees is digested once. The evaluation's instance (evaluation.analyze) also keeps the choice of each
+    gated merge cut at the phi depth under its fingerprint (state.merged_value), for the facts"""
 
     def __init__(self, neutral_key):
         self.neutral_key = neutral_key
         self.memo = {}
+        self.deep_choices = {}      # a cut gated merge's fingerprint -> its gamma
         self.formula_keys = FormulaKeys(self)
 
     def __call__(self, tree) -> bytes:
@@ -94,10 +96,20 @@ class Namer:
 
     def __init__(self, facts: Facts, representative: bool = False):
         self.neutral_key = facts.neutral      # a deep phi is cut to its fingerprint either way
+        self.deep_choices = facts.deep_choices      # where opened finds a cut gated merge's gamma
         self.fingerprints = Fingerprints(self.neutral_key)
         self.formula_keys = FormulaKeys(self.fingerprints, representative)
         self.memo = {}
         self.digests = {}
+
+    def opened(self, tree):
+        """A gated merge cut at the phi depth as the gamma it was cut from (state.merged_value keeps only those, not a
+        phi's); any other tree as it is"""
+        if not (isinstance(tree, tuple) and tree and tree[0] == 'deep_phi'):
+            return tree
+
+        _, _, _, fingerprint, _ = tree
+        return self.deep_choices.get(fingerprint, tree)
 
     def renamed_digest(self, renamed) -> bytes:
         """A renamed tree's digest, memoised by identity (a tree shares its parts): equal digests mean equal trees"""

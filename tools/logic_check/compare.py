@@ -246,37 +246,56 @@ def compare_loop_copies(group: tuple, copies: tuple[dict, dict], namers: tuple[N
     """A loop HLIL rebuilds on several paths, its copies under one stamp: each own key's values along each incoming
     edge, lifted into the formulas the copies carry them under (lift_choices), so copies on exclusive paths compare with
     the reference's one loop; both ways, as compare_carried_values compares. A value carried under a formula that never
-    holds (a copy's back edge it never takes) is left out"""
+    holds (a copy's back edge it never takes) is left out. Where they differ, the merges cut at the phi depth are opened
+    (lift_choices), which only clears the difference: the layers cut at different depths"""
+    found = copy_descriptions(copies, namers, open_cuts=False)
+    if found is None:
+        differences.append(Difference('guard_unchecked', group, 'loop copies'))
+        return
+
+    descriptions, capped = found
+    if descriptions[0] == descriptions[1]:
+        return
+    opened = copy_descriptions(copies, namers, open_cuts=True)
+    if opened is not None and opened[0][0] == opened[0][1]:
+        return
+    counts = [max(len(edge_copies) for per_edge in copies[side].values() for edge_copies in per_edge)
+              for side in (0, 1)]
+    category = 'guard_unchecked' if capped else 'loop_value_differs'
+    differences.append(Difference(category, group, [('copies', *counts)]))
+
+
+def copy_descriptions(copies: tuple[dict, dict], namers: tuple[Namer, Namer], open_cuts: bool) -> tuple | None:
+    """Each side's descriptions of its copies' values (per edge, each value's digest with the key of the formulas it is
+    carried under) and whether a choice was left whole; None where a formula has no key"""
     descriptions, capped = (set(), set()), False
     for side in (0, 1):
         for per_edge in copies[side].values():
             described = []
             for edge_copies in per_edge:
-                values, cut = lift_choices(namers[side], edge_copies)
+                values, cut = lift_choices(namers[side], edge_copies, open_cuts)
                 capped = capped or cut
                 carried = {digest: namers[side].formula_keys(disjunction(formulas))
                            for digest, formulas in values.items()}
                 if None in carried.values():
-                    differences.append(Difference('guard_unchecked', group, 'loop copies'))
-                    return
+                    return None
                 described.append(frozenset((digest, key) for digest, key in carried.items() if key != FALSE_KEY))
             descriptions[side].add(tuple(described))
-    if descriptions[0] != descriptions[1]:
-        counts = [max(len(edge_copies) for per_edge in copies[side].values() for edge_copies in per_edge)
-                  for side in (0, 1)]
-        category = 'guard_unchecked' if capped else 'loop_value_differs'
-        differences.append(Difference(category, group, [('copies', *counts)]))
+    return descriptions, capped
 
 
-def lift_choices(namer: Namer, formula_values: list[tuple]) -> tuple[dict, bool]:
+def lift_choices(namer: Namer, formula_values: list[tuple], open_cuts: bool = False) -> tuple[dict, bool]:
     """(formula, value) pairs as each value's digest under neutral names -> the formulas it holds under, a gated choice
     lifted into them to LIFTED_CHOICES alternatives a pair; and whether a choice was left whole past them, so that a
-    mismatch is unchecked, not a difference"""
+    mismatch is unchecked, not a difference. open_cuts: a merge cut at the phi depth is opened into its gamma first
+    (Namer.opened), an alternative that is one in turn"""
     formulas_by_digest, capped = {}, False
     for formula, value in formula_values:
         alternatives, pending = [], [(formula, value)]
         while pending:
             condition, value = pending.pop()
+            if open_cuts:
+                value = namer.opened(value)
             if isinstance(value, tuple) and value and value[0] == 'gamma':
                 if len(alternatives) + len(pending) + len(value[1]) <= LIFTED_CHOICES:
                     pending.extend((conjunction(condition, choice_formula), choice)

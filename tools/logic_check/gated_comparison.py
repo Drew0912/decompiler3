@@ -139,7 +139,8 @@ def equivalent(namers: tuple[Namer, Namer], formulas: tuple) -> bool:
 def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences: list, premises: tuple):
     """The values an effect's occurrences pass, each argument and storage key on its own: equal under neutral names,
     or, a gated choice lifted into the formula its value is passed under (HLIL may pass from one return what MLIL
-    passes from two, merged at the join before it), the same values each under one formula"""
+    passes from two, merged at the join before it), the same values each under one formula (compare_component, which
+    opens a merge cut at the phi depth)"""
     expected, found = occurrences
     category = value_category(expected[0])
     single = len(expected) == len(found) == 1
@@ -162,12 +163,24 @@ def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences
 
 
 def compare_component(namings: Namings, occurrences: tuple, component, premises: tuple) -> str | None:
+    """compare_lifted with the merges cut at the phi depth kept whole, and where that finds a difference, opened (the
+    layers cut at different depths): the opened answer is taken only if it clears the difference or finds an inverted
+    ordering, so a choice opened past LIFTED_CHOICES leaves the first answer"""
+    closed = compare_lifted(namings, occurrences, component, premises, open_cuts=False)
+    if closed is None:
+        return None
+
+    opened = compare_lifted(namings, occurrences, component, premises, open_cuts=True)
+    return opened if opened in (None, 'condition_ordering_inverted') else closed
+
+
+def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tuple, open_cuts: bool) -> str | None:
     """None when both sides pass the same values for component (an argument's index or a storage key) under the same
     formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted"""
     category = value_category(occurrences[0][0])
     capped = False                  # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
     for namers in namings:
-        lifts = [passed_under(namer, effects, component) for namer, effects in zip(namers, occurrences)]
+        lifts = [passed_under(namer, effects, component, open_cuts) for namer, effects in zip(namers, occurrences)]
         passed = [found for found, _ in lifts]
         capped = capped or any(cut for _, cut in lifts)
         if passed[0].keys() != passed[1].keys():
@@ -197,10 +210,11 @@ def value_differences(namers: tuple[Namer, Namer], a: Effect, b: Effect) -> list
     return details
 
 
-def passed_under(namer: Namer, effects: list[Effect], component) -> tuple[dict, bool]:
+def passed_under(namer: Namer, effects: list[Effect], component, open_cuts: bool) -> tuple[dict, bool]:
     """What the occurrences pass as component, each value's digest under neutral names -> the formulas it is passed
     under, and whether a choice was left whole (lift_choices)"""
-    return lift_choices(namer, [(effect.guard_formula, component_value(effect, component)) for effect in effects])
+    return lift_choices(namer, [(effect.guard_formula, component_value(effect, component)) for effect in effects],
+                        open_cuts)
 
 
 def render(formula) -> str:

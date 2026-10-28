@@ -147,7 +147,9 @@ def merged_value(join, key: tuple, states: list[tuple], fingerprints: Fingerprin
     the predecessors ordered by edge name, the terminal address (join an identity), or a gated choice over the path
     conditions the edges are taken under (join None; FormulaKeys compares them). Past PHI_DEPTH the merge becomes a
     leaf, ('deep_phi', join, key, fingerprint, kept leaves): its fingerprint compares it whole, and its loop leaves and
-    addresses stay visible, so the loop values and pointees it reads are still compared"""
+    addresses stay visible, so the loop values and pointees it reads are still compared. A gated merge's choice is kept
+    under its fingerprint (Fingerprints.deep_choices), opened where a value compared whole differs
+    (compare.lift_choices): the layers cut at different depths"""
     neutral_key = fingerprints.neutral_key
     values = [(name, state.items.get(key, incoming_value(key, neutral_key))) for name, state in states]
     first = values[0][1]
@@ -162,4 +164,7 @@ def merged_value(join, key: tuple, states: list[tuple], fingerprints: Fingerprin
         return phi
 
     kept = dict.fromkeys(leaf for tag in DEEP_PHI_KEPT_LEAVES for leaf in tagged_leaves(phi, tag))
-    return ('deep_phi', join, neutral_key(key), fingerprints(phi), tuple(kept))
+    fingerprint = fingerprints(phi)
+    if join is None:
+        fingerprints.deep_choices[fingerprint] = phi
+    return ('deep_phi', join, neutral_key(key), fingerprint, tuple(kept))

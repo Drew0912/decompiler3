@@ -44,7 +44,8 @@ def analyze(layer, *, gated: bool = False) -> Facts:
     fingerprints = Fingerprints(layer.neutral_key)
     entry_states, exit_states, widened = widen_loop_headers(layer, order, position, naming, fingerprints)
 
-    facts = Facts(neutral_key=layer.neutral_key if layer.OWN_STORAGE_NAMES else None)
+    facts = Facts(neutral_key=layer.neutral_key if layer.OWN_STORAGE_NAMES else None,
+                  deep_choices=fingerprints.deep_choices)
     effects_of = {}
     for block in order:
         exit_states[block], effects_of[block] = run_block(layer, block, entry_states[block], facts)
