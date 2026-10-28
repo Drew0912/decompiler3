@@ -287,7 +287,8 @@ Several dedicated HLIL unit-test files exist today:
   equality/inequality chains, grouped labels, duplicate rejection, scrutinee consistency, and where the line
   comments before each later test end up.
 - `tests/hlil_tests/test_hlil_loop_recovery.py` covers leading break/return guards, unsafe rotations, nested
-  switch breaks, preservation of already-tested loops, the while(1)->do-while rotation, and its
+  switch breaks, preservation of already-tested loops, the while(1)->do-while rotation (from a trailing
+  `if (c) break;` and, since 2026-10-28, from a trailing `if (c) continue; else break;`), and its
   continue-safety/label-preservation guards (Step H, 2026-09-22).
 - `tests/hlil_tests/test_hlil_loop_traversal.py` (Step H, 2026-09-22) covers `DeadCodeEliminationPass`,
   `CommonReturnExtractionPass`, and `TypeScriptGenerator._infer_return_type` each correctly seeing

@@ -37,6 +37,8 @@ RETURN_VALUE = 1
 GUARD_LINE = 'line(782)'
 BODY_CALL = 'btl_chr_list_next'
 SWITCH_CASE_VALUE = 3
+LOOP_LABEL = 'loop_1'
+OUTER_LABEL = 'outer'
 
 
 def make_var() -> HLILVar:
@@ -198,8 +200,9 @@ class TestLoopRecoveryFloatConditions(unittest.TestCase):
 
 
 class TestLoopRecoveryDoWhileRotation(unittest.TestCase):
-    """while (1) { body; if (c) break; } -> do { body } while (!c) - the one recovery shape
-    with no existing test coverage before this step (do-whiles are latent in the real corpus)."""
+    """while (1) { body; if (c) break; } -> do { body } while (!c), and the bottom test structuring
+    writes, while (1) { body; if (c) continue; else break; } -> do { body } while (c) (45 loops of
+    the five games' corpus, menu loops most)."""
 
     def test_trailing_break_guard_becomes_do_while(self):
         guard = make_guard(HLILBreak())
@@ -227,6 +230,79 @@ class TestLoopRecoveryDoWhileRotation(unittest.TestCase):
         self.assertEqual(recovered.address, 0x1234)
         self.assertEqual(recovered.mlil_index, 7)
 
+    def test_trailing_continue_test_becomes_do_while(self):
+        """The test kept as it is: the loop goes round while it holds"""
+        condition = make_exit_condition()
+        test = HLILIf(condition, HLILBlock([HLILContinue()]), HLILBlock([HLILBreak()]))
+        loop = HLILWhile(HLILConst(1), HLILBlock([make_body_statement(), test]))
+
+        recovered = run_pass(loop).body.statements[0]
+
+        self.assertIsInstance(recovered, HLILDoWhile)
+        self.assertIs(recovered.condition, condition)
+        self.assertEqual(call_names(recovered.body), [BODY_CALL])
+
+    def test_mirrored_trailing_test_is_negated(self):
+        """if (c) break; else continue; - the loop goes round while c does not hold"""
+        test = HLILIf(make_exit_condition(), HLILBlock([HLILBreak()]), HLILBlock([HLILContinue()]))
+        loop = HLILWhile(HLILConst(1), HLILBlock([make_body_statement(), test]))
+
+        recovered = run_pass(loop).body.statements[0]
+
+        self.assertIsInstance(recovered, HLILDoWhile)
+        self.assertEqual(recovered.condition.op, BinaryOp.GT)
+        self.assertEqual(call_names(recovered.body), [BODY_CALL])
+
+    def test_body_of_only_the_test_stays_a_while(self):
+        """Nothing before the test: while (c) { } reads better than an empty do, and runs the same"""
+        for name, markers in {'bare': [], 'after a line marker': [HLILComment(GUARD_LINE)]}.items():
+            with self.subTest(name):
+                condition = make_exit_condition()
+                test = HLILIf(condition, HLILBlock([HLILContinue()]), HLILBlock([HLILBreak()]))
+                loop = HLILWhile(HLILConst(1), HLILBlock(markers + [test]))
+
+                recovered = run_pass(loop).body.statements[0]
+
+                self.assertIsInstance(recovered, HLILWhile)
+                self.assertIs(recovered.condition, condition)
+                self.assertEqual(recovered.body.statements, markers)
+
+    def assert_trailing_test_refused(self, true_arm: list, false_arm: list):
+        """The loop stays a while (1) with its body and its test as they were"""
+        test = HLILIf(make_exit_condition(), HLILBlock(true_arm), HLILBlock(false_arm))
+        loop = HLILWhile(HLILConst(1), HLILBlock([make_body_statement(), test]))
+
+        recovered = run_pass(loop).body.statements[0]
+
+        self.assertIsInstance(recovered, HLILWhile)
+        self.assertEqual(recovered.condition.value, 1)
+        self.assertEqual(len(recovered.body.statements), 2)
+        self.assertIs(recovered.body.statements[-1], test)
+
+    def test_labeled_jump_in_an_arm_refuses_the_trailing_test(self):
+        """A labeled jump leaves for another loop: rotating would delete it with the test"""
+        arms = {
+            'labeled continue, bare break': ([HLILContinue(OUTER_LABEL)], [HLILBreak()]),
+            'bare continue, labeled break': ([HLILContinue()], [HLILBreak(OUTER_LABEL)]),
+            'labeled break, bare continue': ([HLILBreak(OUTER_LABEL)], [HLILContinue()]),
+            'bare break, labeled continue': ([HLILBreak()], [HLILContinue(OUTER_LABEL)]),
+        }
+        for name, (true_arm, false_arm) in arms.items():
+            with self.subTest(name):
+                self.assert_trailing_test_refused(true_arm, false_arm)
+
+    def test_comment_in_an_arm_refuses_the_trailing_test(self):
+        """The arm is more than the bare jump: rotating would drop the comment"""
+        arms = {
+            'comment before continue': ([HLILComment(GUARD_LINE), HLILContinue()], [HLILBreak()]),
+            'comment before break':    ([HLILContinue()], [HLILComment(GUARD_LINE), HLILBreak()]),
+            'comment after continue': ([HLILContinue(), HLILComment(GUARD_LINE)], [HLILBreak()]),
+            'comment after break':     ([HLILBreak(), HLILComment(GUARD_LINE)], [HLILContinue()]),
+        }
+        for name, (true_arm, false_arm) in arms.items():
+            with self.subTest(name):
+                self.assert_trailing_test_refused(true_arm, false_arm)
+
 
 class TestLoopRecoveryContinueGuard(unittest.TestCase):
     """continue means something different in while(1) (always jumps to top, never exits) than
@@ -246,6 +322,30 @@ class TestLoopRecoveryContinueGuard(unittest.TestCase):
         # Nothing lost: refusal happens before _trailing_exit_condition would have popped the
         # trailing break-guard, so the body is exactly as it started
         self.assertEqual(len(recovered.body.statements), 3)
+
+    def test_continue_elsewhere_refuses_the_trailing_continue_test(self):
+        # The early continue would run the do-while's test, where the while(1) goes back to the top
+        early = HLILIf(make_flag('skip'), HLILBlock([HLILContinue()]), None)
+        test = HLILIf(make_exit_condition(), HLILBlock([HLILContinue()]), HLILBlock([HLILBreak()]))
+        loop = HLILWhile(HLILConst(1), HLILBlock([early, make_body_statement(), test]))
+
+        recovered = run_pass(loop).body.statements[0]
+
+        self.assertIsInstance(recovered, HLILWhile)
+        self.assertEqual(len(recovered.body.statements), 3)
+
+    def test_labeled_continue_elsewhere_refuses_the_trailing_continue_test(self):
+        # A labeled continue may name this loop or one outside it: either way the test would run in its place
+        for label in (LOOP_LABEL, OUTER_LABEL):
+            with self.subTest(label):
+                early = HLILIf(make_flag('skip'), HLILBlock([HLILContinue(label)]), None)
+                test = HLILIf(make_exit_condition(), HLILBlock([HLILContinue()]), HLILBlock([HLILBreak()]))
+                loop = HLILWhile(HLILConst(1), HLILBlock([early, make_body_statement(), test]), label=LOOP_LABEL)
+
+                recovered = run_pass(loop).body.statements[0]
+
+                self.assertIsInstance(recovered, HLILWhile)
+                self.assertEqual(len(recovered.body.statements), 3)
 
     def test_continue_inside_nested_loop_does_not_block_rotation(self):
         # That continue belongs to the nested loop, not to this one

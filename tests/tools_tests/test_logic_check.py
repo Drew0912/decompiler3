@@ -19,8 +19,9 @@ from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
 from ir.core.il_literals import SourceFloat
 from ir.hlil.hlil import (
-    BinaryOp, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall, HLILConst, HLILContinue, HLILExprStmt, HLILIf,
-    HLILReturn, HLILSwitch, HLILUnstructured, HLILVar, HLILVariable, HLILWhile, VariableKind, iter_tree,
+    BinaryOp, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall, HLILConst, HLILContinue, HLILDoWhile,
+    HLILExprStmt, HLILIf, HLILReturn, HLILSwitch, HLILUnstructured, HLILVar, HLILVariable, HLILWhile, VariableKind,
+    iter_tree,
 )
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
@@ -861,11 +862,22 @@ class TestPlantedHLILBugs(unittest.TestCase):
         self.check(wait_loop_function, mutate, 'guard_differs')
 
     def test_bottom_test_flipped(self):
-        """The test after the loop's only effect: every iteration still makes the call, it goes round otherwise"""
+        """The do-while's test, after the loop's only effect: every iteration still makes the call, it goes round
+        otherwise"""
         def mutate(hlil):
-            test = first_node(hlil, HLILIf)
-            test.condition = HLILBinaryOp(BinaryOp.EQ, test.condition, HLILConst(0))
+            loop = first_node(hlil, HLILDoWhile)
+            loop.condition = HLILBinaryOp(BinaryOp.EQ, loop.condition, HLILConst(0))
         self.check(bottom_test_function, mutate, 'guard_differs')
+
+    def test_do_while_made_while(self):
+        """The test moved before the body, the loop's stamp kept: the first call runs only when the test holds"""
+        def mutate(hlil):
+            loop = first_node(hlil, HLILDoWhile)
+            tested_first = HLILWhile(loop.condition, loop.body)
+            tested_first.address, tested_first.mlil_index = loop.address, loop.mlil_index
+            statements = hlil.body.statements
+            statements[statements.index(loop)] = tested_first
+        self.check(bottom_test_function, mutate, 'order_differs')
 
     def test_effect_free_loop_moved_under_a_condition(self):
         """The wait made conditional: it runs no more whenever GLOBAL_B is 0"""

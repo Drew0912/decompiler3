@@ -4,6 +4,7 @@ Turn the while(1) shape that structuring produces back into a tested loop:
 
     while (1) { if (c) break; body }    ->  while (!c) { body }
     while (1) { body; if (c) break; }   ->  do { body } while (!c)
+    while (1) { body; if (c) continue; else break; }   ->  do { body } while (c)
     while (1) { if (c) return x; body } ->  while (!c) { body } return x
 
 Also folds constant loop conditions and drops a trailing continue, which says
@@ -89,6 +90,11 @@ class LoopRecoveryPass(Pass):
             loop.condition, trailing = leading_return
             return [loop] + trailing
 
+        # Before the continue check below: this test's continue arm is one, and it goes
+        trailing_test = self._trailing_continue_test(loop.body)
+        if trailing_test is not None:
+            return [self._do_while(trailing_test, loop)]
+
         # Checked before _trailing_exit_condition, which mutates loop.body - refusing after
         # that mutation would return a "left unchanged" while(1) loop that had already lost
         # its own trailing break
@@ -97,12 +103,48 @@ class LoopRecoveryPass(Pass):
 
         trailing_exit = self._trailing_exit_condition(loop.body)
         if trailing_exit is not None:
-            new_loop = HLILDoWhile(trailing_exit, loop.body, label=loop.label)
-            new_loop.address = loop.address
-            new_loop.mlil_index = loop.mlil_index
-            return [new_loop]
+            return [self._do_while(trailing_exit, loop)]
 
         return [loop]
+
+    def _do_while(self, condition: HLILExpression, loop: HLILWhile) -> HLILDoWhile:
+        """loop's body tested at its end by condition, the loop's label and provenance kept"""
+        new_loop = HLILDoWhile(condition, loop.body, label=loop.label)
+        new_loop.address = loop.address
+        new_loop.mlil_index = loop.mlil_index
+        return new_loop
+
+    def _trailing_continue_test(self, body: HLILBlock) -> HLILExpression | None:
+        """Condition of a trailing `if (c) continue; else break;` (c; its mirror's negated), taken off the body: the
+        continue does what the body's end does. Each arm the unlabeled statement alone, so no comment is lost; and
+        nothing else in the body continues, since a continue in a do-while runs the test"""
+        if not body.statements or not isinstance(body.statements[-1], HLILIf):
+            return None
+
+        stmt = body.statements[-1]
+        arms = (self._bare_jump(stmt.true_block), self._bare_jump(stmt.false_block))
+        if arms == (HLILContinue, HLILBreak):
+            condition = stmt.condition
+        elif arms == (HLILBreak, HLILContinue):
+            condition = negate_condition(stmt.condition)
+        else:
+            return None
+
+        if contains_escaping_exit(HLILBlock(body.statements[:-1]), HLILContinue, include_labeled=True):
+            return None
+
+        del body.statements[-1]
+        return condition
+
+    def _bare_jump(self, block: HLILBlock | None) -> type | None:
+        """HLILBreak or HLILContinue, when block holds that unlabeled statement and nothing else"""
+        if block is None or len(block.statements) != 1:
+            return None
+
+        stmt = block.statements[0]
+        if isinstance(stmt, (HLILBreak, HLILContinue)) and stmt.label is None:
+            return type(stmt)
+        return None
 
     def _guarded_body(self, body: HLILBlock) -> tuple | None:
         """while (1) { if (c) {...} else { break } } -> while (c) { ... }"""
