@@ -152,6 +152,8 @@ class FormulaKeys:
         return result
 
     def split_short_logic(self, normal: tuple):
+        """normal's structure over atoms at its && and || (gated_comparison.short_logic_formula splits a condition
+        alike, into a formula)"""
         if normal[0] == 'not':
             return ('not', self.split_short_logic(normal[1]))
         if normal[0] == 'op' and normal[1] in SHORT_LOGIC:

@@ -109,6 +109,7 @@ class GatedNaming:
         self.arms = self.earlier_arms(order, dependence)
         self.within_memo, self.within_memo_facts = {}, None
         self.inside_of, self.after_of = {}, {}     # block -> the loops (names) it is in, the loops it follows
+        self.round_after = {}       # a loop's header -> the loops inside it whose exits end its iteration (after_loop)
 
     def branch_blocks(self, order: list) -> dict:
         """branch address -> the block ending in it"""
@@ -281,8 +282,11 @@ class GatedNaming:
                                                                         disjunction([copies[1], ends]))
             for block in body:
                 self.inside_of.setdefault(block, set()).add(name)
-            for block in self.after_loop(header, body):
+            after, iteration_ends = self.after_loop(header, body)
+            for block in after:
                 self.after_of.setdefault(block, set()).add(name)
+            for enclosing in iteration_ends:
+                self.round_after.setdefault(enclosing, set()).add(name)
 
         for block in order:
             for effect in effects_of[block]:
@@ -293,10 +297,10 @@ class GatedNaming:
         return [(block, successor) for block in sorted(body, key=self.position.__getitem__)
                 for successor in dict.fromkeys(self.layer.successors(block)) if successor not in body]
 
-    def after_loop(self, header, body: set) -> set:
-        """The blocks reached from the loop's exits within one iteration of the loops around it: an enclosing loop's
-        header ends that iteration, so it is reached and not passed, and what runs before the loop in the iteration is
-        not after it"""
+    def after_loop(self, header, body: set) -> tuple[set, set]:
+        """The blocks reached from the loop's exits within one iteration of the loops around it, and the headers of
+        those loops reached: the iteration ends there, so a header is not passed, and only its loop's going round again
+        is after the loop; what runs before the loop in the iteration, a header's own effects included, is not"""
         enclosing = {other for other, other_body in self.bodies.items() if other is not header and header in other_body}
         reached = {successor for _, successor in self.exit_edges(body)}
         pending = list(reached)
@@ -310,7 +314,8 @@ class GatedNaming:
                     reached.add(successor)
                     pending.append(successor)
 
-        return reached - body
+        iteration_ends = reached & enclosing
+        return reached - body - iteration_ends, iteration_ends
 
     def exit_taken(self, source, target, facts: Facts) -> tuple:
         """The formula the edge from source to target is taken under in some iteration"""
@@ -341,12 +346,13 @@ class GatedNaming:
         """A loop's pseudo-effects, named by its header: 'loop' under the formula the loop runs under, 'loop continue'
         under the one it goes round again under"""
         name = self.header(header)
-        effects = [Effect(name, 'loop', None, (), guard_formula=self.guard_formula(header, facts)),
-                   Effect(name, 'loop continue', None, (), guard_formula=self.going_round(header, facts))]
-        for effect in effects:
+        runs = Effect(name, 'loop', None, (), guard_formula=self.guard_formula(header, facts))
+        goes_round = Effect(name, 'loop continue', None, (), guard_formula=self.going_round(header, facts))
+        for effect in (runs, goes_round):
             self.place(effect, header, own=name)
+        goes_round.after |= frozenset(self.round_after.get(header, ()))    # the loops whose exits end its iteration
 
-        return effects
+        return [runs, goes_round]
 
     def loop_values(self, header, keys: set, exit_states: dict, facts: Facts, fingerprints: Fingerprints):
         """The values the loop carries in under the formula it runs under, and round under the one it goes round again

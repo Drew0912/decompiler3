@@ -246,9 +246,9 @@ def compare_loop_copies(group: tuple, copies: tuple[dict, dict], namers: tuple[N
     """A loop HLIL rebuilds on several paths, its copies under one stamp: each own key's values along each incoming
     edge, lifted into the formulas the copies carry them under (lift_choices), so copies on exclusive paths compare with
     the reference's one loop; both ways, as compare_carried_values compares. A value carried under a formula that never
-    holds (a copy's back edge it never takes) is left out. Where they differ, the merges cut at the phi depth are opened
-    (lift_choices), which only clears the difference: the layers cut at different depths"""
-    found = copy_descriptions(copies, namers, open_cuts=False)
+    holds (a copy's back edge it never takes) is left out. Where they differ, the choices inside the values are lifted
+    too (lift_choices, inner), which only clears the difference: the layers build such a choice each its own way"""
+    found = copy_descriptions(copies, namers, inner=False)
     if found is None:
         differences.append(Difference('guard_unchecked', group, 'loop copies'))
         return
@@ -256,8 +256,8 @@ def compare_loop_copies(group: tuple, copies: tuple[dict, dict], namers: tuple[N
     descriptions, capped = found
     if descriptions[0] == descriptions[1]:
         return
-    opened = copy_descriptions(copies, namers, open_cuts=True)
-    if opened is not None and opened[0][0] == opened[0][1]:
+    lifted = copy_descriptions(copies, namers, inner=True)
+    if lifted is not None and lifted[0][0] == lifted[0][1]:
         return
     counts = [max(len(edge_copies) for per_edge in copies[side].values() for edge_copies in per_edge)
               for side in (0, 1)]
@@ -265,7 +265,7 @@ def compare_loop_copies(group: tuple, copies: tuple[dict, dict], namers: tuple[N
     differences.append(Difference(category, group, [('copies', *counts)]))
 
 
-def copy_descriptions(copies: tuple[dict, dict], namers: tuple[Namer, Namer], open_cuts: bool) -> tuple | None:
+def copy_descriptions(copies: tuple[dict, dict], namers: tuple[Namer, Namer], inner: bool) -> tuple | None:
     """Each side's descriptions of its copies' values (per edge, each value's digest with the key of the formulas it is
     carried under) and whether a choice was left whole; None where a formula has no key"""
     descriptions, capped = (set(), set()), False
@@ -273,7 +273,7 @@ def copy_descriptions(copies: tuple[dict, dict], namers: tuple[Namer, Namer], op
         for per_edge in copies[side].values():
             described = []
             for edge_copies in per_edge:
-                values, cut = lift_choices(namers[side], edge_copies, open_cuts)
+                values, cut = lift_choices(namers[side], edge_copies, inner)
                 capped = capped or cut
                 carried = {digest: namers[side].formula_keys(disjunction(formulas))
                            for digest, formulas in values.items()}
@@ -284,28 +284,89 @@ def copy_descriptions(copies: tuple[dict, dict], namers: tuple[Namer, Namer], op
     return descriptions, capped
 
 
-def lift_choices(namer: Namer, formula_values: list[tuple], open_cuts: bool = False) -> tuple[dict, bool]:
+def lift_choices(namer: Namer, formula_values: list[tuple], inner: bool = False) -> tuple[dict, bool]:
     """(formula, value) pairs as each value's digest under neutral names -> the formulas it holds under, a gated choice
-    lifted into them to LIFTED_CHOICES alternatives a pair; and whether a choice was left whole past them, so that a
-    mismatch is unchecked, not a difference. open_cuts: a merge cut at the phi depth is opened into its gamma first
-    (Namer.opened), an alternative that is one in turn"""
+    lifted into them (choice_alternatives); and whether a choice was left whole past LIFTED_CHOICES, so that a mismatch
+    is unchecked, not a difference. inner: the choices inside a value too"""
     formulas_by_digest, capped = {}, False
     for formula, value in formula_values:
-        alternatives, pending = [], [(formula, value)]
-        while pending:
-            condition, value = pending.pop()
-            if open_cuts:
-                value = namer.opened(value)
-            if isinstance(value, tuple) and value and value[0] == 'gamma':
-                if len(alternatives) + len(pending) + len(value[1]) <= LIFTED_CHOICES:
-                    pending.extend((conjunction(condition, choice_formula), choice)
-                                   for choice_formula, choice in value[1])
-                    continue
-                capped = True
-            alternatives.append((condition, value))
+        alternatives, cut = choice_alternatives(namer, formula, value, inner)
+        capped = capped or cut
         for condition, value in alternatives:
             formulas_by_digest.setdefault(namer.renamed_digest(namer(value)), []).append(condition)
     return formulas_by_digest, capped
+
+
+def choice_alternatives(namer: Namer, formula, tree, inner: bool) -> tuple[list, bool]:
+    """(formula, tree) as (formula, tree with no choice) alternatives: a choice's values, each under its formulas joined
+    (distinct_values), in the choice's place, under formula and the value's formula; and whether a choice was left whole
+    past LIFTED_CHOICES alternatives. inner: a choice anywhere in the tree (an operand, a leaf's write epoch) and a
+    merge cut at the phi depth (Namer.opened), not only the tree that is one"""
+    alternatives, pending, capped = [], [((formula,), tree)], False
+    while pending:
+        conditions, tree = pending.pop()
+        found = inner_choice(namer, tree, set()) if inner else whole_choice(tree)
+        if found is not None:
+            target, gamma = found
+            values = distinct_values(namer, gamma)
+            if len(alternatives) + len(pending) + len(values) <= LIFTED_CHOICES:
+                pending.extend(((*conditions, value_formula), substitute(tree, target, value, {}))
+                               for value_formula, value in values)
+                continue
+            capped = True
+        alternatives.append((conjunction(*conditions), tree))
+    return alternatives, capped
+
+
+def whole_choice(tree) -> tuple | None:
+    """(tree, tree) where tree is a gated choice"""
+    return (tree, tree) if isinstance(tree, tuple) and tree and tree[0] == 'gamma' else None
+
+
+def inner_choice(namer: Namer, tree, seen: set) -> tuple | None:
+    """(the subtree to replace, its gamma) of the first gated choice in tree, a merge cut at the phi depth opened"""
+    if not isinstance(tree, tuple) or not tree or id(tree) in seen:
+        return None
+    seen.add(id(tree))
+    if tree[0] == 'gamma':
+        return tree, tree
+    if tree[0] == 'deep_phi':
+        opened = namer.opened(tree)
+        return None if opened is tree else (tree, opened)
+
+    for item in tree:
+        found = inner_choice(namer, item, seen)
+        if found is not None:
+            return found
+    return None
+
+
+def distinct_values(namer: Namer, gamma: tuple) -> list[tuple]:
+    """A choice's (formula, value) pairs one per value, by digest (as gated_choice tells them apart), the formulas each
+    arrives under joined: a choice has an alternative per incoming edge, often many for few values"""
+    formulas, values = {}, {}
+    for formula, value in gamma[1]:
+        digest = namer.fingerprints(value)
+        formulas.setdefault(digest, []).append(formula)
+        values.setdefault(digest, value)
+    return [(disjunction(formulas[digest]), value) for digest, value in values.items()]
+
+
+def substitute(tree, target, replacement, memo: dict):
+    """tree with every occurrence of target (by identity) replaced, inside other choices' formulas too: one value on
+    one path; a part with none kept as it is"""
+    if tree is target:
+        return replacement
+    if not isinstance(tree, tuple):
+        return tree
+    found = memo.get(id(tree))
+    if found is not None:
+        return found[1]
+
+    items = tuple(substitute(item, target, replacement, memo) for item in tree)
+    result = tree if all(new is old for new, old in zip(items, tree)) else items
+    memo[id(tree)] = (tree, result)     # the tree kept alive, so its id is not reused
+    return result
 
 
 def brief(tree) -> str:

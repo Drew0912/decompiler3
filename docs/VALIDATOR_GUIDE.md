@@ -63,13 +63,13 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
   `ani/chr0003`, `chr0125`, `chr5006` and `chr5106`, is gone since 5c-2: a loop that runs ends, see the limitations;
   K2, the registers at a return HLIL merges with another or repeats in two arms, in `MayaEvent*` (sora2 `mp5005`,
   `mp1051`; kai1 `e5000`), `Archive01`, `-02`, `-04`, `Svis00`, `Dlc00`, `Etc00` (kai1, kuro2 `scena/a1018.dat`), is
-  gone since 5c-3: a merge cut at the phi depth is opened where the layers cut it at different depths):
-  - K4, a gated choice inside a condition, compared by its shape (`guard_differs`, `arg_differs`):
-    `FdungeonStartVoicePlay`, `OnQuestEnd` (kai1 `scena/system.dat`).
+  gone since 5c-3: a merge cut at the phi depth is opened where the layers cut it at different depths; K4, a gated
+  choice inside a condition or an operation compared by its digest, in `FdungeonStartVoicePlay`, `OnQuestEnd` (kai1
+  `scena/system.dat`), `PigeonProc` (sora1, sora2 `scena/npc_setting.dat`) and 4 of `TestEmotion`'s `guard_differs`,
+  is gone since 5c-4: the choice is lifted, see the limitations):
   - K5, formulas too large: `guard_unchecked` in `MapJumpCheck` (kuro1 `system.dat`), `InitBGM` (kuro2 `sound.dat`),
-    `ChangeEnvSE` (kuro1 `sound.dat`); `arg_differs` read from a choice past the caps in `PigeonProc` (sora1, sora2
-    `scena/npc_setting.dat`). The check is slow there: `MapJumpCallScript` (kai1 `system.dat`) and `InitBGM` (sora1,
-    sora2 `sound.dat`) take over two minutes each.
+    `ChangeEnvSE` (kuro1 `sound.dat`). The check is slow there: `MapJumpCallScript` (kai1 `system.dat`) and `InitBGM`
+    (sora1, sora2 `sound.dat`) take over two minutes each.
 
 ## How to use it
 
@@ -95,13 +95,17 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
   `order_differs` (6 such loops on the full corpus).
 - A loop that runs is taken to end (a formula's atoms stand for no iteration in particular): where the formulas of an
   effect after a loop differ, they are compared again with each side's premise that every loop before the effect, and
-  none it is inside of, takes one of its exits when it runs. So the iterations that go round again are never the last,
-  and HLIL splitting a loop's `&&` exit in two tests, or repeating the code after the loop in each exit, is no finding.
-  A loop that never ends is not checked.
-- A merged value more than three merges deep is compared by its fingerprint, and the two layers may merge it at
-  different depths (HLIL's common return, a region repeated in two arms). Where a value an effect passes or a loop copy
-  carries then differs, the cut merges are opened and compared alternative by alternative, up to 256 alternatives;
-  past that, or for a cut merge inside an operation or a condition (K4), the difference stays.
+  none it is inside of, takes one of its exits when it runs (before: reached from the loop's exits in the same
+  iteration of the loops around it; an enclosing loop's going round again is after it, its header's effects are not).
+  So the iterations that go round again are never the last, and HLIL splitting a loop's `&&` exit in two tests, or
+  repeating the code after the loop in each exit, is no finding. A loop that never ends is not checked.
+- A merged value is a choice over the conditions its paths are taken under, told apart by its digest, which each layer
+  builds its own way: more than three merges deep it is cut to a fingerprint, at a depth each layer reaches on its own,
+  and the formulas of a big choice have no key of their own. Where the formulas or values of an effect then differ,
+  they are compared again with the choices lifted: a choice anywhere in a value an effect passes or a loop copy
+  carries, or in a condition of its guard (split at `&&` and `||` first), becomes its values each under its formula,
+  up to 256 distinct values at a time. That answer is taken only if it clears the difference. Past the cap, or for a
+  choice inside a value a loop carries round (`loop_value_differs`), the difference stays.
 - Only natural loops (a header dominating the edge back to it) have a body. In an irreducible region, which no
   real script has, the formulas of the blocks outside natural loops are those of one pass through the region, so a
   clean result there proves less (the fuzz's irreducible graphs compare without error).

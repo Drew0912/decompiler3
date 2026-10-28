@@ -5,13 +5,14 @@ compares them for both modes"""
 from typing import NamedTuple
 
 from .compare import (
-    Difference, brief, compare_loop_values, compare_order, component_value, effect_components, lift_choices,
-    value_category,
+    Difference, brief, choice_alternatives, compare_loop_values, compare_order, component_value, effect_components,
+    inner_choice, lift_choices, value_category,
 )
 from .decision_diagrams import DiagramOverflow, Diagrams
 from .facts import Effect, Facts
-from .formulas import TRUE, conjunction, disjunction, negation
+from .formulas import TRUE, conjunction, disjunction, literal, negation
 from .neutral_names import Namer
+from .trees import SHORT_LOGIC, negation_normal_form
 
 RENDERED_FORMULA_CHARACTERS = 400   # a gated detail's formula, cut (render)
 
@@ -98,14 +99,72 @@ def termination_premises(reference: Facts, checked: Facts, occurrences: list[Eff
 
 
 def compare_under(namings: Namings, formulas: tuple, premises: tuple) -> str | None:
-    """compare_formulas, and where it finds a difference, again with each side's formula under its premise: that
-    answer is the answer"""
+    """compare_formulas; where it finds a difference, again with each side's formula under its premise, whose answer
+    is the answer; where that still differs, again with the choices in the formulas' conditions lifted
+    (lifted_formula), whose answer is taken only if clean or condition_ordering_inverted: the layers build such a
+    choice each its own way. An unchecked answer stays unchecked"""
     category = compare_formulas(namings, formulas)
-    if category in (None, 'guard_unchecked') or premises == (TRUE, TRUE):
+    if category in (None, 'guard_unchecked'):
         return category
+    if premises != (TRUE, TRUE):
+        formulas = tuple(conjunction(formula, premise) for formula, premise in zip(formulas, premises))
+        category = compare_formulas(namings, formulas)
+        if category in (None, 'guard_unchecked'):
+            return category
 
-    under = tuple(conjunction(formula, premise) for formula, premise in zip(formulas, premises))
-    return compare_formulas(namings, under)
+    lifted = tuple(lifted_formula(namer, formula, {}) for namer, formula in zip(namings.exact, formulas))
+    if all(new is old for new, old in zip(lifted, formulas)):
+        return category
+    found = compare_formulas(namings, lifted)
+    return found if found in (None, 'condition_ordering_inverted') else category
+
+
+def lifted_formula(namer: Namer, formula, memo: dict) -> tuple:
+    """formula with each literal whose condition holds a gated choice lifted: the condition split at its && and ||
+    (short_logic_formula), each part's choices lifted (lifted_atom); a formula with none is the same object"""
+    found = memo.get(id(formula))
+    if found is not None:
+        return found[1]
+
+    tag = formula[0]
+    if tag == 'lit' and inner_choice(namer, formula[1], set()) is not None:
+        split = short_logic_formula(negation_normal_form(formula[1]))     # the condition holding
+        holds = lifted_atom(namer, split, memo) if split[0] == 'lit' else lifted_formula(namer, split, memo)
+        result = holds if formula[2] else negation(holds)
+    elif tag in ('and', 'or'):
+        items = [lifted_formula(namer, item, memo) for item in formula[1]]
+        if all(new is old for new, old in zip(items, formula[1])):
+            result = formula
+        else:
+            result = conjunction(*items) if tag == 'and' else disjunction(items)
+    else:
+        result = formula
+    memo[id(formula)] = (formula, result)       # the formula kept alive, so its id is not reused
+    return result
+
+
+def lifted_atom(namer: Namer, atom: tuple, memo: dict) -> tuple:
+    """atom, a literal on a condition with no && or ||, as its choices' values each under its formula
+    (choice_alternatives, inner): c(G) holds where the value G takes makes c hold. A value's formula may test an earlier
+    choice (a flag tested to set a flag), so it is lifted in turn; atom as it is past LIFTED_CHOICES"""
+    alternatives, capped = choice_alternatives(namer, TRUE, atom[1], inner=True)
+    if capped:
+        return atom
+
+    return disjunction([conjunction(lifted_formula(namer, condition, memo), literal(core, atom[2]))
+                        for condition, core in alternatives])
+
+
+def short_logic_formula(normal: tuple) -> tuple:
+    """A condition in negation normal form as a formula over its parts at && and ||, as FormulaKeys.split_short_logic
+    reads it"""
+    if normal[0] == 'not':
+        return negation(short_logic_formula(normal[1]))
+    if normal[0] == 'op' and normal[1] in SHORT_LOGIC:
+        items = [short_logic_formula(item) for item in normal[2]]
+        return conjunction(*items) if normal[1] == 'LOGICAL_AND' else disjunction(items)
+
+    return literal(normal, True)
 
 
 def compare_formulas(namings: Namings, formulas: tuple) -> str | None:
@@ -140,7 +199,7 @@ def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences
     """The values an effect's occurrences pass, each argument and storage key on its own: equal under neutral names,
     or, a gated choice lifted into the formula its value is passed under (HLIL may pass from one return what MLIL
     passes from two, merged at the join before it), the same values each under one formula (compare_component, which
-    opens a merge cut at the phi depth)"""
+    lifts the choices inside a value too)"""
     expected, found = occurrences
     category = value_category(expected[0])
     single = len(expected) == len(found) == 1
@@ -163,24 +222,25 @@ def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences
 
 
 def compare_component(namings: Namings, occurrences: tuple, component, premises: tuple) -> str | None:
-    """compare_lifted with the merges cut at the phi depth kept whole, and where that finds a difference, opened (the
-    layers cut at different depths): the opened answer is taken only if it clears the difference or finds an inverted
-    ordering, so a choice opened past LIFTED_CHOICES leaves the first answer"""
-    closed = compare_lifted(namings, occurrences, component, premises, open_cuts=False)
-    if closed is None:
+    """compare_lifted with a value's choice lifted only where it is the whole value, and where that finds a difference,
+    with the choices inside it too, merges cut at the phi depth opened (the layers build such a choice each its own way,
+    and cut at different depths): that answer is taken only if it clears the difference or finds an inverted ordering,
+    so a choice left whole past LIFTED_CHOICES leaves the first answer"""
+    whole = compare_lifted(namings, occurrences, component, premises, inner=False)
+    if whole is None:
         return None
 
-    opened = compare_lifted(namings, occurrences, component, premises, open_cuts=True)
-    return opened if opened in (None, 'condition_ordering_inverted') else closed
+    inner = compare_lifted(namings, occurrences, component, premises, inner=True)
+    return inner if inner in (None, 'condition_ordering_inverted') else whole
 
 
-def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tuple, open_cuts: bool) -> str | None:
+def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tuple, inner: bool) -> str | None:
     """None when both sides pass the same values for component (an argument's index or a storage key) under the same
     formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted"""
     category = value_category(occurrences[0][0])
     capped = False                  # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
     for namers in namings:
-        lifts = [passed_under(namer, effects, component, open_cuts) for namer, effects in zip(namers, occurrences)]
+        lifts = [passed_under(namer, effects, component, inner) for namer, effects in zip(namers, occurrences)]
         passed = [found for found, _ in lifts]
         capped = capped or any(cut for _, cut in lifts)
         if passed[0].keys() != passed[1].keys():
@@ -210,11 +270,11 @@ def value_differences(namers: tuple[Namer, Namer], a: Effect, b: Effect) -> list
     return details
 
 
-def passed_under(namer: Namer, effects: list[Effect], component, open_cuts: bool) -> tuple[dict, bool]:
+def passed_under(namer: Namer, effects: list[Effect], component, inner: bool) -> tuple[dict, bool]:
     """What the occurrences pass as component, each value's digest under neutral names -> the formulas it is passed
     under, and whether a choice was left whole (lift_choices)"""
     return lift_choices(namer, [(effect.guard_formula, component_value(effect, component)) for effect in effects],
-                        open_cuts)
+                        inner)
 
 
 def render(formula) -> str:

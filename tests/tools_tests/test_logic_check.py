@@ -6,6 +6,7 @@ condition normal form and formula keys; post-dominators and control dependence; 
 from pathlib import Path
 from typing import Callable
 from unittest import mock
+import contextlib
 import copy
 import sys
 import unittest
@@ -33,7 +34,7 @@ from tests.shared.hlil_cfg_utils import build_function
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 import logic_check
-from logic_check import compare, decision_diagrams, formulas
+from logic_check import compare, decision_diagrams, formulas, gated_comparison
 from logic_check.facts import RETURN_KEY, Branch, Effect, Facts
 from logic_check.naming import FUNCTION_ENTRY
 from logic_check.neutral_names import Fingerprints, Namer
@@ -61,6 +62,7 @@ CHAIN_CASES = 3                 # HLIL's if-to-switch takes a chain of at least 
 NESTED_TESTS = 17               # conditions one guard runs under: past formulas.ROW_CAP's 2 ** 16 rows
 DIAGRAM_NODES_TOO_FEW = 2       # a decision_diagrams.DIAGRAM_NODE_CAP no decision diagram fits in (its two terminals)
 CHAIN_GLOBAL = 10               # the first global a chain of register writes tests (register_chain)
+LIFTED_FLAG_DIAGRAM_NODES = 11  # a DIAGRAM_NODE_CAP the planted flag test's guards fit in (9, 10), not lifted (13, 16)
 ARM_VALUE, OTHER_ARM_VALUE = 100, 200
 # Writes whose merges, opened, are more alternatives than are lifted; a length both layers cut alike, so they compare
 # whole (past the cap a length they cut differently stays a difference: VALIDATOR_GUIDE.md, Limitations)
@@ -554,6 +556,88 @@ def chain_arm_then_loop_function(depth: int = PHI_DEPTH + 1) -> tuple[Asm, int]:
     return asm, 1
 
 
+def calls_then_chain_function() -> tuple[Asm, int]:
+    """if GLOBAL_A: callee(1) else callee(2); register_chain; return: each chain test reads a global after the arms'
+    calls, a choice of the two calls' epochs, which HLIL repeating the chain in each arm reads after its arm's call"""
+    asm = Asm()
+    asm.load_global(GLOBAL_A); asm.jz('other')
+    call(asm, 'first', 1); asm.jmp('join')
+    asm.label('other'); call(asm, 'second', 2)
+    asm.label('join'); register_chain(asm, PHI_DEPTH); return_nothing(asm)
+    return asm, 1
+
+
+def arms_then_slot_chain_function() -> tuple[Asm, int]:
+    """v = ARM_VALUE if GLOBAL_A else OTHER_ARM_VALUE; PHI_DEPTH times: if GLOBAL[CHAIN_GLOBAL + i]: v = i + 1;
+    REG = v + 1; return: the merge, past the phi depth, inside an operation"""
+    asm = Asm()
+    asm.push_int(0)
+    asm.load_global(GLOBAL_A); asm.jz('other')
+    asm.push_int(ARM_VALUE); asm.pop_to(-WORD_SIZE); asm.jmp('join')
+    asm.label('other'); asm.push_int(OTHER_ARM_VALUE); asm.pop_to(-WORD_SIZE)
+    asm.label('join')
+    for index in range(PHI_DEPTH):
+        asm.load_global(CHAIN_GLOBAL + index); asm.jz(f'skip{index}')
+        asm.push_int(index + 1); asm.pop_to(-WORD_SIZE)
+        asm.label(f'skip{index}')
+    asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.set_reg(REG_INDEX)
+    asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 0
+
+
+def flag_then_test_function() -> tuple[Asm, int]:
+    """x = 0; if GLOBAL_A && GLOBAL_B: x = 1; if x == 0: callee(1): the call's guard tests a choice"""
+    asm = Asm()
+    asm.push_int(0)
+    asm.load_global(GLOBAL_A); asm.load_global(GLOBAL_B); asm.logical_and(); asm.jz('test')
+    asm.push_int(1); asm.pop_to(-WORD_SIZE)
+    asm.label('test'); asm.load_stack(-WORD_SIZE); asm.jnz('skip')
+    call(asm, 'called', 1)
+    asm.label('skip'); asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
+def flag_from_flag_function() -> tuple[Asm, int]:
+    """x = 0; if GLOBAL_A && GLOBAL_B: x = 1; y = 0; if x == 0: y = 1; if y == 0: callee(1): the choice x only in the
+    formulas of the choice y"""
+    asm = Asm()
+    asm.push_int(0)                 # x
+    asm.load_global(GLOBAL_A); asm.load_global(GLOBAL_B); asm.logical_and(); asm.jz('y')
+    asm.push_int(1); asm.pop_to(-WORD_SIZE)
+    asm.label('y'); asm.push_int(0)     # y
+    asm.load_stack(-2 * WORD_SIZE); asm.jnz('test')
+    asm.push_int(1); asm.pop_to(-WORD_SIZE)
+    asm.label('test'); asm.load_stack(-WORD_SIZE); asm.jnz('skip')
+    call(asm, 'called', 1)
+    asm.label('skip'); asm.pop(2 * WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
+def flag_copied_function() -> tuple[Asm, int]:
+    """x = 0; if GLOBAL_A: x = 1; y = 0; if x: y = 1; if y: callee(1)"""
+    asm = Asm()
+    asm.push_int(0); asm.push_int(0)    # x, y
+    asm.load_global(GLOBAL_A); asm.jz('x_set')
+    asm.push_int(1); asm.pop_to(-2 * WORD_SIZE)
+    asm.label('x_set'); asm.load_stack(-2 * WORD_SIZE); asm.jz('y_set')
+    asm.push_int(1); asm.pop_to(-WORD_SIZE)
+    asm.label('y_set'); asm.load_stack(-WORD_SIZE); asm.jz('end')
+    call(asm, 'called', 1)
+    asm.label('end'); asm.pop(2 * WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
+def store_then_inner_wait_function() -> tuple[Asm, int]:
+    """while 1: (GLOBAL_C = 1; if !GLOBAL_A: return; while GLOBAL_B: ;): a store in the outer loop's header, which
+    runs before the inner loop in its iteration"""
+    asm = Asm()
+    asm.label('outer'); asm.push_int(1); asm.set_global(GLOBAL_C)
+    asm.load_global(GLOBAL_A); asm.jz('done')
+    asm.label('inner'); asm.load_global(GLOBAL_B); asm.jz('outer'); asm.jmp('inner')
+    asm.label('done'); return_nothing(asm)
+    return asm, 0
+
+
 def reference_and_mlil(build, argc: int = 0) -> tuple:
     """The function's LLIL facts (taken before the conversion) and its MLIL as the decompiler makes it; argc its
     parameters"""
@@ -816,6 +900,20 @@ def mlil_and_hlil(build, argc: int = 0) -> tuple:
 
 def hlil_categories(mlil, hlil) -> set[str]:
     return {difference.category for difference in logic_check.compare_mlil_hlil(mlil, hlil)}
+
+
+@contextlib.contextmanager
+def formula_keys_past_their_caps():
+    """No formula has a key, so a gated choice is told apart by its own digest, as one past the caps is (K4)"""
+    with (mock.patch.object(formulas, 'ROW_CAP', 1),
+          mock.patch.object(decision_diagrams, 'DIAGRAM_KEY_NODE_CAP', DIAGRAM_NODES_TOO_FEW)):
+        yield
+
+
+def flag_set_to(hlil, value: int, new: int):
+    """The first write of the constant value made new"""
+    write = first_node(hlil, HLILAssign, lambda node: isinstance(node.src, HLILConst) and node.src.value == value)
+    write.src.value = new
 
 
 def first_node(hlil, kind: type, predicate: Callable = lambda node: True):
@@ -1117,6 +1215,61 @@ class TestPlantedHLILBugs(unittest.TestCase):
             self.change_write(hlil, PHI_DEPTH + 1)
         self.check(chain_arm_then_loop_function, mutate, 'loop_value_differs')
 
+    def test_register_wrong_in_one_chain_after_a_call(self):
+        """The chain repeated after each arm's call, the first copy's last write changed"""
+        def mutate(hlil):
+            TestHLILStructures.repeat_tail_in_arms(hlil)
+            self.change_write(hlil, PHI_DEPTH)
+        self.check(calls_then_chain_function, mutate, 'return_differs')
+
+    def test_value_wrong_inside_an_operation_in_one_arm(self):
+        """v + 1 repeated in each arm, the first copy's chain's last write changed"""
+        def mutate(hlil):
+            TestHLILStructures.repeat_tail_in_arms(hlil)
+            self.change_write(hlil, PHI_DEPTH)
+        self.check(arms_then_slot_chain_function, mutate, 'return_differs')
+
+    def test_flag_test_made_depend_on_another_global(self):
+        """if (x == 0) made if (x == 0 && GLOBAL_C), the flag's formulas past their caps: lifted, still a difference"""
+        with formula_keys_past_their_caps():
+            def mutate(hlil):
+                test = first_node(hlil, HLILIf, lambda node: makes_a_call(node.true_block)
+                                  or (node.false_block is not None and makes_a_call(node.false_block)))
+                gate = HLILVar(HLILVariable(kind=VariableKind.GLOBAL, index=GLOBAL_C))
+                test.condition = HLILBinaryOp(BinaryOp.AND, test.condition, gate)
+            self.check(flag_then_test_function, mutate, 'guard_differs')
+
+    def test_flag_test_changed_past_the_diagram_cap_once_lifted(self):
+        """The same change, the decision diagrams capped where the plain guards fit and the lifted ones do not: the
+        lifted look is unchecked, and the difference found first stands"""
+        with (formula_keys_past_their_caps(),
+              mock.patch.object(decision_diagrams, 'DIAGRAM_NODE_CAP', LIFTED_FLAG_DIAGRAM_NODES)):
+            mlil, hlil = mlil_and_hlil(flag_then_test_function)
+            test = first_node(hlil, HLILIf, lambda node: makes_a_call(node.true_block)
+                              or (node.false_block is not None and makes_a_call(node.false_block)))
+            gate = HLILVar(HLILVariable(kind=VariableKind.GLOBAL, index=GLOBAL_C))
+            test.condition = HLILBinaryOp(BinaryOp.AND, test.condition, gate)
+            self.assertIn('guard_differs', hlil_categories(mlil, hlil))
+
+    def test_flag_set_from_a_flag_never_set(self):
+        """x = 1 made x = 0, the formulas past their caps: y is then always 1, and the call never runs"""
+        with formula_keys_past_their_caps():
+            self.check(flag_from_flag_function, lambda hlil: flag_set_to(hlil, 1, 0), 'guard_differs')
+
+    def test_store_in_an_outer_header_made_depend_on_an_inner_wait(self):
+        """GLOBAL_C = 1 made if (!GLOBAL_A || !GLOBAL_B) GLOBAL_C = 1: the store runs before the wait in its iteration,
+        so the premise that the wait ends is not its to use"""
+        def mutate(hlil):
+            store = first_node(hlil, HLILAssign, lambda node: isinstance(node.dest, HLILVar)
+                               and node.dest.var.kind == VariableKind.GLOBAL)
+            glob = lambda index: HLILVar(HLILVariable(kind=VariableKind.GLOBAL, index=index))
+            gate = HLILBinaryOp(BinaryOp.OR, HLILUnaryOp(UnaryOp.NOT, glob(GLOBAL_A)),
+                                HLILUnaryOp(UnaryOp.NOT, glob(GLOBAL_B)))
+            block = next(node for node in iter_tree(hlil.body) if isinstance(node, HLILBlock)
+                         and store in node.statements)
+            block.statements[block.statements.index(store)] = HLILIf(gate, HLILBlock([store]))
+        self.check(store_then_inner_wait_function, mutate, 'guard_differs')
+
 
 class TestHLILStructures(unittest.TestCase):
     """Structures HLIL builds otherwise than MLIL writes them, compared clean: the same logic"""
@@ -1243,6 +1396,38 @@ class TestHLILStructures(unittest.TestCase):
         self.rebuild_in_both_arms(hlil)
         self.assertEqual(hlil_categories(mlil, hlil), set())
 
+    def test_chain_after_calls_repeated_in_arms(self):
+        """Each copy's tests read globals after its arm's call; MLIL's one chain reads them after either call, a choice
+        inside each test's leaf, lifted"""
+        mlil, hlil = mlil_and_hlil(calls_then_chain_function)
+        self.repeat_tail_in_arms(hlil)
+        self.assertEqual(hlil_categories(mlil, hlil), set())
+
+    def test_merge_inside_an_operation_repeated_in_arms(self):
+        """MLIL's REG = v + 1 holds the merge of the arms and the chain, cut at the phi depth; each HLIL copy's holds
+        its arm's chain"""
+        mlil, hlil = mlil_and_hlil(arms_then_slot_chain_function)
+        self.repeat_tail_in_arms(hlil)
+        self.assertEqual(hlil_categories(mlil, hlil), set())
+
+    def test_flag_tested_with_formulas_past_their_caps(self):
+        """The flag's choice, keyed by its digest, is built over HLIL's split && otherwise than over MLIL's: lifted in
+        the guard, the two are one function"""
+        with formula_keys_past_their_caps():
+            self.assertEqual(hlil_categories(*mlil_and_hlil(flag_then_test_function)), set())
+
+    def test_flag_set_from_a_flag_with_formulas_past_their_caps(self):
+        """The flag x only in the formulas of the flag y: lifted in turn (lifted_atom)"""
+        with formula_keys_past_their_caps():
+            self.assertEqual(hlil_categories(*mlil_and_hlil(flag_from_flag_function)), set())
+
+    def test_flag_test_written_as_its_condition(self):
+        """if (x) written if (GLOBAL_A), x's value under it: y's choice then holds x only in its formulas"""
+        mlil, hlil = mlil_and_hlil(flag_copied_function)
+        test = [node for node in iter_tree(hlil.body) if isinstance(node, HLILIf)][1]
+        test.condition = HLILVar(HLILVariable(kind=VariableKind.GLOBAL, index=GLOBAL_A))
+        self.assertEqual(hlil_categories(mlil, hlil), set())
+
     def test_loop_rebuilt_in_both_arms(self):
         """Each copy carries in its arm's value: lifted into their formulas, the one MLIL loop's entry choice"""
         mlil, hlil = mlil_and_hlil(branch_then_loop_function)
@@ -1343,6 +1528,49 @@ class TestCutMerges(unittest.TestCase):
         self.assertEqual(value[0], 'deep_phi')
         self.assertEqual(fingerprints.deep_choices, {})
         self.assertIs(Namer(Facts(deep_choices=fingerprints.deep_choices)).opened(value), value)
+
+
+class TestLiftedChoices(unittest.TestCase):
+    """Gated choices inside a value or a condition lifted into the formulas their values arrive under
+    (compare.choice_alternatives, gated_comparison.lifted_formula)"""
+
+    EDGES = 7                       # incoming edges of each choice below, over two values
+
+    def setUp(self):
+        self.namer = Namer(Facts())
+
+    def choice(self, first: int) -> tuple:
+        """A choice over EDGES edges, each under a literal of its own, of the values 0 and 1"""
+        return ('gamma', tuple((formulas.literal(('param', first + index), True), const(index % 2))
+                               for index in range(self.EDGES)))
+
+    def test_choice_in_a_leaf_found(self):
+        choice = self.choice(0)
+        read = ('global', GLOBAL_A, choice)         # a global read after the calls of either arm
+        self.assertEqual(compare.inner_choice(self.namer, op('EQ', [read, const(0)]), set()), (choice, choice))
+
+    def test_substitution_keeps_untouched_parts(self):
+        choice, untouched = self.choice(0), op('ADD', [('param', 1), const(1)])
+        tree = op('ADD', [untouched, choice])
+        lifted = compare.substitute(tree, choice, const(1), {})
+        self.assertIs(lifted[2][0], untouched)
+        self.assertEqual(lifted[2][1], const(1))
+
+    def test_choices_counted_by_value(self):
+        """Three choices in one operation: EDGES ** 3 alternatives by edge, past LIFTED_CHOICES; 2 ** 3 by value"""
+        self.assertGreater(self.EDGES ** 3, compare.LIFTED_CHOICES)
+        tree = op('EQ', [op('ADD', [self.choice(0), op('ADD', [self.choice(10), self.choice(20)])]), const(0)])
+        alternatives, capped = compare.choice_alternatives(self.namer, formulas.TRUE, tree, inner=True)
+        self.assertFalse(capped)
+        self.assertEqual(len(alternatives), 2 ** 3)
+
+    def test_condition_split_before_its_choices_are_lifted(self):
+        """a == 0 && b == 0 && c == 0 with room for two values only: lifted part by part, as FormulaKeys splits it"""
+        parts = [op('EQ', [self.choice(first), const(0)]) for first in (0, 10, 20)]
+        condition = op('LOGICAL_AND', [parts[0], op('LOGICAL_AND', parts[1:])])
+        with mock.patch.object(compare, 'LIFTED_CHOICES', 2):
+            lifted = gated_comparison.lifted_formula(self.namer, formulas.literal(condition, True), {})
+        self.assertIsNone(compare.inner_choice(self.namer, lifted, set()))
 
 
 class TestConditionNormalForm(unittest.TestCase):
