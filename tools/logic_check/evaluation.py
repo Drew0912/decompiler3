@@ -11,11 +11,10 @@ header_name(block), the address naming a loop header on both layers"""
 
 from typing import Callable, Hashable
 
-from ir.core import reverse_post_order
 from .facts import Effect, Facts
 from .naming import AddressNaming, GatedNaming
 from .neutral_names import Fingerprints
-from .post_dominators import back_edges, control_dependence
+from .post_dominators import ControlFlow
 from .state import State, merge
 
 MAX_ROUNDS = 64             # widening at loop headers converges in a few; past this the walk is an internal error
@@ -38,33 +37,30 @@ def analyze(layer, *, gated: bool = False) -> Facts:
     the widened storage every state is exact, and the widened storage only grows. A layer whose storage has names of
     its own (de-SSA's split ranges) hands its neutral_key to the comparison, which compares trees under neutral names
     and pairs loop leaves by the trees that read them"""
-    order = reverse_post_order(layer.entry, layer.successors)
-    position = {block: index for index, block in enumerate(order)}
-    naming = (GatedNaming if gated else AddressNaming)(layer, order, position)
+    naming_class = GatedNaming if gated else AddressNaming
+    flow = ControlFlow(layer.entry, layer.successors, layer.predecessors, layer.branch, naming_class.exit_rank)
+    naming = naming_class(layer, flow)
     fingerprints = Fingerprints(layer.neutral_key)
-    entry_states, exit_states, widened = widen_loop_headers(layer, order, position, naming, fingerprints)
+    entry_states, exit_states, widened = widen_loop_headers(layer, flow, naming, fingerprints)
 
     facts = Facts(neutral_key=layer.neutral_key if layer.OWN_STORAGE_NAMES else None,
                   deep_choices=fingerprints.deep_choices)
     effects_of = {}
-    for block in order:
+    for block in flow.order:
         exit_states[block], effects_of[block] = run_block(layer, block, entry_states[block], facts)
         for effect in effects_of[block]:
             facts.effects.setdefault(naming.effect_key(effect), []).append(effect)
 
-    guards = control_dependence(order, layer.successors, layer.branch, exit_rank=naming.exit_rank)
     for block, effects in effects_of.items():
         for effect in effects:
-            effect.guard = guards[block]
-            if gated:
-                effect.guard_formula = naming.guard_formula(block, facts)
+            naming.set_guard(effect, block, facts)
 
     if gated:
-        naming.mark_loops(order, effects_of, facts)
+        naming.mark_loops(effects_of, facts)
     loop_effects = {header: naming.loop_effects(header, facts) for header in widened}
     # A loop is a place in the order even where it makes no effect of its own: a store moved past a wait loop
     runs_first = {block: [*loop_effects.get(block, [])[:1], *effects] for block, effects in effects_of.items()}
-    facts.next_effects = next_effects(layer, order, runs_first, naming.effect_key)
+    facts.next_effects = next_effects(layer, flow, runs_first, naming.effect_key)
     for header, keys in widened.items():
         naming.loop_values(header, keys, exit_states, facts, fingerprints)
         for effect in loop_effects[header]:
@@ -73,16 +69,14 @@ def analyze(layer, *, gated: bool = False) -> Facts:
     return facts
 
 
-def widen_loop_headers(layer, order: list, position: dict, naming,
-                       fingerprints: Fingerprints) -> tuple[dict, dict, dict]:
+def widen_loop_headers(layer, flow: ControlFlow, naming, fingerprints: Fingerprints) -> tuple[dict, dict, dict]:
     """(entry states, exit states, header -> its widened keys) once no back edge brings a header a value other than
     the one it enters with"""
-    loops = back_edges(order, layer.successors)
-    widened = {header: set() for _, header in loops}
+    widened = {header: set() for _, header in flow.back_edges}
     for _ in range(MAX_ROUNDS):
-        entry_states, exit_states = walk_forward(layer, order, position, naming, widened, fingerprints)
+        entry_states, exit_states = walk_forward(layer, flow, naming, widened, fingerprints)
         added = False
-        for source, header in loops:
+        for source, header in flow.back_edges:
             carried, entering = exit_states[source].items, entry_states[header].items
             for key in carried.keys() | entering.keys():
                 if key not in widened[header] and carried.get(key) != entering.get(key):
@@ -94,13 +88,13 @@ def widen_loop_headers(layer, order: list, position: dict, naming,
     raise RuntimeError(f'the evaluation did not converge in {MAX_ROUNDS} rounds')
 
 
-def walk_forward(layer, order: list, position: dict, naming, widened: dict,
-                 fingerprints: Fingerprints) -> tuple[dict, dict]:
+def walk_forward(layer, flow: ControlFlow, naming, widened: dict, fingerprints: Fingerprints) -> tuple[dict, dict]:
     """Every block's entry and exit state, over forward edges only (the function entry's virtual predecessor holds
     nothing), each widened key of a loop header its leaf"""
+    position = flow.position
     entry_states, exit_states = {}, {}
     facts = Facts()             # the round's branches, for a gated merge's path conditions
-    for block in order:
+    for block in flow.order:
         states = [(predecessor, exit_states[predecessor]) for predecessor in layer.predecessors(block)
                   if predecessor in position and position[predecessor] < position[block]]
         incoming = naming.incoming(block, states, facts)
@@ -114,9 +108,10 @@ def walk_forward(layer, order: list, position: dict, naming, widened: dict,
     return entry_states, exit_states
 
 
-def next_effects(layer, order: list, effects_of: dict, key_of: Callable) -> dict[Hashable, frozenset]:
+def next_effects(layer, flow: ControlFlow, effects_of: dict, key_of: Callable) -> dict[Hashable, frozenset]:
     """START or an effect's key -> the keys of the effects that can run next (FALL_OFF: the function ends without one;
     a return ends a path)"""
+    order = flow.order
     first_effects = {block: {key_of(effects_of[block][0])} if effects_of[block] else set() for block in order}
     changed = True
     while changed:

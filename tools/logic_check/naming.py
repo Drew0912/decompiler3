@@ -7,7 +7,7 @@ from typing import Hashable, NamedTuple
 from .facts import RETURN_KEY, Effect, Facts
 from .formulas import TRUE, conjunction, disjunction, literal
 from .neutral_names import Fingerprints
-from .post_dominators import TRUE_ARM, immediate_dominators, immediate_post_dominators, iteration_dependence
+from .post_dominators import TRUE_ARM, ControlFlow
 from .state import State, incoming_value, merged_value
 
 FUNCTION_ENTRY = -1         # the terminal address of the function entry's virtual predecessor
@@ -39,15 +39,15 @@ class AddressNaming:
     """LLIL against MLIL: a join named by the addresses of its incoming edges (edge_address), a merged value a phi over
     them, a loop value per incoming edge"""
 
-    def __init__(self, layer, order: list, position: dict):
+    def __init__(self, layer, flow: ControlFlow):
         self.layer = layer
-        self.position = position
-        self.joins = {block: self.join_identity(block) for block in order}
+        self.flow = flow
+        self.joins = {block: self.join_identity(block) for block in flow.order}
 
     def join_identity(self, block) -> tuple:
         """A join's identity on every layer: the addresses of the edges into it from reachable blocks"""
         identity = sorted(edge_address(self.layer, predecessor) for predecessor in self.layer.predecessors(block)
-                          if predecessor in self.position)
+                          if predecessor in self.flow.position)
         return tuple(([FUNCTION_ENTRY] if block is self.layer.entry else []) + identity)
 
     def join(self, block):
@@ -65,6 +65,10 @@ class AddressNaming:
     def effect_key(cls, effect: Effect) -> tuple:
         return effect.key
 
+    def set_guard(self, effect: Effect, block, facts: Facts):
+        """The arms block runs under, compared by address"""
+        effect.guard = self.flow.dependence[block]
+
     def incoming(self, block, states: list[tuple], facts: Facts) -> list[tuple]:
         """(edge name, exit state) of each predecessor's (block, exit state), the function entry's included"""
         incoming = [(edge_address(self.layer, predecessor), state) for predecessor, state in states]
@@ -79,7 +83,7 @@ class AddressNaming:
 
     def loop_values(self, header, keys: set, exit_states: dict, facts: Facts, fingerprints: Fingerprints):
         states = [(predecessor, exit_states[predecessor]) for predecessor in self.layer.predecessors(header)
-                  if predecessor in self.position]
+                  if predecessor in self.flow.position]
         for key in keys:
             for address, state in self.incoming(header, states, facts):
                 facts.loop_values[(self.joins[header], key, address)] = \
@@ -96,61 +100,37 @@ class GatedNaming:
 
     exit_rank = None        # a sink region's EXIT edge from its first block in reverse post-order, its loop's header
 
-    def __init__(self, layer, order: list, position: dict):
+    def __init__(self, layer, flow: ControlFlow):
         self.layer = layer
-        self.position = position
-        self.dominators = immediate_dominators(order, layer.predecessors)
-        self.span = self.dominator_tree_span(order)
-        dependence, self.innermost_header, self.bodies = iteration_dependence(
-            order, layer.successors, layer.predecessors, layer.branch, exit_rank=self.exit_rank)
-        self.post_dominators = immediate_post_dominators(order, layer.successors, exit_rank=self.exit_rank)
+        self.flow = flow
         self.only_ways = {}     # (branch block, target) -> whether its edge to target post-dominates it
         self.left_loops = {}    # (branch block, target) -> the header of the outermost loop that edge leaves, or None
-        self.arms = self.earlier_arms(order, dependence)
+        self.arms = self.earlier_arms()
         self.within_memo, self.within_memo_facts = {}, None
         self.inside_of, self.after_of = {}, {}     # block -> the loops (names) it is in, the loops it follows
         self.round_after = {}       # a loop's header -> the loops inside it whose exits end its iteration (after_loop)
 
-    def branch_blocks(self, order: list) -> dict:
+    def branch_blocks(self) -> dict:
         """branch address -> the block ending in it"""
         blocks = {}
-        for block in order:
+        for block in self.flow.order:
             branch = self.layer.branch(block)
             if branch is not None:
                 blocks[branch[0]] = block
         return blocks
 
-    def earlier_arms(self, order: list, dependence: dict) -> dict:
+    def earlier_arms(self) -> dict:
         """block -> its arms (control dependence within an iteration of its innermost loop) on earlier blocks, in
         order: an arm of a later block (a loop's own test) only repeats it, since the block ran before that test"""
-        block_of = self.branch_blocks(order)
+        block_of = self.branch_blocks()
+        position, dependence = self.flow.position, self.flow.iteration_dependence
         arms = {}
-        for block in order:
-            found = [Arm(self.position[block_of[address]], polarity, block_of[address], address)
+        for block in self.flow.order:
+            found = [Arm(position[block_of[address]], polarity, block_of[address], address)
                      for address, polarity in dependence[block]]
-            arms[block] = sorted((arm for arm in found if arm.position < self.position[block]),
+            arms[block] = sorted((arm for arm in found if arm.position < position[block]),
                                  key=lambda arm: (arm.position, arm.polarity))
         return arms
-
-    def dominator_tree_span(self, order: list) -> dict:
-        """block -> (first, last) of its dominator subtree's numbers, a pre-order of the dominator tree"""
-        children = {block: [] for block in order}
-        for block in order[1:]:
-            children[self.dominators[block]].append(block)
-        span, number, pending = {}, 0, [(order[0], False)]
-        while pending:
-            block, done = pending.pop()
-            if done:
-                span[block] = (span[block], number - 1)
-                continue
-            span[block] = number
-            number += 1
-            pending.append((block, True))
-            pending.extend((child, False) for child in reversed(children[block]))
-        return span
-
-    def dominates(self, a, b) -> bool:
-        return self.span[a][0] <= self.span[b][0] <= self.span[a][1]
 
     @classmethod
     def join(cls, block):
@@ -180,7 +160,7 @@ class GatedNaming:
         found = self.only_ways.get(key)
         if found is None:
             _, true_target, false_target = self.layer.branch(source)
-            found = self.post_dominators.get(source) is target
+            found = self.flow.post_dominators.get(source) is target
             pending, seen = [false_target if target is true_target else true_target], {source}
             while found and pending:
                 block = pending.pop()
@@ -199,8 +179,9 @@ class GatedNaming:
             branch = self.layer.branch(source)
             left = None
             if branch is not None and branch[1] is not branch[2] and self.only_way(source, target):
-                left = max((header for header, body in self.bodies.items() if source in body and target not in body),
-                           key=lambda header: len(self.bodies[header]), default=None)
+                bodies = self.flow.loop_bodies
+                left = max((header for header, body in bodies.items() if source in body and target not in body),
+                           key=lambda header: len(bodies[header]), default=None)
             self.left_loops[key] = left
         return self.left_loops[key]
 
@@ -227,7 +208,7 @@ class GatedNaming:
             return found
 
         arms = self.arms[block]
-        if any(arm.block is not dominator and not self.dominates(dominator, arm.block) for arm in arms):
+        if any(arm.block is not dominator and not self.flow.dominates(dominator, arm.block) for arm in arms):
             result = TRUE           # block post-dominates dominator: it runs whenever dominator does
         elif arms:
             result = disjunction(self.arm_formula(dominator, arm, facts) for arm in arms)
@@ -244,8 +225,8 @@ class GatedNaming:
     def iteration_formula(self, dominator, block, facts: Facts) -> tuple:
         """The formula of a block with no arm in its iteration once dominator has run: the iteration's, its header's
         (none within dominator's own loop, or outside every loop)"""
-        header = self.innermost_header.get(block)
-        if header is None or self.dominates(header, dominator):
+        header = self.flow.innermost_header.get(block)
+        if header is None or self.flow.dominates(header, dominator):
             return TRUE
 
         return self.within(dominator, header, facts)
@@ -262,15 +243,19 @@ class GatedNaming:
         if block is self.layer.entry:
             return [(TRUE, State())]   # the entry's other predecessors are back edges
 
-        return self.gated(block, self.dominators[block], states, facts)
+        return self.gated(block, self.flow.dominators[block], states, facts)
 
     def guard_formula(self, block, facts: Facts) -> tuple:
         """The formula block runs under"""
         return self.within(self.layer.entry, block, facts)
 
-    def mark_loops(self, order: list, effects_of: dict, facts: Facts):
+    def set_guard(self, effect: Effect, block, facts: Facts):
+        """The formula block runs under (no branch is compared on its own, so no arms by address)"""
+        effect.guard_formula = self.guard_formula(block, facts)
+
+    def mark_loops(self, effects_of: dict, facts: Facts):
         """Each loop's formulas (facts.loop_runs) and, for every effect, the loops it is inside and after (place)"""
-        for header, body in self.bodies.items():
+        for header, body in self.flow.loop_bodies.items():
             name = self.header(header)
             if name is None:
                 continue
@@ -288,20 +273,21 @@ class GatedNaming:
             for enclosing in iteration_ends:
                 self.round_after.setdefault(enclosing, set()).add(name)
 
-        for block in order:
+        for block in self.flow.order:
             for effect in effects_of[block]:
                 self.place(effect, block)
 
     def exit_edges(self, body: set) -> list[tuple]:
         """(block, successor) of each edge leaving the loop's body"""
-        return [(block, successor) for block in sorted(body, key=self.position.__getitem__)
+        return [(block, successor) for block in sorted(body, key=self.flow.position.__getitem__)
                 for successor in dict.fromkeys(self.layer.successors(block)) if successor not in body]
 
     def after_loop(self, header, body: set) -> tuple[set, set]:
         """The blocks reached from the loop's exits within one iteration of the loops around it, and the headers of
         those loops reached: the iteration ends there, so a header is not passed, and only its loop's going round again
         is after the loop; what runs before the loop in the iteration, a header's own effects included, is not"""
-        enclosing = {other for other, other_body in self.bodies.items() if other is not header and header in other_body}
+        enclosing = {other for other, other_body in self.flow.loop_bodies.items()
+                     if other is not header and header in other_body}
         reached = {successor for _, successor in self.exit_edges(body)}
         pending = list(reached)
         while pending:
@@ -333,8 +319,9 @@ class GatedNaming:
         effect.after = frozenset(self.after_of.get(block, ())) - {own}
 
     def latches(self, header) -> list:
+        position = self.flow.position
         return [predecessor for predecessor in self.layer.predecessors(header)
-                if predecessor in self.position and self.position[predecessor] >= self.position[header]]
+                if predecessor in position and position[predecessor] >= position[header]]
 
     def going_round(self, header, facts: Facts) -> tuple:
         """The formula a loop goes round again under: it runs, and an iteration ends on a back edge (gated from the
@@ -357,8 +344,9 @@ class GatedNaming:
     def loop_values(self, header, keys: set, exit_states: dict, facts: Facts, fingerprints: Fingerprints):
         """The values the loop carries in under the formula it runs under, and round under the one it goes round again
         under: each copy of a loop HLIL rebuilds on several paths (one stamp) adds its own"""
+        position = self.flow.position
         forward = [(predecessor, exit_states[predecessor]) for predecessor in self.layer.predecessors(header)
-                   if predecessor in self.position and self.position[predecessor] < self.position[header]]
+                   if predecessor in position and position[predecessor] < position[header]]
         back = [(latch, exit_states[latch]) for latch in self.latches(header)]
         groups = ((LOOP_ENTRY, self.guard_formula(header, facts), self.incoming(header, forward, facts)),
                   (LOOP_BACK, self.going_round(header, facts), self.gated(header, header, back, facts)))

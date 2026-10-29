@@ -3,9 +3,10 @@
 Immediate dominators by Cooper, Harvey and Kennedy's iterative algorithm ("A Simple, Fast Dominance Algorithm", 2001);
 post-dominators by the same on the reversed graph, rooted at a virtual EXIT; then the branches each block runs under
 (Ferrante, Ottenstein and Warren's control dependence, read off the post-dominator tree), over the whole graph or
-within one iteration of a block's innermost loop"""
+within one iteration of a block's innermost loop; a graph's ControlFlow builds each of them once, when first read"""
 
 from typing import Callable, Hashable, Sequence
+import functools
 
 from ir.core import reverse_post_order
 
@@ -130,13 +131,12 @@ def immediate_dominators(order: Sequence, predecessors: Callable) -> dict[Hashab
     return idom
 
 
-def control_dependence(blocks: Sequence, successors: Callable, branches: Callable,
-                       exit_rank: Callable | None = None) -> dict[Hashable, frozenset]:
+def control_dependence(blocks: Sequence, branches: Callable, ipdom: dict) -> dict[Hashable, frozenset]:
     """block -> the (branch address, TRUE_ARM / FALSE_ARM) it runs under directly. branches(block) is (address, true
-    target, false target) for a block ending in a two-way branch, else None; exit_rank as exit_blocks takes it. A block
-    depends on an arm when it post-dominates the arm's target but not, strictly, the branch: the post-dominator tree's
-    path from the target up to the branch's own immediate post-dominator"""
-    ipdom = immediate_post_dominators(blocks, successors, exit_rank)
+    target, false target) for a block ending in a two-way branch, else None; ipdom the blocks' immediate
+    post-dominators (immediate_post_dominators). A block depends on an arm when it post-dominates the arm's target but
+    not, strictly, the branch: the post-dominator tree's path from the target up to the branch's own immediate
+    post-dominator"""
     dependence = {}
     for block in blocks:
         branch = branches(block)
@@ -166,21 +166,15 @@ def back_edges(order: Sequence, successors: Callable) -> list[tuple]:
             if position[target] <= position[source]]
 
 
-def loop_bodies(order: Sequence, successors: Callable, predecessors: Callable) -> dict[Hashable, set]:
-    """header -> its loop's blocks, those reaching a back edge (back_edges) into it without passing it. Natural loops
-    only: the header dominates the edge's source. A retreating edge into a block that does not (an irreducible
-    region's entry) has no body: walking back from its source would pass the header and reach the function's entry,
-    and two such edges would contain each other's header"""
+def loop_bodies(order: Sequence, predecessors: Callable, edges: list[tuple],
+                dominates: Callable) -> dict[Hashable, set]:
+    """header -> its loop's blocks, those reaching a back edge (edges: back_edges over order) into it without passing
+    it. Natural loops only: the header dominates (dominates(header, source)) the edge's source. A retreating edge into
+    a block that does not (an irreducible region's entry) has no body: walking back from its source would pass the
+    header and reach the function's entry, and two such edges would contain each other's header"""
     reachable = set(order)
-    dominators = immediate_dominators(order, predecessors)
-
-    def dominates(a, b) -> bool:
-        while a is not b and dominators[b] is not b:
-            b = dominators[b]
-        return a is b
-
     latches = {}
-    for source, header in back_edges(order, successors):
+    for source, header in edges:
         if dominates(header, source):
             latches.setdefault(header, []).append(source)
     bodies = {}
@@ -195,23 +189,15 @@ def loop_bodies(order: Sequence, successors: Callable, predecessors: Callable) -
     return bodies
 
 
-def iteration_dependence(order: Sequence, successors: Callable, predecessors: Callable, branches: Callable,
-                         exit_rank: Callable | None = None) -> tuple[dict, dict, dict]:
-    """(block -> the (branch address, TRUE_ARM / FALSE_ARM) it runs under directly within one iteration of its
-    innermost loop, block -> that loop's header, header -> its loop's blocks). Control dependence over the loop's
-    blocks, its back edges and exits ending the iteration, so an arm the block misses in this iteration is one it
-    depends on even where a later iteration reaches it; a block in no loop, and a loop's header (in its enclosing
-    loop), as control_dependence gives them over the blocks around it. Only natural loops (loop_bodies) count: a block
-    in an irreducible region outside any of them has its whole-graph dependence"""
-    bodies = loop_bodies(order, successors, predecessors)
-    region = {}                 # block -> the header of the innermost loop whose iteration it runs in
-    for header in sorted(bodies, key=lambda header: len(bodies[header]), reverse=True):
-        for block in bodies[header]:
-            if block is not header:
-                region[block] = header
-
-    whole = control_dependence(order, successors, branches, exit_rank)
-    dependence = {block: whole[block] for block in order if block not in region}
+def iteration_dependence(order: Sequence, successors: Callable, branches: Callable, bodies: dict,
+                         innermost_header: dict, whole: dict) -> dict[Hashable, frozenset]:
+    """block -> the (branch address, TRUE_ARM / FALSE_ARM) it runs under directly within one iteration of its
+    innermost loop (innermost_header; bodies: header -> its loop's blocks). Control dependence over the loop's blocks,
+    its back edges and exits ending the iteration, so an arm the block misses in this iteration is one it depends on
+    even where a later iteration reaches it; a block in no loop, and a loop's header (in its enclosing loop), its
+    whole-graph dependence (whole) over the blocks around it. Only natural loops (loop_bodies) count: a block in an
+    irreducible region outside any of them has its whole-graph dependence"""
+    dependence = {block: whole[block] for block in order if block not in innermost_header}
     for header, body in bodies.items():
         end = IterationEnd()
 
@@ -227,10 +213,96 @@ def iteration_dependence(order: Sequence, successors: Callable, predecessors: Ca
             return None if branch is None else (branch[0], inside(branch[1]), inside(branch[2]))
 
         members = [*(block for block in order if block in body), end]
-        local = control_dependence(members, iteration_successors, iteration_branch)
-        dependence.update((block, local[block]) for block in members if region.get(block) is header)
-    return dependence, region, bodies
+        local = control_dependence(members, iteration_branch, immediate_post_dominators(members, iteration_successors))
+        dependence.update((block, local[block]) for block in members if innermost_header.get(block) is header)
+    return dependence
 
 
 class IterationEnd:
     """The end of one iteration of a loop, where its back edges and exits lead (iteration_dependence)"""
+
+
+class ControlFlow:
+    """A graph's control-flow facts, each built once, when first read: from entry, successors(block),
+    predecessors(block), branches(block) as control_dependence takes it, and exit_rank as exit_blocks does. Its readers
+    share the facts, so they only read them; and the facts hold for the graph as it is while one analysis runs
+    (evaluation.analyze), which keeps none past its end: a layer may be converted after its analysis"""
+
+    def __init__(self, entry, successors: Callable, predecessors: Callable, branches: Callable,
+                 exit_rank: Callable | None = None):
+        self.entry = entry
+        self.successors = successors
+        self.predecessors = predecessors
+        self.branches = branches
+        self.exit_rank = exit_rank
+
+    @functools.cached_property
+    def order(self) -> list:
+        """The blocks reached from entry, in reverse post-order"""
+        return reverse_post_order(self.entry, self.successors)
+
+    @functools.cached_property
+    def position(self) -> dict:
+        """block -> its index in order"""
+        return {block: index for index, block in enumerate(self.order)}
+
+    @functools.cached_property
+    def dominators(self) -> dict:
+        """Each block's immediate dominator (the entry's its own)"""
+        return immediate_dominators(self.order, self.predecessors)
+
+    @functools.cached_property
+    def dominator_span(self) -> dict:
+        """block -> (first, last) of its dominator subtree's numbers, a pre-order of the dominator tree"""
+        children = {block: [] for block in self.order}
+        for block in self.order[1:]:
+            children[self.dominators[block]].append(block)
+        span, number, pending = {}, 0, [(self.order[0], False)]
+        while pending:
+            block, done = pending.pop()
+            if done:
+                span[block] = (span[block], number - 1)
+                continue
+            span[block] = number
+            number += 1
+            pending.append((block, True))
+            pending.extend((child, False) for child in reversed(children[block]))
+        return span
+
+    def dominates(self, a, b) -> bool:
+        return self.dominator_span[a][0] <= self.dominator_span[b][0] <= self.dominator_span[a][1]
+
+    @functools.cached_property
+    def post_dominators(self) -> dict:
+        """Each block's immediate post-dominator, an endless region's EXIT edge by exit_rank"""
+        return immediate_post_dominators(self.order, self.successors, self.exit_rank)
+
+    @functools.cached_property
+    def back_edges(self) -> list[tuple]:
+        return back_edges(self.order, self.successors)
+
+    @functools.cached_property
+    def loop_bodies(self) -> dict:
+        return loop_bodies(self.order, self.predecessors, self.back_edges, self.dominates)
+
+    @functools.cached_property
+    def dependence(self) -> dict:
+        """block -> the arms it runs under directly over the whole graph"""
+        return control_dependence(self.order, self.branches, self.post_dominators)
+
+    @functools.cached_property
+    def innermost_header(self) -> dict:
+        """block -> the header of the innermost loop whose iteration it runs in (a header: its enclosing loop's)"""
+        bodies = self.loop_bodies
+        innermost = {}
+        for header in sorted(bodies, key=lambda header: len(bodies[header]), reverse=True):
+            for block in bodies[header]:
+                if block is not header:
+                    innermost[block] = header
+        return innermost
+
+    @functools.cached_property
+    def iteration_dependence(self) -> dict:
+        """block -> the arms it runs under directly within one iteration of its innermost loop"""
+        return iteration_dependence(self.order, self.successors, self.branches, self.loop_bodies,
+                                    self.innermost_header, self.dependence)

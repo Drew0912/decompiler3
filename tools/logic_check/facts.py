@@ -16,7 +16,7 @@ class Effect:
                             # gated, a loop's 'loop' and 'loop continue' (GatedNaming.loop_effects)
     target: Hashable
     args: tuple
-    guard: frozenset = frozenset()
+    guard: frozenset = frozenset()      # named by address: the arms it runs under (AddressNaming.set_guard)
     inside: frozenset = frozenset()     # gated: the loops (names) whose body it is in (GatedNaming.mark_loops)
     after: frozenset = frozenset()      # gated: the loops (names) whose exits lead to it
     storage: tuple = ()     # what it passes on besides args, (neutral key, value) pairs: a call the locals they point
