@@ -246,7 +246,8 @@ def compare_component(namings: Namings, occurrences: tuple, component, premises:
 
 def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tuple, inner: bool) -> str | None:
     """None when both sides pass the same values for component (an argument's index or a storage key) under the same
-    formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted"""
+    formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted;
+    the value category only where some value's formulas differ, else guard_unchecked"""
     category = value_category(occurrences[0][0])
     capped = False                  # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
     for namers in (namings.exact, namings.representative):
@@ -264,7 +265,7 @@ def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tu
             return None if namers is namings.exact else 'condition_ordering_inverted'
         if outcomes == {'condition_ordering_inverted'}:
             return 'condition_ordering_inverted'
-        return 'guard_unchecked' if capped or outcomes == {'guard_unchecked'} else category
+        return category if 'guard_differs' in outcomes and not capped else 'guard_unchecked'
 
     return 'guard_unchecked' if capped else category
 
@@ -290,7 +291,7 @@ def passed_under(namer: Namer, effects: list[Effect], component, inner: bool) ->
 def render(formula) -> str:
     """formula as text, cut at RENDERED_FORMULA_CHARACTERS, its conditions brief"""
     parts, pending, length = [], [formula], 0
-    while pending and length < RENDERED_FORMULA_CHARACTERS:
+    while pending and length <= RENDERED_FORMULA_CHARACTERS:
         item = pending.pop()
         if isinstance(item, tuple) and item[0] in ('and', 'or'):
             joiner = ' && ' if item[0] == 'and' else ' || '

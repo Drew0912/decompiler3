@@ -15,26 +15,9 @@ from .trees import loop_leaves, truth
 LIFTED_CHOICES = 1024           # gated choices lifted into an occurrence's formulas, at most (lift_choices)
 SHOWN = reprlib.Repr(maxlevel=8, maxtuple=6, maxstring=40, maxother=40)  # a gated detail's trees, cut (brief)
 
-CATEGORIES = (
-    'missing_effect',               # an effect of the reference absent, or fewer times (gated: absent)
-    'added_effect',                 # an effect the reference lacks, or more times (gated: lacks)
-    'target_differs',
-    'argc_differs',
-    'arg_differs',                  # an argument, or a local an argument points to
-    'return_differs',               # the result, or another register, at a return
-    'guard_differs',                # the branches an effect runs under, or their polarity (gated: its formula)
-    'guard_unchecked',              # gated: formulas past a diagram node cap (decision_diagrams), not compared
-    'condition_differs',            # a branch's condition, or a branch on one side only
-    'condition_ordering_inverted',  # equal once orderings are read as representative ones (`!(a < b)`, `a >= b`)
-    'branch_targets_differ',
-    'order_differs',                # the effects that can run next
-    'loop_value_differs',           # a value a loop carries round a back edge
-    'unstructured_jump',            # a reachable jump HLIL could not express
-)
-
 
 class Difference(NamedTuple):
-    category: str
+    category: str                   # docs/VALIDATOR_GUIDE.md, "Categories"
     key: Hashable                   # (address, effect kind), (address, 'branch') or (loop header, storage, edges)
     detail: object
 

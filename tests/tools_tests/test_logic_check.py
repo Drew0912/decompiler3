@@ -65,6 +65,7 @@ NESTED_TESTS = 17               # conditions one guard runs under: past formulas
 DIAGRAM_NODES_TOO_FEW = 2       # a decision_diagrams.DIAGRAM_NODE_CAP no decision diagram fits in (its two terminals)
 CHAIN_GLOBAL = 10               # the first global a chain of register writes tests (register_chain)
 LIFTED_FLAG_DIAGRAM_NODES = 11  # a DIAGRAM_NODE_CAP the planted flag test's guards fit in (9, 10), not lifted (13, 16)
+ORDERING_ROWS = 4               # a ROW_CAP an ordering's formulas fit in, not those with two more tests (2 to 6 do)
 PAIRS = 9                       # pairs of tests in TestFormulaKeys.pairs_formulas: 18 variables, past ROW_CAP's rows
 PAIRS_KEY_NODES = 500           # a DIAGRAM_KEY_NODE_CAP: pair by pair 103-137 nodes fit, firsts first 1,537+ do not
 ARM_VALUE, OTHER_ARM_VALUE = 100, 200
@@ -334,6 +335,22 @@ def nested_arms_function() -> tuple[Asm, int]:
     asm.label('end'); asm.load_stack(-WORD_SIZE); asm.push_int(2); asm.eq(); asm.jz('skip')
     call(asm, 'two', 2)
     asm.label('skip'); asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
+def ordered_arms_function() -> tuple[Asm, int]:
+    """if GLOBAL_A < LOOP_LIMIT: x = 1 elif GLOBAL_B: x = 2 else x = 3; callee(x): a choice passed, its first arm under
+    an ordering"""
+    asm = Asm()
+    asm.push_int(0)
+    asm.load_global(GLOBAL_A); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('else')
+    asm.push_int(1); asm.pop_to(-WORD_SIZE); asm.jmp('end')
+    asm.label('else'); asm.load_global(GLOBAL_B); asm.jz('last')
+    asm.push_int(2); asm.pop_to(-WORD_SIZE); asm.jmp('end')
+    asm.label('last'); asm.push_int(3); asm.pop_to(-WORD_SIZE)
+    asm.label('end'); asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.load_stack(-3 * WORD_SIZE)
+    asm.call(CALLEE_ID)
+    asm.label('back'); asm.pop(WORD_SIZE); return_nothing(asm)
     return asm, 1
 
 
@@ -1269,6 +1286,23 @@ class TestPlantedHLILBugs(unittest.TestCase):
                   if difference.key == RETURN_KEY and isinstance(difference.detail, list)]
         self.assertEqual(values, ['guard_unchecked'])
 
+    def test_inverted_value_beside_unchecked_ones(self):
+        """x's ordering test written inverted and its other test c written c && (c || GLOBAL_C): one value's formulas
+        compare inverted and, under the lowered caps, the other two values' unchecked, which is no difference found"""
+        mlil, hlil = mlil_and_hlil(ordered_arms_function)
+        self.assertEqual(hlil_categories(mlil, hlil), set(), 'the unchanged HLIL compares clean')
+        ordering = first_node(hlil, HLILBinaryOp, lambda node: node.op == BinaryOp.LT)
+        inverted = HLILBinaryOp(BinaryOp.EQ, HLILBinaryOp(BinaryOp.GE, ordering.lhs, ordering.rhs), HLILConst(0))
+        replace_expression(hlil, ordering, inverted)
+        test = first_node(hlil, HLILIf, lambda node: node.condition is not inverted)
+        other = HLILVar(HLILVariable(kind=VariableKind.GLOBAL, index=GLOBAL_C))
+        test.condition = HLILBinaryOp(BinaryOp.AND, test.condition,
+                                      HLILBinaryOp(BinaryOp.OR, copy.deepcopy(test.condition), other))
+        self.assertEqual(hlil_categories(mlil, hlil), {'condition_ordering_inverted'})
+        with (mock.patch.object(formulas, 'ROW_CAP', ORDERING_ROWS),
+              mock.patch.object(decision_diagrams, 'DIAGRAM_NODE_CAP', DIAGRAM_NODES_TOO_FEW)):
+            self.assertEqual(hlil_categories(mlil, hlil), {'guard_unchecked'})
+
     @classmethod
     def change_write(cls, hlil, value: int):
         """The first write of the constant value made value + 1, which nothing else writes"""
@@ -1740,6 +1774,19 @@ class TestLiftedChoices(unittest.TestCase):
         with mock.patch.object(compare, 'LIFTED_CHOICES', 2):
             lifted = gated_comparison.lifted_formula(self.namer, formulas.literal(condition, True), {})
         self.assertIsNone(compare.inner_choice(self.namer, lifted, set()))
+
+
+class TestRenderedFormula(unittest.TestCase):
+    """A gated detail's formula as text (gated_comparison.render), cut at RENDERED_FORMULA_CHARACTERS"""
+
+    FORMULA = ('or', (formulas.TRUE, formulas.TRUE))   # (true || true)
+
+    def test_cut_exactly_at_the_cap(self):
+        """Text that reaches the cap with parts left is cut, and shown cut; text that ends there is whole"""
+        with mock.patch.object(gated_comparison, 'RENDERED_FORMULA_CHARACTERS', len('(true || ')):
+            self.assertEqual(gated_comparison.render(self.FORMULA), '(true || ...')
+        with mock.patch.object(gated_comparison, 'RENDERED_FORMULA_CHARACTERS', len('(true || true)')):
+            self.assertEqual(gated_comparison.render(self.FORMULA), '(true || true)')
 
 
 class TestConditionNormalForm(unittest.TestCase):
