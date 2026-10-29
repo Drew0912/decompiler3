@@ -30,7 +30,7 @@ MARKER_FIRST_LINE = 1000
 # a parameter name, a constant, or ('==', constant, constant)
 BlockSpec = tuple[Sequence[str | int], tuple]
 
-# Shapes shared by the structuring and path-check tests
+# Shapes shared by the structuring and logic-check tests
 
 # if (a == 1120 && check()) return 1; rest - the rest is the merge, reached conditionally
 EARLY_EXIT = {

@@ -20,17 +20,19 @@ from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
 from ir.core.il_literals import SourceFloat
 from ir.hlil.hlil import (
-    BinaryOp, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall, HLILConst, HLILContinue, HLILDoWhile,
-    HLILExprStmt, HLILIf, HLILReturn, HLILSwitch, HLILUnaryOp, HLILUnstructured, HLILVar, HLILVariable, HLILWhile,
-    UnaryOp, VariableKind, iter_tree,
+    BinaryOp, HighLevelILFunction, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall, HLILConst, HLILContinue,
+    HLILDoWhile, HLILExprStmt, HLILIf, HLILReturn, HLILSwitch, HLILUnaryOp, HLILUnstructured, HLILVar, HLILVariable,
+    HLILWhile, UnaryOp, VariableKind, iter_tree,
 )
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
-    MediumLevelILCall, MLILAdd, MLILCall, MLILConst, MLILGe, MLILIf, MLILLoadGlobal, MLILLogicalNot, MLILLt,
-    MLILRet, MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILVar, map_operands, walk,
+    MediumLevelILCall, MediumLevelILFunction, MLILAdd, MLILCall, MLILConst, MLILEq, MLILGe, MLILGoto, MLILIf,
+    MLILLoadGlobal, MLILLogicalNot, MLILLt, MLILNe, MLILRet, MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg,
+    MLILVar, map_operands, walk,
 )
 from tests.shared.corpus import SORA2_SCRIPTS, require
-from tests.shared.hlil_cfg_utils import build_function
+from tests.shared.hlil_cfg_utils import EARLY_EXIT, SHARED_LOOP, build_function, structure, to_hlil
+from tests.shared.ir_utils import connect
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 import logic_check
@@ -655,6 +657,83 @@ def categories(reference, mlil) -> set[str]:
             logic_check.compare_facts(reference, logic_check.analyze(logic_check.MLILLayer(mlil)))}
 
 
+# === Hand-built MLIL and HLIL ===
+
+def calls_then_test() -> MediumLevelILFunction:
+    """if (first()) body(); else if (second()) body(): both results tested as they come back"""
+    func = MediumLevelILFunction('f', 0)
+    reg0 = func.get_or_create_local('reg0')
+    test1, test2, body, other = (func.create_block(label=label) for label in ('T1', 'T2', 'BODY', 'OTHER'))
+    test1.instructions = [MLILCall('first', [], output=reg0), MLILIf(MLILVar(reg0), body, test2)]
+    test2.instructions = [MLILCall('second', [], output=reg0), MLILIf(MLILVar(reg0), body, other)]
+    body.instructions = [MLILCall('body', []), MLILRet(MLILConst(1))]
+    other.instructions = [MLILRet(MLILConst(0))]
+    return connect(func)
+
+
+def returns_parameter() -> MediumLevelILFunction:
+    """observable(); return p, beside a second parameter q"""
+    func = MediumLevelILFunction('f', 0)
+    p = func.get_or_create_parameter(1, 'p')
+    func.get_or_create_parameter(2, 'q')
+    block = func.create_block(label='B')
+    block.instructions = [MLILCall('observable', []), MLILRet(MLILVar(p))]
+    return connect(func)
+
+
+def returns_call_result() -> MediumLevelILFunction:
+    """reg0 = value(); return reg0: the call folds into the return"""
+    func = MediumLevelILFunction('f', 0)
+    reg0 = func.get_or_create_local('reg0')
+    block = func.create_block(label='B')
+    block.instructions = [MLILCall('value', [], output=reg0), MLILRet(MLILVar(reg0))]
+    return connect(func)
+
+
+def temporary_condition() -> MediumLevelILFunction:
+    """tmp = p == 0; if (tmp != 0) ...: ControlFlowOptimizationPass folds tmp into the if"""
+    func = MediumLevelILFunction('f', 0)
+    p = func.get_or_create_parameter(1, 'p')
+    tmp = func.get_or_create_local('tmp')
+    test, yes, no = (func.create_block(label=label) for label in ('T', 'Y', 'N'))
+    test.instructions = [MLILSetVar(tmp, MLILEq(MLILVar(p), MLILConst(0))),
+                         MLILIf(MLILNe(MLILVar(tmp), MLILConst(0)), yes, no)]
+    yes.instructions = [MLILCall('yes', []), MLILRet(MLILConst(1))]
+    no.instructions = [MLILCall('no', []), MLILRet(MLILConst(0))]
+    return connect(func)
+
+
+def equality_chain() -> MediumLevelILFunction:
+    """if (x == 1) one(); else if (x == 2) two(); else if (x == 3) three(); else other(); done()"""
+    func = MediumLevelILFunction('f', 0)
+    x = func.get_or_create_parameter(1, 'x')
+    labels = ('T1', 'T2', 'T3', 'ONE', 'TWO', 'THREE', 'OTHER', 'DONE')
+    t1, t2, t3, one, two, three, other, done = (func.create_block(label=label) for label in labels)
+    for test, value, case, following in ((t1, 1, one, t2), (t2, 2, two, t3), (t3, 3, three, other)):
+        test.instructions = [MLILIf(MLILEq(MLILVar(x), MLILConst(value)), case, following)]
+    for case, name in ((one, 'one'), (two, 'two'), (three, 'three'), (other, 'other')):
+        case.instructions = [MLILCall(name, []), MLILGoto(done)]
+    done.instructions = [MLILCall('done', []), MLILRet(MLILConst(0))]
+    return connect(func)
+
+
+def either_call_hlil(func: MediumLevelILFunction, op: BinaryOp) -> HighLevelILFunction:
+    """if (first() != 0 <op> second() != 0) { body(); return 1; } return 0: calls_then_test's HLIL written by hand, each
+    call with the provenance and the address of the MLIL call it stands for (the logic check keys effects by address)"""
+    calls = {inst.target: inst for inst in func.iter_instructions() if isinstance(inst, MLILCall)}
+
+    def anchored(node, name: str):
+        node.mlil_index, node.address = calls[name].inst_index, calls[name].address
+        return node
+
+    body = anchored(HLILExprStmt(anchored(HLILCall('body', []), 'body')), 'body')
+    condition = HLILBinaryOp(op, *(HLILBinaryOp(BinaryOp.NE, anchored(HLILCall(name, []), name), HLILConst(0))
+                                   for name in ('first', 'second')))
+    hlil = HighLevelILFunction('f')
+    hlil.body = HLILBlock([HLILIf(condition, HLILBlock([body, HLILReturn(HLILConst(1))])), HLILReturn(HLILConst(0))])
+    return hlil
+
+
 # === Mutations of the MLIL ===
 
 def statements(mlil) -> list[tuple]:
@@ -905,6 +984,11 @@ def hlil_categories(mlil, hlil) -> set[str]:
     return {difference.category for difference in logic_check.compare_mlil_hlil(mlil, hlil)}
 
 
+def with_hlil(func) -> tuple:
+    """(a hand-built MLIL, the HLIL the pipeline makes from it)"""
+    return func, to_hlil(func)
+
+
 @contextlib.contextmanager
 def formula_keys_past_their_caps():
     """No formula has a key, so a gated choice is told apart by its own digest, as one past the caps is (K4)"""
@@ -949,7 +1033,10 @@ class TestPlantedHLILBugs(unittest.TestCase):
     category against the MLIL it came from"""
 
     def check(self, build, mutate, expected: str, argc: int = 0):
-        mlil, hlil = mlil_and_hlil(build, argc)
+        self.check_built(*mlil_and_hlil(build, argc), mutate, expected)
+
+    def check_built(self, mlil, hlil, mutate, expected: str):
+        """check for an MLIL and its HLIL built already"""
         self.assertEqual(hlil_categories(mlil, hlil), set(), 'the unchanged HLIL compares clean')
         mutate(hlil)
         self.assertIn(expected, hlil_categories(mlil, hlil))
@@ -1274,6 +1361,57 @@ class TestPlantedHLILBugs(unittest.TestCase):
             block.statements[block.statements.index(store)] = HLILIf(gate, HLILBlock([store]))
         self.check(store_then_inner_wait_function, mutate, 'guard_differs')
 
+    def test_deleted_call(self):
+        """The early exit's rest() deleted"""
+        def mutate(hlil):
+            for block in [node for node in iter_tree(hlil.body) if isinstance(node, HLILBlock)]:
+                block.statements = [statement for statement in block.statements
+                                    if not (isinstance(statement, HLILExprStmt) and statement.expr.func_name == 'rest')]
+        self.check_built(*with_hlil(build_function('f', EARLY_EXIT)), mutate, 'missing_effect')
+
+    def test_call_replaced_but_provenance_kept(self):
+        """observable() made the constant 0, its statement still naming the call it came from"""
+        def mutate(hlil):
+            statement = first_node(hlil, HLILExprStmt)
+            statement.expr = HLILConst(0)
+            statement.expr.mlil_index = statement.mlil_index
+        self.check_built(*with_hlil(returns_parameter()), mutate, 'missing_effect')
+
+    def test_call_target_changed_but_provenance_kept(self):
+        """observable() made other()"""
+        def mutate(hlil):
+            first_node(hlil, HLILCall).func_name = 'other'
+        self.check_built(*with_hlil(returns_parameter()), mutate, 'target_differs')
+
+    def test_returned_variable_changed(self):
+        """return p made return q"""
+        def mutate(hlil):
+            first_node(hlil, HLILReturn).value = HLILVar(HLILVariable('q'))
+        self.check_built(*with_hlil(returns_parameter()), mutate, 'return_differs')
+
+    def test_short_circuit_made_eager(self):
+        """second() runs only when first() returned 0: || keeps that, | runs both whatever first() returned"""
+        func = calls_then_test()
+        self.assertEqual(hlil_categories(func, either_call_hlil(func, BinaryOp.OR)), set())
+        self.assertIn('guard_differs', hlil_categories(func, either_call_hlil(func, BinaryOp.BIT_OR)))
+
+    def test_one_wrong_copy_of_a_repeated_region(self):
+        """continue made break in the second of the loop's two copies only: that copy no longer repeats"""
+        def mutate(hlil):
+            loops = [node for node in iter_tree(hlil.body) if isinstance(node, HLILWhile)]
+            self.assertEqual(len(loops), 2)
+            for block in [node for node in iter_tree(loops[1].body) if isinstance(node, HLILBlock)]:
+                block.statements = [HLILBreak() if isinstance(statement, HLILContinue) else statement
+                                    for statement in block.statements]
+        self.check_built(*structure(SHARED_LOOP), mutate, 'guard_differs')
+
+    def test_falling_off_the_end(self):
+        """The early exit's top-level returns deleted: the function falls off its end"""
+        def mutate(hlil):
+            hlil.body.statements = [statement for statement in hlil.body.statements
+                                    if not isinstance(statement, HLILReturn)]
+        self.check_built(*with_hlil(build_function('f', EARLY_EXIT)), mutate, 'guard_differs')
+
 
 class TestHLILStructures(unittest.TestCase):
     """Structures HLIL builds otherwise than MLIL writes them, compared clean: the same logic"""
@@ -1465,6 +1603,31 @@ class TestHLILStructures(unittest.TestCase):
     def test_loop_exit_split_at_its_short_circuit(self):
         """The inner loop's only way out tested at once by MLIL, one operand at a time by HLIL"""
         self.assertEqual(hlil_categories(*mlil_and_hlil(split_exit_function)), set())
+
+    def test_early_exit(self):
+        self.assertEqual(hlil_categories(*with_hlil(build_function('f', EARLY_EXIT))), set())
+
+    def test_calls_folded_into_conditions(self):
+        self.assertEqual(hlil_categories(*with_hlil(calls_then_test())), set())
+
+    def test_constant_comparison_decided_alike_on_both_levels(self):
+        """if (1 == 1): the dead arm's call on neither level"""
+        blocks = {'C': ([], ('if', ('==', 1, 1), 'L', 'D')), 'L': (['live'], ('ret', 1)), 'D': (['dead'], ('ret', 0))}
+        self.assertEqual(hlil_categories(*with_hlil(build_function('f', blocks))), set())
+
+    def test_temporary_an_hlil_pass_folds_away(self):
+        self.assertEqual(hlil_categories(*with_hlil(temporary_condition())), set())
+
+    def test_call_folded_into_a_return(self):
+        self.assertEqual(hlil_categories(*with_hlil(returns_call_result())), set())
+
+    def test_switch_from_an_equality_chain(self):
+        func, hlil = with_hlil(equality_chain())
+        self.assertTrue(any(isinstance(node, HLILSwitch) for node in iter_tree(hlil.body)))
+        self.assertEqual(hlil_categories(func, hlil), set())
+
+    def test_region_repeated(self):
+        self.assertEqual(hlil_categories(*structure(SHARED_LOOP)), set())
 
 
 class TestSplitLoopValues(unittest.TestCase):

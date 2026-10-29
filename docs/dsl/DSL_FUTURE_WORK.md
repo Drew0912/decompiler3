@@ -280,8 +280,8 @@ readability. Before starting: calls never folded under a native VM logical op (m
 forwarding a register/global past a redefinition (met 2026-09-24 - including clobbering calls whose
 record dead-code elimination drops; see `docs/mlil/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (met
 2026-09-28 - a jump the tree cannot express is an `HLILUnstructured` node, which the DSL must refuse
-to compile, and `tools/hlil_path_check.py` finds 0 of 80,571 sora2_1.0 functions losing or inventing a
-path; see `docs/hlil/HLIL_DESIGN.md`, Open Items); common-return extraction only hoisting from an
+to compile, and the logic check, `tools/logic_check/`, finds no other lost path in the 351,245 functions of the five
+games, 2026-10-29; see `docs/hlil/HLIL_DESIGN.md`, Open Items); common-return extraction only hoisting from an
 exhaustive switch (met 2026-09-24 - see `docs/hlil/HLIL_GUIDE.md`, Passes).
 
 ### 2. Mixed-IR-Level Compilation, Per Function

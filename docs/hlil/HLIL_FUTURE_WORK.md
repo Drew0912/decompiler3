@@ -117,4 +117,5 @@ Options, cheapest first: let `_clone_region_blocks` treat the active loops' head
 region boundaries instead of refusing; express a loop with several exits with a labelled block
 (`label: { ... break label; }` is valid TypeScript) or an exit flag; keep goto emulation
 (`while (true) switch (state)`) for irreducible regions only. Measure each change with the fuzz test
-(no wrong run, fewer pinned seeds) and with `tools/hlil_path_check.py` over the corpus.
+(no wrong run, fewer pinned seeds) and with the logic check over the corpus (`tools/logic_check/`,
+`docs/VALIDATOR_GUIDE.md`).

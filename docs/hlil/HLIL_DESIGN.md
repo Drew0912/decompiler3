@@ -312,8 +312,9 @@ Several dedicated HLIL unit-test files exist today:
   report).
 - `tests/hlil_tests/test_hlil_structuring_fuzz.py` does the same for 1,000 random CFGs, and checks no statement
   sits in two places, with markers or without.
-- `tests/tools_tests/test_hlil_path_check.py` covers `tools/hlil_path_check.py`: each way of losing or inventing
-  a path, deleting an effect, or changing what a repeated region does is reported.
+- `tests/tools_tests/test_logic_check.py` checks HLIL against its MLIL with the logic check (`tools/logic_check/`):
+  each way of losing or inventing a path, deleting an effect, or changing what a repeated region does is reported
+  (`TestPlantedHLILBugs`), and the structures HLIL builds otherwise than MLIL compare clean (`TestHLILStructures`).
 - `tests/hlil_tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared
   parameter flag gives, the declared flag winning over an inferred int/float variant, and default
   values still printed once.
@@ -353,11 +354,11 @@ still have no dedicated test file of their own.
   all (loops that never exited, a case's code run twice). The causes were merge points that were not
   merges and loop exits through goto-only blocks, not the clone limits. `tests/hlil_tests/test_hlil_structuring.py`
   pins each shape and the node's handling; `tests/hlil_tests/test_hlil_structuring_fuzz.py` runs 1,000 random
-  CFGs through the pipeline against their MLIL for every parameter assignment; `tools/hlil_path_check.py`
-  checks real scripts (0 of 80,571 sora2_1.0 functions lose or invent a path). Still open: 6 of the
-  1,000 random CFGs are reducible yet need a node (pinned in the fuzz test; `docs/hlil/HLIL_FUTURE_WORK.md`,
-  Structuring the Remaining Reducible Shapes), and the path check does not see which way a condition
-  sends control.
+  CFGs through the pipeline against their MLIL for every parameter assignment; the logic check
+  (`tools/logic_check/`, `docs/VALIDATOR_GUIDE.md`) checks real scripts (2026-10-29: of the 351,245 functions of the
+  five games, only `TestEmotion` in `scena/a0000.dat` of kuro1, kuro2 and kai1 loses paths, at its two unstructured
+  jumps). Still open: 6 of the 1,000 random CFGs are reducible yet need a node (pinned in the fuzz test;
+  `docs/hlil/HLIL_FUTURE_WORK.md`, Structuring the Remaining Reducible Shapes).
 - HLIL is the planned input of a Python DSL that compiles back to bytecode (`docs/dsl/DSL_FUTURE_WORK.md`,
   Recompilation Pipeline §1). Once that exists, every HLIL pass must preserve game logic exactly -
   readable-but-approximate rendering is only acceptable in the TypeScript generator.

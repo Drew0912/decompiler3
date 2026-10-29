@@ -45,7 +45,6 @@ from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizatio
 from ir.hlil.passes.pass_dead_code_elimination import DeadCodeEliminationPass
 from ir.hlil.passes.pass_loop_recovery import LoopRecoveryPass
 from codegen.typescript import generate_typescript
-from hlil_path_check import check_function
 from logic_check import compare_mlil_hlil
 from tests.shared.hlil_cfg_utils import (
     EARLY_EXIT, SHARED_LOOP, SHARED_LOOP_COPY_STATEMENTS, build_function, to_hlil, structure, classify, hlil_run,
@@ -428,7 +427,6 @@ class TestLoopExitsReachingAnOuterMerge(unittest.TestCase):
                 hlil = to_hlil(func)
                 self.assertEqual(classify(func, hlil), ('ok', None))
                 self.assertEqual(unstructured_nodes(hlil, reachable_only=False), [])
-                self.assertTrue(check_function(func, hlil).ok)
                 self.assertEqual(compare_mlil_hlil(func, hlil), [])
 
 
@@ -466,7 +464,8 @@ class TestUnstructuredNodes(unittest.TestCase):
             with self.subTest(budget=budget):
                 func, hlil = structure(BYPASS_TO_OUTER_MERGE, clone_budget=budget)
                 self.assertEqual(classify(func, hlil)[0], 'loud')
-                self.assertEqual(check_function(func, hlil).uncovered, [])
+                found = {difference.category for difference in compare_mlil_hlil(func, hlil)}
+                self.assertNotIn('missing_effect', found)
 
     def test_region_over_the_block_cap(self):
         func, hlil = structure(SHARED_LOOP, max_region_blocks=0)

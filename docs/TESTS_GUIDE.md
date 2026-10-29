@@ -26,7 +26,7 @@ A test sits in the folder of the code it tests. Each folder is named after that 
 | `parser_tests/` | reading a `.dat` (`falcom/ed9/parser/`, `falcom/ed9/structs/`, `falcom/ed9/disasm/`, `assembler/`): stack simulation, string pool, call records, listings, the opcode table's stack effects, and the `.py` text scena2py writes |
 | `writer_tests/` | `ScpWriter` (`falcom/ed9/writer/`): compiling the LLIL DSL, hooks, the compile check |
 | `common_functions_tests/` | the shared common-function library (`falcom/ed9/metadata/`): fingerprints, matching, what a script imports, and its generator (the facts, rendering, the closure and input checks) |
-| `tools_tests/` | the scripts in `tools/`: the validators, the line-order report, the HLIL path check |
+| `tools_tests/` | the scripts in `tools/`: the validators, the logic check, the line-order report |
 | `dc3_tests/` | `dc3/`: logging, file I/O, the GC policy |
 | `codegen_tests/` | the TypeScript code generator (`codegen/`) |
 | `ir_core_tests/` | the `ir/core` values every layer shares: `is_int_zero`, `SourceFloat`, `reverse_post_order` |
