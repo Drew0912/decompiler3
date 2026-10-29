@@ -63,10 +63,13 @@ NESTED_TESTS = 17               # conditions one guard runs under: past formulas
 DIAGRAM_NODES_TOO_FEW = 2       # a decision_diagrams.DIAGRAM_NODE_CAP no decision diagram fits in (its two terminals)
 CHAIN_GLOBAL = 10               # the first global a chain of register writes tests (register_chain)
 LIFTED_FLAG_DIAGRAM_NODES = 11  # a DIAGRAM_NODE_CAP the planted flag test's guards fit in (9, 10), not lifted (13, 16)
+PAIRS = 9                       # pairs of tests in TestFormulaKeys.pairs_formulas: 18 variables, past ROW_CAP's rows
+PAIRS_KEY_NODES = 500           # a DIAGRAM_KEY_NODE_CAP: pair by pair 103-137 nodes fit, firsts first 1,537+ do not
 ARM_VALUE, OTHER_ARM_VALUE = 100, 200
+LIFTING_CAP = 8                 # compare.LIFTED_CHOICES in the tests past it, so their chains stay short
 # Writes whose merges, opened, are more alternatives than are lifted; a length both layers cut alike, so they compare
 # whole (past the cap a length they cut differently stays a difference: VALIDATOR_GUIDE.md, Limitations)
-LONG_CHAIN = compare.LIFTED_CHOICES + 1
+LONG_CHAIN = LIFTING_CAP + 1
 
 
 # === Assembled functions ===
@@ -1200,6 +1203,7 @@ class TestPlantedHLILBugs(unittest.TestCase):
             self.change_write(hlil, PHI_DEPTH)
         self.check(arms_then_chain_function, mutate, 'return_differs')
 
+    @mock.patch.object(compare, 'LIFTED_CHOICES', LIFTING_CAP)
     def test_register_wrong_past_the_lifting_cap(self):
         """The long chain's last write changed: the merges opened are more alternatives than are lifted, so the
         difference found with them whole stands, not an unchecked one"""
@@ -1370,6 +1374,7 @@ class TestHLILStructures(unittest.TestCase):
         self.extract_common_return(hlil)
         self.assertEqual(hlil_categories(mlil, hlil), set())
 
+    @mock.patch.object(compare, 'LIFTED_CHOICES', LIFTING_CAP)
     def test_common_return_past_the_lifting_cap(self):
         """Both layers cut the long chain alike, so its merges compare whole: opened, they would be more alternatives
         than are lifted, and unchecked"""
@@ -1389,6 +1394,7 @@ class TestHLILStructures(unittest.TestCase):
         self.rebuild_in_both_arms(hlil)
         self.assertEqual(hlil_categories(mlil, hlil), set())
 
+    @mock.patch.object(compare, 'LIFTED_CHOICES', LIFTING_CAP)
     def test_loop_rebuilt_in_arms_past_the_lifting_cap(self):
         """The copies' values compare whole: opened, the long chain's merges would be more alternatives than are lifted,
         cut short at other places on the two layers, and unchecked"""
@@ -1556,9 +1562,9 @@ class TestLiftedChoices(unittest.TestCase):
         self.assertIs(lifted[2][0], untouched)
         self.assertEqual(lifted[2][1], const(1))
 
+    @mock.patch.object(compare, 'LIFTED_CHOICES', EDGES ** 3 - 1)
     def test_choices_counted_by_value(self):
         """Three choices in one operation: EDGES ** 3 alternatives by edge, past LIFTED_CHOICES; 2 ** 3 by value"""
-        self.assertGreater(self.EDGES ** 3, compare.LIFTED_CHOICES)
         tree = op('EQ', [op('ADD', [self.choice(0), op('ADD', [self.choice(10), self.choice(20)])]), const(0)])
         alternatives, capped = compare.choice_alternatives(self.namer, formulas.TRUE, tree, inner=True)
         self.assertFalse(capped)
@@ -1643,7 +1649,7 @@ class TestConditionNormalForm(unittest.TestCase):
 class TestFormulaKeys(unittest.TestCase):
     """Formulas compare as functions of their conditions: the equality tests of one value exclude each other, but
     for float constants; a condition nothing depends on is left out; past the truth table's rows, by decision
-    diagram"""
+    diagram, over the variables a formula depends on"""
 
     X, Y = ('param', 1), ('param', 2)
 
@@ -1653,6 +1659,32 @@ class TestFormulaKeys(unittest.TestCase):
     @classmethod
     def equals(cls, value: tuple, constant: int | float, polarity: bool = True) -> tuple:
         return formulas.literal(op('EQ', [value, const(constant)]), polarity)
+
+    @classmethod
+    def named_digest(cls, tree) -> str:
+        """A digest naming a parameter ('param', name) by its name, and / or items sorted, so a test sets the variable
+        orders by the names; a literal sorts before an and / or"""
+        if not isinstance(tree, tuple):
+            return repr(tree)
+        if tree[0] == 'param':
+            return tree[1]
+        if tree[0] in ('and', 'or'):
+            return f'({tree[0]} {" ".join(sorted(cls.named_digest(item) for item in tree[1]))})'
+        return '(' + ' '.join(cls.named_digest(item) for item in tree) + ')'
+
+    @classmethod
+    def named(cls, name: str) -> tuple:
+        return formulas.literal(op('EQ', [('param', name), const(1)]), True)
+
+    @classmethod
+    def pairs_formulas(cls, together: bool) -> tuple[tuple, tuple]:
+        """(any of PAIRS pairs of tests both holding, any pair's first holding), the names in sorted order each pair
+        together or every pair's first before every second"""
+        names = ([(f'p{index:02d}a', f'p{index:02d}b') for index in range(PAIRS)] if together else
+                 [(f'x{index:02d}', f'y{index:02d}') for index in range(PAIRS)])
+        pairs = formulas.disjunction([formulas.conjunction(cls.named(first), cls.named(second))
+                                      for first, second in names])
+        return pairs, formulas.disjunction([cls.named(first) for first, _ in names])
 
     def test_a_case_of_a_chain_and_of_its_switch(self):
         chain = formulas.conjunction(self.equals(self.X, 1, False), self.equals(self.X, 2))
@@ -1697,11 +1729,69 @@ class TestFormulaKeys(unittest.TestCase):
         self.assertIsNone(self.keys.table_key(flat))
         self.assertEqual(self.keys(flat), self.keys(chained))
         structure = self.keys.structure
-        self.assertTrue(decision_diagrams.Diagrams().same(structure(flat, {}), structure(chained, {})))
+        self.assertTrue(decision_diagrams.Diagrams().same(structure(flat), structure(chained)))
 
         flipped = formulas.disjunction(formulas.literal(value, index != 0) for index, value in enumerate(values))
         self.assertNotEqual(self.keys(flipped), self.keys(flat))
-        self.assertFalse(decision_diagrams.Diagrams().same(structure(flat, {}), structure(flipped, {})))
+        self.assertFalse(decision_diagrams.Diagrams().same(structure(flat), structure(flipped)))
+
+    def test_relevant_variables(self):
+        """(x == 1 && y == 2) || (x == 1 && y != 2) || x == 3 || (x == 4 && x == 1) depends on x alone, told from any
+        other value at 1 and 3"""
+        formula = formulas.disjunction([
+            *(formulas.conjunction(self.equals(self.X, 1), self.equals(self.Y, 2, polarity))
+              for polarity in (True, False)),
+            self.equals(self.X, 3), formulas.conjunction(self.equals(self.X, 4), self.equals(self.X, 1))])
+        _, expected = self.keys.structure_and_variables(formulas.disjunction([self.equals(self.X, 1),
+                                                                              self.equals(self.X, 3)]))
+        self.assertEqual(decision_diagrams.Diagrams.relevant(*self.keys.structure_and_variables(formula)), expected)
+
+    @mock.patch.object(decision_diagrams, 'DIAGRAM_KEY_NODE_CAP', PAIRS_KEY_NODES)
+    def test_key_past_the_sorted_orders_cap(self):
+        """a || (a && pairs), past ROW_CAP rows, its diagram in sorted order (every pair's first before every second)
+        past the key's cap: a's key, the variables found in the order a digest walk meets them, each pair together"""
+        keys = formulas.FormulaKeys(self.named_digest)
+        a = self.named('a')
+        formula = formulas.disjunction([a, formulas.conjunction(a, self.pairs_formulas(together=False)[0])])
+        with self.assertRaises(decision_diagrams.DiagramOverflow):
+            decision_diagrams.Diagrams.key(*keys.structure_and_variables(formula))
+        self.assertEqual(keys(formula), keys(a))
+
+    @mock.patch.object(decision_diagrams, 'DIAGRAM_KEY_NODE_CAP', PAIRS_KEY_NODES)
+    def test_variables_found_in_sorted_order_past_the_walks_cap(self):
+        """pairs && any first, whose digest walk meets every pair's first before the pairs (a literal sorts before an
+        and), past the key's cap that way: the variables found in sorted order, each pair together, as Diagrams.key
+        finds them"""
+        keys = formulas.FormulaKeys(self.named_digest)
+        formula = formulas.conjunction(*self.pairs_formulas(together=True))
+        structure, variables = keys.structure_and_variables(formula)
+        with self.assertRaises(decision_diagrams.DiagramOverflow):
+            decision_diagrams.Diagrams.relevant(structure, keys.canonical_variables(formula))
+        self.assertEqual(keys(formula), decision_diagrams.Diagrams.key(structure, variables)[1])
+
+    @mock.patch.object(decision_diagrams, 'DIAGRAM_KEY_NODE_CAP', PAIRS_KEY_NODES)
+    def test_one_outcome_for_formulas_of_one_digest(self):
+        """a || (a && (pairs && any first)) and the same with the inner and's items swapped, one digest: in the order
+        each meets its variables one fits the key's cap and the other not; two layers key them alike"""
+        a = self.named('a')
+        pairs, any_first = self.pairs_formulas(together=False)
+        written = [formulas.disjunction([a, formulas.conjunction(a, formulas.conjunction(*items))])
+                   for items in ((pairs, any_first), (any_first, pairs))]
+        self.assertEqual(self.named_digest(written[0]), self.named_digest(written[1]))
+        keyed = [formulas.FormulaKeys(self.named_digest)(formula) for formula in written]
+        self.assertEqual(keyed[0], keyed[1])
+
+    def test_comparisons_remembered_by_both_sides(self):
+        """x == 1 && y == 1 against the condition x == 1 && y == 1 (one function, written otherwise), then against
+        x == 1 && y == 2: the second comparison, its first side's formula the same, still differs"""
+        namings = gated_comparison.Namings((Namer(Facts()), Namer(Facts())),
+                                           (Namer(Facts(), True), Namer(Facts(), True)), {})
+        both = formulas.conjunction(self.equals(self.X, 1), self.equals(self.Y, 1))
+        condition = formulas.literal(op('LOGICAL_AND', [op('EQ', [value, const(1)]) for value in (self.X, self.Y)]),
+                                     True)
+        other = formulas.conjunction(self.equals(self.X, 1), self.equals(self.Y, 2))
+        self.assertIsNone(gated_comparison.compare_formulas(namings, (both, condition)))
+        self.assertEqual(gated_comparison.compare_formulas(namings, (both, other)), 'guard_differs')
 
 
 class TestPostDominators(unittest.TestCase):

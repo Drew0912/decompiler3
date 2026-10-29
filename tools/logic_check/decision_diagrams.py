@@ -2,8 +2,8 @@
 rows, over their structures (formulas.FormulaKeys.structure)"""
 
 FALSE_NODE, TRUE_NODE = 0, 1    # Diagrams' terminals
-DIAGRAM_NODE_CAP = 200_000      # a pairwise comparison's diagram (Diagrams.same)
-DIAGRAM_KEY_NODE_CAP = 20_000   # a key's, in a sorted variable order (Diagrams.key)
+DIAGRAM_NODE_CAP = 1_000_000    # a pairwise comparison's diagram (Diagrams.same)
+DIAGRAM_KEY_NODE_CAP = 20_000   # a key's (Diagrams.key) and the one finding its variables (Diagrams.relevant)
 
 
 def collect_variables(structure, variables: dict, seen: set):
@@ -54,6 +54,14 @@ class Diagrams:
         self.assign_levels(list(variables.items()))
         memo = {}
         return self.build(a, memo) == self.build(b, memo)
+
+    @classmethod
+    def relevant(cls, structure, variables: dict) -> dict:
+        """variable -> the constants structure tells from any other value, of each variable it depends on: its diagram
+        over variables in the order given, which the answer does not depend on"""
+        diagrams = cls(DIAGRAM_KEY_NODE_CAP)
+        diagrams.assign_levels(list(variables.items()))
+        return diagrams.relevant_variables(diagrams.build(structure, {}), variables)
 
     @classmethod
     def key(cls, structure, variables: dict) -> tuple:

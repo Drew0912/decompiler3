@@ -98,7 +98,8 @@ class Namer:
         self.neutral_key = facts.neutral      # a deep phi is cut to its fingerprint either way
         self.deep_choices = facts.deep_choices      # where opened finds a cut gated merge's gamma
         self.fingerprints = Fingerprints(self.neutral_key)
-        self.formula_keys = FormulaKeys(self.fingerprints, representative)
+        # One memo of keys with the fingerprints' gated choices; a representative namer reads orderings its own way
+        self.formula_keys = FormulaKeys(self.fingerprints, True) if representative else self.fingerprints.formula_keys
         self.memo = {}
         self.digests = {}
 

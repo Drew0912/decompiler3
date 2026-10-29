@@ -12,7 +12,7 @@ from .neutral_names import Namer
 from .post_dominators import FALSE_ARM, TRUE_ARM
 from .trees import loop_leaves, truth
 
-LIFTED_CHOICES = 256            # gated choices lifted into an occurrence's formulas, at most (lift_choices)
+LIFTED_CHOICES = 1024           # gated choices lifted into an occurrence's formulas, at most (lift_choices)
 SHOWN = reprlib.Repr(maxlevel=8, maxtuple=6, maxstring=40, maxother=40)  # a gated detail's trees, cut (brief)
 
 CATEGORIES = (

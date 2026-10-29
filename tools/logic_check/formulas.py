@@ -7,8 +7,8 @@ over the atoms it depends on, each atom named by its digest (neutral_names.Finge
 functions on every layer. An atom is a condition's core once the normal form is split at && / || and negation; the
 equality tests of one value against constants are one atom of many values, the value's truth test among them, so tests
 that exclude each other (an if chain and the switch made of it) are not read as independent; a test against a float
-constant is an atom of its own (OVERLAPPING_CONSTANT_TYPES). Past ROW_CAP rows a formula has no key;
-decision_diagrams.Diagrams then compares two exactly"""
+constant is an atom of its own (OVERLAPPING_CONSTANT_TYPES). Past ROW_CAP rows a key is a decision diagram's, and
+decision_diagrams.Diagrams compares two formulas exactly"""
 
 from .decision_diagrams import DiagramOverflow, Diagrams, collect_variables
 from .trees import SHORT_LOGIC, const, constant_truth, negation_normal_form, representative_orderings, truth
@@ -76,20 +76,38 @@ def negation(formula, memo: dict | None = None) -> tuple:
 class FormulaKeys:
     """One side's formulas' keys: (variables, table), the table a bit per row of the variables' values, the first
     variable the fastest, as little-endian bytes; a variable is ('eq', value digest, constant digests), whose values are
-    its constants in order, then any other. Past ROW_CAP rows the key is a decision diagram's (Diagrams.key), None past
-    DIAGRAM_KEY_NODE_CAP nodes. representative reads orderings as trees.representative_orderings does"""
+    its constants in order, then any other. Past ROW_CAP rows the variables the formula depends on are found first
+    (Diagrams.relevant) and the key is their table's, or past ROW_CAP rows again their decision diagram's
+    (Diagrams.key), None past DIAGRAM_KEY_NODE_CAP nodes. Keys are remembered by the formula's digest: equal digests are
+    one function. representative reads orderings as trees.representative_orderings does"""
 
     def __init__(self, digest, representative: bool = False):
         self.digest = digest
         self.representative = representative
         self.atoms = {}             # id(core) -> (core, its structure over atoms)
+        self.structures = {}        # id(formula) -> (formula, its structure over atoms)
+        self.keys = {}              # a formula's digest -> its key
 
     def __call__(self, formula) -> tuple | None:
+        digest = self.digest(formula)
+        if digest not in self.keys:
+            self.keys[digest] = self.computed_key(formula)
+        return self.keys[digest]
+
+    def computed_key(self, formula) -> tuple | None:
         structure, variables = self.structure_and_variables(formula)
         key = self.reduced_table_key(structure, variables)
         if key is not None:
             return key
 
+        try:
+            variables = Diagrams.relevant(structure, self.canonical_variables(formula))
+        except DiagramOverflow:
+            pass                    # the sorted order may still fit: Diagrams.key finds them in it
+        else:
+            key = self.reduced_table_key(structure, variables)
+            if key is not None:
+                return key
         try:
             variables, key = Diagrams.key(structure, variables)
         except DiagramOverflow:
@@ -104,10 +122,28 @@ class FormulaKeys:
 
     def structure_and_variables(self, formula) -> tuple:
         """(formula's structure over atoms, its variables: ('eq', value digest) -> {constant digest})"""
-        structure = self.structure(formula, {})
+        structure = self.structure(formula)
         variables = {}
         collect_variables(structure, variables, set())
         return structure, variables
+
+    def canonical_variables(self, formula) -> dict:
+        """formula's variables in the order a walk meets them with each and / or's items in digest order: one order for
+        all formulas of one digest, so their key's diagrams overflow alike, on every layer"""
+        variables, seen = {}, set()
+
+        def walk(part):
+            if id(part) in seen:
+                return
+            seen.add(id(part))
+            if part[0] in ('and', 'or'):
+                for item in sorted(part[1], key=self.digest):
+                    walk(item)
+            else:
+                collect_variables(self.structure(part), variables, set())
+
+        walk(formula)
+        return variables
 
     def reduced_table_key(self, structure, variables: dict) -> tuple | None:
         key = self.truth_table(structure, variables)
@@ -120,12 +156,12 @@ class FormulaKeys:
 
     # === Atoms ===
 
-    def structure(self, formula, memo: dict):
+    def structure(self, formula):
         """formula over atoms: ('not', s), ('and', ss), ('or', ss), TRUE, FALSE or ('eq', value digest, constant
         digest)"""
-        found = memo.get(id(formula))
+        found = self.structures.get(id(formula))
         if found is not None:
-            return found
+            return found[1]
 
         tag = formula[0]
         if tag == 'lit':
@@ -133,10 +169,10 @@ class FormulaKeys:
             if not formula[2]:
                 result = ('not', result)
         elif tag in ('and', 'or'):
-            result = (tag, tuple(self.structure(item, memo) for item in formula[1]))
+            result = (tag, tuple(self.structure(item) for item in formula[1]))
         else:
             result = formula
-        memo[id(formula)] = result
+        self.structures[id(formula)] = (formula, result)   # the formula kept alive, so its id is not reused
         return result
 
     def condition_structure(self, core: tuple):

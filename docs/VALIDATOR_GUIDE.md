@@ -56,7 +56,7 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
 
 - **Real:** `TestEmotion` in `scena/a0000.dat` of `kuro1`, `kuro2` and `kai1`: two unstructured jumps lose paths
   (`unstructured_jump`, and the `guard_differs`, `loop_value_differs` and `order_differs` the lost paths bring).
-- **The check's own artifacts** (no HLIL bug among them; Step 5c removes them, one kind a sub-step; K1, a dead arm
+- **The check's own artifacts** (no HLIL bug among them), all gone since Step 5c, one kind a sub-step: K1, a dead arm
   of `if (x != 0 && 0 != 0)` counted in `AniBtlKnockDown`, `-Loop`, `-End` of sora1 `ani/chr5004.dat` and `TKFront` of
   `scena/a1011.dat` in kuro1, kuro2 and kai1, is gone since 5c-1: MLIL's view folds a condition with a decisive constant
   operand as HLIL does; K3, a value after a loop whose exit HLIL splits in two tests, in `AniBtlChaseAttack` of sora2
@@ -66,10 +66,11 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
   gone since 5c-3: a merge cut at the phi depth is opened where the layers cut it at different depths; K4, a gated
   choice inside a condition or an operation compared by its digest, in `FdungeonStartVoicePlay`, `OnQuestEnd` (kai1
   `scena/system.dat`), `PigeonProc` (sora1, sora2 `scena/npc_setting.dat`) and 4 of `TestEmotion`'s `guard_differs`,
-  is gone since 5c-4: the choice is lifted, see the limitations):
-  - K5, formulas too large: `guard_unchecked` in `MapJumpCheck` (kuro1 `system.dat`), `InitBGM` (kuro2 `sound.dat`),
-    `ChangeEnvSE` (kuro1 `sound.dat`). The check is slow there: `MapJumpCallScript` (kai1 `system.dat`) and `InitBGM`
-    (sora1, sora2 `sound.dat`) take over two minutes each.
+  is gone since 5c-4: the choice is lifted, see the limitations; K5, formulas too large, `guard_unchecked` in
+  `MapJumpCheck` (kuro1 `system.dat`), `InitBGM` (kuro2 `sound.dat`) and `ChangeEnvSE` (kuro1 `sound.dat`), and checks
+  of over two minutes, `MapJumpCallScript` (kai1 `system.dat`) and `InitBGM` (sora1, sora2 `sound.dat`), is gone since
+  5c-5: keys and comparisons are remembered, a key is built over the variables its formula depends on, and the caps
+  are larger.
 
 ## How to use it
 
@@ -104,12 +105,15 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
   and the formulas of a big choice have no key of their own. Where the formulas or values of an effect then differ,
   they are compared again with the choices lifted: a choice anywhere in a value an effect passes or a loop copy
   carries, or in a condition of its guard (split at `&&` and `||` first), becomes its values each under its formula,
-  up to 256 distinct values at a time. That answer is taken only if it clears the difference. Past the cap, or for a
+  up to 1,024 distinct values at a time. That answer is taken only if it clears the difference. Past the cap, or for a
   choice inside a value a loop carries round (`loop_value_differs`), the difference stays.
 - Only natural loops (a header dominating the edge back to it) have a body. In an irreducible region, which no
   real script has, the formulas of the blocks outside natural loops are those of one pass through the region, so a
   clean result there proves less (the fuzz's irreducible graphs compare without error).
-- A formula past the decision diagram's cap is `guard_unchecked`, not compared.
+- A formula past a decision diagram's cap is not compared: two formulas whose diagram passes 1,000,000 nodes are
+  `guard_unchecked`; a formula whose key's diagram passes 20,000 has no key, so a choice under it is told apart by the
+  formula's digest. Answers are remembered by the formulas' digests, so of two comparisons of formulas equal but for
+  the order of their `&&` / `||` items, the first decides whether the cap is passed.
 
 ## Keeping this doc current
 

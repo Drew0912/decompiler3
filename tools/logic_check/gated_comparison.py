@@ -18,9 +18,11 @@ RENDERED_FORMULA_CHARACTERS = 400   # a gated detail's formula, cut (render)
 
 
 class Namings(NamedTuple):
-    """A gated comparison's namers, a pair (reference, checked) as written and one with representative orderings"""
+    """A gated comparison's namers, a pair (reference, checked) as written and one with representative orderings; and
+    compare_formulas' answers by the formulas' exact digests"""
     exact: tuple[Namer, Namer]
     representative: tuple[Namer, Namer]
+    compared: dict
 
 
 def compare_gated(reference: Facts, checked: Facts) -> list[Difference]:
@@ -28,7 +30,7 @@ def compare_gated(reference: Facts, checked: Facts) -> list[Difference]:
     reachable unstructured jump"""
     differences = []
     namings = Namings((Namer(reference), Namer(checked)),
-                      (Namer(reference, representative=True), Namer(checked, representative=True)))
+                      (Namer(reference, representative=True), Namer(checked, representative=True)), {})
     compare_gated_effects(reference, checked, namings, differences)
     compare_order(reference, checked, differences)
     compare_gated_loop_values(reference, checked, namings, differences)
@@ -168,13 +170,21 @@ def short_logic_formula(normal: tuple) -> tuple:
 
 
 def compare_formulas(namings: Namings, formulas: tuple) -> str | None:
-    """None when the two sides' formulas are one function, else the category of their difference"""
+    """None when the two sides' formulas are one function, else the category of their difference; remembered by their
+    digests, so of two pairs of one digest each the first compared decides an overflow"""
     exact = namings.exact
-    if exact[0].fingerprints(formulas[0]) == exact[1].fingerprints(formulas[1]):
+    digests = (exact[0].fingerprints(formulas[0]), exact[1].fingerprints(formulas[1]))
+    if digests[0] == digests[1]:
         return None
+    if digests not in namings.compared:
+        namings.compared[digests] = formulas_difference(namings, formulas)
+    return namings.compared[digests]
 
+
+def formulas_difference(namings: Namings, formulas: tuple) -> str | None:
+    """compare_formulas past the digests"""
     try:
-        if equivalent(exact, formulas):
+        if equivalent(namings.exact, formulas):
             return None
         if equivalent(namings.representative, formulas):
             return 'condition_ordering_inverted'
@@ -192,7 +202,7 @@ def equivalent(namers: tuple[Namer, Namer], formulas: tuple) -> bool:
     if None not in found:
         return found[0] == found[1]
 
-    return Diagrams().same(keys[0].structure(formulas[0], {}), keys[1].structure(formulas[1], {}))
+    return Diagrams().same(keys[0].structure(formulas[0]), keys[1].structure(formulas[1]))
 
 
 def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences: list, premises: tuple):
@@ -239,7 +249,7 @@ def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tu
     formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted"""
     category = value_category(occurrences[0][0])
     capped = False                  # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
-    for namers in namings:
+    for namers in (namings.exact, namings.representative):
         lifts = [passed_under(namer, effects, component, inner) for namer, effects in zip(namers, occurrences)]
         passed = [found for found, _ in lifts]
         capped = capped or any(cut for _, cut in lifts)
