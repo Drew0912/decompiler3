@@ -113,6 +113,12 @@ from decompiler2's ED8.x support:
   - **Risks:** 161 of the 214 ED85 opcodes are unnamed in decompiler2, some affecting data flow (`OP_0C` / `OP_0D` /
     `OP_0E`, likely frame slots; `Expr24` / `Expr25`); one sample, with no dialogue text; the validators assume an
     LLIL layer.
+  - **Logic check** (`tools/logic_check/`, `docs/VALIDATOR_GUIDE.md`): ED85 support brings the logic check with it.
+    Its MLIL -> HLIL half runs on the generic IR and carries over, given ED85's own register facts (ED9's 16
+    registers and result register 0 are in `tools/logic_check/state.py`). With no LLIL, the passes' reference is the
+    MLIL as lifted, before `optimize_mlil`, compared with the optimized MLIL as LLIL is with MLIL today; ED9's LLIL
+    side (`llil_layer.py`) and driver (`scripts.py`) get ED85 counterparts. The lifter stays outside the check, as
+    ED9's bytecode -> LLIL lifter does.
 
 ## kuro1 Byte-Exact Debug Records (`falcom/ed9/structs/call_debug_records.py`, `falcom/ed9/writer/`)
 
