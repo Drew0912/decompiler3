@@ -35,23 +35,16 @@ REFUSED = 2                     # exit code: a baseline of another version, whic
 # === Layer pairs ===
 
 class Pair(NamedTuple):
-    key: str                                                    # the JSON key
+    key: str                                                            # the JSON key
     label: str
-    differences: Callable[[FunctionResult], list[Difference]]
-    stopped_by: tuple[str, ...]     # the check's stages (check_function) whose error comes before the pair compares
+    differences: Callable[[FunctionResult], list[Difference] | None]    # None: not compared (FunctionResult)
 
 
 PAIRS = (
-    Pair('llil_mlil', 'LLIL->MLIL', lambda result: result.mlil_differences, ('LLIL', 'MLIL')),
-    Pair('mlil_hlil', 'MLIL->HLIL', lambda result: result.hlil_differences, ('LLIL', 'MLIL', 'MLIL gated', 'HLIL')),
+    Pair('llil_mlil', 'LLIL->MLIL', lambda result: result.mlil_differences),
+    Pair('mlil_hlil', 'MLIL->HLIL', lambda result: result.hlil_differences),
 )
 PAIRS_BY_LAYERS = {('llil', 'mlil'): PAIRS[0], ('mlil', 'hlil'): PAIRS[1]}
-
-
-def compared(result: FunctionResult, pair: Pair) -> bool:
-    """Whether the check reached pair: an error names its stage first (FunctionResult)"""
-    error = result.decompile_error or result.internal_error
-    return error is None or error.partition(':')[0] not in pair.stopped_by
 
 
 def failed(result: FunctionResult, pairs: tuple[Pair, ...]) -> bool:
@@ -90,8 +83,10 @@ def difference_json(difference: Difference) -> list[str]:
 
 
 def function_json(result: FunctionResult, pairs: tuple[Pair, ...] = PAIRS) -> dict[str, Any]:
+    """A pair not compared as [], as a clean one: the error fields say where the check stopped"""
     return {'function': result.name,
-            **{pair.key: [difference_json(difference) for difference in pair.differences(result)] for pair in pairs},
+            **{pair.key: [difference_json(difference) for difference in pair.differences(result) or []]
+               for pair in pairs},
             'decompile_error': result.decompile_error, 'internal_error': result.internal_error}
 
 
@@ -113,9 +108,9 @@ class Formatter:
         self.reset  = '\033[0m' if use_color else ''
 
     def pair_lines(self, result: FunctionResult, pair: Pair) -> list[str]:
-        if not compared(result, pair):
-            return [f'    {pair.label}: {self.yellow}not compared{self.reset}']
         differences = pair.differences(result)
+        if differences is None:
+            return [f'    {pair.label}: {self.yellow}not compared{self.reset}']
         if not differences:
             return [f'    {pair.label}: {self.green}PASS{self.reset}']
         counted = f"{len(differences)} difference{'s' if len(differences) > 1 else ''}"
@@ -137,9 +132,9 @@ class Formatter:
         """Per pair the functions compared clean and the differences by category; then the errors"""
         lines = []
         for pair in pairs:
-            checked = [result for result in results if compared(result, pair)]
-            clean = sum(1 for result in checked if not pair.differences(result))
-            by_category = Counter(difference.category for result in checked for difference in pair.differences(result))
+            checked = [differences for differences in map(pair.differences, results) if differences is not None]
+            clean = sum(1 for differences in checked if not differences)
+            by_category = Counter(difference.category for differences in checked for difference in differences)
             line = f'{pair.label}: {clean}/{len(checked)} functions without differences'
             if by_category:
                 line += ' (' + ', '.join(f'{category} {count}' for category, count in sorted(by_category.items())) + ')'

@@ -19,8 +19,8 @@ from .mlil_layer import MLILLayer
 
 class FunctionResult(NamedTuple):
     name: str
-    mlil_differences: list[Difference]  # LLIL -> MLIL
-    hlil_differences: list[Difference]  # MLIL -> HLIL
+    mlil_differences: list[Difference] | None   # LLIL -> MLIL; None: not compared, an error came first
+    hlil_differences: list[Difference] | None   # MLIL -> HLIL; None: not compared, an error came first
     decompile_error: str | None     # the function did not lift or convert: nothing compared (from there on)
     internal_error: str | None      # the check itself failed
 
@@ -28,13 +28,13 @@ class FunctionResult(NamedTuple):
     def decompile_failed(cls, name: str, stage: str, error: Exception,
                          mlil_differences: list | None = None) -> FunctionResult:
         """The function did not lift or convert at stage: nothing compared from there on"""
-        return cls(name, mlil_differences or [], [], f'{stage}: {type(error).__name__}: {error}', None)
+        return cls(name, mlil_differences, None, f'{stage}: {type(error).__name__}: {error}', None)
 
     @classmethod
     def check_failed(cls, name: str, stage: str, error: Exception,
                      mlil_differences: list | None = None) -> FunctionResult:
-        """The check itself failed at stage"""
-        return cls(name, mlil_differences or [], [], None, f'{stage}: {type(error).__name__}: {error}')
+        """The check itself failed at stage: nothing compared from there on"""
+        return cls(name, mlil_differences, None, None, f'{stage}: {type(error).__name__}: {error}')
 
 
 def check_script(path: Path, game: str | None, *, infer_types: bool = True,

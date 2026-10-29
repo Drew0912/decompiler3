@@ -66,6 +66,8 @@ of `kuro2` and `kai1`).
 - One file: `python tools/ir_semantic_validator.py <dat>` (both pairs, function by function), `--compare llil mlil`
   or `--compare mlil hlil` (one pair), `--function NAME`, `--failed-only`, `--json`, `--output-dir <scratch folder>`
   (a file per pair).
+- A pair after a decompile or internal error is `not compared` (in the JSON `[]`, as a clean pair: the error says
+  where the check stopped); a pair before it is reported as usual.
 - Before and after an IR change: `--export-regression <scratch folder>/before.json` first, `--compare-regression
   <scratch folder>/before.json` after. A regression is a difference new since the export, by category and key, or a
   new decompile or internal error; an improvement one gone; functions added or gone are listed.
