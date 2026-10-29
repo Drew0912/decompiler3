@@ -10,8 +10,8 @@
   records and library linking. No second bytecode emitter and no MLIL DSL. Lower in-process;
   optionally dump the lowered stream as LLIL DSL text for debugging.
 - **Exactness first.** The primary check is that an unedited function recompiles to its original
-  opcodes (the per-function fingerprint, ignoring line markers); the static game-logic comparator
-  (`docs/FUTURE_WORK.md`, Static Game-Logic Check) covers the rest. Measure the exact-match rate.
+  opcodes (the per-function fingerprint, ignoring line markers); the logic check (`tools/logic_check/`;
+  `docs/FUTURE_WORK.md`, Static Game-Logic Check) covers the rest. Measure the exact-match rate.
 - **Stack checks.** The lowering tracks the stack pointer itself; re-lifting the compiled output with
   the LLIL lifter checks stack discipline - the writer's compile check does this at the end of every
   `build()` (`ScpWriter.check_compiled`, `docs/dsl/LLIL_DSL.md` §1), so lowered functions get it too. Its
@@ -29,7 +29,7 @@
   register; constant expressions unfolded (`1 | 32768`; kept since 2026-10-27, no pass folds); bare truth tests
   vs `!= 0`; eager vs
   short-circuit logic; a tail-call node; the compiler's switch pattern. Loop rotation, switch recovery,
-  return hoisting and region cloning are not worth inverting; the comparator covers those functions.
+  return hoisting and region cloning are not worth inverting; the logic check covers those functions.
 - **Shared stack model.** The lowering reads the opcode table's stack effects
   (`falcom/ed9/disasm/stack_effects.py`), which the parser and the debug-record tracker already share and
   the lifter is tested against, and is designed as a pair with the rewrite's translator.

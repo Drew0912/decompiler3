@@ -770,7 +770,7 @@ def replace_reads(mlil, old, new, start: tuple):
 
 
 class TestPlantedBugs(unittest.TestCase):
-    """Each bug class a translator or a pass could bring, planted in real MLIL: the comparator reports its category"""
+    """Each bug class a translator or a pass could bring, planted in real MLIL: the logic check reports its category"""
 
     def check(self, build, mutate, expected: str, argc: int = 0):
         reference, mlil = reference_and_mlil(build, argc)
@@ -1029,7 +1029,7 @@ def arm_with_a_call(if_stmt: HLILIf) -> tuple:
 
 
 class TestPlantedHLILBugs(unittest.TestCase):
-    """Each bug class HLIL structuring or a pass could bring, planted in real HLIL: the comparator reports its
+    """Each bug class HLIL structuring or a pass could bring, planted in real HLIL: the logic check reports its
     category against the MLIL it came from"""
 
     def check(self, build, mutate, expected: str, argc: int = 0):

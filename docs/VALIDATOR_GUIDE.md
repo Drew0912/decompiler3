@@ -1,8 +1,7 @@
 # `tools/ir_semantic_validator.py` — reading its output
 
 **Purpose of this doc:** what the validator checks, what each of its categories means, which findings are already
-known (real ones and the check's own artifacts), and what a clean run does not prove. Read this before treating a
-validator FAIL as a regression.
+known, and what a clean run does not prove. Read this before treating a validator FAIL as a regression.
 
 **Since 2026-10-28** (IR rewrite part 1, Step 5b) the validator runs the logic check (`tools/logic_check/`); before,
 it matched operations block by block. The block matcher's categories (`missing_write_anchor`, `local_order_violation`
@@ -49,28 +48,18 @@ instruction, as in the `.llil.asm` / `.mlil.asm` listings), `(address, 'branch')
 `(header, 'loop continue')` for a loop, `(None, 'return')` for the function's returns. Its detail shows what each side
 has there, cut.
 
-## Known findings (the full corpus, 2026-10-28)
+## Known findings (the full corpus, 2026-10-29)
 
-Every parseable script of the five games (351,245 functions; IR rewrite part 1, Step 5a; per function in
-`notes/ir_rewrite_plan/baselines/{llil_mlil,mlil_hlil}_full.json`): LLIL -> MLIL clean; MLIL -> HLIL 38 functions.
+Every parseable script of the five games (4,828 scripts, 351,245 functions; IR rewrite part 1, Step 5e; per function
+in `notes/ir_rewrite_plan/baselines/{llil_mlil,mlil_hlil}_full_5e.json`): no decompile or internal error; LLIL -> MLIL
+clean; MLIL -> HLIL 3 functions, all real. The 8 scripts left out are the parser's: it rejects their `POP 255` (`ani/`
+of `kuro2` and `kai1`).
 
 - **Real:** `TestEmotion` in `scena/a0000.dat` of `kuro1`, `kuro2` and `kai1`: two unstructured jumps lose paths
   (`unstructured_jump`, and the `guard_differs`, `loop_value_differs` and `order_differs` the lost paths bring).
-- **The check's own artifacts** (no HLIL bug among them), all gone since Step 5c, one kind a sub-step: K1, a dead arm
-  of `if (x != 0 && 0 != 0)` counted in `AniBtlKnockDown`, `-Loop`, `-End` of sora1 `ani/chr5004.dat` and `TKFront` of
-  `scena/a1011.dat` in kuro1, kuro2 and kai1, is gone since 5c-1: MLIL's view folds a condition with a decisive constant
-  operand as HLIL does; K3, a value after a loop whose exit HLIL splits in two tests, in `AniBtlChaseAttack` of sora2
-  `ani/chr0003`, `chr0125`, `chr5006` and `chr5106`, is gone since 5c-2: a loop that runs ends, see the limitations;
-  K2, the registers at a return HLIL merges with another or repeats in two arms, in `MayaEvent*` (sora2 `mp5005`,
-  `mp1051`; kai1 `e5000`), `Archive01`, `-02`, `-04`, `Svis00`, `Dlc00`, `Etc00` (kai1, kuro2 `scena/a1018.dat`), is
-  gone since 5c-3: a merge cut at the phi depth is opened where the layers cut it at different depths; K4, a gated
-  choice inside a condition or an operation compared by its digest, in `FdungeonStartVoicePlay`, `OnQuestEnd` (kai1
-  `scena/system.dat`), `PigeonProc` (sora1, sora2 `scena/npc_setting.dat`) and 4 of `TestEmotion`'s `guard_differs`,
-  is gone since 5c-4: the choice is lifted, see the limitations; K5, formulas too large, `guard_unchecked` in
-  `MapJumpCheck` (kuro1 `system.dat`), `InitBGM` (kuro2 `sound.dat`) and `ChangeEnvSE` (kuro1 `sound.dat`), and checks
-  of over two minutes, `MapJumpCallScript` (kai1 `system.dat`) and `InitBGM` (sora1, sora2 `sound.dat`), is gone since
-  5c-5: keys and comparisons are remembered, a key is built over the variables its formula depends on, and the caps
-  are larger.
+- **The check's own artifacts:** Step 5a's run (2026-10-28) found 35 more functions, the check's own artifacts of five
+  kinds (no HLIL bug among them); all are gone since Step 5c, and the limitations below give the assumptions the fixes
+  rest on.
 
 ## How to use it
 
@@ -117,5 +106,4 @@ Every parseable script of the five games (351,245 functions; IR rewrite part 1, 
 
 ## Keeping this doc current
 
-When a change adds or retires a category or a known finding, update the tables above with how it was measured; Step
-5c removes each K kind from "Known findings" as it fixes it.
+When a change adds or retires a category or a known finding, update the tables above with how it was measured.

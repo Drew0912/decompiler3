@@ -23,7 +23,8 @@
 compares the LLIL against the MLIL and the MLIL against the HLIL on the in-memory IR - the effects with their argument
 values, the conditions they run under, branches, the order of effects and the values loops carry - and
 `tools/ir_semantic_validator.py` runs it per script, with a regression export and compare (`docs/VALIDATOR_GUIDE.md`:
-its categories, the known findings, its limits). It replaced the block matcher the validator had. **Not started:**
+its categories, the known findings, its limits). It replaced the block matcher the validator had. Over the five games'
+full corpus it reports only the paths `TestEmotion`'s unstructured jumps lose (2026-10-29). **Not started:**
 
 - **Step B, the value layer:** values computed, not compared as trees, so an equal value written another way
   (`1 + 1` for `2`) and an ordering inverted (`!(a < b)` for `a >= b`, which differs only for NaN) are decided.
