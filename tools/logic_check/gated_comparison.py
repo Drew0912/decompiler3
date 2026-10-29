@@ -149,7 +149,7 @@ def lifted_formula(fingerprints: Fingerprints, formula, memo: dict) -> tuple:
         return found[1]
 
     tag = formula[0]
-    if tag == 'lit' and inner_choice(fingerprints, formula[1], set()) is not None:
+    if tag == 'lit' and inner_choice(formula[1], set()) is not None:
         split = short_logic_formula(negation_normal_form(formula[1]))     # the condition holding
         holds = (lifted_atom(fingerprints, split, memo) if split[0] == 'lit'
                  else lifted_formula(fingerprints, split, memo))
@@ -253,9 +253,9 @@ def compare_passed(readings: tuple[GatedReading, GatedReading], key: tuple, occu
 
 def compare_component(reading: GatedReading, occurrences: tuple, component, premises: tuple) -> str | None:
     """compare_lifted with a value's choice lifted only where it is the whole value, and where that finds a difference,
-    with the choices inside it too, merges cut at the phi depth opened (the layers build such a choice each its own way,
-    and cut at different depths): that answer is taken only if it clears the difference, so a choice left whole past
-    LIFTED_CHOICES leaves the first answer"""
+    with the choices inside it too (the layers build such a choice each its own way: inside an operand or a leaf's write
+    epoch on one, around the value on the other): that answer is taken only if it clears the difference, so a choice
+    left whole past LIFTED_CHOICES leaves the first answer"""
     whole = compare_lifted(reading, occurrences, component, premises, inner=False)
     if whole is None:
         return None

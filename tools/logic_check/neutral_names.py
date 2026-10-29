@@ -29,22 +29,21 @@ class Fingerprints:
     """A layer's value trees and formulas digested the way the comparison sees them: a layer's own storage keys under
     neutral names, == and != operands and those of a formula's and / or in any order, a gated choice by its values
     and the function choosing each (gated_choice), with orderings read as representative ones where representative;
-    equal digests mean equal trees. Memoised by identity, so a subtree shared by many trees is digested once. The
-    evaluation's instance (evaluation.analyze) keeps the choice of each gated merge cut at the phi depth under its
-    fingerprint (state.merged_value), for the facts; a comparison's instance opens them (opened)"""
+    equal digests mean equal trees. Memoised by identity, so a subtree shared by many trees is digested once. It
+    recurses through plain methods (digest, FormulaKeys.key) in list comprehensions: a call through __call__, or a
+    generator a C function consumes, takes C stack at each level, which a deep tree runs out of first"""
 
-    def __init__(self, neutral_key, deep_choices: dict | None = None, representative: bool = False):
+    def __init__(self, neutral_key, representative: bool = False):
         self.neutral_key = neutral_key
         self.memo = {}
-        self.deep_choices = {} if deep_choices is None else deep_choices  # a cut gated merge's fingerprint -> its gamma
-        self.formula_keys = FormulaKeys(self, representative)
+        self.formula_keys = FormulaKeys(self.digest, representative)
 
     @classmethod
     def of(cls, facts: Facts, representative: bool = False) -> Fingerprints:
-        """A side's fingerprints for the comparison: its facts' neutral names and cut gated merges"""
-        return cls(facts.neutral, facts.deep_choices, representative)
+        """A side's fingerprints for the comparison: its facts' neutral names"""
+        return cls(facts.neutral, representative)
 
-    def __call__(self, tree) -> bytes:
+    def digest(self, tree) -> bytes:
         if not isinstance(tree, tuple):
             return repr(tree).encode()
 
@@ -57,14 +56,14 @@ class Fingerprints:
         if leaf is not None:
             parts = list(leaf)
         elif tag == 'op' and tree[1] in EQUALITIES:
-            parts = [tag, tree[1], *sorted(self(operand) for operand in tree[2])]
+            parts = [tag, tree[1], *sorted([self.digest(operand) for operand in tree[2]])]
         elif tag in ('and', 'or'):
-            parts = [tag, *sorted(self(item) for item in tree[1])]
+            parts = [tag, *sorted([self.digest(item) for item in tree[1]])]
         elif tag == 'gamma':
-            choice = gated_choice(tree, self, self.formula_keys)
-            parts = [tag, *sorted(((key, self(value)) for key, value in choice), key=repr)]
+            choice = gated_choice(tree, self.digest, self.formula_keys)
+            parts = [tag, *sorted([(key, self.digest(value)) for key, value in choice], key=repr)]
         else:
-            parts = [self(item) for item in tree]
+            parts = [self.digest(item) for item in tree]
         if tag == 'gamma' and len(parts) == 2:
             digest = parts[1][1]        # one value wherever the join is reached
         else:
@@ -72,14 +71,7 @@ class Fingerprints:
         self.memo[id(tree)] = (tree, digest)    # the tree kept alive, so its id is not reused
         return digest
 
-    def opened(self, tree):
-        """A gated merge cut at the phi depth as the gamma it was cut from (state.merged_value keeps only those, not a
-        phi's); any other tree as it is"""
-        if not (isinstance(tree, tuple) and tree and tree[0] == 'deep_phi'):
-            return tree
-
-        _, _, _, fingerprint, _ = tree
-        return self.deep_choices.get(fingerprint, tree)
+    __call__ = digest
 
 
 Reading = tuple[Fingerprints, Fingerprints]     # the two sides (reference, checked) under one reading
@@ -97,7 +89,7 @@ def gated_choice(gamma: tuple, digest, keys: FormulaKeys) -> list[tuple]:
     choice = []
     for found, arriving in formulas.items():
         joined = disjunction(arriving)
-        key = keys(joined)
+        key = keys.key(joined)
         if key is None:
             key = ('unchecked', digest(joined))
         if key != FALSE_KEY:

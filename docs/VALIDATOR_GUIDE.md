@@ -41,7 +41,7 @@ Every category is a finding until checked, except the two marked.
 | `loop_value_differs` | a value a loop carries round a back edge |
 | `unstructured_jump` | a jump HLIL could not express, on a path that can run: the path is lost from the output |
 | `condition_ordering_inverted` | not a finding: equal once orderings are read as one representative (`!(a < b)` and `a >= b`, which differ only for NaN); HLIL's own inversions, counted for the HLIL slice |
-| `guard_unchecked` | not compared: formulas past the decision diagram's node cap, as written and with orderings read as one representative. Not a finding, but a clean run has none |
+| `guard_unchecked` | not compared: formulas past the decision diagram's node cap, as written and with orderings read as one representative, or a mismatch left where a choice, lifted, passed the lifting cap of 1,024 alternatives (`LIFTED_CHOICES`; Limitations). Not a finding, but a clean run has none |
 
 A difference's key names where it is: `(address, kind)` for an effect (the address is the bytecode offset of its
 instruction, as in the `.llil.asm` / `.mlil.asm` listings), `(address, 'branch')`, `(header, 'loop')` /
@@ -92,12 +92,13 @@ of `kuro2` and `kai1`).
   So the iterations that go round again are never the last, and HLIL splitting a loop's `&&` exit in two tests, or
   repeating the code after the loop in each exit, is no finding. A loop that never ends is not checked.
 - A merged value is a choice over the conditions its paths are taken under, told apart by its digest, which each layer
-  builds its own way: more than three merges deep it is cut to a fingerprint, at a depth each layer reaches on its own,
-  and the formulas of a big choice have no key of their own. Where the formulas or values of an effect then differ,
-  they are compared again with the choices lifted: a choice anywhere in a value an effect passes or a loop copy
-  carries, or in a condition of its guard (split at `&&` and `||` first), becomes its values each under its formula,
-  up to 1,024 distinct values at a time. That answer is taken only if it clears the difference. Past the cap, or for a
-  choice inside a value a loop carries round (`loop_value_differs`), the difference stays.
+  builds its own way, and the formulas of a big choice have no key of their own. Where the formulas or values of an
+  effect then differ, they are compared again with the choices lifted: a choice anywhere in a value an effect passes or
+  a loop copy carries, or in a condition of its guard (split at `&&` and `||` first), becomes its values each under its
+  formula, up to 1,024 distinct values at a time. That answer is taken only if it clears the difference. Past the cap,
+  or for a choice inside a value a loop carries round (`loop_value_differs`), the difference stays. A value that is a
+  choice of choices past the cap, lifted whole, is `guard_unchecked`: a long chain of merges that HLIL merges once more
+  (a common return made one) or splits in two (a loop rebuilt in each arm) is unchecked, not clean.
 - Only natural loops (a header dominating the edge back to it) have a body. In an irreducible region, which no
   real script has, the formulas of the blocks outside natural loops are those of one pass through the region, so a
   clean result there proves less (the fuzz's irreducible graphs compare without error).

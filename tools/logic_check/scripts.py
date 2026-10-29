@@ -90,5 +90,6 @@ def check_function(lifter: ED9VMLifter, func, infer_types: bool) -> FunctionResu
 
 def compare_mlil_hlil(mlil_func, hlil_func) -> list[Difference]:
     """One function's differences, its MLIL the reference"""
+    raise_recursion_limit()     # as check_script: a chain of gated merges nests as deep as it is long
     return compare_gated(analyze(MLILLayer(mlil_func, hlil_view=True), gated=True),
                          analyze(HLILLayer(hlil_func, mlil_func), gated=True))

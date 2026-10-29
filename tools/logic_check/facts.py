@@ -46,8 +46,6 @@ class Facts:
     neutral_key: Callable[[tuple], tuple] | None = None    # a layer's own storage key the way every layer names it
     # gated: loop name -> (the formula it runs under, the formula it ends under: an edge leaving its body is taken)
     loop_runs: dict[Hashable, tuple] = field(default_factory=dict)
-    # gated: a merge cut at the phi depth, its fingerprint -> its gamma (state.merged_value, Fingerprints.opened)
-    deep_choices: dict[bytes, tuple] = field(default_factory=dict)
     unstructured: list = field(default_factory=list)        # HLIL: the reachable jumps it could not express
 
     def neutral(self, key: tuple) -> tuple:

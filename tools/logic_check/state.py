@@ -4,7 +4,7 @@ Storage keys mean the same on every layer: ('stack', slot), ('param', n), ('reg'
 storage with no counterpart (a renamed variable) keeps a key of its own, and only values read from it are compared"""
 
 from .neutral_names import Fingerprints
-from .trees import ENTRY, tagged_leaves
+from .trees import ENTRY, equal_trees, tagged_leaves
 
 GLOBAL_EPOCH = ('epoch', 'global')      # the address of the last call that may have written any global
 MEMORY_EPOCH = ('epoch', 'memory')      # the same for memory behind a pointer
@@ -36,7 +36,8 @@ class State:
 
 
 def phi_depth(tree, memo: dict | None = None) -> int:
-    """Joins nested in tree; memoised by identity: a tree shares its subtrees"""
+    """Phis nested in tree, through its operations (a gated merge is never cut); memoised by identity: a tree shares its
+    subtrees"""
     if not isinstance(tree, tuple):     # an epoch is a plain address
         return 0
     memo = {} if memo is None else memo
@@ -46,8 +47,6 @@ def phi_depth(tree, memo: dict | None = None) -> int:
 
     if tree[0] == 'phi':
         depth = 1 + max((phi_depth(value, memo) for _, value in tree[2]), default=0)
-    elif tree[0] == 'gamma':
-        depth = 1 + max((phi_depth(value, memo) for _, value in tree[1]), default=0)
     elif tree[0] == 'op':
         depth = max((phi_depth(operand, memo) for operand in tree[2]), default=0)
     else:
@@ -77,28 +76,24 @@ def merge(join, states: list[tuple], fingerprints: Fingerprints) -> State:
 
 
 def merged_value(join, key: tuple, states: list[tuple], fingerprints: Fingerprints):
-    """key's value at a join from its predecessors' (edge name, exit state): the value they agree on, else a phi over
-    the predecessors ordered by edge name, the terminal address (join an identity), or a gated choice over the path
-    conditions the edges are taken under (join None; FormulaKeys compares them). Past PHI_DEPTH the merge becomes a
-    leaf, ('deep_phi', join, key, fingerprint, kept leaves): its fingerprint compares it whole, and its loop leaves and
-    addresses stay visible, so the loop values and pointees it reads are still compared. A gated merge's choice is kept
-    under its fingerprint (Fingerprints.deep_choices), opened where a value compared whole differs
-    (compare.lift_choices): the layers cut at different depths"""
+    """key's value at a join from its predecessors' (edge name, exit state): the value they agree on (equal_trees,
+    exact: two de-SSA splits of one slot stay two values), else a phi over the predecessors ordered by edge name, the
+    terminal address (join an identity), or a gated choice over the path conditions the edges are taken under (join
+    None; FormulaKeys compares them), never cut. A phi past PHI_DEPTH becomes a leaf, ('deep_phi', join, key,
+    fingerprint, kept leaves): its fingerprint compares it whole, and its loop leaves and addresses stay visible, so the
+    loop values and pointees it reads are still compared"""
     neutral_key = fingerprints.neutral_key
     values = [(name, state.items.get(key, incoming_value(key, neutral_key))) for name, state in states]
     first = values[0][1]
-    if all(value == first for _, value in values[1:]):
+    if all(equal_trees(value, first) for _, value in values[1:]):
         return first
 
     if join is None:
-        phi = ('gamma', tuple(values))
-    else:
-        phi = ('phi', join, tuple(sorted(values, key=lambda pair: pair[0])))
+        return ('gamma', tuple(values))
+
+    phi = ('phi', join, tuple(sorted(values, key=lambda pair: pair[0])))
     if phi_depth(phi) <= PHI_DEPTH:
         return phi
 
     kept = dict.fromkeys(leaf for tag in DEEP_PHI_KEPT_LEAVES for leaf in tagged_leaves(phi, tag))
-    fingerprint = fingerprints(phi)
-    if join is None:
-        fingerprints.deep_choices[fingerprint] = phi
-    return ('deep_phi', join, neutral_key(key), fingerprint, tuple(kept))
+    return ('deep_phi', join, neutral_key(key), fingerprints(phi), tuple(kept))

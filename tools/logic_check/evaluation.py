@@ -16,6 +16,7 @@ from .naming import AddressNaming, GatedNaming
 from .neutral_names import Fingerprints
 from .post_dominators import ControlFlow
 from .state import State, merge
+from .trees import equal_trees
 
 MAX_ROUNDS = 64             # widening at loop headers converges in a few; past this the walk is an internal error
 START, FALL_OFF = 'start', 'fall off'
@@ -43,8 +44,7 @@ def analyze(layer, *, gated: bool = False) -> Facts:
     fingerprints = Fingerprints(layer.neutral_key)
     entry_states, exit_states, widened = widen_loop_headers(layer, flow, naming, fingerprints)
 
-    facts = Facts(neutral_key=layer.neutral_key if layer.OWN_STORAGE_NAMES else None,
-                  deep_choices=fingerprints.deep_choices)
+    facts = Facts(neutral_key=layer.neutral_key if layer.OWN_STORAGE_NAMES else None)
     effects_of = {}
     for block in flow.order:
         exit_states[block], effects_of[block] = run_block(layer, block, entry_states[block], facts)
@@ -79,7 +79,7 @@ def widen_loop_headers(layer, flow: ControlFlow, naming, fingerprints: Fingerpri
         for source, header in flow.back_edges:
             carried, entering = exit_states[source].items, entry_states[header].items
             for key in carried.keys() | entering.keys():
-                if key not in widened[header] and carried.get(key) != entering.get(key):
+                if key not in widened[header] and not equal_trees(carried.get(key), entering.get(key)):
                     widened[header].add(key)
                     added = True
         if not added:

@@ -3,9 +3,9 @@
 A tree is ('const', type name, value), ('op', operation name, operands), or a leaf naming what was read:
 ('param', n); ('call', address), a call's result; ('reg', n, after), ('global', n, after), ('deref', pointer, after),
 a read after a given write (`ENTRY` for none); ('slot_after', key, address), an address-taken local after a call;
-('phi', join, ((terminal address, value), ...)), or gated ('gamma', ((path condition, value), ...)), past a depth
-('deep_phi', join, key, fingerprint, kept leaves) (state.merge; a gated one's gamma kept in the facts, opened where a
-value compared whole differs: neutral_names.Fingerprints.opened); ('loop', header, key), a value at a loop header;
+('phi', join, ((terminal address, value), ...)), past a depth ('deep_phi', join, key, fingerprint, kept leaves), or
+gated ('gamma', ((path condition, value), ...)), never cut (state.merged_value); ('loop', header, key), a value at a
+loop header;
 ('undef', key); ('absent', key), storage a predecessor of a join never wrote; ('address', key); ('frame',), a call
 setup constant. Leaves name a layer's own storage only where the comparison digests them under neutral names
 (neutral_names.Fingerprints), so equal digests mean the same value on every layer"""
@@ -60,6 +60,25 @@ def tagged_leaves(tree, tag: str) -> Iterator[tuple]:
 
 def loop_leaves(tree) -> Iterator[tuple]:
     return tagged_leaves(tree, 'loop')
+
+
+def equal_trees(a, b) -> bool:
+    """a == b, each pair of subtrees compared once: two trees built apart share parts that == walks once per path to
+    them"""
+    if a is b:
+        return True
+
+    pending, compared = [(a, b)], set()
+    while pending:
+        x, y = pending.pop()
+        if x is y or (id(x), id(y)) in compared:
+            continue
+        if isinstance(x, tuple) and isinstance(y, tuple) and len(x) == len(y):
+            compared.add((id(x), id(y)))
+            pending.extend(zip(x, y))
+        elif x != y:
+            return False
+    return True
 
 
 # === Condition normal form ===

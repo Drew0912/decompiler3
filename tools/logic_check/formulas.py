@@ -88,11 +88,13 @@ class FormulaKeys:
         self.structures = {}        # id(formula) -> (formula, its structure over atoms)
         self.keys = {}              # a formula's digest -> its key
 
-    def __call__(self, formula) -> tuple | None:
+    def key(self, formula) -> tuple | None:
         digest = self.digest(formula)
         if digest not in self.keys:
             self.keys[digest] = self.computed_key(formula)
         return self.keys[digest]
+
+    __call__ = key      # a digest's recursion calls key itself (Fingerprints: C stack)
 
     def computed_key(self, formula) -> tuple | None:
         structure, variables = self.structure_and_variables(formula)

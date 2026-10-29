@@ -281,17 +281,16 @@ def lift_choices(fingerprints: Fingerprints, formula_values: list[tuple], inner:
 def choice_alternatives(fingerprints: Fingerprints, formula, tree, inner: bool) -> tuple[list, bool]:
     """(formula, tree) as (formula, tree with no choice) alternatives: a choice's values, each under its formulas joined
     (distinct_values), in the choice's place, under formula and the value's formula; and whether a choice was left whole
-    past LIFTED_CHOICES alternatives. inner: a choice anywhere in the tree (an operand, a leaf's write epoch) and a
-    merge cut at the phi depth (Fingerprints.opened), not only the tree that is one"""
+    past LIFTED_CHOICES alternatives. inner: a choice anywhere in the tree (an operand, a leaf's write epoch), not only
+    the tree that is one"""
     alternatives, pending, capped = [], [((formula,), tree)], False
     while pending:
         conditions, tree = pending.pop()
-        found = inner_choice(fingerprints, tree, set()) if inner else whole_choice(tree)
-        if found is not None:
-            target, gamma = found
+        gamma = inner_choice(tree, set()) if inner else whole_choice(tree)
+        if gamma is not None:
             values = distinct_values(fingerprints, gamma)
             if len(alternatives) + len(pending) + len(values) <= LIFTED_CHOICES:
-                pending.extend(((*conditions, value_formula), substitute(tree, target, value, {}))
+                pending.extend(((*conditions, value_formula), substitute(tree, gamma, value, {}))
                                for value_formula, value in values)
                 continue
             capped = True
@@ -300,23 +299,20 @@ def choice_alternatives(fingerprints: Fingerprints, formula, tree, inner: bool) 
 
 
 def whole_choice(tree) -> tuple | None:
-    """(tree, tree) where tree is a gated choice"""
-    return (tree, tree) if isinstance(tree, tuple) and tree and tree[0] == 'gamma' else None
+    """tree where it is a gated choice"""
+    return tree if isinstance(tree, tuple) and tree and tree[0] == 'gamma' else None
 
 
-def inner_choice(fingerprints: Fingerprints, tree, seen: set) -> tuple | None:
-    """(the subtree to replace, its gamma) of the first gated choice in tree, a merge cut at the phi depth opened"""
+def inner_choice(tree, seen: set) -> tuple | None:
+    """The first gated choice in tree"""
     if not isinstance(tree, tuple) or not tree or id(tree) in seen:
         return None
     seen.add(id(tree))
     if tree[0] == 'gamma':
-        return tree, tree
-    if tree[0] == 'deep_phi':
-        opened = fingerprints.opened(tree)
-        return None if opened is tree else (tree, opened)
+        return tree
 
     for item in tree:
-        found = inner_choice(fingerprints, item, seen)
+        found = inner_choice(item, seen)
         if found is not None:
             return found
     return None
