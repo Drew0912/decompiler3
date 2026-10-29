@@ -1,6 +1,5 @@
-"""Trees and formulas under neutral names: a layer's own storage named the way every layer names it, digested
-(Fingerprints) or renamed (Namer), both by neutral_leaf; a gated choice told apart by its values and the function
-choosing each (gated_choice)"""
+"""Trees and formulas digested under neutral names (Fingerprints): a layer's own storage named the way every layer
+names it (neutral_leaf); a gated choice told apart by its values and the function choosing each (gated_choice)"""
 
 import hashlib
 
@@ -14,7 +13,7 @@ FINGERPRINT_BYTES = 16
 def neutral_leaf(tree: tuple, neutral_key) -> tuple | None:
     """A leaf naming a layer's own storage under neutral names - a loop value, an address-taken local after a call -
     or a deep phi's leaf as its fingerprint stands for it (its kept leaves are the layer's own); None for any other
-    tree. Fingerprints and Namer both rename by it, so a digest and a renamed tree agree"""
+    tree"""
     tag = tree[0] if tree else None
     if tag == 'loop':
         return ('loop', tree[1], neutral_key(tree[2]))
@@ -29,15 +28,21 @@ def neutral_leaf(tree: tuple, neutral_key) -> tuple | None:
 class Fingerprints:
     """A layer's value trees and formulas digested the way the comparison sees them: a layer's own storage keys under
     neutral names, == and != operands and those of a formula's and / or in any order, a gated choice by its values
-    and the function choosing each (gated_choice); equal digests mean equal trees. Memoised by identity, so a subtree
-    shared by many trees is digested once. The evaluation's instance (evaluation.analyze) also keeps the choice of each
-    gated merge cut at the phi depth under its fingerprint (state.merged_value), for the facts"""
+    and the function choosing each (gated_choice), with orderings read as representative ones where representative;
+    equal digests mean equal trees. Memoised by identity, so a subtree shared by many trees is digested once. The
+    evaluation's instance (evaluation.analyze) keeps the choice of each gated merge cut at the phi depth under its
+    fingerprint (state.merged_value), for the facts; a comparison's instance opens them (opened)"""
 
-    def __init__(self, neutral_key):
+    def __init__(self, neutral_key, deep_choices: dict | None = None, representative: bool = False):
         self.neutral_key = neutral_key
         self.memo = {}
-        self.deep_choices = {}      # a cut gated merge's fingerprint -> its gamma
-        self.formula_keys = FormulaKeys(self)
+        self.deep_choices = {} if deep_choices is None else deep_choices  # a cut gated merge's fingerprint -> its gamma
+        self.formula_keys = FormulaKeys(self, representative)
+
+    @classmethod
+    def of(cls, facts: Facts, representative: bool = False) -> Fingerprints:
+        """A side's fingerprints for the comparison: its facts' neutral names and cut gated merges"""
+        return cls(facts.neutral, facts.deep_choices, representative)
 
     def __call__(self, tree) -> bytes:
         if not isinstance(tree, tuple):
@@ -67,6 +72,18 @@ class Fingerprints:
         self.memo[id(tree)] = (tree, digest)    # the tree kept alive, so its id is not reused
         return digest
 
+    def opened(self, tree):
+        """A gated merge cut at the phi depth as the gamma it was cut from (state.merged_value keeps only those, not a
+        phi's); any other tree as it is"""
+        if not (isinstance(tree, tuple) and tree and tree[0] == 'deep_phi'):
+            return tree
+
+        _, _, _, fingerprint, _ = tree
+        return self.deep_choices.get(fingerprint, tree)
+
+
+Reading = tuple[Fingerprints, Fingerprints]     # the two sides (reference, checked) under one reading
+
 
 def gated_choice(gamma: tuple, digest, keys: FormulaKeys) -> list[tuple]:
     """A gated merge's (key, value) pairs: its values told apart by digest, each with the key (FormulaKeys) of the
@@ -86,72 +103,3 @@ def gated_choice(gamma: tuple, digest, keys: FormulaKeys) -> list[tuple]:
         if key != FALSE_KEY:
             choice.append((key, values[found]))
     return choice
-
-
-class Namer:
-    """A side's trees under neutral names, renamed once each: every storage key a leaf names in the layer's own way (a
-    loop value, an address-taken local after a call) the way every layer names it, == and != operands in their
-    fingerprints' order, a gated choice by its values and the function choosing each (gated_choice), with
-    orderings read as representative ones where representative"""
-
-    def __init__(self, facts: Facts, representative: bool = False):
-        self.neutral_key = facts.neutral      # a deep phi is cut to its fingerprint either way
-        self.deep_choices = facts.deep_choices      # where opened finds a cut gated merge's gamma
-        self.fingerprints = Fingerprints(self.neutral_key)
-        # One memo of keys with the fingerprints' gated choices; a representative namer reads orderings its own way
-        self.formula_keys = FormulaKeys(self.fingerprints, True) if representative else self.fingerprints.formula_keys
-        self.memo = {}
-        self.digests = {}
-
-    def opened(self, tree):
-        """A gated merge cut at the phi depth as the gamma it was cut from (state.merged_value keeps only those, not a
-        phi's); any other tree as it is"""
-        if not (isinstance(tree, tuple) and tree and tree[0] == 'deep_phi'):
-            return tree
-
-        _, _, _, fingerprint, _ = tree
-        return self.deep_choices.get(fingerprint, tree)
-
-    def renamed_digest(self, renamed) -> bytes:
-        """A renamed tree's digest, memoised by identity (a tree shares its parts): equal digests mean equal trees"""
-        if not isinstance(renamed, tuple):
-            return repr(renamed).encode()
-        found = self.digests.get(id(renamed))
-        if found is not None:
-            return found[1]
-
-        parts = repr([self.renamed_digest(item) for item in renamed]).encode()
-        digest = hashlib.blake2b(parts, digest_size=FINGERPRINT_BYTES).digest()
-        self.digests[id(renamed)] = (renamed, digest)
-        return digest
-
-    def __call__(self, tree):
-        if not isinstance(tree, tuple) or not tree:
-            return tree
-
-        found = self.memo.get(id(tree))
-        if found is not None:
-            return found[1]
-
-        tag = tree[0]
-        leaf = neutral_leaf(tree, self.neutral_key)
-        if leaf is not None:
-            result = leaf
-        elif tag == 'op':
-            operands = sorted(tree[2], key=self.fingerprints) if tree[1] in EQUALITIES else tree[2]
-            result = ('op', tree[1], tuple(self(operand) for operand in operands))
-        elif tag == 'phi':
-            result = ('phi', tree[1], tuple((address, self(value)) for address, value in tree[2]))
-        elif tag == 'gamma':
-            choice = gated_choice(tree, self.fingerprints, self.formula_keys)
-            if len(choice) == 1:
-                result = self(choice[0][1])
-            else:
-                result = ('gamma', tuple(sorted(((key, self(value)) for key, value in choice),
-                                                key=lambda pair: repr(pair[0]))))
-        elif tag in ('deref', 'reg', 'global'):
-            result = (tag, *(self(item) for item in tree[1:]))
-        else:
-            result = tree
-        self.memo[id(tree)] = (tree, result)    # the tree kept alive, so its id is not reused
-        return result

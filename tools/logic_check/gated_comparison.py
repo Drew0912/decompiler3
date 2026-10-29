@@ -6,22 +6,22 @@ from typing import NamedTuple
 
 from .compare import (
     Difference, brief, choice_alternatives, compare_loop_values, compare_order, component_value, effect_components,
-    inner_choice, lift_choices, value_category,
+    inner_choice, lift_choices, value_category, value_differences,
 )
 from .decision_diagrams import DiagramOverflow, Diagrams
 from .facts import Effect, Facts
 from .formulas import TRUE, conjunction, disjunction, literal, negation
-from .neutral_names import Namer
+from .neutral_names import Fingerprints, Reading
 from .trees import SHORT_LOGIC, negation_normal_form
 
 RENDERED_FORMULA_CHARACTERS = 400   # a gated detail's formula, cut (render)
 
 
 class Namings(NamedTuple):
-    """A gated comparison's namers, a pair (reference, checked) as written and one with representative orderings; and
-    compare_formulas' answers by the formulas' exact digests"""
-    exact: tuple[Namer, Namer]
-    representative: tuple[Namer, Namer]
+    """A gated comparison's two readings of the sides' trees (Fingerprints), as written and with representative
+    orderings; and compare_formulas' answers by the formulas' exact digests"""
+    exact: Reading
+    representative: Reading
     compared: dict
 
 
@@ -29,8 +29,9 @@ def compare_gated(reference: Facts, checked: Facts) -> list[Difference]:
     """MLIL against HLIL, both analyzed gated: the effects, the effects that can run next, the loop values, every
     reachable unstructured jump"""
     differences = []
-    namings = Namings((Namer(reference), Namer(checked)),
-                      (Namer(reference, representative=True), Namer(checked, representative=True)), {})
+    namings = Namings((Fingerprints.of(reference), Fingerprints.of(checked)),
+                      (Fingerprints.of(reference, representative=True), Fingerprints.of(checked, representative=True)),
+                      {})
     compare_gated_effects(reference, checked, namings, differences)
     compare_order(reference, checked, differences)
     compare_gated_loop_values(reference, checked, namings, differences)
@@ -114,14 +115,15 @@ def compare_under(namings: Namings, formulas: tuple, premises: tuple) -> str | N
         if category in (None, 'guard_unchecked'):
             return category
 
-    lifted = tuple(lifted_formula(namer, formula, {}) for namer, formula in zip(namings.exact, formulas))
+    lifted = tuple(lifted_formula(fingerprints, formula, {})
+                   for fingerprints, formula in zip(namings.exact, formulas))
     if all(new is old for new, old in zip(lifted, formulas)):
         return category
     found = compare_formulas(namings, lifted)
     return found if found in (None, 'condition_ordering_inverted') else category
 
 
-def lifted_formula(namer: Namer, formula, memo: dict) -> tuple:
+def lifted_formula(fingerprints: Fingerprints, formula, memo: dict) -> tuple:
     """formula with each literal whose condition holds a gated choice lifted: the condition split at its && and ||
     (short_logic_formula), each part's choices lifted (lifted_atom); a formula with none is the same object"""
     found = memo.get(id(formula))
@@ -129,12 +131,13 @@ def lifted_formula(namer: Namer, formula, memo: dict) -> tuple:
         return found[1]
 
     tag = formula[0]
-    if tag == 'lit' and inner_choice(namer, formula[1], set()) is not None:
+    if tag == 'lit' and inner_choice(fingerprints, formula[1], set()) is not None:
         split = short_logic_formula(negation_normal_form(formula[1]))     # the condition holding
-        holds = lifted_atom(namer, split, memo) if split[0] == 'lit' else lifted_formula(namer, split, memo)
+        holds = (lifted_atom(fingerprints, split, memo) if split[0] == 'lit'
+                 else lifted_formula(fingerprints, split, memo))
         result = holds if formula[2] else negation(holds)
     elif tag in ('and', 'or'):
-        items = [lifted_formula(namer, item, memo) for item in formula[1]]
+        items = [lifted_formula(fingerprints, item, memo) for item in formula[1]]
         if all(new is old for new, old in zip(items, formula[1])):
             result = formula
         else:
@@ -145,15 +148,15 @@ def lifted_formula(namer: Namer, formula, memo: dict) -> tuple:
     return result
 
 
-def lifted_atom(namer: Namer, atom: tuple, memo: dict) -> tuple:
+def lifted_atom(fingerprints: Fingerprints, atom: tuple, memo: dict) -> tuple:
     """atom, a literal on a condition with no && or ||, as its choices' values each under its formula
     (choice_alternatives, inner): c(G) holds where the value G takes makes c hold. A value's formula may test an earlier
     choice (a flag tested to set a flag), so it is lifted in turn; atom as it is past LIFTED_CHOICES"""
-    alternatives, capped = choice_alternatives(namer, TRUE, atom[1], inner=True)
+    alternatives, capped = choice_alternatives(fingerprints, TRUE, atom[1], inner=True)
     if capped:
         return atom
 
-    return disjunction([conjunction(lifted_formula(namer, condition, memo), literal(core, atom[2]))
+    return disjunction([conjunction(lifted_formula(fingerprints, condition, memo), literal(core, atom[2]))
                         for condition, core in alternatives])
 
 
@@ -171,9 +174,10 @@ def short_logic_formula(normal: tuple) -> tuple:
 
 def compare_formulas(namings: Namings, formulas: tuple) -> str | None:
     """None when the two sides' formulas are one function, else the category of their difference; remembered by their
-    digests, so of two pairs of one digest each the first compared decides an overflow"""
+    exact digests (a representative one could read an exact pair's answer back for a pair equal only representatively),
+    so of two pairs of one digest each the first compared decides an overflow"""
     exact = namings.exact
-    digests = (exact[0].fingerprints(formulas[0]), exact[1].fingerprints(formulas[1]))
+    digests = (exact[0](formulas[0]), exact[1](formulas[1]))
     if digests[0] == digests[1]:
         return None
     if digests not in namings.compared:
@@ -194,10 +198,10 @@ def formulas_difference(namings: Namings, formulas: tuple) -> str | None:
     return 'guard_differs'
 
 
-def equivalent(namers: tuple[Namer, Namer], formulas: tuple) -> bool:
+def equivalent(reading: Reading, formulas: tuple) -> bool:
     """Whether the formulas are one function: by their truth tables, or, past ROW_CAP rows, by one decision diagram in
     the order the formulas meet their variables"""
-    keys = (namers[0].formula_keys, namers[1].formula_keys)
+    keys = (reading[0].formula_keys, reading[1].formula_keys)
     found = (keys[0].table_key(formulas[0]), keys[1].table_key(formulas[1]))
     if None not in found:
         return found[0] == found[1]
@@ -221,7 +225,8 @@ def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences
     differing = [component for component, outcome in outcomes.items() if outcome == category]
     unchecked = [component for component, outcome in outcomes.items() if outcome == 'guard_unchecked']
     if differing:
-        details = (value_differences(namings.exact, expected[0], found[0]) if single
+        details = ([(component, brief(x), brief(y))
+                    for component, x, y in value_differences(namings.exact, expected[0], found[0])] if single
                    else [('occurrences', len(expected), len(found), differing)])
         differences.append(Difference(category, key, details))
     elif unchecked:
@@ -250,8 +255,9 @@ def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tu
     the value category only where some value's formulas differ, else guard_unchecked"""
     category = value_category(occurrences[0][0])
     capped = False                  # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
-    for namers in (namings.exact, namings.representative):
-        lifts = [passed_under(namer, effects, component, inner) for namer, effects in zip(namers, occurrences)]
+    for reading in (namings.exact, namings.representative):
+        lifts = [passed_under(fingerprints, effects, component, inner)
+                 for fingerprints, effects in zip(reading, occurrences)]
         passed = [found for found, _ in lifts]
         capped = capped or any(cut for _, cut in lifts)
         if passed[0].keys() != passed[1].keys():
@@ -262,7 +268,7 @@ def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tu
             outcomes = {compare_under(namings, (disjunction(passed[0][value]), disjunction(passed[1][value])), premises)
                         for value in passed[0]} - {None}
         if not outcomes:
-            return None if namers is namings.exact else 'condition_ordering_inverted'
+            return None if reading is namings.exact else 'condition_ordering_inverted'
         if outcomes == {'condition_ordering_inverted'}:
             return 'condition_ordering_inverted'
         return category if 'guard_differs' in outcomes and not capped else 'guard_unchecked'
@@ -270,22 +276,11 @@ def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tu
     return 'guard_unchecked' if capped else category
 
 
-def value_differences(namers: tuple[Namer, Namer], a: Effect, b: Effect) -> list:
-    """(index or storage key, a's value, b's value) of each argument and storage the two occurrences differ in"""
-    name_a, name_b = namers
-    details = []
-    for component in effect_components([a, b]):
-        x, y = name_a(component_value(a, component)), name_b(component_value(b, component))
-        if name_a.renamed_digest(x) != name_b.renamed_digest(y):
-            details.append((component, brief(x), brief(y)))
-    return details
-
-
-def passed_under(namer: Namer, effects: list[Effect], component, inner: bool) -> tuple[dict, bool]:
+def passed_under(fingerprints: Fingerprints, effects: list[Effect], component, inner: bool) -> tuple[dict, bool]:
     """What the occurrences pass as component, each value's digest under neutral names -> the formulas it is passed
     under, and whether a choice was left whole (lift_choices)"""
-    return lift_choices(namer, [(effect.guard_formula, component_value(effect, component)) for effect in effects],
-                        inner)
+    return lift_choices(fingerprints,
+                        [(effect.guard_formula, component_value(effect, component)) for effect in effects], inner)
 
 
 def render(formula) -> str:

@@ -39,7 +39,7 @@ import logic_check
 from logic_check import compare, decision_diagrams, formulas, gated_comparison
 from logic_check.facts import RETURN_KEY, Branch, Effect, Facts
 from logic_check.naming import FUNCTION_ENTRY
-from logic_check.neutral_names import Fingerprints, Namer
+from logic_check.neutral_names import Fingerprints
 from logic_check.post_dominators import EXIT, ControlFlow, control_dependence, exit_blocks, immediate_post_dominators
 from logic_check.state import ESCAPED, GLOBAL_EPOCH, MEMORY_EPOCH, PHI_DEPTH, State, merged_value
 from logic_check.trees import ENTRY, const, constant_truth, op, truth
@@ -983,7 +983,8 @@ class TestPlantedBugs(unittest.TestCase):
         self.check(tail_call_function, mutate, 'return_differs')
 
     def test_ordering_inverted(self):
-        """!(i < LIMIT) written i >= LIMIT: equal but for NaN, its own category"""
+        """!(i < LIMIT) written i >= LIMIT: equal but for NaN, its own category; a call inside the loop runs under the
+        inverted branch, its arm read against the condition's representative core, so it is no guard difference"""
         def mutate(mlil):
             block, index, branch = first(mlil, lambda inst: isinstance(inst, MLILIf))
             negated = next(node for node in walk(branch.condition) if isinstance(node, MLILLogicalNot))
@@ -991,9 +992,11 @@ class TestPlantedBugs(unittest.TestCase):
             self.assertIsInstance(ordering, MLILLt)
             block.instructions[index] = MLILIf(MLILGe(ordering.lhs, ordering.rhs), branch.true_target,
                                                branch.false_target).copy_metadata_from(branch)
-        reference, mlil = reference_and_mlil(loop_function)
-        mutate(mlil)
-        self.assertEqual(categories(reference, mlil), {'condition_ordering_inverted'})
+        for build in (loop_function, loop_call_function):
+            with self.subTest(function=build.__name__):
+                reference, mlil = reference_and_mlil(build)
+                mutate(mlil)
+                self.assertEqual(categories(reference, mlil), {'condition_ordering_inverted'})
 
 
 # === Mutations of the HLIL ===
@@ -1548,7 +1551,7 @@ class TestHLILStructures(unittest.TestCase):
 
     def test_common_return_merging_past_the_phi_depth(self):
         """The chain's value merged once more at the common return: past the phi depth on HLIL only, so the merge is
-        opened (Namer.opened) and compared with MLIL's two returns alternative by alternative"""
+        opened (Fingerprints.opened) and compared with MLIL's two returns alternative by alternative"""
         mlil, hlil = mlil_and_hlil(chain_then_early_return_function)
         self.extract_common_return(hlil)
         self.assertEqual(hlil_categories(mlil, hlil), set())
@@ -1729,7 +1732,7 @@ class TestCutMerges(unittest.TestCase):
     def test_gated_merge_opened(self):
         value, fingerprints = self.chain(gated=True)
         self.assertEqual(value[0], 'deep_phi')
-        opened = Namer(Facts(deep_choices=fingerprints.deep_choices)).opened(value)
+        opened = Fingerprints.of(Facts(deep_choices=fingerprints.deep_choices)).opened(value)
         self.assertEqual(opened[0], 'gamma')
         self.assertEqual(Fingerprints(lambda key: key)(opened), value[3])
 
@@ -1737,7 +1740,7 @@ class TestCutMerges(unittest.TestCase):
         value, fingerprints = self.chain(gated=False)
         self.assertEqual(value[0], 'deep_phi')
         self.assertEqual(fingerprints.deep_choices, {})
-        self.assertIs(Namer(Facts(deep_choices=fingerprints.deep_choices)).opened(value), value)
+        self.assertIs(Fingerprints.of(Facts(deep_choices=fingerprints.deep_choices)).opened(value), value)
 
 
 class TestLiftedChoices(unittest.TestCase):
@@ -1747,7 +1750,7 @@ class TestLiftedChoices(unittest.TestCase):
     EDGES = 7                       # incoming edges of each choice below, over two values
 
     def setUp(self):
-        self.namer = Namer(Facts())
+        self.fingerprints = Fingerprints.of(Facts())
 
     def choice(self, first: int) -> tuple:
         """A choice over EDGES edges, each under a literal of its own, of the values 0 and 1"""
@@ -1757,7 +1760,7 @@ class TestLiftedChoices(unittest.TestCase):
     def test_choice_in_a_leaf_found(self):
         choice = self.choice(0)
         read = ('global', GLOBAL_A, choice)         # a global read after the calls of either arm
-        self.assertEqual(compare.inner_choice(self.namer, op('EQ', [read, const(0)]), set()), (choice, choice))
+        self.assertEqual(compare.inner_choice(self.fingerprints, op('EQ', [read, const(0)]), set()), (choice, choice))
 
     def test_substitution_keeps_untouched_parts(self):
         choice, untouched = self.choice(0), op('ADD', [('param', 1), const(1)])
@@ -1770,7 +1773,7 @@ class TestLiftedChoices(unittest.TestCase):
     def test_choices_counted_by_value(self):
         """Three choices in one operation: EDGES ** 3 alternatives by edge, past LIFTED_CHOICES; 2 ** 3 by value"""
         tree = op('EQ', [op('ADD', [self.choice(0), op('ADD', [self.choice(10), self.choice(20)])]), const(0)])
-        alternatives, capped = compare.choice_alternatives(self.namer, formulas.TRUE, tree, inner=True)
+        alternatives, capped = compare.choice_alternatives(self.fingerprints, formulas.TRUE, tree, inner=True)
         self.assertFalse(capped)
         self.assertEqual(len(alternatives), 2 ** 3)
 
@@ -1779,8 +1782,8 @@ class TestLiftedChoices(unittest.TestCase):
         parts = [op('EQ', [self.choice(first), const(0)]) for first in (0, 10, 20)]
         condition = op('LOGICAL_AND', [parts[0], op('LOGICAL_AND', parts[1:])])
         with mock.patch.object(compare, 'LIFTED_CHOICES', 2):
-            lifted = gated_comparison.lifted_formula(self.namer, formulas.literal(condition, True), {})
-        self.assertIsNone(compare.inner_choice(self.namer, lifted, set()))
+            lifted = gated_comparison.lifted_formula(self.fingerprints, formulas.literal(condition, True), {})
+        self.assertIsNone(compare.inner_choice(self.fingerprints, lifted, set()))
 
 
 class TestRenderedFormula(unittest.TestCase):
@@ -1828,9 +1831,9 @@ class TestConditionNormalForm(unittest.TestCase):
         self.assertEqual(op('TEST_ZERO', [self.A]), op('EQ', [self.A, self.ZERO]))
 
     def test_equality_is_commutative(self):
-        namer = Namer(Facts())
-        self.assertEqual(namer(op('EQ', [self.A, self.B])), namer(op('EQ', [self.B, self.A])))
-        self.assertNotEqual(namer(op('LT', [self.A, self.B])), namer(op('LT', [self.B, self.A])))
+        fingerprints = Fingerprints.of(Facts())
+        self.assertEqual(fingerprints(op('EQ', [self.A, self.B])), fingerprints(op('EQ', [self.B, self.A])))
+        self.assertNotEqual(fingerprints(op('LT', [self.A, self.B])), fingerprints(op('LT', [self.B, self.A])))
 
     def test_orderings_are_not_inverted(self):
         less, at_least = op('LT', [self.A, self.B]), op('GE', [self.A, self.B])
@@ -1861,6 +1864,30 @@ class TestConditionNormalForm(unittest.TestCase):
         self.assertEqual(self.branch_categories((op('LT', [self.A, self.B]), self.THEN, self.ELSE),
                                                 (op('GE', [self.A, self.B]), self.ELSE, self.THEN)),
                          {'condition_ordering_inverted'})
+
+
+class TestEffectValues(unittest.TestCase):
+    """An effect's values compared LLIL against MLIL (compare.value_differences): a difference for each argument or
+    storage key that differs, the arguments left out where the two pass different counts"""
+
+    ADDRESS = 0x10
+    KEY     = (ADDRESS, 'call')
+
+    @classmethod
+    def differences(cls, expected: tuple, found: tuple) -> list:
+        """The differences of one call passing expected on the reference and found on the checked side"""
+        sides = [Facts(effects={cls.KEY: [Effect(cls.ADDRESS, 'call', CALLEE_ID, args)]}) for args in (expected, found)]
+        return logic_check.compare_facts(*sides)
+
+    def test_unequal_argument_counts(self):
+        """The first argument dropped: the count differs, and the arguments left are not compared by index"""
+        self.assertEqual(self.differences((const(1), const(2)), (const(2),)),
+                         [logic_check.Difference('argc_differs', self.KEY, (2, 1))])
+
+    def test_two_arguments_differing(self):
+        self.assertEqual([(difference.category, difference.detail[0])
+                          for difference in self.differences((const(1), const(2)), (const(3), const(4)))],
+                         [('arg_differs', 0), ('arg_differs', 1)])
 
 
 class TestFormulaKeys(unittest.TestCase):
@@ -2001,8 +2028,9 @@ class TestFormulaKeys(unittest.TestCase):
     def test_comparisons_remembered_by_both_sides(self):
         """x == 1 && y == 1 against the condition x == 1 && y == 1 (one function, written otherwise), then against
         x == 1 && y == 2: the second comparison, its first side's formula the same, still differs"""
-        namings = gated_comparison.Namings((Namer(Facts()), Namer(Facts())),
-                                           (Namer(Facts(), True), Namer(Facts(), True)), {})
+        namings = gated_comparison.Namings((Fingerprints.of(Facts()), Fingerprints.of(Facts())),
+                                           (Fingerprints.of(Facts(), representative=True),
+                                            Fingerprints.of(Facts(), representative=True)), {})
         both = formulas.conjunction(self.equals(self.X, 1), self.equals(self.Y, 1))
         condition = formulas.literal(op('LOGICAL_AND', [op('EQ', [value, const(1)]) for value in (self.X, self.Y)]),
                                      True)
