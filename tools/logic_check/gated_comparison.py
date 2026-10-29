@@ -1,8 +1,9 @@
 """MLIL against HLIL (compare_gated), whose structure HLIL rebuilds: effects matched by address and the formulas they
 run under compared, the values they pass each under its formula; the effect order and the loop values as compare.py
-compares them for both modes"""
+compares them for both modes. Each is compared as written and, where it differs, with orderings read as one
+representative, which decides (decided, reconciled)"""
 
-from typing import NamedTuple
+from typing import Callable, NamedTuple
 
 from .compare import (
     Difference, brief, choice_alternatives, compare_loop_values, compare_order, component_value, effect_components,
@@ -17,11 +18,10 @@ from .trees import SHORT_LOGIC, negation_normal_form
 RENDERED_FORMULA_CHARACTERS = 400   # a gated detail's formula, cut (render)
 
 
-class Namings(NamedTuple):
-    """A gated comparison's two readings of the sides' trees (Fingerprints), as written and with representative
-    orderings; and compare_formulas' answers by the formulas' exact digests"""
-    exact: Reading
-    representative: Reading
+class GatedReading(NamedTuple):
+    """The two sides' trees under one reading (Fingerprints: as written, or with representative orderings) and
+    compare_formulas' answers under it, by the formulas' digests"""
+    sides: Reading
     compared: dict
 
 
@@ -29,17 +29,17 @@ def compare_gated(reference: Facts, checked: Facts) -> list[Difference]:
     """MLIL against HLIL, both analyzed gated: the effects, the effects that can run next, the loop values, every
     reachable unstructured jump"""
     differences = []
-    namings = Namings((Fingerprints.of(reference), Fingerprints.of(checked)),
-                      (Fingerprints.of(reference, representative=True), Fingerprints.of(checked, representative=True)),
-                      {})
-    compare_gated_effects(reference, checked, namings, differences)
+    readings = tuple(GatedReading(tuple(Fingerprints.of(facts, representative) for facts in (reference, checked)), {})
+                     for representative in (False, True))       # as written, then with representative orderings
+    compare_gated_effects(reference, checked, readings, differences)
     compare_order(reference, checked, differences)
-    compare_gated_loop_values(reference, checked, namings, differences)
+    compare_gated_loop_values(reference, checked, readings, differences)
     compare_unstructured(checked, differences)
     return differences
 
 
-def compare_gated_effects(reference: Facts, checked: Facts, namings: Namings, differences: list):
+def compare_gated_effects(reference: Facts, checked: Facts, readings: tuple[GatedReading, GatedReading],
+                          differences: list):
     """Each effect key's occurrences together, since HLIL may repeat an effect (a cloned region) or make two one (a
     common return), and an occurrence count is no finding: the formulas they run under joined (compare_formulas), the
     values they pass, each with the formula it is passed under (compare_passed); a loop's running and going round
@@ -62,24 +62,44 @@ def compare_gated_effects(reference: Facts, checked: Facts, namings: Namings, di
         formulas = (disjunction(effect.guard_formula for effect in expected),
                     disjunction(effect.guard_formula for effect in found))
         premises = termination_premises(reference, checked, [*expected, *found])
-        category = compare_under(namings, formulas, premises)
+        category = decided(compare_under, readings, formulas, premises)
         if category is not None:
             differences.append(Difference(category, key, tuple(render(formula) for formula in formulas)))
-        compare_passed(namings, key, (expected, found), differences, premises)
+        compare_passed(readings, key, (expected, found), differences, premises)
 
 
-def compare_gated_loop_values(reference: Facts, checked: Facts, namings: Namings, differences: list):
-    """The loop values (compare_loop_values) as written; a difference that goes once orderings are read as
-    representative ones (trees.representative_orderings) is condition_ordering_inverted"""
+def compare_gated_loop_values(reference: Facts, checked: Facts, readings: tuple[GatedReading, GatedReading],
+                              differences: list):
+    """The loop values (compare_loop_values) as written; where a group differs, its outcome under representative
+    orderings decides (reconciled). A run gives at most one difference per group, keyed by it, and the groups do not
+    depend on the reading, so the two runs pair by key; a group only the representative run finds differing is clean
+    as written"""
     exact = []
-    compare_loop_values(reference, checked, namings.exact, exact)
+    compare_loop_values(reference, checked, readings[0].sides, exact)
     if exact:
         representative = []
-        compare_loop_values(reference, checked, namings.representative, representative)
-        kept = {difference.key for difference in representative}
-        differences.extend(difference if difference.key in kept else
-                           Difference('condition_ordering_inverted', difference.key, difference.detail)
+        compare_loop_values(reference, checked, readings[1].sides, representative)
+        found = {difference.key: difference.category for difference in representative}
+        differences.extend(Difference(reconciled(found.get(difference.key)), difference.key, difference.detail)
                            for difference in exact)
+
+
+def decided(compare: Callable, readings: tuple[GatedReading, GatedReading], *arguments) -> str | None:
+    """A slot's outcome, compare(reading, *arguments) comparing it under one reading (an effect's guard:
+    compare_under; one value component: compare_component): clean as written is clean, else reconciled with its
+    outcome under representative orderings"""
+    if compare(readings[0], *arguments) is None:
+        return None
+
+    return reconciled(compare(readings[1], *arguments))
+
+
+def reconciled(representative: str | None) -> str:
+    """The outcome of a slot that differs as written (a difference, or guard_unchecked), from its outcome under
+    representative orderings: clean there is condition_ordering_inverted, else that outcome. A representative
+    difference is a real one: the reading only merges ordering atoms (FormulaKeys.condition_structure), so formulas
+    equal as written are equal under it"""
+    return 'condition_ordering_inverted' if representative is None else representative
 
 
 def compare_unstructured(checked: Facts, differences: list):
@@ -101,26 +121,24 @@ def termination_premises(reference: Facts, checked: Facts, occurrences: list[Eff
                  for facts in (reference, checked))
 
 
-def compare_under(namings: Namings, formulas: tuple, premises: tuple) -> str | None:
+def compare_under(reading: GatedReading, formulas: tuple, premises: tuple) -> str | None:
     """compare_formulas; where it finds a difference, again with each side's formula under its premise, whose answer
     is the answer; where that still differs, again with the choices in the formulas' conditions lifted
-    (lifted_formula), whose answer is taken only if clean or condition_ordering_inverted: the layers build such a
-    choice each its own way. An unchecked answer stays unchecked"""
-    category = compare_formulas(namings, formulas)
+    (lifted_formula), whose answer is taken only if clean: the layers build such a choice each its own way. An
+    unchecked answer stays unchecked"""
+    category = compare_formulas(reading, formulas)
     if category in (None, 'guard_unchecked'):
         return category
     if premises != (TRUE, TRUE):
         formulas = tuple(conjunction(formula, premise) for formula, premise in zip(formulas, premises))
-        category = compare_formulas(namings, formulas)
+        category = compare_formulas(reading, formulas)
         if category in (None, 'guard_unchecked'):
             return category
 
-    lifted = tuple(lifted_formula(fingerprints, formula, {})
-                   for fingerprints, formula in zip(namings.exact, formulas))
+    lifted = tuple(lifted_formula(fingerprints, formula, {}) for fingerprints, formula in zip(reading.sides, formulas))
     if all(new is old for new, old in zip(lifted, formulas)):
         return category
-    found = compare_formulas(namings, lifted)
-    return found if found in (None, 'condition_ordering_inverted') else category
+    return None if compare_formulas(reading, lifted) is None else category
 
 
 def lifted_formula(fingerprints: Fingerprints, formula, memo: dict) -> tuple:
@@ -172,36 +190,30 @@ def short_logic_formula(normal: tuple) -> tuple:
     return literal(normal, True)
 
 
-def compare_formulas(namings: Namings, formulas: tuple) -> str | None:
-    """None when the two sides' formulas are one function, else the category of their difference; remembered by their
-    exact digests (a representative one could read an exact pair's answer back for a pair equal only representatively),
-    so of two pairs of one digest each the first compared decides an overflow"""
-    exact = namings.exact
-    digests = (exact[0](formulas[0]), exact[1](formulas[1]))
+def compare_formulas(reading: GatedReading, formulas: tuple) -> str | None:
+    """None when the two sides' formulas are one function under reading, else guard_differs, or guard_unchecked past
+    the caps; remembered by their digests under reading, in its own memo, so of two pairs of one digest each the first
+    compared decides an overflow"""
+    digests = (reading.sides[0](formulas[0]), reading.sides[1](formulas[1]))
     if digests[0] == digests[1]:
         return None
-    if digests not in namings.compared:
-        namings.compared[digests] = formulas_difference(namings, formulas)
-    return namings.compared[digests]
+    if digests not in reading.compared:
+        reading.compared[digests] = formulas_difference(reading.sides, formulas)
+    return reading.compared[digests]
 
 
-def formulas_difference(namings: Namings, formulas: tuple) -> str | None:
+def formulas_difference(sides: Reading, formulas: tuple) -> str | None:
     """compare_formulas past the digests"""
     try:
-        if equivalent(namings.exact, formulas):
-            return None
-        if equivalent(namings.representative, formulas):
-            return 'condition_ordering_inverted'
+        return None if equivalent(sides, formulas) else 'guard_differs'
     except DiagramOverflow:
         return 'guard_unchecked'
 
-    return 'guard_differs'
 
-
-def equivalent(reading: Reading, formulas: tuple) -> bool:
+def equivalent(sides: Reading, formulas: tuple) -> bool:
     """Whether the formulas are one function: by their truth tables, or, past ROW_CAP rows, by one decision diagram in
     the order the formulas meet their variables"""
-    keys = (reading[0].formula_keys, reading[1].formula_keys)
+    keys = (sides[0].formula_keys, sides[1].formula_keys)
     found = (keys[0].table_key(formulas[0]), keys[1].table_key(formulas[1]))
     if None not in found:
         return found[0] == found[1]
@@ -209,24 +221,27 @@ def equivalent(reading: Reading, formulas: tuple) -> bool:
     return Diagrams().same(keys[0].structure(formulas[0]), keys[1].structure(formulas[1]))
 
 
-def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences: list, premises: tuple):
-    """The values an effect's occurrences pass, each argument and storage key on its own: equal under neutral names,
-    or, a gated choice lifted into the formula its value is passed under (HLIL may pass from one return what MLIL
-    passes from two, merged at the join before it), the same values each under one formula (compare_component, which
-    lifts the choices inside a value too)"""
+def compare_passed(readings: tuple[GatedReading, GatedReading], key: tuple, occurrences: tuple, differences: list,
+                   premises: tuple):
+    """The values an effect's occurrences pass, each argument and storage key on its own (decided): equal under
+    neutral names, or, a gated choice lifted into the formula its value is passed under (HLIL may pass from one return
+    what MLIL passes from two, merged at the join before it), the same values each under one formula
+    (compare_component, which lifts the choices inside a value too). The components' outcomes give one difference, the
+    strongest: a difference, then unchecked, then condition_ordering_inverted"""
     expected, found = occurrences
     category = value_category(expected[0])
     single = len(expected) == len(found) == 1
-    if single and not value_differences(namings.exact, expected[0], found[0]):
+    exact = readings[0].sides
+    if single and not value_differences(exact, expected[0], found[0]):
         return
 
-    outcomes = {component: compare_component(namings, occurrences, component, premises)
+    outcomes = {component: decided(compare_component, readings, occurrences, component, premises)
                 for component in effect_components([*expected, *found])}
     differing = [component for component, outcome in outcomes.items() if outcome == category]
     unchecked = [component for component, outcome in outcomes.items() if outcome == 'guard_unchecked']
     if differing:
         details = ([(component, brief(x), brief(y))
-                    for component, x, y in value_differences(namings.exact, expected[0], found[0])] if single
+                    for component, x, y in value_differences(exact, expected[0], found[0])] if single
                    else [('occurrences', len(expected), len(found), differing)])
         differences.append(Difference(category, key, details))
     elif unchecked:
@@ -236,44 +251,37 @@ def compare_passed(namings: Namings, key: tuple, occurrences: tuple, differences
                                                                            in outcomes.items() if outcome]))
 
 
-def compare_component(namings: Namings, occurrences: tuple, component, premises: tuple) -> str | None:
+def compare_component(reading: GatedReading, occurrences: tuple, component, premises: tuple) -> str | None:
     """compare_lifted with a value's choice lifted only where it is the whole value, and where that finds a difference,
     with the choices inside it too, merges cut at the phi depth opened (the layers build such a choice each its own way,
-    and cut at different depths): that answer is taken only if it clears the difference or finds an inverted ordering,
-    so a choice left whole past LIFTED_CHOICES leaves the first answer"""
-    whole = compare_lifted(namings, occurrences, component, premises, inner=False)
+    and cut at different depths): that answer is taken only if it clears the difference, so a choice left whole past
+    LIFTED_CHOICES leaves the first answer"""
+    whole = compare_lifted(reading, occurrences, component, premises, inner=False)
     if whole is None:
         return None
 
-    inner = compare_lifted(namings, occurrences, component, premises, inner=True)
-    return inner if inner in (None, 'condition_ordering_inverted') else whole
+    inner = compare_lifted(reading, occurrences, component, premises, inner=True)
+    return None if inner is None else whole
 
 
-def compare_lifted(namings: Namings, occurrences: tuple, component, premises: tuple, inner: bool) -> str | None:
+def compare_lifted(reading: GatedReading, occurrences: tuple, component, premises: tuple, inner: bool) -> str | None:
     """None when both sides pass the same values for component (an argument's index or a storage key) under the same
-    formulas, else the category: an equal choice once orderings are representative is condition_ordering_inverted;
-    the value category only where some value's formulas differ, else guard_unchecked"""
+    formulas, under reading; else the value category where some value's formulas differ, else guard_unchecked"""
     category = value_category(occurrences[0][0])
-    capped = False                  # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
-    for reading in (namings.exact, namings.representative):
-        lifts = [passed_under(fingerprints, effects, component, inner)
-                 for fingerprints, effects in zip(reading, occurrences)]
-        passed = [found for found, _ in lifts]
-        capped = capped or any(cut for _, cut in lifts)
-        if passed[0].keys() != passed[1].keys():
-            continue
-        if len(passed[0]) == 1:
-            outcomes = set()        # one value, passed wherever the effect runs: its formula compared already
-        else:
-            outcomes = {compare_under(namings, (disjunction(passed[0][value]), disjunction(passed[1][value])), premises)
-                        for value in passed[0]} - {None}
-        if not outcomes:
-            return None if reading is namings.exact else 'condition_ordering_inverted'
-        if outcomes == {'condition_ordering_inverted'}:
-            return 'condition_ordering_inverted'
-        return category if 'guard_differs' in outcomes and not capped else 'guard_unchecked'
+    lifts = [passed_under(fingerprints, effects, component, inner)
+             for fingerprints, effects in zip(reading.sides, occurrences)]
+    passed = [found for found, _ in lifts]
+    capped = any(cut for _, cut in lifts)       # a choice left whole past LIFTED_CHOICES: a mismatch is unchecked
+    if passed[0].keys() != passed[1].keys():
+        return 'guard_unchecked' if capped else category
+    if len(passed[0]) == 1:
+        return None                 # one value, passed wherever the effect runs: its formula compared already
 
-    return 'guard_unchecked' if capped else category
+    outcomes = {compare_under(reading, (disjunction(passed[0][value]), disjunction(passed[1][value])), premises)
+                for value in passed[0]} - {None}
+    if not outcomes:
+        return None
+    return category if 'guard_differs' in outcomes and not capped else 'guard_unchecked'
 
 
 def passed_under(fingerprints: Fingerprints, effects: list[Effect], component, inner: bool) -> tuple[dict, bool]:

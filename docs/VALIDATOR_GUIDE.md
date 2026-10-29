@@ -41,7 +41,7 @@ Every category is a finding until checked, except the two marked.
 | `loop_value_differs` | a value a loop carries round a back edge |
 | `unstructured_jump` | a jump HLIL could not express, on a path that can run: the path is lost from the output |
 | `condition_ordering_inverted` | not a finding: equal once orderings are read as one representative (`!(a < b)` and `a >= b`, which differ only for NaN); HLIL's own inversions, counted for the HLIL slice |
-| `guard_unchecked` | not compared: formulas past the decision diagram's node cap. Not a finding, but a clean run has none |
+| `guard_unchecked` | not compared: formulas past the decision diagram's node cap, as written and with orderings read as one representative. Not a finding, but a clean run has none |
 
 A difference's key names where it is: `(address, kind)` for an effect (the address is the bytecode offset of its
 instruction, as in the `.llil.asm` / `.mlil.asm` listings), `(address, 'branch')`, `(header, 'loop')` /
@@ -101,8 +101,10 @@ of `kuro2` and `kai1`).
 - Only natural loops (a header dominating the edge back to it) have a body. In an irreducible region, which no
   real script has, the formulas of the blocks outside natural loops are those of one pass through the region, so a
   clean result there proves less (the fuzz's irreducible graphs compare without error).
-- A formula past a decision diagram's cap is not compared: two formulas whose diagram passes 1,000,000 nodes are
-  `guard_unchecked`; a formula whose key's diagram passes 20,000 has no key, so a choice under it is told apart by the
+- A formula past a decision diagram's cap is not compared as written: two formulas whose diagram passes 1,000,000
+  nodes are compared again with orderings read as one representative, whose answer decides (equal:
+  `condition_ordering_inverted`; different: the difference), and are `guard_unchecked` only where that passes the cap
+  too; a formula whose key's diagram passes 20,000 has no key, so a choice under it is told apart by the
   formula's digest. Answers are remembered by the formulas' digests, so of two comparisons of formulas equal but for
   the order of their `&&` / `||` items, the first decides whether the cap is passed.
 

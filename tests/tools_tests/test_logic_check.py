@@ -65,6 +65,7 @@ DIAGRAM_NODES_TOO_FEW = 2       # a decision_diagrams.DIAGRAM_NODE_CAP no decisi
 CHAIN_GLOBAL = 10               # the first global a chain of register writes tests (register_chain)
 LIFTED_FLAG_DIAGRAM_NODES = 11  # a DIAGRAM_NODE_CAP the planted flag test's guards fit in (9, 10), not lifted (13, 16)
 ORDERING_ROWS = 4               # a ROW_CAP an ordering's formulas fit in, not those with two more tests (2 to 6 do)
+TWO_TESTS_ROWS = 2              # a ROW_CAP one test's formulas fit in, not two tests' (2 and 3 do)
 PAIRS = 9                       # pairs of tests in TestFormulaKeys.pairs_formulas: 18 variables, past ROW_CAP's rows
 PAIRS_KEY_NODES = 500           # a DIAGRAM_KEY_NODE_CAP: pair by pair 103-137 nodes fit, firsts first 1,537+ do not
 ARM_VALUE, OTHER_ARM_VALUE = 100, 200
@@ -356,6 +357,38 @@ def ordered_arms_function() -> tuple[Asm, int]:
     asm.push_int(2); asm.pop_to(-WORD_SIZE); asm.jmp('end')
     asm.label('last'); asm.push_int(3); asm.pop_to(-WORD_SIZE)
     asm.label('end'); asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.load_stack(-3 * WORD_SIZE)
+    asm.call(CALLEE_ID)
+    asm.label('back'); asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
+def two_choices_function() -> tuple[Asm, int]:
+    """x = 1 if GLOBAL_A < LOOP_LIMIT else 2; y = 1 if GLOBAL_B < LOOP_LIMIT else 2; callee(x, y): two choices
+    passed, each under an ordering"""
+    asm = Asm()
+    asm.push_int(0); asm.push_int(0)
+    asm.load_global(GLOBAL_A); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('x_other')
+    asm.push_int(1); asm.pop_to(-2 * WORD_SIZE); asm.jmp('y_test')
+    asm.label('x_other'); asm.push_int(2); asm.pop_to(-2 * WORD_SIZE)
+    asm.label('y_test'); asm.load_global(GLOBAL_B); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('y_other')
+    asm.push_int(1); asm.pop_to(-WORD_SIZE); asm.jmp('pass')
+    asm.label('y_other'); asm.push_int(2); asm.pop_to(-WORD_SIZE)
+    asm.label('pass'); asm.push_raw(CALLER_ID); asm.push_raw('back')
+    asm.load_stack(-3 * WORD_SIZE); asm.load_stack(-5 * WORD_SIZE)    # y, then x: the last pushed is the first
+    asm.call(CALLEE_ID)
+    asm.label('back'); asm.pop(2 * WORD_SIZE); return_nothing(asm)
+    return asm, 2
+
+
+def choice_then_loop_function() -> tuple[Asm, int]:
+    """x = 1 if GLOBAL_A < LOOP_LIMIT else 2; while GLOBAL_B: x = x + 1; callee(x): a choice the loop carries in"""
+    asm = Asm()
+    asm.load_global(GLOBAL_A); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('two')
+    asm.push_int(1); asm.jmp('head')
+    asm.label('two'); asm.push_int(2)
+    asm.label('head'); asm.load_global(GLOBAL_B); asm.jz('done')
+    asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.pop_to(-WORD_SIZE); asm.jmp('head')
+    asm.label('done'); asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.load_stack(-3 * WORD_SIZE)
     asm.call(CALLEE_ID)
     asm.label('back'); asm.pop(WORD_SIZE); return_nothing(asm)
     return asm, 1
@@ -1037,6 +1070,11 @@ def first_node(hlil, kind: type, predicate: Callable = lambda node: True):
     return found[0]
 
 
+def reads_global(node, index: int) -> bool:
+    return any(isinstance(item, HLILVar) and item.var.kind == VariableKind.GLOBAL and item.var.index == index
+               for item in iter_tree(node))
+
+
 def replace_expression(hlil, old, new):
     """new in place of old, wherever the HLIL holds it"""
     for node in iter_tree(hlil.body):
@@ -1149,7 +1187,9 @@ class TestPlantedHLILBugs(unittest.TestCase):
         self.check(loop_call_function, mutate, 'guard_differs')
 
     def test_ordering_inverted(self):
-        """while (i < LIMIT) written while (!(i >= LIMIT)): equal but for NaN, its own category"""
+        """while (i < LIMIT) written while (!(i >= LIMIT)): equal but for NaN, its own category; with the call's
+        argument changed too, the call's guard (a slot of its own) still reads inverted, beside the argument's
+        difference"""
         def mutate(hlil):
             loop = first_node(hlil, HLILWhile)
             ordering = first_node(hlil, HLILBinaryOp, lambda node: node.op == BinaryOp.LT)
@@ -1158,6 +1198,10 @@ class TestPlantedHLILBugs(unittest.TestCase):
         mlil, hlil = mlil_and_hlil(loop_call_function)
         mutate(hlil)
         self.assertEqual(hlil_categories(mlil, hlil), {'condition_ordering_inverted'})
+        self.change_argument(hlil, 0)
+        # At the call's key: the loop's own pseudo-effects read inverted too
+        self.assertEqual({difference.category for difference in logic_check.compare_mlil_hlil(mlil, hlil)
+                          if difference.key[1] == 'call'}, {'condition_ordering_inverted', 'arg_differs'})
 
     def test_case_body_moved(self):
         def mutate(hlil):
@@ -1312,6 +1356,84 @@ class TestPlantedHLILBugs(unittest.TestCase):
         with (mock.patch.object(formulas, 'ROW_CAP', ORDERING_ROWS),
               mock.patch.object(decision_diagrams, 'DIAGRAM_NODE_CAP', DIAGRAM_NODES_TOO_FEW)):
             self.assertEqual(hlil_categories(mlil, hlil), {'guard_unchecked'})
+
+    def test_inverted_value_beside_other_components(self):
+        """callee(x, y), each a choice under an ordering: each argument compared on its own, then the strongest
+        outcome taken, a difference before unchecked before an inversion. Unchecked: a test c written
+        c && (c || GLOBAL_C), past TWO_TESTS_ROWS"""
+        invert, widen, change = self.invert_ordering, self.widen_test, self.change_argument
+        cases = [   # (name, the plants and their arguments, under the caps, the categories)
+            ('x inverted, y changed', ((invert, GLOBAL_A), (change, 1)), False, {'arg_differs'}),
+            ('x inverted, y unchecked', ((invert, GLOBAL_A), (widen, GLOBAL_B)), True, {'guard_unchecked'}),
+            ('x unchecked, y changed', ((widen, GLOBAL_A), (change, 1)), True, {'arg_differs'}),
+            ('both inverted', ((invert, GLOBAL_A), (invert, GLOBAL_B)), False, {'condition_ordering_inverted'}),
+        ]
+        self.assertEqual(hlil_categories(*mlil_and_hlil(two_choices_function)), set(),
+                         'the unchanged HLIL compares clean')
+        for name, plants, capped, expected in cases:
+            with self.subTest(name):
+                mlil, hlil = mlil_and_hlil(two_choices_function)
+                for plant, argument in plants:
+                    plant(hlil, argument)
+                with contextlib.ExitStack() as caps:
+                    if capped:
+                        caps.enter_context(mock.patch.object(formulas, 'ROW_CAP', TWO_TESTS_ROWS))
+                        caps.enter_context(mock.patch.object(decision_diagrams, 'DIAGRAM_NODE_CAP',
+                                                             DIAGRAM_NODES_TOO_FEW))
+                    found = logic_check.compare_mlil_hlil(mlil, hlil)
+                self.assertEqual({difference.category for difference in found}, expected)
+        # The last case's, both inverted: one difference, naming both arguments
+        self.assertEqual([difference.detail for difference in found], [[0, 1]])
+
+    def test_formulas_past_the_cap_as_written(self):
+        """The branch's test g written (GLOBAL_B < LOOP_LIMIT && g) || (GLOBAL_B >= LOOP_LIMIT && g): three variables
+        as written, past ORDERING_ROWS, two once orderings are read as one representative, which then decides: g, an
+        inversion; with !g in the second arm, not g, a difference (the arms' guards, and the registers the return
+        passes, the call's result on one arm only)"""
+        for negated, expected in ((False, {'condition_ordering_inverted'}),
+                                  (True, {'guard_differs', 'return_differs'})):
+            with self.subTest(negated=negated):
+                mlil, hlil = mlil_and_hlil(branch_function)
+                test = first_node(hlil, HLILIf)
+                g = test.condition
+                tested = HLILVar(HLILVariable(kind=VariableKind.GLOBAL, index=GLOBAL_B))
+                below = HLILBinaryOp(BinaryOp.LT, tested, HLILConst(LOOP_LIMIT))
+                at_least = HLILBinaryOp(BinaryOp.GE, copy.deepcopy(tested), HLILConst(LOOP_LIMIT))
+                second = HLILUnaryOp(UnaryOp.NOT, copy.deepcopy(g)) if negated else copy.deepcopy(g)
+                test.condition = HLILBinaryOp(BinaryOp.OR, HLILBinaryOp(BinaryOp.AND, below, copy.deepcopy(g)),
+                                              HLILBinaryOp(BinaryOp.AND, at_least, second))
+                with (mock.patch.object(formulas, 'ROW_CAP', ORDERING_ROWS),
+                      mock.patch.object(decision_diagrams, 'DIAGRAM_NODE_CAP', DIAGRAM_NODES_TOO_FEW)):
+                    self.assertEqual(hlil_categories(mlil, hlil), expected)
+
+    def test_ordering_inverted_in_a_loop_value(self):
+        """x's ordering written inverted: the value the loop carries in differs by an inversion only; with the other
+        arm's value changed too, it differs"""
+        mlil, hlil = mlil_and_hlil(choice_then_loop_function)
+        self.assertEqual(hlil_categories(mlil, hlil), set(), 'the unchanged HLIL compares clean')
+        self.invert_ordering(hlil, GLOBAL_A)
+        self.assertEqual(hlil_categories(mlil, hlil), {'condition_ordering_inverted'})
+        flag_set_to(hlil, 2, 3)
+        self.assertEqual(hlil_categories(mlil, hlil), {'loop_value_differs'})
+
+    @classmethod
+    def invert_ordering(cls, hlil, index: int):
+        """The ordering on GLOBAL[index], a < b, written !(a >= b)"""
+        ordering = first_node(hlil, HLILBinaryOp, lambda node: node.op == BinaryOp.LT and reads_global(node, index))
+        inverted = HLILBinaryOp(BinaryOp.EQ, HLILBinaryOp(BinaryOp.GE, ordering.lhs, ordering.rhs), HLILConst(0))
+        replace_expression(hlil, ordering, inverted)
+
+    @classmethod
+    def widen_test(cls, hlil, index: int):
+        """The test on GLOBAL[index], c, written c && (c || GLOBAL_C): one function, in two tests"""
+        test = first_node(hlil, HLILIf, lambda node: reads_global(node.condition, index))
+        other = HLILVar(HLILVariable(kind=VariableKind.GLOBAL, index=GLOBAL_C))
+        test.condition = HLILBinaryOp(BinaryOp.AND, test.condition,
+                                      HLILBinaryOp(BinaryOp.OR, copy.deepcopy(test.condition), other))
+
+    @classmethod
+    def change_argument(cls, hlil, position: int):
+        first_node(hlil, HLILCall).args[position] = HLILConst(UNRELATED_ARG)
 
     @classmethod
     def change_write(cls, hlil, value: int):
@@ -2028,15 +2150,13 @@ class TestFormulaKeys(unittest.TestCase):
     def test_comparisons_remembered_by_both_sides(self):
         """x == 1 && y == 1 against the condition x == 1 && y == 1 (one function, written otherwise), then against
         x == 1 && y == 2: the second comparison, its first side's formula the same, still differs"""
-        namings = gated_comparison.Namings((Fingerprints.of(Facts()), Fingerprints.of(Facts())),
-                                           (Fingerprints.of(Facts(), representative=True),
-                                            Fingerprints.of(Facts(), representative=True)), {})
+        reading = gated_comparison.GatedReading((Fingerprints.of(Facts()), Fingerprints.of(Facts())), {})
         both = formulas.conjunction(self.equals(self.X, 1), self.equals(self.Y, 1))
         condition = formulas.literal(op('LOGICAL_AND', [op('EQ', [value, const(1)]) for value in (self.X, self.Y)]),
                                      True)
         other = formulas.conjunction(self.equals(self.X, 1), self.equals(self.Y, 2))
-        self.assertIsNone(gated_comparison.compare_formulas(namings, (both, condition)))
-        self.assertEqual(gated_comparison.compare_formulas(namings, (both, other)), 'guard_differs')
+        self.assertIsNone(gated_comparison.compare_formulas(reading, (both, condition)))
+        self.assertEqual(gated_comparison.compare_formulas(reading, (both, other)), 'guard_differs')
 
 
 class TestVMEffects(unittest.TestCase):
