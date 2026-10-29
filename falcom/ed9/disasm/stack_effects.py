@@ -20,6 +20,7 @@ __all__ = (
     'CALLEE_OPERAND',
     'REGISTER_OPERAND',
     'RESULT_REGISTER',
+    'REGISTER_COUNT',
 )
 
 LOCAL_SETUP_SLOTS       = 2     # CALL: func_id, ret_addr
@@ -31,6 +32,7 @@ SLOT_OFFSET_OPERAND     = 0     # the byte offset of a slot-addressing opcode
 CALLEE_OPERAND          = 0     # CALL's callee, whose parameters are its argument count
 REGISTER_OPERAND        = 0     # GET_REG / SET_REG's register
 RESULT_REGISTER         = 0     # where a returning call leaves its result
+REGISTER_COUNT          = 16    # the VM's registers (GET_REG / SET_REG)
 
 
 class InstructionKind(Enum):

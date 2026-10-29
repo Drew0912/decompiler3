@@ -16,8 +16,9 @@ from ir.llil.llil import (
     LowLevelILStore, LowLevelILSyscall, LowLevelILUnaryOp, WORD_SIZE, walk,
 )
 from .facts import Branch, Effect, Facts
-from .state import MEMORY_EPOCH, RESULT_REGISTER, State
+from .state import MEMORY_EPOCH, State
 from .trees import ENTRY, const, op
+from .vm_effects import VMEffects
 
 FRAME_CONSTANTS = (LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstScriptName)
 IGNORED = (LowLevelILSpAdd, LowLevelILDebug, LowLevelILJmp)
@@ -26,18 +27,20 @@ COPIES = (LowLevelILStackStore, LowLevelILFrameStore, LowLevelILRegStore, *IGNOR
 
 class LLILLayer:
     OWN_STORAGE_NAMES = False       # every key is already the neutral one
+    VM_EFFECTS        = VMEffects   # the effects of its engine's VM
 
     def __init__(self, func: LowLevelILFunction):
         self.func = func
         self.entry = func.get_block_by_addr(func.start_addr)
-        self.address_taken = set()
+        address_taken = set()
         for block in func.basic_blocks:
             for inst in block.instructions:
                 for node in walk(inst):
                     if isinstance(node, LowLevelILStackAddr):
-                        self.address_taken.add(('stack', node.slot_index))
+                        address_taken.add(('stack', node.slot_index))
                     elif isinstance(node, LowLevelILFrameAddr):
-                        self.address_taken.add(('param', self.param_position(node.offset)))
+                        address_taken.add(('param', self.param_position(node.offset)))
+        self.vm = self.VM_EFFECTS(address_taken, self.neutral_key)
 
     @classmethod
     def successors(cls, block) -> list:
@@ -106,28 +109,21 @@ class LLILLayer:
         elif isinstance(inst, LowLevelILFrameStore):
             state.set(('param', self.param_position(inst.offset)), self.evaluate(inst.value, state))
         elif isinstance(inst, LowLevelILRegStore):
-            value = self.evaluate(inst.value, state)
-            state.escape(value, self.address_taken, self.neutral_key)
-            state.set(('reg', inst.reg_index), value)
+            self.vm.write(state, ('reg', inst.reg_index), self.evaluate(inst.value, state))
         elif isinstance(inst, LowLevelILGlobalStore):
-            value = self.evaluate(inst.value, state)
-            state.escape(value, self.address_taken, self.neutral_key)
-            state.set(('global', inst.index), value)
-            return [Effect(address, 'store global', inst.index, (value,))]
+            return [self.vm.store_global(state, address, inst.index, self.evaluate(inst.value, state))]
         elif isinstance(inst, LowLevelILStore):
             value = self.evaluate(inst.value, state)
-            effect = Effect(address, 'store deref', None, (self.evaluate(inst.dest, state), value))
-            state.escape(value, self.address_taken, self.neutral_key)
-            state.store_through_pointer(address)
-            return [effect]
+            return [self.vm.store_deref(state, address, self.evaluate(inst.dest, state), value)]
         elif isinstance(inst, LowLevelILDebugLog):
             # As MLIL translates it: a debug.log call with no output that changes nothing
-            return [Effect(address, 'call', DEBUG_LOG_CALL_TARGET, self.arguments(inst, state))]
+            return [self.vm.call(state, address, 'call', DEBUG_LOG_CALL_TARGET, self.arguments(inst, state),
+                                 clobbers=False)]
         elif isinstance(inst, LowLevelILSyscall):
             return [self.call(inst, 'syscall', (inst.subsystem, inst.cmd), state)]
         elif isinstance(inst, LowLevelILCallScriptNoReturn):
             # As MLIL translates it: `return module.func(args)`, the callee's registers passed on to our caller
-            return [self.call(inst, 'script call', inst.target, state), self.ret(address, state)]
+            return [self.call(inst, 'script call', inst.target, state), self.vm.ret(state, address)]
         elif isinstance(inst, LowLevelILCallScript):
             return [self.call(inst, 'script call', inst.target, state)]
         elif isinstance(inst, LowLevelILCall):
@@ -136,7 +132,7 @@ class LLILLayer:
             facts.branches[address] = Branch(address, self.evaluate(inst.condition, state), inst.true_target.start,
                                              inst.false_target.start)
         elif isinstance(inst, LowLevelILRet):
-            return [self.ret(address, state)]
+            return [self.vm.ret(state, address)]
         elif not isinstance(inst, IGNORED):
             raise RuntimeError(f'no LLIL rule for {type(inst).__name__}')
 
@@ -146,10 +142,4 @@ class LLILLayer:
         return tuple(self.evaluate(arg, state) for arg in inst.args)
 
     def call(self, inst, kind: str, target, state: State) -> Effect:
-        args = self.arguments(inst, state)
-        return Effect(inst.address, kind, target, args,
-                      storage=state.call(inst.address, args, self.address_taken, self.neutral_key))
-
-    @classmethod
-    def ret(cls, address: int, state: State) -> Effect:
-        return Effect(address, 'return', None, (state.register(RESULT_REGISTER),), storage=state.return_registers())
+        return self.vm.call(state, inst.address, kind, target, self.arguments(inst, state))

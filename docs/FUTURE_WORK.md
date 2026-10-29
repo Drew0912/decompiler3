@@ -115,7 +115,8 @@ from decompiler2's ED8.x support:
     LLIL layer.
   - **Logic check** (`tools/logic_check/`, `docs/VALIDATOR_GUIDE.md`): ED85 support brings the logic check with it.
     Its MLIL -> HLIL half runs on the generic IR and carries over, given ED85's own register facts (ED9's 16
-    registers and result register 0 are in `tools/logic_check/state.py`). With no LLIL, the passes' reference is the
+    registers and result register 0 are `falcom/ed9/disasm/stack_effects.py`'s, which the check's `VMEffects` in
+    `vm_effects.py` takes; an ED85 layer names its own in `VM_EFFECTS`). With no LLIL, the passes' reference is the
     MLIL as lifted, before `optimize_mlil`, compared with the optimized MLIL as LLIL is with MLIL today; ED9's LLIL
     side (`llil_layer.py`) and driver (`scripts.py`) get ED85 counterparts. The lifter stays outside the check, as
     ED9's bytecode -> LLIL lifter does.

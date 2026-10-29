@@ -19,8 +19,9 @@ from ir.mlil.mlil import (
 )
 from .facts import Branch, Effect, Facts
 from .mlil_layer import MLILStorage
-from .state import MEMORY_EPOCH, RESULT_REGISTER, State
+from .state import MEMORY_EPOCH, State
 from .trees import ENTRY, const, constant_truth, op
+from .vm_effects import VMEffects
 
 BINARY_OPERATIONS = {           # the trees' operation names, MLIL's
     BinaryOp.ADD     : 'ADD',
@@ -122,13 +123,15 @@ def mlil_calls_by_index(mlil: MediumLevelILFunction) -> dict[int, MediumLevelILC
 
 class HLILLayer:
     OWN_STORAGE_NAMES = True        # MLIL's split ranges and minted locals, kept by HLIL
+    VM_EFFECTS        = VMEffects   # the effects of its engine's VM
 
     def __init__(self, func: HighLevelILFunction, mlil: MediumLevelILFunction):
         self.mlil_storage = MLILStorage(mlil)
         self.variables = mlil_variables_by_name(mlil)
         self.calls = mlil_calls_by_index(mlil)
-        self.address_taken = {self.key(node.operand.var) for node in iter_tree(func.body)
-                              if isinstance(node, HLILAddressOf) and isinstance(node.operand, HLILVar)}
+        address_taken = {self.key(node.operand.var) for node in iter_tree(func.body)
+                         if isinstance(node, HLILAddressOf) and isinstance(node.operand, HLILVar)}
+        self.vm = self.VM_EFFECTS(address_taken, self.neutral_key)      # with address_taken, before anything evaluates
         self.nodes: list[Node] = []
         self.branch_numbers, self.switch_numbers = count(), count()
         end = self.new_node()           # falling off the end of the body
@@ -304,8 +307,8 @@ class HLILLayer:
         elif isinstance(inst, HLILExprStmt):
             self.evaluate(inst.expr, state, effects)
         elif isinstance(inst, HLILReturn):
-            value = state.register(RESULT_REGISTER) if inst.value is None else self.evaluate(inst.value, state, effects)
-            effects.append(Effect(inst.address, 'return', None, (value,), storage=state.return_registers()))
+            value = None if inst.value is None else self.evaluate(inst.value, state, effects)
+            effects.append(self.vm.ret(state, inst.address, value))
         elif isinstance(inst, HLILUnstructured):
             facts.unstructured.append(inst)
         else:
@@ -321,17 +324,14 @@ class HLILLayer:
         elif isinstance(dest, HLILDeref):
             pointer = self.evaluate(dest.operand, state, effects)
             value = self.evaluate(inst.src, state, effects)
-            effects.append(Effect(inst.address, 'store deref', None, (pointer, value)))
-            state.escape(value, self.address_taken, self.neutral_key)
-            state.store_through_pointer(inst.address)
+            effects.append(self.vm.store_deref(state, inst.address, pointer, value))
         elif isinstance(dest, HLILVar):
             value = self.evaluate(inst.src, state, effects)
             key = self.key(dest.var)
-            if self.neutral_key(key)[0] in ('reg', 'global'):   # a de-SSA split of a register too
-                state.escape(value, self.address_taken, self.neutral_key)
             if key[0] == 'global':
-                effects.append(Effect(inst.address, 'store global', key[1], (value,)))
-            state.set(key, value)
+                effects.append(self.vm.store_global(state, inst.address, key[1], value))
+            else:
+                self.vm.write(state, key, value)
         else:
             raise RuntimeError(f'no HLIL rule for an assignment to {type(dest).__name__}')
 
@@ -371,9 +371,7 @@ class HLILLayer:
         else:
             kind, target = 'call', expr.func_name
 
-        effect = Effect(expr.address, kind, target, args)
         source = self.calls.get(expr.mlil_index)
-        if source is None or source.clobbers_registers:
-            effect.storage = state.call(expr.address, args, self.address_taken, self.neutral_key)
-        effects.append(effect)
+        effects.append(self.vm.call(state, expr.address, kind, target, args,
+                                    clobbers=source is None or source.clobbers_registers))
         return ('call', expr.address)

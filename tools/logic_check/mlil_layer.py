@@ -13,8 +13,9 @@ from ir.mlil.mlil import (
 )
 from .facts import Branch, Effect, Facts
 from .post_dominators import back_edges
-from .state import MEMORY_EPOCH, RESULT_REGISTER, State
+from .state import MEMORY_EPOCH, State
 from .trees import ENTRY, const, constant_truth, op
+from .vm_effects import VMEffects
 
 SPLIT_SUFFIX = re.compile(r'_v\d+$')
 PARAMETER_NAME = re.compile(r'^arg(\d+)$')
@@ -76,6 +77,7 @@ class MLILLayer(MLILStorage):
     a block, so HLIL joins arms where they lead)"""
 
     OWN_STORAGE_NAMES = True        # a split range or a minted local
+    VM_EFFECTS        = VMEffects   # the effects of its engine's VM
 
     def __init__(self, func: MediumLevelILFunction, *, hlil_view: bool = False):
         super().__init__(func)
@@ -91,11 +93,12 @@ class MLILLayer(MLILStorage):
             for successor in successors:
                 self.incoming[successor].append(block)
 
-        self.address_taken = set()
+        address_taken = set()
         for inst in func.iter_instructions():
             for node in walk(inst):
                 if isinstance(node, MLILAddressOf) and isinstance(node.operand, MLILVar):
-                    self.address_taken.add(self.key(node.operand.var))
+                    address_taken.add(self.key(node.operand.var))
+        self.vm = self.VM_EFFECTS(address_taken, self.neutral_key)
 
     def follow_constant_branches(self):
         for block in list(self.targets):
@@ -204,36 +207,24 @@ class MLILLayer(MLILStorage):
     def step(self, inst, state: State, facts: Facts) -> list[Effect]:
         address = inst.address
         if isinstance(inst, MLILSetVar):
-            key, value = self.key(inst.var), self.evaluate(inst.value, state)
-            if self.neutral_key(key)[0] == 'reg':   # a register, or a de-SSA split of one
-                state.escape(value, self.address_taken, self.neutral_key)
-            state.set(key, value)
+            self.vm.write(state, self.key(inst.var), self.evaluate(inst.value, state))
         elif isinstance(inst, MLILStoreReg):
-            value = self.evaluate(inst.value, state)
-            state.escape(value, self.address_taken, self.neutral_key)
-            state.set(('reg', inst.index), value)
+            self.vm.write(state, ('reg', inst.index), self.evaluate(inst.value, state))
         elif isinstance(inst, MLILStoreGlobal):
-            value = self.evaluate(inst.value, state)
-            state.escape(value, self.address_taken, self.neutral_key)
-            state.set(('global', inst.index), value)
-            return [Effect(address, 'store global', inst.index, (value,))]
+            return [self.vm.store_global(state, address, inst.index, self.evaluate(inst.value, state))]
         elif isinstance(inst, MLILStoreDeref):
             if self.local_memory_write(inst):
                 state.set(self.key(self.memory_form_variable(inst.dest)), self.evaluate(inst.value, state))
                 return []
             value = self.evaluate(inst.value, state)
-            effect = Effect(address, 'store deref', None, (self.evaluate(inst.dest, state), value))
-            state.escape(value, self.address_taken, self.neutral_key)
-            state.store_through_pointer(address)
-            return [effect]
+            return [self.vm.store_deref(state, address, self.evaluate(inst.dest, state), value)]
         elif isinstance(inst, MediumLevelILCall):
             return [self.call(inst, state)]
         elif isinstance(inst, MLILIf):
             facts.branches[address] = Branch(address, self.evaluate(inst.condition, state), inst.true_target.start,
                                              inst.false_target.start)
         elif isinstance(inst, MLILRet):
-            value = state.register(RESULT_REGISTER) if inst.value is None else self.evaluate(inst.value, state)
-            return [Effect(address, 'return', None, (value,), storage=state.return_registers())]
+            return [self.vm.ret(state, address, None if inst.value is None else self.evaluate(inst.value, state))]
         elif not isinstance(inst, IGNORED):
             raise RuntimeError(f'no MLIL rule for {type(inst).__name__}')
 
@@ -247,9 +238,8 @@ class MLILLayer(MLILStorage):
         else:
             kind, target = 'call', inst.target
 
-        effect = Effect(inst.address, kind, target, tuple(self.evaluate(arg, state) for arg in inst.args))
-        if inst.clobbers_registers:
-            effect.storage = state.call(inst.address, effect.args, self.address_taken, self.neutral_key)
+        effect = self.vm.call(state, inst.address, kind, target, tuple(self.evaluate(arg, state) for arg in inst.args),
+                              clobbers=inst.clobbers_registers)
         if inst.output is not None:
             state.set(self.key(inst.output), ('call', inst.address))
         return effect
