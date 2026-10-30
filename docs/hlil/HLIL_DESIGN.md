@@ -312,9 +312,10 @@ Several dedicated HLIL unit-test files exist today:
   report).
 - `tests/hlil_tests/test_hlil_structuring_fuzz.py` does the same for 1,000 random CFGs, and checks no statement
   sits in two places, with markers or without.
-- `tests/tools_tests/test_logic_check.py` checks HLIL against its MLIL with the logic check (`tools/logic_check/`):
-  each way of losing or inventing a path, deleting an effect, or changing what a repeated region does is reported
-  (`TestPlantedHLILBugs`), and the structures HLIL builds otherwise than MLIL compare clean (`TestHLILStructures`).
+- `tests/tools_tests/test_logic_check_mlil_hlil.py` checks HLIL against its MLIL with the logic check
+  (`tools/logic_check/`): each way of losing or inventing a path, deleting an effect, or changing what a repeated
+  region does is reported (`TestPlantedHLILBugs`), and the structures HLIL builds otherwise than MLIL compare clean
+  (`TestHLILStructures`).
 - `tests/hlil_tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared
   parameter flag gives, the declared flag winning over an inferred int/float variant, and default
   values still printed once.

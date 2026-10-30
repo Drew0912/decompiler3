@@ -45,6 +45,7 @@ need goes in `tests/shared/`.
 | `hlil_cfg_utils.py` | `build_function` and `structure`: small MLIL CFGs from a block spec, and their HLIL; `classify` and `hlil_run`: an oracle that runs MLIL and HLIL side by side |
 | `scp_asm.py` | `Asm` and `Program`: hand-written ED9 bytecode for a real `ScpParser` |
 | `scp_writer_test_utils.py` | `fresh_writer(dat)` (a clean `ScpWriter` for `dat`), `body_writer()` (one inside a function body, to emit opcodes one at a time), `WriterTestCase` (compiles `test.dat` in a temp folder), `load_module` (a hook or library file as a fresh module), `marked_line`/`location`/`at` for `file:line` messages, and `HEX`, an address in a writer message as a regex |
+| `logic_check_functions.py` | the logic check's test files' shared assembled functions (`calls_function`, `branch_function`, ...) and pairs: `reference_and_mlil` (a function's LLIL facts and its MLIL), `mlil_and_hlil`, and `categories` / `hlil_categories`, what each pair's comparison reports; it imports `logic_check`, so the test puts `tools/` on `sys.path` first |
 
 ## Corpus and generated files
 
