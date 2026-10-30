@@ -12,20 +12,27 @@ from .trees import tagged_leaves
 
 
 class VMEffects:
-    """The VM's effects bound to one layer: its address-taken locals and its neutral_key. The register facts are the
-    engine's, ED9's here: another engine's layers name a subclass with its own (their VM_EFFECTS)"""
+    """The VM's effects bound to one layer: its neutral_key and the address-taken locals its evaluation meets
+    (address_of). The register facts are the engine's, ED9's here: another engine's layers name a subclass with its own
+    (their VM_EFFECTS)"""
 
     REGISTER_COUNT  = REGISTER_COUNT
     RESULT_REGISTER = RESULT_REGISTER
 
-    def __init__(self, address_taken: set, neutral_key: Callable):
-        self.address_taken = address_taken
+    def __init__(self, neutral_key: Callable):
+        self.address_taken = set()      # the layer's own keys whose address a tree holds (address_of)
         self.neutral_key = neutral_key
         self.owners = {}                # neutral key -> the layer's own keys
-        for key in address_taken:
-            self.owners.setdefault(neutral_key(key), []).append(key)
         # every register but the result: a call changes them, a return passes them on
         self.other_registers = [('reg', index) for index in range(self.REGISTER_COUNT) if index != self.RESULT_REGISTER]
+
+    def address_of(self, key: tuple) -> tuple:
+        """The leaf holding the address of the layer's local key, which is address-taken from here on"""
+        neutral = self.neutral_key(key)
+        if key not in self.address_taken:
+            self.address_taken.add(key)
+            self.owners.setdefault(neutral, []).append(key)
+        return ('address', neutral)
 
     def write(self, state: State, key: tuple, value):
         """key holds value; an address in it written to a register, or to a de-SSA split of one, escapes (escape)"""
@@ -89,7 +96,10 @@ class VMEffects:
         """The address-taken locals a callee can reach, by neutral key: those the arguments hold the address of and
         those whose address escaped before (escape), then, to a fixed point, those a reached local's value holds the
         address of (a pointer to a pointer). Not every address-taken local: its slot may hold a call's setup
-        elsewhere, after the local's scope ends"""
+        elsewhere, after the local's scope ends. None for a layer with no address-taken local (most)"""
+        if not self.owners:
+            return []
+
         reached = set()
         pending = [key for key in self.address_taken if (ESCAPED, key) in state.items] + self.pointed_by(args)
         while pending:
@@ -100,13 +110,13 @@ class VMEffects:
 
         return sorted(reached, key=lambda key: repr(self.neutral_key(key)))
 
-    def local_values(self, state: State, keys: list[tuple]) -> tuple:
-        """(neutral key, value) of each local: what a callee can read behind its pointers"""
-        return tuple((self.neutral_key(key),
-                      state.items.get(key, key if key[0] == 'param' else ('undef', self.neutral_key(key))))
-                     for key in keys)
+    def local_values(self, state: State, keys: list[tuple]) -> dict:
+        """Neutral key -> value of each local: what a callee can read behind its pointers"""
+        return {self.neutral_key(key):
+                    state.items.get(key, key if key[0] == 'param' else ('undef', self.neutral_key(key)))
+                for key in keys}
 
-    def return_registers(self, state: State) -> tuple:
-        """(key, value) of every register but the result, which the return passes on: VM state the caller can read
+    def return_registers(self, state: State) -> dict:
+        """Key -> value of every register but the result, which the return passes on: VM state the caller can read
         after the call. A call's registers are not its inputs: no function reads a register it has not written"""
-        return tuple((key, state.register(key[1])) for key in self.other_registers)
+        return {key: state.register(key[1]) for key in self.other_registers}

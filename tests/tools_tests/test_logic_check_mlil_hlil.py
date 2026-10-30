@@ -32,7 +32,7 @@ from tests.shared.logic_check_functions import (
 )
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm
 import logic_check
-from logic_check import compare, decision_diagrams, formulas
+from logic_check import choice_lifting, decision_diagrams, formulas
 from logic_check.facts import RETURN_KEY
 from logic_check.trees import op
 
@@ -47,7 +47,7 @@ LIFTED_FLAG_DIAGRAM_NODES = 11  # a DIAGRAM_NODE_CAP the planted flag test's gua
 ORDERING_ROWS = 4               # a ROW_CAP an ordering's formulas fit in, not those with two more tests (2 to 6 do)
 TWO_TESTS_ROWS = 2              # a ROW_CAP one test's formulas fit in, not two tests' (2 and 3 do)
 ARM_VALUE, OTHER_ARM_VALUE = 100, 200
-LIFTING_CAP = 8                 # compare.LIFTED_CHOICES in the tests past it, so their chains stay short
+LIFTING_CAP = 8                 # choice_lifting.LIFTED_CHOICES in the tests past it, so their chains stay short
 LONG_CHAIN = LIFTING_CAP + 1    # writes whose merges are more alternatives than are lifted
 
 
@@ -993,7 +993,7 @@ class TestPlantedHLILBugs(unittest.TestCase):
             self.change_write(hlil, CHAIN_LENGTH)
         self.check(arms_then_chain_function, mutate, 'return_differs')
 
-    @mock.patch.object(compare, 'LIFTED_CHOICES', LIFTING_CAP)
+    @mock.patch.object(choice_lifting, 'LIFTED_CHOICES', LIFTING_CAP)
     def test_register_wrong_past_the_lifting_cap(self):
         """The long chain's last write changed, its merge inside an operation: the choices inside it are more
         alternatives than are lifted, so the difference found with the value whole stands, not an unchecked one"""
@@ -1275,7 +1275,7 @@ class TestHLILStructures(unittest.TestCase):
         self.extract_common_return(hlil)
         loop_mlil, loop_hlil = mlil_and_hlil(branch_then_loop_function)
         self.rebuild_in_both_arms(loop_hlil)
-        with mock.patch.object(compare, 'LIFTED_CHOICES', 1):
+        with mock.patch.object(choice_lifting, 'LIFTED_CHOICES', 1):
             self.assertEqual(hlil_categories(mlil, hlil), {'guard_unchecked'})
             self.assertEqual(hlil_categories(loop_mlil, loop_hlil), {'guard_unchecked'})
 

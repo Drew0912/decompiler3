@@ -15,7 +15,7 @@ from ir.core.il_literals import SourceFloat
 from tests.shared.hlil_cfg_utils import structure
 from tests.shared.logic_check_functions import GLOBAL_A, NESTED_TESTS, first
 import logic_check
-from logic_check import compare, decision_diagrams, formulas, gated_comparison
+from logic_check import choice_lifting, decision_diagrams, formulas, gated_comparison
 from logic_check.facts import Branch, Facts
 from logic_check.neutral_names import Fingerprints
 from logic_check.trees import const, constant_truth, op, truth
@@ -26,7 +26,7 @@ PAIRS_KEY_NODES = 500           # a DIAGRAM_KEY_NODE_CAP: pair by pair 103-137 n
 
 class TestLiftedChoices(unittest.TestCase):
     """Gated choices inside a value or a condition lifted into the formulas their values arrive under
-    (compare.choice_alternatives, gated_comparison.lifted_formula)"""
+    (choice_lifting.choice_alternatives, choice_lifting.lifted_formula)"""
 
     EDGES = 7                       # incoming edges of each choice below, over two values
 
@@ -41,20 +41,20 @@ class TestLiftedChoices(unittest.TestCase):
     def test_choice_in_a_leaf_found(self):
         choice = self.choice(0)
         read = ('global', GLOBAL_A, choice)         # a global read after the calls of either arm
-        self.assertIs(compare.inner_choice(op('EQ', [read, const(0)]), set()), choice)
+        self.assertIs(choice_lifting.inner_choice(op('EQ', [read, const(0)]), set()), choice)
 
     def test_substitution_keeps_untouched_parts(self):
         choice, untouched = self.choice(0), op('ADD', [('param', 1), const(1)])
         tree = op('ADD', [untouched, choice])
-        lifted = compare.substitute(tree, choice, const(1), {})
+        lifted = choice_lifting.substitute(tree, choice, const(1), {})
         self.assertIs(lifted[2][0], untouched)
         self.assertEqual(lifted[2][1], const(1))
 
-    @mock.patch.object(compare, 'LIFTED_CHOICES', EDGES ** 3 - 1)
+    @mock.patch.object(choice_lifting, 'LIFTED_CHOICES', EDGES ** 3 - 1)
     def test_choices_counted_by_value(self):
         """Three choices in one operation: EDGES ** 3 alternatives by edge, past LIFTED_CHOICES; 2 ** 3 by value"""
         tree = op('EQ', [op('ADD', [self.choice(0), op('ADD', [self.choice(10), self.choice(20)])]), const(0)])
-        alternatives, capped = compare.choice_alternatives(self.fingerprints, formulas.TRUE, tree, inner=True)
+        alternatives, capped = choice_lifting.choice_alternatives(self.fingerprints, formulas.TRUE, tree, inner=True)
         self.assertFalse(capped)
         self.assertEqual(len(alternatives), 2 ** 3)
 
@@ -62,9 +62,9 @@ class TestLiftedChoices(unittest.TestCase):
         """a == 0 && b == 0 && c == 0 with room for two values only: lifted part by part, as FormulaKeys splits it"""
         parts = [op('EQ', [self.choice(first), const(0)]) for first in (0, 10, 20)]
         condition = op('LOGICAL_AND', [parts[0], op('LOGICAL_AND', parts[1:])])
-        with mock.patch.object(compare, 'LIFTED_CHOICES', 2):
-            lifted = gated_comparison.lifted_formula(self.fingerprints, formulas.literal(condition, True), {})
-        self.assertIsNone(compare.inner_choice(lifted, set()))
+        with mock.patch.object(choice_lifting, 'LIFTED_CHOICES', 2):
+            lifted = choice_lifting.lifted_formula(self.fingerprints, formulas.literal(condition, True), {})
+        self.assertIsNone(choice_lifting.inner_choice(lifted, set()))
 
 
 class TestRenderedFormula(unittest.TestCase):

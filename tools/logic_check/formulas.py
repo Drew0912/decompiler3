@@ -55,7 +55,7 @@ def disjunction(formulas) -> tuple:
 
 def short_logic_formula(normal: tuple) -> tuple:
     """A condition in negation normal form as a formula over its parts at && and || (FormulaKeys.condition_structure;
-    gated_comparison.lifted_formula lifts each part's choices)"""
+    choice_lifting.lifted_formula lifts each part's choices)"""
     if normal[0] == 'not':
         return negation(short_logic_formula(normal[1]))
     if normal[0] == 'op' and normal[1] in SHORT_LOGIC:
@@ -218,7 +218,6 @@ class FormulaKeys:
         # A value tested for truth: one of the values its equalities range over. A test against a float constant, or
         # of two constants constant_truth leaves open, is such a value of its own
         return ('not', ('eq', self.digest(core), self.digest(ZERO)))
-
 
     # === Truth tables ===
 

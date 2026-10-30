@@ -37,13 +37,13 @@ class State:
 
 def phi_depth(tree, memo: dict | None = None) -> int:
     """Phis nested in tree, through its operations (a gated merge is never cut); memoised by identity: a tree shares its
-    subtrees"""
+    subtrees, and a value merged at one join is merged again at the next (memo: a walk_forward round's)"""
     if not isinstance(tree, tuple):     # an epoch is a plain address
         return 0
     memo = {} if memo is None else memo
     found = memo.get(id(tree))
     if found is not None:
-        return found
+        return found[1]
 
     if tree[0] == 'phi':
         depth = 1 + max((phi_depth(value, memo) for _, value in tree[2]), default=0)
@@ -51,7 +51,7 @@ def phi_depth(tree, memo: dict | None = None) -> int:
         depth = max((phi_depth(operand, memo) for operand in tree[2]), default=0)
     else:
         depth = 0
-    memo[id(tree)] = depth
+    memo[id(tree)] = (tree, depth)      # the tree kept alive, so its id is not reused
     return depth
 
 
@@ -66,16 +66,16 @@ def incoming_value(key: tuple, neutral_key) -> tuple:
     return ('absent', neutral_key(key))
 
 
-def merge(join, states: list[tuple], fingerprints: Fingerprints) -> State:
+def merge(join, states: list[tuple], fingerprints: Fingerprints, depths: dict | None = None) -> State:
     """A join's entry state from its predecessors' (edge name, exit state), as merged_value merges each key"""
     keys = set().union(*(state.items.keys() for _, state in states))
     merged = State()
     for key in keys:
-        merged.items[key] = merged_value(join, key, states, fingerprints)
+        merged.items[key] = merged_value(join, key, states, fingerprints, depths)
     return merged
 
 
-def merged_value(join, key: tuple, states: list[tuple], fingerprints: Fingerprints):
+def merged_value(join, key: tuple, states: list[tuple], fingerprints: Fingerprints, depths: dict | None = None):
     """key's value at a join from its predecessors' (edge name, exit state): the value they agree on (equal_trees,
     exact: two de-SSA splits of one slot stay two values), else a phi over the predecessors ordered by edge name, the
     terminal address (join an identity), or a gated choice over the path conditions the edges are taken under (join
@@ -92,7 +92,7 @@ def merged_value(join, key: tuple, states: list[tuple], fingerprints: Fingerprin
         return ('gamma', tuple(values))
 
     phi = ('phi', join, tuple(sorted(values, key=lambda pair: pair[0])))
-    if phi_depth(phi) <= PHI_DEPTH:
+    if phi_depth(phi, depths) <= PHI_DEPTH:
         return phi
 
     kept = dict.fromkeys(leaf for tag in DEEP_PHI_KEPT_LEAVES for leaf in tagged_leaves(phi, tag))

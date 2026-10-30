@@ -5,15 +5,15 @@ representative, which decides (decided, reconciled)"""
 
 from typing import Callable, NamedTuple
 
+from .choice_lifting import lift_choices, lifted_formula
 from .compare import (
-    Difference, brief, choice_alternatives, compare_loop_values, compare_order, component_value, effect_components,
-    inner_choice, lift_choices, value_category, value_differences,
+    Difference, brief, compare_loop_values, compare_order, component_value, effect_components, value_category,
+    value_differences,
 )
 from .decision_diagrams import DiagramOverflow, Diagrams
 from .facts import Effect, Facts
-from .formulas import TRUE, conjunction, disjunction, literal, negation, short_logic_formula
+from .formulas import TRUE, conjunction, disjunction, negation
 from .neutral_names import Fingerprints, Reading
-from .trees import negation_normal_form
 
 RENDERED_FORMULA_CHARACTERS = 400   # a gated detail's formula, cut (render)
 
@@ -139,43 +139,6 @@ def compare_under(reading: GatedReading, formulas: tuple, premises: tuple) -> st
     if all(new is old for new, old in zip(lifted, formulas)):
         return category
     return None if compare_formulas(reading, lifted) is None else category
-
-
-def lifted_formula(fingerprints: Fingerprints, formula, memo: dict) -> tuple:
-    """formula with each literal whose condition holds a gated choice lifted: the condition split at its && and ||
-    (short_logic_formula), each part's choices lifted (lifted_atom); a formula with none is the same object"""
-    found = memo.get(id(formula))
-    if found is not None:
-        return found[1]
-
-    tag = formula[0]
-    if tag == 'lit' and inner_choice(formula[1], set()) is not None:
-        split = short_logic_formula(negation_normal_form(formula[1]))     # the condition holding
-        holds = (lifted_atom(fingerprints, split, memo) if split[0] == 'lit'
-                 else lifted_formula(fingerprints, split, memo))
-        result = holds if formula[2] else negation(holds)
-    elif tag in ('and', 'or'):
-        items = [lifted_formula(fingerprints, item, memo) for item in formula[1]]
-        if all(new is old for new, old in zip(items, formula[1])):
-            result = formula
-        else:
-            result = conjunction(*items) if tag == 'and' else disjunction(items)
-    else:
-        result = formula
-    memo[id(formula)] = (formula, result)       # the formula kept alive, so its id is not reused
-    return result
-
-
-def lifted_atom(fingerprints: Fingerprints, atom: tuple, memo: dict) -> tuple:
-    """atom, a literal on a condition with no && or ||, as its choices' values each under its formula
-    (choice_alternatives, inner): c(G) holds where the value G takes makes c hold. A value's formula may test an earlier
-    choice (a flag tested to set a flag), so it is lifted in turn; atom as it is past LIFTED_CHOICES"""
-    alternatives, capped = choice_alternatives(fingerprints, TRUE, atom[1], inner=True)
-    if capped:
-        return atom
-
-    return disjunction([conjunction(lifted_formula(fingerprints, condition, memo), literal(core, atom[2]))
-                        for condition, core in alternatives])
 
 
 def compare_formulas(reading: GatedReading, formulas: tuple) -> str | None:

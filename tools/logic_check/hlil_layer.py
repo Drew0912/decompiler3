@@ -129,9 +129,7 @@ class HLILLayer:
         self.mlil_storage = MLILStorage(mlil)
         self.variables = mlil_variables_by_name(mlil)
         self.calls = mlil_calls_by_index(mlil)
-        address_taken = {self.key(node.operand.var) for node in iter_tree(func.body)
-                         if isinstance(node, HLILAddressOf) and isinstance(node.operand, HLILVar)}
-        self.vm = self.VM_EFFECTS(address_taken, self.neutral_key)      # with address_taken, before anything evaluates
+        self.vm = self.VM_EFFECTS(self.neutral_key)     # before anything evaluates
         self.nodes: list[Node] = []
         self.branch_numbers, self.switch_numbers = count(), count()
         end = self.new_node()           # falling off the end of the body
@@ -350,7 +348,7 @@ class HLILLayer:
             return op(UNARY_OPERATIONS[expr.op], [self.evaluate(expr.operand, state, effects)])
         if isinstance(expr, HLILAddressOf):
             if isinstance(expr.operand, HLILVar):
-                return ('address', self.neutral_key(self.key(expr.operand.var)))
+                return self.vm.address_of(self.key(expr.operand.var))
             return ('address', self.evaluate(expr.operand, state, effects))
         if isinstance(expr, HLILDeref):
             local = unwrap_address_taken_var(expr)     # the memory form of a local's read, *(&v)

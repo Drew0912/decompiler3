@@ -47,8 +47,9 @@ class TestVMEffects(unittest.TestCase):
 
     def setUp(self):
         neutral = {self.SPLIT: ('reg', REG_INDEX)}
-        self.vm = VMEffects({self.PASSED, self.POINTEE, self.ESCAPED_LOCAL, self.PARAMETER, self.UNREACHED},
-                            lambda key: neutral.get(key, key))
+        self.vm = VMEffects(lambda key: neutral.get(key, key))
+        for key in (self.PASSED, self.POINTEE, self.ESCAPED_LOCAL, self.PARAMETER, self.UNREACHED):
+            self.vm.address_of(key)
 
     @classmethod
     def escaped(cls, key: tuple) -> dict:
@@ -79,8 +80,8 @@ class TestVMEffects(unittest.TestCase):
         result = ('reg', VMEffects.RESULT_REGISTER)
         state = State({('reg', REG_INDEX): const(STORED), result: const(OUT_INITIAL)})
         before = dict(state.items)
-        registers = tuple((('reg', index), const(STORED) if index == REG_INDEX else ('reg', index, ENTRY))
-                          for index in range(VMEffects.REGISTER_COUNT) if index != VMEffects.RESULT_REGISTER)
+        registers = {('reg', index): const(STORED) if index == REG_INDEX else ('reg', index, ENTRY)
+                     for index in range(VMEffects.REGISTER_COUNT) if index != VMEffects.RESULT_REGISTER}
         self.assertEqual(self.vm.ret(state, self.ADDRESS, const(UNRELATED_ARG)),
                          Effect(self.ADDRESS, 'return', None, (const(UNRELATED_ARG),), storage=registers))
         self.assertEqual(self.vm.ret(state, self.ADDRESS),
@@ -96,8 +97,8 @@ class TestVMEffects(unittest.TestCase):
                        **self.escaped(self.ESCAPED_LOCAL), self.UNREACHED: const(UNRELATED_ARG),
                        ('global', GLOBAL_A): const(OUT_INITIAL), ('reg', REG_INDEX): const(OUT_INITIAL)})
         args = (('address', self.PASSED), ('address', self.PARAMETER))
-        passed = ((self.PARAMETER, self.PARAMETER), (self.PASSED, ('address', self.POINTEE)),
-                  (self.POINTEE, ('undef', self.POINTEE)), (self.ESCAPED_LOCAL, const(STORED)))
+        passed = {self.PARAMETER: self.PARAMETER, self.PASSED: ('address', self.POINTEE),
+                  self.POINTEE: ('undef', self.POINTEE), self.ESCAPED_LOCAL: const(STORED)}
         self.assertEqual(self.vm.call(state, self.ADDRESS, 'script call', MESSAGE, args),
                          Effect(self.ADDRESS, 'script call', MESSAGE, args, storage=passed))
 
@@ -105,7 +106,7 @@ class TestVMEffects(unittest.TestCase):
             **{('reg', index): ('reg', index, ('after', self.ADDRESS)) for index in range(VMEffects.REGISTER_COUNT)},
             ('reg', VMEffects.RESULT_REGISTER): ('call', self.ADDRESS),
             GLOBAL_EPOCH: self.ADDRESS, MEMORY_EPOCH: self.ADDRESS,
-            **{key: ('slot_after', key, self.ADDRESS) for key, _ in passed},
+            **{key: ('slot_after', key, self.ADDRESS) for key in passed},
             **self.escaped(self.ESCAPED_LOCAL), self.UNREACHED: const(UNRELATED_ARG)})
 
     def test_call_kinds(self):

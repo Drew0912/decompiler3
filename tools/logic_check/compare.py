@@ -6,19 +6,20 @@ and the parts of an effect's values both modes compare are here"""
 import reprlib
 from typing import Hashable, NamedTuple
 
+from .choice_lifting import lift_choices
 from .facts import Effect, Facts
-from .formulas import FALSE_KEY, TRUE, conjunction, disjunction
+from .formulas import FALSE_KEY, TRUE, disjunction
 from .neutral_names import Fingerprints, Reading
 from .post_dominators import FALSE_ARM, TRUE_ARM
 from .trees import loop_leaves, truth
 
-LIFTED_CHOICES = 1024           # gated choices lifted into an occurrence's formulas, at most (lift_choices)
 SHOWN = reprlib.Repr(maxlevel=8, maxtuple=6, maxstring=40, maxother=40)  # a detail's trees, cut (brief)
 
 
 class Difference(NamedTuple):
     category: str                   # docs/VALIDATOR_GUIDE.md, "Categories"
-    key: Hashable                   # (address, effect kind), (address, 'branch') or (loop header, storage, edges)
+    key: Hashable                   # where it is: an effect's key (gated: RETURN_KEY for the returns), (address,
+                                    # 'branch'), (loop header, neutral key) or (address, 'unstructured')
     detail: object
 
 
@@ -27,14 +28,15 @@ class Difference(NamedTuple):
 def compare_facts(reference: Facts, checked: Facts) -> list[Difference]:
     differences = []
     reading = (Fingerprints.of(reference), Fingerprints.of(checked))
-    compare_effects(reference, checked, reading, differences)
-    compare_branches(reference, checked, reading, differences)
+    negated = (negated_branches(reference), negated_branches(checked))
+    compare_effects(reference, checked, reading, negated, differences)
+    compare_branches(reference, checked, reading, negated, differences)
     compare_order(reference, checked, differences)
     compare_loop_values(reference, checked, reading, differences)
     return differences
 
 
-def compare_effects(reference: Facts, checked: Facts, reading: Reading, differences: list):
+def compare_effects(reference: Facts, checked: Facts, reading: Reading, negated: tuple[set, set], differences: list):
     for key in sorted(reference.effects.keys() | checked.effects.keys(), key=repr):
         expected, found = reference.effects.get(key, []), checked.effects.get(key, [])
         if len(expected) != len(found):
@@ -47,13 +49,13 @@ def compare_effects(reference: Facts, checked: Facts, reading: Reading, differen
                 differences.append(Difference('argc_differs', key, (len(a.args), len(b.args))))
             differences.extend(Difference(value_category(a), key, detail)
                                for detail in value_differences(reading, a, b))
-            guard_a = {(address, canonical_polarity(reference, address, polarity)) for address, polarity in a.guard}
-            guard_b = {(address, canonical_polarity(checked, address, polarity)) for address, polarity in b.guard}
+            guard_a = {(address, canonical_polarity(negated[0], address, polarity)) for address, polarity in a.guard}
+            guard_b = {(address, canonical_polarity(negated[1], address, polarity)) for address, polarity in b.guard}
             if guard_a != guard_b:
                 differences.append(Difference('guard_differs', key, (sorted(guard_a), sorted(guard_b))))
 
 
-def compare_branches(reference: Facts, checked: Facts, reading: Reading, differences: list):
+def compare_branches(reference: Facts, checked: Facts, reading: Reading, negated: tuple[set, set], differences: list):
     for address in sorted(reference.branches.keys() | checked.branches.keys()):
         a, b = reference.branches.get(address), checked.branches.get(address)
         key = (address, 'branch')
@@ -71,25 +73,26 @@ def compare_branches(reference: Facts, checked: Facts, reading: Reading, differe
 
         # Where control goes when the condition's representative core holds: a negation dropped by swapping the
         # targets is none, an inverted ordering counted once (as the condition's difference)
-        targets_a = canonical_targets(a)
-        targets_b = canonical_targets(b)
+        targets_a = canonical_targets(a, address in negated[0])
+        targets_b = canonical_targets(b, address in negated[1])
         if targets_a != targets_b:
             differences.append(Difference('branch_targets_differ', key, (targets_a, targets_b)))
 
 
-def canonical_targets(branch) -> tuple[int, int]:
-    _, negated = truth(branch.condition, representative=True)
-    if negated:
-        return branch.false_target, branch.true_target
-
-    return branch.true_target, branch.false_target
+def negated_branches(facts: Facts) -> set:
+    """The addresses of the branches whose condition's representative core is negated (truth): an arm of one flips,
+    and so do its targets"""
+    return {address for address, branch in facts.branches.items() if truth(branch.condition, representative=True)[1]}
 
 
-def canonical_polarity(facts: Facts, address: int, polarity: str) -> str:
+def canonical_targets(branch, negated: bool) -> tuple[int, int]:
+    return (branch.false_target, branch.true_target) if negated else (branch.true_target, branch.false_target)
+
+
+def canonical_polarity(negated: set, address: int, polarity: str) -> str:
     """An arm's polarity relative to its branch condition's representative core (an arm of a negated condition
     flips)"""
-    branch = facts.branches.get(address)
-    if branch is None or not truth(branch.condition, representative=True)[1]:
+    if address not in negated:
         return polarity
 
     return FALSE_ARM if polarity == TRUE_ARM else TRUE_ARM
@@ -112,13 +115,13 @@ def value_category(effect: Effect) -> str:
 def effect_components(effects: list[Effect]) -> list:
     """What effects pass, each part on its own: the argument indexes (as the first has them), then every storage
     key"""
-    storage = sorted({key for effect in effects for key, _ in effect.storage}, key=repr)
+    storage = sorted({key for effect in effects for key in effect.storage}, key=repr)
     return [*range(len(effects[0].args)), *storage]
 
 
 def component_value(effect: Effect, component):
     """What effect passes as component, an argument's index or a storage key (None where it passes none)"""
-    return effect.args[component] if isinstance(component, int) else dict(effect.storage).get(component)
+    return effect.args[component] if isinstance(component, int) else effect.storage.get(component)
 
 
 def value_differences(reading: Reading, a: Effect, b: Effect) -> list:
@@ -165,7 +168,8 @@ def loop_leaves_read(facts: Facts) -> set:
     if not facts.loop_values:
         return set()
 
-    read = [part for effects in facts.effects.values() for effect in effects for part in (effect.args, effect.storage)]
+    read = [part for effects in facts.effects.values() for effect in effects
+            for part in (effect.args, *effect.storage.values())]
     read += [branch.condition for branch in facts.branches.values()]
     return set(loop_leaves(tuple(read)))
 
@@ -263,87 +267,6 @@ def copy_descriptions(copies: tuple[dict, dict], reading: Reading, inner: bool) 
                 described.append(frozenset((digest, key) for digest, key in carried.items() if key != FALSE_KEY))
             descriptions[side].add(tuple(described))
     return descriptions, capped
-
-
-def lift_choices(fingerprints: Fingerprints, formula_values: list[tuple], inner: bool = False) -> tuple[dict, bool]:
-    """(formula, value) pairs as each value's digest under neutral names -> the formulas it holds under, a gated choice
-    lifted into them (choice_alternatives); and whether a choice was left whole past LIFTED_CHOICES, so that a mismatch
-    is unchecked, not a difference. inner: the choices inside a value too"""
-    formulas_by_digest, capped = {}, False
-    for formula, value in formula_values:
-        alternatives, cut = choice_alternatives(fingerprints, formula, value, inner)
-        capped = capped or cut
-        for condition, value in alternatives:
-            formulas_by_digest.setdefault(fingerprints(value), []).append(condition)
-    return formulas_by_digest, capped
-
-
-def choice_alternatives(fingerprints: Fingerprints, formula, tree, inner: bool) -> tuple[list, bool]:
-    """(formula, tree) as (formula, tree with no choice) alternatives: a choice's values, each under its formulas joined
-    (distinct_values), in the choice's place, under formula and the value's formula; and whether a choice was left whole
-    past LIFTED_CHOICES alternatives. inner: a choice anywhere in the tree (an operand, a leaf's write epoch), not only
-    the tree that is one"""
-    alternatives, pending, capped = [], [((formula,), tree)], False
-    while pending:
-        conditions, tree = pending.pop()
-        gamma = inner_choice(tree, set()) if inner else whole_choice(tree)
-        if gamma is not None:
-            values = distinct_values(fingerprints, gamma)
-            if len(alternatives) + len(pending) + len(values) <= LIFTED_CHOICES:
-                pending.extend(((*conditions, value_formula), substitute(tree, gamma, value, {}))
-                               for value_formula, value in values)
-                continue
-            capped = True
-        alternatives.append((conjunction(*conditions), tree))
-    return alternatives, capped
-
-
-def whole_choice(tree) -> tuple | None:
-    """tree where it is a gated choice"""
-    return tree if isinstance(tree, tuple) and tree and tree[0] == 'gamma' else None
-
-
-def inner_choice(tree, seen: set) -> tuple | None:
-    """The first gated choice in tree"""
-    if not isinstance(tree, tuple) or not tree or id(tree) in seen:
-        return None
-    seen.add(id(tree))
-    if tree[0] == 'gamma':
-        return tree
-
-    for item in tree:
-        found = inner_choice(item, seen)
-        if found is not None:
-            return found
-    return None
-
-
-def distinct_values(fingerprints: Fingerprints, gamma: tuple) -> list[tuple]:
-    """A choice's (formula, value) pairs one per value, by digest (as gated_choice tells them apart), the formulas each
-    arrives under joined: a choice has an alternative per incoming edge, often many for few values"""
-    formulas, values = {}, {}
-    for formula, value in gamma[1]:
-        digest = fingerprints(value)
-        formulas.setdefault(digest, []).append(formula)
-        values.setdefault(digest, value)
-    return [(disjunction(formulas[digest]), value) for digest, value in values.items()]
-
-
-def substitute(tree, target, replacement, memo: dict):
-    """tree with every occurrence of target (by identity) replaced, inside other choices' formulas too: one value on
-    one path; a part with none kept as it is"""
-    if tree is target:
-        return replacement
-    if not isinstance(tree, tuple):
-        return tree
-    found = memo.get(id(tree))
-    if found is not None:
-        return found[1]
-
-    items = tuple(substitute(item, target, replacement, memo) for item in tree)
-    result = tree if all(new is old for new, old in zip(items, tree)) else items
-    memo[id(tree)] = (tree, result)     # the tree kept alive, so its id is not reused
-    return result
 
 
 def brief(tree) -> str:

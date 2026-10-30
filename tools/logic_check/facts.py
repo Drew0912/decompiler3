@@ -19,8 +19,9 @@ class Effect:
     guard: frozenset = frozenset()      # named by address: the arms it runs under (AddressNaming.set_guard)
     inside: frozenset = frozenset()     # gated: the loops (names) whose body it is in (GatedNaming.mark_loops)
     after: frozenset = frozenset()      # gated: the loops (names) whose exits lead to it
-    storage: tuple = ()     # what it passes on besides args, (neutral key, value) pairs: a call the locals they point
-                            # to (VMEffects.local_values), a return the other registers (VMEffects.return_registers)
+    # what it passes on besides args, neutral key -> value: a call the locals they point to (VMEffects.local_values), a
+    # return the other registers (VMEffects.return_registers)
+    storage: dict = field(default_factory=dict)
     guard_formula: tuple = TRUE     # gated: the formula it runs under (GatedNaming.guard_formula)
 
     @property

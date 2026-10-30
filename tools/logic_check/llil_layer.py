@@ -13,7 +13,7 @@ from ir.llil.llil import (
     LowLevelILBinaryOp, LowLevelILCall, LowLevelILConst, LowLevelILDebug, LowLevelILFrameAddr, LowLevelILFrameLoad,
     LowLevelILFrameStore, LowLevelILFunction, LowLevelILIf, LowLevelILJmp, LowLevelILLoad, LowLevelILRegLoad,
     LowLevelILRegStore, LowLevelILRet, LowLevelILSpAdd, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore,
-    LowLevelILStore, LowLevelILSyscall, LowLevelILUnaryOp, WORD_SIZE, walk,
+    LowLevelILStore, LowLevelILSyscall, LowLevelILUnaryOp, WORD_SIZE,
 )
 from .facts import Branch, Effect, Facts
 from .state import MEMORY_EPOCH, State
@@ -32,15 +32,7 @@ class LLILLayer:
     def __init__(self, func: LowLevelILFunction):
         self.func = func
         self.entry = func.get_block_by_addr(func.start_addr)
-        address_taken = set()
-        for block in func.basic_blocks:
-            for inst in block.instructions:
-                for node in walk(inst):
-                    if isinstance(node, LowLevelILStackAddr):
-                        address_taken.add(('stack', node.slot_index))
-                    elif isinstance(node, LowLevelILFrameAddr):
-                        address_taken.add(('param', self.param_position(node.offset)))
-        self.vm = self.VM_EFFECTS(address_taken, self.neutral_key)
+        self.vm = self.VM_EFFECTS(self.neutral_key)
 
     @classmethod
     def successors(cls, block) -> list:
@@ -88,9 +80,9 @@ class LLILLayer:
         if isinstance(expr, LowLevelILLoad):
             return ('deref', self.evaluate(expr.src, state), state.get(MEMORY_EPOCH, ENTRY))
         if isinstance(expr, LowLevelILStackAddr):
-            return ('address', ('stack', expr.slot_index))
+            return self.vm.address_of(('stack', expr.slot_index))
         if isinstance(expr, LowLevelILFrameAddr):
-            return ('address', ('param', self.param_position(expr.offset)))
+            return self.vm.address_of(('param', self.param_position(expr.offset)))
         if isinstance(expr, LowLevelILRegLoad):
             return state.register(expr.reg_index)
         if isinstance(expr, LowLevelILGlobalLoad):

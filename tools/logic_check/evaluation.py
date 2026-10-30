@@ -94,11 +94,13 @@ def walk_forward(layer, flow: ControlFlow, naming, widened: dict, fingerprints: 
     position = flow.position
     entry_states, exit_states = {}, {}
     facts = Facts()             # the round's branches, for a gated merge's path conditions
+    depths = {}                 # the round's phi depths (state.phi_depth)
     for block in flow.order:
         states = [(predecessor, exit_states[predecessor]) for predecessor in layer.predecessors(block)
                   if predecessor in position and position[predecessor] < position[block]]
         incoming = naming.incoming(block, states, facts)
-        state = incoming[0][1].copy() if len(incoming) == 1 else merge(naming.join(block), incoming, fingerprints)
+        state = (incoming[0][1].copy() if len(incoming) == 1
+                 else merge(naming.join(block), incoming, fingerprints, depths))
         for key in widened.get(block, ()):
             state.items[key] = ('loop', naming.header(block), key)
 

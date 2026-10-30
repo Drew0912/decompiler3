@@ -9,7 +9,7 @@ from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILAddressOf, MLILBinaryOp, MLILCallScript, MLILConst, MLILDebug,
     MLILDeref, MLILGoto, MLILIf, MLILLoadGlobal, MLILLoadReg, MLILNop, MLILRet, MLILSetVar, MLILStoreDeref,
     MLILStoreGlobal, MLILStoreReg, MLILSyscall, MLILUnaryOp, MLILUndef, MLILVar, MLILVariable,
-    UNASSIGNED_SLOT_INDEX, walk,
+    UNASSIGNED_SLOT_INDEX,
 )
 from .facts import Branch, Effect, Facts
 from .post_dominators import back_edges
@@ -81,6 +81,7 @@ class MLILLayer(MLILStorage):
 
     def __init__(self, func: MediumLevelILFunction, *, hlil_view: bool = False):
         super().__init__(func)
+        self.vm = self.VM_EFFECTS(self.neutral_key)     # before follow_constant_branches evaluates a condition
         self.entry = func.basic_blocks[0]
         self.edges = {block: list(block.outgoing_edges) for block in func.basic_blocks}
         self.targets = {block: (block.instructions[-1].true_target, block.instructions[-1].false_target)
@@ -92,13 +93,6 @@ class MLILLayer(MLILStorage):
         for block, successors in self.edges.items():
             for successor in successors:
                 self.incoming[successor].append(block)
-
-        address_taken = set()
-        for inst in func.iter_instructions():
-            for node in walk(inst):
-                if isinstance(node, MLILAddressOf) and isinstance(node.operand, MLILVar):
-                    address_taken.add(self.key(node.operand.var))
-        self.vm = self.VM_EFFECTS(address_taken, self.neutral_key)
 
     def follow_constant_branches(self):
         for block in list(self.targets):
@@ -193,7 +187,7 @@ class MLILLayer(MLILStorage):
             return ('deref', self.evaluate(expr.operand, state), state.get(MEMORY_EPOCH, ENTRY))
         if isinstance(expr, MLILAddressOf):
             if isinstance(expr.operand, MLILVar):
-                return ('address', self.neutral_key(self.key(expr.operand.var)))
+                return self.vm.address_of(self.key(expr.operand.var))
             return ('address', self.evaluate(expr.operand, state))
         if isinstance(expr, MLILUndef):
             return ('undef', None)

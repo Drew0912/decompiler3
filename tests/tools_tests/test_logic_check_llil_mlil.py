@@ -124,6 +124,19 @@ def counter_loop_function() -> tuple[Asm, int]:
     return asm, 1
 
 
+def register_loop_function() -> tuple[Asm, int]:
+    """r = 0; i = 0; while i < LOOP_LIMIT: r = r + 1; i = i + 1 (r register REG_INDEX, updated first): only the return
+    reads r, among the registers it passes on"""
+    asm = Asm()
+    asm.push_int(0); asm.push_int(0); asm.set_reg(REG_INDEX)
+    asm.label('head'); asm.load_stack(-WORD_SIZE); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('done')
+    asm.get_reg(REG_INDEX); asm.push_int(1); asm.add(); asm.set_reg(REG_INDEX)
+    asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.pop_to(-WORD_SIZE)
+    asm.jmp('head')
+    asm.label('done'); asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 0
+
+
 def deep_join_function() -> tuple[Asm, int]:
     """v = DEEP_INITIAL; then PHI_DEPTH + 1 times: if GLOBAL[i]: v = DEEP_INITIAL + i + 1; GLOBAL[0] = v: the value
     stored merges more joins deep than a phi is spelled out"""
@@ -359,13 +372,13 @@ class TestPlantedBugs(unittest.TestCase):
 
     def test_loop_update_changed(self):
         """i = i + 1 made i = i + 3: the value after the loop is the same leaf, the value carried round differs; also
-        where only the loop's condition reads i"""
+        where only the loop's condition reads it, or only the return's registers"""
         def mutate(mlil):
             block, index, update = first(mlil, lambda inst: isinstance(inst, MLILSetVar)
                                          and isinstance(inst.value, MLILAdd))
             block.instructions[index] = MLILSetVar(update.var, MLILAdd(update.value.lhs, MLILConst(3))) \
                 .copy_metadata_from(update)
-        for build in (loop_function, counter_loop_function):
+        for build in (loop_function, counter_loop_function, register_loop_function):
             with self.subTest(build.__name__):
                 self.check(build, mutate, 'loop_value_differs')
 
