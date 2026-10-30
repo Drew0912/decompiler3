@@ -431,6 +431,23 @@ def calls_then_chain_function() -> tuple[Asm, int]:
     return asm, 1
 
 
+def calls_in_two_of_three_arms_function() -> tuple[Asm, int]:
+    """if GLOBAL_A: callee(); if GLOBAL_B: callee() elif GLOBAL_C: GLOBAL_D = STORED else GLOBAL_D = UNRELATED_ARG;
+    GLOBAL_A = REG: the register read after the three arms' join, whose choice of call epochs holds the first join's
+    choice in two arms"""
+    asm = Asm()
+    asm.load_global(GLOBAL_A); asm.jz('first_join')
+    call(asm, 'first')
+    asm.label('first_join'); asm.load_global(GLOBAL_B); asm.jz('third_test')
+    call(asm, 'second'); asm.jmp('final')
+    asm.label('third_test'); asm.load_global(GLOBAL_C); asm.jz('third_else')
+    asm.push_int(STORED); asm.set_global(GLOBAL_D); asm.jmp('final')
+    asm.label('third_else'); asm.push_int(UNRELATED_ARG); asm.set_global(GLOBAL_D)
+    asm.label('final'); asm.get_reg(REG_INDEX); asm.set_global(GLOBAL_A)
+    return_nothing(asm)
+    return asm, 0
+
+
 def arms_then_slot_chain_function(depth: int = CHAIN_LENGTH) -> tuple[Asm, int]:
     """v = ARM_VALUE if GLOBAL_A else OTHER_ARM_VALUE; depth times: if GLOBAL[CHAIN_GLOBAL + i]: v = i + 1;
     REG = v + 1; return: the merge inside an operation"""
@@ -1232,6 +1249,10 @@ class TestHLILStructures(unittest.TestCase):
         mlil, hlil = mlil_and_hlil(calls_then_chain_function)
         self.repeat_tail_in_arms(hlil)
         self.assertEqual(hlil_categories(mlil, hlil), set())
+
+    def test_register_read_after_a_choice_of_calls_shared_by_two_arms(self):
+        """The register a read takes after either call or none, its choice of epochs made of the first join's twice"""
+        self.assertEqual(hlil_categories(*mlil_and_hlil(calls_in_two_of_three_arms_function)), set())
 
     def test_merge_inside_an_operation_repeated_in_arms(self):
         """MLIL's REG = v + 1 holds the merge of the arms and the chain; each HLIL copy's holds its arm's chain"""

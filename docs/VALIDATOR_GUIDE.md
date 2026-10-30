@@ -45,7 +45,8 @@ Every category is a finding until checked, except the two marked.
 
 A difference's key names where it is: `(address, kind)` for an effect (the address is the bytecode offset of its
 instruction, as in the `.llil.asm` / `.mlil.asm` listings), `(address, 'branch')`, `(header, 'loop')` /
-`(header, 'loop continue')` for a loop, `(None, 'return')` for the function's returns. Its detail shows what each side
+`(header, 'loop continue')` for a loop, `(header, storage)` for a value a loop carries (the registers a call left as
+one, `(header, ('epoch', 'register'))`), `(None, 'return')` for the function's returns. Its detail shows what each side
 has there, cut.
 
 ## Known findings (the full corpus, 2026-10-29)

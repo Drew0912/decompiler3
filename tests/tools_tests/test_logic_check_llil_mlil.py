@@ -15,8 +15,8 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
-    MediumLevelILCall, MLILAdd, MLILCall, MLILConst, MLILGe, MLILIf, MLILLoadGlobal, MLILLogicalNot, MLILLt, MLILRet,
-    MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILVar, map_operands, walk,
+    MediumLevelILCall, MLILAdd, MLILCall, MLILConst, MLILGe, MLILIf, MLILLoadGlobal, MLILLoadReg, MLILLogicalNot,
+    MLILLt, MLILRet, MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILVar, map_operands, walk,
 )
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.logic_check_functions import (
@@ -137,6 +137,50 @@ def register_loop_function() -> tuple[Asm, int]:
     return asm, 0
 
 
+def saved_register_function() -> tuple[Asm, int]:
+    """s = REG; if GLOBAL_A: callee() else: REG = REG_OUT; GLOBAL_B = REG; GLOBAL_C = s: s holds the register's value
+    from before the call"""
+    asm = Asm()
+    asm.get_reg(REG_INDEX)
+    asm.load_global(GLOBAL_A); asm.jz('other')
+    call(asm, 'back')
+    asm.jmp('join')
+    asm.label('other'); asm.push_int(REG_OUT); asm.set_reg(REG_INDEX)
+    asm.label('join'); asm.get_reg(REG_INDEX); asm.set_global(GLOBAL_B)
+    asm.load_stack(-WORD_SIZE); asm.set_global(GLOBAL_C)
+    asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 0
+
+
+def saved_register_loop_function() -> tuple[Asm, int]:
+    """s = REG; REG = REG_OUT; i = 0; while i < LOOP_LIMIT: callee(); i = i + 1; GLOBAL_B = REG; GLOBAL_C = s"""
+    asm = Asm()
+    asm.get_reg(REG_INDEX)
+    asm.push_int(REG_OUT); asm.set_reg(REG_INDEX)
+    asm.push_int(0)
+    asm.label('head'); asm.load_stack(-WORD_SIZE); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('done')
+    call(asm, 'back')
+    asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.pop_to(-WORD_SIZE)
+    asm.jmp('head')
+    asm.label('done'); asm.get_reg(REG_INDEX); asm.set_global(GLOBAL_B)
+    asm.load_stack(-2 * WORD_SIZE); asm.set_global(GLOBAL_C)
+    asm.pop(2 * WORD_SIZE); return_nothing(asm)
+    return asm, 0
+
+
+def unwritten_register_function() -> tuple[Asm, int]:
+    """s = REG; if GLOBAL_A: callee(); GLOBAL_B = REG; GLOBAL_C = s: no arm writes the register, which MLIL copies
+    into itself on the call's edge (reg5 = REG[5])"""
+    asm = Asm()
+    asm.get_reg(REG_INDEX)
+    asm.load_global(GLOBAL_A); asm.jz('join')
+    call(asm, 'back')
+    asm.label('join'); asm.get_reg(REG_INDEX); asm.set_global(GLOBAL_B)
+    asm.load_stack(-WORD_SIZE); asm.set_global(GLOBAL_C)
+    asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 0
+
+
 def deep_join_function() -> tuple[Asm, int]:
     """v = DEEP_INITIAL; then PHI_DEPTH + 1 times: if GLOBAL[i]: v = DEEP_INITIAL + i + 1; GLOBAL[0] = v: the value
     stored merges more joins deep than a phi is spelled out"""
@@ -195,6 +239,13 @@ def replace_reads(mlil, old, new, start: tuple):
     for position in range(index, len(block.instructions)):
         block.instructions[position] = rewrite(
             block.instructions[position], lambda e: MLILVar(new) if isinstance(e, MLILVar) and e.var == old else e)
+
+
+def restore_register_after_the_call(mlil):
+    """REG = s after the call, s the register's value saved before it: a register read past a call as stale"""
+    saved = first(mlil, lambda inst: isinstance(inst, MLILSetVar) and isinstance(inst.value, MLILLoadReg))[2]
+    block, index, _ = first(mlil, is_call)
+    block.instructions.insert(index + 1, MLILStoreReg(REG_INDEX, MLILVar(saved.var)))
 
 
 class TestPlantedBugs(unittest.TestCase):
@@ -381,6 +432,19 @@ class TestPlantedBugs(unittest.TestCase):
         for build in (loop_function, counter_loop_function, register_loop_function):
             with self.subTest(build.__name__):
                 self.check(build, mutate, 'loop_value_differs')
+
+    def test_register_restored_after_a_call_on_one_arm(self):
+        """The arm with the call reads the register after it; the other writes it, so the join merges the two"""
+        self.check(saved_register_function, restore_register_after_the_call, 'arg_differs')
+
+    def test_register_restored_in_a_loop_after_a_call(self):
+        """The value carried round the loop is the register's after the call, which the loop entered written"""
+        self.check(saved_register_loop_function, restore_register_after_the_call, 'loop_value_differs')
+
+    def test_unwritten_register_restored_after_an_optional_call(self):
+        """No arm writes the register: the join merges the arm reading it after the call with the one reading it as it
+        came in, while MLIL copies it into itself"""
+        self.check(unwritten_register_function, restore_register_after_the_call, 'arg_differs')
 
     def test_tail_call(self):
         """The tail call compares clean with MLIL's script call and return; the call's result not returned differs"""

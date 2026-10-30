@@ -7,8 +7,8 @@ from typing import Callable
 
 from falcom.ed9.disasm.stack_effects import REGISTER_COUNT, RESULT_REGISTER
 from .facts import Effect
-from .state import ESCAPED, GLOBAL_EPOCH, MEMORY_EPOCH, State
-from .trees import tagged_leaves
+from .state import ESCAPED, GLOBAL_EPOCH, MEMORY_EPOCH, REGISTER_EPOCH, State
+from .trees import equal_trees, tagged_leaves
 
 
 class VMEffects:
@@ -23,7 +23,7 @@ class VMEffects:
         self.address_taken = set()      # the layer's own keys whose address a tree holds (address_of)
         self.neutral_key = neutral_key
         self.owners = {}                # neutral key -> the layer's own keys
-        # every register but the result: a call changes them, a return passes them on
+        # every register but the result: a return passes them on
         self.other_registers = [('reg', index) for index in range(self.REGISTER_COUNT) if index != self.RESULT_REGISTER]
 
     def address_of(self, key: tuple) -> tuple:
@@ -35,9 +35,14 @@ class VMEffects:
         return ('address', neutral)
 
     def write(self, state: State, key: tuple, value):
-        """key holds value; an address in it written to a register, or to a de-SSA split of one, escapes (escape)"""
+        """key holds value; an address in it written to a register, or to a de-SSA split of one, escapes (escape). A
+        register with no value stored, written with what a read gives (State.register), stays unstored: the de-SSA's
+        copy of a register into itself after a call (reg5 = REG[5]), which another layer does not make, so both merge
+        the register alike. A split is stored as written: the de-SSA makes no such copy under a split name"""
         if self.neutral_key(key)[0] == 'reg':
             self.escape(state, value)
+        if key[0] == 'reg' and key not in state.items and equal_trees(value, state.register(key[1])):
+            return
         state.set(key, value)
 
     def store_global(self, state: State, address: int, index: int, value) -> Effect:
@@ -60,19 +65,18 @@ class VMEffects:
 
     def call(self, state: State, address: int, kind: str, target, args: tuple, clobbers: bool = True) -> Effect:
         """A call; one that clobbers passes the locals it can reach (reachable_locals) as local_values gives them, then
-        changes every register (the result to the call's), every global, memory behind a pointer and those locals"""
+        changes every register (the result to the call's, every other read after it: REGISTER_EPOCH), every global,
+        memory behind a pointer and those locals"""
         effect = Effect(address, kind, target, args)
         if not clobbers:
             return effect
 
         pointed = self.reachable_locals(state, args)
         effect.storage = self.local_values(state, pointed)
-        after = ('after', address)
-        for key in self.other_registers:
-            state.items[key] = ('reg', key[1], after)
-        for key in [key for key in state.items if key[0] == 'global']:
+        for key in [key for key in state.items if key[0] in ('global', 'reg')]:
             del state.items[key]
         state.set(GLOBAL_EPOCH, address)
+        state.set(REGISTER_EPOCH, ('after', address))
         state.set(MEMORY_EPOCH, address)
         for key in pointed:
             state.set(key, ('slot_after', key, address))

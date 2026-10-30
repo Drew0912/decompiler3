@@ -18,7 +18,7 @@ from tests.shared.logic_check_functions import (
 )
 from tests.shared.scp_asm import Asm
 from logic_check.facts import Effect
-from logic_check.state import ESCAPED, GLOBAL_EPOCH, MEMORY_EPOCH, State
+from logic_check.state import ESCAPED, GLOBAL_EPOCH, MEMORY_EPOCH, REGISTER_EPOCH, State
 from logic_check.trees import ENTRY, const
 from logic_check.vm_effects import VMEffects
 
@@ -90,9 +90,9 @@ class TestVMEffects(unittest.TestCase):
 
     def test_call_passes_and_changes(self):
         """Passed: the locals an argument holds the address of, one whose address escaped before, one a passed local
-        points to; a never-written parameter as itself, a never-written stack slot as undefined. Then every register
-        but the result is the call's, the result its value, no global is left, memory behind pointers changes, and so
-        does every passed local"""
+        points to; a never-written parameter as itself, a never-written stack slot as undefined. Then no register or
+        global is left but the result, its value, every other register is read after the call, memory behind pointers
+        changes, and so does every passed local"""
         state = State({self.PASSED: ('address', self.POINTEE), self.ESCAPED_LOCAL: const(STORED),
                        **self.escaped(self.ESCAPED_LOCAL), self.UNREACHED: const(UNRELATED_ARG),
                        ('global', GLOBAL_A): const(OUT_INITIAL), ('reg', REG_INDEX): const(OUT_INITIAL)})
@@ -103,9 +103,8 @@ class TestVMEffects(unittest.TestCase):
                          Effect(self.ADDRESS, 'script call', MESSAGE, args, storage=passed))
 
         self.assertEqual(state.items, {
-            **{('reg', index): ('reg', index, ('after', self.ADDRESS)) for index in range(VMEffects.REGISTER_COUNT)},
             ('reg', VMEffects.RESULT_REGISTER): ('call', self.ADDRESS),
-            GLOBAL_EPOCH: self.ADDRESS, MEMORY_EPOCH: self.ADDRESS,
+            GLOBAL_EPOCH: self.ADDRESS, REGISTER_EPOCH: ('after', self.ADDRESS), MEMORY_EPOCH: self.ADDRESS,
             **{key: ('slot_after', key, self.ADDRESS) for key in passed},
             **self.escaped(self.ESCAPED_LOCAL), self.UNREACHED: const(UNRELATED_ARG)})
 

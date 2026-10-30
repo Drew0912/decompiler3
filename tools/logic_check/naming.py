@@ -86,7 +86,7 @@ class AddressNaming:
                   if predecessor in self.flow.position]
         for key in keys:
             for address, state in self.incoming(header, states, facts):
-                value = state.items.get(key, incoming_value(key, self.layer.neutral_key))
+                value = state.items.get(key, incoming_value(state, key, self.layer.neutral_key))
                 facts.loop_values[(self.joins[header], key, address)] = [(TRUE, value)]
 
 

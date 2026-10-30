@@ -7,6 +7,7 @@ from .neutral_names import Fingerprints
 from .trees import ENTRY, equal_trees, tagged_leaves
 
 GLOBAL_EPOCH = ('epoch', 'global')      # the address of the last call that may have written any global
+REGISTER_EPOCH = ('epoch', 'register')  # ('after', the last call's address): what a register with no key is read after
 MEMORY_EPOCH = ('epoch', 'memory')      # the same for memory behind a pointer
 PHI_DEPTH = 3                           # a deeper phi becomes a leaf of its join holding the phi's fingerprint
 DEEP_PHI_KEPT_LEAVES = ('loop', 'address')  # what a deep phi's leaf keeps of the phi, for the comparison to find
@@ -29,16 +30,36 @@ class State:
         self.items[key] = value
 
     def register(self, index: int) -> tuple:
-        return self.items.get(('reg', index), ('reg', index, ENTRY))
+        """The register's value: written, or read after the last call (REGISTER_EPOCH), which changed every register"""
+        found = self.items.get(('reg', index))
+        if found is not None:
+            return found
+        return register_after(index, self.items.get(REGISTER_EPOCH, ENTRY), {})
 
     def global_value(self, index: int) -> tuple:
         return self.items.get(('global', index), ('global', index, self.items.get(GLOBAL_EPOCH, ENTRY)))
 
 
+def register_after(index: int, epoch, memo: dict) -> tuple:
+    """Register index read after epoch; a gated choice of epochs is the choice of the register's values after each, as
+    a merge of the register builds it, so a choice HLIL makes where MLIL keeps two paths (a common return) is lifted
+    whole. An address-named phi of epochs stays inside the leaf: both layers build it alike, neither storing a copy a
+    read gives (VMEffects.write). Memoised by identity: a choice shares its earlier ones"""
+    if not isinstance(epoch, tuple) or epoch[0] != 'gamma':
+        return ('reg', index, epoch)
+    found = memo.get(id(epoch))
+    if found is not None:
+        return found[1]
+
+    result = ('gamma', tuple([(formula, register_after(index, value, memo)) for formula, value in epoch[1]]))
+    memo[id(epoch)] = (epoch, result)       # the epoch kept alive, so its id is not reused
+    return result
+
+
 def phi_depth(tree, memo: dict | None = None) -> int:
     """Phis nested in tree, through its operations (a gated merge is never cut); memoised by identity: a tree shares its
     subtrees, and a value merged at one join is merged again at the next (memo: a walk_forward round's)"""
-    if not isinstance(tree, tuple):     # an epoch is a plain address
+    if not isinstance(tree, tuple):     # a global or memory epoch is a plain address
         return 0
     memo = {} if memo is None else memo
     found = memo.get(id(tree))
@@ -55,11 +76,14 @@ def phi_depth(tree, memo: dict | None = None) -> int:
     return depth
 
 
-def incoming_value(key: tuple, neutral_key) -> tuple:
-    """A key's value on a path that never wrote it: a register's or a parameter's the function came in with, as a read
-    finds it (one layer may copy it, the other leave it), anything else absent"""
+def incoming_value(state: State, key: tuple, neutral_key) -> tuple:
+    """A key's value on a path that never wrote it: a register's as a read finds it on that path (State.register: as
+    the function came in, or after the path's last call), the register epoch's the entry, a parameter's the function
+    came in with (one layer may copy it, the other leave it), anything else absent"""
     if key[0] == 'reg':
-        return ('reg', key[1], ENTRY)
+        return state.register(key[1])
+    if key == REGISTER_EPOCH:
+        return ENTRY
     if key[0] == 'param':
         return key
 
@@ -83,7 +107,7 @@ def merged_value(join, key: tuple, states: list[tuple], fingerprints: Fingerprin
     fingerprint, kept leaves): its fingerprint compares it whole, and its loop leaves and addresses stay visible, so the
     loop values and pointees it reads are still compared"""
     neutral_key = fingerprints.neutral_key
-    values = [(name, state.items.get(key, incoming_value(key, neutral_key))) for name, state in states]
+    values = [(name, state.items.get(key, incoming_value(state, key, neutral_key))) for name, state in states]
     first = values[0][1]
     if all(equal_trees(value, first) for _, value in values[1:]):
         return first

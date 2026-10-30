@@ -2,7 +2,8 @@
 
 A tree is ('const', type name, value), ('op', operation name, operands), or a leaf naming what was read:
 ('param', n); ('call', address), a call's result; ('reg', n, after), ('global', n, after), ('deref', pointer, after),
-a read after a given write (`ENTRY` for none); ('slot_after', key, address), an address-taken local after a call;
+a read after a given write (`ENTRY` for none; a register's ('after', call address), a phi of those or a loop leaf of
+the register epoch, state.REGISTER_EPOCH); ('slot_after', key, address), an address-taken local after a call;
 ('phi', join, ((terminal address, value), ...)), past a depth ('deep_phi', join, key, fingerprint, kept leaves), or
 gated ('gamma', ((path condition, value), ...)), never cut (state.merged_value); ('loop', header, key), a value at a
 loop header;
