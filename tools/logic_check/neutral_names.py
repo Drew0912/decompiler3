@@ -63,7 +63,8 @@ class Fingerprints:
             choice = gated_choice(tree, self.digest, self.formula_keys)
             parts = [tag, *sorted([(key, self.digest(value)) for key, value in choice], key=repr)]
         else:
-            parts = [self.digest(item) for item in tree]
+            # an atom's bytes as digest gives them, inline: the hottest loop
+            parts = [self.digest(item) if isinstance(item, tuple) else repr(item).encode() for item in tree]
         if tag == 'gamma' and len(parts) == 2:
             digest = parts[1][1]        # one value wherever the join is reached
         else:

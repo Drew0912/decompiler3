@@ -104,7 +104,9 @@ class LLILLayer:
 
     def step(self, inst, state: State, facts: Facts) -> list[Effect]:
         address = inst.address
-        if isinstance(inst, LowLevelILStackStore):
+        if isinstance(inst, IGNORED):   # about half of all steps, so tested first
+            pass
+        elif isinstance(inst, LowLevelILStackStore):
             state.set(('stack', inst.slot_index), self.evaluate(inst.value, state))
         elif isinstance(inst, LowLevelILFrameStore):
             state.set(('param', self.param_position(inst.offset)), self.evaluate(inst.value, state))
@@ -133,7 +135,7 @@ class LLILLayer:
                                              inst.false_target.start)
         elif isinstance(inst, LowLevelILRet):
             return [self.vm.ret(state, address)]
-        elif not isinstance(inst, IGNORED):
+        else:
             raise RuntimeError(f'no LLIL rule for {type(inst).__name__}')
 
         return []

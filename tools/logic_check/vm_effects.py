@@ -24,6 +24,8 @@ class VMEffects:
         self.owners = {}                # neutral key -> the layer's own keys
         for key in address_taken:
             self.owners.setdefault(neutral_key(key), []).append(key)
+        # every register but the result: a call changes them, a return passes them on
+        self.other_registers = [('reg', index) for index in range(self.REGISTER_COUNT) if index != self.RESULT_REGISTER]
 
     def write(self, state: State, key: tuple, value):
         """key holds value; an address in it written to a register, or to a de-SSA split of one, escapes (escape)"""
@@ -58,9 +60,9 @@ class VMEffects:
 
         pointed = self.reachable_locals(state, args)
         effect.storage = self.local_values(state, pointed)
-        for index in range(self.REGISTER_COUNT):
-            if index != self.RESULT_REGISTER:
-                state.set(('reg', index), ('reg', index, ('after', address)))
+        after = ('after', address)
+        for key in self.other_registers:
+            state.items[key] = ('reg', key[1], after)
         for key in [key for key in state.items if key[0] == 'global']:
             del state.items[key]
         state.set(GLOBAL_EPOCH, address)
@@ -77,7 +79,10 @@ class VMEffects:
             state.set((ESCAPED, key), (ESCAPED,))
 
     def pointed_by(self, tree) -> list[tuple]:
-        """The address-taken locals whose address tree holds"""
+        """The address-taken locals whose address tree holds; for a layer with none (most), no tree walked"""
+        if not self.owners:
+            return []
+
         return [key for leaf in tagged_leaves(tree, 'address') for key in self.owners.get(leaf[1], ())]
 
     def reachable_locals(self, state: State, args: tuple) -> list[tuple]:
@@ -104,5 +109,4 @@ class VMEffects:
     def return_registers(self, state: State) -> tuple:
         """(key, value) of every register but the result, which the return passes on: VM state the caller can read
         after the call. A call's registers are not its inputs: no function reads a register it has not written"""
-        return tuple((('reg', index), state.register(index)) for index in range(self.REGISTER_COUNT)
-                     if index != self.RESULT_REGISTER)
+        return tuple((key, state.register(key[1])) for key in self.other_registers)

@@ -4,6 +4,7 @@ unreachable code left out), its LLIL against its MLIL and its MLIL against its H
 from pathlib import Path
 from typing import NamedTuple
 
+from dc3.gc_policy import infrequent_gc
 from dc3.utils import raise_recursion_limit
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
@@ -37,10 +38,11 @@ class FunctionResult(NamedTuple):
         return cls(name, mlil_differences, None, None, f'{stage}: {type(error).__name__}: {error}')
 
 
+@infrequent_gc()
 def check_script(path: Path, game: str | None, *, infer_types: bool = True,
                  function_name: str | None = None) -> list[FunctionResult]:
     """Each function's LLIL -> MLIL and MLIL -> HLIL differences, or function_name's alone; a script the parser rejects
-    raises"""
+    raises. Cyclic garbage collection spaced out, as for a decompile"""
     raise_recursion_limit()     # a value tree nests as deep as a chain of pushes, an eager || chain's
     only = None if function_name is None else (lambda func: func.name == function_name)
     parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False, game=game,

@@ -159,15 +159,15 @@ def compare_loop_values(reference: Facts, checked: Facts, reading: Reading, diff
 
 
 def loop_leaves_read(facts: Facts) -> set:
-    """The loop leaves facts' effects (arguments and storage) and branch conditions read"""
-    reading = set()
-    for effects in facts.effects.values():
-        for effect in effects:
-            reading.update(loop_leaves(effect.args))
-            reading.update(loop_leaves(effect.storage))
-    for branch in facts.branches.values():
-        reading.update(loop_leaves(branch.condition))
-    return reading
+    """The loop leaves facts' effects (arguments and storage) and branch conditions read, in one walk; none without
+    loop values: a loop leaf is made only for a widened key (evaluation.walk_forward), and each naming's loop_values
+    records a value for every widened key"""
+    if not facts.loop_values:
+        return set()
+
+    read = [part for effects in facts.effects.values() for effect in effects for part in (effect.args, effect.storage)]
+    read += [branch.condition for branch in facts.branches.values()]
+    return set(loop_leaves(tuple(read)))
 
 
 def edges_into_headers(facts: Facts) -> dict:

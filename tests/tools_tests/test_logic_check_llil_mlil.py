@@ -112,6 +112,18 @@ def loop_function() -> tuple[Asm, int]:
     return asm, 0
 
 
+def counter_loop_function() -> tuple[Asm, int]:
+    """i = 0; while i < LOOP_LIMIT: callee(UNRELATED_ARG); i = i + 1: only the loop's condition reads i"""
+    asm = Asm()
+    asm.push_int(0)
+    asm.label('head'); asm.load_stack(-WORD_SIZE); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('done')
+    asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.push_int(UNRELATED_ARG); asm.call(CALLEE_ID)
+    asm.label('back'); asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.pop_to(-WORD_SIZE)
+    asm.jmp('head')
+    asm.label('done'); asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
 def deep_join_function() -> tuple[Asm, int]:
     """v = DEEP_INITIAL; then PHI_DEPTH + 1 times: if GLOBAL[i]: v = DEEP_INITIAL + i + 1; GLOBAL[0] = v: the value
     stored merges more joins deep than a phi is spelled out"""
@@ -346,13 +358,16 @@ class TestPlantedBugs(unittest.TestCase):
         self.check(endless_tail_function, mutate, 'guard_differs', ENDLESS_TAIL_PARAMETERS)
 
     def test_loop_update_changed(self):
-        """i = i + 1 made i = i + 3: the value after the loop is the same leaf, the value carried round differs"""
+        """i = i + 1 made i = i + 3: the value after the loop is the same leaf, the value carried round differs; also
+        where only the loop's condition reads i"""
         def mutate(mlil):
             block, index, update = first(mlil, lambda inst: isinstance(inst, MLILSetVar)
                                          and isinstance(inst.value, MLILAdd))
             block.instructions[index] = MLILSetVar(update.var, MLILAdd(update.value.lhs, MLILConst(3))) \
                 .copy_metadata_from(update)
-        self.check(loop_function, mutate, 'loop_value_differs')
+        for build in (loop_function, counter_loop_function):
+            with self.subTest(build.__name__):
+                self.check(build, mutate, 'loop_value_differs')
 
     def test_tail_call(self):
         """The tail call compares clean with MLIL's script call and return; the call's result not returned differs"""
