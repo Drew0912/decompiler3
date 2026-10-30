@@ -11,9 +11,9 @@ from .compare import (
 )
 from .decision_diagrams import DiagramOverflow, Diagrams
 from .facts import Effect, Facts
-from .formulas import TRUE, conjunction, disjunction, literal, negation
+from .formulas import TRUE, conjunction, disjunction, literal, negation, short_logic_formula
 from .neutral_names import Fingerprints, Reading
-from .trees import SHORT_LOGIC, negation_normal_form
+from .trees import negation_normal_form
 
 RENDERED_FORMULA_CHARACTERS = 400   # a gated detail's formula, cut (render)
 
@@ -176,18 +176,6 @@ def lifted_atom(fingerprints: Fingerprints, atom: tuple, memo: dict) -> tuple:
 
     return disjunction([conjunction(lifted_formula(fingerprints, condition, memo), literal(core, atom[2]))
                         for condition, core in alternatives])
-
-
-def short_logic_formula(normal: tuple) -> tuple:
-    """A condition in negation normal form as a formula over its parts at && and ||, as FormulaKeys.split_short_logic
-    reads it"""
-    if normal[0] == 'not':
-        return negation(short_logic_formula(normal[1]))
-    if normal[0] == 'op' and normal[1] in SHORT_LOGIC:
-        items = [short_logic_formula(item) for item in normal[2]]
-        return conjunction(*items) if normal[1] == 'LOGICAL_AND' else disjunction(items)
-
-    return literal(normal, True)
 
 
 def compare_formulas(reading: GatedReading, formulas: tuple) -> str | None:

@@ -53,6 +53,18 @@ def disjunction(formulas) -> tuple:
     return items[0] if len(items) == 1 else ('or', tuple(items))
 
 
+def short_logic_formula(normal: tuple) -> tuple:
+    """A condition in negation normal form as a formula over its parts at && and || (FormulaKeys.condition_structure;
+    gated_comparison.lifted_formula lifts each part's choices)"""
+    if normal[0] == 'not':
+        return negation(short_logic_formula(normal[1]))
+    if normal[0] == 'op' and normal[1] in SHORT_LOGIC:
+        items = [short_logic_formula(item) for item in normal[2]]
+        return conjunction(*items) if normal[1] == 'LOGICAL_AND' else disjunction(items)
+
+    return literal(normal, True)
+
+
 def negation(formula, memo: dict | None = None) -> tuple:
     """formula's negation, moved to its literals (De Morgan's)"""
     memo = {} if memo is None else memo
@@ -185,20 +197,13 @@ class FormulaKeys:
         normal = negation_normal_form(core)
         if self.representative:
             normal = representative_orderings(normal)
-        result = self.split_short_logic(normal)
+        split = short_logic_formula(normal)
+        if split[0] == 'lit':           # an atom: its own structure, not split again
+            result = self.atom(split[1]) if split[2] else ('not', self.atom(split[1]))
+        else:
+            result = self.structure(split)
         self.atoms[id(core)] = (core, result)  # the core kept alive, so its id is not reused
         return result
-
-    def split_short_logic(self, normal: tuple):
-        """normal's structure over atoms at its && and || (gated_comparison.short_logic_formula splits a condition
-        alike, into a formula)"""
-        if normal[0] == 'not':
-            return ('not', self.split_short_logic(normal[1]))
-        if normal[0] == 'op' and normal[1] in SHORT_LOGIC:
-            return ('and' if normal[1] == 'LOGICAL_AND' else 'or',
-                    tuple(self.split_short_logic(item) for item in normal[2]))
-
-        return self.atom(normal)
 
     def atom(self, core: tuple):
         decided = constant_truth(core)
