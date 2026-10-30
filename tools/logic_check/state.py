@@ -78,11 +78,12 @@ def phi_depth(tree, memo: dict | None = None) -> int:
 
 def incoming_value(state: State, key: tuple, neutral_key) -> tuple:
     """A key's value on a path that never wrote it: a register's as a read finds it on that path (State.register: as
-    the function came in, or after the path's last call), the register epoch's the entry, a parameter's the function
-    came in with (one layer may copy it, the other leave it), anything else absent"""
+    the function came in, or after the path's last call), a write epoch's the entry, as a read takes it (one layer may
+    merge a path with no call where the other repeats what follows), a parameter's the function came in with (one
+    layer may copy it, the other leave it), anything else absent"""
     if key[0] == 'reg':
         return state.register(key[1])
-    if key == REGISTER_EPOCH:
+    if key[0] == 'epoch':
         return ENTRY
     if key[0] == 'param':
         return key

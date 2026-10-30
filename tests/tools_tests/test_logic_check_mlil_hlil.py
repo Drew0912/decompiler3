@@ -448,6 +448,27 @@ def calls_in_two_of_three_arms_function() -> tuple[Asm, int]:
     return asm, 0
 
 
+def region_two_conditions_share_function(pointer: bool = False) -> tuple[Asm, int]:
+    """if GLOBAL_A: (callee(); if GLOBAL_C: shared) else shared, shared: GLOBAL_D = GLOBAL_B (pointer: *arg): the region
+    two conditions share, which HLIL repeats, one copy after the call and one with none on the way in, and MLIL reads
+    after their join"""
+    asm = Asm()
+    asm.load_global(GLOBAL_A); asm.jz('shared')
+    call(asm, 'called')
+    asm.load_global(GLOBAL_C); asm.jz('end')
+    asm.label('shared')
+    if pointer:
+        asm.load_stack_deref(-WORD_SIZE)
+    else:
+        asm.load_global(GLOBAL_B)
+    asm.set_global(GLOBAL_D)
+    asm.label('end')
+    if pointer:
+        asm.pop(WORD_SIZE)
+    return_nothing(asm)
+    return asm, 0
+
+
 def arms_then_slot_chain_function(depth: int = CHAIN_LENGTH) -> tuple[Asm, int]:
     """v = ARM_VALUE if GLOBAL_A else OTHER_ARM_VALUE; depth times: if GLOBAL[CHAIN_GLOBAL + i]: v = i + 1;
     REG = v + 1; return: the merge inside an operation"""
@@ -1253,6 +1274,22 @@ class TestHLILStructures(unittest.TestCase):
     def test_register_read_after_a_choice_of_calls_shared_by_two_arms(self):
         """The register a read takes after either call or none, its choice of epochs made of the first join's twice"""
         self.assertEqual(hlil_categories(*mlil_and_hlil(calls_in_two_of_three_arms_function)), set())
+
+    def test_global_read_in_a_region_repeated_after_a_call_on_one_way(self):
+        """Each copy reads the global after its own way in, the call or none; MLIL after the join, whose global epoch
+        the way with none comes in with as a read takes it"""
+        self.assert_repeated_region_clean(*mlil_and_hlil(region_two_conditions_share_function))
+
+    def test_pointer_read_in_a_region_repeated_after_a_call_on_one_way(self):
+        """The same for memory behind a pointer (the memory epoch)"""
+        self.assert_repeated_region_clean(*mlil_and_hlil(lambda: region_two_conditions_share_function(pointer=True),
+                                                         argc=1))
+
+    def assert_repeated_region_clean(self, mlil, hlil):
+        stores = [node for node in iter_tree(hlil.body)
+                  if isinstance(node, HLILAssign) and reads_global(node.dest, GLOBAL_D)]
+        self.assertEqual(len(stores), 2)        # the shape the test needs: the shared region in each arm
+        self.assertEqual(hlil_categories(mlil, hlil), set())
 
     def test_merge_inside_an_operation_repeated_in_arms(self):
         """MLIL's REG = v + 1 holds the merge of the arms and the chain; each HLIL copy's holds its arm's chain"""
