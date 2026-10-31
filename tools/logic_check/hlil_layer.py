@@ -122,7 +122,7 @@ def mlil_calls_by_index(mlil: MediumLevelILFunction) -> dict[int, MediumLevelILC
 
 
 class HLILLayer:
-    OWN_STORAGE_NAMES = True        # MLIL's split ranges and minted locals, kept by HLIL
+    OWN_STORAGE_NAMES = True        # MLIL's own storage (split ranges, ...), kept by HLIL
     VM_EFFECTS        = VMEffects   # the effects of its engine's VM
 
     def __init__(self, func: HighLevelILFunction, mlil: MediumLevelILFunction):
@@ -361,6 +361,7 @@ class HLILLayer:
         raise RuntimeError(f'no HLIL rule for {type(expr).__name__}')
 
     def call(self, expr, state: State, effects: list) -> tuple:
+        """The call's value, which reaches the result register only by an assignment to it (reg0 = f())"""
         args = tuple(self.evaluate(arg, state, effects) for arg in expr.args)
         if isinstance(expr, HLILSyscall):
             kind, target = 'syscall', (expr.subsystem, expr.cmd)
@@ -371,5 +372,5 @@ class HLILLayer:
 
         source = self.calls.get(expr.mlil_index)
         effects.append(self.vm.call(state, expr.address, kind, target, args,
-                                    clobbers=source is None or source.clobbers_registers))
+                                    clobbers=source is None or source.clobbers_registers, delivers_result=False))
         return ('call', expr.address)

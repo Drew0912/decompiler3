@@ -77,6 +77,16 @@ def loop_call_function() -> tuple[Asm, int]:
     return asm, 1
 
 
+def optional_call_result_function() -> tuple[Asm, int]:
+    """if GLOBAL[0]: callee(); GLOBAL_A = REG[0]: the call's result read after the join"""
+    asm = Asm()
+    asm.load_global(0); asm.jz('join')
+    call(asm, 'after')
+    asm.label('join'); asm.get_reg(0); asm.set_global(GLOBAL_A)
+    return_nothing(asm)
+    return asm, 0
+
+
 def reference_and_mlil(build, argc: int = 0) -> tuple:
     """The function's LLIL facts (taken before the conversion) and its MLIL as the decompiler makes it; argc its
     parameters"""

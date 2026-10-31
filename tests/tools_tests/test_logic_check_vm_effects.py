@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
 from ir.llil.llil import WORD_SIZE
 from tests.shared.logic_check_functions import (
-    GLOBAL_A, GLOBAL_B, MESSAGE, OUT_INITIAL, REG_INDEX, STORED, UNRELATED_ARG, categories, hlil_categories,
+    GLOBAL_A, GLOBAL_B, MESSAGE, OUT_INITIAL, REG_INDEX, STORED, UNRELATED_ARG, call, categories, hlil_categories,
     initialised_out_parameter_function, mlil_and_hlil, reference_and_mlil, return_nothing,
 )
 from tests.shared.scp_asm import Asm
@@ -30,6 +30,16 @@ def pointer_store_function() -> tuple[Asm, int]:
     asm = Asm()
     asm.push_int(STORED); asm.pop_to_deref(-WORD_SIZE)
     asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 0
+
+
+def debug_log_after_call_function() -> tuple[Asm, int]:
+    """callee(); a DEBUG_LOG; GLOBAL_A = REG[0]: a call that clobbers nothing between a call and its result's read"""
+    asm = Asm()
+    call(asm, 'after')
+    asm.push_str(MESSAGE); asm.debug_log(1)
+    asm.get_reg(0); asm.set_global(GLOBAL_A)
+    return_nothing(asm)
     return asm, 0
 
 
@@ -114,6 +124,15 @@ class TestVMEffects(unittest.TestCase):
                 self.assertEqual(self.vm.call(State(), self.ADDRESS, kind, target, ()),
                                  Effect(self.ADDRESS, kind, target, ()))
 
+    def test_call_that_does_not_deliver_its_result(self):
+        """A layer's call that writes no result register (an MLIL call with another output or none, an HLIL call)
+        leaves it uncaptured, a value no LLIL holds; the rest as a call that delivers it"""
+        state = State()
+        self.vm.call(state, self.ADDRESS, 'call', MESSAGE, (), delivers_result=False)
+        self.assertEqual(state.items, {
+            ('reg', VMEffects.RESULT_REGISTER): ('uncaptured', self.ADDRESS),
+            GLOBAL_EPOCH: self.ADDRESS, REGISTER_EPOCH: ('after', self.ADDRESS), MEMORY_EPOCH: self.ADDRESS})
+
     def test_call_that_does_not_clobber(self):
         state = State({self.PASSED: const(STORED), ('reg', REG_INDEX): const(OUT_INITIAL)})
         before = dict(state.items)
@@ -145,6 +164,12 @@ class TestLayerOperands(unittest.TestCase):
     def test_store_through_a_pointer(self):
         self.assertEqual(categories(*reference_and_mlil(pointer_store_function, 1)), set())
         self.assertEqual(hlil_categories(*mlil_and_hlil(pointer_store_function, 1)), set())
+
+    def test_result_kept_across_a_call_that_clobbers_nothing(self):
+        """callee(); a DEBUG_LOG; GLOBAL_A = REG[0]: the debug.log call, which has no output, leaves the result where
+        the call put it"""
+        self.assertEqual(categories(*reference_and_mlil(debug_log_after_call_function)), set())
+        self.assertEqual(hlil_categories(*mlil_and_hlil(debug_log_after_call_function)), set())
 
     def test_local_written_in_its_memory_form(self):
         """v = OUT_INITIAL before callee(&v): HLIL writes v as *(&v), the local, not memory behind a pointer"""

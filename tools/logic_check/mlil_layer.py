@@ -1,6 +1,8 @@
 """The MLIL side of the evaluation: a variable is the storage it stands for - a register variable the register, a
-parameter the parameter, a stack variable its slot; a live range de-SSA split off (`{base}_v{n}`) or a minted local is
-storage of its own, named like its base where a loop value needs a name on every layer"""
+parameter the parameter, a stack variable its slot; a live range de-SSA split off (`{base}_v{n}`), a variable named
+apart within its slot (a sibling scope's local, a box) or a minted local is storage of its own, named like its base
+where a loop value needs a name on every layer. A call puts its result in the result register only through its
+output, so a read of the register where the MLIL never stored the result differs from the LLIL's"""
 
 import re
 
@@ -9,7 +11,7 @@ from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILAddressOf, MLILBinaryOp, MLILCallScript, MLILConst, MLILDebug,
     MLILDeref, MLILGoto, MLILIf, MLILLoadGlobal, MLILLoadReg, MLILNop, MLILRet, MLILSetVar, MLILStoreDeref,
     MLILStoreGlobal, MLILStoreReg, MLILSyscall, MLILUnaryOp, MLILUndef, MLILVar, MLILVariable,
-    UNASSIGNED_SLOT_INDEX,
+    UNASSIGNED_SLOT_INDEX, mlil_stack_var_name,
 )
 from .facts import Branch, Effect, Facts
 from .post_dominators import back_edges
@@ -21,7 +23,7 @@ SPLIT_SUFFIX = re.compile(r'_v\d+$')
 PARAMETER_NAME = re.compile(r'^arg(\d+)$')
 STACK_NAME = re.compile(r'^var_s(\d+)$')
 IGNORED = (MLILGoto, MLILDebug, MLILNop)
-COPIES = (MLILSetVar, *IGNORED)
+COPIES = (MLILSetVar, MLILStoreReg, *IGNORED)
 
 
 class MLILStorage:
@@ -30,10 +32,10 @@ class MLILStorage:
     def __init__(self, func: MediumLevelILFunction):
         self.register_of = {var.name: index for index, var in func.register_vars.items()}
         self.parameter_of = {var.name: position for position, var in enumerate(func.parameters, 1) if var is not None}
-        self.split_base_key: dict[str, tuple] = {}  # a split range's name -> its base's key, filled as key() meets it
+        self.base_key: dict[str, tuple] = {}    # own storage's name -> its base's key, filled as key() meets it
 
     def neutral_key(self, key: tuple) -> tuple:
-        return self.split_base_key.get(key[1], key) if key[0] == 'name' else key
+        return self.base_key.get(key[1], key) if key[0] == 'name' else key
 
     def key(self, var: MLILVariable) -> tuple:
         name = var.name
@@ -44,14 +46,17 @@ class MLILStorage:
 
         split = SPLIT_SUFFIX.search(name)
         if split is not None:
-            if name not in self.split_base_key:
-                self.split_base_key[name] = self.key(MLILVariable(name[:split.start()], var.slot_index))
+            if name not in self.base_key:
+                self.base_key[name] = self.key(MLILVariable(name[:split.start()], var.slot_index))
             return ('name', name)
 
         match = PARAMETER_NAME.match(name)
         if match is not None:
             return ('param', int(match.group(1)))
         if var.slot_index != UNASSIGNED_SLOT_INDEX:
+            if name != mlil_stack_var_name(var.slot_index):    # named apart within its slot
+                self.base_key.setdefault(name, ('stack', var.slot_index))
+                return ('name', name)
             return ('stack', var.slot_index)
         match = STACK_NAME.match(name)
         if match is not None:
@@ -76,7 +81,7 @@ class MLILLayer(MLILStorage):
     jumps, line markers and nops, a loop's header aside, passes control on to where it leads (the converter skips such
     a block, so HLIL joins arms where they lead)"""
 
-    OWN_STORAGE_NAMES = True        # a split range or a minted local
+    OWN_STORAGE_NAMES = True        # a split range, a variable named apart within its slot or a minted local
     VM_EFFECTS        = VMEffects   # the effects of its engine's VM
 
     def __init__(self, func: MediumLevelILFunction, *, hlil_view: bool = False):
@@ -232,8 +237,9 @@ class MLILLayer(MLILStorage):
         else:
             kind, target = 'call', inst.target
 
+        delivers = inst.output is not None and self.key(inst.output) == ('reg', self.vm.RESULT_REGISTER)
         effect = self.vm.call(state, inst.address, kind, target, tuple(self.evaluate(arg, state) for arg in inst.args),
-                              clobbers=inst.clobbers_registers)
+                              clobbers=inst.clobbers_registers, delivers_result=delivers)
         if inst.output is not None:
             state.set(self.key(inst.output), ('call', inst.address))
         return effect

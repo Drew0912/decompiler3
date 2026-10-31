@@ -28,7 +28,8 @@ from tests.shared.hlil_cfg_utils import EARLY_EXIT, SHARED_LOOP, build_function,
 from tests.shared.ir_utils import connect
 from tests.shared.logic_check_functions import (
     GLOBAL_A, GLOBAL_B, GLOBAL_C, GLOBAL_D, LOOP_LIMIT, NESTED_TESTS, REG_INDEX, STORED, UNRELATED_ARG, branch_function,
-    call, calls_function, hlil_categories, loop_call_function, mlil_and_hlil, return_nothing, statements,
+    call, calls_function, hlil_categories, loop_call_function, mlil_and_hlil, optional_call_result_function,
+    return_nothing, statements,
 )
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm
 import logic_check
@@ -1154,6 +1155,16 @@ class TestPlantedHLILBugs(unittest.TestCase):
             hlil.body.statements = [statement for statement in hlil.body.statements
                                     if not isinstance(statement, HLILReturn)]
         self.check_built(*with_hlil(build_function('f', EARLY_EXIT)), mutate, 'guard_differs')
+
+    def test_call_result_assignment_dropped(self):
+        """reg0 = callee() in its arm made a bare call, the register read after the join: HLIL never stores the
+        result, so the read is stale"""
+        def mutate(hlil):
+            for block in [node for node in iter_tree(hlil.body) if isinstance(node, HLILBlock)]:
+                block.statements = [HLILExprStmt(statement.src)
+                                    if isinstance(statement, HLILAssign) and isinstance(statement.src, HLILCall)
+                                    else statement for statement in block.statements]
+        self.check(optional_call_result_function, mutate, 'arg_differs')
 
 
 class TestHLILStructures(unittest.TestCase):

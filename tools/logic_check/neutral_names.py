@@ -11,14 +11,16 @@ FINGERPRINT_BYTES = 16
 
 
 def neutral_leaf(tree: tuple, neutral_key) -> tuple | None:
-    """A leaf naming a layer's own storage under neutral names - a loop value, an address-taken local after a call -
-    or a deep phi's leaf as its fingerprint stands for it (its kept leaves are the layer's own); None for any other
-    tree"""
+    """A leaf naming a layer's own storage under neutral names - a loop value, an address-taken local after a call, a
+    local's address (VMEffects.address_of: its neutral key, its own left out) - or a deep phi's leaf as its fingerprint
+    stands for it (its kept leaves are the layer's own); None for any other tree"""
     tag = tree[0] if tree else None
     if tag == 'loop':
         return ('loop', tree[1], neutral_key(tree[2]))
     if tag == 'slot_after':
         return ('slot_after', neutral_key(tree[1]), tree[2])
+    if tag == 'address' and tree[2:]:
+        return tree[:2]
     if tag == 'deep_phi':
         return tree[:4]
 

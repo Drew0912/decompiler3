@@ -15,20 +15,22 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
-    MediumLevelILCall, MLILAdd, MLILCall, MLILConst, MLILGe, MLILIf, MLILLoadGlobal, MLILLoadReg, MLILLogicalNot,
-    MLILLt, MLILRet, MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILVar, map_operands, walk,
+    MediumLevelILCall, MLILAdd, MLILAddressOf, MLILCall, MLILConst, MLILGe, MLILIf, MLILLoadGlobal, MLILLoadReg,
+    MLILLogicalNot, MLILLt, MLILRet, MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILVar, MLILVariable,
+    map_operands, walk,
 )
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.logic_check_functions import (
-    GLOBAL_A, GLOBAL_B, GLOBAL_C, LOOP_LIMIT, MESSAGE, OUT_INITIAL, REG_INDEX, UNRELATED_ARG, branch_function, call,
-    calls_function, categories, first, initialised_out_parameter_function, loop_call_function, reference_and_mlil,
-    return_nothing, statements,
+    GLOBAL_A, GLOBAL_B, GLOBAL_C, LOOP_LIMIT, MESSAGE, OUT_INITIAL, REG_INDEX, STORED, UNRELATED_ARG, branch_function,
+    call, calls_function, categories, first, initialised_out_parameter_function, loop_call_function,
+    optional_call_result_function, reference_and_mlil, return_nothing, statements,
 )
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm
 import logic_check
 from logic_check.facts import Effect, Facts
 from logic_check.state import PHI_DEPTH
 from logic_check.trees import const
+from logic_check.vm_effects import VMEffects
 
 REG_OUT = 7
 DEEP_INITIAL = 1
@@ -218,6 +220,43 @@ def tail_call_function() -> tuple[Asm, int]:
     return asm, 1
 
 
+def joined_slot_function() -> tuple[Asm, int]:
+    """GLOBAL_A = 1 + (GLOBAL[0] ? 5 : 7), the joined slot read by offset: one local, written in each arm"""
+    asm = Asm()
+    asm.load_global(0); asm.jz('else')
+    asm.push_int(5); asm.jmp('join')
+    asm.label('else'); asm.push_int(7)
+    asm.label('join'); asm.push_int(1); asm.load_stack(-2 * WORD_SIZE); asm.add(); asm.set_global(GLOBAL_A)
+    asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 0
+
+
+def sibling_out_parameters_function() -> tuple[Asm, int]:
+    """v1 = OUT_INITIAL; callee(&v1); then v2 = STORED; callee(&v2): two out-parameter locals in sibling scopes, the
+    second in the slot the first's scope left"""
+    asm = Asm()
+    asm.push_int(OUT_INITIAL)
+    asm.push_raw(CALLER_ID); asm.push_raw('first'); asm.push_stack_offset(-3 * WORD_SIZE); asm.call(CALLEE_ID)
+    asm.label('first'); asm.pop(WORD_SIZE)
+    asm.push_int(STORED)
+    asm.push_raw(CALLER_ID); asm.push_raw('second'); asm.push_stack_offset(-3 * WORD_SIZE); asm.call(CALLEE_ID)
+    asm.label('second'); asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
+def register_before_loop_function() -> tuple[Asm, int]:
+    """REG = 5; i = 0; while i < LOOP_LIMIT: callee(i); i = i + 1: an entry block that only copies, before a loop"""
+    asm = Asm()
+    asm.push_int(5); asm.set_reg(REG_INDEX)
+    asm.push_int(0)
+    asm.label('head'); asm.load_stack(-WORD_SIZE); asm.push_int(LOOP_LIMIT); asm.lt(); asm.jz('done')
+    asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.load_stack(-3 * WORD_SIZE); asm.call(CALLEE_ID)
+    asm.label('back'); asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.pop_to(-WORD_SIZE)
+    asm.jmp('head')
+    asm.label('done'); asm.pop(WORD_SIZE); return_nothing(asm)
+    return asm, 1
+
+
 # === Mutations of the MLIL ===
 
 def is_debug_log(inst) -> bool:
@@ -239,6 +278,44 @@ def replace_reads(mlil, old, new, start: tuple):
     for position in range(index, len(block.instructions)):
         block.instructions[position] = rewrite(
             block.instructions[position], lambda e: MLILVar(new) if isinstance(e, MLILVar) and e.var == old else e)
+
+
+def sibling(var: MLILVariable, scope: int) -> MLILVariable:
+    """var's slot under a sibling scope's name, `var_s<slot>_<scope>`, as the stack translator names them apart"""
+    return MLILVariable(f'{var.name}_{scope}', var.slot_index)
+
+
+def write_as(entry: tuple, var: MLILVariable):
+    """The write at entry (block, index, MLILSetVar) made a write of var"""
+    block, index, inst = entry
+    block.instructions[index] = MLILSetVar(var, inst.value).copy_metadata_from(inst)
+
+
+def joined_slot_writes_and_read(mlil) -> tuple:
+    """joined_slot_function's MLIL: its two writes of the local and the statement reading it"""
+    writes = [entry for entry in statements(mlil) if isinstance(entry[2], MLILSetVar)]
+    return writes, first(mlil, lambda inst: isinstance(inst, MLILStoreGlobal))
+
+
+def out_parameters_named_apart(mlil) -> list:
+    """sibling_out_parameters_function's MLIL: each local's memory-form store and the call passed its address made
+    those of its own sibling scope (var_s<slot>_0, _1); the stores, in order"""
+    stores = [inst for _, _, inst in statements(mlil) if isinstance(inst, MLILStoreDeref)]
+    calls = [inst for _, _, inst in statements(mlil) if is_call(inst)]
+    local = stores[0].dest.operand.var
+    for scope, (store, call_inst) in enumerate(zip(stores, calls)):
+        store.dest = MLILAddressOf(MLILVar(sibling(local, scope)))
+        call_inst.args[0] = MLILAddressOf(MLILVar(sibling(local, scope)))
+    return stores
+
+
+def result_read_as_the_register(mlil):
+    """Every read of the result register's variable made a read of the register (MLILLoadReg), as the stack translator
+    writes it"""
+    result = mlil.register_vars[VMEffects.RESULT_REGISTER]
+    for block, index, inst in statements(mlil):
+        block.instructions[index] = rewrite(
+            inst, lambda e: MLILLoadReg(VMEffects.RESULT_REGISTER) if isinstance(e, MLILVar) and e.var == result else e)
 
 
 def restore_register_after_the_call(mlil):
@@ -468,6 +545,65 @@ class TestPlantedBugs(unittest.TestCase):
                 reference, mlil = reference_and_mlil(build)
                 mutate(mlil)
                 self.assertEqual(categories(reference, mlil), {'condition_ordering_inverted'})
+
+    def test_sibling_read_from_the_other_scope(self):
+        """The joined slot's two writes named apart as sibling scopes, the read given one arm's name (an arbitrary push
+        picked at a join): the other arm's value never reaches it"""
+        def mutate(mlil):
+            (then_write, else_write), read = joined_slot_writes_and_read(mlil)
+            local = then_write[2].var
+            write_as(then_write, sibling(local, 1))
+            write_as(else_write, sibling(local, 0))
+            replace_reads(mlil, local, sibling(local, 0), read)
+        self.check(joined_slot_function, mutate, 'arg_differs')
+
+    def test_address_taken_sibling_value_changed(self):
+        """Two out-parameter locals named apart in one slot, the second's stored value changed: the call passed its
+        address reaches it, with the changed value"""
+        def mutate(mlil):
+            second = out_parameters_named_apart(mlil)[1]
+            second.value = MLILConst(UNRELATED_ARG)
+        self.check(sibling_out_parameters_function, mutate, 'arg_differs')
+
+    def test_call_result_never_captured(self):
+        """The call kept without its output, its result read after the join as the register: no MLIL write puts the
+        result there, so a printed REGS[0] would be stale"""
+        def mutate(mlil):
+            first(mlil, is_call)[2].output = None
+            result_read_as_the_register(mlil)
+        self.check(optional_call_result_function, mutate, 'arg_differs')
+
+
+class TestTranslatorShapes(unittest.TestCase):
+    """MLIL in shapes the symbolic-stack translator gives (IR rewrite part 2), planted in today's MLIL: the check reads
+    them as the LLIL's storage"""
+
+    def test_sibling_scopes_named_apart(self):
+        """The joined slot's writes and read all named as one sibling scope's local: storage of its own, read where it
+        was written"""
+        reference, mlil = reference_and_mlil(joined_slot_function)
+        writes, read = joined_slot_writes_and_read(mlil)
+        local = writes[0][2].var
+        for write in writes:
+            write_as(write, sibling(local, 1))
+        replace_reads(mlil, local, sibling(local, 1), read)
+        self.assertEqual(categories(reference, mlil), set())
+
+    def test_address_taken_siblings_in_one_slot(self):
+        """Two out-parameter locals named apart in one slot: one neutral key, two addresses, so each call reaches the
+        local it was passed, not both"""
+        reference, mlil = reference_and_mlil(sibling_out_parameters_function)
+        out_parameters_named_apart(mlil)
+        self.assertEqual(categories(reference, mlil), set())
+
+    def test_register_stored_before_a_loop_at_the_start(self):
+        """The entry block's register write as a register store, not today's register variable: the block still only
+        copies, so the loop's entry edge is named as the LLIL names it"""
+        reference, mlil = reference_and_mlil(register_before_loop_function)
+        registers = list(mlil.register_vars.values())
+        block, index, inst = first(mlil, lambda inst: isinstance(inst, MLILSetVar) and inst.var in registers)
+        block.instructions[index] = MLILStoreReg(REG_INDEX, inst.value).copy_metadata_from(inst)
+        self.assertEqual(categories(reference, mlil), set())
 
 
 class TestEffectValues(unittest.TestCase):

@@ -22,17 +22,14 @@ class VMEffects:
     def __init__(self, neutral_key: Callable):
         self.address_taken = set()      # the layer's own keys whose address a tree holds (address_of)
         self.neutral_key = neutral_key
-        self.owners = {}                # neutral key -> the layer's own keys
         # every register but the result: a return passes them on
         self.other_registers = [('reg', index) for index in range(self.REGISTER_COUNT) if index != self.RESULT_REGISTER]
 
     def address_of(self, key: tuple) -> tuple:
-        """The leaf holding the address of the layer's local key, which is address-taken from here on"""
-        neutral = self.neutral_key(key)
-        if key not in self.address_taken:
-            self.address_taken.add(key)
-            self.owners.setdefault(neutral, []).append(key)
-        return ('address', neutral)
+        """The leaf holding the address of the layer's local key, which is address-taken from here on: its neutral key,
+        which the comparison reads, then its own, which tells apart the locals of one slot (sibling scopes)"""
+        self.address_taken.add(key)
+        return ('address', self.neutral_key(key), key)
 
     def write(self, state: State, key: tuple, value):
         """key holds value; an address in it written to a register, or to a de-SSA split of one, escapes (escape). A
@@ -63,10 +60,13 @@ class VMEffects:
             value = state.register(self.RESULT_REGISTER)
         return Effect(address, 'return', None, (value,), storage=self.return_registers(state))
 
-    def call(self, state: State, address: int, kind: str, target, args: tuple, clobbers: bool = True) -> Effect:
+    def call(self, state: State, address: int, kind: str, target, args: tuple, clobbers: bool = True,
+             delivers_result: bool = True) -> Effect:
         """A call; one that clobbers passes the locals it can reach (reachable_locals) as local_values gives them, then
         changes every register (the result to the call's, every other read after it: REGISTER_EPOCH), every global,
-        memory behind a pointer and those locals"""
+        memory behind a pointer and those locals. Where the layer's call does not write the result register
+        (delivers_result False: an MLIL call with another output or none, every HLIL call), the register holds
+        uncaptured, a value no LLIL holds, so a read the layer never stored the result for differs"""
         effect = Effect(address, kind, target, args)
         if not clobbers:
             return effect
@@ -80,7 +80,7 @@ class VMEffects:
         state.set(MEMORY_EPOCH, address)
         for key in pointed:
             state.set(key, ('slot_after', key, address))
-        state.set(('reg', self.RESULT_REGISTER), ('call', address))
+        state.set(('reg', self.RESULT_REGISTER), ('call', address) if delivers_result else ('uncaptured', address))
         return effect
 
     def escape(self, state: State, value):
@@ -90,18 +90,19 @@ class VMEffects:
             state.set((ESCAPED, key), (ESCAPED,))
 
     def pointed_by(self, tree) -> list[tuple]:
-        """The address-taken locals whose address tree holds; for a layer with none (most), no tree walked"""
-        if not self.owners:
+        """The address-taken locals whose address tree holds, by their own keys; for a layer with none (most), no tree
+        walked"""
+        if not self.address_taken:
             return []
 
-        return [key for leaf in tagged_leaves(tree, 'address') for key in self.owners.get(leaf[1], ())]
+        return [leaf[-1] for leaf in tagged_leaves(tree, 'address') if leaf[-1] in self.address_taken]
 
     def reachable_locals(self, state: State, args: tuple) -> list[tuple]:
-        """The address-taken locals a callee can reach, by neutral key: those the arguments hold the address of and
-        those whose address escaped before (escape), then, to a fixed point, those a reached local's value holds the
-        address of (a pointer to a pointer). Not every address-taken local: its slot may hold a call's setup
-        elsewhere, after the local's scope ends. None for a layer with no address-taken local (most)"""
-        if not self.owners:
+        """The address-taken locals a callee can reach, by own key: those the arguments hold the address of and those
+        whose address escaped before (escape), then, to a fixed point, those a reached local's value holds the address
+        of (a pointer to a pointer). Not every address-taken local: its slot may hold a call's setup elsewhere, after
+        the local's scope ends. None for a layer with no address-taken local (most)"""
+        if not self.address_taken:
             return []
 
         reached = set()
@@ -112,10 +113,12 @@ class VMEffects:
                 reached.add(key)
                 pending.extend(self.pointed_by(state.items.get(key)))
 
-        return sorted(reached, key=lambda key: repr(self.neutral_key(key)))
+        return sorted(reached, key=lambda key: (repr(self.neutral_key(key)), repr(key)))
 
     def local_values(self, state: State, keys: list[tuple]) -> dict:
-        """Neutral key -> value of each local: what a callee can read behind its pointers"""
+        """Neutral key -> value of each local: what a callee can read behind its pointers. Two locals of one slot
+        reached at once keep the one sorted last: that takes a scope's address escaping before its slot is reused,
+        which real bytecode never stores (escape)"""
         return {self.neutral_key(key):
                     state.items.get(key, key if key[0] == 'param' else ('undef', self.neutral_key(key)))
                 for key in keys}

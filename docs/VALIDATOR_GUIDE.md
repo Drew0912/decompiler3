@@ -25,6 +25,13 @@ the HLIL. Each layer is evaluated over storage that means the same on every laye
 Values are compared as trees, not computed (Step A of `docs/FUTURE_WORK.md`, "Static Game-Logic Check"); conditions
 in a small normal form (`!c`, `c == 0` and `EZ c` one tree; an ordering pair by one representative).
 
+The storage: a register is the register, a parameter the parameter, a stack variable its slot; a variable named apart
+within its slot (a sibling scope's local, a box: any name but `var_s<slot>`) and a de-SSA split range are storage of
+their own. A call's result reaches the result register as the VM writes it on the LLIL, but on the MLIL only through a
+call whose output is that register or a store of the result into it (`REGS[0] = t` after `t = f()`), and on the HLIL
+only through an assignment to it, so a layer that reads the register where its own code never stored the result (a
+printed `REGS[0]` that would be stale) differs.
+
 ## Categories
 
 Every category is a finding until checked, except the two marked.
