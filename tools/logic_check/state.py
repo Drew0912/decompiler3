@@ -15,13 +15,14 @@ ESCAPED = 'escaped'                     # (ESCAPED, key) is set for a local whos
 
 
 class State:
-    __slots__ = ('items',)
+    __slots__ = ('items', 'reads')
 
-    def __init__(self, items: dict | None = None):
+    def __init__(self, items: dict | None = None, reads: dict | None = None):
         self.items = dict(items) if items else {}
+        self.reads = {} if reads is None else reads     # the registers read after a choice of epochs, one analysis's
 
     def copy(self) -> State:
-        return State(self.items)
+        return State(self.items, self.reads)
 
     def get(self, key: tuple, default):
         return self.items.get(key, default)
@@ -34,7 +35,7 @@ class State:
         found = self.items.get(('reg', index))
         if found is not None:
             return found
-        return register_after(index, self.items.get(REGISTER_EPOCH, ENTRY), {})
+        return register_after(index, self.items.get(REGISTER_EPOCH, ENTRY), self.reads)
 
     def global_value(self, index: int) -> tuple:
         return self.items.get(('global', index), ('global', index, self.items.get(GLOBAL_EPOCH, ENTRY)))
@@ -44,15 +45,17 @@ def register_after(index: int, epoch, memo: dict) -> tuple:
     """Register index read after epoch; a gated choice of epochs is the choice of the register's values after each, as
     a merge of the register builds it, so a choice HLIL makes where MLIL keeps two paths (a common return) is lifted
     whole. An address-named phi of epochs stays inside the leaf: both layers build it alike, neither storing a copy a
-    read gives (VMEffects.write). Memoised by identity: a choice shares its earlier ones"""
+    read gives (VMEffects.write). Memoised by the epoch's identity and the index, for the whole analysis
+    (State.reads): every read after one choice is one tree, and a choice shares its earlier ones, so the digests built
+    of it are shared too"""
     if not isinstance(epoch, tuple) or epoch[0] != 'gamma':
         return ('reg', index, epoch)
-    found = memo.get(id(epoch))
+    found = memo.get((id(epoch), index))
     if found is not None:
         return found[1]
 
     result = ('gamma', tuple([(formula, register_after(index, value, memo)) for formula, value in epoch[1]]))
-    memo[id(epoch)] = (epoch, result)       # the epoch kept alive, so its id is not reused
+    memo[(id(epoch), index)] = (epoch, result)      # the epoch kept alive, so its id is not reused
     return result
 
 
@@ -77,12 +80,14 @@ def phi_depth(tree, memo: dict | None = None) -> int:
 
 
 def incoming_value(state: State, key: tuple, neutral_key) -> tuple:
-    """A key's value on a path that never wrote it: a register's as a read finds it on that path (State.register: as
-    the function came in, or after the path's last call), a write epoch's the entry, as a read takes it (one layer may
-    merge a path with no call where the other repeats what follows), a parameter's the function came in with (one
-    layer may copy it, the other leave it), anything else absent"""
+    """A key's value on a path that never wrote it: a register's or a global's as a read finds it on that path
+    (State.register, State.global_value: as the function came in, or after the path's last call), a write epoch's the
+    entry, as a read takes it (one layer may merge a path where the other repeats what follows), a parameter's the
+    function came in with (one layer may copy it, the other leave it), anything else absent"""
     if key[0] == 'reg':
         return state.register(key[1])
+    if key[0] == 'global':
+        return state.global_value(key[1])
     if key[0] == 'epoch':
         return ENTRY
     if key[0] == 'param':
@@ -94,7 +99,7 @@ def incoming_value(state: State, key: tuple, neutral_key) -> tuple:
 def merge(join, states: list[tuple], fingerprints: Fingerprints, depths: dict | None = None) -> State:
     """A join's entry state from its predecessors' (edge name, exit state), as merged_value merges each key"""
     keys = set().union(*(state.items.keys() for _, state in states))
-    merged = State()
+    merged = State(reads=states[0][1].reads)
     for key in keys:
         merged.items[key] = merged_value(join, key, states, fingerprints, depths)
     return merged

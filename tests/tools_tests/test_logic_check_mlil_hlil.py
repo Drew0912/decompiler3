@@ -448,14 +448,17 @@ def calls_in_two_of_three_arms_function() -> tuple[Asm, int]:
     return asm, 0
 
 
-def region_two_conditions_share_function(pointer: bool = False) -> tuple[Asm, int]:
-    """if GLOBAL_A: (callee(); if GLOBAL_C: shared) else shared, shared: GLOBAL_D = GLOBAL_B (pointer: *arg): the region
-    two conditions share, which HLIL repeats, one copy after the call and one with none on the way in, and MLIL reads
-    after their join"""
+def region_two_conditions_share_function(pointer: bool = False, stored: bool = False) -> tuple[Asm, int]:
+    """if GLOBAL_A: (callee(); if GLOBAL_C: shared) else (stored: GLOBAL_B = STORED); shared, shared: GLOBAL_D =
+    GLOBAL_B (pointer: *arg): the region two conditions share, which HLIL repeats, one copy after the call and one with
+    none on the way in, and MLIL reads after their join"""
     asm = Asm()
-    asm.load_global(GLOBAL_A); asm.jz('shared')
+    asm.load_global(GLOBAL_A); asm.jz('other' if stored else 'shared')
     call(asm, 'called')
     asm.load_global(GLOBAL_C); asm.jz('end')
+    if stored:
+        asm.jmp('shared')
+        asm.label('other'); asm.push_int(STORED); asm.set_global(GLOBAL_B)
     asm.label('shared')
     if pointer:
         asm.load_stack_deref(-WORD_SIZE)
@@ -1284,6 +1287,11 @@ class TestHLILStructures(unittest.TestCase):
         """The same for memory behind a pointer (the memory epoch)"""
         self.assert_repeated_region_clean(*mlil_and_hlil(lambda: region_two_conditions_share_function(pointer=True),
                                                          argc=1))
+
+    def test_global_written_on_the_other_way_into_a_region_repeated_after_a_call(self):
+        """The global the call's way in reads after the call, the other way its own write: MLIL's join merges the
+        call's way as a read finds the global there"""
+        self.assert_repeated_region_clean(*mlil_and_hlil(lambda: region_two_conditions_share_function(stored=True)))
 
     def assert_repeated_region_clean(self, mlil, hlil):
         stores = [node for node in iter_tree(hlil.body)

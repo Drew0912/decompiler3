@@ -2,12 +2,14 @@
 
 A tree is ('const', type name, value), ('op', operation name, operands), or a leaf naming what was read:
 ('param', n); ('call', address), a call's result; ('reg', n, after), ('global', n, after), ('deref', pointer, after),
-a read after a given write (`ENTRY` for none; a register's ('after', call address), a phi of those or a loop leaf of
-the register epoch, state.REGISTER_EPOCH); ('slot_after', key, address), an address-taken local after a call;
+a read after a given write (`ENTRY` for none; a register's ('after', call address), a phi or deep phi of those or a
+loop leaf of the register epoch, state.REGISTER_EPOCH, never a gated choice, which state.register_after distributes
+over the register's values); ('slot_after', key, address), an address-taken local after a call;
 ('phi', join, ((terminal address, value), ...)), past a depth ('deep_phi', join, key, fingerprint, kept leaves), or
 gated ('gamma', ((path condition, value), ...)), never cut (state.merged_value); ('loop', header, key), a value at a
 loop header;
-('undef', key); ('absent', key), storage a predecessor of a join never wrote; ('address', key); ('frame',), a call
+('undef', key); ('absent', key), a local a predecessor of a join never wrote (state.incoming_value: a register, a
+global, an epoch or a parameter comes in as a read finds it); ('address', key); ('frame',), a call
 setup constant. Leaves name a layer's own storage only where the comparison digests them under neutral names
 (neutral_names.Fingerprints), so equal digests mean the same value on every layer"""
 
