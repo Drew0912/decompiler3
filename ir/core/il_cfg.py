@@ -1,11 +1,11 @@
 """Control-flow graphs: the IL layers' block base, reverse post-order over any block type (the caller names a block's
-successors) and the Graphviz DOT writer the layers' formatters share"""
+successors), immediate dominators over such an order and the Graphviz DOT writer the layers' formatters share"""
 
 from typing import Callable, Sequence
 
 from .il_base import ILInstruction, Terminal
 
-__all__ = ['ILBasicBlock', 'reverse_post_order', 'CFGDotFormatter']
+__all__ = ['ILBasicBlock', 'reverse_post_order', 'immediate_dominators', 'CFGDotFormatter']
 
 
 class ILBasicBlock:
@@ -58,6 +58,39 @@ def reverse_post_order[Block](entry: Block, successors: Callable[[Block], Sequen
                 stack.append((succ, False))
 
     return list(reversed(postorder))
+
+
+def immediate_dominators[Block](order: Sequence[Block],
+                                predecessors: Callable[[Block], Sequence[Block]]) -> dict[Block, Block]:
+    """Each block's immediate dominator, order[0] (the root) its own, filled in order: the blocks reachable from the
+    root in reverse post-order (reverse_post_order), a predecessor outside it skipped. Cooper, Harvey and Kennedy's
+    iterative algorithm ("A Simple, Fast Dominance Algorithm", 2001), over the blocks' positions in order, so blocks
+    compare as positions, never as objects"""
+    position = {block: index for index, block in enumerate(order)}
+    dominator = {0: 0}    # position -> its immediate dominator's position, for each block processed so far
+
+    def intersect(a: int, b: int) -> int:
+        while a != b:
+            while a > b:
+                a = dominator[a]
+            while b > a:
+                b = dominator[b]
+        return a
+
+    changed = True
+    while changed:
+        changed = False
+        for index in range(1, len(order)):
+            new = None
+            for predecessor in predecessors(order[index]):
+                pred_position = position.get(predecessor)    # None outside order
+                if pred_position in dominator:               # processed already
+                    new = pred_position if new is None else intersect(pred_position, new)
+            if dominator.get(index) != new:
+                dominator[index] = new
+                changed = True
+
+    return {block: order[dominator[index]] for index, block in enumerate(order)}
 
 
 class CFGDotFormatter:

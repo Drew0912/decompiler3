@@ -15,6 +15,8 @@ from collections.abc import Container
 from dataclasses import dataclass, field
 from enum import Enum, auto
 
+from ir.core import immediate_dominators, reverse_post_order
+
 
 class RegionType(Enum):
     """Types of control flow regions"""
@@ -65,7 +67,7 @@ class StructuralAnalyzer:
         self.working_predecessors: dict[int, list[int]] = self._build_predecessors()
 
         # Dominator tree (computed once on original graph)
-        self.idom: dict[int, int | None] = {}
+        self.idom: dict[int, int] = {}
 
         # Loop information
         self.loops: dict[int, LoopInfo] = {}
@@ -103,36 +105,10 @@ class StructuralAnalyzer:
         self._reduce()
 
     def _compute_dominators(self):
-        """Compute dominator tree using iterative dataflow"""
-        all_nodes = set(range(self.num_blocks))
-        dom = {i: all_nodes.copy() for i in range(self.num_blocks)}
-        dom[0] = {0}  # Entry dominates only itself
-
-        changed = True
-        while changed:
-            changed = False
-            for node in range(self.num_blocks):
-                if node == 0:
-                    continue
-
-                preds = self.working_predecessors.get(node, [])
-                if not preds:
-                    continue
-
-                new_dom = all_nodes.copy()
-                for pred in preds:
-                    new_dom &= dom[pred]
-                new_dom.add(node)
-
-                if new_dom != dom[node]:
-                    dom[node] = new_dom
-                    changed = True
-
-        # The immediate dominator is the closest strict dominator: every other strict dominator dominates it
-        for node in range(self.num_blocks):
-            dominators = dom[node] - {node}
-            closest = (candidate for candidate in dominators if dominators - {candidate} <= dom[candidate])
-            self.idom[node] = next(closest, None)
+        """Each node's immediate dominator, the entry its own; a node unreachable from the entry gets none, so it
+        dominates nothing but itself"""
+        order = reverse_post_order(0, lambda node: self.original_successors.get(node, []))
+        self.idom = immediate_dominators(order, self.working_predecessors.__getitem__)
 
     def dominates(self, a: int, b: int) -> bool:
         """Check if a dominates b"""

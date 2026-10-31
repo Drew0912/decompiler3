@@ -1,6 +1,6 @@
 """Dominators, post-dominators and control dependence over any layer's control-flow graph
 
-Immediate dominators by Cooper, Harvey and Kennedy's iterative algorithm ("A Simple, Fast Dominance Algorithm", 2001);
+Immediate dominators by Cooper, Harvey and Kennedy's iterative algorithm (ir.core's immediate_dominators);
 post-dominators by the same on the reversed graph, rooted at a virtual EXIT; then the branches each block runs under
 (Ferrante, Ottenstein and Warren's control dependence, read off the post-dominator tree), over the whole graph or
 within one iteration of a block's innermost loop; a graph's ControlFlow builds each of them once, when first read"""
@@ -8,7 +8,7 @@ within one iteration of a block's innermost loop; a graph's ControlFlow builds e
 from typing import Callable, Hashable, Sequence
 import functools
 
-from ir.core import reverse_post_order
+from ir.core import immediate_dominators, reverse_post_order
 
 EXIT = 'exit'
 TRUE_ARM, FALSE_ARM = 't', 'f'    # an arm's polarity: the branch's true or false target
@@ -101,34 +101,6 @@ def immediate_post_dominators(blocks: Sequence, successors: Callable,
     order = reverse_post_order(EXIT, lambda node: reversed_successors[node])
     reversed_predecessors = {block: [*successors(block), *((EXIT,) if block in exits else ())] for block in blocks}
     return immediate_dominators(order, reversed_predecessors.__getitem__)
-
-
-def immediate_dominators(order: Sequence, predecessors: Callable) -> dict[Hashable, Hashable]:
-    """Each block's immediate dominator over blocks in reverse post-order from order[0], the root (its own)"""
-    number = {node: index for index, node in enumerate(order)}
-    idom = {order[0]: order[0]}
-
-    def intersect(a, b):
-        while a is not b:
-            while number[a] > number[b]:
-                a = idom[a]
-            while number[b] > number[a]:
-                b = idom[b]
-        return a
-
-    changed = True
-    while changed:
-        changed = False
-        for node in order[1:]:
-            new = None
-            for predecessor in predecessors(node):
-                if predecessor in idom:
-                    new = predecessor if new is None else intersect(predecessor, new)
-            if idom.get(node) is not new:
-                idom[node] = new
-                changed = True
-
-    return idom
 
 
 def control_dependence(blocks: Sequence, branches: Callable, ipdom: dict) -> dict[Hashable, frozenset]:

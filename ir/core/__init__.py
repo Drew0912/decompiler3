@@ -17,5 +17,6 @@ __all__ = [
     'ILOptions',
     'ILBasicBlock',
     'reverse_post_order',
+    'immediate_dominators',
     'CFGDotFormatter',
 ]

@@ -225,7 +225,8 @@ label.
 
 The generic conversion begins by deriving a CFG from each MLIL block's terminal `MLILIf`,
 `MLILGoto`, `MLILRet`, or implicit fallthrough. `StructuralAnalyzer` then computes dominators on the
-original graph, identifies natural loops from back edges whose targets dominate their sources, and
+original graph (`ir.core`'s `immediate_dominators`, which the logic check shares), identifies natural
+loops from back edges whose targets dominate their sources, and
 performs iterative region reduction in this priority order: loops, conditionals, then linear
 sequences.
 
