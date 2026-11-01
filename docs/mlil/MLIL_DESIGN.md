@@ -278,6 +278,11 @@ pre-pass finds which push each slot holds and how each push is read. Translation
 - **Locals:** a push becomes a local when it is read by offset, written in place or address-taken, when it is never
   read and is no call's setup (a declared slot, kept), or when it is read twice. Locals are named per declaring
   push: `var_s<slot>`, then `var_s<slot>_<n>` for sibling scopes in one slot.
+- **Boxes:** the pushes that may hold a slot where control enters a block other than the entry or a call's
+  continuation (two pushes meeting at a join, or one pending value) share one local, named for the box's first push,
+  and each push stores it where the VM does: `x = c ? 5 : 7` built with branches is `var_s0 = 5` / `var_s0 = 7`, then
+  a read of `var_s0`. The VM changes a slot below `sp` only in place, so no copy is made on an edge. A call's setup
+  crosses a block entry as it is (it holds no value).
 - **Address-taken variables:** an address-taken local (per declaring push: a sibling local in its slot, or a value
   pushed there, stays plain) or parameter (for the whole function) is read and written in memory form, through its
   address: `*(&v)` and `*(&v) = value`, the SSA path's shapes, which the printers fold back to `v`. A call's result
@@ -301,11 +306,10 @@ pre-pass finds which push each slot holds and how each push is read. Translation
 Shaping passes (dropping a dead result store, returning a stored value directly) come after the translator, each
 exact and removable.
 
-**Not translated yet:** a function with a value pending where control reaches a block other than its call's
-continuation, a block entry slot two pushes may hold, or an address of a slot no push holds (ED9's lifter refuses
-such an address first). These raise
-`UnsupportedStackShape`, as does, on ED9, a call frame value read as data (a hand edit reading a slot of a call's
-setup, `PUSH_CALLER_FRAME`'s or `PUSH_CURRENT_FUNC_ID`'s: no MLIL node holds the VM's frame values).
+**Not translated yet:** a function with a call's setup and a value in one slot at a block entry (ED9's disassembler
+refuses such a call first), or an address of a slot no push holds (ED9's lifter refuses such an address first).
+These raise `UnsupportedStackShape`, as does, on ED9, a call frame value read as data (a hand edit reading a slot of
+a call's setup, `PUSH_CALLER_FRAME`'s or `PUSH_CURRENT_FUNC_ID`'s: no MLIL node holds the VM's frame values).
 
 **Counts:** the translator records the shapes it meets in the function's `translation_counts` (a `Counter`, empty
 from the SSA path), which the corpus runs of IR rewrite part 2 compare with the side-effect census. Nothing prints
@@ -317,7 +321,8 @@ them, and the rewrite removes them after its last such run. The keys:
 - `push never read` (no consumer, no read or write by offset, no address taken, no call's setup) and
   `push read twice`, both locals;
 - `store above sp`: a store into a dead slot (a `POP_TO` above `sp`);
-- `sibling slots` and `sibling locals`: the slots holding two or more locals, and those locals;
+- `sibling slots` and `sibling locals`: the slots holding two or more locals, and those locals (a box's pushes one);
+- `box`: each box (none on real scripts, as the census found no value crossing a block entry);
 - `unwritten register read`: a register read that some way reaches with no store to the register since the entry
   or since a call that clobbers (a dataflow over the translator's MLIL).
 

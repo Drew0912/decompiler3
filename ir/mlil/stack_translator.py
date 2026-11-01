@@ -3,11 +3,12 @@ sp_in, each stack access's slot_index, the SpAdds), never the bytecode.
 
 A pushed value stays a pending expression on a pile and folds into the statement or expression that consumes it.
 A push becomes a named local when its slot is read by offset, written in place or has its address taken, when it is
-never consumed and is no call's setup (a declared slot, kept) and when it is consumed twice. An address-taken local
-or parameter is read and written through its address, *(&v) (memory form). Before a statement that writes storage,
-every pending leaf the write may change is copied into a fresh temporary, so each pending expression keeps the value
-it had when pushed. A call's continuation (the call's return target, reached from the call alone) is translated into
-the call's own MLIL block, the pile carried over.
+never consumed and is no call's setup (a declared slot, kept) and when it is consumed twice. The pushes that may hold
+a slot where control enters another block (a box) share one local, each push storing it as the VM does. An
+address-taken local or parameter is read and written through its address, *(&v) (memory form). Before a statement
+that writes storage, every pending leaf the write may change is copied into a fresh temporary, so each pending
+expression keeps the value it had when pushed. A call's continuation (the call's return target, reached from the call
+alone) is translated into the call's own MLIL block, the pile carried over.
 
 The canonical form: every register is storage (MLILLoadReg / MLILStoreReg); a call with a result writes it to the
 result register through a temporary (t = f(); REG[r] = t); a return reads the result register (return REG[r]); a
@@ -40,9 +41,8 @@ __all__ = ['StackTranslator', 'StackTranslatorPass', 'UnsupportedStackShape']
 
 
 class UnsupportedStackShape(NotImplementedError):
-    """A stack shape the translator does not translate yet: a value pending where control reaches a block other than
-    its call's continuation, a block entry slot two pushes may hold, an address of a slot no push holds, or a shape a
-    VM's subclass refuses"""
+    """A stack shape the translator does not translate yet: a call's setup and a value in one slot at a block entry,
+    an address of a slot no push holds, or a shape a VM's subclass refuses"""
 
 
 @dataclass(eq=False)
@@ -55,11 +55,13 @@ class Push:
     written_in_place: bool = False
     address_taken: bool = False
     setup: bool = False                                                 # never consumed, removed by a call's cleanup
+    boxed: bool = False                                                 # may hold its slot where a block is entered
     variable: MLILVariable | None = None                                # a local's, named by the pre-pass
 
     @property
     def is_local(self) -> bool:
-        if self.read_by_offset or self.written_in_place or self.address_taken or len(self.consumers) > 1:
+        if (self.read_by_offset or self.written_in_place or self.address_taken or self.boxed
+                or len(self.consumers) > 1):
             return True
 
         return not self.consumers and not self.setup     # a declared slot nothing reads
@@ -105,6 +107,7 @@ class StackTranslator:
         self.entry_pushes: dict[LowLevelILBasicBlock, dict[int, set[Push]]] = {}
         self.continuations: set[LowLevelILBasicBlock] = set()
         self.refusals: list[str] = []
+        self.boxes: dict[Push, set[Push]] = {}              # each boxed push -> the pushes sharing its variable
         self.address_taken_parameters: set[int] = set()     # the frame offsets whose address is taken
         self.memory_vars: set[MLILVariable] = set()         # the address-taken locals and parameters, read as *(&v)
         self.block_map: dict[LowLevelILBasicBlock, MediumLevelILBasicBlock] = {}
@@ -128,8 +131,7 @@ class StackTranslator:
 
         for block in blocks:
             self.builder.set_current_block(self.block_map[block])
-            self.pile = {slot: PileEntry(var=next(iter(pushes)).variable)
-                         for slot, pushes in self.entry_pushes[block].items()}
+            self.pile = {slot: self.held_entry(pushes) for slot, pushes in self.entry_pushes[block].items()}
             current = block
             while current is not None:
                 current = self.translate_block(current)
@@ -137,6 +139,12 @@ class StackTranslator:
         function = self.builder.finalize()
         self.count_unwritten_register_reads(function)
         return function
+
+    @classmethod
+    def held_entry(cls, pushes: set[Push]) -> PileEntry:
+        """A slot at a block entry: the one local or box its pushes share, or (none) a call's setup"""
+        (var,) = {push.variable for push in pushes}
+        return PileEntry(var=var)
 
     # === The pre-pass: which push each slot holds, and how each push is read ===
 
@@ -156,6 +164,7 @@ class StackTranslator:
                 elif self.merge(current, incoming):
                     pending.append(successor)
 
+        self.find_boxes()
         self.name_locals()
         self.find_memory_vars()
         self.check_shapes()
@@ -228,21 +237,54 @@ class StackTranslator:
 
         return holding
 
+    def find_boxes(self):
+        """A box: the pushes that may hold a slot where control enters a block other than the entry or a call's
+        continuation, unless that is one local; they share one variable, each push storing it as the VM does. A call's
+        setup crosses as it is (no value)"""
+        for block, holding in self.entry_pushes.items():
+            if block is self.entry or block in self.continuations:
+                continue
+            for pushes in holding.values():
+                if all(push.setup for push in pushes):
+                    continue
+                if any(push.setup for push in pushes):
+                    self.refuse("a call's setup and a value in one slot at a block entry")
+                elif len(pushes) > 1 or not next(iter(pushes)).is_local:
+                    self.join_box(pushes)
+        if self.boxes:
+            self.count('box', len({id(box) for box in self.boxes.values()}))
+
+    def join_box(self, pushes: set[Push]):
+        """pushes into one box, with the boxes any of them is in already"""
+        box = set(pushes).union(*(self.boxes.get(push, ()) for push in pushes))
+        for push in box:
+            push.boxed = True
+            self.boxes[push] = box
+
     def name_locals(self):
-        """Each local per declaring push: the slot's first in address order var_s<slot>, the n-th var_s<slot>_<n>"""
+        """Each local per declaring push, a box's pushes sharing one: the slot's first in address order var_s<slot>,
+        the n-th var_s<slot>_<n>"""
         by_slot: dict[int, list[Push]] = {}
         for push in self.pushes.values():
             if push.is_local:
                 by_slot.setdefault(push.store.slot_index, []).append(push)
 
+        def order(push: Push) -> tuple[int, int]:
+            return push.store.address, push.store.inst_index
+
         for slot, pushes in by_slot.items():
-            pushes.sort(key=lambda push: (push.store.address, push.store.inst_index))
-            for n, push in enumerate(pushes):
-                name = mlil_stack_var_name(slot) if n == 0 else f'{mlil_stack_var_name(slot)}_{n}'
-                push.variable = self.builder.get_or_create_local(name, slot)
-            if len(pushes) > 1:
+            pushes.sort(key=order)
+            variables: dict[Push, MLILVariable] = {}        # by the first push of each local or box
+            for push in pushes:
+                first = min(self.boxes.get(push, {push}), key=order)
+                if first not in variables:
+                    n = len(variables)
+                    name = mlil_stack_var_name(slot) if n == 0 else f'{mlil_stack_var_name(slot)}_{n}'
+                    variables[first] = self.builder.get_or_create_local(name, slot)
+                push.variable = variables[first]
+            if len(variables) > 1:
                 self.count('sibling slots')
-                self.count('sibling locals', len(pushes))
+                self.count('sibling locals', len(variables))
 
     def find_memory_vars(self):
         """The variables read and written in memory form: each address-taken push's local, and each address-taken
@@ -251,16 +293,7 @@ class StackTranslator:
         self.memory_vars |= {self.parameter_var(offset) for offset in self.address_taken_parameters}
 
     def check_shapes(self):
-        """Values cross only a call's return split: at any other block entry, a slot held by one local"""
-        for block, holding in self.entry_pushes.items():
-            if block is self.entry or block in self.continuations:
-                continue
-            for pushes in holding.values():
-                if len(pushes) > 1:
-                    self.refuse('a block entry slot two pushes may hold')
-                elif not next(iter(pushes)).is_local:
-                    self.refuse('a value or call setup pending at a block boundary')
-
+        """The refusals the pre-pass met, raised together"""
         if self.refusals:
             raise UnsupportedStackShape(f'{self.llil_func.name}: {", ".join(dict.fromkeys(self.refusals))}')
 

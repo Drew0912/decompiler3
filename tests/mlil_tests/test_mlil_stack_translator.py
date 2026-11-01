@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """The symbolic-stack translator (ir/mlil/stack_translator.py, falcom/ed9/ir/mlil/stack_translator.py) on assembled
 functions: the MLIL where the shape is the point, the logic check's two pairs clean and every temporary assigned once
-and read only after that in its own block, for every case; address-taken variables in memory form; the refusals"""
+and read only after that in its own block and every local or box read only after its store, for every case;
+address-taken variables in memory form; boxes; the refusals"""
 
 from collections import Counter
 from pathlib import Path
@@ -17,12 +18,13 @@ from codegen import generate_typescript
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil, convert_falcom_llil_to_mlil_stack
+from ir.core import reverse_post_order
 from ir.llil.llil import LowLevelILAdd, LowLevelILStackStore, WORD_SIZE
 from ir.mlil.mlil import (
-    MediumLevelILCall, MLILAdd, MLILAnd, MLILCallScript, MLILConst, MLILDebug, MLILSetVar, MLILVar,
-    UNASSIGNED_INST_INDEX, walk,
+    MediumLevelILCall, MLILAdd, MLILAddressOf, MLILAnd, MLILCallScript, MLILConst, MLILDebug, MLILSetVar,
+    MLILStoreDeref, MLILVar, UNASSIGNED_INST_INDEX, UNASSIGNED_SLOT_INDEX, walk,
 )
-from ir.mlil.stack_translator import UnsupportedStackShape
+from ir.mlil.stack_translator import StackTranslator, UnsupportedStackShape
 from tests.shared.llil_utils import lift_asm
 from tests.shared.logic_check_functions import (
     GLOBAL_A, GLOBAL_B, GLOBAL_D, MESSAGE, OUT_INITIAL, REG_INDEX, branch_function, call,
@@ -69,6 +71,64 @@ def temporaries_misused(mlil) -> list[str]:
     return problems
 
 
+def stored_variable(inst):
+    """The variable a statement stores: a SetVar's, a call's output, v of *(&v) = value"""
+    if isinstance(inst, MLILStoreDeref) and isinstance(inst.dest, MLILAddressOf):
+        return inst.dest.operand.var if isinstance(inst.dest.operand, MLILVar) else None
+    return written_by(inst)
+
+
+def variables_read(inst) -> list:
+    """The variables a statement reads: each MLILVar but an address's (&v reads nothing), v of each *(&v)"""
+    found = []
+    for operand in inst.operands():
+        nodes = list(walk(operand))
+        addressed = {id(node.operand) for node in nodes if isinstance(node, MLILAddressOf)}
+        for node in nodes:
+            if isinstance(node, MLILVar) and id(node) not in addressed:
+                found.append(node.var)
+            elif (var := StackTranslator.memory_form_var(node)) is not None:
+                found.append(var)
+    return found
+
+
+def reads_before_definition(mlil) -> list[str]:
+    """The translator's invariant for locals and boxes: each read reached only from a store to the variable; the reads
+    some way from the entry reaches with no store since (a must-written dataflow over the blocks; G3's harness runs it
+    on every function too)"""
+    entry = mlil.basic_blocks[0]
+    order = reverse_post_order(entry, lambda block: block.outgoing_edges)
+    exits = {}
+
+    def stored_at_entry(block) -> frozenset:
+        # A predecessor not reached yet in the iteration counts as storing every variable
+        known = [exits[predecessor] for predecessor in block.incoming_edges if predecessor in exits]
+        return frozenset.intersection(*known) if block is not entry and known else frozenset()
+
+    def through(block, stored: frozenset, problems: list[str] | None = None) -> frozenset:
+        for inst in block.instructions:
+            if problems is not None:
+                problems += [f'{var.name} read in {inst}' for var in variables_read(inst)
+                             if var.slot_index != UNASSIGNED_SLOT_INDEX and var not in stored]
+            if (var := stored_variable(inst)) is not None:
+                stored |= {var}
+        return stored
+
+    changed = True
+    while changed:
+        changed = False
+        for block in order:
+            stored = through(block, stored_at_entry(block))
+            if exits.get(block) != stored:
+                exits[block] = stored
+                changed = True
+
+    problems = []
+    for block in order:
+        through(block, stored_at_entry(block), problems)
+    return problems
+
+
 def statements(mlil) -> list[str]:
     return [str(inst) for block in mlil.basic_blocks for inst in block.instructions]
 
@@ -93,11 +153,13 @@ def call_with_address(asm: Asm, label: str, offset: int):
 
 class StackTranslatorTestCase(unittest.TestCase):
     def translate(self, asm: Asm, argc: int = 0, callee_argc: int = 0):
-        """asm's MLIL through the new path, after checking it: both pairs clean, the temporaries' invariant"""
+        """asm's MLIL through the new path, after checking it: both pairs clean, the temporaries' invariant, every
+        local or box read reached only from its store"""
         _, llil = lift_asm(asm, argc=argc, others=(returning_callee(callee_argc),))
         reference = logic_check.analyze(logic_check.LLILLayer(llil))
         mlil = convert_falcom_llil_to_mlil_stack(llil)
         self.assertEqual(temporaries_misused(mlil), [])
+        self.assertEqual(reads_before_definition(mlil), [])
         llil_mlil = logic_check.compare_facts(reference, logic_check.analyze(logic_check.MLILLayer(mlil)))
         self.assertEqual({difference.category for difference in llil_mlil}, set(), 'LLIL -> MLIL')
         mlil_hlil = logic_check.compare_mlil_hlil(mlil, convert_falcom_mlil_to_hlil(mlil))
@@ -461,6 +523,185 @@ class TestAddressTaken(StackTranslatorTestCase):
         ])
 
 
+def branch_on_global(asm: Asm, label: str):
+    """if GLOBAL[0] == 0 goto label"""
+    asm.load_global(0); asm.jz(label)
+
+
+def store_global_b(asm: Asm):
+    """GLOBAL_B = 1: an arm's statement, leaving the stack as it was"""
+    asm.push_int(1); asm.set_global(GLOBAL_B)
+
+
+def two_pushes_meeting(asm: Asm):
+    """5 or 7 pushed into slot 0 on the two ways of a fork, meeting at the label 'join'"""
+    branch_on_global(asm, 'else'); asm.push_int(5); asm.jmp('join')
+    asm.label('else'); asm.push_int(7)
+    asm.label('join')
+
+
+class TestBoxes(StackTranslatorTestCase):
+    """The pushes that may hold a slot where control enters a block (other than a call's continuation) share one
+    variable, each push storing it where the VM does"""
+
+    def assertBoxed(self, mlil, *expected: str, boxes: int = 1):
+        body = statements(mlil)
+        for statement in expected:
+            self.assertIn(statement, body)
+        self.assertEqual(mlil.translation_counts['box'], boxes)
+        self.assertEqual([name for name in mlil.locals if name.startswith('var_s')], ['var_s0'])
+
+    def test_a_value_across_a_fork(self):
+        asm = Asm()
+        asm.push_int(5)
+        branch_on_global(asm, 'skip'); store_global_b(asm)
+        asm.label('skip'); asm.set_global(GLOBAL_A)
+        return_nothing(asm)
+        mlil = self.translate(asm)
+
+        self.assertEqual(statements(mlil)[0], 'var_s0 = 5')
+        self.assertBoxed(mlil, f'GLOBAL[{GLOBAL_A}] = var_s0')
+
+    def test_two_pushes_meeting_at_a_join(self):
+        """One variable both ways, consumed or read by offset after the join (the part-1 prototype picked one push's)"""
+        reads = {
+            'consumed':     lambda asm: asm.set_global(GLOBAL_A),
+            'by offset':    lambda asm: (asm.load_stack(-WORD_SIZE), asm.set_global(GLOBAL_A), asm.pop(WORD_SIZE)),
+        }
+        for name, read in reads.items():
+            with self.subTest(read=name):
+                asm = Asm()
+                two_pushes_meeting(asm); read(asm)
+                return_nothing(asm)
+                mlil = self.translate(asm)
+
+                self.assertBoxed(mlil, 'var_s0 = 5', 'var_s0 = 7', f'GLOBAL[{GLOBAL_A}] = var_s0')
+
+    def test_boxes_sharing_a_push_are_one(self):
+        """2 meets 1 at one join and 3 at another: the three pushes share one variable"""
+        asm = Asm()
+        branch_on_global(asm, 'second'); asm.push_int(1); asm.jmp('first_join')
+        asm.label('second'); asm.push_int(2); asm.load_global(1); asm.jz('second_join')
+        asm.label('first_join'); asm.set_global(GLOBAL_A); asm.push_int(3)
+        asm.label('second_join'); asm.set_global(GLOBAL_B)
+        return_nothing(asm)
+        mlil = self.translate(asm)
+
+        self.assertBoxed(mlil, 'var_s0 = 1', 'var_s0 = 2', 'var_s0 = 3', f'GLOBAL[{GLOBAL_A}] = var_s0',
+                         f'GLOBAL[{GLOBAL_B}] = var_s0')
+
+    def test_a_loop_header(self):
+        loops = {
+            # A value pushed before the loop, read after it
+            'a value pending across the loop': (lambda asm: (asm.push_int(5), asm.label('head'),
+                                                             branch_on_global(asm, 'done'), store_global_b(asm)),
+                                                ['var_s0 = 5']),
+            # The body pops the slot and pushes its next value: two pushes meet at the header
+            'a loop-carried push':             (lambda asm: (asm.push_int(0), asm.label('head'),
+                                                             branch_on_global(asm, 'done'), asm.push_int(1), asm.add()),
+                                                ['var_s0 = 0', 'var_s0 = (var_s0 + 1)']),
+        }
+        for name, (loop, expected) in loops.items():
+            with self.subTest(loop=name):
+                asm = Asm()
+                loop(asm); asm.jmp('head')
+                asm.label('done'); asm.set_global(GLOBAL_A)
+                return_nothing(asm)
+                mlil = self.translate(asm)
+
+                self.assertBoxed(mlil, *expected, f'GLOBAL[{GLOBAL_A}] = var_s0')
+
+    def test_a_box_read_by_a_call(self):
+        asm = Asm()
+        asm.push_int(5)
+        branch_on_global(asm, 'skip'); store_global_b(asm)
+        asm.label('skip'); asm.syscall(SUBSYSTEM, COMMAND, 1); asm.pop(WORD_SIZE)        # its argument read in place
+        return_nothing(asm)
+        mlil = self.translate(asm)
+
+        self.assertBoxed(mlil, 'var_s0 = 5', f't1 = syscall({SUBSYSTEM}, {COMMAND}, var_s0)')
+
+    def test_a_value_across_calls_whose_return_target_is_a_join(self):
+        asm = Asm()
+        asm.push_int(5)
+        branch_on_global(asm, 'else'); call(asm, 'then'); asm.jmp('end')
+        asm.label('else'); call(asm, 'other')
+        asm.label('end'); asm.set_global(GLOBAL_A)
+        return_nothing(asm)
+        mlil = self.translate(asm)
+
+        self.assertBoxed(mlil, 'var_s0 = 5', 't1 = callee()', 't2 = callee()', f'GLOBAL[{GLOBAL_A}] = var_s0')
+
+    def test_slots_rotated_on_a_back_edge(self):
+        """The VM rotates slots in place (POP_TO): each old value read before it is overwritten, copied where one is
+        still pending, and no box (the pushes before the loop hold the slots throughout)"""
+        rotations = {
+            # (a, b) := (b, a + b)
+            'two slots': (2, lambda asm: (asm.load_stack(-WORD_SIZE), asm.load_stack(-3 * WORD_SIZE),
+                                          asm.load_stack(-3 * WORD_SIZE), asm.add(),
+                                          asm.pop_to(-2 * WORD_SIZE), asm.pop_to(-2 * WORD_SIZE)),
+                          ['t1 = var_s1', 'var_s1 = (var_s0 + var_s1)', 'var_s0 = t1']),
+            # (a, b, c) := (b, c, a)
+            'three slots': (3, lambda asm: (asm.load_stack(-3 * WORD_SIZE), asm.load_stack(-3 * WORD_SIZE),
+                                            asm.pop_to(-4 * WORD_SIZE), asm.load_stack(-2 * WORD_SIZE),
+                                            asm.pop_to(-3 * WORD_SIZE), asm.pop_to(-WORD_SIZE)),
+                            ['t1 = var_s0', 'var_s0 = var_s1', 'var_s1 = var_s2', 'var_s2 = t1']),
+            # (a, b, c) := (b, c, c): a chain, no copy
+            'an acyclic shift': (3, lambda asm: (asm.load_stack(-2 * WORD_SIZE), asm.pop_to(-3 * WORD_SIZE),
+                                                 asm.load_stack(-WORD_SIZE), asm.pop_to(-2 * WORD_SIZE)),
+                                 ['var_s0 = var_s1', 'var_s1 = var_s2']),
+        }
+        for name, (slots, rotate, expected) in rotations.items():
+            with self.subTest(rotation=name):
+                asm = Asm()
+                for value in range(slots):
+                    asm.push_int(value)
+                asm.label('head'); branch_on_global(asm, 'done')
+                rotate(asm); asm.jmp('head')
+                asm.label('done'); asm.pop(slots * WORD_SIZE)
+                return_nothing(asm)
+                mlil = self.translate(asm)
+
+                body = statements(mlil)
+                start = body.index(expected[0])
+                self.assertEqual(body[start:start + len(expected)], expected)
+                self.assertEqual(mlil.translation_counts['box'], 0)
+
+    def test_a_consumed_argument_across_a_fork(self):
+        """A syscall's argument, read in place before the fork and popped after it: boxed like any push"""
+        asm = Asm()
+        asm.push_int(7); asm.syscall(SUBSYSTEM, COMMAND, 1)
+        branch_on_global(asm, 'skip'); store_global_b(asm)
+        asm.label('skip'); asm.pop(WORD_SIZE)
+        return_nothing(asm)
+        mlil = self.translate(asm)
+
+        self.assertEqual(statements(mlil)[:2], ['var_s0 = 7', f't1 = syscall({SUBSYSTEM}, {COMMAND}, var_s0)'])
+        self.assertBoxed(mlil)
+
+    def test_a_call_setup_across_a_fork(self):
+        """No value: it crosses as it is"""
+        asm = Asm()
+        asm.push_raw(CALLER_ID); asm.push_raw('back')
+        branch_on_global(asm, 'skip'); store_global_b(asm)
+        asm.label('skip'); asm.push_int(3); asm.call(CALLEE_ID); asm.label('back')
+        return_nothing(asm)
+        mlil = self.translate(asm, callee_argc=1)
+
+        self.assertIn('t1 = callee(3)', statements(mlil))
+        self.assertEqual(mlil.translation_counts['box'], 0)
+
+    def test_an_address_taken_box(self):
+        asm = Asm()
+        two_pushes_meeting(asm)
+        call_with_address(asm, 'back', -3 * WORD_SIZE)
+        asm.load_stack(-WORD_SIZE); asm.set_global(GLOBAL_A); asm.pop(WORD_SIZE)
+        return_nothing(asm)
+        mlil = self.translate(asm, callee_argc=1)
+
+        self.assertBoxed(mlil, '*&var_s0 = 5', '*&var_s0 = 7', 't1 = callee(&var_s0)', f'GLOBAL[{GLOBAL_A}] = *&var_s0')
+
+
 class TestResultRegister(StackTranslatorTestCase):
     """The call's result read as the register wherever it is read: the explicit store puts it there"""
 
@@ -605,22 +846,6 @@ class TestRefusals(unittest.TestCase):
         _, llil = lift_asm(asm, argc=argc, others=(returning_callee(callee_argc),))
         with self.assertRaisesRegex(UnsupportedStackShape, reason):
             convert_falcom_llil_to_mlil_stack(llil)
-
-    def test_a_value_pending_across_a_fork(self):
-        asm = Asm()
-        asm.push_int(5)
-        asm.load_global(0); asm.jz('skip'); asm.push_int(1); asm.set_global(GLOBAL_B)
-        asm.label('skip'); asm.set_global(GLOBAL_A)
-        return_nothing(asm)
-        self.assertRefused(asm, 'a value or call setup pending at a block boundary')
-
-    def test_a_join_of_two_pushes_read_by_offset(self):
-        asm = Asm()
-        asm.load_global(0); asm.jz('else'); asm.push_int(5); asm.jmp('join')
-        asm.label('else'); asm.push_int(7)
-        asm.label('join'); asm.load_stack(-WORD_SIZE); asm.set_global(GLOBAL_A); asm.pop(WORD_SIZE)
-        return_nothing(asm)
-        self.assertRefused(asm, 'a block entry slot two pushes may hold')
 
     def test_a_call_frame_value_read_as_data(self):
         for slot in range(CALLER_FRAME_SLOTS):
