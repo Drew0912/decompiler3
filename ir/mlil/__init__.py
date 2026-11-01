@@ -51,6 +51,7 @@ __all__ = [
     'SSATypeInferencePass',
     'BlockMergePass',
     'CallResultPass',
+    'ReturnValuePass',
     'RegGlobalState',
     'RegGlobalValuePropagator',
     'RegGlobalValuePropagationPass',

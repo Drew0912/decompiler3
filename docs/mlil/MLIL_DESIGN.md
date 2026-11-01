@@ -27,7 +27,7 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
 | `ir/mlil/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
 | `ir/mlil/mlil_optimizer.py` | `mlil_optimization_passes()`, the one list of passes that runs after LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
-| `ir/mlil/passes/` | The actual pass implementations (16 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_block_merge.py`, `pass_bitwise_hex.py`, `pass_call_result.py` (the stack translator's path only); SCCP, expression simplification and register/global propagation are out of the pipeline (see "LLIL → MLIL Pipeline"). |
+| `ir/mlil/passes/` | The actual pass implementations (17 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_block_merge.py`, `pass_bitwise_hex.py`, `pass_call_result.py` and `pass_return_value.py` (the stack translator's path only); SCCP, expression simplification and register/global propagation are out of the pipeline (see "LLIL → MLIL Pipeline"). |
 | `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function's blocks, variables and statements; expressions are built with the node classes. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging) and the `.mlil.dot` graphs, with the DOT writer LLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`). |
 | `ir/mlil/mlil_types.py` | Type-kind/unification support. |
@@ -267,8 +267,8 @@ member that arrives after the variable is already a variant is still recorded.
 
 ## The stack translator (not yet production)
 
-`convert_falcom_llil_to_mlil_stack()` runs `ED9StackTranslatorPass`, `BlockMergePass`, `CallResultPass` and
-`BitwiseHexPass`. It will
+`convert_falcom_llil_to_mlil_stack()` runs `ED9StackTranslatorPass`, `BlockMergePass`, `CallResultPass`,
+`ReturnValuePass` and `BitwiseHexPass`. It will
 replace the SSA path at parity (IR rewrite part 2), and the decompile path does not call it yet.
 
 The translator (`StackTranslator`, `ir/mlil/stack_translator.py`; `FalcomStackTranslator` for ED9) reads only the
@@ -313,7 +313,12 @@ Shaping passes come after the translator, each exact and removable, the canonica
   `t1 = f(); x = t1`, which HLIL folds to `x = f()`; an unused result is `f()`; a tail call returns its temporary. A
   store some later block reads is kept (none on real bytecode), and so is the script's own `SET_REG`
   (`GET_REG 0; SET_REG 0`).
-- Returning a stored value directly (`REG[0] = v; return REG[0]`) comes next.
+- **`ReturnValuePass`** (`pass_return_value.py`), on the result register: a block ending in `return REG[0]` whose
+  statement before it, line markers and nops skipped, is `REG[0] = v` returns `v`, the store gone. So
+  `t1 = f(); REG[0] = t1; return REG[0]` is `t1 = f(); return t1`, which HLIL folds to `return f()`. It reads only
+  each block's tail. A store with any other statement between it and the return is kept (the value may read what that
+  statement writes), and so are a store to another register (the return passes it on to the caller) and the stores in
+  the predecessors of a return block; none of these on real bytecode.
 
 **Not translated yet:** a function with a call's setup and a value in one slot at a block entry (ED9's disassembler
 refuses such a call first), or an address of a slot no push holds (ED9's lifter refuses such an address first).
@@ -345,7 +350,8 @@ said only one existed. `test_mlil_stack_translator.py` covers the stack translat
 also compared clean by the logic check on both pairs; `test_mlil_stack_hand_written.py` on the shapes only a hand edit
 makes, written in the LLIL DSL and compiled by the writer, through the same checks
 (`tests/shared/stack_translator_checks.py`), both on the translator's own pipeline (no shaping pass);
-`test_mlil_call_result.py` covers `CallResultPass` through the whole entry point.
+`test_mlil_call_result.py` and `test_mlil_return_value.py` cover `CallResultPass` and `ReturnValuePass` through the
+whole entry point.
 
 ## Open Items
 

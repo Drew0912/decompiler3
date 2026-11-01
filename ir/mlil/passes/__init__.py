@@ -21,6 +21,7 @@ from .pass_ssa_type_inference import SSATypeInferencePass
 # Non-SSA passes
 from .pass_block_merge import BlockMergePass
 from .pass_call_result import CallResultPass
+from .pass_return_value import ReturnValuePass
 from .pass_reg_global_propagation import (
     RegGlobalState,
     RegGlobalValuePropagator,
@@ -50,6 +51,7 @@ __all__ = [
     # Non-SSA
     'BlockMergePass',
     'CallResultPass',
+    'ReturnValuePass',
     'RegGlobalState',
     'RegGlobalValuePropagator',
     'RegGlobalValuePropagationPass',

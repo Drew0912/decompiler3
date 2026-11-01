@@ -26,7 +26,7 @@ from tests.shared.stack_translator_checks import StackTranslationTestCase, state
 
 SUBSYSTEM, COMMAND = 1, 2
 LINE = 5
-RETURNED = ['REG[0] = 0', 'return REG[0]']      # return_nothing's
+RETURNED = ['return 0']                         # return_nothing's, through ReturnValuePass
 
 
 class CallResultTestCase(StackTranslationTestCase):
@@ -174,15 +174,17 @@ class TestKeptStores(CallResultTestCase):
         self.assertIn('callee(REG[0])', statements(mlil))
 
     def test_an_authors_store_after_the_call(self):
-        """GET_REG 0; SET_REG 0 after a call is the script's own store: kept, reading the temporary, dead or not"""
+        """GET_REG 0; SET_REG 0 after a call is the script's own store: kept, reading the temporary, dead or not (a
+        global store before the return, so ReturnValuePass leaves the live one)"""
         live = Asm()
         live.frame('back'); live.push_int(3); live.call_script(1); live.label('back')
-        live.get_reg(0); live.set_reg(0); live.ret()
+        live.get_reg(0); live.set_reg(0); live.push_int(5); live.set_global(GLOBAL_A); live.ret()
         dead = Asm()
         call(dead, 'first'); dead.get_reg(0); dead.set_reg(0); call(dead, 'second')
         return_nothing(dead)
 
-        self.assertEqual(statements(self.convert(live)), ['t1 = this.g(3)', 'REG[0] = t1', 'return REG[0]'])
+        self.assertEqual(statements(self.convert(live)), ['t1 = this.g(3)', 'REG[0] = t1', f'GLOBAL[{GLOBAL_A}] = 5',
+                                                          'return REG[0]'])
         self.assertEqual(statements(self.convert(dead)), ['t1 = callee()', 'REG[0] = t1', 'callee()', *RETURNED])
 
 
