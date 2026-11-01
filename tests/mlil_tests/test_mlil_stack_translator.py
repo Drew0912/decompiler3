@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """The symbolic-stack translator (ir/mlil/stack_translator.py, falcom/ed9/ir/mlil/stack_translator.py) on assembled
 functions: the MLIL where the shape is the point, the logic check's two pairs clean and every temporary assigned once
-and read only after that in its own block, for every case; the refusals"""
+and read only after that in its own block, for every case; address-taken variables in memory form; the refusals"""
 
 from collections import Counter
 from pathlib import Path
@@ -13,6 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
+from codegen import generate_typescript
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil, convert_falcom_llil_to_mlil_stack
@@ -24,10 +25,10 @@ from ir.mlil.mlil import (
 from ir.mlil.stack_translator import UnsupportedStackShape
 from tests.shared.llil_utils import lift_asm
 from tests.shared.logic_check_functions import (
-    GLOBAL_A, GLOBAL_B, GLOBAL_D, MESSAGE, REG_INDEX, branch_function, call, initialised_out_parameter_function,
-    optional_call_result_function, return_nothing,
+    GLOBAL_A, GLOBAL_B, GLOBAL_D, MESSAGE, OUT_INITIAL, REG_INDEX, branch_function, call,
+    initialised_out_parameter_function, optional_call_result_function, return_nothing,
 )
-from tests.shared.scp_asm import Asm, returning_callee
+from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 import logic_check
 
 TEMPORARY = re.compile(r'^t\d+$')
@@ -81,6 +82,13 @@ def copies(mlil) -> list[str]:
 def write_counts(mlil) -> Counter:
     """The counts of writes with a value pending, and of their copies"""
     return Counter({key: n for key, n in mlil.translation_counts.items() if key.startswith(('pending at', 'copy at'))})
+
+
+def call_with_address(asm: Asm, label: str, offset: int):
+    """A local call of the callee given the address of STACK[sp + offset] (sp where the address is pushed, after the
+    call's two setup slots), returning at label"""
+    asm.push_raw(CALLER_ID); asm.push_raw(label); asm.push_stack_offset(offset); asm.call(CALLEE_ID)
+    asm.label(label)
 
 
 class StackTranslatorTestCase(unittest.TestCase):
@@ -324,6 +332,135 @@ class TestLocals(StackTranslatorTestCase):
         self.assertEqual(statements(mlil)[:2], ['arg1 = 5', f'GLOBAL[{GLOBAL_A}] = arg1'])
 
 
+class TestAddressTaken(StackTranslatorTestCase):
+    """An address-taken local or parameter read and written in memory form, *(&v), and the writes that may change it:
+    a call, a store to it, a store through a pointer"""
+
+    def test_an_initialised_out_parameter(self):
+        mlil = self.translate_built(initialised_out_parameter_function)
+
+        self.assertEqual(statements(mlil)[:4], [
+            f'*&var_s0 = {OUT_INITIAL}', 't1 = callee(&var_s0)', 'REG[0] = t1', 'GLOBAL[0] = *&var_s0',
+        ])
+
+    def test_a_read_pending_across_the_call_given_its_address(self):
+        asm = Asm()
+        asm.push_int(1)                                         # v, slot 0
+        asm.load_stack(-WORD_SIZE)                              # its value pending, slot 1
+        call_with_address(asm, 'back', -4 * WORD_SIZE)
+        asm.get_reg(0); asm.add(); asm.set_global(GLOBAL_A)
+        asm.pop(WORD_SIZE); return_nothing(asm)
+        mlil = self.translate(asm, callee_argc=1)
+
+        self.assertEqual(statements(mlil)[:5], [
+            '*&var_s0 = 1', 't1 = *&var_s0', 't2 = callee(&var_s0)', 'REG[0] = t2',
+            f'GLOBAL[{GLOBAL_A}] = (t1 + REG[0])',
+        ])
+        self.assertEqual(write_counts(mlil), Counter({'pending at CALL': 1, 'copy at CALL: variable': 1}))
+        ts = [line.strip() for line in generate_typescript(convert_falcom_mlil_to_hlil(mlil)).splitlines()]
+        self.assertLess(ts.index('t1 = var_s0;'), ts.index('REGS[0] = callee(addr_of(var_s0));'))
+
+    def test_a_store_to_it_with_its_read_pending(self):
+        asm = Asm()
+        asm.push_int(1); call_with_address(asm, 'back', -3 * WORD_SIZE)
+        asm.load_stack(-WORD_SIZE)                              # v's value pending, slot 1
+        asm.push_int(CHANGED); asm.pop_to(-2 * WORD_SIZE)       # v = CHANGED (the offset from sp after the pop)
+        asm.set_global(GLOBAL_A)
+        asm.pop(WORD_SIZE); return_nothing(asm)
+        mlil = self.translate(asm, callee_argc=1)
+
+        self.assertEqual(statements(mlil)[3:6], ['t2 = *&var_s0', f'*&var_s0 = {CHANGED}', f'GLOBAL[{GLOBAL_A}] = t2'])
+        self.assertEqual(write_counts(mlil),
+                         Counter({'pending at STACK_STORE': 1, 'copy at STACK_STORE: variable': 1}))
+
+    def test_an_address_taken_parameter(self):
+        asm = Asm()
+        call_with_address(asm, 'back', -3 * WORD_SIZE)          # &arg1, slot 0
+        asm.load_stack(-WORD_SIZE); asm.set_global(GLOBAL_A)
+        asm.push_int(CHANGED); asm.pop_to(-WORD_SIZE)
+        asm.pop(WORD_SIZE); return_nothing(asm)
+        mlil = self.translate(asm, argc=1, callee_argc=1)
+
+        self.assertEqual(statements(mlil)[:4], [
+            't1 = callee(&arg1)', 'REG[0] = t1', f'GLOBAL[{GLOBAL_A}] = *&arg1', f'*&arg1 = {CHANGED}',
+        ])
+
+    def test_an_address_kept_as_data(self):
+        asm = Asm()
+        asm.push_stack_offset(-WORD_SIZE); asm.set_global(GLOBAL_A); asm.pop(WORD_SIZE)
+        return_nothing(asm)
+        mlil = self.translate(asm, argc=1)
+
+        self.assertEqual(statements(mlil)[0], f'GLOBAL[{GLOBAL_A}] = &arg1')
+
+    def test_an_argument_in_the_slot_a_later_local_takes(self):
+        """The argument stays a value: memory form is per local, not per slot"""
+        asm = Asm()
+        call(asm, 'first', -1)                                  # the argument in slot 2, above the call's setup
+        asm.push_int(0); asm.push_int(0)                        # two locals, slots 0 and 1
+        asm.push_int(0)                                         # v, slot 2 too
+        call_with_address(asm, 'second', -3 * WORD_SIZE)
+        asm.load_stack(-WORD_SIZE); asm.set_global(GLOBAL_A)
+        asm.pop(3 * WORD_SIZE); return_nothing(asm)
+        mlil = self.translate(asm, callee_argc=1)
+
+        self.assertEqual(statements(mlil)[:6], [
+            't1 = callee(-1)', 'REG[0] = t1', 'var_s0 = 0', 'var_s1 = 0', '*&var_s2 = 0', 't2 = callee(&var_s2)',
+        ])
+
+    def test_sibling_locals_in_one_slot(self):
+        """Each in memory form only if its own address is taken"""
+        for both in (False, True):
+            with self.subTest(both_address_taken=both):
+                asm = Asm()
+                asm.push_int(1); call_with_address(asm, 'first', -3 * WORD_SIZE)
+                asm.load_stack(-WORD_SIZE); asm.set_global(GLOBAL_A); asm.pop(WORD_SIZE)
+                asm.push_int(2)
+                if both:
+                    call_with_address(asm, 'second', -3 * WORD_SIZE)
+                asm.load_stack(-WORD_SIZE); asm.set_global(GLOBAL_B); asm.pop(WORD_SIZE)
+                return_nothing(asm)
+                mlil = self.translate(asm, callee_argc=1)
+
+                second = (['*&var_s0_1 = 2', 't2 = callee(&var_s0_1)', 'REG[0] = t2',
+                           f'GLOBAL[{GLOBAL_B}] = *&var_s0_1'] if both
+                          else ['var_s0_1 = 2', f'GLOBAL[{GLOBAL_B}] = var_s0_1'])
+                self.assertEqual(statements(mlil)[3:-2], [f'GLOBAL[{GLOBAL_A}] = *&var_s0'] + second)
+
+    def test_a_read_pending_across_a_store_through_a_pointer(self):
+        """Copied: the pointer may be its address, once the function stores that in the pointer parameter"""
+        addresses = {
+            'passed to a call':          lambda asm: call_with_address(asm, 'back', -3 * WORD_SIZE),
+            'stored in the parameter':   lambda asm: (asm.push_stack_offset(-WORD_SIZE), asm.pop_to(-2 * WORD_SIZE)),
+        }
+        for name, take_address in addresses.items():
+            with self.subTest(address=name):
+                asm = Asm()
+                asm.push_int(1)                                 # v, slot 1 (the pointer parameter in slot 0)
+                take_address(asm)
+                asm.load_stack(-WORD_SIZE)                      # v's value pending, slot 2
+                asm.push_int(CHANGED); asm.pop_to_deref(-3 * WORD_SIZE)
+                asm.set_global(GLOBAL_A)
+                asm.pop(2 * WORD_SIZE); return_nothing(asm)
+                mlil = self.translate(asm, argc=1, callee_argc=1)
+
+                self.assertEqual(copies(mlil), ['*&var_s1'])
+                self.assertEqual(write_counts(mlil), Counter({'pending at STORE': 1, 'copy at STORE: variable': 1}))
+
+    def test_a_read_pending_across_a_call_without_its_address(self):
+        """Copied: a call may change every address-taken variable"""
+        asm = Asm()
+        asm.push_int(1); call_with_address(asm, 'first', -3 * WORD_SIZE)
+        asm.load_stack(-WORD_SIZE)                              # v's value pending, slot 1
+        call(asm, 'second', 3); asm.set_global(GLOBAL_A)
+        asm.pop(WORD_SIZE); return_nothing(asm)
+        mlil = self.translate(asm, callee_argc=1)
+
+        self.assertEqual(statements(mlil)[3:7], [
+            't2 = *&var_s0', 't3 = callee(3)', 'REG[0] = t3', f'GLOBAL[{GLOBAL_A}] = t2',
+        ])
+
+
 class TestResultRegister(StackTranslatorTestCase):
     """The call's result read as the register wherever it is read: the explicit store puts it there"""
 
@@ -468,16 +605,6 @@ class TestRefusals(unittest.TestCase):
         _, llil = lift_asm(asm, argc=argc, others=(returning_callee(callee_argc),))
         with self.assertRaisesRegex(UnsupportedStackShape, reason):
             convert_falcom_llil_to_mlil_stack(llil)
-
-    def test_an_address_taken_local(self):
-        asm, callee_argc = initialised_out_parameter_function()
-        self.assertRefused(asm, 'an address-taken local', callee_argc=callee_argc)
-
-    def test_an_address_taken_parameter(self):
-        asm = Asm()
-        asm.push_stack_offset(-WORD_SIZE); asm.set_global(GLOBAL_A); asm.pop(WORD_SIZE)
-        return_nothing(asm)
-        self.assertRefused(asm, 'an address-taken parameter', argc=1)
 
     def test_a_value_pending_across_a_fork(self):
         asm = Asm()

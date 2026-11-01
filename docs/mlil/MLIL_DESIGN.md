@@ -278,9 +278,14 @@ pre-pass finds which push each slot holds and how each push is read. Translation
 - **Locals:** a push becomes a local when it is read by offset, written in place or address-taken, when it is never
   read and is no call's setup (a declared slot, kept), or when it is read twice. Locals are named per declaring
   push: `var_s<slot>`, then `var_s<slot>_<n>` for sibling scopes in one slot.
+- **Address-taken variables:** an address-taken local (per declaring push: a sibling local in its slot, or a value
+  pushed there, stays plain) or parameter (for the whole function) is read and written in memory form, through its
+  address: `*(&v)` and `*(&v) = value`, the SSA path's shapes, which the printers fold back to `v`. A call's result
+  goes to a fresh temporary, so no call output is one.
 - **Copies before a write:** before a statement that writes storage, every pending leaf the write may change is
   copied into a fresh temporary `t<n>` (one conservative rule, `may_change`). A call may change every register,
-  global and dereference.
+  global and dereference, `*(&v)` included; a store to `v` changes `v` and `*(&v)`; a store through a pointer changes
+  every dereference, `*(&v)` included (the function may have stored `&v` in the pointer parameter).
 - **Calls:** a call's continuation (its return target, reached from the call alone) is translated into the call's
   own block, the pending values carried over.
 
@@ -296,8 +301,9 @@ pre-pass finds which push each slot holds and how each push is read. Translation
 Shaping passes (dropping a dead result store, returning a stored value directly) come after the translator, each
 exact and removable.
 
-**Not translated yet:** a function with an address-taken local or parameter, a value pending where control reaches
-a block other than its call's continuation, or a block entry slot two pushes may hold. These raise
+**Not translated yet:** a function with a value pending where control reaches a block other than its call's
+continuation, a block entry slot two pushes may hold, or an address of a slot no push holds (ED9's lifter refuses
+such an address first). These raise
 `UnsupportedStackShape`, as does, on ED9, a call frame value read as data (a hand edit reading a slot of a call's
 setup, `PUSH_CALLER_FRAME`'s or `PUSH_CURRENT_FUNC_ID`'s: no MLIL node holds the VM's frame values).
 
@@ -307,7 +313,7 @@ them, and the rewrite removes them after its last such run. The keys:
 - `pending at <S>`: a statement that writes (or ED9's `DEBUG_LOG`) with a value pending below its own operands, once
   per statement. `<S>` is its LLIL operation name, a register store's with its register (`REG_STORE 1`);
 - `copy at <S>: <leaf>`: each temporary made before a write, the leaf `register <n>`, `global`, `dereference` or
-  `variable`;
+  `variable` (an address-taken one's `*(&v)` too);
 - `push never read` (no consumer, no read or write by offset, no address taken, no call's setup) and
   `push read twice`, both locals;
 - `store above sp`: a store into a dead slot (a `POP_TO` above `sp`);

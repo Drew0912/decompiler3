@@ -3,10 +3,11 @@ sp_in, each stack access's slot_index, the SpAdds), never the bytecode.
 
 A pushed value stays a pending expression on a pile and folds into the statement or expression that consumes it.
 A push becomes a named local when its slot is read by offset, written in place or has its address taken, when it is
-never consumed and is no call's setup (a declared slot, kept) and when it is consumed twice. Before a statement that
-writes storage, every pending leaf the write may change is copied into a fresh temporary, so each pending expression
-keeps the value it had when pushed. A call's continuation (the call's return target, reached from the call alone) is
-translated into the call's own MLIL block, the pile carried over.
+never consumed and is no call's setup (a declared slot, kept) and when it is consumed twice. An address-taken local
+or parameter is read and written through its address, *(&v) (memory form). Before a statement that writes storage,
+every pending leaf the write may change is copied into a fresh temporary, so each pending expression keeps the value
+it had when pushed. A call's continuation (the call's return target, reached from the call alone) is translated into
+the call's own MLIL block, the pile carried over.
 
 The canonical form: every register is storage (MLILLoadReg / MLILStoreReg); a call with a result writes it to the
 result register through a temporary (t = f(); REG[r] = t); a return reads the result register (return REG[r]); a
@@ -39,8 +40,8 @@ __all__ = ['StackTranslator', 'StackTranslatorPass', 'UnsupportedStackShape']
 
 
 class UnsupportedStackShape(NotImplementedError):
-    """A stack shape the translator does not translate yet: an address-taken local or parameter, a value pending where
-    control reaches a block other than its call's continuation, a block entry slot two pushes may hold, or a shape a
+    """A stack shape the translator does not translate yet: a value pending where control reaches a block other than
+    its call's continuation, a block entry slot two pushes may hold, an address of a slot no push holds, or a shape a
     VM's subclass refuses"""
 
 
@@ -76,11 +77,11 @@ class PileEntry:
 class WriteKind(Enum):
     """What a statement may change, so the pending leaves it may change are copied before it"""
 
-    CALL     = auto()   # a clobbering call: every register, global and dereference
+    CALL     = auto()   # a clobbering call: every register, global and dereference, address-taken variables too
     REGISTER = auto()   # one register
     GLOBAL   = auto()   # one global
     VARIABLE = auto()   # one local or parameter
-    MEMORY   = auto()   # every dereference
+    MEMORY   = auto()   # every dereference, address-taken variables too
 
 
 class Write(NamedTuple):
@@ -104,6 +105,8 @@ class StackTranslator:
         self.entry_pushes: dict[LowLevelILBasicBlock, dict[int, set[Push]]] = {}
         self.continuations: set[LowLevelILBasicBlock] = set()
         self.refusals: list[str] = []
+        self.address_taken_parameters: set[int] = set()     # the frame offsets whose address is taken
+        self.memory_vars: set[MLILVariable] = set()         # the address-taken locals and parameters, read as *(&v)
         self.block_map: dict[LowLevelILBasicBlock, MediumLevelILBasicBlock] = {}
         self.pile: dict[int, PileEntry] = {}
         self.sp = 0
@@ -154,6 +157,7 @@ class StackTranslator:
                     pending.append(successor)
 
         self.name_locals()
+        self.find_memory_vars()
         self.check_shapes()
         self.count_pushes()
 
@@ -198,11 +202,13 @@ class StackTranslator:
                             else:
                                 push.read_by_offset = True
                     elif isinstance(node, LowLevelILStackAddr):
-                        for push in holding.get(node.slot_index, ()):
+                        holders = holding.get(node.slot_index, ())
+                        if not holders:
+                            self.refuse('an address of a slot no push holds')
+                        for push in holders:
                             push.address_taken = True
-                        self.refuse('an address-taken local')
                     elif isinstance(node, LowLevelILFrameAddr):
-                        self.refuse('an address-taken parameter')
+                        self.address_taken_parameters.add(node.offset)
 
             if isinstance(inst, LowLevelILStackStore):
                 if inst.slot_index >= sp:
@@ -237,6 +243,12 @@ class StackTranslator:
             if len(pushes) > 1:
                 self.count('sibling slots')
                 self.count('sibling locals', len(pushes))
+
+    def find_memory_vars(self):
+        """The variables read and written in memory form: each address-taken push's local, and each address-taken
+        parameter (a parameter lives the whole function)"""
+        self.memory_vars = {push.variable for push in self.pushes.values() if push.address_taken}
+        self.memory_vars |= {self.parameter_var(offset) for offset in self.address_taken_parameters}
 
     def check_shapes(self):
         """Values cross only a call's return split: at any other block entry, a slot held by one local"""
@@ -287,10 +299,7 @@ class StackTranslator:
         elif isinstance(inst, LowLevelILStackStore):
             self.translate_stack_store(inst)
         elif isinstance(inst, LowLevelILFrameStore):
-            var = self.parameter_var(inst.offset)
-            value = self.translate_expr(inst.value)
-            self.copy_out(Write(WriteKind.VARIABLE, var))
-            builder.set_var(var, value)
+            self.write_var(self.parameter_var(inst.offset), self.translate_expr(inst.value))
         elif isinstance(inst, LowLevelILStore):
             dest, value = self.translate_expr(inst.dest), self.translate_expr(inst.value)
             self.copy_out(Write(WriteKind.MEMORY))
@@ -322,19 +331,14 @@ class StackTranslator:
     def translate_stack_store(self, inst: LowLevelILStackStore):
         """A push (at or above sp): a pending entry, or a local's declaring store (kept); below sp, a local's write"""
         if inst.slot_index < self.sp:
-            var = self.pile[inst.slot_index].var
-            value = self.translate_expr(inst.value)
-            self.copy_out(Write(WriteKind.VARIABLE, var))
-            self.builder.set_var(var, value)
+            self.write_var(self.pile[inst.slot_index].var, self.translate_expr(inst.value))
             return
 
         push = self.pushes[inst]
         if inst.slot_index > self.sp:       # no push puts a value there: a store into a dead slot (a POP_TO)
             self.count('store above sp')
         if push.variable is not None:
-            value = self.translate_expr(inst.value)
-            self.copy_out(Write(WriteKind.VARIABLE, push.variable))
-            self.builder.set_var(push.variable, value)
+            self.write_var(push.variable, self.translate_expr(inst.value))
             self.pile[inst.slot_index] = PileEntry(var=push.variable)
         elif push.setup:
             self.pile[inst.slot_index] = PileEntry()
@@ -368,7 +372,11 @@ class StackTranslator:
         if isinstance(node, LowLevelILStackLoad):
             return self.take(node.slot_index)
         if isinstance(node, LowLevelILFrameLoad):
-            return stamp(MLILVar(self.parameter_var(node.offset)))
+            return self.read_var(self.parameter_var(node.offset))
+        if isinstance(node, LowLevelILStackAddr):
+            return self.address_of(self.pile[node.slot_index].var)
+        if isinstance(node, LowLevelILFrameAddr):
+            return self.address_of(self.parameter_var(node.offset))
         if isinstance(node, LowLevelILLoad):
             return stamp(MLILDeref(self.translate_expr(node.src)))
         if isinstance(node, LowLevelILRegLoad):
@@ -387,12 +395,42 @@ class StackTranslator:
         """A read of slot: its local, or its pending expression, which only its one consumer reads"""
         entry = self.pile[slot]
         if entry.var is not None:
-            return self.builder.stamp(MLILVar(entry.var))
+            return self.read_var(entry.var)
         if entry.expr is None or entry.consumed:
             raise RuntimeError(f'{self.llil_func.name}: slot {slot} read where the pre-pass found no pending value')
 
         entry.consumed = True
         return entry.expr
+
+    # === Variables ===
+
+    def read_var(self, var: MLILVariable) -> MediumLevelILInstruction:
+        """A read of var; an address-taken one through its address, *(&v)"""
+        if var in self.memory_vars:
+            return self.builder.stamp(MLILDeref(self.address_of(var)))
+
+        return self.builder.stamp(MLILVar(var))
+
+    def write_var(self, var: MLILVariable, value: MediumLevelILInstruction):
+        """var = value after the copy-out; an address-taken var through its address, *(&v) = value"""
+        self.copy_out(Write(WriteKind.VARIABLE, var))
+        if var in self.memory_vars:
+            self.builder.store_deref(self.address_of(var), value)
+        else:
+            self.builder.set_var(var, value)
+
+    def address_of(self, var: MLILVariable) -> MLILAddressOf:
+        stamp = self.builder.stamp
+        return stamp(MLILAddressOf(stamp(MLILVar(var))))
+
+    @classmethod
+    def memory_form_var(cls, node: MediumLevelILInstruction) -> MLILVariable | None:
+        """v when node reads an address-taken variable, *(&v)"""
+        if (isinstance(node, MLILDeref) and isinstance(node.operand, MLILAddressOf)
+                and isinstance(node.operand.operand, MLILVar)):
+            return node.operand.operand.var
+
+        return None
 
     # === Writes ===
 
@@ -426,9 +464,10 @@ class StackTranslator:
                 return isinstance(node, MLILLoadReg) and node.index == write.target
             case WriteKind.GLOBAL:
                 return isinstance(node, MLILLoadGlobal) and node.index == write.target
-            case WriteKind.VARIABLE:
-                return isinstance(node, MLILVar) and node.var == write.target
-            case WriteKind.MEMORY:
+            case WriteKind.VARIABLE:    # an address-taken one read as *(&v)
+                return (isinstance(node, MLILVar) and node.var == write.target
+                        or cls.memory_form_var(node) == write.target)
+            case WriteKind.MEMORY:      # *(&v) too: a pointer the function holds may be &v
                 return isinstance(node, MLILDeref)
 
         return False
@@ -470,6 +509,8 @@ class StackTranslator:
             return f'register {node.index}'
         if isinstance(node, MLILLoadGlobal):
             return 'global'
+        if cls.memory_form_var(node) is not None:
+            return 'variable'
         if isinstance(node, MLILDeref):
             return 'dereference'
 
