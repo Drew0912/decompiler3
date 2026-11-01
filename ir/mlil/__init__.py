@@ -50,6 +50,7 @@ __all__ = [
     'DeadPhiSourceEliminationPass',
     'SSATypeInferencePass',
     'BlockMergePass',
+    'CallResultPass',
     'RegGlobalState',
     'RegGlobalValuePropagator',
     'RegGlobalValuePropagationPass',

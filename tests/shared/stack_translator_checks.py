@@ -1,19 +1,25 @@
 #!/usr/bin/env python3
-"""The stack translator's checks that its test files share (tests/mlil_tests/test_mlil_stack_*.py; G3's harness runs
-the invariants too): every temporary assigned once and read only after that in its own block, every local or box read
-only after its store, and a test case translating LLIL through the new path after checking it; it imports logic_check
-from tools/, which the importing test puts on sys.path"""
+"""The stack translator's checks that its test files share (tests/mlil_tests/test_mlil_stack_*.py,
+test_mlil_call_result.py; G3's harness runs the invariants too): every temporary assigned once and read only after that
+in its own block, every local or box read only after its store, the translator's own pipeline, and a test case
+converting LLIL through it or the new path after checking the result; it imports logic_check from tools/, which the
+importing test puts on sys.path"""
 
 import re
 import unittest
+from typing import Callable
 
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.stack_translator import ED9StackTranslatorPass
 from ir.core import reverse_post_order
+from ir.llil.llil import LowLevelILFunction
+from ir.mlil import BitwiseHexPass, BlockMergePass
 from ir.mlil.mlil import (
-    MediumLevelILCall, MLILAddressOf, MLILSetVar, MLILStoreDeref, MLILVar, UNASSIGNED_SLOT_INDEX, walk,
+    MediumLevelILCall, MediumLevelILFunction, MLILAddressOf, MLILSetVar, MLILStoreDeref, MLILVar,
+    UNASSIGNED_SLOT_INDEX, walk,
 )
 from ir.mlil.stack_translator import StackTranslator
+from ir.pipeline import Pipeline
 import logic_check
 
 TEMPORARY = re.compile(r'^t\d+$')
@@ -114,12 +120,21 @@ def statements(mlil) -> list[str]:
     return [str(inst) for block in mlil.basic_blocks for inst in block.instructions]
 
 
+def translated(llil: LowLevelILFunction) -> MediumLevelILFunction:
+    """The translator's own MLIL, its canonical form: convert_falcom_llil_to_mlil_stack's passes without the shaping
+    ones (CallResultPass), which take it as their input"""
+    mlil = Pipeline([ED9StackTranslatorPass(), BlockMergePass(), BitwiseHexPass()]).run(llil)
+    mlil.renumber_instructions()
+    return mlil
+
+
 class StackTranslationTestCase(unittest.TestCase):
-    def checked_translation(self, llil):
-        """llil's MLIL through the new path, after checking it: both pairs clean, the temporaries' invariant, every
-        local or box read reached only from its store"""
+    def checked_translation(self, llil: LowLevelILFunction,
+                            convert: Callable[[LowLevelILFunction], MediumLevelILFunction] = translated):
+        """llil's MLIL through convert (the translator's own pipeline, or the new path whole), after checking it: both
+        pairs clean, the temporaries' invariant, every local or box read reached only from its store"""
         reference = logic_check.analyze(logic_check.LLILLayer(llil))
-        mlil = convert_falcom_llil_to_mlil_stack(llil)
+        mlil = convert(llil)
         self.assertEqual(temporaries_misused(mlil), [])
         self.assertEqual(reads_before_definition(mlil), [])
         llil_mlil = logic_check.compare_facts(reference, logic_check.analyze(logic_check.MLILLayer(mlil)))
