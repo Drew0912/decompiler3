@@ -10,12 +10,16 @@ translated into the call's own MLIL block, the pile carried over.
 
 The canonical form: every register is storage (MLILLoadReg / MLILStoreReg); a call with a result writes it to the
 result register through a temporary (t = f(); REG[r] = t); a return reads the result register (return REG[r]); a
-condition stays as the LLIL has it. Shaping passes run after the translator, each exact and removable."""
+condition stays as the LLIL has it. Shaping passes run after the translator, each exact and removable.
+
+The function's translation_counts record the shapes the translator met (docs/mlil/MLIL_DESIGN.md), for the corpus
+runs to compare with the side-effect census."""
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import NamedTuple
 
+from ir.core import reverse_post_order
 from ir.llil.llil import (
     LowLevelILBasicBlock, LowLevelILCall, LowLevelILConst, LowLevelILDebug, LowLevelILFrameAddr, LowLevelILFrameLoad,
     LowLevelILFrameStore, LowLevelILFunction, LowLevelILIf, LowLevelILInstruction, LowLevelILJmp, LowLevelILLoad,
@@ -26,8 +30,8 @@ from ir.pipeline import Pass
 from .llil_ops import BINARY_OP_TYPES, UNARY_OP_TYPES
 from .mlil import (
     MediumLevelILBasicBlock, MediumLevelILCall, MediumLevelILFunction, MediumLevelILInstruction, MLILAddressOf,
-    MLILCall, MLILConst, MLILDeref, MLILLoadGlobal, MLILLoadReg, MLILVar, MLILVariable, map_operands,
-    mlil_arg_var_name, mlil_stack_var_name,
+    MLILCall, MLILConst, MLILDeref, MLILLoadGlobal, MLILLoadReg, MLILStoreReg, MLILVar, MLILVariable, map_operands,
+    mlil_arg_var_name, mlil_stack_var_name, walk,
 )
 from .mlil_builder import MLILBuilder
 
@@ -103,6 +107,7 @@ class StackTranslator:
         self.block_map: dict[LowLevelILBasicBlock, MediumLevelILBasicBlock] = {}
         self.pile: dict[int, PileEntry] = {}
         self.sp = 0
+        self.statement: LowLevelILInstruction | None = None   # the LLIL statement being translated
         self.temp_count = 0
 
     def translate(self) -> MediumLevelILFunction:
@@ -126,7 +131,9 @@ class StackTranslator:
             while current is not None:
                 current = self.translate_block(current)
 
-        return self.builder.finalize()
+        function = self.builder.finalize()
+        self.count_unwritten_register_reads(function)
+        return function
 
     # === The pre-pass: which push each slot holds, and how each push is read ===
 
@@ -148,6 +155,7 @@ class StackTranslator:
 
         self.name_locals()
         self.check_shapes()
+        self.count_pushes()
 
     def find_continuations(self):
         """The return targets reached from their call's block alone"""
@@ -226,6 +234,9 @@ class StackTranslator:
             for n, push in enumerate(pushes):
                 name = mlil_stack_var_name(slot) if n == 0 else f'{mlil_stack_var_name(slot)}_{n}'
                 push.variable = self.builder.get_or_create_local(name, slot)
+            if len(pushes) > 1:
+                self.count('sibling slots')
+                self.count('sibling locals', len(pushes))
 
     def check_shapes(self):
         """Values cross only a call's return split: at any other block entry, a slot held by one local"""
@@ -244,6 +255,15 @@ class StackTranslator:
     def refuse(self, reason: str):
         self.refusals.append(reason)
 
+    def count_pushes(self):
+        """A push nothing reads (declared: a local), and one read twice (a local too)"""
+        for push in self.pushes.values():
+            if len(push.consumers) > 1:
+                self.count('push read twice')
+            elif not (push.consumers or push.setup or push.read_by_offset or push.written_in_place
+                      or push.address_taken):
+                self.count('push never read')
+
     # === Translation ===
 
     def translate_block(self, block: LowLevelILBasicBlock) -> LowLevelILBasicBlock | None:
@@ -251,6 +271,7 @@ class StackTranslator:
         self.sp = block.sp_in
         for inst in block.instructions:
             self.builder.set_current_source(inst.address, inst.inst_index)
+            self.statement = inst
             continuation = self.translate_statement(inst)
             if continuation is not None:
                 return continuation
@@ -308,6 +329,8 @@ class StackTranslator:
             return
 
         push = self.pushes[inst]
+        if inst.slot_index > self.sp:       # no push puts a value there: a store into a dead slot (a POP_TO)
+            self.count('store above sp')
         if push.variable is not None:
             value = self.translate_expr(inst.value)
             self.copy_out(Write(WriteKind.VARIABLE, push.variable))
@@ -376,6 +399,7 @@ class StackTranslator:
     def copy_out(self, write: Write):
         """Before a write: every pending leaf it may change copied into a fresh temporary, the pending expression then
         reading the copy, so it keeps the value it had when pushed (it holds only pure operators)"""
+        self.count_pending()
         for slot in sorted(self.pile):
             entry = self.pile[slot]
             if entry.expr is not None and not entry.consumed:
@@ -383,6 +407,7 @@ class StackTranslator:
 
     def copied(self, node: MediumLevelILInstruction, write: Write) -> MediumLevelILInstruction:
         if self.may_change(write, node):
+            self.count(f'copy at {self.statement_name(self.statement)}: {self.leaf_name(node)}')
             temp = self.new_temp()
             self.builder.set_var(temp, node)
             return MLILVar(temp).copy_metadata_from(node)
@@ -424,6 +449,79 @@ class StackTranslator:
     def result_read(self) -> MediumLevelILInstruction | None:
         """What a return passes on: the result register, or nothing on a VM without one"""
         return None if self.RESULT_REGISTER is None else self.builder.stamp(MLILLoadReg(self.RESULT_REGISTER))
+
+    # === Counts ===
+
+    def count(self, key: str, n: int = 1):
+        self.builder.function.translation_counts[key] += n
+
+    @classmethod
+    def statement_name(cls, inst: LowLevelILInstruction) -> str:
+        """A statement in a count: its operation's name, a register store's with its register"""
+        if isinstance(inst, LowLevelILRegStore):
+            return f'{inst.operation_name} {inst.reg_index}'
+
+        return inst.operation_name
+
+    @classmethod
+    def leaf_name(cls, node: MediumLevelILInstruction) -> str:
+        """A copied leaf in a count: each kind may_change can match"""
+        if isinstance(node, MLILLoadReg):
+            return f'register {node.index}'
+        if isinstance(node, MLILLoadGlobal):
+            return 'global'
+        if isinstance(node, MLILDeref):
+            return 'dereference'
+
+        return 'variable'
+
+    def count_pending(self):
+        """The current statement, once, when a value is pending below its own operands (read by now); a VM's
+        statement that writes nothing calls it too"""
+        if any(entry.expr is not None and not entry.consumed for entry in self.pile.values()):
+            self.count(f'pending at {self.statement_name(self.statement)}')
+
+    def count_unwritten_register_reads(self, function: MediumLevelILFunction):
+        """Each register read that some way reaches with no store to the register since the entry or since a call that
+        clobbers: a must-written dataflow over the MLIL's blocks, where the canonical form makes every register write a
+        statement"""
+        entry = function.basic_blocks[0]
+        order = reverse_post_order(entry, lambda block: block.outgoing_edges)
+        exits: dict[MediumLevelILBasicBlock, frozenset[int]] = {}
+
+        def written_at_entry(block: MediumLevelILBasicBlock) -> frozenset[int]:
+            # A predecessor not reached yet in the iteration counts as writing every register
+            known = [exits[predecessor] for predecessor in block.incoming_edges if predecessor in exits]
+            return frozenset.intersection(*known) if block is not entry and known else frozenset()
+
+        changed = True
+        while changed:
+            changed = False
+            for block in order:
+                written = self.registers_written(block, written_at_entry(block))
+                if exits.get(block) != written:
+                    exits[block] = written
+                    changed = True
+
+        for block in order:
+            self.registers_written(block, written_at_entry(block), counting=True)
+
+    def registers_written(self, block: MediumLevelILBasicBlock, written: frozenset[int],
+                          counting: bool = False) -> frozenset[int]:
+        """The registers written on every way to block's end, from those on every way to its start; counting, each
+        read of a register not among them"""
+        for inst in block.instructions:
+            if counting:
+                for operand in inst.operands():
+                    for node in walk(operand):
+                        if isinstance(node, MLILLoadReg) and node.index not in written:
+                            self.count('unwritten register read')
+            if isinstance(inst, MLILStoreReg):
+                written |= {inst.index}
+            elif isinstance(inst, MediumLevelILCall) and inst.clobbers_registers:
+                written = frozenset()       # the result store follows the call
+
+        return written
 
     # === The VM's ===
 

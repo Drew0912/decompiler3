@@ -276,8 +276,8 @@ pre-pass finds which push each slot holds and how each push is read. Translation
 - **Pending values:** a pushed value stays a pending expression and folds into the statement or expression that
   consumes it.
 - **Locals:** a push becomes a local when it is read by offset, written in place or address-taken, when it is never
-  read and is no call's setup (a declared slot, kept), or when it is read twice. Locals are named per declaring push: `var_s<slot>`, then
-  `var_s<slot>_<n>` for sibling scopes in one slot.
+  read and is no call's setup (a declared slot, kept), or when it is read twice. Locals are named per declaring
+  push: `var_s<slot>`, then `var_s<slot>_<n>` for sibling scopes in one slot.
 - **Copies before a write:** before a statement that writes storage, every pending leaf the write may change is
   copied into a fresh temporary `t<n>` (one conservative rule, `may_change`). A call may change every register,
   global and dereference.
@@ -299,6 +299,20 @@ exact and removable.
 a block other than its call's continuation, or a block entry slot two pushes may hold. These raise
 `UnsupportedStackShape`, as does, on ED9, a call frame value read as data (a hand edit reading a slot of a call's
 setup, `PUSH_CALLER_FRAME`'s or `PUSH_CURRENT_FUNC_ID`'s: no MLIL node holds the VM's frame values).
+
+**Counts:** the translator records the shapes it meets in the function's `translation_counts` (a `Counter`, empty
+from the SSA path), which the corpus runs of IR rewrite part 2 compare with the side-effect census. Nothing prints
+them, and the rewrite removes them after its last such run. The keys:
+- `pending at <S>`: a statement that writes (or ED9's `DEBUG_LOG`) with a value pending below its own operands, once
+  per statement. `<S>` is its LLIL operation name, a register store's with its register (`REG_STORE 1`);
+- `copy at <S>: <leaf>`: each temporary made before a write, the leaf `register <n>`, `global`, `dereference` or
+  `variable`;
+- `push never read` (no consumer, no read or write by offset, no address taken, no call's setup) and
+  `push read twice`, both locals;
+- `store above sp`: a store into a dead slot (a `POP_TO` above `sp`);
+- `sibling slots` and `sibling locals`: the slots holding two or more locals, and those locals;
+- `unwritten register read`: a register read that some way reaches with no store to the register since the entry
+  or since a call that clobbers (a dataflow over the translator's MLIL).
 
 ## Testing
 
