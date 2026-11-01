@@ -76,14 +76,16 @@ become boolean operators. MLIL logical-not and test-zero operations are represen
 with zero; other unary operations map to negation or bitwise-not.
 
 Operator knowledge lives once, in `ir/hlil/hlil.py`, in two groups. The language-neutral group -
-`COMPARISON_OPS`, `BOOLEAN_BINARY_OPS`/`is_boolean_expr`, `NEGATED_COMPARISON_OP`, `DE_MORGAN_OP` and
-`negate_condition` (negation distributed through `&&`/`||`) - is what any output language needs,
-including the planned HLIL DSL. The C-family syntax group - the `BINARY_OP_STR`/`UNARY_OP_STR`
+`COMPARISON_OPS`, `BOOLEAN_BINARY_OPS`/`is_boolean_expr`, `NEGATED_COMPARISON_OP`, `DE_MORGAN_OP`,
+`negate_condition` (negation distributed through `&&`/`||`) and `strip_truth_test` (a boolean's truth
+tests, `(c) != 0`, `(c) == 0` and `!c`, read off without changing the tree) - is what any output language
+needs, including the planned HLIL DSL. The C-family syntax group - the `BINARY_OP_STR`/`UNARY_OP_STR`
 symbols, `BINARY_OP_PRECEDENCE`, `NON_ASSOCIATIVE_OPS` and `needs_parentheses` - serves only the
 TypeScript generator and the debug formatter; a non-C output needs its own. `TERMINAL_STATEMENTS`
 (return, break, continue, `HLILUnstructured`) is the one list of statements that never fall through.
-`ControlFlowOptimizationPass` keeps its own negation, which wraps a non-comparison as `== 0` instead
-of `!`.
+`ControlFlowOptimizationPass` negates with the shared `negate_condition`, and its switch recognizer reads
+each chain link through `strip_truth_test`: the stack translator keeps the LLIL's jump test, so a link
+arrives as `(x == k) == 0`, or `(x == k) != 0` once negated.
 
 Tree walking is shared the same way. `sub_blocks` gives the blocks a structured statement owns;
 `node_children` gives every child of a node in source order (a switch contributes each case's
@@ -285,8 +287,11 @@ Several dedicated HLIL unit-test files exist today:
 - `tests/hlil_tests/test_hlil_branch_order_normalization.py` covers line-based swaps, nesting-depth fallback,
   chain preservation, De Morgan negation, nested ordering, and the production enable/disable flag.
 - `tests/hlil_tests/test_hlil_control_flow_optimization.py` covers switch conversion thresholds, mixed
-  equality/inequality chains, grouped labels, duplicate rejection, scrutinee consistency, and where the line
-  comments before each later test end up.
+  equality/inequality chains, grouped labels, duplicate rejection, scrutinee consistency, where the line
+  comments before each later test end up, and links under a truth test (each form, `||` groups, label 0, a
+  register scrutinee, and the tests that are no link).
+- `tests/hlil_tests/test_hlil_switch_on_stack_path.py` runs dispatch chains as the compiler writes them through
+  both LLIL -> MLIL paths: the same switch on each, and the logic check's MLIL -> HLIL pair clean.
 - `tests/hlil_tests/test_hlil_loop_recovery.py` covers leading break/return guards, unsafe rotations, nested
   switch breaks, preservation of already-tested loops, the while(1)->do-while rotation (from a trailing
   `if (c) break;` and, since 2026-10-28, from a trailing `if (c) continue; else break;`), and its
@@ -302,8 +307,8 @@ Several dedicated HLIL unit-test files exist today:
   shared return (switch default and bare-break guards, `if` without `else`, int/float and NaN
   constants) plus the shared `constant_values_equal` and `contains_bare_break` helpers.
 - `tests/hlil_tests/test_hlil_operators.py` covers the shared operator tables (comparison negation is the
-  complement), `negate_condition`, `needs_parentheses`, and the debug formatter's operator symbols
-  and switch-case `break`s.
+  complement), `negate_condition`, `strip_truth_test`, `needs_parentheses`, and the debug formatter's operator
+  symbols and switch-case `break`s.
 - `tests/hlil_tests/test_hlil_traversal.py` covers the shared tree walkers: every node type's children, source
   order, `iter_tree`'s exclusion, the escaping-exit rules, `sole_statement`, declaration order, and
   control-flow optimization reaching into a do-while body.

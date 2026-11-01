@@ -24,6 +24,7 @@ from ir.hlil import (
     HLILConst,
     HLILContinue,
     HLILDoWhile,
+    HLILExpression,
     HLILExprStmt,
     HLILFormatter,
     HLILIf,
@@ -287,6 +288,122 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
                          [[FIRST_CASE_VALUE], [SECOND_CASE_VALUE], [THIRD_CASE_VALUE]])
         self.assertEqual([case.body.statements for case in switch_stmt.cases[:-1]], [[], [], []])
         self.assertTrue(switch_stmt.cases[-1].is_default())
+
+
+CHAIN_VALUES = (FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE)
+
+
+def truth_test(cond: HLILExpression, op: BinaryOp) -> HLILBinaryOp:
+    """cond under a truth test, `(cond) != 0` or `(cond) == 0`, as a link reaches HLIL on the stack translator's path"""
+    return HLILBinaryOp(op, cond, HLILConst(0))
+
+
+def make_chain(links: list[tuple[HLILExpression, int, bool]]) -> HLILIf:
+    """Nested ifs, one per (condition, value, whether the case body is the then arm), the default body last"""
+    continuation = make_case_body(DEFAULT_BODY_VALUE)
+    for condition, value, in_then in reversed(links):
+        body = make_case_body(value)
+        link = HLILIf(condition, body, continuation) if in_then else HLILIf(condition, continuation, body)
+        continuation = HLILBlock([link])
+
+    return continuation.statements[0]
+
+
+class TestTruthTestedChainLinks(unittest.TestCase):
+    """Links under a truth test, as the stack translator keeps the LLIL's `(x == k) == 0`: each read as the test it
+    makes, the case body the arm that runs when the test holds; the conditions themselves stay as written"""
+
+    def assert_switch(self, chain: HLILIf, labels: list[list[int]]) -> HLILSwitch:
+        """chain became one switch with these labels, each case's body the arm made for its first label"""
+        [switch_stmt] = run_cfo(chain).body.statements
+
+        self.assertIsInstance(switch_stmt, HLILSwitch)
+        cases = [case for case in switch_stmt.cases if not case.is_default()]
+        self.assertEqual([[value.value for value in case.values] for case in cases], labels)
+        for case in cases:
+            self.assertTrue(block_contains_call(case.body, f'{CASE_MARKER_CALL_PREFIX}{case.values[0].value}'))
+        [default] = [case for case in switch_stmt.cases if case.is_default()]
+        self.assertTrue(block_contains_call(default.body, f'{CASE_MARKER_CALL_PREFIX}{DEFAULT_BODY_VALUE}'))
+        return switch_stmt
+
+    def test_each_link_form(self):
+        eq = lambda value: make_condition(BinaryOp.EQ, value)
+        ne = lambda value: make_condition(BinaryOp.NE, value)
+        forms = {           # form -> (its condition for a value, whether the case body is the then arm)
+            '(x == k) != 0':        (lambda value: truth_test(eq(value), BinaryOp.NE), True),
+            '(x == k) == 0':        (lambda value: truth_test(eq(value), BinaryOp.EQ), False),
+            '(x != k) != 0':        (lambda value: truth_test(ne(value), BinaryOp.NE), False),
+            '(x != k) == 0':        (lambda value: truth_test(ne(value), BinaryOp.EQ), True),
+            '((x == k) == 0) == 0': (lambda value: truth_test(truth_test(eq(value), BinaryOp.EQ), BinaryOp.EQ), True),
+        }
+        for name, (condition, in_then) in forms.items():
+            with self.subTest(form=name):
+                chain = make_chain([(condition(value), value, in_then) for value in CHAIN_VALUES])
+
+                self.assert_switch(chain, [[value] for value in CHAIN_VALUES])
+
+    def test_a_chain_mixing_truth_tested_and_bare_links(self):
+        chain = make_chain([
+            (truth_test(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), BinaryOp.NE), FIRST_CASE_VALUE, True),
+            (make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), SECOND_CASE_VALUE, True),
+            (make_condition(BinaryOp.NE, THIRD_CASE_VALUE), THIRD_CASE_VALUE, False),
+            (truth_test(make_condition(BinaryOp.NE, FOURTH_CASE_VALUE), BinaryOp.EQ), FOURTH_CASE_VALUE, True),
+        ])
+
+        self.assert_switch(chain, [[FIRST_CASE_VALUE], [SECOND_CASE_VALUE], [THIRD_CASE_VALUE], [FOURTH_CASE_VALUE]])
+
+    def test_an_or_group_under_truth_tests_is_one_case(self):
+        first, second = (make_condition(BinaryOp.EQ, value) for value in (FIRST_CASE_VALUE, SECOND_CASE_VALUE))
+        groups = {
+            'each test under its own (a funnel)':
+                HLILBinaryOp(BinaryOp.OR, truth_test(first, BinaryOp.NE), truth_test(second, BinaryOp.NE)),
+            'one over the || (an eager ||)': truth_test(HLILBinaryOp(BinaryOp.OR, first, second), BinaryOp.NE),
+        }
+        for name, group in groups.items():
+            with self.subTest(group=name):
+                chain = make_chain([(group, FIRST_CASE_VALUE, True)] + [
+                    (truth_test(make_condition(BinaryOp.EQ, value), BinaryOp.NE), value, True)
+                    for value in (THIRD_CASE_VALUE, FOURTH_CASE_VALUE)])
+
+                self.assert_switch(chain, [[FIRST_CASE_VALUE, SECOND_CASE_VALUE], [THIRD_CASE_VALUE],
+                                           [FOURTH_CASE_VALUE]])
+
+    def test_label_zero_stays_a_test_of_the_variable(self):
+        values = (0, FIRST_CASE_VALUE, SECOND_CASE_VALUE)
+        chain = make_chain([(truth_test(make_condition(BinaryOp.EQ, value), BinaryOp.NE), value, True)
+                            for value in values])
+
+        self.assert_switch(chain, [[value] for value in values])
+
+    def test_a_register_scrutinee(self):
+        register = HLILVariable(kind=VariableKind.REG, index=0)
+        chain = make_chain([
+            (truth_test(HLILBinaryOp(BinaryOp.EQ, HLILVar(register), HLILConst(value)), BinaryOp.NE), value, True)
+            for value in CHAIN_VALUES])
+
+        switch_stmt = self.assert_switch(chain, [[value] for value in CHAIN_VALUES])
+        self.assertEqual(switch_stmt.scrutinee.var, register)
+
+    def test_tests_that_are_no_link_stay_ifs(self):
+        tests = {
+            '(x < k) == 0':      lambda value: truth_test(make_condition(BinaryOp.LT, value), BinaryOp.EQ),
+            '(x == k) == 1':     lambda value: HLILBinaryOp(BinaryOp.EQ, make_condition(BinaryOp.EQ, value),
+                                                            HLILConst(1)),
+            '(x == k) == 0.0':   lambda value: HLILBinaryOp(BinaryOp.EQ, make_condition(BinaryOp.EQ, value),
+                                                            HLILConst(0.0)),
+            'x != k || x != j':  lambda value: HLILBinaryOp(BinaryOp.OR, make_condition(BinaryOp.NE, value),
+                                                            make_condition(BinaryOp.NE, NESTED_CASE_VALUE)),
+        }
+        for name, test in tests.items():
+            with self.subTest(test=name):
+                # Two links after it: read as a link, it would make the third case a switch needs
+                condition = test(FIRST_CASE_VALUE)
+                chain = make_chain([(condition, FIRST_CASE_VALUE, True)] + [
+                    (make_condition(BinaryOp.EQ, value), value, True) for value in CHAIN_VALUES[1:]])
+
+                [first] = run_cfo(chain).body.statements
+                self.assertIsInstance(first, HLILIf)
+                self.assertIs(first.condition, condition)
 
 
 FLAG_COMPARE_LHS = 10

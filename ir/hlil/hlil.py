@@ -5,7 +5,7 @@ from enum import auto
 import operator
 import re
 from dc3 import format_uint32_hex, IntEnum2, quote_string
-from ir.core import UNASSIGNED_INST_INDEX, constant_values_equal
+from ir.core import UNASSIGNED_INST_INDEX, constant_values_equal, is_int_zero
 
 
 class HLILTypeKind(IntEnum2):
@@ -676,6 +676,20 @@ def negate_condition(cond: HLILExpression) -> HLILExpression:
 
     # Default: wrap with NOT
     return HLILUnaryOp(UnaryOp.NOT, cond)
+
+
+def strip_truth_test(cond: HLILExpression) -> tuple[HLILExpression, bool]:
+    """(test, negated): every truth test of a boolean read off cond - `!e` and `e == 0` negate, `e != 0` does not
+    (int 0 only); the tree stays as written"""
+    negated = False
+    while True:
+        if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT and is_boolean_expr(cond.operand):
+            cond, negated = cond.operand, not negated
+        elif (isinstance(cond, HLILBinaryOp) and cond.op in (BinaryOp.EQ, BinaryOp.NE) and is_boolean_expr(cond.lhs)
+              and isinstance(cond.rhs, HLILConst) and is_int_zero(cond.rhs.value)):
+            cond, negated = cond.lhs, negated ^ (cond.op == BinaryOp.EQ)
+        else:
+            return cond, negated
 
 
 def constant_truth(cond: HLILExpression) -> bool | None:

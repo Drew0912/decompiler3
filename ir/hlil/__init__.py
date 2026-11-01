@@ -22,6 +22,7 @@ __all__ = [
     'COMPARISON_FUNCTIONS',
     'is_boolean_expr',
     'negate_condition',
+    'strip_truth_test',
     'constant_truth',
     'same_const_or_var',
 

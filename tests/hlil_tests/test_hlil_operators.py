@@ -32,6 +32,7 @@ from ir.hlil import (
     is_boolean_expr,
     needs_parentheses,
     negate_condition,
+    strip_truth_test,
     unary_operand_needs_parentheses,
 )
 
@@ -140,6 +141,37 @@ class TestNegateCondition(unittest.TestCase):
         self.assertIsInstance(negated, HLILUnaryOp)
         self.assertEqual(negated.op, UnaryOp.NOT)
         self.assertIs(negated.operand, x)
+
+
+class TestStripTruthTest(unittest.TestCase):
+    """A boolean's truth tests read off, as the LLIL writes a jump's test (`(c) == 0`) and HLIL negates it"""
+
+    def test_every_truth_test_of_a_boolean_is_read_off(self):
+        test = HLILBinaryOp(BinaryOp.LT, var('a'), var('b'))
+        zero = HLILConst(0)
+        rows = [
+            ('(a < b) != 0', HLILBinaryOp(BinaryOp.NE, test, zero), False),
+            ('(a < b) == 0', HLILBinaryOp(BinaryOp.EQ, test, zero), True),
+            ('!(a < b)', HLILUnaryOp(UnaryOp.NOT, test), True),
+            ('((a < b) == 0) == 0', HLILBinaryOp(BinaryOp.EQ, HLILBinaryOp(BinaryOp.EQ, test, zero), zero), False),
+        ]
+        for text, cond, negated in rows:
+            with self.subTest(cond=text):
+                self.assertEqual(strip_truth_test(cond), (test, negated))
+
+    def test_anything_else_is_left_as_it_is(self):
+        x = var('x')
+        test = HLILBinaryOp(BinaryOp.LT, var('a'), var('b'))
+        rows = [
+            ('x == 0', HLILBinaryOp(BinaryOp.EQ, x, HLILConst(0))),         # x is no boolean: a test of x
+            ('(a < b) == 0.0', HLILBinaryOp(BinaryOp.EQ, test, HLILConst(0.0))),
+            ('(a < b) == 1', HLILBinaryOp(BinaryOp.EQ, test, HLILConst(1))),
+            ('x', x),
+            ('!x', HLILUnaryOp(UnaryOp.NOT, x)),
+        ]
+        for text, cond in rows:
+            with self.subTest(cond=text):
+                self.assertEqual(strip_truth_test(cond), (cond, False))
 
 
 class TestIsBooleanExpr(unittest.TestCase):

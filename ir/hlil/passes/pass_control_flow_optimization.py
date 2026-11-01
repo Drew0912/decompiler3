@@ -13,7 +13,6 @@ from ..hlil import (
     HLILVar,
     HLILConst,
     HLILBinaryOp,
-    HLILUnaryOp,
     HLILDeref,
     HLILIf,
     HLILWhile,
@@ -30,7 +29,6 @@ from ..hlil import (
     HLILVariable,
     VariableKind,
     BinaryOp,
-    UnaryOp,
     unwrap_address_taken_var,
     contains_bare_break,
     is_boolean_expr,
@@ -39,6 +37,7 @@ from ..hlil import (
     read_children,
     same_const_or_var,
     sole_statement,
+    strip_truth_test,
     sub_blocks,
 )
 
@@ -586,30 +585,31 @@ class ControlFlowOptimizationPass(Pass):
 
         return any(modifies(n) for n in iter_tree(stmt, read_children))
 
-    def _equality_labels(self, cond) -> tuple[HLILVar, list[int]] | None:
-        """Values a test accepts, for `x == k` or any || chain of those
+    def _equality_labels(self, cond) -> tuple[HLILVar, list[int], bool] | None:
+        """(scrutinee, values, negated) of a test `x == k`, `x != k` or an || of `x == k`s, each read through its truth
+        tests (the stack translator keeps the LLIL's `(x == k) == 0`)
 
         The scrutinee must be a plain variable: a folded call would be evaluated
         once by the switch but once per test by the chain it replaces
         """
-        if not isinstance(cond, HLILBinaryOp):
+        test, negated = strip_truth_test(cond)
+        if not isinstance(test, HLILBinaryOp):
             return None
 
-        if cond.op == BinaryOp.OR:
-            left = self._equality_labels(cond.lhs)
-            right = self._equality_labels(cond.rhs)
+        if test.op == BinaryOp.OR:
+            left = self._equality_labels(test.lhs)
+            right = self._equality_labels(test.rhs)
 
-            if left is None or right is None:
+            if left is None or right is None or left[2] or right[2]:
                 return None
 
             if left[0].var != right[0].var:
                 return None
 
-            return left[0], left[1] + right[1]
+            return left[0], left[1] + right[1], negated
 
-        if cond.op == BinaryOp.EQ:
-            if isinstance(cond.lhs, HLILVar) and isinstance(cond.rhs, HLILConst):
-                return cond.lhs, [cond.rhs.value]
+        if test.op in (BinaryOp.EQ, BinaryOp.NE) and isinstance(test.lhs, HLILVar) and isinstance(test.rhs, HLILConst):
+            return test.lhs, [test.rhs.value], negated ^ (test.op == BinaryOp.NE)
 
         return None
 
@@ -617,32 +617,25 @@ class ControlFlowOptimizationPass(Pass):
         """One link of a dispatch chain as (scrutinee, values, case body, continuation)
 
         should_invert_condition can pick either orientation per link, so a chain may
-        alternate between them; both are read here so one walk spans the whole chain
+        alternate between them; a negated test's case body is the else
         """
-        cond = if_stmt.condition
+        match = self._equality_labels(if_stmt.condition)
+        if match is None:
+            return None
 
-        match = self._equality_labels(cond)
-        if match is not None:
-            return match[0], match[1], if_stmt.true_block, if_stmt.false_block
+        scrutinee, values, negated = match
+        if negated:
+            return scrutinee, values, if_stmt.false_block, if_stmt.true_block
 
-        # Inverted: the case body is the else, the chain continues in the then
-        if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT:
-            match = self._equality_labels(cond.operand)
-            if match is not None:
-                return match[0], match[1], if_stmt.false_block, if_stmt.true_block
-
-        if isinstance(cond, HLILBinaryOp) and cond.op == BinaryOp.NE:
-            if isinstance(cond.lhs, HLILVar) and isinstance(cond.rhs, HLILConst):
-                return cond.lhs, [cond.rhs.value], if_stmt.false_block, if_stmt.true_block
-
-        return None
+        return scrutinee, values, if_stmt.true_block, if_stmt.false_block
 
     def _try_convert_to_switch(self, if_stmt: HLILIf) -> HLILSwitch | None:
         """Convert a chain of equality tests on one variable into a switch
 
-        Handles `==`, `!=` and ||-grouped links in any order, so a chain that
-        alternates between them still becomes one switch. The chain is only read
-        until the conversion is certain, so one that stays an if keeps its comments.
+        Handles `==`, `!=` and ||-grouped links in any order, each also under a
+        truth test, so a chain that alternates between them still becomes one
+        switch. The chain is only read until the conversion is certain, so one
+        that stays an if keeps its comments.
         """
         cases = []
         seen_case_values = set()

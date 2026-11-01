@@ -290,7 +290,8 @@ pre-pass finds which push each slot holds and how each push is read. Translation
   read of the register sees a write the output prints;
 - a return reads the result register (`return REG[0]`), and `result_register` is set;
 - a tail call is `t = module.func(args)` marked `tail_call`, then `REG[0] = t; return REG[0]`;
-- a condition stays as the LLIL has it (`(x == 0)`).
+- a condition stays as the LLIL has it (`(x == 0)`); HLIL's switch recognizer reads a chain link through it
+  (`strip_truth_test`, `docs/hlil/HLIL_DESIGN.md`).
 
 Shaping passes (dropping a dead result store, returning a stored value directly) come after the translator, each
 exact and removable.
