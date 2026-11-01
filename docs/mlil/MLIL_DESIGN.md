@@ -333,7 +333,9 @@ Several dedicated MLIL test files exist today (`test_mlil_metadata.py`,
 `test_mlil_reg_global_propagation.py`, `test_mlil_types.py`, and others) covering SSA construction/deconstruction, the
 SSA optimizer's passes, and register/global propagation - a closed gap from when this line last
 said only one existed. `test_mlil_stack_translator.py` covers the stack translator on assembled functions, each case
-also compared clean by the logic check on both pairs.
+also compared clean by the logic check on both pairs; `test_mlil_stack_hand_written.py` on the shapes only a hand edit
+makes, written in the LLIL DSL and compiled by the writer, through the same checks
+(`tests/shared/stack_translator_checks.py`).
 
 ## Open Items
 
