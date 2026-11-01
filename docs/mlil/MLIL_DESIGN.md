@@ -31,8 +31,11 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function's blocks, variables and statements; expressions are built with the node classes. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging) and the `.mlil.dot` graphs, with the DOT writer LLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`). |
 | `ir/mlil/mlil_types.py` | Type-kind/unification support. |
-| `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific); the one-to-one binary / unary operations by table. |
-| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
+| `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific). |
+| `ir/mlil/llil_ops.py` | The LLIL operations that map one to one onto MLIL ones (`BINARY_OP_TYPES`, `UNARY_OP_TYPES`), for both translators. |
+| `ir/mlil/stack_translator.py` | The generic symbolic-stack translator, `StackTranslator`, and `StackTranslatorPass` (see "The stack translator"). |
+| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil()`, and the stack translator's, `convert_falcom_llil_to_mlil_stack()`, not yet production. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
+| `falcom/ed9/ir/mlil/stack_translator.py` | `FalcomStackTranslator`: ED9's result register, calling convention, globals, script calls and `DEBUG_LOG` on the stack translator. |
 | `falcom/ed9/ir/mlil/mlil_passes.py` | `ED9LLILToMLILPass`, the pipeline's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
 | `falcom/ed9/ir/mlil/mlil_translator.py` | Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
 | `tests/mlil_tests/test_mlil_metadata.py` | One of several dedicated MLIL test files today — see Testing below. |
@@ -48,7 +51,8 @@ instruction the statement comes from - every statement one LLIL instruction prod
 statement de-SSA places on a CFG edge, a phi copy or a split-edge goto, takes the branch that leaves
 along that edge) and `inst_index` (the statement's own number: `convert_falcom_llil_to_mlil()` and
 `optimize_mlil()` end by numbering every statement 0..N-1 in block order, and HLIL copies it as
-`mlil_index`). Only statements carry them; expressions keep the defaults. A pass that replaces a
+`mlil_index`). On the SSA path only statements carry them, expressions keeping the defaults; the stack translator
+stamps every expression node too, with the LLIL statement it comes from (`MLILBuilder.stamp`). A pass that replaces a
 statement copies all three with `copy_metadata_from()`. Nodes are split into `MediumLevelILExpr` (produces a value) and
 `MediumLevelILStatement` (side effects only); the concrete instruction classes in both cover:
 
@@ -261,13 +265,49 @@ per variable name (`func.var_types`, printed as the `.mlil.asm` "Inferred Types"
 kinds unify to an `MLILVariantType`, which is identified by its members (`mlil_types.py`), so a
 member that arrives after the variable is already a variant is still recorded.
 
+## The stack translator (not yet production)
+
+`convert_falcom_llil_to_mlil_stack()` runs `ED9StackTranslatorPass`, `BlockMergePass` and `BitwiseHexPass`. It will
+replace the SSA path at parity (IR rewrite part 2), and the decompile path does not call it yet.
+
+The translator (`StackTranslator`, `ir/mlil/stack_translator.py`; `FalcomStackTranslator` for ED9) reads only the
+LLIL and its stack layout: each block's `sp_in`, each stack access's `slot_index`, the `SpAdd`s. A function-wide
+pre-pass finds which push each slot holds and how each push is read. Translation then works on that:
+- **Pending values:** a pushed value stays a pending expression and folds into the statement or expression that
+  consumes it.
+- **Locals:** a push becomes a local when it is read by offset, written in place or address-taken, when it is never
+  read and is no call's setup (a declared slot, kept), or when it is read twice. Locals are named per declaring push: `var_s<slot>`, then
+  `var_s<slot>_<n>` for sibling scopes in one slot.
+- **Copies before a write:** before a statement that writes storage, every pending leaf the write may change is
+  copied into a fresh temporary `t<n>` (one conservative rule, `may_change`). A call may change every register,
+  global and dereference.
+- **Calls:** a call's continuation (its return target, reached from the call alone) is translated into the call's
+  own block, the pending values carried over.
+
+**The canonical form:**
+- every register is storage, `REG[n]` (`MLILLoadReg` / `MLILStoreReg`), and no register variables;
+- a call with a result writes it to the result register through a temporary (`t1 = f(); REG[0] = t1`), so a later
+  read of the register sees a write the output prints;
+- a return reads the result register (`return REG[0]`), and `result_register` is set;
+- a tail call is `t = module.func(args)` marked `tail_call`, then `REG[0] = t; return REG[0]`;
+- a condition stays as the LLIL has it (`(x == 0)`).
+
+Shaping passes (dropping a dead result store, returning a stored value directly) come after the translator, each
+exact and removable.
+
+**Not translated yet:** a function with an address-taken local or parameter, a value pending where control reaches
+a block other than its call's continuation, or a block entry slot two pushes may hold. These raise
+`UnsupportedStackShape`, as does, on ED9, a call frame value read as data (a hand edit reading a slot of a call's
+setup, `PUSH_CALLER_FRAME`'s or `PUSH_CURRENT_FUNC_ID`'s: no MLIL node holds the VM's frame values).
+
 ## Testing
 
 Several dedicated MLIL test files exist today (`test_mlil_metadata.py`,
 `test_mlil_ssa_optimizer.py`, `test_mlil_sccp_folding.py`, `test_mlil_address_taken.py`,
 `test_mlil_reg_global_propagation.py`, `test_mlil_types.py`, and others) covering SSA construction/deconstruction, the
 SSA optimizer's passes, and register/global propagation - a closed gap from when this line last
-said only one existed.
+said only one existed. `test_mlil_stack_translator.py` covers the stack translator on assembled functions, each case
+also compared clean by the logic check on both pairs.
 
 ## Open Items
 

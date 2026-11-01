@@ -4,9 +4,7 @@ from ir.llil import *
 from ir.mlil import *
 from ..llil.llil_ext import *
 from ..llil.constants import *
-
-# DEBUG_LOG becomes a call so existing call handling covers it; script function names never contain a dot
-DEBUG_LOG_CALL_TARGET = 'debug.log'
+from .stack_translator import DEBUG_LOG_CALL_TARGET
 
 # REG[0] is the VM result register: calls write it and RETURN reads it
 RESULT_REG_INDEX = 0

@@ -8,7 +8,7 @@ from falcom.ed9.ir.llil.llil_ext import (
     LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugLog, LowLevelILGlobalLoad,
     LowLevelILGlobalStore,
 )
-from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
+from falcom.ed9.ir.mlil.stack_translator import DEBUG_LOG_CALL_TARGET
 from ir.llil.llil import (
     LowLevelILBinaryOp, LowLevelILCall, LowLevelILConst, LowLevelILDebug, LowLevelILFrameAddr, LowLevelILFrameLoad,
     LowLevelILFrameStore, LowLevelILFunction, LowLevelILIf, LowLevelILJmp, LowLevelILLoad, LowLevelILRegLoad,

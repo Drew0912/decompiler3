@@ -1,7 +1,9 @@
 """Medium Level IL - Stack-free intermediate representation"""
 
 from .mlil_builder import *
+from .llil_ops import *
 from .llil_to_mlil import *
+from .stack_translator import *
 from .mlil_formatter import *
 from .mlil_optimizer import *
 from .mlil_ssa_optimizer import *
@@ -22,6 +24,8 @@ __all__ = [
     'LLILToMLILTranslator',
     'BINARY_OP_TYPES',
     'UNARY_OP_TYPES',
+    'StackTranslator',
+    'UnsupportedStackShape',
     'MLILFormatter',
     'SSAOptimizer',
     'SSA_OPTIMIZER_MAX_ITERATIONS',
@@ -30,6 +34,7 @@ __all__ = [
 
     # Passes
     'LLILToMLILPass',
+    'StackTranslatorPass',
     'SSAConversionPass',
     'SSAOptimizationPass',
     'SSADeconstructionPass',

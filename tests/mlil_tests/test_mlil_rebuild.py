@@ -181,7 +181,7 @@ class TestSCCPNeverSubstitutesUnderAddressOf(unittest.TestCase):
 
 class TestCallRebuildKeepsClobberFlag(unittest.TestCase):
     """rebuild() of every call kind keeps clobbers_registers (Syscall/CallScript used to reset it
-    to the default True)."""
+    to the default True) and the tail-call mark."""
 
     def test_every_call_kind_keeps_clobbers_registers(self):
         calls = [
@@ -196,6 +196,20 @@ class TestCallRebuildKeepsClobberFlag(unittest.TestCase):
 
                 self.assertIs(type(rebuilt), type(call))
                 self.assertFalse(rebuilt.clobbers_registers)
+
+    def test_every_call_kind_keeps_its_tail_call_mark(self):
+        calls = [
+            MLILCall('f', [MLILConst(1)], tail_call=True),
+            MLILSyscall(1, 2, [MLILConst(1)], tail_call=True),
+            MLILCallScript('module', 'func', [MLILConst(1)], tail_call=True),
+        ]
+
+        for call in calls:
+            with self.subTest(call=type(call).__name__):
+                rebuilt = call.rebuild(MLILConst(2))
+
+                self.assertIs(type(rebuilt), type(call))
+                self.assertTrue(rebuilt.tail_call)
 
 
 if __name__ == '__main__':

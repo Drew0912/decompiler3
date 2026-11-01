@@ -52,9 +52,14 @@ class MLILBuilder:
 
     def add_instruction(self, inst: MediumLevelILInstruction):
         """Add inst to the current block with the current source (renumber_instructions() numbers it later)"""
-        inst.address = self._current_address
-        inst.llil_index = self._current_llil_index
+        self.stamp(inst)
         self.current_block.add_instruction(inst)
+
+    def stamp(self, node: MediumLevelILInstruction) -> MediumLevelILInstruction:
+        """node with the current source: a statement as it is added, an expression as a translator builds it"""
+        node.address = self._current_address
+        node.llil_index = self._current_llil_index
+        return node
 
     # === Variable Management ===
 
@@ -76,6 +81,9 @@ class MLILBuilder:
 
     def store_global(self, index: int, value: MediumLevelILInstruction):
         self.add_instruction(MLILStoreGlobal(index, value))
+
+    def store_reg(self, index: int, value: MediumLevelILInstruction):
+        self.add_instruction(MLILStoreReg(index, value))
 
     def store_deref(self, dest: MediumLevelILInstruction, value: MediumLevelILInstruction):
         self.add_instruction(MLILStoreDeref(dest, value))

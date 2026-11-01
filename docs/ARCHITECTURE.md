@@ -66,7 +66,9 @@ Erases the explicit operand stack — every temporary becomes a named variable �
 control/data flow suitable for SSA and optimizer passes, while retaining Falcom-specific semantics
 (syscall IDs, `CALL_SCRIPT` metadata). Includes a full SSA optimizer pipeline — construction/
 deconstruction, critical-edge splitting, type inference, and further optimization passes
-(constant/copy propagation, dead-code elimination; none computes a value the bytecode does not hold). See
+(constant/copy propagation, dead-code elimination; none computes a value the bytecode does not hold). Beside it, not
+yet on the decompile path, the symbolic-stack translator (`convert_falcom_llil_to_mlil_stack`) gives non-SSA MLIL
+straight from the LLIL's stack layout, registers as storage (IR rewrite part 2). See
 `docs/mlil/MLIL_DESIGN.md` for the node model and pipeline shape, `docs/mlil/MLIL_GUIDE.md` for a practical
 usage guide.
 

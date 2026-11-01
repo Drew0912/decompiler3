@@ -511,14 +511,19 @@ class MediumLevelILCall(MediumLevelILStatement):
     them a fresh, unknown-valued pseudo-definition here. False marks a call proven to
     have no VM register/global side effects at all (e.g. a pure debug print), so
     nothing but its own output (if any) is treated as redefined.
+
+    tail_call marks a call that never gives control back (the LLIL's returns=False): the
+    stack translator follows it with the return that passes its result on, and only the
+    HLIL DSL will read the mark.
     """
 
     def __init__(self, operation: MediumLevelILOperation, args: list[MediumLevelILInstruction],
-                 output: Any | None = None, *, clobbers_registers: bool = True, **kwargs):
+                 output: Any | None = None, *, clobbers_registers: bool = True, tail_call: bool = False, **kwargs):
         super().__init__(operation, **kwargs)
         self.args = args
         self.output = output
         self.clobbers_registers = clobbers_registers
+        self.tail_call = tail_call
 
     def operands(self) -> tuple[MediumLevelILInstruction, ...]:
         return tuple(self.args)
@@ -531,7 +536,7 @@ class MediumLevelILCall(MediumLevelILStatement):
         return f'{self.output} = {call_str}'
 
     def rebuild(self, *args: MediumLevelILInstruction) -> MediumLevelILCall:
-        """Copy of this call with new arguments, keeping target, output, clobbers_registers and metadata"""
+        """Copy of this call with new arguments, keeping target, output, clobbers_registers, tail_call and metadata"""
         raise NotImplementedError
 
 
@@ -545,8 +550,8 @@ class MLILCall(MediumLevelILCall):
         self.target = target
 
     def rebuild(self, *args: MediumLevelILInstruction) -> MLILCall:
-        return MLILCall(self.target, list(args), self.output,
-                        clobbers_registers=self.clobbers_registers).copy_metadata_from(self)
+        return MLILCall(self.target, list(args), self.output, clobbers_registers=self.clobbers_registers,
+                        tail_call=self.tail_call).copy_metadata_from(self)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)
@@ -563,8 +568,8 @@ class MLILSyscall(MediumLevelILCall):
         self.cmd = cmd
 
     def rebuild(self, *args: MediumLevelILInstruction) -> MLILSyscall:
-        return MLILSyscall(self.subsystem, self.cmd, list(args), self.output,
-                           clobbers_registers=self.clobbers_registers).copy_metadata_from(self)
+        return MLILSyscall(self.subsystem, self.cmd, list(args), self.output, clobbers_registers=self.clobbers_registers,
+                           tail_call=self.tail_call).copy_metadata_from(self)
 
     def __str__(self) -> str:
         args_str = ', '.join([f'{self.subsystem}', f'{self.cmd}', *(str(arg) for arg in self.args)])
@@ -581,8 +586,8 @@ class MLILCallScript(MediumLevelILCall):
         self.func = func
 
     def rebuild(self, *args: MediumLevelILInstruction) -> MLILCallScript:
-        return MLILCallScript(self.module, self.func, list(args), self.output,
-                              clobbers_registers=self.clobbers_registers).copy_metadata_from(self)
+        return MLILCallScript(self.module, self.func, list(args), self.output, clobbers_registers=self.clobbers_registers,
+                              tail_call=self.tail_call).copy_metadata_from(self)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)
