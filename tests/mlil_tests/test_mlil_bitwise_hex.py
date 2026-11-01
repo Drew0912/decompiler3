@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from codegen import generate_typescript
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from falcom.ed9.ir.mlil.mlil_translator import RESULT_REG_INDEX
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.mlil.mlil_formatter import MLILFormatter
@@ -33,7 +33,7 @@ def outputs(push_value) -> dict[str, str]:
     push_value(asm)
     asm.set_reg(RESULT_REG_INDEX); asm.ret()
     _, llil_func = lift_asm(asm)
-    mlil_func = convert_falcom_llil_to_mlil(llil_func)
+    mlil_func = convert_falcom_llil_to_mlil_ssa(llil_func)
     hlil_func = convert_falcom_mlil_to_hlil(mlil_func)
     return {'.mlil.asm': '\n'.join(MLILFormatter.format_function(mlil_func)),
             '.hlil.ts': '\n'.join(HLILFormatter.format_function(hlil_func)),

@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MediumLevelILCall, MLILDeref,
@@ -490,7 +490,7 @@ class TestAddressTakenFromRealLLIL(unittest.TestCase):
         builder.pop_bytes(3 * WORD_SIZE)        # sp 3->0 (discard the three remaining temps)
         builder.ret()
 
-        mlil_func = convert_falcom_llil_to_mlil(builder.function, optimize=True, infer_types=False)
+        mlil_func = convert_falcom_llil_to_mlil_ssa(builder.function, optimize=True, infer_types=False)
 
         ret_inst = next(inst for b in mlil_func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))

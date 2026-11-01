@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import LowLevelILFunction
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.mlil.mlil_optimizer import mlil_optimization_passes, optimize_mlil
@@ -58,9 +58,9 @@ class TestOptimizeMLILMatchesProduction(unittest.TestCase):
     def test_same_mlil_as_the_production_converter(self):
         for infer_types in (True, False):
             with self.subTest(infer_types=infer_types):
-                production = convert_falcom_llil_to_mlil(build_call_function(), optimize=True,
-                                                         infer_types=infer_types)
-                translated = convert_falcom_llil_to_mlil(build_call_function(), optimize=False)
+                production = convert_falcom_llil_to_mlil_ssa(build_call_function(), optimize=True,
+                                                             infer_types=infer_types)
+                translated = convert_falcom_llil_to_mlil_ssa(build_call_function(), optimize=False)
                 optimized = optimize_mlil(translated, infer_types=infer_types)
 
                 self.assertEqual(MLILFormatter.format_function(optimized), MLILFormatter.format_function(production))

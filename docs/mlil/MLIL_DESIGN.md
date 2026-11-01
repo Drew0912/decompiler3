@@ -34,7 +34,7 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific). |
 | `ir/mlil/llil_ops.py` | The LLIL operations that map one to one onto MLIL ones (`BINARY_OP_TYPES`, `UNARY_OP_TYPES`), for both translators. |
 | `ir/mlil/stack_translator.py` | The generic symbolic-stack translator, `StackTranslator`, and `StackTranslatorPass` (see "The stack translator"). |
-| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil()`, and the stack translator's, `convert_falcom_llil_to_mlil_stack()`, not yet production. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
+| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil_ssa()`, and the stack translator's, `convert_falcom_llil_to_mlil_stack()`, not yet production. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
 | `falcom/ed9/ir/mlil/stack_translator.py` | `FalcomStackTranslator`: ED9's result register, calling convention, globals, script calls and `DEBUG_LOG` on the stack translator. |
 | `falcom/ed9/ir/mlil/mlil_passes.py` | `ED9LLILToMLILPass`, the pipeline's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
 | `falcom/ed9/ir/mlil/mlil_translator.py` | Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
@@ -49,7 +49,7 @@ All MLIL nodes derive from a common `MediumLevelILInstruction` base carrying an
 `operation` enum value and source tracking: `address` (the SCP offset), `llil_index` (the LLIL
 instruction the statement comes from - every statement one LLIL instruction produces shares it, and a
 statement de-SSA places on a CFG edge, a phi copy or a split-edge goto, takes the branch that leaves
-along that edge) and `inst_index` (the statement's own number: `convert_falcom_llil_to_mlil()` and
+along that edge) and `inst_index` (the statement's own number: `convert_falcom_llil_to_mlil_ssa()` and
 `optimize_mlil()` end by numbering every statement 0..N-1 in block order, and HLIL copies it as
 `mlil_index`). On the SSA path only statements carry them, expressions keeping the defaults; the stack translator
 stamps every expression node too, with the LLIL statement it comes from (`MLILBuilder.stamp`). A pass that replaces a
@@ -181,7 +181,7 @@ separate LLIL-to-MLIL map.
 
 ## LLIL → MLIL Pipeline
 
-The real production entry point is `convert_falcom_llil_to_mlil()`
+The real production entry point is `convert_falcom_llil_to_mlil_ssa()`
 (`falcom/ed9/ir/mlil/mlil_converter.py`), which builds a `Pipeline` and runs, in order:
 
 ```

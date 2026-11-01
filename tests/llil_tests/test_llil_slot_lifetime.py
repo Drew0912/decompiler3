@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from ir.llil.llil import LowLevelILFrameLoad, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore, WORD_SIZE
 from ir.llil.llil_builder import LowLevelILBuilder
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.mlil.mlil import MLILCallScript, MLILConst, MLILStoreGlobal, MLILVar
 from tests.shared.llil_utils import FOURTH_BLOCK_START, SECOND_BLOCK_START, THIRD_BLOCK_START, make_builder
 
@@ -42,7 +42,7 @@ def last_pushed_value(builder: LowLevelILBuilder):
 
 def global_stores(builder: FalcomVMBuilder) -> dict:
     """GLOBAL index -> stored value, after the production MLIL pipeline"""
-    mlil = convert_falcom_llil_to_mlil(builder.finalize(), optimize=True)
+    mlil = convert_falcom_llil_to_mlil_ssa(builder.finalize(), optimize=True)
     return {
         inst.index: inst.value
         for block in mlil.basic_blocks for inst in block.instructions
@@ -290,7 +290,7 @@ class TestLiveParameterSlot(unittest.TestCase):
         self.assertIsInstance(builder.current_block.instructions[-2], LowLevelILStackStore)
         builder.call_script_no_return(MODULE_NAME, TAIL_FUNC_NAME, 1)
 
-        mlil = convert_falcom_llil_to_mlil(builder.finalize(), optimize=True)
+        mlil = convert_falcom_llil_to_mlil_ssa(builder.finalize(), optimize=True)
         call = next(
             inst for block in mlil.basic_blocks for inst in block.instructions if isinstance(inst, MLILCallScript)
         )

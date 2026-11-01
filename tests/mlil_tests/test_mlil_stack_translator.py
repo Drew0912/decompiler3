@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from codegen import generate_typescript
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil, convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa, convert_falcom_llil_to_mlil_stack
 from ir.llil.llil import LowLevelILAdd, LowLevelILStackStore, WORD_SIZE
 from ir.mlil.mlil import (
     MLILAdd, MLILAnd, MLILCallScript, MLILConst, MLILDebug, MLILSetVar, UNASSIGNED_INST_INDEX, walk,
@@ -728,7 +728,7 @@ class TestCounts(StackTranslatorTestCase):
 
     def test_the_ssa_path_counts_nothing(self):
         _, llil = lift_asm(self.debug_log_with_a_value_pending(), others=(returning_callee(),))
-        mlil = convert_falcom_llil_to_mlil(llil, optimize=True, infer_types=False)
+        mlil = convert_falcom_llil_to_mlil_ssa(llil, optimize=True, infer_types=False)
 
         self.assertEqual(mlil.translation_counts, Counter())
 

@@ -47,7 +47,7 @@ class ScenaDecompileConfig(StrictBase):
     # .dat file with this on, since callers still reference the now-missing definitions.
     include_common_functions: bool = True
 
-    # MLIL conversion flags, forwarded to convert_falcom_llil_to_mlil
+    # MLIL conversion flags, forwarded to convert_falcom_llil_to_mlil_ssa
     optimize_mlil: bool = True
     infer_types: bool = True
 

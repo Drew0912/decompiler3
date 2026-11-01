@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import LowLevelILCall, LowLevelILFunction, LowLevelILRet
 from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILConst, MLILDebug, MLILGoto, MLILSetVar, MLILVariable,
@@ -82,13 +82,13 @@ class TestTranslatedProvenance(unittest.TestCase):
         for optimize in (False, True):
             with self.subTest(optimize=optimize):
                 llil = build_call_function()
-                mlil = convert_falcom_llil_to_mlil(llil, optimize=optimize)
+                mlil = convert_falcom_llil_to_mlil_ssa(llil, optimize=optimize)
                 self.assertIs(mlil.llil_function, llil)
                 self.check_contract(mlil, llil)
 
     def test_call_and_its_goto_share_the_call(self):
         llil = build_call_function()
-        mlil = convert_falcom_llil_to_mlil(llil, optimize=False)
+        mlil = convert_falcom_llil_to_mlil_ssa(llil, optimize=False)
         call_index = next(i for i, inst in llil_instructions(llil).items() if isinstance(inst, LowLevelILCall))
         ret_index = next(i for i, inst in llil_instructions(llil).items() if isinstance(inst, LowLevelILRet))
         entry, ret_block = mlil.basic_blocks
@@ -100,7 +100,7 @@ class TestTranslatedProvenance(unittest.TestCase):
 
     def test_optimize_mlil_numbers_statements_after_block_merge(self):
         llil = build_call_function()
-        mlil = optimize_mlil(convert_falcom_llil_to_mlil(llil, optimize=False))
+        mlil = optimize_mlil(convert_falcom_llil_to_mlil_ssa(llil, optimize=False))
         self.check_contract(mlil, llil)
 
 

@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil, convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa, convert_falcom_llil_to_mlil_stack
 from ir.hlil import HLILSwitch, iter_tree
 from ir.llil.llil import WORD_SIZE
 from tests.shared.llil_utils import lift_asm
@@ -115,7 +115,7 @@ class TestSwitchOnBothPaths(unittest.TestCase):
         """build()'s HLIL through one path, and the logic check's MLIL -> HLIL categories on it"""
         _, llil = lift_asm(build(), argc=argc, others=(returning_callee(),))
         mlil = (convert_falcom_llil_to_mlil_stack(llil) if stack
-                else convert_falcom_llil_to_mlil(llil, optimize=True, infer_types=False))
+                else convert_falcom_llil_to_mlil_ssa(llil, optimize=True, infer_types=False))
         hlil = convert_falcom_mlil_to_hlil(mlil)
         return hlil, {difference.category for difference in logic_check.compare_mlil_hlil(mlil, hlil)}
 

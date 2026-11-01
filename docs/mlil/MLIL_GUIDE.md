@@ -43,7 +43,7 @@ See `docs/mlil/MLIL_DESIGN.md`'s Module Layout table for the full file-by-file b
 `ir/mlil/` holds the generic engine (non-SSA node types, the SSA layer, the optimizer, the
 builder/formatter), `ir/mlil/passes/` holds the 14 pass modules, and
 `falcom/ed9/ir/mlil/` holds Falcom-specific wiring — `mlil_converter.py` is the real production
-entry point (`convert_falcom_llil_to_mlil()`), mirroring how `falcom/ed9/ir/hlil/hlil_converter.py`
+entry point (`convert_falcom_llil_to_mlil_ssa()`), mirroring how `falcom/ed9/ir/hlil/hlil_converter.py`
 wires HLIL.
 
 ## Variable Model
@@ -99,7 +99,7 @@ convention.
 
 ## The Pipeline
 
-`convert_falcom_llil_to_mlil()` (`falcom/ed9/ir/mlil/mlil_converter.py`) is what real code paths
+`convert_falcom_llil_to_mlil_ssa()` (`falcom/ed9/ir/mlil/mlil_converter.py`) is what real code paths
 call. It builds a `Pipeline` and runs:
 
 ```

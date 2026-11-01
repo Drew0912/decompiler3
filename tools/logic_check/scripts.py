@@ -8,7 +8,7 @@ from dc3.gc_policy import infrequent_gc
 from dc3.utils import raise_recursion_limit
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from falcom.ed9.parser.scp import ScpParser
 from .compare import Difference, compare_facts
 from .evaluation import analyze
@@ -63,7 +63,7 @@ def check_function(lifter: ED9VMLifter, func, infer_types: bool) -> FunctionResu
         return FunctionResult.check_failed(func.name, 'LLIL', e)
 
     try:
-        mlil = convert_falcom_llil_to_mlil(llil, optimize=True, infer_types=infer_types)
+        mlil = convert_falcom_llil_to_mlil_ssa(llil, optimize=True, infer_types=infer_types)
     except Exception as e:
         return FunctionResult.decompile_failed(func.name, 'MLIL', e)
 

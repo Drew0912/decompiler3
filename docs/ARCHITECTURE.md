@@ -131,7 +131,7 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
    ↓
 6. Lifter (ED9VMLifter.lift_function) → LowLevelILFunction
    ↓
-7. MLIL (convert_falcom_llil_to_mlil)
+7. MLIL (convert_falcom_llil_to_mlil_ssa)
    ↓
 8. HLIL (convert_falcom_mlil_to_hlil)
    ↓
