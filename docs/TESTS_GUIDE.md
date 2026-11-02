@@ -21,7 +21,8 @@ A test sits in the folder of the code it tests. Each folder is named after that 
 | Folder | Tests of |
 |---|---|
 | `llil_tests/` | the LLIL builder and the ED9 lifter (`ir/llil/`, `falcom/ed9/ir/llil/`), and what they hand to MLIL |
-| `mlil_tests/` | the LLIL->MLIL translators (the stack translator, the decompile path's, and the SSA path's), its passes, MLIL SSA and the optimizer passes (`ir/mlil/`, `falcom/ed9/ir/mlil/`) |
+| `mlil_tests/` | the decompile path's MLIL: the stack translator and its passes, the nodes, builder and formatter (`ir/mlil/`, `falcom/ed9/ir/mlil/`); a few files test the SSA path beside the code that stays (address-taken locals, types, metadata, rebuild, traversal, provenance) |
+| `mlil_ssa_tests/` | the SSA path, kept and never called: its LLIL->MLIL translator, MLIL SSA and the optimizer passes (`ir/mlil_ssa/`, `falcom/ed9/ir/mlil_ssa/`) |
 | `hlil_tests/` | MLIL->HLIL structuring and the HLIL passes (`ir/hlil/`, `falcom/ed9/ir/hlil/`) |
 | `parser_tests/` | reading a `.dat` (`falcom/ed9/parser/`, `falcom/ed9/structs/`, `falcom/ed9/disasm/`, `assembler/`): stack simulation, string pool, call records, listings, the opcode table's stack effects, and the `.py` text scena2py writes |
 | `writer_tests/` | `ScpWriter` (`falcom/ed9/writer/`): compiling the LLIL DSL, hooks, the compile check |

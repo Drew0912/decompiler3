@@ -60,17 +60,18 @@ per-edge stack state are in `docs/llil/LLIL_DESIGN.md`.
 
 ## Layer 4: MLIL — Implemented
 
-**Location:** `ir/mlil/` (generic) + `falcom/ed9/ir/mlil/` (Falcom-specific)
+**Location:** `ir/mlil/` (generic) + `falcom/ed9/ir/mlil/` (Falcom-specific); the kept SSA path in `ir/mlil_ssa/` +
+`falcom/ed9/ir/mlil_ssa/`
 
 Erases the explicit operand stack, while retaining Falcom-specific semantics (syscall IDs, `CALL_SCRIPT` metadata).
 The decompile path's MLIL comes from the symbolic-stack translator (`convert_falcom_llil_to_mlil_stack`): non-SSA MLIL
 straight from the LLIL's stack layout, registers as storage, then the passes that merge blocks, forward call results,
 return the value stored before each return and mark bitwise constants hex (IR rewrite part 2). Beside it, kept and
-never called by the decompile path, the SSA path (`convert_falcom_llil_to_mlil_ssa`): every temporary a named
-variable, and a full SSA optimizer pipeline — construction/deconstruction, critical-edge splitting, type inference,
-and further optimization passes (constant/copy propagation, dead-code elimination; none computes a value the bytecode
-does not hold). See `docs/mlil/MLIL_DESIGN.md` for the node model and pipeline shape, `docs/mlil/MLIL_GUIDE.md` for a
-practical usage guide.
+never called by the decompile path, the SSA path (`convert_falcom_llil_to_mlil_ssa`, in its own packages, which
+import from `ir/mlil/` and never the other way): every temporary a named variable, and a full SSA optimizer pipeline —
+construction/deconstruction, critical-edge splitting, type inference, and further optimization passes (constant/copy
+propagation, dead-code elimination; none computes a value the bytecode does not hold). See `docs/mlil/MLIL_DESIGN.md`
+for the node model and pipeline shape, `docs/mlil/MLIL_GUIDE.md` for a practical usage guide.
 
 ## Layer 5: HLIL — Implemented, active development
 
@@ -143,7 +144,11 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
 `ir/`, `assembler/` and `dc3/` are meant to be generic, with game code under `falcom/`, and nothing generic imports
 `falcom/`. `codegen/` is game output (user, 2026-10-02): it reads only HLIL and nothing in `ir/` depends on it, so
 game knowledge there can't spread back into the IR. The opcode table (`falcom/ed9/disasm/`) holds no IR node classes:
-it gives opcode kinds and stack effects, and the LLIL lifter maps them to nodes.
+it gives opcode kinds and stack effects, and the LLIL lifter maps them to nodes. The decompile path's LLIL -> MLIL
+translator keeps the game's conventions in `falcom/ed9/ir/mlil/stack_translator.py` (`FalcomStackTranslator`: the
+parameter-to-slot mapping, the result register, globals, script calls, `DEBUG_LOG`); the generic `StackTranslator`
+translates the generic LLIL nodes (`RegStore`, `RegLoad`, `Syscall`) itself. The SSA path's known leftovers stay with
+it in `ir/mlil_ssa/` (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary").
 
 ## Key Design Principles
 

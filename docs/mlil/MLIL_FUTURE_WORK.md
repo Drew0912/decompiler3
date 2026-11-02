@@ -5,7 +5,7 @@
 
 ## VM-Accurate DIV/MOD and Float Folding (`docs/mlil/MLIL_DESIGN.md`)
 
-SCCP (`ir/mlil/passes/pass_ssa_sccp.py`) deliberately does not fold `MLIL_DIV`/`MLIL_MOD`, or any
+SCCP (`ir/mlil_ssa/passes/pass_ssa_sccp.py`) deliberately does not fold `MLIL_DIV`/`MLIL_MOD`, or any
 op with a float operand, and no pass decides a branch from a float (LLIL DSL neatening plan, Step
 3b) - see the Optimization Passes section of `docs/mlil/MLIL_DESIGN.md`. The one live, corpus-confirmed
 bad fold the DIV/MOD part closed: sora2's `script_en/scena/mp0000_ev.dat`'s `MayaEvented_22_test`
@@ -40,7 +40,7 @@ again only where folding comes back.
   left as it is - both predate this idea and are independent of it, but a natural pass to make at
   the same time.
 - Mixed int/float arithmetic is typed `int`: `SSATypeInferencePass._infer_expr_type`
-  (`ir/mlil/passes/pass_ssa_type_inference.py`) falls back to `int` when `unify_types` gives
+  (`ir/mlil_ssa/passes/pass_ssa_type_inference.py`) falls back to `int` when `unify_types` gives
   `variant<int, float>`, which `is_numeric()` rejects. Since Step 3b leaves such expressions
   unfolded, it shows in 2 places: `chr0125` `AniFieldAttack`'s `arg1 = 0.0333 * 5` makes the
   `.mlil.asm` type `int` (was `variant<int, float>`), and `sound_ani` `SeBattleWaitingVoice`'s

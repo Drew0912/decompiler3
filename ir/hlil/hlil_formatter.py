@@ -37,8 +37,8 @@ class HLILFormatter(HLILStatementPrinter):
             operand = cls._format_expr(expr.operand)
             return f'&{operand}'
         elif isinstance(expr, HLILDeref):
-            # *(&x) - ir/mlil/mlil_ssa.py's memory-form lowering of address-taken local x -
-            # folds back to plain x, same convention as codegen/typescript.py
+            # *(&x) - the memory form of address-taken local x (the stack translator's, and
+            # ir/mlil_ssa/mlil_ssa.py's lowering) - folds back to plain x, same convention as codegen/typescript.py
             unwrapped = unwrap_address_taken_var(expr)
             if unwrapped is not None:
                 return cls._format_expr(unwrapped)

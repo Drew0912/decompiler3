@@ -12,8 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
-from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
+from falcom.ed9.ir.mlil.stack_translator import DEBUG_LOG_CALL_TARGET
+from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
     MediumLevelILCall, MLILAdd, MLILAddressOf, MLILCall, MLILConst, MLILEq, MLILGe, MLILIf, MLILLoadGlobal,

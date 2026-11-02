@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for address-taken locals as memory during SSA. Address-taken locals/parameters
-are lowered to explicit *(&x) deref/store form during SSA construction (ir/mlil/mlil_ssa.py's
+are lowered to explicit *(&x) deref/store form during SSA construction (ir/mlil_ssa/mlil_ssa.py's
 _lower_address_taken_vars) instead of being versioned like ordinary scalars, so a call's real
 effect on an out-parameter is never dropped (real examples: mp0000_ev.EVENT_END_BTL,
 QSM410_00_01/QSM802_00_01)."""
@@ -13,16 +13,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
+from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MediumLevelILCall, MLILDeref,
     MLILStoreDeref, MLILSetVar, MLILVar, MLILVariable, MLILConst, MLILCall, MLILAddressOf,
     MLILIf, MLILGoto, MLILAdd, MLILSub, MLILEq, MLILGe, MLILRet, MLILStoreGlobal, MLILLoadGlobal,
 )
-from ir.mlil.mlil_ssa import SSAConstructor, SSADeconstructor
-from ir.mlil.mlil_optimizer import optimize_mlil
-from ir.mlil.passes import SSAConversionPass, SSATypeInferencePass, RegGlobalValuePropagationPass
+from ir.mlil_ssa.mlil_ssa import SSAConstructor, SSADeconstructor
+from ir.mlil_ssa.mlil_optimizer import optimize_mlil
+from ir.mlil_ssa.passes import SSAConversionPass, SSATypeInferencePass, RegGlobalValuePropagationPass
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from ir.hlil.hlil import (
     HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock, HLILAddressOf,

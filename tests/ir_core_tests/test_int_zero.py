@@ -19,8 +19,8 @@ from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizatio
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILEq, MLILNe, MLILLt, MLILLogicalNot,
 )
-from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILIf, MLILRet
-from ir.mlil.passes.pass_ssa_condition_simplification import ConditionSimplificationPass
+from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILIf, MLILRet
+from ir.mlil_ssa.passes.pass_ssa_condition_simplification import ConditionSimplificationPass
 
 INT_ZERO = 0
 FLOAT_ZERO = 0.0

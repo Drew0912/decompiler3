@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from ir.llil.llil import LowLevelILCall
 from ir.mlil.mlil import MLILCallScript, MLILRet, MLILVar
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript, LowLevelILCallScriptNoReturn
-from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
 from falcom.ed9.structs.call_debug_records import CallDebugInfoTracker
 from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo
@@ -73,7 +73,7 @@ class TestCallScriptNoReturnMLIL(unittest.TestCase):
     def test_translates_to_call_then_return(self):
         llil_func, _ = build_tail_call_function(1)
 
-        mlil_func = FalcomLLILToMLILTranslator().translate(llil_func)
+        mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
 
         block = mlil_func.basic_blocks[0]
         # Pushing the argument emits its own MLIL statement(s) ahead of the call (same as any

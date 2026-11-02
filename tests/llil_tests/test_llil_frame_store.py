@@ -11,7 +11,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILFrameStore, LowLevelILStackStore, LowLevelILConst, WORD_SIZE
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
-from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from ir.mlil.mlil import MLILSetVar
 from tests.shared.llil_utils import make_builder
 
@@ -72,7 +72,7 @@ class TestPopToParameterSlotMLIL(unittest.TestCase):
         builder.pop_bytes(WORD_SIZE)  # a real function cleans up its own param slot before RETURN
         builder.ret()
 
-        mlil_func = FalcomLLILToMLILTranslator().translate(builder.function)
+        mlil_func = convert_falcom_llil_to_mlil_stack(builder.function)
         block = mlil_func.basic_blocks[0]
 
         set_var_inst = block.instructions[-2]  # last instruction is the translated ret

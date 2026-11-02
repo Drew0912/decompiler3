@@ -11,15 +11,15 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILLoad, LowLevelILStore, LowLevelILFrameLoad, WORD_SIZE
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
-from falcom.ed9.ir.mlil.mlil_translator import FalcomLLILToMLILTranslator
+from falcom.ed9.ir.mlil_ssa.mlil_translator import FalcomLLILToMLILTranslator
 from ir.mlil.mlil import (
     MediumLevelILFunction, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILVariable,
     MLILConst, MLILCall, MLILStoreReg, MLILLoadReg, MLILRet, MLILAddressOf, MLILIf, MLILGoto,
     MLILAdd, MLILEq,
 )
-from ir.mlil.mlil_ssa import MLILVarSSA, MLILPhi
-from ir.mlil.mlil_optimizer import optimize_mlil
-from ir.mlil.passes import (
+from ir.mlil_ssa.mlil_ssa import MLILVarSSA, MLILPhi
+from ir.mlil_ssa.mlil_optimizer import optimize_mlil
+from ir.mlil_ssa.passes import (
     SSAConversionPass, SSADeconstructionPass, CopyPropagationPass, ExpressionInliningPass,
     SSADeadCodeEliminationPass, RegGlobalValuePropagationPass,
 )

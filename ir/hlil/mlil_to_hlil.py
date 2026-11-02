@@ -340,7 +340,7 @@ class CallResultFolder:
         """Whether node reads through a pointer, or reads REG[]/GLOBAL[], anywhere in its tree.
 
         Both are impure the same way: not SSA-tracked variables, and a call is conservatively
-        assumed able to write either (see e.g. pass_reg_global_propagation.py's MLILCall
+        assumed able to write either (see e.g. ir/mlil_ssa/passes/pass_reg_global_propagation.py's MLILCall
         handling, which drops every cached REG/GLOBAL value on a call).
         """
         return any(isinstance(sub, (MLILDeref, MLILLoadReg, MLILLoadGlobal)) for sub in walk(node))

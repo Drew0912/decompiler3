@@ -26,7 +26,7 @@ from ir.hlil import HLILConst
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.llil.llil import WORD_SIZE, LowLevelILConst, LowLevelILStackStore
 from ir.mlil.mlil import MLILConst
-from ir.mlil.mlil_ssa_optimizer import SSAOptimizer
+from ir.mlil_ssa.mlil_ssa_optimizer import SSAOptimizer
 from tests.shared.scp_writer_test_utils import fresh_writer
 
 STORED_0_3 = 0.2999999523162842     # what 0.3 decodes to

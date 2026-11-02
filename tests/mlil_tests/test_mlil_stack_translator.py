@@ -16,7 +16,8 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from codegen import generate_typescript
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa, convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import LowLevelILAdd, LowLevelILStackStore, WORD_SIZE
 from ir.mlil.mlil import (
     MLILAdd, MLILAnd, MLILCallScript, MLILConst, MLILDebug, MLILSetVar, UNASSIGNED_INST_INDEX, walk,

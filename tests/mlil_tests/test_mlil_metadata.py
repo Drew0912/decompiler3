@@ -19,8 +19,8 @@ from ir.mlil import (
     MLILSetVar,
     MLILVariable,
 )
-from ir.mlil.mlil_ssa import MLILSetVarSSA, MLILVariableSSA, MLILVarSSA
-from ir.mlil.passes import (
+from ir.mlil_ssa.mlil_ssa import MLILSetVarSSA, MLILVariableSSA, MLILVarSSA
+from ir.mlil_ssa.passes import (
     ConditionSimplificationPass,
     CopyPropagationPass,
     SSAConversionPass,

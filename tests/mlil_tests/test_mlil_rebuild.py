@@ -16,10 +16,10 @@ from ir.mlil.mlil import (
     MLILBinaryOp, MLILUnaryOp, MLILAdd, MLILLogicalAnd, MLILLogicalNot, MLILAddressOf, MLILDeref,
     MLILCall, MLILSyscall, MLILCallScript,
 )
-from ir.mlil.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILRet
-from ir.mlil.passes.pass_ssa_sccp import SCCP
-from ir.mlil.passes.pass_ssa_constant_propagation import ConstantPropagationPass
-from ir.mlil.passes.pass_ssa_nnf import NNFPass
+from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILRet
+from ir.mlil_ssa.passes.pass_ssa_sccp import SCCP
+from ir.mlil_ssa.passes.pass_ssa_constant_propagation import ConstantPropagationPass
+from ir.mlil_ssa.passes.pass_ssa_nnf import NNFPass
 from tests.shared.ir_utils import concrete_subclasses
 
 

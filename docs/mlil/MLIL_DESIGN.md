@@ -25,21 +25,24 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | Path | Responsibility |
 | --- | --- |
 | `ir/mlil/mlil.py` | Core non-SSA data structures: `MediumLevelILInstruction` base, the `MediumLevelILExpr`/`MediumLevelILStatement` split, `MLILVariable`, `MediumLevelILBasicBlock`, `MediumLevelILFunction`. |
-| `ir/mlil/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
-| `ir/mlil/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
-| `ir/mlil/mlil_optimizer.py` | `mlil_optimization_passes()`, the SSA path's one list of passes that runs after its LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
-| `ir/mlil/passes/` | The actual pass implementations (17 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_block_merge.py`, `pass_bitwise_hex.py`, `pass_call_result.py` and `pass_return_value.py` (the stack translator's path only); SCCP, expression simplification and register/global propagation are out of the SSA path's pipeline (see "LLIL → MLIL Pipeline"). |
 | `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function's blocks, variables and statements; expressions are built with the node classes. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging) and the `.mlil.dot` graphs, with the DOT writer LLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`). |
-| `ir/mlil/mlil_types.py` | Type-kind/unification support. |
-| `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific), the SSA path's translator. |
+| `ir/mlil/mlil_types.py` | Type-kind/unification support (HLIL's converter reads it; the SSA path's type pass fills it). |
 | `ir/mlil/llil_ops.py` | The LLIL operations that map one to one onto MLIL ones (`BINARY_OP_TYPES`, `UNARY_OP_TYPES`), for both translators. |
 | `ir/mlil/stack_translator.py` | The generic symbolic-stack translator, `StackTranslator`, and `StackTranslatorPass` (see "The stack translator"). |
-| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the decompile path's entry point, the stack translator's `convert_falcom_llil_to_mlil_stack()`, and the SSA path's, `convert_falcom_llil_to_mlil_ssa()`, kept and never called by it. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
+| `ir/mlil/passes/` | The decompile path's passes after its translator (4 files): `pass_block_merge.py` and `pass_bitwise_hex.py` (the SSA path runs them too), `pass_call_result.py` and `pass_return_value.py`. |
+| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the decompile path's entry point, the stack translator's `convert_falcom_llil_to_mlil_stack()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
 | `falcom/ed9/ir/mlil/stack_translator.py` | `FalcomStackTranslator`: ED9's result register, calling convention, globals, script calls and `DEBUG_LOG` on the stack translator. |
-| `falcom/ed9/ir/mlil/mlil_passes.py` | `ED9LLILToMLILPass`, the SSA path's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
-| `falcom/ed9/ir/mlil/mlil_translator.py` | The SSA path's Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
-| `tests/mlil_tests/test_mlil_metadata.py` | One of several dedicated MLIL test files today — see Testing below. |
+| **The SSA path** | Kept beside the decompile path and never called by it (IR rewrite part 2, Step 10); it imports from `ir/mlil/`, never the other way. |
+| `ir/mlil_ssa/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific), the SSA path's translator. |
+| `ir/mlil_ssa/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
+| `ir/mlil_ssa/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
+| `ir/mlil_ssa/mlil_optimizer.py` | `mlil_optimization_passes()`, the SSA path's one list of passes that runs after its LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
+| `ir/mlil_ssa/passes/` | The SSA path's passes (13 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`; SCCP, expression simplification and register/global propagation are out of its pipeline (see "LLIL → MLIL Pipeline"). |
+| `falcom/ed9/ir/mlil_ssa/mlil_converter.py` | The SSA path's entry point, `convert_falcom_llil_to_mlil_ssa()`. |
+| `falcom/ed9/ir/mlil_ssa/mlil_passes.py` | `ED9LLILToMLILPass`, the SSA path's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
+| `falcom/ed9/ir/mlil_ssa/mlil_translator.py` | The SSA path's Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
+| `tests/mlil_tests/`, `tests/mlil_ssa_tests/` | The MLIL tests, the SSA path's in their own folder — see Testing below. |
 
 Note: `falcom/ed9/lifters/mlil_lifter.py`, previously listed here, does not exist anywhere in the
 tree. This table now reflects the real path.
@@ -83,7 +86,7 @@ comparison inversion) builds the new node directly.
 
 Reading is shared the same way. Every node's `operands()` returns the expressions it holds, in
 evaluation order; `walk()` (`ir/mlil/mlil.py`) visits a node and everything below it, and
-`iter_ssa_reads()` (`ir/mlil/mlil_ssa.py`) yields each SSA variable it reads with the node that
+`iter_ssa_reads()` (`ir/mlil_ssa/mlil_ssa.py`) yields each SSA variable it reads with the node that
 reads it (the `MLILVarSSA`, or the phi for a phi source). Every use collector - SSA construction's
 address-taken scan, de-SSA liveness, SCCP, dead code, dead phis, copy propagation, inlining - is
 built on these, so a new node type needs only its own `operands()`. Copy propagation passes
@@ -97,7 +100,7 @@ Two coexisting representations, not a single evolving one:
 - **Non-SSA** (`ir/mlil/mlil.py`): `MLILVariable`, read via `MLILVar` and written via
   `MLILSetVar`. This is the "on the wire" default form — a `MediumLevelILFunction` starts and ends
   in this form both before and after the optimizer runs.
-- **SSA** (`ir/mlil/mlil_ssa.py`): `MLILVariableSSA`, `MLILVarSSA`, `MLILSetVarSSA`, and `MLILPhi`.
+- **SSA** (`ir/mlil_ssa/mlil_ssa.py`): `MLILVariableSSA`, `MLILVarSSA`, `MLILSetVarSSA`, and `MLILPhi`.
   SSA construction is dominance-based (`SSAConstructor`) and includes critical-edge splitting;
   deconstruction (`SSADeconstructor`) converts back to non-SSA form afterward. An entry block a back
   edge enters (a loop at the function's very start) first gets an empty block in front of it
@@ -110,9 +113,9 @@ slot is `argN` only while it still holds the caller's value, and a value pushed 
 function popped the parameter is a `var_sN`, like any other push.
 
 On the SSA path, SSA is where essentially all real optimization work happens. Its shared pass list
-(`mlil_optimization_passes()` in `ir/mlil/mlil_optimizer.py`) merges call-split blocks, converts to SSA, runs the full
-`SSAOptimizer` pass suite plus optional type inference, deconstructs back to non-SSA, then marks bitwise constants for
-hex display (`BitwiseHexPass`). HLIL's converter (`falcom/ed9/ir/hlil/hlil_converter.py`) imports and consumes
+(`mlil_optimization_passes()` in `ir/mlil_ssa/mlil_optimizer.py`) merges call-split blocks, converts to SSA, runs the
+full `SSAOptimizer` pass suite plus optional type inference, deconstructs back to non-SSA, then marks bitwise constants
+for hex display (`BitwiseHexPass`). HLIL's converter (`falcom/ed9/ir/hlil/hlil_converter.py`) imports and consumes
 non-SSA `MediumLevelILFunction` — it does not read SSA form directly: the decompile path's stack translator makes
 non-SSA MLIL directly, and on the SSA path construction/optimization/deconstruction has already happened upstream.
 
@@ -185,8 +188,9 @@ separate LLIL-to-MLIL map.
 
 The decompile path's entry point is `convert_falcom_llil_to_mlil_stack()` (`falcom/ed9/ir/mlil/mlil_converter.py`):
 the stack translator and its passes ("The stack translator", below). Beside it, kept and never called by the decompile
-path (IR rewrite part 2), the SSA path's entry point, `convert_falcom_llil_to_mlil_ssa()`, builds a `Pipeline` and
-runs, in order:
+path (IR rewrite part 2), the SSA path's entry point, `convert_falcom_llil_to_mlil_ssa()`
+(`falcom/ed9/ir/mlil_ssa/mlil_converter.py`; its generic code in `ir/mlil_ssa/`, which imports from `ir/mlil/` and
+never the other way; its tests in `tests/mlil_ssa_tests/`, run by the suite), builds a `Pipeline` and runs, in order:
 
 ```
 ED9LLILToMLILPass → BlockMergePass (optimize only) → SSAConversionPass → SSAOptimizationPass →
@@ -194,7 +198,7 @@ SSATypeInferencePass (optional) → SSADeconstructionPass → BitwiseHexPass
 ```
 
 Every pass after `ED9LLILToMLILPass` comes from `mlil_optimization_passes()`
-(`ir/mlil/mlil_optimizer.py`); `optimize_mlil()` runs the same list on an already translated
+(`ir/mlil_ssa/mlil_optimizer.py`); `optimize_mlil()` runs the same list on an already translated
 function, so tests that call it run what the SSA path runs. No dead-code pass runs after SSA
 deconstruction: a census of its output, then production's, found no unread local assignment (500-file sample,
 2026-09-26).
@@ -213,7 +217,7 @@ tests kept. A constant expression prints as written (`1 | 32768`, `40000 + 200`)
 
 ### Optimization Passes (inside `SSAOptimizer`)
 
-Run on SSA form, in `ir/mlil/mlil_ssa_optimizer.py`'s configured order: constant propagation (a
+Run on SSA form, in `ir/mlil_ssa/mlil_ssa_optimizer.py`'s configured order: constant propagation (a
 variable's one constant definition substituted into its reads), condition simplification, negation
 normal form, copy propagation, expression inlining, dead-code elimination, and dead-`Phi` elimination.
 They repeat until a round changes nothing, for at most `SSA_OPTIMIZER_MAX_ITERATIONS` (10) rounds -
@@ -348,13 +352,14 @@ them, and the rewrite removes them after its last such run. The keys:
 
 ## Testing
 
-Several dedicated MLIL test files exist today (`test_mlil_metadata.py`,
-`test_mlil_ssa_optimizer.py`, `test_mlil_sccp_folding.py`, `test_mlil_address_taken.py`,
-`test_mlil_reg_global_propagation.py`, `test_mlil_types.py`, and others) covering SSA construction/deconstruction, the
-SSA optimizer's passes, and register/global propagation - a closed gap from when this line last
-said only one existed. `test_mlil_stack_translator.py` covers the stack translator on assembled functions, each case
-also compared clean by the logic check on both pairs; `test_mlil_stack_hand_written.py` on the shapes only a hand edit
-makes, written in the LLIL DSL and compiled by the writer, through the same checks
+The SSA path's tests are in `tests/mlil_ssa_tests/` (`test_mlil_ssa_optimizer.py`, `test_mlil_sccp_folding.py`,
+`test_mlil_reg_global_propagation.py`, and others), covering SSA construction/deconstruction, the SSA
+optimizer's passes, and register/global propagation; a few files in `tests/mlil_tests/` test it beside the code
+that stays (`test_mlil_address_taken.py`, `test_mlil_types.py`, `test_mlil_metadata.py`, `test_mlil_rebuild.py`,
+`test_mlil_traversal.py`, `test_mlil_provenance.py`). `test_mlil_stack_translator.py` covers
+the stack translator on assembled functions, each case also compared clean by the logic check on both pairs;
+`test_mlil_stack_hand_written.py` on the shapes only a hand edit makes, written in the LLIL DSL and compiled by the
+writer, through the same checks
 (`tests/shared/stack_translator_checks.py`), both on the translator's own pipeline (no shaping pass);
 `test_mlil_call_result.py` and `test_mlil_return_value.py` cover `CallResultPass` and `ReturnValuePass` through the
 whole entry point.

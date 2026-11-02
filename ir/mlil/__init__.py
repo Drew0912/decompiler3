@@ -1,13 +1,10 @@
-"""Medium Level IL - Stack-free intermediate representation"""
+"""Medium Level IL - Stack-free intermediate representation (the SSA path, kept and never called by the decompile
+path, is ir/mlil_ssa/)"""
 
 from .mlil_builder import *
 from .llil_ops import *
-from .llil_to_mlil import *
 from .stack_translator import *
 from .mlil_formatter import *
-from .mlil_optimizer import *
-from .mlil_ssa_optimizer import *
-from .mlil_ssa import *
 from .mlil_types import *
 from .passes import *
 from .mlil import *
@@ -19,57 +16,20 @@ __all__ = [
     'mlil_reg_var_name',
     'mlil_global_var_name',
 
-    # Builder, Translator, Formatter, and Optimizers
+    # Builder, Translator, Formatter
     'MLILBuilder',
-    'LLILToMLILTranslator',
     'BINARY_OP_TYPES',
     'UNARY_OP_TYPES',
     'StackTranslator',
     'UnsupportedStackShape',
     'MLILFormatter',
-    'SSAOptimizer',
-    'SSA_OPTIMIZER_MAX_ITERATIONS',
-    'mlil_optimization_passes',
-    'optimize_mlil',
 
     # Passes
-    'LLILToMLILPass',
     'StackTranslatorPass',
-    'SSAConversionPass',
-    'SSAOptimizationPass',
-    'SSADeconstructionPass',
-    'NNFPass',
-    'SCCP',
-    'LatticeValue',
-    'ConstantPropagationPass',
-    'CopyPropagationPass',
-    'ExpressionSimplificationPass',
-    'ConditionSimplificationPass',
-    'ExpressionInliningPass',
-    'SSADeadCodeEliminationPass',
-    'DeadPhiSourceEliminationPass',
-    'SSATypeInferencePass',
     'BlockMergePass',
     'CallResultPass',
     'ReturnValuePass',
-    'RegGlobalState',
-    'RegGlobalValuePropagator',
-    'RegGlobalValuePropagationPass',
     'BitwiseHexPass',
-
-    # SSA
-    'MLILVariableSSA',
-    'MLILVarSSA',
-    'MLILSetVarSSA',
-    'MLILPhi',
-    'iter_ssa_reads',
-    'iter_ssa_defs',
-    'registers_left_by_returns',
-    'DominanceAnalysis',
-    'SSAConstructor',
-    'SSADeconstructor',
-    'convert_to_ssa',
-    'convert_from_ssa',
 
     # Type System
     'MLILType',

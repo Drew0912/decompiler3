@@ -10,14 +10,15 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa, convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import LowLevelILCall, LowLevelILFunction, LowLevelILRet
 from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILConst, MLILDebug, MLILGoto, MLILSetVar, MLILVariable,
 )
-from ir.mlil.mlil_optimizer import optimize_mlil
-from ir.mlil.mlil_ssa import MLILIf, MLILPhi, MLILRet, MLILSetVarSSA, MLILVariableSSA, MLILVarSSA, SSADeconstructor
-from ir.mlil.passes import DeadPhiSourceEliminationPass, SSADeadCodeEliminationPass
+from ir.mlil_ssa.mlil_optimizer import optimize_mlil
+from ir.mlil_ssa.mlil_ssa import MLILIf, MLILPhi, MLILRet, MLILSetVarSSA, MLILVariableSSA, MLILVarSSA, SSADeconstructor
+from ir.mlil_ssa.passes import DeadPhiSourceEliminationPass, SSADeadCodeEliminationPass
 
 
 FUNC_START = 0x3000

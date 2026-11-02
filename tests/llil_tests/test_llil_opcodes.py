@@ -16,12 +16,13 @@ from ir.llil.llil import (
 )
 from codegen import generate_typescript
 from falcom.ed9.disasm.formatter import Formatter
+from falcom.ed9.disasm.stack_effects import RESULT_REGISTER
 from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugLog, LowLevelILFalcomOperation
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
-from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET, RESULT_REG_INDEX
+from falcom.ed9.ir.mlil.stack_translator import DEBUG_LOG_CALL_TARGET
 from falcom.ed9.structs.scp_types import RawInt, ScpValue
 from ir.hlil.hlil import HighLevelILFunction, HLILAssign, HLILCall, HLILConst, HLILVar, iter_tree
 from ir.llil import WORD_SIZE
@@ -150,7 +151,7 @@ class TestRawPushKeepsItsType(unittest.TestCase):
 
     def test_reaches_hlil_as_a_raw_int_printed_as_a_number(self):
         asm = Asm()
-        asm.push_raw(RAW_VALUE); asm.set_reg(RESULT_REG_INDEX); asm.ret()
+        asm.push_raw(RAW_VALUE); asm.set_reg(RESULT_REGISTER); asm.ret()
         _, llil_func = lift_asm(asm)
         mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
         hlil_func = convert_falcom_mlil_to_hlil(mlil_func)

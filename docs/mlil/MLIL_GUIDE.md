@@ -47,11 +47,13 @@ instead of tracking a stack pointer — easier to read and to run further analys
 ## Module Layout
 
 See `docs/mlil/MLIL_DESIGN.md`'s Module Layout table for the full file-by-file breakdown. In short:
-`ir/mlil/` holds the generic engine (non-SSA node types, the stack translator, the SSA layer, the optimizer, the
-builder/formatter), `ir/mlil/passes/` holds the 17 pass modules, and
-`falcom/ed9/ir/mlil/` holds Falcom-specific wiring — `mlil_converter.py` holds the decompile path's entry point
-(`convert_falcom_llil_to_mlil_stack()`) and the SSA path's (`convert_falcom_llil_to_mlil_ssa()`), mirroring how
-`falcom/ed9/ir/hlil/hlil_converter.py` wires HLIL.
+`ir/mlil/` holds the generic engine (the node types, the stack translator, the builder/formatter) and
+`ir/mlil/passes/` the 4 passes the decompile path runs after its translator; `falcom/ed9/ir/mlil/` holds the
+Falcom-specific wiring — `mlil_converter.py` is the decompile path's entry point
+(`convert_falcom_llil_to_mlil_stack()`), mirroring how `falcom/ed9/ir/hlil/hlil_converter.py` wires HLIL. The SSA
+path, kept and never called by the decompile path, has its own packages: `ir/mlil_ssa/` (its translator, the SSA
+layer, the optimizer; 13 pass modules in `ir/mlil_ssa/passes/`) and `falcom/ed9/ir/mlil_ssa/` (its entry point,
+`convert_falcom_llil_to_mlil_ssa()`); it imports from `ir/mlil/`, never the other way.
 
 ## Variable Model
 
@@ -118,7 +120,7 @@ SSATypeInferencePass (optional) → SSADeconstructionPass → BitwiseHexPass
 ```
 
 Every pass after `ED9LLILToMLILPass` comes from `mlil_optimization_passes()`
-(`ir/mlil/mlil_optimizer.py`), and `optimize_mlil()` runs that same list on an already translated
+(`ir/mlil_ssa/mlil_optimizer.py`), and `optimize_mlil()` runs that same list on an already translated
 function - the SSA path has one pipeline, not a real one and a test one. No pass computes a value the
 bytecode does not hold: SCCP, expression simplification and register/global value propagation are left out but kept
 (`docs/mlil/MLIL_DESIGN.md`, "LLIL → MLIL Pipeline"), so a constant expression prints as written (`1 | 32768`).
@@ -129,7 +131,7 @@ terminator), but it also removes real bytecode `JMP`s that happen to land on a s
 target. On the SSA path it only runs when `optimize=True`; `optimize=False` keeps the untouched, block-per-LLIL-
 boundary translation. The decompile path always runs it, after the translator.
 
-`SSAOptimizationPass` internally runs the `SSAOptimizer` (`ir/mlil/mlil_ssa_optimizer.py`): in this
+`SSAOptimizationPass` internally runs the `SSAOptimizer` (`ir/mlil_ssa/mlil_ssa_optimizer.py`): in this
 order until a round changes nothing (at most `SSA_OPTIMIZER_MAX_ITERATIONS` = 10 rounds), constant
 propagation, condition simplification, negation normal form conversion, copy propagation, expression
 inlining, and two flavors of dead-code elimination (dead statements, dead `Phi` nodes) — all defined
@@ -156,5 +158,5 @@ debug dumps — analogous to `HLILFormatter` on the HLIL side.
 
 ## Testing
 
-`tests/mlil_tests/test_mlil_*.py` (and `tests/llil_tests/test_llil_deref.py`) - see `docs/mlil/MLIL_DESIGN.md`'s Testing
-section.
+`tests/mlil_tests/test_mlil_*.py`, the SSA path's in `tests/mlil_ssa_tests/` (and `tests/llil_tests/test_llil_deref.py`)
+- see `docs/mlil/MLIL_DESIGN.md`'s Testing section.

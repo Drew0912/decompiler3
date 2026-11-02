@@ -45,11 +45,12 @@ Pipeline §1).
 An audit (2026-10-02, Fable and Codex, read-only) found ED9
 knowledge in generic code anyway. None of it is a bug, and with one VM it costs nothing today. Decided with the user:
 
-- **Removed by the IR rewrite:** the Falcom type names in the SSA type pass
-  (`ir/mlil/passes/pass_ssa_type_inference.py:307`), the parameter-slot mapping in
-  `ir/mlil/llil_to_mlil.py:101`, `MLILCallScript`, and the generic `RegStore`/`RegLoad`/`Syscall` translation
-  that only the Falcom translator has. The rules for the new translator are in
-  `notes/rewrite/08_decision_and_checklist.md` (Checklist, "Boundary rules").
+- **Left with the SSA path by the IR rewrite** (part 2: kept in `ir/mlil_ssa/`, never called by the decompile
+  path): the parameter-slot mapping in its generic translator (`ir/mlil_ssa/llil_to_mlil.py`,
+  `_frame_offset_to_param_index`) and the generic `RegStore`/`RegLoad`/`Syscall` translation that only its Falcom
+  translator has. The decompile path's stack translator meets the rules (`notes/rewrite/08_decision_and_checklist.md`,
+  Checklist, "Boundary rules"; `docs/ARCHITECTURE.md`, "Generic/Falcom Boundary"); `MLILCallScript` ->
+  `MLILExternCall` is deferred (IR rewrite part 2, D2).
 - **Small moves, done by the opcode-table plan** (Step 7 `89063e4`, no output change; Step 7b `f8f4682` changed only
   the `POP_TO_DEREF` lines of `.llil.asm`):
   - `LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` live only in `LowLevelILFalcomOperation`

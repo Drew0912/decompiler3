@@ -149,7 +149,7 @@ arguments, which leaves `sp` at 0 with no setup pending (the parser checks both)
 **Return.** A function pops its own parameters before it returns, so every real exit leaves its
 stack empty with no setup pending; the parser checks it at every exit.
 `LowLevelILRet` carries no value - a function's result travels in register 0, which calls write and
-`RETURN` reads (`RESULT_REG_INDEX`, `falcom/ed9/ir/mlil/mlil_translator.py`).
+`RETURN` reads (`RESULT_REGISTER`, `falcom/ed9/disasm/stack_effects.py`).
 
 **Not terminals:** `SYSCALL` reads its `argc` arguments from the top of the stack without popping
 them and leaves `sp` unchanged; `DEBUG_LOG argc` reads its arguments (message first), then pops
