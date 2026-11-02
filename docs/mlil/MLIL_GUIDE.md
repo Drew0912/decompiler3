@@ -34,17 +34,24 @@ var_s1 = 5
 var_s0 = var_s0 + var_s1
 ```
 
+That is the SSA path's translation (`convert_falcom_llil_to_mlil_ssa()`), kept beside the decompile path and never
+called by it. The decompile path's symbolic-stack translator (`convert_falcom_llil_to_mlil_stack()`;
+`docs/mlil/MLIL_DESIGN.md`, "The stack translator") keeps a pushed value pending until something consumes it, so the
+two pushes and the add fold into one expression, `10 + 5`, in the statement that consumes the sum; a push becomes a
+local only when it is read by offset, written in place, address-taken, read twice, never read (a declared slot), or
+held where control enters a block (a box).
+
 Seven LLIL instructions collapse to three MLIL statements that directly operate on variables
 instead of tracking a stack pointer — easier to read and to run further analysis on.
 
 ## Module Layout
 
 See `docs/mlil/MLIL_DESIGN.md`'s Module Layout table for the full file-by-file breakdown. In short:
-`ir/mlil/` holds the generic engine (non-SSA node types, the SSA layer, the optimizer, the
-builder/formatter), `ir/mlil/passes/` holds the 14 pass modules, and
-`falcom/ed9/ir/mlil/` holds Falcom-specific wiring — `mlil_converter.py` is the real production
-entry point (`convert_falcom_llil_to_mlil_ssa()`), mirroring how `falcom/ed9/ir/hlil/hlil_converter.py`
-wires HLIL.
+`ir/mlil/` holds the generic engine (non-SSA node types, the stack translator, the SSA layer, the optimizer, the
+builder/formatter), `ir/mlil/passes/` holds the 17 pass modules, and
+`falcom/ed9/ir/mlil/` holds Falcom-specific wiring — `mlil_converter.py` holds the decompile path's entry point
+(`convert_falcom_llil_to_mlil_stack()`) and the SSA path's (`convert_falcom_llil_to_mlil_ssa()`), mirroring how
+`falcom/ed9/ir/hlil/hlil_converter.py` wires HLIL.
 
 ## Variable Model
 
@@ -57,7 +64,7 @@ Two representations coexist rather than one replacing the other:
   new value into its slot (the usual tail-call pattern), every access to that slot uses the push's
   `var_sN`, like any other push. The LLIL builder decides this (`_holds_parameter`); MLIL maps
   frame accesses to `argN` and stack accesses to `var_sN`.
-- **SSA** — used internally during optimization. Every assignment gets a fresh version, and
+- **SSA** — used internally during the SSA path's optimization. Every assignment gets a fresh version, and
   control-flow joins get explicit `Phi` nodes. A function is converted to SSA, optimized, and
   converted back to non-SSA before anything downstream (including HLIL) ever sees it.
 
@@ -99,8 +106,11 @@ convention.
 
 ## The Pipeline
 
-`convert_falcom_llil_to_mlil_ssa()` (`falcom/ed9/ir/mlil/mlil_converter.py`) is what real code paths
-call. It builds a `Pipeline` and runs:
+`convert_falcom_llil_to_mlil_stack()` (`falcom/ed9/ir/mlil/mlil_converter.py`) is what the decompile path, the
+logic check and the tools call: `ED9StackTranslatorPass → BlockMergePass → CallResultPass → ReturnValuePass →
+BitwiseHexPass` (`docs/mlil/MLIL_DESIGN.md`, "The stack translator"). The SSA path,
+`convert_falcom_llil_to_mlil_ssa()`, kept beside it and never called by it (IR rewrite part 2), builds a `Pipeline`
+and runs:
 
 ```
 ED9LLILToMLILPass → BlockMergePass (optimize only) → SSAConversionPass → SSAOptimizationPass →
@@ -109,15 +119,15 @@ SSATypeInferencePass (optional) → SSADeconstructionPass → BitwiseHexPass
 
 Every pass after `ED9LLILToMLILPass` comes from `mlil_optimization_passes()`
 (`ir/mlil/mlil_optimizer.py`), and `optimize_mlil()` runs that same list on an already translated
-function - there is one MLIL pipeline, not a production one and a test one. No pass computes a value the
+function - the SSA path has one pipeline, not a real one and a test one. No pass computes a value the
 bytecode does not hold: SCCP, expression simplification and register/global value propagation are left out but kept
 (`docs/mlil/MLIL_DESIGN.md`, "LLIL → MLIL Pipeline"), so a constant expression prints as written (`1 | 32768`).
 
 `BlockMergePass` splices any block whose only way in is another block's unconditional goto into
 that block - mainly undoing the call-return split every `LowLevelILCall` forces (it is a block
 terminator), but it also removes real bytecode `JMP`s that happen to land on a single-predecessor
-target. Only runs when `optimize=True`; `optimize=False` keeps the untouched, block-per-LLIL-
-boundary translation.
+target. On the SSA path it only runs when `optimize=True`; `optimize=False` keeps the untouched, block-per-LLIL-
+boundary translation. The decompile path always runs it, after the translator.
 
 `SSAOptimizationPass` internally runs the `SSAOptimizer` (`ir/mlil/mlil_ssa_optimizer.py`): in this
 order until a round changes nothing (at most `SSA_OPTIMIZER_MAX_ITERATIONS` = 10 rounds), constant
@@ -130,7 +140,7 @@ under `ir/mlil/passes/`. The condition passes negate only `==` / `!=`: an orderi
 constant operand in hex (`arg3 & 0x00000800`, `x & ~0x00000010`, a union of single-bit flags
 `x & (0x00000001 | 0x00000008)`).
 
-No dead-code pass runs after SSA deconstruction: a census of production output found no unread
+No dead-code pass runs after SSA deconstruction: a census of its output, then production's, found no unread
 local assignment (500-file sample, 2026-09-26).
 
 ## Formatting

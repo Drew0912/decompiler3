@@ -14,8 +14,9 @@ SCP → Parser → Disassembler → Lifter → LLIL → MLIL → HLIL → Codege
 
 MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 
-1. **Erases the explicit operand stack** — every temporary becomes a named variable.
-2. **Exposes control/data flow** suitable for SSA and optimizer passes.
+1. **Erases the explicit operand stack** — a pushed value folds into the expression that consumes it, or becomes a
+   temporary or a local ("The stack translator"; on the SSA path every temporary becomes a named variable).
+2. **Exposes control/data flow** as basic blocks over named storage (locals, temporaries, registers, globals).
 3. **Retains Falcom semantics** (syscall IDs, `CALL_SCRIPT` metadata, etc.) so later passes still
    understand VM behavior.
 
@@ -26,18 +27,18 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil.py` | Core non-SSA data structures: `MediumLevelILInstruction` base, the `MediumLevelILExpr`/`MediumLevelILStatement` split, `MLILVariable`, `MediumLevelILBasicBlock`, `MediumLevelILFunction`. |
 | `ir/mlil/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
 | `ir/mlil/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
-| `ir/mlil/mlil_optimizer.py` | `mlil_optimization_passes()`, the one list of passes that runs after LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
-| `ir/mlil/passes/` | The actual pass implementations (17 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_block_merge.py`, `pass_bitwise_hex.py`, `pass_call_result.py` and `pass_return_value.py` (the stack translator's path only); SCCP, expression simplification and register/global propagation are out of the pipeline (see "LLIL → MLIL Pipeline"). |
+| `ir/mlil/mlil_optimizer.py` | `mlil_optimization_passes()`, the SSA path's one list of passes that runs after its LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
+| `ir/mlil/passes/` | The actual pass implementations (17 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`, `pass_block_merge.py`, `pass_bitwise_hex.py`, `pass_call_result.py` and `pass_return_value.py` (the stack translator's path only); SCCP, expression simplification and register/global propagation are out of the SSA path's pipeline (see "LLIL → MLIL Pipeline"). |
 | `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function's blocks, variables and statements; expressions are built with the node classes. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging) and the `.mlil.dot` graphs, with the DOT writer LLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`). |
 | `ir/mlil/mlil_types.py` | Type-kind/unification support. |
-| `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific). |
+| `ir/mlil/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific), the SSA path's translator. |
 | `ir/mlil/llil_ops.py` | The LLIL operations that map one to one onto MLIL ones (`BINARY_OP_TYPES`, `UNARY_OP_TYPES`), for both translators. |
 | `ir/mlil/stack_translator.py` | The generic symbolic-stack translator, `StackTranslator`, and `StackTranslatorPass` (see "The stack translator"). |
-| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the real production entry point, `convert_falcom_llil_to_mlil_ssa()`, and the stack translator's, `convert_falcom_llil_to_mlil_stack()`, not yet production. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
+| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the decompile path's entry point, the stack translator's `convert_falcom_llil_to_mlil_stack()`, and the SSA path's, `convert_falcom_llil_to_mlil_ssa()`, kept and never called by it. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
 | `falcom/ed9/ir/mlil/stack_translator.py` | `FalcomStackTranslator`: ED9's result register, calling convention, globals, script calls and `DEBUG_LOG` on the stack translator. |
-| `falcom/ed9/ir/mlil/mlil_passes.py` | `ED9LLILToMLILPass`, the pipeline's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
-| `falcom/ed9/ir/mlil/mlil_translator.py` | Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
+| `falcom/ed9/ir/mlil/mlil_passes.py` | `ED9LLILToMLILPass`, the SSA path's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
+| `falcom/ed9/ir/mlil/mlil_translator.py` | The SSA path's Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
 | `tests/mlil_tests/test_mlil_metadata.py` | One of several dedicated MLIL test files today — see Testing below. |
 
 Note: `falcom/ed9/lifters/mlil_lifter.py`, previously listed here, does not exist anywhere in the
@@ -49,8 +50,8 @@ All MLIL nodes derive from a common `MediumLevelILInstruction` base carrying an
 `operation` enum value and source tracking: `address` (the SCP offset), `llil_index` (the LLIL
 instruction the statement comes from - every statement one LLIL instruction produces shares it, and a
 statement de-SSA places on a CFG edge, a phi copy or a split-edge goto, takes the branch that leaves
-along that edge) and `inst_index` (the statement's own number: `convert_falcom_llil_to_mlil_ssa()` and
-`optimize_mlil()` end by numbering every statement 0..N-1 in block order, and HLIL copies it as
+along that edge) and `inst_index` (the statement's own number: both entry points and `optimize_mlil()` end by
+numbering every statement 0..N-1 in block order, and HLIL copies it as
 `mlil_index`). On the SSA path only statements carry them, expressions keeping the defaults; the stack translator
 stamps every expression node too, with the LLIL statement it comes from (`MLILBuilder.stamp`). A pass that replaces a
 statement copies all three with `copy_metadata_from()`. Nodes are split into `MediumLevelILExpr` (produces a value) and
@@ -108,20 +109,19 @@ LLIL builder from the slot's current lifetime (`LowLevelILBuilder._holds_paramet
 slot is `argN` only while it still holds the caller's value, and a value pushed there after the
 function popped the parameter is a `var_sN`, like any other push.
 
-SSA is not optional or a future addition — it's where essentially all real optimization work
-happens. The shared pass list (`mlil_optimization_passes()` in `ir/mlil/mlil_optimizer.py`) merges
-call-split blocks, converts to SSA, runs the full `SSAOptimizer` pass suite plus optional type
-inference, deconstructs back to non-SSA, then marks bitwise constants for hex display (`BitwiseHexPass`). HLIL's
-converter (`falcom/ed9/ir/hlil/hlil_converter.py`) imports and consumes
-non-SSA `MediumLevelILFunction` — it does not read SSA form directly; by the time HLIL sees a
-function, SSA construction/optimization/deconstruction has already happened upstream in the MLIL
-pipeline.
+On the SSA path, SSA is where essentially all real optimization work happens. Its shared pass list
+(`mlil_optimization_passes()` in `ir/mlil/mlil_optimizer.py`) merges call-split blocks, converts to SSA, runs the full
+`SSAOptimizer` pass suite plus optional type inference, deconstructs back to non-SSA, then marks bitwise constants for
+hex display (`BitwiseHexPass`). HLIL's converter (`falcom/ed9/ir/hlil/hlil_converter.py`) imports and consumes
+non-SSA `MediumLevelILFunction` — it does not read SSA form directly: the decompile path's stack translator makes
+non-SSA MLIL directly, and on the SSA path construction/optimization/deconstruction has already happened upstream.
 
 Falcom-specific stack-setup helpers (`PUSH_CALLER_FRAME`, `PUSH_CURRENT_FUNC_ID`, `PUSH_RET_ADDR`) are
 fully lowered to regular variables/arguments in MLIL — there is no dedicated MLIL opcode for them
 once the stack layout is eliminated.
 
-**Address-taken locals/parameters are memory, not scalar SSA values.** A variable whose address is
+**Address-taken locals/parameters are memory, not scalar SSA values.** On the SSA path (the stack translator writes
+the same memory form itself: "The stack translator"), a variable whose address is
 taken anywhere in the function (`SSAConstructor._collect_address_taken_vars`) cannot be versioned
 like an ordinary scalar: doing so would version the *address* itself (`&x#1`, `&x#2`, ...),
 conflating one stable storage location with a chain of immutable SSA values — the root cause of a
@@ -141,7 +141,8 @@ raised back to a plain variable only at print time (`x` / `x = v`, never `deref(
 `docs/hlil/HLIL_GUIDE.md`'s printing-convention section.
 
 **A register a return leaves is the caller's.** A caller can read a register after the call, as it
-reads a global, while a register variable prints as a local. So SSA construction ends by storing,
+reads a global, while a register variable prints as a local. The stack translator keeps registers as storage
+throughout; on the SSA path, SSA construction ends by storing,
 before each return, every register whose version there is the function's own write
 (`SSAConstructor._store_registers_left_by_returns`, `registers_left_by_returns`): `REGS[n] = v`,
 an `MLILStoreReg`, an ordinary read no pass drops, which HLIL prints as the register. Left out: the
@@ -172,7 +173,8 @@ class MediumLevelILFunction:
 `MediumLevelILFunction` in `ir/mlil/mlil.py`.) Predecessor/successor edges are `incoming_edges`/`outgoing_edges`, not `preds`/
 `succs`. Both layers' blocks derive from `ILBasicBlock` (`ir/core/il_cfg.py`): the instructions, the edges kept on
 both ends (`add_outgoing_edge`) and `has_terminal`.
-Each MLIL block mirrors an LLIL block when `optimize=False` - the `BlockMergePass` (part
+The decompile path always merges blocks (its `BlockMergePass` runs after the translator). On the SSA path each MLIL
+block mirrors an LLIL block when `optimize=False` - the `BlockMergePass` (part
 of the SSA optimization pipeline, so it does not run when `optimize=False`) collapses call-return
 and other single-predecessor goto chains when optimization is enabled, so this 1:1 property does
 not hold for `optimize=True` output. A statement's `llil_index` is how tools get back to LLIL
@@ -181,8 +183,10 @@ separate LLIL-to-MLIL map.
 
 ## LLIL → MLIL Pipeline
 
-The real production entry point is `convert_falcom_llil_to_mlil_ssa()`
-(`falcom/ed9/ir/mlil/mlil_converter.py`), which builds a `Pipeline` and runs, in order:
+The decompile path's entry point is `convert_falcom_llil_to_mlil_stack()` (`falcom/ed9/ir/mlil/mlil_converter.py`):
+the stack translator and its passes ("The stack translator", below). Beside it, kept and never called by the decompile
+path (IR rewrite part 2), the SSA path's entry point, `convert_falcom_llil_to_mlil_ssa()`, builds a `Pipeline` and
+runs, in order:
 
 ```
 ED9LLILToMLILPass → BlockMergePass (optimize only) → SSAConversionPass → SSAOptimizationPass →
@@ -191,14 +195,14 @@ SSATypeInferencePass (optional) → SSADeconstructionPass → BitwiseHexPass
 
 Every pass after `ED9LLILToMLILPass` comes from `mlil_optimization_passes()`
 (`ir/mlil/mlil_optimizer.py`); `optimize_mlil()` runs the same list on an already translated
-function, so tests that call it run what production runs. No dead-code pass runs after SSA
-deconstruction: a census of production output found no unread local assignment (500-file sample,
+function, so tests that call it run what the SSA path runs. No dead-code pass runs after SSA
+deconstruction: a census of its output, then production's, found no unread local assignment (500-file sample,
 2026-09-26).
 
 Since 2026-10-27 no pass computes a value the bytecode does not hold, so MLIL keeps the LLIL's values as
 written: SCCP, `ExpressionSimplificationPass` and `RegGlobalValuePropagationPass` (constant folding, algebraic
-identities, a register's or global's value carried forward) are out of the pipeline, their code and direct tests
-kept. A constant expression prints as written (`1 | 32768`, `40000 + 200`), a branch on one keeps both arms
+identities, a register's or global's value carried forward) are out of the SSA path's pipeline, their code and direct
+tests kept. A constant expression prints as written (`1 | 32768`, `40000 + 200`), a branch on one keeps both arms
 (`if ((1024 & 1024) != 0)`), and a register read stays `REG[n]`.
 
 `BitwiseHexPass` (`pass_bitwise_hex.py`) runs last and only marks constants for display: a bitwise operation
@@ -257,7 +261,8 @@ and same printed text (`0.0` and `-0.0` differ, NaN equals NaN).
 
 ### Type Inference
 
-`SSATypeInferencePass` types parameters from their declared kinds, `SetVar`/`Phi` targets, and
+The SSA path's `SSATypeInferencePass` (the decompile path runs none) types parameters from their declared kinds,
+`SetVar`/`Phi` targets, and
 address-taken locals through their `*(&x) = v` stores, takes backward hints from the top level of
 each `if` condition (a comparison with a constant, arithmetic, a bare truth test), then unifies every
 SSA version into one type
@@ -265,11 +270,12 @@ per variable name (`func.var_types`, printed as the `.mlil.asm` "Inferred Types"
 kinds unify to an `MLILVariantType`, which is identified by its members (`mlil_types.py`), so a
 member that arrives after the variable is already a variant is still recorded.
 
-## The stack translator (not yet production)
+## The stack translator (the decompile path)
 
 `convert_falcom_llil_to_mlil_stack()` runs `ED9StackTranslatorPass`, `BlockMergePass`, `CallResultPass`,
-`ReturnValuePass` and `BitwiseHexPass`. It will
-replace the SSA path at parity (IR rewrite part 2), and the decompile path does not call it yet.
+`ReturnValuePass` and `BitwiseHexPass`. It replaced the SSA path on the decompile path at parity (IR rewrite part 2,
+2026-11-01). It runs no type pass: locals print untyped (`any`), without the SSA path's `int(...)` wrappers, until the
+HLIL type plan.
 
 The translator (`StackTranslator`, `ir/mlil/stack_translator.py`; `FalcomStackTranslator` for ED9) reads only the
 LLIL and its stack layout: each block's `sp_in`, each stack access's `slot_index`, the `SpAdd`s. A function-wide
@@ -364,11 +370,11 @@ whole entry point.
   reachability would fold more constants, moving output further from the bytecode.
 - Rendered parameter types no longer come from this pass: since 2026-09-29 HLIL's
   `FalcomTypeInferencePass` takes them from the declared flags, so `Value32`/`Nullable32` - which this
-  pass still calls `int` - reach a signature as `number` (int or float). Locals still use this pass's
-  types. An HLIL type pass for locals (CX Step F's follow-up plan) is parked until the tool is nearly
-  done. Known gaps until then: call results are never typed (a call is a statement with an `output`,
-  which the pass never reads); use hints come only from the top level of an `if` condition, so a
-  comparison nested under `&&`/`||` gives none; and types are keyed by pre-deconstruction names, so a
-  split variable (`var_s11_v0`) finds no type (78 locals in the corpus).
+  pass still calls `int` - reach a signature as `number` (int or float). Locals used this pass's types until
+  the decompile path moved to the stack translator, which runs no type pass (IR rewrite part 2): they print
+  `any` until the HLIL type plan. This pass's known gaps, on the SSA path: call results are never typed (a
+  call is a statement with an `output`, which the pass never reads); use hints come only from the top level
+  of an `if` condition, so a comparison nested under `&&`/`||` gives none; and types are keyed by
+  pre-deconstruction names, so a split variable (`var_s11_v0`) finds no type (78 locals in the corpus).
 - This document and `docs/mlil/MLIL_GUIDE.md` should be kept in sync with `ir/mlil/passes/` as passes
   are added, removed, or reordered — that directory is the actual source of truth for what runs.

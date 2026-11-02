@@ -17,7 +17,6 @@ from falcom.ed9.structs.scp_types import Nullable32, NullableStr, Pointer, ScpPa
 from ir.core.il_base import IRParameter
 from ir.hlil import HighLevelILFunction, HLILTypeKind, HLILVariable, VariableKind
 from ir.mlil.mlil import MediumLevelILFunction, MLILRet
-from ir.mlil.mlil_optimizer import optimize_mlil
 from ir.mlil.mlil_types import MLILType, MLILVariantType
 
 
@@ -38,7 +37,7 @@ def make_mlil_function(type_name: str, default_value) -> MediumLevelILFunction:
     func = MediumLevelILFunction(TEST_FUNCTION_NAME, params=[IRParameter('arg1', type_name, default_value)])
     func.get_or_create_parameter(1, 'arg1')
     func.create_block().add_instruction(MLILRet())
-    return optimize_mlil(func)
+    return func
 
 
 # What the SSA pass infers for a Value32 parameter that also receives a float: its int seed joined with the float

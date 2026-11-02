@@ -13,8 +13,8 @@ from .stack_translator import ED9StackTranslatorPass
 def convert_falcom_llil_to_mlil_ssa(llil_func: LowLevelILFunction,
                                      optimize: bool = True,
                                      infer_types: bool = True) -> MediumLevelILFunction:
-    """The SSA path's MLIL, the decompile path's until the switch (IR rewrite part 2): LLIL converted to MLIL with
-    Falcom-specific handling
+    """The SSA path's MLIL, kept beside the decompile path and never called by it (IR rewrite part 2): LLIL converted
+    to MLIL with Falcom-specific handling
 
     Args:
         llil_func: LLIL function to convert
@@ -35,7 +35,7 @@ def convert_falcom_llil_to_mlil_ssa(llil_func: LowLevelILFunction,
 
 
 def convert_falcom_llil_to_mlil_stack(llil_func: LowLevelILFunction) -> MediumLevelILFunction:
-    """The symbolic-stack translator's MLIL, not yet the decompile path's: the translator, then the remaining
+    """The decompile path's MLIL, the symbolic-stack translator's: the translator, then the remaining
     single-predecessor jumps merged, the result stores nothing reads taken out, each return given the value stored
     right before it and bitwise constants marked hex. A shape it does not translate yet raises UnsupportedStackShape"""
     log.info(f'Translating {llil_func.name} @ 0x{llil_func.start_addr:08X} (stack translator)')

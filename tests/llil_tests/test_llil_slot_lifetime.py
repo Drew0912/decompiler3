@@ -13,8 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from ir.llil.llil import LowLevelILFrameLoad, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore, WORD_SIZE
 from ir.llil.llil_builder import LowLevelILBuilder
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
-from ir.mlil.mlil import MLILCallScript, MLILConst, MLILStoreGlobal, MLILVar
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from tests.shared.llil_utils import FOURTH_BLOCK_START, SECOND_BLOCK_START, THIRD_BLOCK_START, make_builder
 
 
@@ -40,23 +39,15 @@ def last_pushed_value(builder: LowLevelILBuilder):
     return builder.current_block.instructions[-2].value
 
 
-def global_stores(builder: FalcomVMBuilder) -> dict:
-    """GLOBAL index -> stored value, after the production MLIL pipeline"""
-    mlil = convert_falcom_llil_to_mlil_ssa(builder.finalize(), optimize=True)
-    return {
-        inst.index: inst.value
-        for block in mlil.basic_blocks for inst in block.instructions
-        if isinstance(inst, MLILStoreGlobal)
-    }
+def production_statements(builder: FalcomVMBuilder) -> list[str]:
+    """Every statement of the production MLIL, in order"""
+    mlil = convert_falcom_llil_to_mlil_stack(builder.finalize())
+    return [str(inst) for block in mlil.basic_blocks for inst in block.instructions]
 
 
 class TestRepushedParameterSlot(unittest.TestCase):
     """After the function pops a parameter and pushes into its slot, every access uses the push's stack storage.
     Before, these accesses picked the parameter by slot number and read or wrote the popped parameter."""
-
-    def assert_const(self, value, expected):
-        self.assertIsInstance(value, MLILConst)
-        self.assertEqual(value.value, expected)
 
     def test_pop_to_writes_the_pushed_slot(self):
         builder = make_builder(num_params=1)
@@ -71,7 +62,8 @@ class TestRepushedParameterSlot(unittest.TestCase):
 
         builder.set_global(GLOBAL_INDEX)
         builder.ret()
-        self.assert_const(global_stores(builder)[GLOBAL_INDEX], STORED_VALUE)
+        self.assertEqual(production_statements(builder), [f'var_s0 = {PUSHED_VALUE}', f'var_s0 = {STORED_VALUE}',
+                                                          f'GLOBAL[{GLOBAL_INDEX}] = var_s0', 'return REG[0]'])
 
     def test_load_stack_reads_the_pushed_slot(self):
         builder = make_builder(num_params=1)
@@ -86,7 +78,8 @@ class TestRepushedParameterSlot(unittest.TestCase):
         builder.set_global(GLOBAL_INDEX)
         builder.pop_bytes(WORD_SIZE)
         builder.ret()
-        self.assert_const(global_stores(builder)[GLOBAL_INDEX], PUSHED_VALUE)
+        self.assertEqual(production_statements(builder),
+                         [f'var_s0 = {PUSHED_VALUE}', f'GLOBAL[{GLOBAL_INDEX}] = var_s0', 'return REG[0]'])
 
     def test_address_is_the_pushed_slot(self):
         builder = make_builder(num_params=1)
@@ -111,10 +104,9 @@ class TestRepushedParameterSlot(unittest.TestCase):
         builder.set_global(GLOBAL_INDEX)
         builder.pop_bytes(2 * WORD_SIZE)
         builder.ret()
-        stores = global_stores(builder)
-        self.assert_const(stores[SECOND_GLOBAL_INDEX], PUSHED_VALUE)
-        self.assertIsInstance(stores[GLOBAL_INDEX], MLILVar)
-        self.assertEqual(stores[GLOBAL_INDEX].var.name, 'arg2')
+        self.assertEqual(production_statements(builder), [f'var_s1 = {PUSHED_VALUE}',
+                                                          f'GLOBAL[{SECOND_GLOBAL_INDEX}] = var_s1',
+                                                          f'GLOBAL[{GLOBAL_INDEX}] = arg2', 'return REG[0]'])
 
     def test_dereference_through_a_repushed_slot_raises(self):
         """The slot now holds a pushed pointer, which may point into this function's own frame."""
@@ -290,12 +282,9 @@ class TestLiveParameterSlot(unittest.TestCase):
         self.assertIsInstance(builder.current_block.instructions[-2], LowLevelILStackStore)
         builder.call_script_no_return(MODULE_NAME, TAIL_FUNC_NAME, 1)
 
-        mlil = convert_falcom_llil_to_mlil_ssa(builder.finalize(), optimize=True)
-        call = next(
-            inst for block in mlil.basic_blocks for inst in block.instructions if isinstance(inst, MLILCallScript)
-        )
-        self.assertIsInstance(call.args[0], MLILConst)
-        self.assertEqual(call.args[0].value, TAIL_ARG_VALUE)
+        self.assertEqual(production_statements(builder), [f'REG[{TAIL_ARG_REG}] = {TAIL_ARG_VALUE}',
+                                                          f't1 = .{TAIL_FUNC_NAME}(REG[{TAIL_ARG_REG}])',
+                                                          'return t1'])
 
     def test_both_arms_repushing_a_parameter_slot_are_accepted(self):
         builder = make_builder(num_params=1)

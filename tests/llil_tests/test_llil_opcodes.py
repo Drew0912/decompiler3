@@ -20,7 +20,7 @@ from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugLog, LowLevelILFalcomOperation
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET, RESULT_REG_INDEX
 from falcom.ed9.structs.scp_types import RawInt, ScpValue
 from ir.hlil.hlil import HighLevelILFunction, HLILAssign, HLILCall, HLILConst, HLILVar, iter_tree
@@ -66,7 +66,7 @@ class TestDebugLogIsLifted(unittest.TestCase):
     def test_survives_as_a_debug_log_call_in_mlil(self):
         _, llil_func = self.make_function()
 
-        mlil_func = convert_falcom_llil_to_mlil_ssa(llil_func, optimize=False)
+        mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
 
         calls = [inst for block in mlil_func.basic_blocks for inst in block.instructions
                  if isinstance(inst, MLILCall) and inst.target == DEBUG_LOG_CALL_TARGET]
@@ -100,13 +100,13 @@ UNARY_OPERATORS = (
 
 
 def stored_values(func) -> list:
-    """The value of every instruction that has one (StackStore / SetVar ...), in order"""
+    """The value of every instruction that has one (StackStore / SetVar / a return ...), in order"""
     return [inst.value for block in func.basic_blocks for inst in block.instructions if hasattr(inst, 'value')]
 
 
 class TestOperatorsKeepTheirOperands(unittest.TestCase):
     """Each arithmetic, comparison, bitwise and logical opcode lifts to its own node over the values pushed (first
-    push on the left) and translates to its own MLIL operation over the same variables"""
+    push on the left) and translates to its own MLIL operation over the same values"""
 
     def lift_and_translate(self, mnemonic: str, operand_count: int):
         asm = Asm()
@@ -117,7 +117,7 @@ class TestOperatorsKeepTheirOperands(unittest.TestCase):
         getattr(asm, mnemonic)()
         asm.set_reg(REG_INDEX); asm.ret()
         _, llil_func = lift_asm(asm)
-        return llil_func, convert_falcom_llil_to_mlil_ssa(llil_func, optimize=False)
+        return llil_func, convert_falcom_llil_to_mlil_stack(llil_func)
 
     def test_binary_operators(self):
         for mnemonic, llil_class, mlil_class, operation in BINARY_OPERATORS:
@@ -129,7 +129,7 @@ class TestOperatorsKeepTheirOperands(unittest.TestCase):
                 self.assertEqual((node.lhs.slot_index, node.rhs.slot_index), (0, 1))
 
                 mlil_node, = [value for value in stored_values(mlil_func) if isinstance(value, mlil_class)]
-                self.assertEqual((mlil_node.lhs.var.name, mlil_node.rhs.var.name), ('var_s0', 'var_s1'))
+                self.assertEqual((mlil_node.lhs.value, mlil_node.rhs.value), (FIRST_VALUE, SECOND_VALUE))
 
     def test_unary_operators(self):
         for mnemonic, llil_class, mlil_class, operation in UNARY_OPERATORS:
@@ -141,7 +141,7 @@ class TestOperatorsKeepTheirOperands(unittest.TestCase):
                 self.assertEqual(node.operand.slot_index, 0)
 
                 mlil_node, = [value for value in stored_values(mlil_func) if isinstance(value, mlil_class)]
-                self.assertEqual(mlil_node.operand.var.name, 'var_s0')
+                self.assertEqual(mlil_node.operand.value, FIRST_VALUE)
 
 
 class TestRawPushKeepsItsType(unittest.TestCase):
@@ -152,7 +152,7 @@ class TestRawPushKeepsItsType(unittest.TestCase):
         asm = Asm()
         asm.push_raw(RAW_VALUE); asm.set_reg(RESULT_REG_INDEX); asm.ret()
         _, llil_func = lift_asm(asm)
-        mlil_func = convert_falcom_llil_to_mlil_ssa(llil_func)
+        mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
         hlil_func = convert_falcom_mlil_to_hlil(mlil_func)
 
         [value] = [node.value for node in iter_tree(hlil_func.body) if isinstance(node, HLILConst)]
@@ -168,30 +168,28 @@ class TestRawPushKeepsItsType(unittest.TestCase):
     def hlil_function(self, asm: Asm, callee_argc: int) -> HighLevelILFunction:
         """asm's function lifted to HLIL beside a callee taking callee_argc arguments"""
         _, llil_func = lift_asm(asm, others=(returning_callee(callee_argc),))
-        return convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil_ssa(llil_func))
-
-    def hlil_call(self, asm: Asm, callee_argc: int) -> HLILCall:
-        """The one call in asm's function in HLIL"""
-        [call] = [node for node in iter_tree(self.hlil_function(asm, callee_argc).body) if isinstance(node, HLILCall)]
-        return call
+        return convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil_stack(llil_func))
 
     def test_call_argument_stays_raw(self):
-        """Pushed as the argument, or stored in a local first (constant propagation substitutes the constant)"""
+        """Pushed as the argument, or stored in the local the argument reads"""
         direct = Asm()
         direct.push_raw(CALLER_ID); direct.push_raw('back'); direct.push_raw(RAW_VALUE); direct.push_int(FIRST_VALUE)
         direct.call(CALLEE_ID); direct.label('back'); direct.ret()
+        with self.subTest('direct'):
+            [call] = [node for node in iter_tree(self.hlil_function(direct, 2).body) if isinstance(node, HLILCall)]
+            self.assertEqual({arg.value: type(arg.value) for arg in call.args}, {RAW_VALUE: RawInt, FIRST_VALUE: int})
 
         local = Asm()
         local.push_raw(RAW_VALUE)
         local.push_raw(CALLER_ID); local.push_raw('back'); local.load_stack(LOCAL_UNDER_CALL_SETUP)
         local.call(CALLEE_ID); local.label('back'); local.pop(WORD_SIZE); local.ret()
-
-        for case, asm, expected in (('direct', direct, {RAW_VALUE: RawInt, FIRST_VALUE: int}),
-                                    ('through a local', local, {RAW_VALUE: RawInt})):
-            with self.subTest(case):
-                call = self.hlil_call(asm, len(expected))
-
-                self.assertEqual({arg.value: type(arg.value) for arg in call.args}, expected)
+        with self.subTest('through a local'):
+            body = self.hlil_function(local, 1).body
+            [store] = [node for node in iter_tree(body)
+                       if isinstance(node, HLILAssign) and isinstance(node.src, HLILConst)]
+            [call] = [node for node in iter_tree(body) if isinstance(node, HLILCall)]
+            self.assertIs(type(store.src.value), RawInt)
+            self.assertEqual([arg.var for arg in call.args], [store.dest.var])
 
     def test_raw_and_integer_constants_do_not_merge(self):
         """A Raw 0 and an Integer 0 are different words: where they meet the variable stays, each arm's constant
@@ -208,7 +206,8 @@ class TestRawPushKeepsItsType(unittest.TestCase):
         body = self.hlil_function(asm, 1).body
         [call] = [node for node in iter_tree(body) if isinstance(node, HLILCall)]
         arm_values = [node.src.value for node in iter_tree(body)
-                      if isinstance(node, HLILAssign) and isinstance(node.src, HLILConst)]
+                      if isinstance(node, HLILAssign) and isinstance(node.src, HLILConst)
+                      and node.src.value == MERGED_VALUE]
 
         self.assertIsInstance(call.args[0], HLILVar)
         self.assertCountEqual([type(value) for value in arm_values], [RawInt, int])
@@ -222,7 +221,7 @@ class TestRawPushKeepsItsType(unittest.TestCase):
         callee.params[0].default_value = ScpValue(RawInt(RAW_VALUE))
 
         llil_func = ED9VMLifter(parser=parser).lift_function(callee)
-        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil_ssa(llil_func), callee)
+        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil_stack(llil_func), callee)
 
         self.assertIn(f'(arg1: number = {RAW_VALUE})', generate_typescript(hlil_func))
         self.assertIn(f'= {RawInt(RAW_VALUE)!r}', Formatter.format_param(0, callee.params[0]))

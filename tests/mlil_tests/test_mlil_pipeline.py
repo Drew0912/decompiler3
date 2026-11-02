@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the one MLIL pass list shared by production and optimize_mlil."""
+"""Unit tests for the SSA path's one MLIL pass list, shared by its converter and optimize_mlil."""
 
 from pathlib import Path
 import sys
@@ -46,7 +46,7 @@ def build_call_function() -> LowLevelILFunction:
 
 
 class TestMLILPassList(unittest.TestCase):
-    def test_pass_order_is_production_order(self):
+    def test_pass_order_is_the_converters_order(self):
         self.assertEqual([type(p) for p in mlil_optimization_passes()], EXPECTED_PASS_TYPES)
 
     def test_type_inference_can_be_left_out(self):
@@ -54,16 +54,16 @@ class TestMLILPassList(unittest.TestCase):
         self.assertEqual([type(p) for p in mlil_optimization_passes(infer_types=False)], expected)
 
 
-class TestOptimizeMLILMatchesProduction(unittest.TestCase):
-    def test_same_mlil_as_the_production_converter(self):
+class TestOptimizeMLILMatchesTheConverter(unittest.TestCase):
+    def test_same_mlil_as_the_ssa_converter(self):
         for infer_types in (True, False):
             with self.subTest(infer_types=infer_types):
-                production = convert_falcom_llil_to_mlil_ssa(build_call_function(), optimize=True,
-                                                             infer_types=infer_types)
+                converted = convert_falcom_llil_to_mlil_ssa(build_call_function(), optimize=True,
+                                                            infer_types=infer_types)
                 translated = convert_falcom_llil_to_mlil_ssa(build_call_function(), optimize=False)
                 optimized = optimize_mlil(translated, infer_types=infer_types)
 
-                self.assertEqual(MLILFormatter.format_function(optimized), MLILFormatter.format_function(production))
+                self.assertEqual(MLILFormatter.format_function(optimized), MLILFormatter.format_function(converted))
                 self.assertEqual(len(optimized.basic_blocks), 1, 'the call-return goto was not merged away')
 
 

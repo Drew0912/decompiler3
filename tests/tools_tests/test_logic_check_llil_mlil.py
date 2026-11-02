@@ -12,11 +12,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from falcom.ed9.ir.mlil.mlil_translator import DEBUG_LOG_CALL_TARGET
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
-    MediumLevelILCall, MLILAdd, MLILAddressOf, MLILCall, MLILConst, MLILGe, MLILIf, MLILLoadGlobal, MLILLoadReg,
-    MLILLogicalNot, MLILLt, MLILRet, MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILVar, MLILVariable,
+    MediumLevelILCall, MLILAdd, MLILAddressOf, MLILCall, MLILConst, MLILEq, MLILGe, MLILIf, MLILLoadGlobal,
+    MLILLoadReg, MLILLt, MLILRet, MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILVar, MLILVariable,
     map_operands, walk,
 )
 from tests.shared.corpus import SORA2_SCRIPTS, require
@@ -171,8 +172,7 @@ def saved_register_loop_function() -> tuple[Asm, int]:
 
 
 def unwritten_register_function() -> tuple[Asm, int]:
-    """s = REG; if GLOBAL_A: callee(); GLOBAL_B = REG; GLOBAL_C = s: no arm writes the register, which MLIL copies
-    into itself on the call's edge (reg5 = REG[5])"""
+    """s = REG; if GLOBAL_A: callee(); GLOBAL_B = REG; GLOBAL_C = s: no arm writes the register"""
     asm = Asm()
     asm.get_reg(REG_INDEX)
     asm.load_global(GLOBAL_A); asm.jz('join')
@@ -309,15 +309,6 @@ def out_parameters_named_apart(mlil) -> list:
     return stores
 
 
-def result_read_as_the_register(mlil):
-    """Every read of the result register's variable made a read of the register (MLILLoadReg), as the stack translator
-    writes it"""
-    result = mlil.register_vars[VMEffects.RESULT_REGISTER]
-    for block, index, inst in statements(mlil):
-        block.instructions[index] = rewrite(
-            inst, lambda e: MLILLoadReg(VMEffects.RESULT_REGISTER) if isinstance(e, MLILVar) and e.var == result else e)
-
-
 def restore_register_after_the_call(mlil):
     """REG = s after the call, s the register's value saved before it: a register read past a call as stale"""
     saved = first(mlil, lambda inst: isinstance(inst, MLILSetVar) and isinstance(inst.value, MLILLoadReg))[2]
@@ -407,12 +398,14 @@ class TestPlantedBugs(unittest.TestCase):
         self.check(branch_function, mutate, 'guard_differs')
 
     def test_stale_register_read(self):
-        """x = reg0; call; use(x) read as use(reg0): the copy before the call left out"""
+        """x = callee() held across later calls, its copy reading the register instead of the call's temporary: no MLIL
+        statement wrote the register, so a printed REGS[0] would be stale"""
         def mutate(mlil):
-            start = first(mlil, lambda inst: isinstance(inst, MLILSetVar) and isinstance(inst.value, MLILVar))
-            copy = start[2]
-            later = (start[0], start[1] + 1, None)
-            replace_reads(mlil, copy.var, copy.value.var, later)
+            temporary = first(mlil, is_call)[2].output
+            block, index, copy = first(mlil, lambda inst: isinstance(inst, MLILSetVar)
+                                       and isinstance(inst.value, MLILVar) and inst.value.var == temporary)
+            block.instructions[index] = MLILSetVar(copy.var, MLILLoadReg(VMEffects.RESULT_REGISTER)) \
+                .copy_metadata_from(copy)
         self.check(two_results_function, mutate, 'arg_differs')
 
     def test_reused_temporary(self):
@@ -482,10 +475,9 @@ class TestPlantedBugs(unittest.TestCase):
         self.check(pointer_to_pointer_function, mutate, 'arg_differs')
 
     def test_register_one_arm_leaves_changed(self):
-        """The arm's write changed; the other arm's incoming value compares clean on both layers (MLIL copies it, LLIL
-        leaves it)"""
+        """The arm's write changed; the other arm's incoming value compares clean (both layers leave it)"""
         def mutate(mlil):
-            write = first(mlil, lambda inst: isinstance(inst, MLILSetVar) and isinstance(inst.value, MLILConst)
+            write = first(mlil, lambda inst: isinstance(inst, MLILStoreReg) and isinstance(inst.value, MLILConst)
                           and inst.value.value == REG_OUT)[2]
             write.value = MLILConst(REG_OUT + 1)
         self.check(one_arm_register_function, mutate, 'return_differs')
@@ -520,7 +512,7 @@ class TestPlantedBugs(unittest.TestCase):
 
     def test_unwritten_register_restored_after_an_optional_call(self):
         """No arm writes the register: the join merges the arm reading it after the call with the one reading it as it
-        came in, while MLIL copies it into itself"""
+        came in"""
         self.check(unwritten_register_function, restore_register_after_the_call, 'arg_differs')
 
     def test_tail_call(self):
@@ -531,12 +523,13 @@ class TestPlantedBugs(unittest.TestCase):
         self.check(tail_call_function, mutate, 'return_differs')
 
     def test_ordering_inverted(self):
-        """!(i < LIMIT) written i >= LIMIT: equal but for NaN, its own category; a call inside the loop runs under the
-        inverted branch, its arm read against the condition's representative core, so it is no guard difference"""
+        """(i < LIMIT) == 0 written i >= LIMIT: equal but for NaN, its own category; a call inside the loop runs under
+        the inverted branch, its arm read against the condition's representative core, so it is no guard difference"""
         def mutate(mlil):
             block, index, branch = first(mlil, lambda inst: isinstance(inst, MLILIf))
-            negated = next(node for node in walk(branch.condition) if isinstance(node, MLILLogicalNot))
-            ordering = negated.operand
+            negated = next(node for node in walk(branch.condition) if isinstance(node, MLILEq)
+                           and isinstance(node.rhs, MLILConst) and node.rhs.value == 0)
+            ordering = negated.lhs
             self.assertIsInstance(ordering, MLILLt)
             block.instructions[index] = MLILIf(MLILGe(ordering.lhs, ordering.rhs), branch.true_target,
                                                branch.false_target).copy_metadata_from(branch)
@@ -566,22 +559,27 @@ class TestPlantedBugs(unittest.TestCase):
         self.check(sibling_out_parameters_function, mutate, 'arg_differs')
 
     def test_call_result_never_captured(self):
-        """The call kept without its output, its result read after the join as the register: no MLIL write puts the
-        result there, so a printed REGS[0] would be stale"""
+        """The result's store after the call dropped, the result read after the join as the register: no MLIL write
+        puts the result there, so a printed REGS[0] would be stale"""
         def mutate(mlil):
-            first(mlil, is_call)[2].output = None
-            result_read_as_the_register(mlil)
+            block, index, _ = first(mlil, lambda inst: isinstance(inst, MLILStoreReg)
+                                    and inst.index == VMEffects.RESULT_REGISTER)
+            del block.instructions[index]
         self.check(optional_call_result_function, mutate, 'arg_differs')
 
 
 class TestTranslatorShapes(unittest.TestCase):
-    """MLIL in shapes the symbolic-stack translator gives (IR rewrite part 2), planted in today's MLIL: the check reads
-    them as the LLIL's storage"""
+    """MLIL in shapes the symbolic-stack translator gives (IR rewrite part 2), planted in the SSA path's MLIL: the check
+    reads them as the LLIL's storage"""
+
+    @classmethod
+    def reference_and_ssa_mlil(cls, build) -> tuple:
+        return reference_and_mlil(build, convert=lambda llil: convert_falcom_llil_to_mlil_ssa(llil, infer_types=False))
 
     def test_sibling_scopes_named_apart(self):
         """The joined slot's writes and read all named as one sibling scope's local: storage of its own, read where it
         was written"""
-        reference, mlil = reference_and_mlil(joined_slot_function)
+        reference, mlil = self.reference_and_ssa_mlil(joined_slot_function)
         writes, read = joined_slot_writes_and_read(mlil)
         local = writes[0][2].var
         for write in writes:
@@ -592,14 +590,14 @@ class TestTranslatorShapes(unittest.TestCase):
     def test_address_taken_siblings_in_one_slot(self):
         """Two out-parameter locals named apart in one slot: one neutral key, two addresses, so each call reaches the
         local it was passed, not both"""
-        reference, mlil = reference_and_mlil(sibling_out_parameters_function)
+        reference, mlil = self.reference_and_ssa_mlil(sibling_out_parameters_function)
         out_parameters_named_apart(mlil)
         self.assertEqual(categories(reference, mlil), set())
 
     def test_register_stored_before_a_loop_at_the_start(self):
-        """The entry block's register write as a register store, not today's register variable: the block still only
-        copies, so the loop's entry edge is named as the LLIL names it"""
-        reference, mlil = reference_and_mlil(register_before_loop_function)
+        """The entry block's register write as a register store, not the SSA path's register variable: the block still
+        only copies, so the loop's entry edge is named as the LLIL names it"""
+        reference, mlil = self.reference_and_ssa_mlil(register_before_loop_function)
         registers = list(mlil.register_vars.values())
         block, index, inst = first(mlil, lambda inst: isinstance(inst, MLILSetVar) and inst.var in registers)
         block.instructions[index] = MLILStoreReg(REG_INDEX, inst.value).copy_metadata_from(inst)

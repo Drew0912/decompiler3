@@ -94,10 +94,12 @@ LineMarkerRemovalPass (only with line_markers off)
 
 `FalcomTypeInferencePass` sets each parameter's type from the flag the script declares for it
 (`Value32`/`Nullable32` -> `number`, `str`/`NullableStr` -> `string`, `Pointer` -> `Pointer`), so
-signatures don't depend on MLIL inference; local variables still take the MLIL SSA types. It is also
+signatures don't depend on MLIL inference. Local variables have no type on the decompile path (`any` until the HLIL
+type plan: its stack translator runs no type pass); on the SSA path they take the MLIL SSA types. It is also
 the planned home of Falcom semantic types such as character IDs.
 
-HLIL has no copy-propagation pass: copy propagation happens earlier, at the MLIL-SSA layer. An HLIL
+HLIL has no copy-propagation pass: the decompile path's stack translator folds each push into its consumer, and the
+SSA path propagates copies earlier, at the MLIL-SSA layer. An HLIL
 `CopyPropagationPass`, disabled since 2025-12, was removed on 2026-09-27. Re-enabled on the full
 corpus, it changed 27 functions, and 24 of those changes were wrong: it deleted `GLOBALS[n]` writes
 (a wait loop became `while (1)`) and assignments whose value was still read after the enclosing
@@ -149,9 +151,9 @@ record's: a record that keeps fewer passes an address-taken local HLIL shows as 
 (`btl_check_condition(arg1, 3, *&var_s4)`). A call with no count (an unpaired function, a call without a
 record, an everyday decompile) prints the rule's. Syscalls, script calls and `.hlil.ts` print every argument.
 
-**Address-taken locals fold back to a plain variable, not a `deref` call.** MLIL SSA construction
-lowers every address-taken local/parameter `x` to explicit `*(&x)` memory form (see
-`docs/mlil/MLIL_DESIGN.md`'s Variable Model & SSA section); that form survives SSA deconstruction and MLIL-
+**Address-taken locals fold back to a plain variable, not a `deref` call.** The stack translator writes every
+address-taken local/parameter `x` in explicit `*(&x)` memory form, as MLIL SSA construction lowers it on the SSA path
+(see `docs/mlil/MLIL_DESIGN.md`'s Variable Model & SSA section); that form survives SSA deconstruction and MLIL-
 to-HLIL conversion unchanged, so it also reaches HLIL as `HLILDeref(HLILAddressOf(HLILVar(x)))` /
 an `HLILAssign` whose `dest` is that same shape. `*(&x) ≡ x` always holds for exactly this shape
 (never for a genuine runtime-computed pointer), so both printers special-case it before falling

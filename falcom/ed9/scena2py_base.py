@@ -6,7 +6,7 @@ Usage, from a game's launcher:
 
 Flags live in scena2py_config.py, not on the command line (only the output folder has an
 override, -o) - edit scena2py_config.py to change which outputs are written and which
-ScpParser/MLIL flags are used.
+ScpParser flags are used.
 """
 
 import argparse
@@ -22,7 +22,7 @@ from falcom.ed9.parser.scp_listing import write_listing
 from falcom.ed9.parser.parser_types import Function
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.hlil.hlil import HLILUnstructured, reachable_statements
@@ -146,8 +146,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if not need_mlil:
                 continue
 
-            mlil_func = convert_falcom_llil_to_mlil_ssa(llil_func, optimize=config.optimize_mlil,
-                                                        infer_types=config.infer_types)
+            mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
 
             if config.write_mlil_asm:
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))

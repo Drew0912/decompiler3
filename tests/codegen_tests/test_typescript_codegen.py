@@ -10,7 +10,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from codegen.typescript import TypeScriptGenerator, generate_typescript, generate_typescript_header
-from falcom.ed9.structs.scp_types import RawInt
+from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.parser.parser_types import Function, FunctionParam
+from falcom.ed9.structs.scp_types import Pointer, RawInt, ScpParamFlags
 from ir.core import SourceFloat
 from ir.core.il_base import IRParameter
 from ir.hlil import (
@@ -36,9 +38,7 @@ from ir.hlil import (
     VariableKind,
 )
 from ir.hlil.hlil_formatter import HLILFormatter
-from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from ir.mlil.mlil import MediumLevelILFunction, MLILRet
-from ir.mlil.mlil_optimizer import optimize_mlil
 
 
 TEST_FUNCTION_NAME = 'test_func'
@@ -151,14 +151,18 @@ class TestSwitchEmptyCase(unittest.TestCase):
 
 
 class TestPointerCodegen(unittest.TestCase):
-    """A Pointer (out-parameter) keeps its own kind through MLIL and HLIL."""
+    """A Pointer (out-parameter) keeps its own kind through HLIL, from the script's declared flags as production takes
+    it."""
 
     def test_pointer_parameter_renders_as_the_alias(self):
         func = MediumLevelILFunction(TEST_FUNCTION_NAME, params=[IRParameter('arg1', 'pointer')])
         func.get_or_create_parameter(1, 'arg1')
         func.create_block().add_instruction(MLILRet())
+        scp_func = Function()
+        scp_func.name = TEST_FUNCTION_NAME
+        scp_func.params = [FunctionParam(ScpParamFlags(Pointer))]
 
-        hlil = MLILToHLILConverter(optimize_mlil(func)).convert()
+        hlil = convert_falcom_mlil_to_hlil(func, scp_func)
 
         self.assertEqual(hlil.parameters[0].type_hint, HLILTypeKind.POINTER)
         self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: Pointer)', generate_typescript(hlil))

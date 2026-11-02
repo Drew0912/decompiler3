@@ -750,13 +750,14 @@ class TestPlantedHLILBugs(unittest.TestCase):
         self.check(branch_function, mutate, 'guard_differs')
 
     def test_call_moved_into_a_short_circuit_right_operand(self):
-        """x = callee(1); if (GLOBAL_A && x) made if (GLOBAL_A && callee(1)): the call no longer runs on every path"""
+        """x = callee(1); if ((GLOBAL_A && x) != 0) made if ((GLOBAL_A && callee(1)) != 0): the call no longer runs on
+        every path"""
         def mutate(hlil):
             assignment = first_node(hlil, HLILAssign, lambda node: isinstance(node.src, HLILCall))
             hlil.body.statements.remove(assignment)
-            test = first_node(hlil, HLILIf).condition.rhs
-            self.assertIsInstance(test.lhs, HLILVar)
-            test.lhs = assignment.src
+            test = first_node(hlil, HLILIf).condition.lhs
+            self.assertIsInstance(test.rhs, HLILVar)
+            test.rhs = assignment.src
         self.check(and_condition_function, mutate, 'guard_differs')
 
     def test_loop_test_polarity_flipped(self):

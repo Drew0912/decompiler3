@@ -62,15 +62,15 @@ per-edge stack state are in `docs/llil/LLIL_DESIGN.md`.
 
 **Location:** `ir/mlil/` (generic) + `falcom/ed9/ir/mlil/` (Falcom-specific)
 
-Erases the explicit operand stack — every temporary becomes a named variable — and exposes
-control/data flow suitable for SSA and optimizer passes, while retaining Falcom-specific semantics
-(syscall IDs, `CALL_SCRIPT` metadata). Includes a full SSA optimizer pipeline — construction/
-deconstruction, critical-edge splitting, type inference, and further optimization passes
-(constant/copy propagation, dead-code elimination; none computes a value the bytecode does not hold). Beside it, not
-yet on the decompile path, the symbolic-stack translator (`convert_falcom_llil_to_mlil_stack`) gives non-SSA MLIL
-straight from the LLIL's stack layout, registers as storage (IR rewrite part 2). See
-`docs/mlil/MLIL_DESIGN.md` for the node model and pipeline shape, `docs/mlil/MLIL_GUIDE.md` for a practical
-usage guide.
+Erases the explicit operand stack, while retaining Falcom-specific semantics (syscall IDs, `CALL_SCRIPT` metadata).
+The decompile path's MLIL comes from the symbolic-stack translator (`convert_falcom_llil_to_mlil_stack`): non-SSA MLIL
+straight from the LLIL's stack layout, registers as storage, then the passes that merge blocks, forward call results,
+return the value stored before each return and mark bitwise constants hex (IR rewrite part 2). Beside it, kept and
+never called by the decompile path, the SSA path (`convert_falcom_llil_to_mlil_ssa`): every temporary a named
+variable, and a full SSA optimizer pipeline — construction/deconstruction, critical-edge splitting, type inference,
+and further optimization passes (constant/copy propagation, dead-code elimination; none computes a value the bytecode
+does not hold). See `docs/mlil/MLIL_DESIGN.md` for the node model and pipeline shape, `docs/mlil/MLIL_GUIDE.md` for a
+practical usage guide.
 
 ## Layer 5: HLIL — Implemented, active development
 
@@ -131,7 +131,7 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
    ↓
 6. Lifter (ED9VMLifter.lift_function) → LowLevelILFunction
    ↓
-7. MLIL (convert_falcom_llil_to_mlil_ssa)
+7. MLIL (convert_falcom_llil_to_mlil_stack)
    ↓
 8. HLIL (convert_falcom_mlil_to_hlil)
    ↓

@@ -54,7 +54,7 @@ def call_with_address(asm: Asm, label: str, offset: int):
 
 class StackTranslatorTestCase(StackTranslationTestCase):
     def translate(self, asm: Asm, argc: int = 0, callee_argc: int = 0):
-        """asm's MLIL through the new path, after the shared checks"""
+        """asm's MLIL through the decompile path, after the shared checks"""
         _, llil = lift_asm(asm, argc=argc, others=(returning_callee(callee_argc),))
         self.llil = llil
         return self.checked_translation(llil)

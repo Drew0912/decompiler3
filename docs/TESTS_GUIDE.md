@@ -21,7 +21,7 @@ A test sits in the folder of the code it tests. Each folder is named after that 
 | Folder | Tests of |
 |---|---|
 | `llil_tests/` | the LLIL builder and the ED9 lifter (`ir/llil/`, `falcom/ed9/ir/llil/`), and what they hand to MLIL |
-| `mlil_tests/` | the LLIL->MLIL translator, MLIL SSA and the optimizer passes (`ir/mlil/`, `falcom/ed9/ir/mlil/`) |
+| `mlil_tests/` | the LLIL->MLIL translators (the stack translator, the decompile path's, and the SSA path's), its passes, MLIL SSA and the optimizer passes (`ir/mlil/`, `falcom/ed9/ir/mlil/`) |
 | `hlil_tests/` | MLIL->HLIL structuring and the HLIL passes (`ir/hlil/`, `falcom/ed9/ir/hlil/`) |
 | `parser_tests/` | reading a `.dat` (`falcom/ed9/parser/`, `falcom/ed9/structs/`, `falcom/ed9/disasm/`, `assembler/`): stack simulation, string pool, call records, listings, the opcode table's stack effects, and the `.py` text scena2py writes |
 | `writer_tests/` | `ScpWriter` (`falcom/ed9/writer/`): compiling the LLIL DSL, hooks, the compile check |
@@ -45,8 +45,8 @@ need goes in `tests/shared/`.
 | `hlil_cfg_utils.py` | `build_function` and `structure`: small MLIL CFGs from a block spec, and their HLIL; `classify` and `hlil_run`: an oracle that runs MLIL and HLIL side by side |
 | `scp_asm.py` | `Asm` and `Program`: hand-written ED9 bytecode for a real `ScpParser` |
 | `scp_writer_test_utils.py` | `fresh_writer(dat)` (a clean `ScpWriter` for `dat`), `body_writer()` (one inside a function body, to emit opcodes one at a time), `WriterTestCase` (compiles `test.dat` in a temp folder), `load_module` (a hook or library file as a fresh module), `marked_line`/`location`/`at` for `file:line` messages, and `HEX`, an address in a writer message as a regex |
-| `logic_check_functions.py` | the logic check's test files' shared assembled functions (`calls_function`, `branch_function`, ...) and pairs: `reference_and_mlil` (a function's LLIL facts and its MLIL), `mlil_and_hlil`, and `categories` / `hlil_categories`, what each pair's comparison reports; it imports `logic_check`, so the test puts `tools/` on `sys.path` first |
-| `stack_translator_checks.py` | the stack translator's test files' checks: its invariants (`temporaries_misused`, `reads_before_definition`), `statements(mlil)`, `translated(llil)` (the translator's own pipeline, no shaping pass), and `StackTranslationTestCase`, whose `checked_translation(llil, convert=translated)` converts (the new path whole: `convert=convert_falcom_llil_to_mlil_stack`) after checking both pairs clean and both invariants; it imports `logic_check`, so the test puts `tools/` on `sys.path` first |
+| `logic_check_functions.py` | the logic check's test files' shared assembled functions (`calls_function`, `branch_function`, ...) and pairs: `reference_and_mlil` (a function's LLIL facts and its MLIL, the decompile path's unless `convert` names another), `mlil_and_hlil`, and `categories` / `hlil_categories`, what each pair's comparison reports; it imports `logic_check`, so the test puts `tools/` on `sys.path` first |
+| `stack_translator_checks.py` | the stack translator's test files' checks: its invariants (`temporaries_misused`, `reads_before_definition`), `statements(mlil)`, `translated(llil)` (the translator's own pipeline, no shaping pass), and `StackTranslationTestCase`, whose `checked_translation(llil, convert=translated)` converts (the decompile path whole: `convert=convert_falcom_llil_to_mlil_stack`) after checking both pairs clean and both invariants; it imports `logic_check`, so the test puts `tools/` on `sys.path` first |
 
 ## Corpus and generated files
 

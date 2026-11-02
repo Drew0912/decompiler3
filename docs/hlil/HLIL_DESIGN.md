@@ -26,8 +26,8 @@ That boundary gives HLIL three main responsibilities:
 3. **Normalize source-like structure** — simplify recovered control flow without reintroducing CFG
    edges or an SSA variable model.
 
-HLIL is intentionally not a general replacement for MLIL analysis. Data-flow optimization and SSA
-work happen upstream; HLIL favors explicit tree ownership and straightforward code generation.
+HLIL is intentionally not a general replacement for MLIL analysis. Data-flow work happens upstream (the stack
+translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership and straightforward code generation.
 
 ## Module Layout
 
@@ -153,7 +153,8 @@ types attached to every expression. During conversion, MLIL booleans map to `INT
 values are copied from MLIL source-parameter metadata when available. When the script's function is
 given, `FalcomTypeInferencePass` then sets each parameter's type from its declared flag -
 `Value32`/`Nullable32` -> `NUMBER`, `str`/`NullableStr` -> `STRING`, `Pointer` -> `POINTER` - so a
-signature never depends on MLIL inference; locals still take the MLIL SSA types.
+signature never depends on MLIL inference. Locals have no type on the decompile path (its stack translator runs no
+type pass: `any` until the HLIL type plan); on the SSA path they take the MLIL SSA types.
 
 ### Call Results as Expressions
 
@@ -274,10 +275,10 @@ deliberately prefers recovered source-line order over bytecode emission order.
 `line(N)` comments, then tidies the if arms left empty without changing what runs (a negated
 condition, swapped or nested arms); the code statements and their order are unchanged.
 
-HLIL has no copy-propagation pass: copy propagation happens in MLIL SSA optimization (the disabled
-HLIL `CopyPropagationPass` was removed on 2026-09-27). `FalcomTypeInferencePass` only sets parameter
-types (see Variable Model); it is also the planned home of Falcom semantic types such as character
-IDs. See `docs/hlil/HLIL_GUIDE.md` for the detailed transformations
+HLIL has no copy-propagation pass (the disabled HLIL `CopyPropagationPass` was removed on 2026-09-27): the decompile
+path's stack translator folds each push into its consumer, and the SSA path propagates copies in its optimizer.
+`FalcomTypeInferencePass` only sets parameter types (see Variable Model); it is also the planned home of Falcom
+semantic types such as character IDs. See `docs/hlil/HLIL_GUIDE.md` for the detailed transformations
 performed by each active pass and why the copy-propagation pass was removed.
 
 ## Testing
@@ -336,11 +337,10 @@ still have no dedicated test file of their own.
 
 ## Open Items
 
-- Parameter types come from the declared flags (`FalcomTypeInferencePass`, since 2026-09-29); local
-  types still come from the MLIL SSA type pass, so the planned rewrite, which deletes that pass, leaves
-  locals `any` until typing resumes. The HLIL type-inference plan for locals (CX Step F's follow-up) is
-  parked until the tool is nearly done; call results stay untyped (`any` in TypeScript), which is most
-  of the untyped locals.
+- Parameter types come from the declared flags (`FalcomTypeInferencePass`, since 2026-09-29). Locals are
+  `any` since the decompile path moved to the stack translator (IR rewrite part 2, 2026-11-01), which runs
+  no type pass, until the HLIL type plan for locals; the SSA path's type pass never typed call results
+  either (`any` in TypeScript), which were most of its untyped locals.
 - **Resolved (Step H, 2026-09-22):** `HLILFor` (no construction site, and already-wrong rendering)
   was deleted rather than fixed. Tree-walking passes that only recursed into simple nested blocks -
   `DeadCodeEliminationPass`, `CommonReturnExtractionPass`, `TypeScriptGenerator._infer_return_type`

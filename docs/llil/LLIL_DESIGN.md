@@ -91,7 +91,8 @@ Model).
 
 **Push and pop.** `push(value)` emits `StackStore(value, offset 0, slot sp)` then `SpAdd(+1)`, and
 puts a `StackLoad` of that slot on the virtual stack - not the value itself. A consumer therefore
-reads "the value in slot k", as the VM does; MLIL's SSA passes merge and propagate the values.
+reads "the value in slot k", as the VM does; MLIL's stack translator folds each push into its consumer (the SSA
+path's passes merge and propagate the values).
 `pop()` emits `SpAdd(-1)` and returns the virtual stack's top entry. `POP` / `POP_N` emit one
 `SpAdd(-n)` and drop the entries at or above the new `sp`.
 
@@ -166,7 +167,8 @@ Every terminal records the state its edge carries into the target (`_record_edge
 branches when they are emitted, calls after their cleanup (the return edge). The first record for a
 block becomes its state; every later one must have the same **shape** - the same `sp`, the same
 tracked slots and, for ED9, the same pending setups (kind, `sp` before the call, return block;
-`FalcomStackSnapshot.shape()`). Values may differ between edges: MLIL's SSA merges them. The entry
+`FalcomStackSnapshot.shape()`). Values may differ between edges: the pushes meeting there share one local, MLIL's
+stack translator's box (the SSA path's phis merge them). The entry
 state is seeded, not recorded from an edge, so a back edge into the entry must match it too. The
 parser's disassembly-time stack simulation checks the same stack heights earlier
 (`docs/falcom/ed9/ED9_FORMAT.md`, Layer 2).

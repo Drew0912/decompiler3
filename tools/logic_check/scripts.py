@@ -8,7 +8,7 @@ from dc3.gc_policy import infrequent_gc
 from dc3.utils import raise_recursion_limit
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from falcom.ed9.parser.scp import ScpParser
 from .compare import Difference, compare_facts
 from .evaluation import analyze
@@ -39,8 +39,7 @@ class FunctionResult(NamedTuple):
 
 
 @infrequent_gc()
-def check_script(path: Path, game: str | None, *, infer_types: bool = True,
-                 function_name: str | None = None) -> list[FunctionResult]:
+def check_script(path: Path, game: str | None, *, function_name: str | None = None) -> list[FunctionResult]:
     """Each function's LLIL -> MLIL and MLIL -> HLIL differences, or function_name's alone; a script the parser rejects
     raises. Cyclic garbage collection spaced out, as for a decompile"""
     raise_recursion_limit()     # a value tree nests as deep as a chain of pushes, an eager || chain's
@@ -48,10 +47,10 @@ def check_script(path: Path, game: str | None, *, infer_types: bool = True,
     parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False, game=game,
                                        filter_func=only)
     lifter = ED9VMLifter(parser=parser)
-    return [check_function(lifter, func, infer_types) for func in functions]
+    return [check_function(lifter, func) for func in functions]
 
 
-def check_function(lifter: ED9VMLifter, func, infer_types: bool) -> FunctionResult:
+def check_function(lifter: ED9VMLifter, func) -> FunctionResult:
     try:
         llil = lifter.lift_function(func)
     except Exception as e:
@@ -63,7 +62,7 @@ def check_function(lifter: ED9VMLifter, func, infer_types: bool) -> FunctionResu
         return FunctionResult.check_failed(func.name, 'LLIL', e)
 
     try:
-        mlil = convert_falcom_llil_to_mlil_ssa(llil, optimize=True, infer_types=infer_types)
+        mlil = convert_falcom_llil_to_mlil_stack(llil)
     except Exception as e:
         return FunctionResult.decompile_failed(func.name, 'MLIL', e)
 

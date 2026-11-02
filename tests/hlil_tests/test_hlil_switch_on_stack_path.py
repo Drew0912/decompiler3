@@ -31,7 +31,7 @@ class Selector:
 
     def __init__(self, argc: int, scrutinee: str):
         self.argc = argc
-        self.scrutinee = scrutinee      # the new path's switch scrutinee
+        self.scrutinee = scrutinee      # the decompile path's switch scrutinee
 
     def setup(self, asm: Asm):
         if not self.argc:
@@ -140,7 +140,7 @@ class TestSwitchOnBothPaths(unittest.TestCase):
         }
         for name, (build, selector, labels) in shapes.items():
             for stack in (False, True):
-                with self.subTest(chain=name, path='stack' if stack else 'today'):
+                with self.subTest(chain=name, path='stack' if stack else 'ssa'):
                     hlil, differences = self.hlil(build, selector.argc, stack)
 
                     [switch] = self.switches(hlil)
@@ -157,7 +157,7 @@ class TestSwitchOnBothPaths(unittest.TestCase):
         }
         for name, build in shapes.items():
             for stack in (False, True):
-                with self.subTest(chain=name, path='stack' if stack else 'today'):
+                with self.subTest(chain=name, path='stack' if stack else 'ssa'):
                     hlil, differences = self.hlil(build, 0, stack)
 
                     self.assertEqual(self.switches(hlil), [])

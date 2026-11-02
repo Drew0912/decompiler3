@@ -2,8 +2,8 @@
 """The stack translator's checks that its test files share (tests/mlil_tests/test_mlil_stack_*.py,
 test_mlil_call_result.py; G3's harness runs the invariants too): every temporary assigned once and read only after that
 in its own block, every local or box read only after its store, the translator's own pipeline, and a test case
-converting LLIL through it or the new path after checking the result; it imports logic_check from tools/, which the
-importing test puts on sys.path"""
+converting LLIL through it or the decompile path after checking the result; it imports logic_check from tools/, which
+the importing test puts on sys.path"""
 
 import re
 import unittest
@@ -131,8 +131,8 @@ def translated(llil: LowLevelILFunction) -> MediumLevelILFunction:
 class StackTranslationTestCase(unittest.TestCase):
     def checked_translation(self, llil: LowLevelILFunction,
                             convert: Callable[[LowLevelILFunction], MediumLevelILFunction] = translated):
-        """llil's MLIL through convert (the translator's own pipeline, or the new path whole), after checking it: both
-        pairs clean, the temporaries' invariant, every local or box read reached only from its store"""
+        """llil's MLIL through convert (the translator's own pipeline, or the decompile path whole), after checking it:
+        both pairs clean, the temporaries' invariant, every local or box read reached only from its store"""
         reference = logic_check.analyze(logic_check.LLILLayer(llil))
         mlil = convert(llil)
         self.assertEqual(temporaries_misused(mlil), [])

@@ -91,15 +91,15 @@ def failing_analysis(layer_type: type, gated: bool) -> Callable:
 
 
 STAGES = (  # the stage failing, the patch failing it, the error field, LLIL -> MLIL and MLIL -> HLIL, the exit status
-    ('LLIL',       failing(ED9VMLifter, 'lift_function'),               'decompile_error', NOT_COMPARED, NOT_COMPARED, 0),
-    ('LLIL',       failing_analysis(LLILLayer, gated=False),            'internal_error',  NOT_COMPARED, NOT_COMPARED, 1),
-    ('MLIL',       failing(scripts, 'convert_falcom_llil_to_mlil_ssa'), 'decompile_error', NOT_COMPARED, NOT_COMPARED, 0),
-    ('MLIL',       failing(scripts, 'compare_facts'),                   'internal_error',  NOT_COMPARED, NOT_COMPARED, 1),
-    ('MLIL gated', failing_analysis(MLILLayer, gated=True),             'internal_error',  FAIL,         NOT_COMPARED, 1),
-    ('HLIL',       failing(scripts, 'convert_falcom_mlil_to_hlil'),     'decompile_error', FAIL,         NOT_COMPARED, 1),
-    ('HLIL',       failing(scripts, 'compare_gated'),                   'internal_error',  FAIL,         NOT_COMPARED, 1),
-    (None,         contextlib.nullcontext,                              None,              FAIL,         PASS,         1),
-    (None,         contextlib.nullcontext,                              None,              PASS,         PASS,         0),
+    ('LLIL',       failing(ED9VMLifter, 'lift_function'),                 'decompile_error', NOT_COMPARED, NOT_COMPARED, 0),
+    ('LLIL',       failing_analysis(LLILLayer, gated=False),              'internal_error',  NOT_COMPARED, NOT_COMPARED, 1),
+    ('MLIL',       failing(scripts, 'convert_falcom_llil_to_mlil_stack'), 'decompile_error', NOT_COMPARED, NOT_COMPARED, 0),
+    ('MLIL',       failing(scripts, 'compare_facts'),                     'internal_error',  NOT_COMPARED, NOT_COMPARED, 1),
+    ('MLIL gated', failing_analysis(MLILLayer, gated=True),               'internal_error',  FAIL,         NOT_COMPARED, 1),
+    ('HLIL',       failing(scripts, 'convert_falcom_mlil_to_hlil'),       'decompile_error', FAIL,         NOT_COMPARED, 1),
+    ('HLIL',       failing(scripts, 'compare_gated'),                     'internal_error',  FAIL,         NOT_COMPARED, 1),
+    (None,         contextlib.nullcontext,                                None,              FAIL,         PASS,         1),
+    (None,         contextlib.nullcontext,                                None,              PASS,         PASS,         0),
 )
 DIFFERENCES = {NOT_COMPARED: None, PASS: [], FAIL: [PLANTED]}
 PAIR_LINE = {NOT_COMPARED: 'not compared', PASS: 'PASS', FAIL: 'FAIL (1 difference)'}
@@ -126,7 +126,7 @@ class TestCheckStages(unittest.TestCase):
         planting = (mock.patch.object(scripts, 'compare_facts', return_value=[PLANTED]) if planted
                     else contextlib.nullcontext())
         with planting, fails():
-            return scripts.check_function(ED9VMLifter(parser=parser), func, False)
+            return scripts.check_function(ED9VMLifter(parser=parser), func)
 
     @classmethod
     def report(cls, result: scripts.FunctionResult, **options) -> tuple[int, str]:

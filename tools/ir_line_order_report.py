@@ -37,7 +37,7 @@ from dc3.utils import collect_paths, raise_recursion_limit
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_ssa
+from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from ir.core import reverse_post_order
 from ir.llil.llil import LowLevelILDebug
@@ -129,7 +129,7 @@ def analyse_file(path: Path) -> list[FunctionReport]:
 
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             llil_func = lifter.lift_function(func)
-            mlil_func = convert_falcom_llil_to_mlil_ssa(llil_func, optimize=True)
+            mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
             hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
 
             sequences = {

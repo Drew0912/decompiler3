@@ -43,7 +43,8 @@ def call_callee(callee, ret: str, arg2_push):
 
 def decompile(filter_func=None) -> str:
     """The .ts of a script whose Main calls Callee(arg1, arg2 = 3, arg3 = 0.3, arg4 = 'x') three times: arg2 pushed
-    as an Integer 3, as a Raw 3, and read from a local holding an Integer 3 (constant propagation substitutes it)"""
+    as an Integer 3, as a Raw 3, and read from a local holding an Integer 3 (printed: the decompile path propagates
+    no constant)"""
     with tempfile.TemporaryDirectory() as tmp:
         dat = Path(tmp) / 'defaults.dat'
         writer = fresh_writer(dat)
@@ -124,16 +125,17 @@ class TestCallDefaultsEndToEnd(unittest.TestCase):
 
         self.assertIn(f'function Callee(arg1: number, arg2: number = {DEFAULT_INT}, arg3: number = {DEFAULT_FLOAT}, '
                       f'arg4: string = "{DEFAULT_TEXT}")', ts)
-        # An Integer arg2, pushed or read from the local, goes with the float and string defaults; a Raw 3 is
-        # another word than Integer 3
-        self.assertEqual(ts.count(f'Callee({FIRST_ARG});'), 2)
+        # A pushed Integer arg2 goes with the float and string defaults; a Raw 3 is another word than Integer 3; the
+        # local's read is not the constant
+        self.assertEqual(ts.count(f'Callee({FIRST_ARG});'), 1)
         self.assertIn(f'Callee({FIRST_ARG}, {DEFAULT_INT});', ts)
+        self.assertIn(f'Callee({FIRST_ARG}, var_s0);', ts)
 
     def test_callee_left_out_of_the_output_still_counts(self):
         ts = decompile(filter_func=lambda func: func.name != 'Callee')
 
         self.assertNotIn('function Callee(', ts)
-        self.assertEqual(ts.count(f'Callee({FIRST_ARG});'), 2)
+        self.assertEqual(ts.count(f'Callee({FIRST_ARG});'), 1)
 
 
 if __name__ == '__main__':
