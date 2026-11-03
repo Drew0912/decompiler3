@@ -331,10 +331,10 @@ Shaping passes come after the translator, each exact and removable, the canonica
   statement writes), and so are a store to another register (the return passes it on to the caller) and the stores in
   the predecessors of a return block; none of these on real bytecode.
 
-**Not translated yet:** a function with a call's setup and a value in one slot at a block entry (ED9's disassembler
-refuses such a call first), or an address of a slot no push holds (ED9's lifter refuses such an address first).
-These raise `UnsupportedStackShape`, as does, on ED9, a call frame value read as data (a hand edit reading a slot of
-a call's setup, `PUSH_CALLER_FRAME`'s or `PUSH_CURRENT_FUNC_ID`'s: no MLIL node holds the VM's frame values).
+**Not translated:** on ED9, a call frame value read as data (a hand edit reading a slot of a call's setup,
+`PUSH_CALLER_FRAME`'s or `PUSH_CURRENT_FUNC_ID`'s: no MLIL node holds the VM's frame values) raises
+`UnsupportedStackShape`. Two shapes never reach the translator, as ED9 refuses them earlier: a call's setup and a value
+in one slot at a block entry (the disassembler) and an address of a slot no push holds (the LLIL builder).
 
 ## Testing
 

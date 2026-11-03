@@ -37,8 +37,7 @@ __all__ = ['StackTranslator', 'StackTranslatorPass', 'UnsupportedStackShape']
 
 
 class UnsupportedStackShape(NotImplementedError):
-    """A stack shape the translator does not translate yet: a call's setup and a value in one slot at a block entry,
-    an address of a slot no push holds, or a shape a VM's subclass refuses"""
+    """A stack shape a VM's subclass refuses to translate"""
 
 
 @dataclass(eq=False)
@@ -102,7 +101,6 @@ class StackTranslator:
         self.pushes: dict[LowLevelILStackStore, Push] = {}
         self.entry_pushes: dict[LowLevelILBasicBlock, dict[int, set[Push]]] = {}
         self.continuations: set[LowLevelILBasicBlock] = set()
-        self.refusals: list[str] = []
         self.carried: dict[Push, set[Push]] = {}            # each carried push -> the pushes sharing its local
         self.address_taken_parameters: set[int] = set()     # the frame offsets whose address is taken
         self.memory_vars: set[MLILVariable] = set()         # the address-taken locals and parameters, read as *(&v)
@@ -160,7 +158,6 @@ class StackTranslator:
         self.find_carried_locals()
         self.name_locals()
         self.find_memory_vars()
-        self.check_shapes()
 
     def find_continuations(self):
         """The return targets reached from their call's block alone"""
@@ -203,10 +200,7 @@ class StackTranslator:
                             else:
                                 push.read_by_offset = True
                     elif isinstance(node, LowLevelILStackAddr):
-                        holders = holding.get(node.slot_index, ())
-                        if not holders:
-                            self.refuse('an address of a slot no push holds')
-                        for push in holders:
+                        for push in holding.get(node.slot_index, ()):
                             push.address_taken = True
                     elif isinstance(node, LowLevelILFrameAddr):
                         self.address_taken_parameters.add(node.offset)
@@ -232,16 +226,14 @@ class StackTranslator:
     def find_carried_locals(self):
         """A carried local: the pushes that may hold a slot where control enters a block other than the entry or a
         call's continuation, unless that is one local; they share one variable, each push storing it as the VM does. A
-        call's setup crosses as it is (no value)"""
+        call's setup crosses as it is (no value); a setup and a value in one slot are the VM's to refuse"""
         for block, holding in self.entry_pushes.items():
             if block is self.entry or block in self.continuations:
                 continue
             for pushes in holding.values():
                 if all(push.setup for push in pushes):
                     continue
-                if any(push.setup for push in pushes):
-                    self.refuse("a call's setup and a value in one slot at a block entry")
-                elif len(pushes) > 1 or not next(iter(pushes)).is_local:
+                if len(pushes) > 1 or not next(iter(pushes)).is_local:
                     self.carry_together(pushes)
 
     def carry_together(self, pushes: set[Push]):
@@ -278,14 +270,6 @@ class StackTranslator:
         parameter (a parameter lives the whole function)"""
         self.memory_vars = {push.variable for push in self.pushes.values() if push.address_taken}
         self.memory_vars |= {self.parameter_var(offset) for offset in self.address_taken_parameters}
-
-    def check_shapes(self):
-        """The refusals the pre-pass met, raised together"""
-        if self.refusals:
-            raise UnsupportedStackShape(f'{self.llil_func.name}: {", ".join(dict.fromkeys(self.refusals))}')
-
-    def refuse(self, reason: str):
-        self.refusals.append(reason)
 
     # === Translation ===
 
@@ -404,8 +388,6 @@ class StackTranslator:
         entry = self.pile[slot]
         if entry.var is not None:
             return self.read_var(entry.var)
-        if entry.expr is None or entry.consumed:
-            raise RuntimeError(f'{self.llil_func.name}: slot {slot} read where the pre-pass found no pending value')
 
         entry.consumed = True
         return entry.expr
