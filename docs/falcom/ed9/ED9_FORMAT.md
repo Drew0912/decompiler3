@@ -1,7 +1,8 @@
 # ED9 Format: Parser and Disassembler
 
 > Status: current. How `falcom/ed9/parser/`, `falcom/ed9/structs/` and `falcom/ed9/disasm/` (on the generic
-> `assembler/`) read an ED9 script (`.dat`), and how the games on this format differ.
+> `assembler/`) read an ED9 script (`.dat`), and how the games on this format differ. What the VM does with a script:
+> `docs/falcom/ed9/ED9_VM.md`.
 
 ## Layer 1: Parser — Done
 
@@ -68,13 +69,14 @@ parameters for `CALL`, the count operand otherwise).
 
 ## Games on This Format
 
-`sora2_1.0`, `sora1` and `kuro1` scripts share one format: all 45 decoded instruction forms of the opcode table (`PUSH`
-decodes into its typed forms; the unknown 0x28 never occurs), the same header (`dword_14` is 0, the function table at
-0x18), value encoding and table field values (a census of every file, 2026-10-18). They differ in:
+`sora2` (game version 1.5.0.0, the version of the exe `ED9_VM.md` was read from), `sora1` and `kuro1` scripts share
+one format: all 45 decoded instruction forms of the opcode table (`PUSH` decodes into its typed forms; 0x28
+`DEBUG_INT`, which the opcode table lacks, never occurs), the same header (`dword_14` is 0: none is compiled with
+`-s`; the function table at 0x18), value encoding and table field values. They differ in:
 - **Call debug records:** `kuro1`'s older compiler writes each function's records twice and gives a call without a line
   marker a record, so 26 of 634 `kuro1` files rebuild byte-identical (`docs/FUTURE_WORK.md`, "kuro1 Byte-Exact Debug
   Records").
-- **Syscalls:** each game has its own command set: of the 991 `(subsystem, command)` pairs used, 540 occur in all three,
-  89 only in `sora2_1.0`, 12 only in `sora1` and 147 only in `kuro1`.
+- **Syscalls:** each game has its own command set; most `(subsystem, command)` pairs occur in all three.
 
-`kuro1`'s `ani/mon9996_c00.dat` is a broken script (`byte06` 147 in its function table) and is not supported.
+`kuro1`'s `ani/mon9996_c00.dat` is a broken script (`byte06` 147 in its function table) and is not supported. The VM
+does not read `byte06` (`ED9_VM.md`, File-format fields), but the parser refuses a non-zero one.

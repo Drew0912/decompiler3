@@ -102,8 +102,11 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   calls, so eager chains print flat; `~` is bitwise `NOT`; `x == 0` is a real comparison; `/` is `DIV`
   and `%` is `MOD`; operators the VM lacks raise; a bare value as a condition emits no comparison.
   `AndThen`/`OrElse` are short-circuit logic recovered from jumps, allowed only in conditions and
-  lowered to jumps. Operands evaluate left to right, call arguments right to left (last pushed first);
-  warn when an edit puts two calls in one argument list.
+  lowered to jumps. Two VM rules to keep in mind (`docs/falcom/ed9/ED9_VM.md`, Truth): `Not` on a non-Integer
+  leaves the value, so `Not(f)` on a Float tests `f`, not its negation; and `And`/`Or` take a Float as true when it
+  is not `0.0`, while a jump truncates it first (0.5 is true in `And`, false as a condition). Operands evaluate
+  left to right, call arguments right to left (last pushed first); warn when an edit puts two calls in one argument
+  list.
 - **Other statements:** `Return(n)` computes its `POP` from the live locals and parameters; `Return()`
   is the raw-zero return. Out-parameters are `Ref(x)` (`PUSH_STACK_OFFSET`), `Deref(p)` and
   `Set(Deref(p), value)`, only on `Pointer` parameters. `Syscall(subsystem, cmd, ...)` covers unnamed

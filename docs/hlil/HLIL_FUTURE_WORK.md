@@ -76,12 +76,11 @@ only: their callee's defaults are in this script's function table. Two ways:
 
 - **(a) From the code:** leave out trailing constant arguments equal to the callee's declared defaults
   (the TypeScript signatures already print them). This is the original compiler's own rule: no call-site
-  debug record drops an argument that differs from its default (0 of 734,250 local-call records in
-  `sora2_1.0`, 0 of 450,565 in `sora1`; `notes/debug_records_handoff.md`). Needs no records. It differs
-  from the author where they wrote a default out anyway, about 15% of calls (114,613 in `sora2_1.0`):
-  `mp0000_ev`'s 1,180 `camera_lookat` calls all keep the `3`, written `camera_lookat(63.153, 29.174,
-  -63.103, 0, 3)`, which (a) prints as `camera_lookat(63.153, 29.174, -63.103, 0)`; its 36
-  `mes_set_auto` calls match (a) exactly.
+  debug record drops an argument that differs from its default (none in `sora2` or `sora1`;
+  `notes/debug_records_handoff.md`). Needs no records. It differs from the author where they wrote a default out
+  anyway, about one call in seven: `mp0000_ev`'s `camera_lookat` calls all keep the `3`, written
+  `camera_lookat(63.153, 29.174, -63.103, 0, 3)`, which (a) prints as `camera_lookat(63.153, 29.174, -63.103, 0)`;
+  its `mes_set_auto` calls match (a) exactly.
 - **(b) As written:** a local call's debug record keeps the arguments the author wrote. In a round trip
   (`ScpParser.round_trip`; the parser reads records only then) `.ts` prints `max(written, (a))`, the
   written count found by `HLILCall.address` in the parser's `call_written_argc` (every paired local call,
@@ -92,8 +91,8 @@ only: their callee's defaults are in this script's function table. Two ways:
   cause, a call argument in a reused stack slot, is a work-order follow-up. A call with no written count
   prints (a): functions without records (common functions), unpaired functions (the 4 differently built
   `chr*` files, `chr5110`), calls before the first `DEBUG_SET_LINENO`, `debug_record=False` calls, and
-  every everyday decompile. Measured on `sora2_1.0`: 114,535 of 732,300 recorded calls print more than (a),
-  in 400 files. Dead code isn't in `.ts`.
+  every everyday decompile. In `sora2` about one recorded call in seven prints more than (a). Dead code isn't in
+  `.ts`.
 
 Either way only the HLIL/TypeScript side changes; the LLIL DSL keeps one line per push, and the HLIL
 DSL's lowering pushes the omitted defaults back, as Falcom's compiler did. Drop only constants, compared
@@ -103,7 +102,7 @@ stays.
 ## Structuring the Remaining Reducible Shapes (`docs/hlil/HLIL_DESIGN.md`)
 
 Since 2026-09-28 a jump the HLIL tree cannot express becomes an `HLILUnstructured` node: loud, but the
-path is lost to the reader (and to a future HLIL DSL). None remains on the sora2_1.0 corpus. On random
+path is lost to the reader (and to a future HLIL DSL). None remains on the sora2 corpus. On random
 CFGs (`tests/hlil_tests/test_hlil_structuring_fuzz.py`'s generator) 48 of 6,000 are reducible yet get a reachable
 node - a reducible CFG can always be structured, so these are converter gaps; the 6 among the test's
 1,000 seeds are pinned, so a new one fails the suite. One cause is left (51 nodes over those 48): re-emissions

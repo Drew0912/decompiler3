@@ -57,7 +57,7 @@ markers that the branch-order pass reads to recover original source ordering; wi
 of falling through. TypeScript renders it as a comment plus `throw new Error("unstructured: loc_X")`,
 the `.hlil.ts` listing as `goto loc_X;`. `falcom/ed9/scena2py_base.py` warns about every one on a path that
 can run (`reachable_statements`), and the logic check (`tools/logic_check/`, run by `tools/ir_semantic_validator.py`)
-reports it as the difference `unstructured_jump`; none occurs in the sora2_1.0 corpus, two in `TestEmotion` of
+reports it as the difference `unstructured_jump`; none occurs in the sora2 corpus, two in `TestEmotion` of
 `scena/a0000.dat` in kuro1, kuro2 and kai1).
 
 **Expressions:** `HLILVar`/`HLILConst`, `HLILBinaryOp`/`HLILUnaryOp`, `HLILAddressOf`, `HLILDeref`
@@ -133,9 +133,9 @@ TypeScript has no `*ptr` syntax, so a pointer read is a `deref(ptr)` call and a 
 (`HLILAssign` whose `dest` is `HLILDeref`) becomes a `deref_set(ptr, value)` call instead of an
 assignment - matching the existing `addr_of(x)` convention for `&x`. It
 also does its own peephole simplification at print time (constant-folds
-comparisons of two int constants via `constant_truth` - never floats, whose VM comparisons are
-unverified - `(bool) != 0` → `bool` for an int `0` only, double-negation elimination) — some
-optimization happens here, not only in `ir/hlil/passes/`.
+comparisons of two int constants via `constant_truth` - never floats, whose VM comparisons are known
+only statically, not traced (`docs/falcom/ed9/ED9_VM.md`, Comparisons) - `(bool) != 0` → `bool` for an int `0`
+only, double-negation elimination) — some optimization happens here, not only in `ir/hlil/passes/`.
 
 **Trailing default arguments.** A local call pushes every argument, so HLIL holds them all; `.ts` leaves
 out a call's longest tail of literal constants equal to the callee's declared defaults - the original

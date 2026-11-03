@@ -34,14 +34,16 @@ call-site debug records and their pairing) is optional, on by default, behind th
 it (`ScpParser.round_trip`, `ScpWriter.round_trip`), so it can be turned off, e.g. for another game's scripts where the
 fidelity rules may not hold. A change to the generated `.py` text alone needs no flag. Format-correctness fixes are
 always on (the function table sorted by name, the `PUSH_CURRENT_FUNC_ID` index, default-parameter order, header
-offsets, functions kept in source order); say why it is not gated when adding one.
+offsets, functions kept in source order); say why it is not gated when adding one. The table's order is the
+compiler's: the VM's lookup by name ignores it (`docs/falcom/ed9/ED9_VM.md`, Calls by name).
 
 ## Every function stays
 
 Every function-table entry stays in every output (the LLIL DSL `.py`, the recompiled `.dat`, the `.ts`, a future HLIL
 DSL), even when its only reachable body is a `return` and the real body is dead code behind it (`chr5110.dat`
-`AniBackhairDinamicJointOff`, `chr0110.dat` `AniBtlCraft01`): the game may look a function up by name (script calls,
-engine callbacks). Dead-code elimination removes unreachable code inside a function, never the function; a design
-that would drop one is a finding. The exceptions are opt-in inspection settings in `scena2py_config.py`
-(`include_common_functions = False`, `filter_func`): their output is partial on purpose and its `.py` is not meant to
-recompile.
+`AniBackhairDinamicJointOff`, `chr0110.dat` `AniBtlCraft01`): the game looks functions up by name (script calls,
+the engine's own calls: `docs/falcom/ed9/ED9_VM.md`, Engine-called names), and a missing one only logs "function not
+found", so dropping it fails silently in game. Dead-code elimination removes unreachable code inside a function,
+never the function; a design that would drop one is a finding. The exceptions are opt-in inspection settings in
+`scena2py_config.py` (`include_common_functions = False`, `filter_func`): their output is partial on purpose and its
+`.py` is not meant to recompile.

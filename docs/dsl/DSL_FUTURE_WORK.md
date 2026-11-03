@@ -30,7 +30,8 @@ byte.
   decimals, neither exact nor short: `0.033299997448921204` printed in full, `-2738.1494140625` as
   `-2738.149`, which encodes to a different word. The `.llil.asm` is under Listings. Step 3b (done)
   stopped SCCP folding floats and the algebraic identities firing on float constants, since the VM's
-  float arithmetic is unverified (`docs/mlil/MLIL_DESIGN.md`, Optimization Passes).
+  float arithmetic was unverified (now known statically, not traced: `docs/falcom/ed9/ED9_VM.md`; why nothing folds:
+  `docs/mlil/MLIL_DESIGN.md`, Optimization Passes).
 - **Float bits comment, opt-in** (item 2; Step 8a, done). `PUSH_FLOAT(0.3)  # f32 0x3E999998, raw 0x8FA66666`:
   the float32 the VM computes with and the stored word a hex editor shows, in unreachable code too; not on
   float defaults in `def` lines (a line with several would get long). Off by default:
@@ -146,7 +147,7 @@ byte.
   missing push or an extra argument used to compile into a `.dat` that only a decompile noticed; the
   compile check (`ScpWriter.check_compiled`, on by default) now parses and lifts the bytes again and
   fails the compile at the `.py` line - what it checks, its message and its limits are in
-  `docs/dsl/LLIL_DSL.md` §1. All 1,082 `sora2_1.0` scripts pass in both decompile modes. It replaced the
+  `docs/dsl/LLIL_DSL.md` §1. Every `sora2` script passes in both decompile modes. It replaced the
   earlier design of a writer-side walker over an effect table, a second stack model next to the
   parser's; the per-opcode stack effects have since moved into the opcode table (the opcode-table plan,
   `notes/plans/archive/opcode-table.md`). Checking an HLIL DSL `EmitLLIL` list before anything is written

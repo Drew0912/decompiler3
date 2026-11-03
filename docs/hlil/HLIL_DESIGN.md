@@ -357,7 +357,7 @@ still have no dedicated test file of their own.
   semantics between the two shapes) and silently dropped a labelled loop's label (`HLILDoWhile` had
   no `label` field); both fixed - see `HLIL_GUIDE.md`'s loop recovery section.
 - **Resolved (Codex IR review plan Step G, 2026-09-28):** structuring used to lose or invent paths
-  in 94 sora2_1.0 functions - 47 behind the 89 `[hlil] dropped path` warnings, 47 with no warning at
+  in some `sora2` functions - half of them behind `[hlil] dropped path` warnings, half with no warning at
   all (loops that never exited, a case's code run twice). The causes were merge points that were not
   merges and loop exits through goto-only blocks, not the clone limits. `tests/hlil_tests/test_hlil_structuring.py`
   pins each shape and the node's handling; `tests/hlil_tests/test_hlil_structuring_fuzz.py` runs 1,000 random

@@ -28,7 +28,8 @@ full corpus it reports only the paths `TestEmotion`'s unstructured jumps lose (2
 
 - **Step B, the value layer:** values computed, not compared as trees, so an equal value written another way
   (`1 + 1` for `2`) and an ordering inverted (`!(a < b)` for `a >= b`, which differs only for NaN) are decided.
-  Waits for the user's own analysis of the game executable (the VM's arithmetic and comparisons).
+  The VM's arithmetic and comparisons are known statically, from the game exe (`docs/falcom/ed9/ED9_VM.md`); it
+  waits for those rules to be traced in the running game.
 - **Cross-program mode** for compile-back: source `.dat` vs recompiled `.dat`, both at LLIL - the
   least-transformed level, so decompiler bugs and lowering bugs both show. There are no provenance
   links across two programs, so matching leans on order, guards and arguments; legitimate
@@ -125,11 +126,11 @@ from decompiler2's ED8.x support:
 ## kuro1 Byte-Exact Debug Records (`falcom/ed9/structs/call_debug_records.py`, `falcom/ed9/writer/`)
 
 **Planned, not started; much later, after the HLIL DSL is done** (user, 2026-10-18). A three-game census
-(2026-10-18, every file, `tools/scp_roundtrip_validator.py` checks plus `--round-trip`) found `sora2_1.0`, `sora1` and
-`kuro1` share one format: the same 45 instructions, header, value encoding and table field values; 2,505 of 2,506
-files parse (the one failure, `kuro1` `ani/mon9996_c00.dat`, is a broken script, never to be supported). Only the
-call debug records differ: `kuro1` rebuilds byte-identical in 26 of 634 files (`sora2_1.0` 1,076 of 1,082, `sora1`
-783 of 789). Its older compiler leaves two patterns the record tracker does not reproduce:
+(every file, `tools/scp_roundtrip_validator.py` checks plus `--round-trip`) found `sora2`, `sora1` and `kuro1` share
+one format: the same 45 instructions, header, value encoding and table field values; every file parses but one
+(`kuro1` `ani/mon9996_c00.dat`, a broken script, never to be supported). Only the call debug records differ: `kuro1`
+rebuilds byte-identical in only 26 of 634 files, the other two games in nearly all. Its older compiler leaves two
+patterns the record tracker does not reproduce:
 - **Records written twice:** a function's whole record list appears again after itself (`ani/chrx001.dat`
   `AniAttachE07kmo05`: 5 calls, 10 records, the second five a repeat of the first).
 - **Records for calls without a line marker,** where the `sora` compilers write none (`ai/ai_chr0002.dat`

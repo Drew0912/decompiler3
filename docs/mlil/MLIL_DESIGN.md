@@ -249,8 +249,9 @@ to a lattice constant (`pass_ssa_sccp.py`'s `_eval_binary_op`/`_eval_unary_op`),
 branch (`_visit_branch`) - Python's arithmetic doesn't match the VM's actual number format
 (`ScpValue`'s 30-bit-int/float32 shape describes the constant *encoding*, not the runtime arithmetic
 width), and the real semantics (float32 rounding, int/float mixing, a float's truth, int truncation,
-overflow, MOD's sign) can't be verified without running the game. Folding with an unverified formula
-risks silently replacing one wrong constant with another: `0.4 * 0.8` used to print as `0.32`. The
+overflow, MOD's sign) are known only statically, from the game exe, not traced (`docs/falcom/ed9/ED9_VM.md`).
+Folding with an untraced formula risks silently replacing one wrong constant with another: `0.4 * 0.8` used to
+print as `0.32`. The
 same holds downstream: HLIL's `constant_truth` and loop recovery decide nothing from a float, the
 TypeScript printer folds a comparison of two constants only for ints, and the rewrites that turn a
 comparison with zero into a truth test (condition simplification, boolean-temp inlining, the TypeScript

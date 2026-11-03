@@ -262,11 +262,10 @@ small, and only the logic round trip is needed, not byte-exact output.
   move whenever the decompiler's output changes. The `DEBUG_SET_LINENO(n)` values compiled into the `.dat`
   don't: an anchor is (function, source line `n`, occurrence), and the writer applies "before / after /
   replace line `n` of `F`" while it runs the function body (an extension of the opcode callbacks), with
-  no text edits to the `.py`. In the 500-file `sora2_1.0` sample (stored decompiler output, 2026-10-05):
-  11,848 of 13,021 functions carry line numbers (the others are patched by function name), 58 have code
-  before their first one, and 606 (4.7%) use a line number more than once - a loop compiles its
-  condition at the head and again at the bottom (`ai_mon5220` `SkillTable`, line 50) - hence the
-  occurrence.
+  no text edits to the `.py`. In the `sora2` scripts every source function carries line numbers, while most
+  common functions carry none (those are patched by function name); a few functions have code before their first
+  one, and some use a line number more than once - a loop compiles its condition at the head and again at the
+  bottom (`ai_mon5220` `SkillTable`, line 50) - hence the occurrence.
 - **Fingerprint:** each patch records the code it anchors to (the opcodes under the line, or the call
   there), so a game update that moves lines fails loudly instead of patching the wrong place.
 - **Errors in the hook file** point at its own lines: the writer's source map, plus the `tokenize`-based

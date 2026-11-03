@@ -87,7 +87,8 @@ of `kuro2` and `kai1`).
 ## Limitations (what a clean run does not prove)
 
 - Values are trees, not computed: an equal value written another way (`1 + 1` for `2`) is a difference. Computing
-  them is Step B, after the user's own analysis of the game executable.
+  them is Step B: the VM's rules are known statically (`docs/falcom/ed9/ED9_VM.md`), and Step B waits for them to be
+  traced in the running game.
 - MLIL -> HLIL compares no branch on its own: a branch shows only through the guards of the effects after it.
 - An effect HLIL repeats is compared by the disjunction of its copies' guards, so a copy on a path another copy
   already covers adds nothing the check sees (the full corpus has 445 calls HLIL repeats, in 26 functions).

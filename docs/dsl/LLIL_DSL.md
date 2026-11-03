@@ -56,8 +56,9 @@ shortest float literal that stores the same word (`ScpValue.float_literal`): `PU
 decoded `PUSH_FLOAT(0.2999999523162842)`, and the same for float parameter defaults (`= 0.2`). It is
 always a float literal (`1.0`, `-0.0`), because the writer picks the encoding from the Python type;
 `PUSH_FLOAT` itself converts an `int` with `float()`, so a hand-written `PUSH_FLOAT(1)` still pushes a
-float, and `PUSH_INT` a `RawInt` with `int()`, so `PUSH_INT(RawInt(5))` pushes an Integer. Non-finite floats, which the game can't use, print as `float('inf')`/`float('nan')`: decoding one
-logs a warning and compiling it raises. `CALL_SCRIPT`/`CALL_SCRIPT_NO_RETURN` names print as plain
+float, and `PUSH_INT` a `RawInt` with `int()`, so `PUSH_INT(RawInt(5))` pushes an Integer. Non-finite floats
+print as `float('inf')`/`float('nan')`: decoding one logs a warning and compiling it raises, though the VM handles
+them (`docs/falcom/ed9/ED9_VM.md`, Values). `CALL_SCRIPT`/`CALL_SCRIPT_NO_RETURN` names print as plain
 strings, `CALL_SCRIPT("this", "GetCoolClone", 0)` - the writer wraps a bare `str` itself. An `int` must
 fit the 30-bit Integer payload (`ScpValue.INTEGER_MIN..INTEGER_MAX`, -0x20000000..0x1FFFFFFF) and a
 `RawInt` `0..0x3FFFFFFF`; past that, compiling raises at its line instead of storing a different number
@@ -91,7 +92,7 @@ jumps to adds `jumped to by unreachable code`; unreachable code itself (fidelity
 stack and gets no stack comments. A slot that holds anything but one parameter or a local prints
 everything it may hold (`slot 2 = arg1 or local`, `slot 1 = caller frame`, `slot 0 = call setup`,
 `slot -1 (below the stack)`, `slot 5 (above the stack)`), and the parser logs a warning; none occur in
-the `sora2_1.0` scripts. `ScenaDecompileConfig.stack_slot_comments` (on by default) turns the stack
+the `sora2` scripts. `ScenaDecompileConfig.stack_slot_comments` (on by default) turns the stack
 comments off in scripts; the common-function library (§3) always has them, labels named `L0`, `L1`, ...
 (`label(L0)  # sp = 3`). Comments don't change the compiled bytes.
 
@@ -232,11 +233,10 @@ while it is on, each opcode also records where it was emitted.
 The policy (what must hold) is `docs/ROUND_TRIP_POLICY.md`; this section is how the round trip is generated, run and
 measured.
 
-**Measured on the full sora2_1.0 corpus** (1082 files, `tools/scp_roundtrip_validator.py
---logic-round-trip`, before the common-function library existed): all 1082 files reach the fixed
-point at round 2 (`c1 == c2`, `out2 == out3`); all preserve game logic against the source;
-`out1`/`out2` differ only in `loc_` label lines. Re-checked after the library landed (§3) on a
-132-file subset (sora2's `script_en/battle/`, chosen for subsystem diversity) plus the two
+**Measured on the full sora2 corpus** (`tools/scp_roundtrip_validator.py --logic-round-trip`, before the
+common-function library existed): every file reaches the fixed point at round 2 (`c1 == c2`, `out2 == out3`); all
+preserve game logic against the source; `out1`/`out2` differ only in `loc_` label lines. Re-checked after the
+library landed (§3) on a 132-file subset (sora2's `script_en/battle/`, chosen for subsystem diversity) plus the two
 previously-broken edge cases (`common.dat`, `mon5078+.dat`): identical result, 100% converge at
 round 2, no logic regressions. **Full 1082-file re-run with the library active, completed
 2026-09-22:** 0 logic round-trip failures and 0 errors — every file's `logic round trip` check
@@ -308,12 +308,11 @@ to `True`.
 **What's actually verified, and what isn't:** `--round-trip` is byte-identical on the validator's 5
 baseline samples (sora2's `script_en/scena/e0000.dat`, `e2000.dat`, `mp0000_ev.dat`, `system.dat`,
 and `script_en/ai/ai_chr0100_e00.dat`), and `--logic-round-trip` converges at round 2 on
-all 5 (2026-10-01). On a 300-file quota sample of `sora2_1.0` that includes them (list and results
-in the gitignored `notes/validator300/`), 298 files are byte-identical and all 300 converge at round 2
-(2026-10-16). The logic round trip is also measured corpus-wide (above), and so is the byte-exact one:
-1,076 of 1,082 `sora2_1.0` files are byte-identical (2026-10-16, after the debug-records plan; 855 on
-2026-10-01). The 6 left are known and out of that plan's scope: 4 differently built `chr*` files
-(`chr0000`, `chr5001`, `chr5003`, `chr5007`: records missing for some calls, record strings sharing pool
+all 5 (2026-10-01). On a 300-file quota sample of `sora2` that includes them (list and results
+in the gitignored `notes/validator300/`), all but 2 files are byte-identical and all converge at round 2.
+The logic round trip is also measured corpus-wide (above), and so is the byte-exact one: all but 6 `sora2`
+files are byte-identical. The 6 left are known and out of the debug-records plan's scope: 4 differently built
+`chr*` files (`chr0000`, `chr5001`, `chr5003`, `chr5007`: records missing for some calls, record strings sharing pool
 entries), `chr5110` (dead code ranges the decompiler drops) and `mp0090` (bytes before its first
 function); `notes/debug_records_handoff.md` has the details. When a rebuilt file differs, `--round-trip`
 also compares the two files' debug records function by function and reports the first difference in each
@@ -322,8 +321,8 @@ also compares the two files' debug records function by function and reports the 
 ## 3. Common-Function Shared Library — Implemented
 
 **Problem (confirmed):** output `.py` files used to embed a full copy of every shared game
-function they used. Across the 1082-file sora2_1.0 corpus: 953 distinct common-function names,
-43,185 total copies, up to 290 in a single script (`mp2000.py`).
+function they used: across the `sora2` corpus, tens of thousands of copies of the shared functions, hundreds in
+the largest scripts (`mp2000.py`).
 
 **Design:** `falcom/ed9/metadata/gen_common_library.py` walks one game's scripts once and generates
 that game's library in its metadata package `falcom/ed9/games/<game>/metadata/` (tracked, the generated
