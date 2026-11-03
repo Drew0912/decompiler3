@@ -1,8 +1,8 @@
 """The MLIL side of the evaluation: a variable is the storage it stands for - a register variable the register, a
 parameter the parameter, a stack variable its slot; a live range de-SSA split off (`{base}_v{n}`), a variable named
-apart within its slot (a sibling scope's local, a box) or a minted local is storage of its own, named like its base
-where a loop value needs a name on every layer. A call puts its result in the result register only through its
-output, so a read of the register where the MLIL never stored the result differs from the LLIL's"""
+apart within its slot (a sibling scope's local, a carried local) or a minted local is storage of its own, named like
+its base where a loop value needs a name on every layer. A call puts its result in the result register only through
+its output, so a read of the register where the MLIL never stored the result differs from the LLIL's"""
 
 import re
 

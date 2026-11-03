@@ -4,7 +4,7 @@ sp_in, each stack access's slot_index, the SpAdds), never the bytecode.
 A pushed value stays a pending expression on a pile and folds into the statement or expression that consumes it.
 A push becomes a named local when its slot is read by offset, written in place or has its address taken, when it is
 never consumed and is no call's setup (a declared slot, kept) and when it is consumed twice. The pushes that may hold
-a slot where control enters another block (a box) share one local, each push storing it as the VM does. An
+a slot where control enters another block share one local (a carried local), each push storing it as the VM does. An
 address-taken local or parameter is read and written through its address, *(&v) (memory form). Before a statement
 that writes storage, every pending leaf the write may change is copied into a fresh temporary, so each pending
 expression keeps the value it had when pushed. A call's continuation (the call's return target, reached from the call
@@ -12,16 +12,12 @@ alone) is translated into the call's own MLIL block, the pile carried over.
 
 The canonical form: every register is storage (MLILLoadReg / MLILStoreReg); a call with a result writes it to the
 result register through a temporary (t = f(); REG[r] = t); a return reads the result register (return REG[r]); a
-condition stays as the LLIL has it. Shaping passes run after the translator, each exact and removable.
-
-The function's translation_counts record the shapes the translator met (docs/mlil/MLIL_DESIGN.md), for the corpus
-runs to compare with the side-effect census."""
+condition stays as the LLIL has it. Shaping passes run after the translator, each exact and removable."""
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import NamedTuple
 
-from ir.core import reverse_post_order
 from ir.llil.llil import (
     LowLevelILBasicBlock, LowLevelILCall, LowLevelILConst, LowLevelILDebug, LowLevelILFrameAddr, LowLevelILFrameLoad,
     LowLevelILFrameStore, LowLevelILFunction, LowLevelILIf, LowLevelILInstruction, LowLevelILJmp, LowLevelILLoad,
@@ -32,8 +28,8 @@ from ir.pipeline import Pass
 from .llil_ops import BINARY_OP_TYPES, UNARY_OP_TYPES
 from .mlil import (
     MediumLevelILBasicBlock, MediumLevelILCall, MediumLevelILFunction, MediumLevelILInstruction, MLILAddressOf,
-    MLILCall, MLILConst, MLILDeref, MLILLoadGlobal, MLILLoadReg, MLILStoreReg, MLILVar, MLILVariable, map_operands,
-    mlil_arg_var_name, mlil_stack_var_name, walk,
+    MLILCall, MLILConst, MLILDeref, MLILLoadGlobal, MLILLoadReg, MLILVar, MLILVariable, map_operands, mlil_arg_var_name,
+    mlil_stack_var_name,
 )
 from .mlil_builder import MLILBuilder
 
@@ -55,12 +51,12 @@ class Push:
     written_in_place: bool = False
     address_taken: bool = False
     setup: bool = False                                                 # never consumed, removed by a call's cleanup
-    boxed: bool = False                                                 # may hold its slot where a block is entered
+    carried: bool = False                                               # may hold its slot where a block is entered
     variable: MLILVariable | None = None                                # a local's, named by the pre-pass
 
     @property
     def is_local(self) -> bool:
-        if (self.read_by_offset or self.written_in_place or self.address_taken or self.boxed
+        if (self.read_by_offset or self.written_in_place or self.address_taken or self.carried
                 or len(self.consumers) > 1):
             return True
 
@@ -107,13 +103,12 @@ class StackTranslator:
         self.entry_pushes: dict[LowLevelILBasicBlock, dict[int, set[Push]]] = {}
         self.continuations: set[LowLevelILBasicBlock] = set()
         self.refusals: list[str] = []
-        self.boxes: dict[Push, set[Push]] = {}              # each boxed push -> the pushes sharing its variable
+        self.carried: dict[Push, set[Push]] = {}            # each carried push -> the pushes sharing its local
         self.address_taken_parameters: set[int] = set()     # the frame offsets whose address is taken
         self.memory_vars: set[MLILVariable] = set()         # the address-taken locals and parameters, read as *(&v)
         self.block_map: dict[LowLevelILBasicBlock, MediumLevelILBasicBlock] = {}
         self.pile: dict[int, PileEntry] = {}
         self.sp = 0
-        self.statement: LowLevelILInstruction | None = None   # the LLIL statement being translated
         self.temp_count = 0
 
     def translate(self) -> MediumLevelILFunction:
@@ -136,13 +131,11 @@ class StackTranslator:
             while current is not None:
                 current = self.translate_block(current)
 
-        function = self.builder.finalize()
-        self.count_unwritten_register_reads(function)
-        return function
+        return self.builder.finalize()
 
     @classmethod
     def held_entry(cls, pushes: set[Push]) -> PileEntry:
-        """A slot at a block entry: the one local or box its pushes share, or (none) a call's setup"""
+        """A slot at a block entry: the one local its pushes share, or (none) a call's setup"""
         (var,) = {push.variable for push in pushes}
         return PileEntry(var=var)
 
@@ -164,11 +157,10 @@ class StackTranslator:
                 elif self.merge(current, incoming):
                     pending.append(successor)
 
-        self.find_boxes()
+        self.find_carried_locals()
         self.name_locals()
         self.find_memory_vars()
         self.check_shapes()
-        self.count_pushes()
 
     def find_continuations(self):
         """The return targets reached from their call's block alone"""
@@ -237,10 +229,10 @@ class StackTranslator:
 
         return holding
 
-    def find_boxes(self):
-        """A box: the pushes that may hold a slot where control enters a block other than the entry or a call's
-        continuation, unless that is one local; they share one variable, each push storing it as the VM does. A call's
-        setup crosses as it is (no value)"""
+    def find_carried_locals(self):
+        """A carried local: the pushes that may hold a slot where control enters a block other than the entry or a
+        call's continuation, unless that is one local; they share one variable, each push storing it as the VM does. A
+        call's setup crosses as it is (no value)"""
         for block, holding in self.entry_pushes.items():
             if block is self.entry or block in self.continuations:
                 continue
@@ -250,20 +242,18 @@ class StackTranslator:
                 if any(push.setup for push in pushes):
                     self.refuse("a call's setup and a value in one slot at a block entry")
                 elif len(pushes) > 1 or not next(iter(pushes)).is_local:
-                    self.join_box(pushes)
-        if self.boxes:
-            self.count('box', len({id(box) for box in self.boxes.values()}))
+                    self.carry_together(pushes)
 
-    def join_box(self, pushes: set[Push]):
-        """pushes into one box, with the boxes any of them is in already"""
-        box = set(pushes).union(*(self.boxes.get(push, ()) for push in pushes))
-        for push in box:
-            push.boxed = True
-            self.boxes[push] = box
+    def carry_together(self, pushes: set[Push]):
+        """pushes into one carried local, with the pushes any of them shares one with already"""
+        sharing = set(pushes).union(*(self.carried.get(push, ()) for push in pushes))
+        for push in sharing:
+            push.carried = True
+            self.carried[push] = sharing
 
     def name_locals(self):
-        """Each local per declaring push, a box's pushes sharing one: the slot's first in address order var_s<slot>,
-        the n-th var_s<slot>_<n>"""
+        """Each local per declaring push, a carried local's pushes sharing one: the slot's first in address order
+        var_s<slot>, the n-th var_s<slot>_<n>"""
         by_slot: dict[int, list[Push]] = {}
         for push in self.pushes.values():
             if push.is_local:
@@ -274,17 +264,14 @@ class StackTranslator:
 
         for slot, pushes in by_slot.items():
             pushes.sort(key=order)
-            variables: dict[Push, MLILVariable] = {}        # by the first push of each local or box
+            variables: dict[Push, MLILVariable] = {}        # by the first push of each local
             for push in pushes:
-                first = min(self.boxes.get(push, {push}), key=order)
+                first = min(self.carried.get(push, {push}), key=order)
                 if first not in variables:
                     n = len(variables)
                     name = mlil_stack_var_name(slot) if n == 0 else f'{mlil_stack_var_name(slot)}_{n}'
                     variables[first] = self.builder.get_or_create_local(name, slot)
                 push.variable = variables[first]
-            if len(variables) > 1:
-                self.count('sibling slots')
-                self.count('sibling locals', len(variables))
 
     def find_memory_vars(self):
         """The variables read and written in memory form: each address-taken push's local, and each address-taken
@@ -300,15 +287,6 @@ class StackTranslator:
     def refuse(self, reason: str):
         self.refusals.append(reason)
 
-    def count_pushes(self):
-        """A push nothing reads (declared: a local), and one read twice (a local too)"""
-        for push in self.pushes.values():
-            if len(push.consumers) > 1:
-                self.count('push read twice')
-            elif not (push.consumers or push.setup or push.read_by_offset or push.written_in_place
-                      or push.address_taken):
-                self.count('push never read')
-
     # === Translation ===
 
     def translate_block(self, block: LowLevelILBasicBlock) -> LowLevelILBasicBlock | None:
@@ -316,7 +294,6 @@ class StackTranslator:
         self.sp = block.sp_in
         for inst in block.instructions:
             self.builder.set_current_source(inst.address, inst.inst_index)
-            self.statement = inst
             continuation = self.translate_statement(inst)
             if continuation is not None:
                 return continuation
@@ -368,8 +345,6 @@ class StackTranslator:
             return
 
         push = self.pushes[inst]
-        if inst.slot_index > self.sp:       # no push puts a value there: a store into a dead slot (a POP_TO)
-            self.count('store above sp')
         if push.variable is not None:
             self.write_var(push.variable, self.translate_expr(inst.value))
             self.pile[inst.slot_index] = PileEntry(var=push.variable)
@@ -470,7 +445,6 @@ class StackTranslator:
     def copy_out(self, write: Write):
         """Before a write: every pending leaf it may change copied into a fresh temporary, the pending expression then
         reading the copy, so it keeps the value it had when pushed (it holds only pure operators)"""
-        self.count_pending()
         for slot in sorted(self.pile):
             entry = self.pile[slot]
             if entry.expr is not None and not entry.consumed:
@@ -478,7 +452,6 @@ class StackTranslator:
 
     def copied(self, node: MediumLevelILInstruction, write: Write) -> MediumLevelILInstruction:
         if self.may_change(write, node):
-            self.count(f'copy at {self.statement_name(self.statement)}: {self.leaf_name(node)}')
             temp = self.new_temp()
             self.builder.set_var(temp, node)
             return MLILVar(temp).copy_metadata_from(node)
@@ -521,81 +494,6 @@ class StackTranslator:
     def result_read(self) -> MediumLevelILInstruction | None:
         """What a return passes on: the result register, or nothing on a VM without one"""
         return None if self.RESULT_REGISTER is None else self.builder.stamp(MLILLoadReg(self.RESULT_REGISTER))
-
-    # === Counts ===
-
-    def count(self, key: str, n: int = 1):
-        self.builder.function.translation_counts[key] += n
-
-    @classmethod
-    def statement_name(cls, inst: LowLevelILInstruction) -> str:
-        """A statement in a count: its operation's name, a register store's with its register"""
-        if isinstance(inst, LowLevelILRegStore):
-            return f'{inst.operation_name} {inst.reg_index}'
-
-        return inst.operation_name
-
-    @classmethod
-    def leaf_name(cls, node: MediumLevelILInstruction) -> str:
-        """A copied leaf in a count: each kind may_change can match"""
-        if isinstance(node, MLILLoadReg):
-            return f'register {node.index}'
-        if isinstance(node, MLILLoadGlobal):
-            return 'global'
-        if cls.memory_form_var(node) is not None:
-            return 'variable'
-        if isinstance(node, MLILDeref):
-            return 'dereference'
-
-        return 'variable'
-
-    def count_pending(self):
-        """The current statement, once, when a value is pending below its own operands (read by now); a VM's
-        statement that writes nothing calls it too"""
-        if any(entry.expr is not None and not entry.consumed for entry in self.pile.values()):
-            self.count(f'pending at {self.statement_name(self.statement)}')
-
-    def count_unwritten_register_reads(self, function: MediumLevelILFunction):
-        """Each register read that some way reaches with no store to the register since the entry or since a call that
-        clobbers: a must-written dataflow over the MLIL's blocks, where the canonical form makes every register write a
-        statement"""
-        entry = function.basic_blocks[0]
-        order = reverse_post_order(entry, lambda block: block.outgoing_edges)
-        exits: dict[MediumLevelILBasicBlock, frozenset[int]] = {}
-
-        def written_at_entry(block: MediumLevelILBasicBlock) -> frozenset[int]:
-            # A predecessor not reached yet in the iteration counts as writing every register
-            known = [exits[predecessor] for predecessor in block.incoming_edges if predecessor in exits]
-            return frozenset.intersection(*known) if block is not entry and known else frozenset()
-
-        changed = True
-        while changed:
-            changed = False
-            for block in order:
-                written = self.registers_written(block, written_at_entry(block))
-                if exits.get(block) != written:
-                    exits[block] = written
-                    changed = True
-
-        for block in order:
-            self.registers_written(block, written_at_entry(block), counting=True)
-
-    def registers_written(self, block: MediumLevelILBasicBlock, written: frozenset[int],
-                          counting: bool = False) -> frozenset[int]:
-        """The registers written on every way to block's end, from those on every way to its start; counting, each
-        read of a register not among them"""
-        for inst in block.instructions:
-            if counting:
-                for operand in inst.operands():
-                    for node in walk(operand):
-                        if isinstance(node, MLILLoadReg) and node.index not in written:
-                            self.count('unwritten register read')
-            if isinstance(inst, MLILStoreReg):
-                written |= {inst.index}
-            elif isinstance(inst, MediumLevelILCall) and inst.clobbers_registers:
-                written = frozenset()       # the result store follows the call
-
-        return written
 
     # === The VM's ===
 

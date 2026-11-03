@@ -3,8 +3,8 @@
 write that may change it, a value crossing a fork, a join or a loop header, a register read before any write, a
 syscall argument read before its pop, a push never read. Written in the LLIL DSL as the functions of one script,
 compiled once by the writer with its compile check, parsed and lifted; per shape the shared checks
-(tests/shared/stack_translator_checks.py), its counts exactly and the MLIL it is about. Also the script's logic round
-trip: a check of the writer and the parser on these shapes, not of the translator"""
+(tests/shared/stack_translator_checks.py) and the MLIL it is about. Also the script's logic round trip: a check of
+the writer and the parser on these shapes, not of the translator"""
 
 import contextlib
 import io
@@ -185,34 +185,31 @@ class TestHandWrittenShapes(StackTranslationTestCase):
         lifter = ED9VMLifter(parser=parser)
         cls.llil = {func.name: lifter.lift_function(func) for func in functions}
 
-    def shape(self, name: str, counts: dict[str, int]) -> list[str]:
-        """The shape's MLIL statements, after the shared checks and its counts"""
-        mlil = self.checked_translation(self.llil[name])
-        self.assertEqual(dict(mlil.translation_counts), counts)
-        return statements(mlil)
+    def shape(self, name: str) -> list[str]:
+        """The shape's MLIL statements, after the shared checks"""
+        return statements(self.checked_translation(self.llil[name]))
 
     def assertRegisterCopied(self, name: str, register: int):
-        mlil = self.shape(name, {f'pending at REG_STORE {register}': 1,
-                                 f'copy at REG_STORE {register}: register {register}': 1})
+        mlil = self.shape(name)
         self.assertEqual(mlil[:4], [f'REG[{register}] = {INITIAL}', f't1 = REG[{register}]',
                                     f'REG[{register}] = {CHANGED}', f'GLOBAL[{GLOBAL_RESULT}] = t1'])
 
     def test_a_global_pending_across_its_store(self):
-        mlil = self.shape('GlobalAcrossItsStore', {'pending at GLOBAL_STORE': 1, 'copy at GLOBAL_STORE: global': 1})
+        mlil = self.shape('GlobalAcrossItsStore')
         self.assertEqual(mlil[:3], [f't1 = GLOBAL[{GLOBAL_READ}]', f'GLOBAL[{GLOBAL_READ}] = {CHANGED}',
                                     f'GLOBAL[{GLOBAL_RESULT}] = t1'])
 
     def test_a_local_pending_across_its_store(self):
-        mlil = self.shape('LocalAcrossItsStore', {'pending at STACK_STORE': 1, 'copy at STACK_STORE: variable': 1})
+        mlil = self.shape('LocalAcrossItsStore')
         self.assertEqual(mlil[:4], [f'var_s0 = {INITIAL}', 't1 = var_s0', f'var_s0 = {CHANGED}',
                                     f'GLOBAL[{GLOBAL_RESULT}] = t1'])
 
     def test_a_parameter_pending_across_its_store(self):
-        mlil = self.shape('ParameterAcrossItsStore', {'pending at FRAME_STORE': 1, 'copy at FRAME_STORE: variable': 1})
+        mlil = self.shape('ParameterAcrossItsStore')
         self.assertEqual(mlil[:3], ['t1 = arg1', f'arg1 = {CHANGED}', f'GLOBAL[{GLOBAL_RESULT}] = t1'])
 
     def test_a_dereference_pending_across_a_pointer_store(self):
-        mlil = self.shape('DereferenceAcrossAPointerStore', {'pending at STORE': 1, 'copy at STORE: dereference': 1})
+        mlil = self.shape('DereferenceAcrossAPointerStore')
         self.assertEqual(mlil[:3], ['t1 = *arg1', f'*arg1 = {CHANGED}', f'GLOBAL[{GLOBAL_RESULT}] = t1'])
 
     def test_the_result_register_pending_across_its_store(self):
@@ -222,26 +219,26 @@ class TestHandWrittenShapes(StackTranslationTestCase):
         self.assertRegisterCopied('OtherRegisterAcrossItsStore', OTHER_REGISTER)
 
     def test_a_value_pending_across_a_fork(self):
-        mlil = self.shape('AcrossAFork', {'box': 1})
+        mlil = self.shape('AcrossAFork')
         self.assertEqual(mlil[0], f'var_s0 = {VALUE}')
         self.assertIn(f'GLOBAL[{GLOBAL_RESULT}] = var_s0', mlil)
 
     def test_two_values_meeting_at_a_join(self):
-        mlil = self.shape('AtAJoin', {'box': 1})
+        mlil = self.shape('AtAJoin')
         for statement in (f'var_s0 = {VALUE}', f'var_s0 = {OTHER_VALUE}', f'GLOBAL[{GLOBAL_RESULT}] = var_s0'):
             self.assertIn(statement, mlil)
 
     def test_a_loop_carried_value_at_a_loop_header(self):
-        mlil = self.shape('AtALoopHeader', {'box': 1, 'push read twice': 2})
+        mlil = self.shape('AtALoopHeader')
         for statement in ('var_s0 = 0', 'var_s0 = (var_s0 + 1)', f'GLOBAL[{GLOBAL_RESULT}] = var_s0'):
             self.assertIn(statement, mlil)
 
     def test_a_register_read_before_any_write(self):
-        mlil = self.shape('RegisterBeforeAnyWrite', {'unwritten register read': 1})
+        mlil = self.shape('RegisterBeforeAnyWrite')
         self.assertEqual(mlil[0], f'GLOBAL[{GLOBAL_RESULT}] = REG[{OTHER_REGISTER}]')
 
     def test_a_register_read_after_a_call(self):
-        mlil = self.shape('RegisterAfterACall', {'unwritten register read': 1})
+        mlil = self.shape('RegisterAfterACall')
         self.assertEqual(mlil[:4], [f'REG[{OTHER_REGISTER}] = {INITIAL}', 't1 = Callee()',
                                     f'REG[{RESULT_REGISTER}] = t1', f'GLOBAL[{GLOBAL_RESULT}] = REG[{OTHER_REGISTER}]'])
 
@@ -251,12 +248,12 @@ class TestHandWrittenShapes(StackTranslationTestCase):
         self.assertRegex(self.warnings[0],
                          rf'^{at(__file__, "syscall")}SyscallArgumentReread: SYSCALL at {HEX}: reads 1 value, but the '
                          rf'next opcode is LOAD_STACK, not POP\({WORD_SIZE}\)$')
-        mlil = self.shape('SyscallArgumentReread', {})
+        mlil = self.shape('SyscallArgumentReread')
         self.assertEqual(mlil[:4], [f'var_s0 = {OTHER_VALUE}', f't1 = syscall({SUBSYSTEM}, {COMMAND}, var_s0)',
                                     f'REG[{RESULT_REGISTER}] = t1', f'GLOBAL[{GLOBAL_RESULT}] = var_s0'])
 
     def test_a_push_never_read_across_branches(self):
-        mlil = self.shape('UnreadAcrossBranches', {'push never read': 1})
+        mlil = self.shape('UnreadAcrossBranches')
         self.assertEqual(mlil[0], f'var_s0 = {VALUE}')
         self.assertFalse([statement for statement in mlil[1:] if 'var_s0' in statement])
 

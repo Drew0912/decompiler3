@@ -168,7 +168,7 @@ branches when they are emitted, calls after their cleanup (the return edge). The
 block becomes its state; every later one must have the same **shape** - the same `sp`, the same
 tracked slots and, for ED9, the same pending setups (kind, `sp` before the call, return block;
 `FalcomStackSnapshot.shape()`). Values may differ between edges: the pushes meeting there share one local, MLIL's
-stack translator's box (the SSA path's phis merge them). The entry
+stack translator's carried local (the SSA path's phis merge them). The entry
 state is seeded, not recorded from an edge, so a back edge into the entry must match it too. The
 parser's disassembly-time stack simulation checks the same stack heights earlier
 (`docs/falcom/ed9/ED9_FORMAT.md`, Layer 2).

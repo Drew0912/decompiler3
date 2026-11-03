@@ -39,7 +39,7 @@ called by it. The decompile path's symbolic-stack translator (`convert_falcom_ll
 `docs/mlil/MLIL_DESIGN.md`, "The stack translator") keeps a pushed value pending until something consumes it, so the
 two pushes and the add fold into one expression, `10 + 5`, in the statement that consumes the sum; a push becomes a
 local only when it is read by offset, written in place, address-taken, read twice, never read (a declared slot), or
-held where control enters a block (a box).
+held where control enters a block (a carried local).
 
 Seven LLIL instructions collapse to three MLIL statements that directly operate on variables
 instead of tracking a stack pointer — easier to read and to run further analysis on.

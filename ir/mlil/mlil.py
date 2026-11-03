@@ -1,6 +1,5 @@
 """MLIL - Stack-free IR (variables instead of stack operations)"""
 
-from collections import Counter
 from typing import Any, Callable, Iterator, TYPE_CHECKING
 
 from dc3 import format_uint32_hex, IntEnum2, quote_string
@@ -806,7 +805,6 @@ class MediumLevelILFunction:
         self.result_register: int | None = None  # The register a return's value travels in, passed as that value
         self.llil_function: 'LowLevelILFunction | None' = None
         self.var_types: dict[str, MLILType] = {}  # Variable name -> inferred type
-        self.translation_counts: Counter[str] = Counter()  # The shapes the stack translator met; none from SSA
 
     def add_basic_block(self, block: MediumLevelILBasicBlock):
         self.basic_blocks.append(block)

@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 """The symbolic-stack translator (ir/mlil/stack_translator.py, falcom/ed9/ir/mlil/stack_translator.py) on assembled
 functions: the MLIL where the shape is the point, the shared checks (tests/shared/stack_translator_checks.py: the logic
-check's two pairs clean, every temporary assigned once and read only after that in its own block, every local or box
-read only after its store) for every case; address-taken variables in memory form; boxes; the refusals"""
+check's two pairs clean, every temporary assigned once and read only after that in its own block, every local read
+only after its store) for every case; address-taken variables in memory form; carried locals; the refusals"""
 
-from collections import Counter
 from pathlib import Path
 import sys
 import unittest
@@ -17,7 +16,6 @@ from codegen import generate_typescript
 from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
-from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import LowLevelILAdd, LowLevelILStackStore, WORD_SIZE
 from ir.mlil.mlil import (
     MLILAdd, MLILAnd, MLILCallScript, MLILConst, MLILDebug, MLILSetVar, UNASSIGNED_INST_INDEX, walk,
@@ -39,11 +37,6 @@ def copies(mlil) -> list[str]:
     """The values copied into temporaries before a write"""
     return [str(inst.value) for block in mlil.basic_blocks for inst in block.instructions
             if isinstance(inst, MLILSetVar) and TEMPORARY.match(inst.var.name)]
-
-
-def write_counts(mlil) -> Counter:
-    """The counts of writes with a value pending, and of their copies"""
-    return Counter({key: n for key, n in mlil.translation_counts.items() if key.startswith(('pending at', 'copy at'))})
 
 
 def call_with_address(asm: Asm, label: str, offset: int):
@@ -102,9 +95,9 @@ class TestCanonicalForm(StackTranslatorTestCase):
 
 
 class TestWriteModel(StackTranslatorTestCase):
-    """Each write with each pending leaf: a copy exactly where the write may change the leaf, and the write and its
-    copies counted. The function has one parameter (a pointer for the dereference) and a local; the leaf is pushed,
-    the write made, the leaf's value stored"""
+    """Each write with each pending leaf: a copy exactly where the write may change the leaf. The function has one
+    parameter (a pointer for the dereference) and a local; the leaf is pushed, the write made, the leaf's value
+    stored"""
 
     # The leaf, pushed with sp at 2 (the parameter in slot 0, the local in slot 1)
     LEAVES = {
@@ -143,14 +136,6 @@ class TestWriteModel(StackTranslatorTestCase):
         'the parameter':   {'parameter': ['arg1'], 'dereference': ['arg1']},    # the pointer changes, memory not
         'memory':          {'dereference': ['*arg1']},
     }
-    # The write's statement and each copy's leaf, as the counts name them
-    STATEMENTS = {
-        'call': 'CALL', 'script call': 'CALL_SCRIPT', 'syscall': 'SYSCALL', 'result register': 'REG_STORE 0',
-        'another register': f'REG_STORE {REG_INDEX}', 'the global': 'GLOBAL_STORE', 'another global': 'GLOBAL_STORE',
-        'the local': 'STACK_STORE', 'the parameter': 'FRAME_STORE', 'memory': 'STORE', 'a debug log': 'DEBUG_LOG',
-    }
-    COPIED_LEAVES = {'REG[0]': 'register 0', f'REG[{REG_INDEX}]': f'register {REG_INDEX}',
-                     f'GLOBAL[{GLOBAL_A}]': 'global', '*arg1': 'dereference', 'var_s1': 'variable', 'arg1': 'variable'}
 
     def test_each_write_with_each_pending_leaf(self):
         for write_name, write in self.WRITES.items():
@@ -165,12 +150,7 @@ class TestWriteModel(StackTranslatorTestCase):
                     return_nothing(asm)
                     mlil = self.translate(asm, argc=1)
 
-                    expected = self.EXPECTED.get(write_name, {}).get(leaf_name, [])
-                    self.assertEqual(copies(mlil), expected)
-                    statement = self.STATEMENTS[write_name]
-                    self.assertEqual(write_counts(mlil), Counter(
-                        [f'pending at {statement}']
-                        + [f'copy at {statement}: {self.COPIED_LEAVES[copy]}' for copy in expected]))
+                    self.assertEqual(copies(mlil), self.EXPECTED.get(write_name, {}).get(leaf_name, []))
 
     def test_two_leaves_of_one_kind_are_copied_each(self):
         asm = Asm()
@@ -183,7 +163,6 @@ class TestWriteModel(StackTranslatorTestCase):
             f'REG[{REG_INDEX}] = 5', f't1 = REG[{REG_INDEX}]', f't2 = REG[{REG_INDEX}]', 't3 = callee()',
             'REG[0] = t3', f'GLOBAL[{GLOBAL_A}] = (t1 + t2)',
         ])
-        self.assertEqual(write_counts(mlil), Counter({'pending at CALL': 1, f'copy at CALL: register {REG_INDEX}': 2}))
 
 
 class TestCalls(StackTranslatorTestCase):
@@ -199,7 +178,6 @@ class TestCalls(StackTranslatorTestCase):
             't1 = callee()', 'REG[0] = t1', 't2 = REG[0]', f't3 = syscall({SUBSYSTEM}, {COMMAND})', 'REG[0] = t3',
             f't4 = syscall({SUBSYSTEM}, {OTHER_COMMAND}, REG[0], t2)', 'REG[0] = t4',
         ])
-        self.assertEqual(write_counts(mlil), Counter({'pending at SYSCALL': 1, 'copy at SYSCALL: register 0': 1}))
 
     def test_a_syscall_argument_read_again_is_a_local(self):
         asm = Asm()
@@ -215,7 +193,6 @@ class TestCalls(StackTranslatorTestCase):
             'var_s0 = 0', 'var_s1 = 7', f't1 = syscall({SUBSYSTEM}, {COMMAND}, var_s1)', 'REG[0] = t1',
             'var_s0 = var_s1', f'GLOBAL[{GLOBAL_A}] = var_s0',
         ])
-        self.assertEqual(mlil.translation_counts['push read twice'], 1)
 
     def test_the_tail_call_shuffle_and_its_mark(self):
         asm = Asm()
@@ -227,7 +204,6 @@ class TestCalls(StackTranslatorTestCase):
         self.assertEqual(statements(mlil), ['REG[1] = 4', 't1 = this.g(REG[1], 3)', 'REG[0] = t1', 'return REG[0]'])
         call_node = next(inst for inst in mlil.basic_blocks[0].instructions if isinstance(inst, MLILCallScript))
         self.assertTrue(call_node.tail_call)
-        self.assertEqual(write_counts(mlil), Counter({'pending at REG_STORE 1': 1}))
 
     def test_a_script_call_then_a_return_is_no_tail_call(self):
         asm = Asm()
@@ -254,7 +230,6 @@ class TestLocals(StackTranslatorTestCase):
         mlil = self.translate(asm)
 
         self.assertEqual(statements(mlil), ['var_s0 = 0', f'GLOBAL[{GLOBAL_A}] = 1', 'REG[0] = 0', 'return REG[0]'])
-        self.assertEqual(mlil.translation_counts, Counter({'push never read': 1}))
 
     def test_a_store_into_a_dead_slot_declares_a_local(self):
         asm = Asm()
@@ -263,7 +238,15 @@ class TestLocals(StackTranslatorTestCase):
         mlil = self.translate(asm)
 
         self.assertEqual(statements(mlil), ['var_s0 = 5', 'REG[0] = 0', 'return REG[0]'])
-        self.assertEqual(mlil.translation_counts, Counter({'push never read': 1}))     # at sp, as a push stores
+
+    def test_a_store_above_sp(self):
+        asm = Asm()
+        asm.push_int(5); asm.push_int(6); asm.pop_to(WORD_SIZE)         # popped, then stored a slot above sp
+        asm.set_global(GLOBAL_A)
+        return_nothing(asm)
+        mlil = self.translate(asm)
+
+        self.assertEqual(statements(mlil)[:2], ['var_s2 = 6', f'GLOBAL[{GLOBAL_A}] = 5'])
 
     def test_sibling_scopes_in_one_slot_are_distinct_locals(self):
         asm = Asm()
@@ -275,7 +258,6 @@ class TestLocals(StackTranslatorTestCase):
         self.assertEqual(statements(mlil)[:4], [
             'var_s0 = 1', f'GLOBAL[{GLOBAL_A}] = var_s0', 'var_s0_1 = 2', f'GLOBAL[{GLOBAL_B}] = var_s0_1',
         ])
-        self.assertEqual(mlil.translation_counts, Counter({'sibling slots': 1, 'sibling locals': 2}))
 
     def test_a_parameter_written_in_place(self):
         asm = Asm()
@@ -311,7 +293,6 @@ class TestAddressTaken(StackTranslatorTestCase):
             '*&var_s0 = 1', 't1 = *&var_s0', 't2 = callee(&var_s0)', 'REG[0] = t2',
             f'GLOBAL[{GLOBAL_A}] = (t1 + REG[0])',
         ])
-        self.assertEqual(write_counts(mlil), Counter({'pending at CALL': 1, 'copy at CALL: variable': 1}))
         ts = [line.strip() for line in generate_typescript(convert_falcom_mlil_to_hlil(mlil)).splitlines()]
         self.assertLess(ts.index('t1 = var_s0;'), ts.index('REGS[0] = callee(addr_of(var_s0));'))
 
@@ -325,8 +306,6 @@ class TestAddressTaken(StackTranslatorTestCase):
         mlil = self.translate(asm, callee_argc=1)
 
         self.assertEqual(statements(mlil)[3:6], ['t2 = *&var_s0', f'*&var_s0 = {CHANGED}', f'GLOBAL[{GLOBAL_A}] = t2'])
-        self.assertEqual(write_counts(mlil),
-                         Counter({'pending at STACK_STORE': 1, 'copy at STACK_STORE: variable': 1}))
 
     def test_an_address_taken_parameter(self):
         asm = Asm()
@@ -400,7 +379,6 @@ class TestAddressTaken(StackTranslatorTestCase):
                 mlil = self.translate(asm, argc=1, callee_argc=1)
 
                 self.assertEqual(copies(mlil), ['*&var_s1'])
-                self.assertEqual(write_counts(mlil), Counter({'pending at STORE': 1, 'copy at STORE: variable': 1}))
 
     def test_a_read_pending_across_a_call_without_its_address(self):
         """Copied: a call may change every address-taken variable"""
@@ -433,15 +411,14 @@ def two_pushes_meeting(asm: Asm):
     asm.label('join')
 
 
-class TestBoxes(StackTranslatorTestCase):
+class TestCarriedLocals(StackTranslatorTestCase):
     """The pushes that may hold a slot where control enters a block (other than a call's continuation) share one
-    variable, each push storing it where the VM does"""
+    local, each push storing it where the VM does"""
 
-    def assertBoxed(self, mlil, *expected: str, boxes: int = 1):
+    def assertCarried(self, mlil, *expected: str):
         body = statements(mlil)
         for statement in expected:
             self.assertIn(statement, body)
-        self.assertEqual(mlil.translation_counts['box'], boxes)
         self.assertEqual([name for name in mlil.locals if name.startswith('var_s')], ['var_s0'])
 
     def test_a_value_across_a_fork(self):
@@ -453,7 +430,7 @@ class TestBoxes(StackTranslatorTestCase):
         mlil = self.translate(asm)
 
         self.assertEqual(statements(mlil)[0], 'var_s0 = 5')
-        self.assertBoxed(mlil, f'GLOBAL[{GLOBAL_A}] = var_s0')
+        self.assertCarried(mlil, f'GLOBAL[{GLOBAL_A}] = var_s0')
 
     def test_two_pushes_meeting_at_a_join(self):
         """One variable both ways, consumed or read by offset after the join (the part-1 prototype picked one push's)"""
@@ -468,9 +445,9 @@ class TestBoxes(StackTranslatorTestCase):
                 return_nothing(asm)
                 mlil = self.translate(asm)
 
-                self.assertBoxed(mlil, 'var_s0 = 5', 'var_s0 = 7', f'GLOBAL[{GLOBAL_A}] = var_s0')
+                self.assertCarried(mlil, 'var_s0 = 5', 'var_s0 = 7', f'GLOBAL[{GLOBAL_A}] = var_s0')
 
-    def test_boxes_sharing_a_push_are_one(self):
+    def test_carried_locals_sharing_a_push_are_one(self):
         """2 meets 1 at one join and 3 at another: the three pushes share one variable"""
         asm = Asm()
         branch_on_global(asm, 'second'); asm.push_int(1); asm.jmp('first_join')
@@ -480,7 +457,7 @@ class TestBoxes(StackTranslatorTestCase):
         return_nothing(asm)
         mlil = self.translate(asm)
 
-        self.assertBoxed(mlil, 'var_s0 = 1', 'var_s0 = 2', 'var_s0 = 3', f'GLOBAL[{GLOBAL_A}] = var_s0',
+        self.assertCarried(mlil, 'var_s0 = 1', 'var_s0 = 2', 'var_s0 = 3', f'GLOBAL[{GLOBAL_A}] = var_s0',
                          f'GLOBAL[{GLOBAL_B}] = var_s0')
 
     def test_a_loop_header(self):
@@ -502,9 +479,9 @@ class TestBoxes(StackTranslatorTestCase):
                 return_nothing(asm)
                 mlil = self.translate(asm)
 
-                self.assertBoxed(mlil, *expected, f'GLOBAL[{GLOBAL_A}] = var_s0')
+                self.assertCarried(mlil, *expected, f'GLOBAL[{GLOBAL_A}] = var_s0')
 
-    def test_a_box_read_by_a_call(self):
+    def test_a_carried_local_read_by_a_call(self):
         asm = Asm()
         asm.push_int(5)
         branch_on_global(asm, 'skip'); store_global_b(asm)
@@ -512,7 +489,7 @@ class TestBoxes(StackTranslatorTestCase):
         return_nothing(asm)
         mlil = self.translate(asm)
 
-        self.assertBoxed(mlil, 'var_s0 = 5', f't1 = syscall({SUBSYSTEM}, {COMMAND}, var_s0)')
+        self.assertCarried(mlil, 'var_s0 = 5', f't1 = syscall({SUBSYSTEM}, {COMMAND}, var_s0)')
 
     def test_a_value_across_calls_whose_return_target_is_a_join(self):
         asm = Asm()
@@ -523,11 +500,11 @@ class TestBoxes(StackTranslatorTestCase):
         return_nothing(asm)
         mlil = self.translate(asm)
 
-        self.assertBoxed(mlil, 'var_s0 = 5', 't1 = callee()', 't2 = callee()', f'GLOBAL[{GLOBAL_A}] = var_s0')
+        self.assertCarried(mlil, 'var_s0 = 5', 't1 = callee()', 't2 = callee()', f'GLOBAL[{GLOBAL_A}] = var_s0')
 
     def test_slots_rotated_on_a_back_edge(self):
         """The VM rotates slots in place (POP_TO): each old value read before it is overwritten, copied where one is
-        still pending, and no box (the pushes before the loop hold the slots throughout)"""
+        still pending, and no carried local (the pushes before the loop hold the slots throughout)"""
         rotations = {
             # (a, b) := (b, a + b)
             'two slots': (2, lambda asm: (asm.load_stack(-WORD_SIZE), asm.load_stack(-3 * WORD_SIZE),
@@ -558,10 +535,9 @@ class TestBoxes(StackTranslatorTestCase):
                 body = statements(mlil)
                 start = body.index(expected[0])
                 self.assertEqual(body[start:start + len(expected)], expected)
-                self.assertEqual(mlil.translation_counts['box'], 0)
 
     def test_a_consumed_argument_across_a_fork(self):
-        """A syscall's argument, read in place before the fork and popped after it: boxed like any push"""
+        """A syscall's argument, read in place before the fork and popped after it: carried like any push"""
         asm = Asm()
         asm.push_int(7); asm.syscall(SUBSYSTEM, COMMAND, 1)
         branch_on_global(asm, 'skip'); store_global_b(asm)
@@ -570,7 +546,7 @@ class TestBoxes(StackTranslatorTestCase):
         mlil = self.translate(asm)
 
         self.assertEqual(statements(mlil)[:2], ['var_s0 = 7', f't1 = syscall({SUBSYSTEM}, {COMMAND}, var_s0)'])
-        self.assertBoxed(mlil)
+        self.assertCarried(mlil)
 
     def test_a_call_setup_across_a_fork(self):
         """No value: it crosses as it is"""
@@ -582,9 +558,8 @@ class TestBoxes(StackTranslatorTestCase):
         mlil = self.translate(asm, callee_argc=1)
 
         self.assertIn('t1 = callee(3)', statements(mlil))
-        self.assertEqual(mlil.translation_counts['box'], 0)
 
-    def test_an_address_taken_box(self):
+    def test_an_address_taken_carried_local(self):
         asm = Asm()
         two_pushes_meeting(asm)
         call_with_address(asm, 'back', -3 * WORD_SIZE)
@@ -592,7 +567,7 @@ class TestBoxes(StackTranslatorTestCase):
         return_nothing(asm)
         mlil = self.translate(asm, callee_argc=1)
 
-        self.assertBoxed(mlil, '*&var_s0 = 5', '*&var_s0 = 7', 't1 = callee(&var_s0)', f'GLOBAL[{GLOBAL_A}] = *&var_s0')
+        self.assertCarried(mlil, '*&var_s0 = 5', '*&var_s0 = 7', 't1 = callee(&var_s0)', f'GLOBAL[{GLOBAL_A}] = *&var_s0')
 
 
 class TestResultRegister(StackTranslatorTestCase):
@@ -636,7 +611,13 @@ class TestResultRegister(StackTranslatorTestCase):
         self.assertEqual(statements(mlil)[:4], [
             't1 = callee()', 'REG[0] = t1', f'debug.log("{MESSAGE}")', f'GLOBAL[{GLOBAL_A}] = REG[0]',
         ])
-        self.assertEqual(mlil.translation_counts, Counter())           # REG[0] the call's still: no unwritten read
+
+    def test_a_bare_return_reads_the_callers_result_register(self):
+        asm = Asm()
+        asm.ret()
+        mlil = self.translate(asm)
+
+        self.assertEqual(statements(mlil), ['return REG[0]'])
 
 
 class TestMarks(StackTranslatorTestCase):
@@ -663,75 +644,6 @@ class TestMarks(StackTranslatorTestCase):
         body = mlil.basic_blocks[0].instructions
         store = statements(mlil).index(f'GLOBAL[{GLOBAL_A}] = (1 + 2)')
         self.assertTrue(any(isinstance(inst, MLILDebug) for inst in body[:store]))
-
-
-class TestCounts(StackTranslatorTestCase):
-    """The counts no other case makes: a value pending at a statement that writes nothing, a store above sp, register
-    reads no store reaches; and a function without any"""
-
-    def debug_log_with_a_value_pending(self) -> Asm:
-        asm = Asm()
-        asm.push_int(7); asm.push_str(MESSAGE); asm.debug_log(1); asm.set_global(GLOBAL_A)
-        return_nothing(asm)
-        return asm
-
-    def test_a_value_pending_across_a_debug_log(self):
-        mlil = self.translate(self.debug_log_with_a_value_pending())
-
-        self.assertEqual(mlil.translation_counts, Counter({'pending at DEBUG_LOG': 1}))
-
-    def test_a_store_above_sp(self):
-        asm = Asm()
-        asm.push_int(5); asm.push_int(6); asm.pop_to(WORD_SIZE)         # popped, then stored a slot above sp
-        asm.set_global(GLOBAL_A)
-        return_nothing(asm)
-        mlil = self.translate(asm)
-
-        self.assertEqual(statements(mlil)[:2], ['var_s2 = 6', f'GLOBAL[{GLOBAL_A}] = 5'])
-        self.assertEqual(mlil.translation_counts,
-                         Counter({'store above sp': 1, 'push never read': 1, 'pending at STACK_STORE': 1}))
-
-    def test_register_reads_no_store_reaches(self):
-        shapes = {
-            'before any write': lambda asm: asm.get_reg(REG_INDEX),
-            'after a call':     lambda asm: (asm.push_int(4), asm.set_reg(REG_INDEX), call(asm, 'back'),
-                                             asm.get_reg(REG_INDEX)),
-            'one way wrote it': lambda asm: (asm.load_global(0), asm.jz('join'), asm.push_int(4),
-                                             asm.set_reg(REG_INDEX), asm.label('join'), asm.get_reg(REG_INDEX)),
-            # Written before the loop, the call in its body clobbers it: seen only once the dataflow iterates
-            'after a loop':     lambda asm: (asm.push_int(4), asm.set_reg(REG_INDEX), asm.label('head'),
-                                             asm.load_global(0), asm.jz('done'), call(asm, 'back'), asm.jmp('head'),
-                                             asm.label('done'), asm.get_reg(REG_INDEX)),
-        }
-        for name, read in shapes.items():
-            with self.subTest(read=name):
-                asm = Asm()
-                read(asm); asm.set_global(GLOBAL_A)
-                return_nothing(asm)
-                mlil = self.translate(asm)
-
-                self.assertEqual(mlil.translation_counts, Counter({'unwritten register read': 1}))
-
-    def test_a_bare_return_reads_the_callers_result_register(self):
-        asm = Asm()
-        asm.ret()
-        mlil = self.translate(asm)
-
-        self.assertEqual(statements(mlil), ['return REG[0]'])
-        self.assertEqual(mlil.translation_counts, Counter({'unwritten register read': 1}))
-
-    def test_a_function_without_any(self):
-        asm = Asm()
-        asm.push_int(1); asm.set_global(GLOBAL_A)
-        return_nothing(asm)
-
-        self.assertEqual(self.translate(asm).translation_counts, Counter())
-
-    def test_the_ssa_path_counts_nothing(self):
-        _, llil = lift_asm(self.debug_log_with_a_value_pending(), others=(returning_callee(),))
-        mlil = convert_falcom_llil_to_mlil_ssa(llil, optimize=True, infer_types=False)
-
-        self.assertEqual(mlil.translation_counts, Counter())
 
 
 class TestRefusals(unittest.TestCase):

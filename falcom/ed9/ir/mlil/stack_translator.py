@@ -41,7 +41,6 @@ class FalcomStackTranslator(StackTranslator):
         elif isinstance(inst, LowLevelILDebugLog):
             # A debug print changes no register, global or memory: nothing to copy, no result
             args = [self.translate_expr(arg) for arg in inst.args]
-            self.count_pending()
             self.builder.call(DEBUG_LOG_CALL_TARGET, args, clobbers_registers=False)
         else:
             return super().translate_statement(inst)
