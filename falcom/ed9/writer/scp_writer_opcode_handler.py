@@ -22,7 +22,8 @@ def PUSH(value: sint32 | float32 | str | RawInt):
 
 
 def POP(byte_count: uint8):
-    """Pop byte_count bytes (byte_count // WORD_SIZE values) and discard them (Opcode 0x01)"""
+    """Pop byte_count bytes and discard them (Opcode 0x01): whole values, alone or with the POPs right after it (a pop
+    over 255 bytes is POP(255), then the rest)"""
     _require_type('POP', 'byte_count', byte_count, uint8)
     return get_scp_writer().handle_opcode(ED9Opcode.POP, byte_count)
 

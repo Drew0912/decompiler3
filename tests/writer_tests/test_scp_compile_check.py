@@ -20,7 +20,10 @@ from falcom.ed9.scena2py_base import main
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_compile_check import CompileCheckError, definition_line
 from falcom.ed9.writer.scp_writer_helper import *
+from tests.shared.scp_asm import SPLIT_POP_BYTES
 from tests.shared.scp_writer_test_utils import HEX, WriterTestCase, at, load_module, marked_line
+
+SPLIT_POP_SLOTS = sum(SPLIT_POP_BYTES) // WORD_SIZE
 
 LIBRARY_SOURCE = """from falcom.ed9.writer.scp_writer_helper import *
 
@@ -278,6 +281,16 @@ class TestStackMistakes(CheckTestCase):
 
         self.assertCheckFails(rf'{at(__file__, "offset in slots")}Main: LOAD_STACK at {HEX}: addresses byte offset -1, '
                               rf'not a whole slot \({WORD_SIZE} bytes each\)$')
+
+    def test_pop_ending_inside_a_slot_fails_at_its_line(self):
+        """A POP's bytes end on a slot, alone or with the POPs right after it"""
+        @self.writer.LLILCode()
+        def Main(arg1: Value32):
+            POP(WORD_SIZE - 1)                      # line: partial pop
+            RETURN()
+
+        self.assertCheckFails(rf'{at(__file__, "partial pop")}Main: POP at {HEX}: pops {WORD_SIZE - 1} bytes, not '
+                              rf'whole slots, and RETURN at {HEX} comes before a POP completes the slot$')
 
     def test_value_the_if_arm_leaves_names_its_line(self):
         """Caught where the arms meet, at the else arm's last opcode; the entry it names gets the push's line"""
@@ -734,6 +747,9 @@ class TestSyscallArgc(CheckTestCase):
             'argc raised over a local': r'reads 2 values, but the POP after it pops 1 \(POP\(4\)\)' + stale,
             'argument added, argc 0': r'reads 0 values, but the POP after it pops 1 \(POP\(4\)\)' + stale,
             'no POP after it': r'reads 1 value, but the next opcode is JMP, not POP\(4\)',
+            'split pop, argc kept': (rf'reads {SPLIT_POP_SLOTS - 1} values, but the POP after it pops '
+                                     rf'{SPLIT_POP_SLOTS} \(POP\({SPLIT_POP_BYTES[0]}\), POP\({SPLIT_POP_BYTES[1]}\)\)'
+                                     + stale),
         }
         for case, message in cases.items():
             with self.subTest(case):
@@ -755,6 +771,12 @@ class TestSyscallArgc(CheckTestCase):
                         SYSCALL(1, 2, 0)                    # line: argument added, argc 0
                         POP(WORD_SIZE)
                         POP(WORD_SIZE)
+                    elif case == 'split pop, argc kept':
+                        for _ in range(SPLIT_POP_SLOTS - 2):
+                            PUSH_INT(3)
+                        SYSCALL(1, 2, SPLIT_POP_SLOTS - 1)  # line: split pop, argc kept
+                        for byte_count in SPLIT_POP_BYTES:
+                            POP(byte_count)
                     else:
                         SYSCALL(1, 2, 1)                    # line: no POP after it
                         JMP('pop')
@@ -766,8 +788,9 @@ class TestSyscallArgc(CheckTestCase):
                 self.assert_warns(rf'{at(__file__, case)}Main: SYSCALL at {HEX}: {message}$')
 
     def test_own_pop_right_after_it_is_quiet(self):
-        """The game's form, argc 0 with its result read, and a label on the POP (a label emits no opcode)"""
-        for case in ('pop after it', 'argc 0, result read', 'label on the pop'):
+        """The game's form, argc 0 with its result read, a label on the POP (a label emits no opcode), and a split pop's
+        POPs together (a syscall of more than 63 arguments)"""
+        for case in ('pop after it', 'argc 0, result read', 'label on the pop', 'split pop after it'):
             with self.subTest(case):
                 self.writer = self.fresh_writer()
 
@@ -777,6 +800,12 @@ class TestSyscallArgc(CheckTestCase):
                         SYSCALL(1, 2, 0)
                         GET_REG(0)
                         SET_REG(1)
+                    elif case == 'split pop after it':
+                        for _ in range(SPLIT_POP_SLOTS):
+                            PUSH_INT(1)
+                        SYSCALL(1, 2, SPLIT_POP_SLOTS)
+                        for byte_count in SPLIT_POP_BYTES:
+                            POP(byte_count)
                     else:
                         PUSH_INT(1)
                         SYSCALL(1, 2, 1)

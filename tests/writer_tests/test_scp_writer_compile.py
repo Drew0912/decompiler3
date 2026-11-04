@@ -23,6 +23,7 @@ from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
 from falcom.ed9.structs.scp_types import ScpGlobalVar, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
+from tests.shared.scp_asm import SPLIT_POP_BYTES
 from tests.shared.scp_writer_test_utils import WriterTestCase, at, fresh_writer, local_call, location
 
 
@@ -570,6 +571,28 @@ class TestDebugInt(WriterTestCase):
         self.assertEqual(decoded, list(values))
         for value in values:
             self.assertIn(f'    DEBUG_INT({value})\n', script)
+
+
+class TestSplitPop(WriterTestCase):
+    """A pop over 255 bytes is two POPs, as the compiler writes it: compiled, decoded and printed back as written"""
+
+    def test_compiles_decodes_and_prints_back(self):
+        @self.writer.LLILCode()
+        def Main():
+            for _ in range(sum(SPLIT_POP_BYTES) // WORD_SIZE):
+                PUSH_INT(0)
+            for byte_count in SPLIT_POP_BYTES:
+                POP(byte_count)
+            RETURN()
+
+        parser, functions = parse(self.writer.build({}))
+        decoded = [inst.operands[0].value for inst in parser.get_instructions(functions['Main'])
+                   if inst.opcode == ED9Opcode.POP]
+        script = parser.gen_python_script(list(functions.values()))
+
+        self.assertEqual(decoded, list(SPLIT_POP_BYTES))
+        for byte_count in SPLIT_POP_BYTES:
+            self.assertIn(f'    POP({byte_count})', script)
 
 
 class TestOperandRanges(WriterTestCase):

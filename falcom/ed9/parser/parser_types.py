@@ -73,6 +73,7 @@ class StackLayout:
     slot_refs       : dict[int, SlotRef] = field(default_factory=dict)      # the slot each offset opcode addresses
     local_slots     : dict[int, int] = field(default_factory=dict)          # an addressed local's instruction -> slot
     arg_numbers     : dict[int, tuple[int, ...]] = field(default_factory=dict)     # an argument's push -> argN per call
+    carried_before  : dict[int, int] = field(default_factory=dict)          # bytes a split pop carries into a later POP
 
 
 class Function(StrictBase):

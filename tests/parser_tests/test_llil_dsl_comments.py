@@ -94,6 +94,15 @@ class TestFunctionComments(unittest.TestCase):
             'RETURN()',
         ])
 
+    def test_split_pop_gives_each_pop_its_slots(self):
+        asm = Asm()
+        asm.pop(WORD_SIZE + WORD_SIZE // 2); asm.pop(WORD_SIZE // 2); asm.ret()        # the 2 parameters
+        self.assertEqual(function_lines(asm, 2), [
+            'POP(6)                          # 1 slot + 2 bytes',
+            'POP(2)                          # 1 slot',
+            'RETURN()',
+        ])
+
     def test_dereferences_and_addresses(self):
         asm = Asm()
         asm.push_stack_offset(-WORD_SIZE); asm.pop(WORD_SIZE)          # sp 1: slot 0

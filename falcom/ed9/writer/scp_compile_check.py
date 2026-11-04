@@ -103,10 +103,10 @@ class CompileCheck:
             self._warn_unreachable(ordered, code_end)
 
     def _warn_syscall_counts(self, by_offset: dict[int, Instruction], ordered: list[Instruction]):
-        """A warning per SYSCALL whose argc disagrees with the instruction after it: a POP of another count, or no POP
-        though it reads values. The game's compiler always emits its own POP right after it, and nothing else checks
-        argc while the stack balances. Code two functions reach is warned once, named by the function it is in; a
-        SYSCALL ending a function gets only the run-on warning"""
+        """A warning per SYSCALL whose argc disagrees with the instruction after it: a POP of another count (a split
+        pop's POPs counted together), or no POP though it reads values. The game's compiler always emits its own POP
+        right after it, and nothing else checks argc while the stack balances. Code two functions reach is warned once,
+        named by the function it is in; a SYSCALL ending a function gets only the run-on warning"""
         start_set = set(self.function_offsets)
         for inst in ordered:
             offset = inst.offset
@@ -118,11 +118,12 @@ class CompileCheck:
             argc = inst.descriptor.effect.read_count(inst.operand_values)
             values = 'value' if argc == 1 else 'values'
             if follower.descriptor.kind == InstructionKind.POP:
-                size = follower.operands[POP_SIZE_OPERAND].value
-                if size == argc * WORD_SIZE:
+                sizes = self._split_pop_sizes(by_offset, follower)
+                if sum(sizes) == argc * WORD_SIZE:
                     continue
 
-                message = (f'reads {argc} {values}, but the POP after it pops {size // WORD_SIZE} (POP({size})) - '
+                pops = ', '.join(f'POP({size})' for size in sizes)
+                message = (f'reads {argc} {values}, but the POP after it pops {sum(sizes) // WORD_SIZE} ({pops}) - '
                            'is its argc stale?')
             elif argc:
                 message = (f'reads {argc} {values}, but the next opcode is {follower.mnemonic}, '
@@ -131,6 +132,17 @@ class CompileCheck:
                 continue
 
             log.warning(self._failure_text(self._function_at(offset), message, inst))
+
+    @classmethod
+    def _split_pop_sizes(cls, by_offset: dict[int, Instruction], pop: Instruction) -> list[int]:
+        """The byte counts of pop and of the POPs right after it that complete the slot it ends inside (a split pop,
+        which the parse already checked)"""
+        sizes = [pop.operands[POP_SIZE_OPERAND].value]
+        while sum(sizes) % WORD_SIZE:
+            pop = by_offset[pop.offset + pop.size]
+            sizes.append(pop.operands[POP_SIZE_OPERAND].value)
+
+        return sizes
 
     def _warn_unreachable(self, ordered: list[Instruction], code_end: int):
         """A warning per range of code no function's reachable instructions cover, at its first opcode's line. All

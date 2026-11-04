@@ -419,10 +419,13 @@ class TestWriterOnlyInputs(unittest.TestCase):
         tracker.on_opcode(ED9Opcode.PUSH, [RawInt(SYSCALL_CONSTANT)], value, None)
         self.assertEqual(tracker.stack, [TrackedValue(ArgType.Constant, value)])
 
-    def test_pop_of_a_partial_slot_pops_only_whole_slots(self):
+    def test_pop_carries_a_partial_slot_into_the_next_pop(self):
+        """A split pop: the first POP pops the whole slot it completes, the next the slot it ended inside"""
         tracker = self.tracker_holding(2)
         tracker.on_opcode(ED9Opcode.POP, [WORD_SIZE + WORD_SIZE // 2])
         self.assertEqual(len(tracker.stack), 1)
+        tracker.on_opcode(ED9Opcode.POP, [WORD_SIZE // 2])
+        self.assertEqual(tracker.stack, [])
 
     @classmethod
     def call_script(cls, tracker: CallDebugInfoTracker, with_frame: bool):

@@ -14,7 +14,7 @@ from dc3.logging import log
 from assembler import Instruction
 from ..disasm import ED9_INSTRUCTION_TABLE, InstructionKind
 from ..disasm.ed9_optable import opcodes_of
-from ..disasm.stack_effects import CALLEE_OPERAND, REGISTER_OPERAND, RESULT_REGISTER
+from ..disasm.stack_effects import CALLEE_OPERAND, REGISTER_OPERAND, RESULT_REGISTER, PopCarry
 from .string_pool import read_text, read_u32, string_offset
 from .scp_types import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
 
@@ -77,6 +77,7 @@ class CallDebugInfoTracker:
         self.frames             : list = []                         # ret_label of each call set up but not made yet
         self.registers          : dict[int, TrackedValue] = {}
         self.calls              : list[TrackedCall] = []            # every call made, in evaluation order
+        self.pop_carry          = PopCarry()                        # bytes the last POP left inside a slot
         self.has_line_info      = False
 
     def on_opcode(self, opcode: int, operands: list | tuple, payload: ScpValue | None = None, string: Any = None):
@@ -119,7 +120,7 @@ class CallDebugInfoTracker:
 
             case (InstructionKind.POP | InstructionKind.CONDITIONAL_JUMP | InstructionKind.STORE_SLOT
                   | InstructionKind.STORE_DEREF | InstructionKind.STORE_GLOBAL | InstructionKind.POPN):
-                self.pop(effect.pop_count(operands))
+                self.pop(effect.pop_count(operands, pop_carry=self.pop_carry))
 
             # LOAD_DEREF / LOAD_GLOBAL are unverified - no sample script passes them as call args
             case (InstructionKind.LOAD_SLOT | InstructionKind.SLOT_ADDRESS | InstructionKind.LOAD_DEREF

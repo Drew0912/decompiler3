@@ -24,6 +24,7 @@ FLOAT_VALUE = 0.3
 SYSCALL_SUBSYSTEM = 1
 SYSCALL_FUNC = 2
 FUNC_NAME = 'f'
+SPLIT_POP_BYTES = (255, 77)                  # the compiler's pop of 83 slots (kuro2 / kai1 chr0121)
 CALLEE_NAME = 'callee'
 MODULE_NAME = 'this'
 SCRIPT_FUNC_NAME = 'g'

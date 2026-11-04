@@ -19,7 +19,8 @@
   emits opcodes: an HLIL body has returned before its tree is lowered, so the lowering must set the
   writer's source site from each node's recorded file and line, or every error falls back to the `def`.
   A syscall lowers its argc and the `POP` right after it from one count: the compile check warns when they
-  differ.
+  differ. A pop of more than 255 bytes (`POP`'s operand is one byte) lowers as the compiler's does: `POP(255)`, then
+  a `POP` of the rest right after it (`docs/falcom/ed9/ED9_VM.md`, Stack and slots).
 - **What HLIL must keep for exact recompiles:** raw vs typed constants (kept: past LLIL's `is_raw`, a
   Raw constant stays a `RawInt` through MLIL and HLIL, and prints as its number, not as `RawInt(...)` (in hex
   beside a bitwise operation's value, as an Integer does); no pass folds it, and a

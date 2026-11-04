@@ -3,7 +3,8 @@
 block must carry the same stack height; entries that meet at one position on a join form one group, and a call checks
 and rewrites every push of the groups it consumes. Calls declare their own return edges. A push an ordinary consumer
 uses or overwrites cannot also be a call setup, no instruction may overlap another (in any function), and code must end
-before the string pool. Each function keeps the simulated stack's layout for comments; an unusual slot is logged."""
+before the string pool. A POP may end inside a slot only when the POPs right after it complete the slot (a split pop).
+Each function keeps the simulated stack's layout for comments; an unusual slot is logged."""
 
 from pathlib import Path
 import sys
@@ -170,11 +171,6 @@ class TestEdgeStates(unittest.TestCase):
         self.assertEqual(str(caught.exception),
                          f'{FUNC_NAME}: SYSCALL at 0x6: reads 2 entries, the stack has 1: [PUSH_INT@0x0]')
 
-    def test_pop_of_a_partial_slot_raises(self):
-        asm = Asm()
-        asm.push_int(LEFT_VALUE); asm.pop(WORD_SIZE // 2); asm.pop(WORD_SIZE // 2); asm.ret()
-        assert_fails_at(self, Program(main_function(asm)), 0x6, 'POP', 'pops 2 bytes, not whole slots')
-
     def test_slot_offset_that_is_not_a_whole_slot_raises(self):
         """Every slot-addressing opcode, before anything rounds the offset down to a slot; a positive offset too, which
         would otherwise be above the stack"""
@@ -203,6 +199,78 @@ class TestEdgeStates(unittest.TestCase):
         asm = Asm()
         asm.push_int(LEFT_VALUE); asm.pop_to(-2 * WORD_SIZE); asm.ret()   # sp 1, 0 after its pop: slot -2
         assert_fails_at(self, Program(main_function(asm)), 0x6, 'POP_TO', 'writes below the stack')
+
+
+class TestSplitPops(unittest.TestCase):
+    """POPs right after each other on one path pop their bytes together: each pops the whole slots it completes, and
+    the bytes past them carry into the next. A split pop that ends inside a slot is blamed on its first POP."""
+
+    def split_pop(self, asm: Asm):
+        """6 bytes, then 2: the first POP ends inside the second slot, which the next completes"""
+        asm.label('first'); asm.pop(WORD_SIZE + WORD_SIZE // 2)
+        asm.label('rest'); asm.pop(WORD_SIZE // 2)
+
+    def assert_left_open(self, program: Program, event: str):
+        assert_fails_at(self, program, program.label('first'), 'POP',
+                        f'pops {WORD_SIZE + WORD_SIZE // 2} bytes, not whole slots, and {event} before a POP '
+                        'completes the slot')
+
+    def test_each_pop_pops_the_slots_it_completes(self):
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE); asm.push_int(LEFT_VALUE)
+        asm.label('first'); asm.pop(WORD_SIZE + 1)                  # 1 slot, 1 byte carried
+        asm.label('second'); asm.pop(WORD_SIZE + 1)                 # 1 slot, 2 bytes carried
+        asm.label('third'); asm.pop(WORD_SIZE // 2)                 # the last slot
+        asm.label('end'); asm.ret()
+        program = Program(main_function(asm))
+        _, functions = program.disassemble()
+        layout = functions[0].stack_layout
+        self.assertEqual(layout.carried_before, {program.label('second'): 1, program.label('third'): WORD_SIZE // 2})
+        self.assertEqual([layout.sp_before[program.label(name)] for name in ('first', 'second', 'third', 'end')],
+                         [3, 2, 1, 0])
+
+    def test_a_lone_partial_pop_raises(self):
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.label('first'); asm.pop(WORD_SIZE + WORD_SIZE // 2); asm.label('end'); asm.ret()
+        program = Program(main_function(asm))
+        self.assert_left_open(program, f'RETURN at 0x{program.label("end"):X} comes')
+
+    def test_an_instruction_between_the_pops_raises(self):
+        """Even one that leaves the stack alone"""
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE)
+        asm.label('first'); asm.pop(WORD_SIZE + WORD_SIZE // 2)
+        asm.label('between'); asm.debug_set_lineno(LEFT_VALUE); asm.pop(WORD_SIZE // 2); asm.ret()
+        program = Program(main_function(asm))
+        self.assert_left_open(program, f'DEBUG_SET_LINENO at 0x{program.label("between"):X} comes')
+
+    def test_a_branch_to_the_later_pop_raises(self):
+        """Its target known before the split pop is decoded: the first POP falls through into a block start"""
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE)
+        asm.get_reg(REG_INDEX); asm.jz('rest')
+        self.split_pop(asm); asm.ret()
+        program = Program(main_function(asm))
+        self.assert_left_open(program, f'a branch lands at 0x{program.label("rest"):X}')
+
+    def test_a_branch_back_to_the_later_pop_raises(self):
+        """Found after the split pop was decoded: the branch splits its block"""
+        asm = Asm()
+        asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE)
+        asm.get_reg(REG_INDEX); asm.jz('back')
+        self.split_pop(asm); asm.ret()
+        asm.label('back'); asm.jmp('rest')
+        program = Program(main_function(asm))
+        self.assert_left_open(program, f'a branch lands at 0x{program.label("rest"):X}')
+
+    def test_a_function_entry_at_the_later_pop_raises(self):
+        """The split pop would go on into the next function's code"""
+        first = Asm()
+        first.push_int(LEFT_VALUE); first.push_int(RIGHT_VALUE)
+        first.label('first'); first.pop(WORD_SIZE + WORD_SIZE // 2)                       # no RETURN: runs on
+        second = Asm()
+        second.pop(WORD_SIZE // 2); second.ret()
+        self.assert_left_open(Program(main_function(first), Func(CALLEE_NAME, 0, second)), 'the function ends')
 
 
 class TestInstructionBounds(unittest.TestCase):
@@ -734,11 +802,6 @@ class TestCheckOrder(unittest.TestCase):
         caller.label('return'); caller.ret()
         assert_fails_at(self, Program(main_function(caller)), 0x5, 'CALL_SCRIPT_NO_RETURN',
                         'discards caller frame slot 4 of 0x0 without its CALL_SCRIPT')
-
-    def test_pop_checks_whole_slots_before_the_stack(self):
-        asm = Asm()
-        asm.pop(WORD_SIZE + WORD_SIZE // 2); asm.ret()                                   # on an empty stack
-        assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP', 'pops 6 bytes, not whole slots')
 
     def test_pop_to_checks_whole_slots_before_it_pops(self):
         asm = Asm()

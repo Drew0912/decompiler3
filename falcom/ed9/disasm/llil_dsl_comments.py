@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from dc3.utils import display_width
 from .ed9_optable import ED9Opcode, ED9OperandType
+from .stack_effects import PopCarry
 from ..structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
@@ -75,7 +76,8 @@ def instruction_comments(layout: 'StackLayout | None', inst: 'Instruction', opti
 
 
 def stack_comments(layout: 'StackLayout', inst: 'Instruction') -> list[str]:
-    """The slot an offset opcode addresses and what it holds, the opening of an addressed local, POP's slot count"""
+    """The slot an offset opcode addresses and what it holds, the opening of an addressed local, POP's slot count
+    (with the bytes it leaves for the POP after it in a split pop)"""
     comments = []
     ref = layout.slot_refs.get(inst.offset)
     if ref is not None:
@@ -85,8 +87,13 @@ def stack_comments(layout: 'StackLayout', inst: 'Instruction') -> list[str]:
         comments.append(f'slot {layout.local_slots[inst.offset]} (local)')
 
     if inst.opcode == ED9Opcode.POP:
-        count = inst.descriptor.effect.pop_count(inst.operand_values)
-        comments.append(f'{count} slot' if count == 1 else f'{count} slots')
+        carry = PopCarry(layout.carried_before.get(inst.offset, 0))
+        count = inst.descriptor.effect.pop_count(inst.operand_values, pop_carry=carry)
+        slots = f'{count} slot' if count == 1 else f'{count} slots'
+        if carry.carried:
+            slots += f' + {carry.carried} byte' if carry.carried == 1 else f' + {carry.carried} bytes'
+
+        comments.append(slots)
 
     return comments
 

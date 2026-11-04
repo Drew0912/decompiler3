@@ -16,7 +16,7 @@ from assembler import (SYNTHETIC_INSTRUCTION_SIZE, BasicBlock, BranchKind, Branc
                        DisassemblerContext, Instruction, Operand)
 from ..disasm import *
 from ..disasm.ed9_optable import *
-from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND
+from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, PopCarry
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
 from ..structs.call_debug_records import PUSH_CONSTANT_OPS, canonical_argc, pair_records
 from ..structs.string_pool import string_offset
@@ -266,10 +266,27 @@ class ScpDisassemblerContext(DisassemblerContext):
     inst_states      : dict[int, tuple] = field(default_factory=dict)       # instruction offset -> the stack before it
     groups           : StackEntryGroups = field(default_factory=StackEntryGroups)
     plain_uses       : set = field(default_factory=set)                     # entries an ordinary consumer used
+    pop_carry        : PopCarry = field(default_factory=PopCarry)           # bytes the last POP left inside a slot
+    split_pop_start  : Instruction | None = None    # the split pop's first POP, while it ends inside a slot
+    carried_before   : dict[int, int] = field(default_factory=dict)         # bytes a split pop carries into a POP
+    split_pop_starts : dict[int, Instruction] = field(default_factory=dict)  # a split pop's later POP -> its first
     declares_call_returns : bool = True             # CALL and CALL_SCRIPT return their own return edges
 
     def fail(self, message: str, inst: Instruction | None = None):
         raise ScpDisassemblyError.at(self.current_func.name, message, inst)
+
+    def continue_split_pop(self, inst: Instruction):
+        """inst comes right after a POP that ended inside a slot: only a POP may complete it"""
+        if inst.descriptor.kind != InstructionKind.POP:
+            self.fail_split_pop(self.split_pop_start, f'{inst.mnemonic} at 0x{inst.offset:X} comes')
+
+        self.carried_before[inst.offset] = self.pop_carry.carried
+        self.split_pop_starts[inst.offset] = self.split_pop_start
+
+    def fail_split_pop(self, start: Instruction, event: str):
+        """A split pop that ends inside a slot, blamed on its first POP"""
+        size = start.operands[POP_SIZE_OPERAND].value
+        self.fail(f'pops {size} bytes, not whole slots, and {event} before a POP completes the slot', start)
 
     def note_run_on(self, inst: Instruction):
         """An instruction that ends at code_end and may continue with the next one runs on into the next function's
@@ -435,12 +452,13 @@ class ScpDisassemblerContext(DisassemblerContext):
         self.plain_uses.add(entry)
 
     def pop_count(self, inst: Instruction) -> int:
-        """How many entries inst pops above a call's setup; a local CALL's are its callee's parameters"""
+        """How many entries inst pops above a call's setup; a local CALL's are its callee's parameters, a POP's the
+        whole slots it completes, the bytes the POP before it carried counted first"""
         effect = inst.descriptor.effect
         if isinstance(effect.pops, int):            # most kinds: no operand list to build
             return effect.pops
 
-        return effect.pop_count(inst.operand_values, self.get_func_argc)
+        return effect.pop_count(inst.operand_values, self.get_func_argc, self.pop_carry)
 
     def call_argc(self, inst: Instruction) -> int:
         """How many arguments a call takes from the stack; SYSCALL reads them in place"""
@@ -515,7 +533,7 @@ class ScpDisassemblerContext(DisassemblerContext):
                     target_entries.update(held_at(source_blocks[source], state, slot))
                     changed = changed or len(target_entries) != count
 
-        layout = StackLayout()
+        layout = StackLayout(carried_before=self.carried_before)
         arguments = {}      # push offset -> (call offset, argN) of each call it may be an argument of
         for start, insts in blocks.items():
             for inst in insts:
@@ -740,6 +758,11 @@ class ScpParser(StrictBase):
 
     def on_pre_add_branch(self, context: ScpDisassemblerContext, target: BranchTarget):
         """Record the state the edge carries into its target (a branch or a fall-through)"""
+        # Only a POP's fall-through into a block start gets here inside a split pop: something else lands on its
+        # next POP
+        if context.pop_carry.carried:
+            context.fail_split_pop(context.split_pop_start, f'a branch lands at 0x{target.offset:X}')
+
         if context.known_code_end is not None and target.offset >= context.known_code_end:
             context.fail(f'jumps to 0x{target.offset:X}, past the end of the code (no RETURN after its label)',
                          context.current_inst)
@@ -748,6 +771,10 @@ class ScpParser(StrictBase):
 
     def on_block_split(self, context: ScpDisassemblerContext, source_offset: int, split_offset: int):
         """The head falls through into the tail with the state the tail's first instruction was simulated with"""
+        start = context.split_pop_starts.get(split_offset)
+        if start is not None:
+            context.fail_split_pop(start, f'a branch lands at 0x{split_offset:X}')
+
         context.record_edge(source_offset, split_offset, context.inst_states[split_offset])
 
     def on_instruction_decoded(self, context: ScpDisassemblerContext, inst: Instruction,
@@ -756,6 +783,9 @@ class ScpParser(StrictBase):
         stack = context.stack_simulation
         context.current_inst = inst
         context.inst_states[inst.offset] = tuple(stack)
+        if context.pop_carry.carried:
+            context.continue_split_pop(inst)
+
         context.note_run_on(inst)
         effect = inst.descriptor.effect
 
@@ -784,11 +814,13 @@ class ScpParser(StrictBase):
                     context.fail(f'the stack is not empty: {format_stack(stack)}', inst)
 
             case InstructionKind.POP:
-                size = inst.operands[POP_SIZE_OPERAND].value
-                if size % WORD_SIZE:
-                    context.fail(f'pops {size} bytes, not whole slots', inst)
+                if not context.pop_carry.carried:
+                    context.split_pop_start = inst
 
                 context.pop_entries(context.pop_count(inst))
+                # A split pop can't go on into the next function's code
+                if context.pop_carry.carried and inst.offset + inst.size == context.code_end:
+                    context.fail_split_pop(context.split_pop_start, 'the function ends')
 
             case InstructionKind.STORE_SLOT:
                 slot = addressed_slot(inst, len(stack))

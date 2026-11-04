@@ -94,7 +94,9 @@ puts a `StackLoad` of that slot on the virtual stack - not the value itself. A c
 reads "the value in slot k", as the VM does; MLIL's stack translator folds each push into its consumer (the SSA
 path's passes merge and propagate the values).
 `pop()` emits `SpAdd(-1)` and returns the virtual stack's top entry. `POP` / `POP_N` emit one
-`SpAdd(-n)` and drop the entries at or above the new `sp`.
+`SpAdd(-n)` and drop the entries at or above the new `sp`. `POP` counts bytes: its `n` is the whole slots they
+complete, and the bytes past the last one carry into the `POP` right after it (a split pop, `POP 255` then the rest;
+`PopCarry`, `falcom/ed9/disasm/stack_effects.py`).
 
 **Stack-pointer changes.** Inside a block every `sp` change is an explicit `SpAdd`
 (`emit_sp_add`). Two changes emit none, on purpose:

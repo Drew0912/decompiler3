@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import NamedTuple
 from ir.llil import *
-from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
+from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, PopCarry
 from .constants import *
 from .llil_ext import *
 
@@ -62,6 +62,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
         """Create builder without function (call create_function first)"""
         super().__init__()
         self._pending_setups: list[PendingCallSetup] = []   # Innermost last
+        self._pop_carry = PopCarry()                        # bytes the last POP left inside a slot
 
     def finalize(self) -> LowLevelILFunction:
         """Finalize builder and return function"""
@@ -222,8 +223,9 @@ class FalcomVMBuilder(LowLevelILBuilder):
         self.pop_jmp_zero(false_target, true_target)
 
     def pop_bytes(self, num_bytes: int, *, hidden_for_formatter: bool = False):
-        """POP operation - discard N bytes from stack"""
-        self.pop_n(num_bytes // WORD_SIZE, hidden_for_formatter=hidden_for_formatter)
+        """POP operation - discard N bytes from stack: the whole slots they complete, with the bytes the POPs right
+        before carried in (a split pop, POP 255 then the rest)"""
+        self.pop_n(self._pop_carry.pop(num_bytes), hidden_for_formatter=hidden_for_formatter)
 
     def pop_n(self, count: int, *, hidden_for_formatter: bool = False):
         """POP_N operation - discard N slots from stack"""

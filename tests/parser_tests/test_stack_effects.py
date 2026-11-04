@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Unit tests for the ED9 stack effects: the agreement test - the parser's stack simulation, the lifter's builder and
-the debug-record tracker change the stack as the opcode table says and take a call's arguments as it says, and the
-parser rejects a value left on the stack exactly at the instructions the table says exit; a local call's argument count
+the debug-record tracker change the stack as the opcode table says and take a call's arguments as it says (a split
+pop's POPs the whole slots each completes), and the parser rejects a value left on the stack exactly at the instructions
+the table says exit; a local call's argument count
 through each walker's lookup; and the table's lookup of an opcode without a row. The parser and the tracker apply the
 row they are checked against, so their legs check the wiring; a wrong row shows through the lifter, whose builder
 operations push and pop on their own - except a local CALL's argument count, which the lifter reads from the row too."""
@@ -19,7 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from assembler.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
-from falcom.ed9.disasm.stack_effects import STACK_EFFECTS, InstructionKind, StackEffect
+from falcom.ed9.disasm.stack_effects import STACK_EFFECTS, InstructionKind, PopCarry, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.structs.call_debug_records import CallDebugInfoTracker
 from falcom.ed9.parser.scp import ScpDisassemblyError, ScpParser
@@ -27,7 +28,7 @@ from falcom.ed9.parser.parser_types import Function
 from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
 from tests.shared.scp_asm import (
     CALLER_ID, CALLEE_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, MODULE_NAME, REG_INDEX, RIGHT_VALUE,
-    SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm, Func, Program, main_function, returning_callee,
+    SPLIT_POP_BYTES, SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm, Func, Program, main_function, returning_callee,
 )
 
 
@@ -143,9 +144,22 @@ def intrinsics_program() -> tuple[Func, ...]:
     return (main_function(asm),)
 
 
+def split_pop_program() -> tuple[Func, ...]:
+    asm = Asm()
+    for _ in range(sum(SPLIT_POP_BYTES) // WORD_SIZE):
+        asm.push_int(LEFT_VALUE)
+
+    for byte_count in SPLIT_POP_BYTES:
+        asm.pop(byte_count)                                             # the first ends inside a slot
+
+    asm.ret()
+    return (main_function(asm),)
+
+
 PROGRAMS = (
     constants_program, slots_program, deref_program, globals_and_registers_program, operators_program,
     branches_program, local_call_program, script_call_program, tail_call_program, syscall_program, intrinsics_program,
+    split_pop_program,
 )
 
 
@@ -266,11 +280,11 @@ def track(parser: ScpParser, decoded: list[Function]) -> list[Step]:
     return steps
 
 
-def table_change(step: Step, parser: ScpParser) -> int:
+def table_change(step: Step, parser: ScpParser, pop_carry: PopCarry) -> int:
     """The stack change the table gives for step; a local call's arguments are its callee's declared parameters, from
-    the function table every walker reads"""
+    the function table every walker reads; a POP's the whole slots it completes, with the bytes pop_carry holds"""
     effect = effect_of(step.opcode)
-    return effect.pushes - effect.pop_count(step.values, parser.get_func_argc) - effect.setup_pops
+    return effect.pushes - effect.pop_count(step.values, parser.get_func_argc, pop_carry) - effect.setup_pops
 
 
 def table_argc(step: Step, parser: ScpParser) -> int:
@@ -326,9 +340,10 @@ class TestWalkersAgreeWithTheTable(unittest.TestCase):
     def test_each_instruction_changes_the_stack_as_the_table_says(self):
         for program, parser, walkers in self.runs:
             for walker, steps in walkers.items():
+                pop_carry = PopCarry()
                 for step in steps:
                     with self.subTest(program=program, walker=walker, opcode=step.opcode.name):
-                        expected = table_change(step, parser)
+                        expected = table_change(step, parser, pop_carry)
                         if walker == 'tracker':
                             # It starts each function empty, without the caller's parameters: a POP reaching into
                             # them pops only what it holds
@@ -342,10 +357,11 @@ class TestWalkersAgreeWithTheTable(unittest.TestCase):
         slot-addressing effect that pops stores into its slot, so it may replace one entry below."""
         for program, parser, walkers in self.runs:
             for walker, steps in walkers.items():
+                pop_carry = PopCarry()
                 for step in steps:
                     with self.subTest(program=program, walker=walker, opcode=step.opcode.name):
                         effect = effect_of(step.opcode)
-                        popped = effect.pop_count(step.values, parser.get_func_argc) + effect.setup_pops
+                        popped = effect.pop_count(step.values, parser.get_func_argc, pop_carry) + effect.setup_pops
                         kept = max(len(step.entries_before) - popped, 0)
                         self.assertGreaterEqual(len(step.entries_after), kept)
                         replaced_below = [index for index in range(kept)

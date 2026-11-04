@@ -9,6 +9,8 @@ __all__ = (
     'InstructionKind',
     'OperandCount',
     'CalleeParamCount',
+    'PoppedBytes',
+    'PopCarry',
     'StackEffect',
     'STACK_EFFECTS',
     'LOCAL_SETUP_SLOTS',
@@ -68,10 +70,9 @@ class InstructionKind(Enum):
 
 @dataclass(frozen=True)
 class OperandCount:
-    """A count read from an operand; unit = WORD_SIZE when the operand counts bytes (POP)"""
+    """A count read from an operand"""
 
     index   : int
-    unit    : int = 1
 
 
 @dataclass(frozen=True)
@@ -82,20 +83,47 @@ class CalleeParamCount:
 
 
 @dataclass(frozen=True)
+class PoppedBytes:
+    """POP's count, the bytes in the operand at index: each walker counts them through its PopCarry, as a POP may
+    end inside a slot that the POP right after it completes"""
+
+    index   : int
+
+
+@dataclass
+class PopCarry:
+    """The bytes a walker's last POP popped past a whole slot: the compiler splits a pop of more than 255 bytes into
+    POP 255 and a POP completing the slots, and the VM rounds nothing, so they carry into the next POP"""
+
+    carried : int = 0       # bytes popped past the last whole slot
+
+    def pop(self, byte_count: int) -> int:
+        """The whole slots a POP of byte_count bytes pops, the carried bytes counted first"""
+        popped = self.carried + byte_count
+        self.carried = popped % WORD_SIZE
+        return popped // WORD_SIZE
+
+
+@dataclass(frozen=True)
 class StackEffect:
     """In order: pops (operands, or a call's arguments), the call setup below them, pushes"""
 
-    pops            : int | OperandCount | CalleeParamCount = 0
+    pops            : int | OperandCount | CalleeParamCount | PoppedBytes = 0
     setup_pops      : int = 0
     reads           : int | OperandCount = 0     # values read in place, not popped (SYSCALL's arguments)
     pushes          : int = 0
     addresses_slot  : bool = False               # the offset operand counts from sp after the pops
     exits           : bool = False               # the walkers require an empty stack after it; the VM does not
 
-    def pop_count(self, operand_values: Sequence, get_param_count: Callable[[Any], int] | None = None) -> int:
-        """Values popped above any call setup; a local CALL's are its callee's parameters, from the walker's lookup"""
+    def pop_count(self, operand_values: Sequence, get_param_count: Callable[[Any], int] | None = None,
+                  pop_carry: PopCarry | None = None) -> int:
+        """Values popped above any call setup; a local CALL's are its callee's parameters, from the walker's lookup; a
+        POP's are the whole slots its bytes complete, the walker's carried bytes first"""
         if isinstance(self.pops, CalleeParamCount):
             return get_param_count(operand_values[self.pops.index])
+
+        if isinstance(self.pops, PoppedBytes):
+            return pop_carry.pop(operand_values[self.pops.index])
 
         return self.resolve_count(self.pops, operand_values)
 
@@ -106,7 +134,7 @@ class StackEffect:
     @classmethod
     def resolve_count(cls, count: int | OperandCount, operand_values: Sequence[int]) -> int:
         if isinstance(count, OperandCount):
-            return operand_values[count.index] // count.unit    # floored: POP's partial slot isn't popped
+            return operand_values[count.index]
 
         return count
 
@@ -124,7 +152,7 @@ STACK_EFFECTS = {
     InstructionKind.STORE_REG           : StackEffect(pops=1),
     InstructionKind.BINARY              : StackEffect(pops=2, pushes=1),
     InstructionKind.UNARY               : StackEffect(pops=1, pushes=1),
-    InstructionKind.POP                 : StackEffect(pops=OperandCount(POP_SIZE_OPERAND, unit=WORD_SIZE)),
+    InstructionKind.POP                 : StackEffect(pops=PoppedBytes(POP_SIZE_OPERAND)),
     InstructionKind.JUMP                : StackEffect(),
     InstructionKind.CONDITIONAL_JUMP    : StackEffect(pops=1),
     InstructionKind.PUSH_FUNC_ID        : StackEffect(pushes=1),

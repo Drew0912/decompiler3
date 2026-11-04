@@ -72,7 +72,8 @@ stack the way the `.llil.asm` does, read from the parser's simulated stack (`Fun
 `docs/falcom/ed9/ED9_FORMAT.md` Layer 2). Each of the 5 offset opcodes gets the absolute slot it addresses and
 what it holds, `*` marking a dereference and `&` an address (`POP_TO` and `POP_TO_DEREF` count their
 offset from sp after their pop); the instruction that opened a local the code addresses gets
-`(local)`; `POP(n)` gets its slot count; each label gets the depth there:
+`(local)`; `POP(n)` gets its slot count (in a split pop, the first `POP` also the bytes it leaves for the next:
+`POP(255)  # 63 slots + 3 bytes`, `POP(77)  # 20 slots`); each label gets the depth there:
 ```python
     LOAD_STACK(-16)                 # slot 1 = arg2
     POP(12)                         # 3 slots

@@ -32,11 +32,12 @@ Converts bytecode into a readable instruction sequence, identifies basic block b
 Instruction encoding/decoding is table-driven (an opcode table maps each opcode to its mnemonic and operand format), so
 adding a new instruction is a table entry rather than new parsing code. Each row also has a kind, and each kind a stack
 effect (`falcom/ed9/disasm/stack_effects.py`: the values it pops, a call's setup slots, the values it reads in place,
-the values it pushes, whether it addresses a slot, whether the stack must be empty after it). The parser's simulation
-and the debug-record tracker (`CallDebugInfoTracker`, `structs/call_debug_records.py`) dispatch on the kind and read the
-effects; the LLIL lifter takes only which opcodes are binary and a local `CALL`'s argument count from the table
-(`docs/ARCHITECTURE.md`, Layer 3). `tests/parser_tests/test_stack_effects.py` checks all three walkers of the VM stack
-against the table.
+the values it pushes, whether it addresses a slot, whether the stack must be empty after it). A `POP` counts bytes: each
+walker counts them through its own `PopCarry`, which carries the bytes past the last whole slot into the `POP` right
+after it (a split pop). The parser's simulation and the debug-record tracker (`CallDebugInfoTracker`,
+`structs/call_debug_records.py`) dispatch on the kind and read the effects; the LLIL lifter takes only which opcodes are
+binary and a local `CALL`'s argument count from the table (`docs/ARCHITECTURE.md`, Layer 3).
+`tests/parser_tests/test_stack_effects.py` checks all three walkers of the VM stack against the table.
 
 While the disassembler decodes a function, `ScpParser` simulates the VM stack to find each call's
 setup: the two pushes a `CALL` consumes (rewritten to `PUSH_CURRENT_FUNC_ID` / `PUSH_RET_ADDR`) and

@@ -60,8 +60,8 @@ has there, cut.
 
 Every parseable script of the five games (4,828 scripts, 351,245 functions; IR rewrite part 1, Step 5e; per function
 in `notes/ir_rewrite_plan/baselines/{llil_mlil,mlil_hlil}_full_5e.json`): no decompile or internal error; LLIL -> MLIL
-clean; MLIL -> HLIL 3 functions, all real. The 8 scripts left out are the parser's: it rejects their `POP 255` (`ani/`
-of `kuro2` and `kai1`).
+clean; MLIL -> HLIL 3 functions, all real. The 8 scripts left out were the parser's: it rejected their split pop,
+`POP 255` then a `POP` completing the slots (`ani/` of `kuro2` and `kai1`), which it reads since 2026-11-04.
 
 - **Real:** `TestEmotion` in `scena/a0000.dat` of `kuro1`, `kuro2` and `kai1`: two unstructured jumps lose paths
   (`unstructured_jump`, and the `guard_differs`, `loop_value_differs` and `order_differs` the lost paths bring).
