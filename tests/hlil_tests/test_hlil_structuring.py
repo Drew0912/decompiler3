@@ -593,7 +593,8 @@ class TestConstantTruth(unittest.TestCase):
         self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.EQ, var('c'), HLILConst(1))))
 
     def test_floats_decide_nothing(self):
-        # A float's truth and comparisons in the VM are unverified
+        # A float's truth depends on what tests it (docs/falcom/ed9/ED9_VM.md, Truth); its comparisons are known
+        # statically, not traced
         self.assertIsNone(constant_truth(HLILConst(0.5)))
         self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.LT, HLILConst(0.5), HLILConst(1))))
         self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.LT, HLILConst(1), HLILConst(0.5))))

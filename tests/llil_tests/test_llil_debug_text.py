@@ -113,7 +113,7 @@ block_3(0x006D), loc_6D, [sp = 1]
   sp++
   STACK[sp] = <script_ptr> ; [4]
   sp++
-  STACK[sp] = <script_name> ; [5]
+  STACK[sp] = <frame_marker> ; [5]
   sp++
   STACK[sp] = 4 ; [6]
   sp++

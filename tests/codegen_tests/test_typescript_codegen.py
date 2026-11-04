@@ -200,7 +200,7 @@ class TestNumberCodegen(unittest.TestCase):
 
 
 class TestConstantComparisonCodegen(unittest.TestCase):
-    """A comparison of two constants prints its value only for ints: a float comparison in the VM is unverified.
+    """A comparison of two constants prints its value only for ints: a float comparison is known statically, not traced.
     Seen live: mon5265 printed if (2.0 > 0) as if (true)."""
 
     def render(self, op: BinaryOp, lhs, rhs) -> str:

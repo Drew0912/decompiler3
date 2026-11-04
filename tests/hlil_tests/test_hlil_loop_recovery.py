@@ -177,7 +177,8 @@ class TestLoopRecoveryBreakGuard(unittest.TestCase):
 
 
 class TestLoopRecoveryFloatConditions(unittest.TestCase):
-    """A float condition is never folded or taken as always true: its truth in the VM is unverified"""
+    """A float condition is never folded or taken as always true: its truth depends on what tests it
+    (docs/falcom/ed9/ED9_VM.md, Truth)"""
 
     def test_float_condition_is_left_alone(self):
         for condition in (HLILConst(1.0), HLILBinaryOp(BinaryOp.EQ, HLILConst(0.5), HLILConst(0.5))):

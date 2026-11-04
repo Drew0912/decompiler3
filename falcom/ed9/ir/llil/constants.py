@@ -37,11 +37,12 @@ class LowLevelILConstScript(LowLevelILConst):
         return '<script_ptr>'
 
 
-class LowLevelILConstScriptName(LowLevelILConst):
-    """Falcom VM current script name constant (context marker)"""
+class LowLevelILConstFrameMarker(LowLevelILConst):
+    """Falcom VM caller frame marker: the word 0xF0000000 RETURN tests for, no typed value (its tag bits say String)"""
 
     def __init__(self):
-        super().__init__('')
+        # Special constant with no actual value
+        super().__init__(None)
 
     def __str__(self) -> str:
-        return '<script_name>'
+        return '<frame_marker>'

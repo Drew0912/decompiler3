@@ -7,7 +7,7 @@ from ir.llil.llil import LowLevelILBasicBlock, LowLevelILCall, LowLevelILInstruc
 from ir.mlil.mlil import MediumLevelILCall, MediumLevelILInstruction, MLILCallScript, MLILLoadGlobal, MLILVariable
 from ir.mlil.stack_translator import StackTranslator, StackTranslatorPass, UnsupportedStackShape, Write, WriteKind
 from ..llil.constants import (
-    LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstScriptName,
+    LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstFrameMarker,
 )
 from ..llil.llil_ext import (
     LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugLog, LowLevelILGlobalLoad, LowLevelILGlobalStore,
@@ -53,7 +53,7 @@ class FalcomStackTranslator(StackTranslator):
         # A call's setup is never translated: one of its values here is a hand edit reading the VM's frame as data,
         # which no MLIL node holds
         if isinstance(node, (LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript,
-                             LowLevelILConstScriptName)):
+                             LowLevelILConstFrameMarker)):
             raise UnsupportedStackShape(f'{self.llil_func.name}: a call frame value read as data')
 
         return super().translate_expr(node)

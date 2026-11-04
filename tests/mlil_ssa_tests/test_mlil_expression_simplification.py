@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for ExpressionSimplificationPass: its algebraic identities fire only on int constants. With a float
-constant x * 0.0 isn't int 0, and the VM's int/float mixing is unverified. Seen live: mon5047 printed 0.0 * arg4
+constant x * 0.0 is a Float, not int 0, and can be -0.0 or NaN. Seen live: mon5047 printed 0.0 * arg4
 as 0. All-ones is -1 (script ints are signed, SCCP folds ~0 to -1): x & -1 is x, x | -1 is -1."""
 
 from pathlib import Path

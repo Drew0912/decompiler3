@@ -249,7 +249,7 @@ def SYSCALL(subsystem: uint8, cmd: uint8, argc: uint8):
 
 
 def PUSH_CALLER_FRAME(return_addr: str):
-    """Push caller frame [func_id, &ret_addr, script_ptr, script_ptr, script_name] (Opcode 0x25)"""
+    """Push caller frame [func_id, &ret_addr, script_ptr, script_ptr, frame_marker] (Opcode 0x25)"""
     _require_type('PUSH_CALLER_FRAME', 'return_addr', return_addr, str)
     return get_scp_writer().handle_opcode(ED9Opcode.PUSH_CALLER_FRAME, return_addr)
 

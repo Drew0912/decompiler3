@@ -35,5 +35,6 @@ def constant_values_equal(a, b) -> bool:
 
 def is_int_zero(value) -> bool:
     """A zero int constant (False included: bool is an int): a comparison with it is a plain truth test. A
-    float zero is not one - a float's truth in the VM is unverified."""
+    float zero is not one: a jump truncates a Float, so 0.5 tests false while 0.5 != 0.0 holds
+    (docs/falcom/ed9/ED9_VM.md, Truth)"""
     return isinstance(value, int) and value == 0

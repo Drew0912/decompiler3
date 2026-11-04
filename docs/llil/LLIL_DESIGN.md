@@ -38,7 +38,7 @@ operand stack has little use for LLIL and can lift straight to MLIL.
 | `falcom/ed9/ir/llil/llil_builder.py` | `FalcomVMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `finalize()`. |
 | `falcom/ed9/ir/llil/llil_formatter.py` | `FalcomLLILFormatter`: the pops the builder hides (see Formatting). |
 | `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILDebugLog`; their operations in `LowLevelILFalcomOperation`. |
-| `falcom/ed9/ir/llil/constants.py` | ED9 constants the call setups push: function ID, return-address block, script pointer, the caller frame's marker (`LowLevelILConstScriptName`, named for a script name it does not hold). |
+| `falcom/ed9/ir/llil/constants.py` | ED9 constants the call setups push: function ID, return-address block, script pointer, the caller frame's marker (`LowLevelILConstFrameMarker`). |
 | `falcom/ed9/ir/llil/vm_lifter.py` | `ED9VMLifter.lift_function()`: the production entry point, a `match` arm per opcode - the binary opcodes share one, picked by the opcode table's kind (`BINARY_BUILDER_METHODS` names each one's builder operation), and a local `CALL`'s argument count comes from its stack effect. |
 
 ## Node Model

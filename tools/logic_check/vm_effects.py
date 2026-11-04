@@ -49,7 +49,8 @@ class VMEffects:
 
     def store_deref(self, state: State, address: int, pointer, value) -> Effect:
         """A store through a pointer changes memory behind pointers, none of the function's locals: LLIL dereferences
-        only a caller's pointer, and MLIL writes a local's memory form as the local"""
+        only a caller's pointer (a decompiler rule: the VM follows any Integer), and MLIL writes a local's memory form
+        as the local"""
         self.escape(state, value)
         state.set(MEMORY_EPOCH, address)
         return Effect(address, 'store deref', None, (pointer, value))

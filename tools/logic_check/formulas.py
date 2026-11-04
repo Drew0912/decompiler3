@@ -15,7 +15,7 @@ from .trees import SHORT_LOGIC, const, constant_truth, negation_normal_form, rep
 
 TRUE = ('true',)
 FALSE = ('false',)
-OVERLAPPING_CONSTANT_TYPES = ('float',)  # two of its constants may compare equal (0.0, -0.0): float == unverified
+OVERLAPPING_CONSTANT_TYPES = ('float',)  # -0.0 == 0.0, NaN != NaN: docs/falcom/ed9/ED9_VM.md, Comparisons
 ROW_CAP = 1 << 16
 ZERO = const(0)
 FALSE_KEY = ((), b'')           # FormulaKeys' key of a formula that never holds

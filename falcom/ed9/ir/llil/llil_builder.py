@@ -117,7 +117,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
         self.push(LowLevelILConstFuncId())
         self.push(LowLevelILConstRetAddrBlock(return_target))
         self.push(LowLevelILConstScript())
-        self.push(LowLevelILConstScriptName())
+        self.push(LowLevelILConstFrameMarker())
         self._pending_setups.append(PendingCallSetup(CallSetupKind.SCRIPT, sp_before_call, return_target))
 
     def call_local(self, target: str, arg_count: int):
@@ -142,7 +142,8 @@ class FalcomVMBuilder(LowLevelILBuilder):
         No call setup precedes this opcode in the bytecode, and it never consumes one. The args
         stay logically on the vstack (the callee's frame takes over rather than this function
         reading them back), so _cleanup_stack brings the tracked sp back to 0 without emitting IL -
-        matching the bytecode, which emits no cleanup POP before a tail call.
+        matching the VM, which sets sp to 0 and re-pushes the arguments (docs/falcom/ed9/ED9_VM.md, Calls and
+        frames), so the bytecode has no cleanup POP before a tail call.
         """
         parameters = self._describe_untracked_parameters(arg_count)
         if parameters is not None:
@@ -188,7 +189,8 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
     def _resolve_deref_param_ptr(self, slot_index: int, opcode_name: str):
         """The pointer a dereference goes through - only a caller-supplied one, in a parameter the function still
-        holds: a pointer in any other slot may point into this function's own frame"""
+        holds: a pointer in any other slot may point into this function's own frame. A decompiler rule: the compiler
+        dereferences only parameters, while the VM follows any Integer (docs/falcom/ed9/ED9_VM.md, Pointers)"""
         if not self._holds_parameter(slot_index):
             raise NotImplementedError(
                 f'{opcode_name} requires a slot still holding a caller parameter, got slot {slot_index}'

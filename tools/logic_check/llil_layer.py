@@ -2,7 +2,7 @@
 global; every push, pop and store is followed as written"""
 
 from falcom.ed9.ir.llil.constants import (
-    LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstScriptName,
+    LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstFrameMarker,
 )
 from falcom.ed9.ir.llil.llil_ext import (
     LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugLog, LowLevelILGlobalLoad,
@@ -20,7 +20,8 @@ from .state import MEMORY_EPOCH, State
 from .trees import ENTRY, const, op
 from .vm_effects import VMEffects
 
-FRAME_CONSTANTS = (LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstScriptName)
+FRAME_CONSTANTS = (LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript,
+                   LowLevelILConstFrameMarker)
 IGNORED = (LowLevelILSpAdd, LowLevelILDebug, LowLevelILJmp)
 COPIES = (LowLevelILStackStore, LowLevelILFrameStore, LowLevelILRegStore, *IGNORED)
 

@@ -93,8 +93,8 @@ class TestDivModNeverFold(unittest.TestCase):
 
 
 class TestFloatsNeverFold(unittest.TestCase):
-    """Any op with a float operand evaluates to bottom, and a float decides no branch: the VM's float arithmetic
-    and truth (float32 rounding, int/float mixing, -0.0) are unverified. Seen live: chr0000.AniBtlCraft01Main
+    """Any op with a float operand evaluates to bottom, and a float decides no branch: the VM computes in float32
+    with each result's 2 lowest bits cut, and a jump truncates a Float. Seen live: chr0000.AniBtlCraft01Main
     printed 0.4 * 0.8 as 0.32."""
 
     def test_float_ops_do_not_fold(self):

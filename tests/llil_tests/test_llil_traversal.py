@@ -18,7 +18,7 @@ from ir.llil.llil import (
     LowLevelILSyscall, walk,
 )
 from falcom.ed9.ir.llil.constants import (
-    LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstScriptName,
+    LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstFrameMarker,
 )
 from falcom.ed9.ir.llil.llil_ext import (
     LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugLog, LowLevelILGlobalLoad,
@@ -51,7 +51,7 @@ def samples() -> list:
         LowLevelILCallScript('m', 'f', [c(), c()], block), LowLevelILCallScriptNoReturn('m', 'f', [c(), c()]),
         LowLevelILGlobalLoad(0), LowLevelILGlobalStore(1, c()), LowLevelILDebugLog([c(), c()]),
         LowLevelILConstFuncId(), LowLevelILConstRetAddrBlock(block), LowLevelILConstScript(),
-        LowLevelILConstScriptName(),
+        LowLevelILConstFrameMarker(),
     ]
     nodes += [cls(c(), c()) for cls in concrete_subclasses(LowLevelILBinaryOp)]
     nodes += [cls(c()) for cls in concrete_subclasses(LowLevelILUnaryOp)]

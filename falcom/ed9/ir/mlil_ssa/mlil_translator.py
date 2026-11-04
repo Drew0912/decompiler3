@@ -59,7 +59,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
             LowLevelILConstFuncId,
             LowLevelILConstRetAddrBlock,
             LowLevelILConstScript,
-            LowLevelILConstScriptName,
+            LowLevelILConstFrameMarker,
         ))
 
     def _translate_call_script(self, llil_inst: LowLevelILCallScript):

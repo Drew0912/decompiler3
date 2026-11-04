@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """is_int_zero: only the int constant 0 turns a comparison into a plain truth test. Every place that simplifies a
-comparison with zero leaves a float zero as written - a float's truth in the VM is unverified."""
+comparison with zero leaves a float zero as written: a jump truncates a Float, so 0.5 tests false while 0.5 != 0.0
+holds (docs/falcom/ed9/ED9_VM.md, Truth)"""
 
 from pathlib import Path
 import sys

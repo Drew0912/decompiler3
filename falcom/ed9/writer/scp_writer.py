@@ -313,7 +313,7 @@ class ScpWriter:
         entry.offset                = UNRESOLVED_FUNC_OFFSET
         entry.param_count           = param_count
         entry.is_common_func        = int(is_common_func)
-        entry.byte06                = 0  # meaning unknown; the parser rejects any other value
+        entry.byte06                = 0  # the VM never reads it; the compiler writes 0, the parser rejects any other
         entry.default_params_count  = 0  # placeholder - overwritten by _write_default_params()
         entry.default_params_offset = 0  # placeholder - overwritten by _write_default_params()
         entry.param_flags_offset    = 0  # placeholder - overwritten by _write_param_flags()

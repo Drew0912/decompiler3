@@ -24,7 +24,7 @@ __all__ = (
 )
 
 LOCAL_SETUP_SLOTS       = 2     # CALL: func_id, ret_addr
-CALLER_FRAME_SLOTS      = 5     # PUSH_CALLER_FRAME: func_id, ret_addr, script pointer (2 slots), script_name
+CALLER_FRAME_SLOTS      = 5     # PUSH_CALLER_FRAME: func_id, ret_addr, script pointer (2 slots), frame marker
 POP_SIZE_OPERAND        = 0     # POP's byte count
 DEBUG_LOG_ARGC_OPERAND  = 0
 ARGC_OPERAND            = 2     # the argument count of every argument call but CALL, whose count is its callee's parameters
@@ -89,7 +89,7 @@ class StackEffect:
     reads           : int | OperandCount = 0     # values read in place, not popped (SYSCALL's arguments)
     pushes          : int = 0
     addresses_slot  : bool = False               # the offset operand counts from sp after the pops
-    exits           : bool = False               # the stack must be empty afterwards
+    exits           : bool = False               # the walkers require an empty stack after it; the VM does not
 
     def pop_count(self, operand_values: Sequence, get_param_count: Callable[[Any], int] | None = None) -> int:
         """Values popped above any call setup; a local CALL's are its callee's parameters, from the walker's lookup"""

@@ -347,7 +347,9 @@ class ScpFunctionEntry(StrictBase):
          self.name_hash, self.name_offset) = self.LAYOUT.unpack(fs.Read(self.SIZE))
 
         if self.byte06 != 0:
-            raise NotImplementedError(f'byte06 != 0: {self.byte06}. ScpFunctionEntry.is_common_func is UShort?')
+            raise NotImplementedError(
+                f'byte06 != 0: {self.byte06} (the VM never reads it; every compiled script has 0)'
+            )
 
     def to_bytes(self) -> bytes:
         return self.LAYOUT.pack(self.offset, self.param_count, self.is_common_func, self.byte06,
