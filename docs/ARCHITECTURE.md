@@ -146,9 +146,9 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
 game knowledge there can't spread back into the IR. The opcode table (`falcom/ed9/disasm/`) holds no IR node classes:
 it gives opcode kinds and stack effects, and the LLIL lifter maps them to nodes. The decompile path's LLIL -> MLIL
 translator keeps the game's conventions in `falcom/ed9/ir/mlil/stack_translator.py` (`FalcomStackTranslator`: the
-parameter-to-slot mapping, the result register, globals, script calls, `POPN`); the generic `StackTranslator`
-translates the generic LLIL nodes (`RegStore`, `RegLoad`, `Syscall`) itself. The SSA path's known leftovers stay with
-it in `ir/mlil_ssa/` (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary").
+parameter-to-slot mapping, the result register, globals, script calls, `POPN`, `DEBUG_INT`); the generic
+`StackTranslator` translates the generic LLIL nodes (`RegStore`, `RegLoad`, `Syscall`) itself. The SSA path's known
+leftovers stay with it in `ir/mlil_ssa/` (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary").
 
 ## Key Design Principles
 

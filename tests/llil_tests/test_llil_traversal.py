@@ -21,8 +21,8 @@ from falcom.ed9.ir.llil.constants import (
     LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstFrameMarker,
 )
 from falcom.ed9.ir.llil.llil_ext import (
-    LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugLog, LowLevelILGlobalLoad,
-    LowLevelILGlobalStore,
+    LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugInt, LowLevelILGlobalLoad,
+    LowLevelILGlobalStore, LowLevelILPopN,
 )
 from tests.shared.ir_utils import concrete_subclasses
 
@@ -49,7 +49,7 @@ def samples() -> list:
         LowLevelILJmp(block), LowLevelILIf(c(), block, other_block), LowLevelILCall('f', block, [c(), c()]),
         LowLevelILRet(), c(), LowLevelILDebug('line', 5), LowLevelILSyscall(1, 2, 2, [c(), c()]),
         LowLevelILCallScript('m', 'f', [c(), c()], block), LowLevelILCallScriptNoReturn('m', 'f', [c(), c()]),
-        LowLevelILGlobalLoad(0), LowLevelILGlobalStore(1, c()), LowLevelILDebugLog([c(), c()]),
+        LowLevelILGlobalLoad(0), LowLevelILGlobalStore(1, c()), LowLevelILPopN([c(), c()]), LowLevelILDebugInt(-1),
         LowLevelILConstFuncId(), LowLevelILConstRetAddrBlock(block), LowLevelILConstScript(),
         LowLevelILConstFrameMarker(),
     ]
@@ -92,7 +92,7 @@ class TestOperandsCoverEveryExpressionField(unittest.TestCase):
         self.assertEqual(list(LowLevelILAdd(lhs, rhs).operands()), [lhs, rhs])
         self.assertEqual(list(LowLevelILCall('f', None, args).operands()), args)
         self.assertEqual(list(LowLevelILSyscall(1, 2, len(args), args).operands()), args)
-        self.assertEqual(list(LowLevelILDebugLog(args).operands()), args)
+        self.assertEqual(list(LowLevelILPopN(args).operands()), args)
         self.assertEqual(list(LowLevelILStore(dest, value).operands()), [dest, value])
 
 

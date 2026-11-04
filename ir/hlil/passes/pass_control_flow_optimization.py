@@ -370,7 +370,9 @@ class ControlFlowOptimizationPass(Pass):
             # A jump HLIL could not express: whatever runs next may read var
             return (True, None, ())
 
-        return (False, killed, ())
+        # Any other statement (a comment, an intrinsic) holds no exit and kills nothing: it reads what the shared
+        # walker finds below it
+        return (not killed and self._reads_var(var, node), killed, ())
 
     def _loop_result(self, var: HLILVariable, node, killed: bool, *,
                      condition_checked_first: bool) -> tuple:

@@ -37,7 +37,7 @@ operand stack has little use for LLIL and can lift straight to MLIL.
 | `ir/llil/llil_formatter.py` | `LLILFormatter`: the `.llil.asm` text and `.llil.dot` graphs (each instruction's own text, the binary/unary expansion). |
 | `falcom/ed9/ir/llil/llil_builder.py` | `FalcomVMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `finalize()`. |
 | `falcom/ed9/ir/llil/llil_formatter.py` | `FalcomLLILFormatter`: the pops the builder hides (see Formatting). |
-| `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILDebugLog`; their operations in `LowLevelILFalcomOperation`. |
+| `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILPopN`, `LowLevelILDebugInt`; their operations in `LowLevelILFalcomOperation`. |
 | `falcom/ed9/ir/llil/constants.py` | ED9 constants the call setups push: function ID, return-address block, script pointer, the caller frame's marker (`LowLevelILConstFrameMarker`). |
 | `falcom/ed9/ir/llil/vm_lifter.py` | `ED9VMLifter.lift_function()`: the production entry point, a `match` arm per opcode - the binary opcodes share one, picked by the opcode table's kind (`BINARY_BUILDER_METHODS` names each one's builder operation), and a local `CALL`'s argument count comes from its stack effect. |
 
@@ -58,7 +58,7 @@ came from, `inst_index`, `options.hidden_for_formatter`). Nodes are either a
 | Globals (ED9) | `LowLevelILGlobalStore(index, value)`, `LowLevelILGlobalLoad(index)` |
 | Arithmetic / compare / logic | `LowLevelILBinaryOp(lhs, rhs)` subclasses (`Add`, `Sub`, `Mul`, `Div`, `Mod`, `Eq`, `Ne`, `Lt`, `Le`, `Gt`, `Ge`, bitwise `And`/`Or`, eager `LogicalAnd`/`LogicalOr`); `LowLevelILUnaryOp(operand)` subclasses (`Neg`, `BitwiseNot`, `TestZero`); each subclass sets only its `OPERATION` |
 | Terminals | `LowLevelILJmp(target)`, `LowLevelILIf(condition, true_target, false_target)`, `LowLevelILCall(target, return_target, args, returns)`, `LowLevelILRet()`; ED9 `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn` (both subclass `LowLevelILCall`) |
-| Other | `LowLevelILConst(value, is_raw)`, `LowLevelILSyscall(subsystem, cmd, argc, args)`, `LowLevelILDebug('line', n)` (from `DEBUG_SET_LINENO`), `LowLevelILDebugLog(args)` |
+| Other | `LowLevelILConst(value, is_raw)`, `LowLevelILSyscall(subsystem, cmd, argc, args)`, `LowLevelILDebug('line', n)` (from `DEBUG_SET_LINENO`), `LowLevelILPopN(values)`, `LowLevelILDebugInt(value)` |
 
 Offsets are **bytes** (`slot * WORD_SIZE`); `slot_index` is an absolute slot number. Stack offsets
 count from the current `sp`, frame offsets from the frame base.
@@ -153,8 +153,8 @@ stack empty with no setup pending; the parser checks it at every exit.
 `RETURN` reads (`RESULT_REGISTER`, `falcom/ed9/disasm/stack_effects.py`).
 
 **Not terminals:** `SYSCALL` reads its `argc` arguments from the top of the stack without popping
-them and leaves `sp` unchanged; `POPN count` pops `count` slots, which the lifter keeps as a debug
-print's arguments (message first).
+them and leaves `sp` unchanged; `POPN count` pops `count` slots, which the lifter keeps as its
+node's values (top of stack first).
 
 ## Control Flow and Per-Edge Stack State
 

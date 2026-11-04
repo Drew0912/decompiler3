@@ -677,23 +677,6 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         self.assertFalse(any('reg0#2' in line for line in lines), 'the dead pseudo-def must have been dropped')
         self.assertIn('consume(t#1)', lines, 'reg0#1 must not be read after the syscall')
 
-    def test_non_clobbering_call_does_not_block_forward(self):
-        func, reg0, t1 = self.reg0_func('non_clobbering')
-        reg0_1 = MLILVariableSSA(reg0, 1)
-        block = MediumLevelILBasicBlock(0)
-        block.instructions = [
-            MLILCall('produce', [], output=reg0_1),
-            MLILSetVarSSA(t1, MLILVarSSA(reg0_1)),
-            MLILCall('debug_print', [], clobbers_registers=False),
-            MLILCall('consume', [MLILVarSSA(t1)]),
-            MLILRet(MLILConst(0)),
-        ]
-        func.basic_blocks = [block]
-
-        self.optimize_rounds(func)
-
-        self.assertIn('consume(reg0#1)', [str(inst) for inst in block.instructions])
-
     def test_read_as_argument_of_the_clobbering_call_still_forwards(self):
         """Arguments are read before the call runs, so its own clobber does not apply to them"""
         func, reg0, t1 = self.reg0_func('argument_of_clobbering_call')
@@ -719,9 +702,6 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
 
         self.assertFalse(reaches_without_redefinition(func, reg0, block, 0, block, 2))
         self.assertFalse(reaches_without_redefinition(func, global5, block, 0, block, 2))
-
-        block.instructions[1] = MLILCall('debug_print', [], clobbers_registers=False)
-        self.assertTrue(reaches_without_redefinition(func, reg0, block, 0, block, 2))
 
 
 def optimized_corpus_mlil(dat_name: str, func_name: str) -> MediumLevelILFunction:

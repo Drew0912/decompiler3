@@ -14,8 +14,8 @@ Per function, decompiled as the decompiler decompiles it (`round_trip` off, unre
 the logic check compares two layer pairs: the LLIL against the MLIL (the LLIL is the trust root) and the MLIL against
 the HLIL. Each layer is evaluated over storage that means the same on every layer, and compared are:
 
-- the effects - calls, syscalls, script calls, `debug.log`, global stores, stores through a pointer, returns (with the
-  registers a return leaves) - with their argument values;
+- the effects - calls, syscalls, script calls, prints (`POPN`, `DEBUG_INT`), global stores, stores through a pointer,
+  returns (with the registers a return leaves) - with their argument values;
 - the conditions each effect runs under (its guard): LLIL -> MLIL by the branches it depends on, MLIL -> HLIL as a
   formula over conditions, compared exactly (a truth table, then a decision diagram);
 - LLIL -> MLIL also each branch's condition and targets; MLIL -> HLIL sees a branch through the guards of what it

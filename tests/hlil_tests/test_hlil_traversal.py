@@ -30,6 +30,7 @@ from ir.hlil import (
     HLILExternCall,
     HLILIf,
     HLILInstruction,
+    HLILIntrinsic,
     HLILReturn,
     HLILSwitch,
     HLILSwitchCase,
@@ -84,7 +85,7 @@ def samples() -> list:
                               HLILSwitchCase(None, HLILBlock())]),
         HLILBreak(LOOP_LABEL), HLILContinue(), HLILReturn(c(FIRST_VALUE)), HLILReturn(),
         HLILAssign(var('x'), c(FIRST_VALUE)), HLILExprStmt(HLILCall('f', [])), HLILComment('note'),
-        HLILUnstructured('loc_1', 'region not repeatable'),
+        HLILIntrinsic('POPN', [c(FIRST_VALUE), var('x')]), HLILUnstructured('loc_1', 'region not repeatable'),
     ]
 
 

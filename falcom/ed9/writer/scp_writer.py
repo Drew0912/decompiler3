@@ -735,10 +735,6 @@ class ScpWriter:
         elif opcode == ED9Opcode.PUSH_RET_ADDR:
             self._write_push_header()
             self._write_label_ref(args[0])
-        elif opcode == ED9Opcode.UNKNOWN_28:
-            # No descriptor - the operand format is unknown, so the operand bytes are written as given
-            self.fs.WriteByte(opcode)
-            self.fs.Write(args[0])
         else:
             self._emit_described_opcode(opcode, args)
 

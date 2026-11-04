@@ -74,6 +74,7 @@ __all__ = [
     'HLILAssign',
     'HLILExprStmt',
     'HLILComment',
+    'HLILIntrinsic',
 
     # Shape helpers
     'code_statements',

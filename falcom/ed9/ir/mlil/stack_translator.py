@@ -1,25 +1,25 @@
 """Falcom ED9 symbolic-stack LLIL -> MLIL translator: the VM's result register, its calling convention, globals,
-script calls (the tail call among them) and DEBUG_LOG on the generic translator; a call frame value read as data
-refused"""
+script calls (the tail call among them), POPN and DEBUG_INT on the generic translator; a call frame value read as
+data refused"""
 
 from falcom.ed9.disasm.stack_effects import RESULT_REGISTER
 from ir.llil.llil import LowLevelILBasicBlock, LowLevelILCall, LowLevelILInstruction, WORD_SIZE
-from ir.mlil.mlil import MediumLevelILCall, MediumLevelILInstruction, MLILCallScript, MLILLoadGlobal, MLILVariable
+from ir.mlil.mlil import (
+    MediumLevelILCall, MediumLevelILInstruction, MLILCallScript, MLILConst, MLILLoadGlobal, MLILVariable,
+)
 from ir.mlil.stack_translator import StackTranslator, StackTranslatorPass, UnsupportedStackShape, Write, WriteKind
 from ..llil.constants import (
     LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstFrameMarker,
 )
 from ..llil.llil_ext import (
-    LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugLog, LowLevelILGlobalLoad, LowLevelILGlobalStore,
+    LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugInt, LowLevelILGlobalLoad, LowLevelILGlobalStore,
+    LowLevelILPopN,
 )
-
-# DEBUG_LOG becomes a call so call handling covers it; script function names never contain a dot
-DEBUG_LOG_CALL_TARGET = 'debug.log'
 
 
 class FalcomStackTranslator(StackTranslator):
     RESULT_REGISTER    = RESULT_REGISTER
-    IN_PLACE_ARGUMENTS = (*StackTranslator.IN_PLACE_ARGUMENTS, LowLevelILDebugLog)
+    IN_PLACE_ARGUMENTS = (*StackTranslator.IN_PLACE_ARGUMENTS, LowLevelILPopN)
 
     def parameter_position(self, frame_offset: int) -> int:
         """Arguments are pushed right to left, so the first parameter is in the highest frame slot and STACK[fp + 0]
@@ -38,10 +38,11 @@ class FalcomStackTranslator(StackTranslator):
             value = self.translate_expr(inst.value)
             self.copy_out(Write(WriteKind.GLOBAL, inst.index))
             self.builder.store_global(inst.index, value)
-        elif isinstance(inst, LowLevelILDebugLog):
-            # A debug print changes no register, global or memory: nothing to copy, no result
-            args = [self.translate_expr(arg) for arg in inst.args]
-            self.builder.call(DEBUG_LOG_CALL_TARGET, args, clobbers_registers=False)
+        # Neither changes a register, global or memory: nothing to copy, no result
+        elif isinstance(inst, LowLevelILPopN):
+            self.builder.intrinsic('POPN', [self.translate_expr(value) for value in inst.values])
+        elif isinstance(inst, LowLevelILDebugInt):
+            self.builder.intrinsic('DEBUG_INT', [self.builder.stamp(MLILConst(inst.value))])
         else:
             return super().translate_statement(inst)
 

@@ -218,8 +218,8 @@ a `POP` of another count, or none after an argc above 0, warns - a merged or sha
 WARNING   test.py:12: Main: SYSCALL at 0x3C: reads 2 values, but the POP after it pops 3 (POP(12)) - is its argc stale?
 ```
 A slot offset that isn't a multiple of `WORD_SIZE` fails decompiling too, like a partial `POP`.
-An opcode can't use a parameter's slot in place - consume it (`SET_REG`, `ADD`, `POP_TO`, ...),
-read it (`SYSCALL`, `POPN`) or forward it to `CALL_SCRIPT_NO_RETURN`: that is valid VM code, but
+An opcode can't use a parameter's slot in place - consume it (`SET_REG`, `ADD`, `POP_TO`, `POPN`, ...),
+read it (`SYSCALL`) or forward it to `CALL_SCRIPT_NO_RETURN`: that is valid VM code, but
 the decompiler doesn't follow it, so the check fails naming the parameter (`uses the slot of parameter 1
 (arg1) in place`). Work on a `LOAD_STACK` copy, which moves every offset below it one slot further:
 `POP_TO(-WORD_SIZE)` (`arg1` into `arg2`) becomes `LOAD_STACK(-WORD_SIZE)`, `POP_TO(-2 * WORD_SIZE)`,

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """What the lifter makes of an opcode: each operator its own node over the values pushed, translated to its own
-MLIL operation; DEBUG_LOG a debug-log node that MLIL keeps as a call; PUSH_RAW a RawInt constant through to HLIL."""
+MLIL operation; POPN and DEBUG_INT a node of their own that MLIL and HLIL keep as an intrinsic statement; PUSH_RAW a
+RawInt constant through to HLIL."""
 
 from pathlib import Path
 import sys
@@ -20,16 +21,15 @@ from falcom.ed9.disasm.stack_effects import RESULT_REGISTER
 from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugLog, LowLevelILFalcomOperation
+from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugInt, LowLevelILFalcomOperation, LowLevelILPopN
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
-from falcom.ed9.ir.mlil.stack_translator import DEBUG_LOG_CALL_TARGET
 from falcom.ed9.structs.scp_types import RawInt, ScpValue
 from ir.hlil.hlil import HighLevelILFunction, HLILAssign, HLILCall, HLILConst, HLILVar, iter_tree
 from ir.llil import WORD_SIZE
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.mlil.mlil import (
-    MLILAdd, MLILAnd, MLILBitwiseNot, MLILCall, MLILDiv, MLILEq, MLILGe, MLILGt, MLILLe, MLILLogicalAnd,
+    MLILAdd, MLILAnd, MLILBitwiseNot, MLILDiv, MLILEq, MLILGe, MLILGt, MLILIntrinsic, MLILLe, MLILLogicalAnd,
     MLILLogicalOr, MLILLt, MLILMod, MLILMul, MLILNe, MLILNeg, MLILOr, MLILSub, MLILTestZero,
 )
 from tests.shared.llil_utils import instructions_of, lift_asm
@@ -40,39 +40,58 @@ from tests.shared.scp_asm import (
 
 FIRST_VALUE = 7
 SECOND_VALUE = 8
-LOG_ARGC = 2
+DEBUG_VALUE = -5
 RAW_VALUE = 5
 MERGED_VALUE = 0
 # The local in slot 0, read from above a call's setup with nothing else pushed
 LOCAL_UNDER_CALL_SETUP = -(LOCAL_SETUP_SLOTS + 1) * WORD_SIZE
 
 
-class TestDebugLogIsLifted(unittest.TestCase):
-    """DEBUG_LOG prints its arguments; the decompiled script must still print them"""
+class TestIntrinsicsAreLifted(unittest.TestCase):
+    """POPN and DEBUG_INT change nothing, but a debug build prints them: each output keeps them as a statement that
+    compiles back, POPN's values top of stack first (a string and the three reads the corpus pops)"""
 
     def make_function(self):
         asm = Asm()
-        asm.push_str(MODULE_NAME); asm.push_int(FIRST_VALUE); asm.debug_log(LOG_ARGC); asm.ret()
-        return lift_asm(asm)
+        asm.push_str(MODULE_NAME); asm.load_stack(-2 * WORD_SIZE); asm.get_reg(REG_INDEX); asm.load_global(0)
+        asm.popn(4); asm.debug_int(DEBUG_VALUE); asm.pop(WORD_SIZE); asm.ret()
+        return lift_asm(asm, argc=1)
 
-    def test_lifts_to_a_debug_log_with_its_arguments_top_of_stack_first(self):
+    def test_lift_to_their_own_nodes(self):
         _, llil_func = self.make_function()
 
-        logs = instructions_of(llil_func, LowLevelILDebugLog)
+        [popn] = instructions_of(llil_func, LowLevelILPopN)
+        [debug_int] = instructions_of(llil_func, LowLevelILDebugInt)
 
-        self.assertEqual(len(logs), 1)
-        self.assertEqual([arg.slot_index for arg in logs[0].args], [1, 0])
-        self.assertEqual(logs[0].operation, LowLevelILFalcomOperation.LLIL_DEBUG_LOG)
+        self.assertEqual(len(popn.values), 4)
+        self.assertEqual(popn.operation, LowLevelILFalcomOperation.LLIL_POPN)
+        self.assertEqual(debug_int.value, DEBUG_VALUE)
+        self.assertEqual(debug_int.operation, LowLevelILFalcomOperation.LLIL_DEBUG_INT)
 
-    def test_survives_as_a_debug_log_call_in_mlil(self):
+    def test_reach_mlil_as_intrinsics(self):
         _, llil_func = self.make_function()
 
         mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
 
-        calls = [inst for block in mlil_func.basic_blocks for inst in block.instructions
-                 if isinstance(inst, MLILCall) and inst.target == DEBUG_LOG_CALL_TARGET]
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(len(calls[0].args), LOG_ARGC)
+        intrinsics = [inst for inst in mlil_func.iter_instructions() if isinstance(inst, MLILIntrinsic)]
+        self.assertEqual([(inst.name, len(inst.args)) for inst in intrinsics], [('POPN', 4), ('DEBUG_INT', 1)])
+
+    def test_print_as_statements_in_every_output(self):
+        _, llil_func = self.make_function()
+        mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
+        hlil_func = convert_falcom_mlil_to_hlil(mlil_func)
+
+        for output, text, expected in (
+                ('.mlil.asm', '\n'.join(MLILFormatter.format_function(mlil_func)),
+                 (f'POPN(GLOBAL[0], REG[{REG_INDEX}], arg1, "{MODULE_NAME}")', f'DEBUG_INT({DEBUG_VALUE})')),
+                ('.hlil.ts', '\n'.join(HLILFormatter.format_function(hlil_func)),
+                 (f'POPN(GLOBALS[0], REGS[{REG_INDEX}], arg1, "{MODULE_NAME}");', f'DEBUG_INT({DEBUG_VALUE});')),
+                ('.ts', generate_typescript(hlil_func),
+                 (f'POPN(GLOBALS[0], REGS[{REG_INDEX}], arg1, "{MODULE_NAME}");', f'DEBUG_INT({DEBUG_VALUE});'))):
+            with self.subTest(output):
+                lines = [line.strip() for line in text.splitlines()]
+                for statement in expected:
+                    self.assertIn(statement, lines)
 
 
 

@@ -16,6 +16,7 @@ LOOP_LIMIT = 3
 STORED = 3
 OUT_INITIAL = 1
 UNRELATED_ARG = 9
+DEBUG_VALUE = -5
 REG_INDEX = 5
 NESTED_TESTS = 17               # conditions one guard runs under: past formulas.ROW_CAP's 2 ** 16 rows
 
@@ -35,11 +36,11 @@ def return_nothing(asm: Asm):
 
 
 def calls_function() -> tuple[Asm, int]:
-    """callee(8, 7); GLOBAL_A = its result; callee(10, 9); a DEBUG_LOG; returned"""
+    """callee(8, 7); GLOBAL_A = its result; callee(10, 9); a POPN and a DEBUG_INT; returned"""
     asm = Asm()
     call(asm, 'first', 7, 8); asm.get_reg(0); asm.set_global(GLOBAL_A)
     call(asm, 'second', 9, 10)
-    asm.push_str(MESSAGE); asm.push_int(5); asm.debug_log(2)
+    asm.push_str(MESSAGE); asm.push_int(5); asm.popn(2); asm.debug_int(DEBUG_VALUE)
     return_nothing(asm)
     return asm, 2
 

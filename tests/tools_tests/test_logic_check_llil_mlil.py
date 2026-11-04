@@ -12,18 +12,17 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from falcom.ed9.ir.mlil.stack_translator import DEBUG_LOG_CALL_TARGET
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
-    MediumLevelILCall, MLILAdd, MLILAddressOf, MLILCall, MLILConst, MLILEq, MLILGe, MLILIf, MLILLoadGlobal,
+    MediumLevelILCall, MLILAdd, MLILAddressOf, MLILConst, MLILEq, MLILGe, MLILIf, MLILIntrinsic, MLILLoadGlobal,
     MLILLoadReg, MLILLt, MLILRet, MLILSetVar, MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILVar, MLILVariable,
     map_operands, walk,
 )
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.logic_check_functions import (
-    GLOBAL_A, GLOBAL_B, GLOBAL_C, LOOP_LIMIT, MESSAGE, OUT_INITIAL, REG_INDEX, STORED, UNRELATED_ARG, branch_function,
-    call, calls_function, categories, first, initialised_out_parameter_function, loop_call_function,
+    DEBUG_VALUE, GLOBAL_A, GLOBAL_B, GLOBAL_C, LOOP_LIMIT, MESSAGE, OUT_INITIAL, REG_INDEX, STORED, UNRELATED_ARG,
+    branch_function, call, calls_function, categories, first, initialised_out_parameter_function, loop_call_function,
     optional_call_result_function, reference_and_mlil, return_nothing, statements,
 )
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm
@@ -259,12 +258,12 @@ def register_before_loop_function() -> tuple[Asm, int]:
 
 # === Mutations of the MLIL ===
 
-def is_debug_log(inst) -> bool:
-    return isinstance(inst, MLILCall) and inst.target == DEBUG_LOG_CALL_TARGET
+def is_print(inst) -> bool:
+    return isinstance(inst, MLILIntrinsic)
 
 
 def is_call(inst) -> bool:
-    return isinstance(inst, MediumLevelILCall) and not is_debug_log(inst)
+    return isinstance(inst, MediumLevelILCall)
 
 
 def rewrite(node, transform):
@@ -356,23 +355,29 @@ class TestPlantedBugs(unittest.TestCase):
             block.instructions[a], block.instructions[b] = call_b, call_a
         self.check(calls_function, mutate, 'order_differs')
 
-    def test_debug_log_argument_changed(self):
+    def test_popn_argument_changed(self):
         def mutate(mlil):
-            inst = first(mlil, is_debug_log)[2]
+            inst = first(mlil, is_print)[2]
             inst.args[1] = MLILConst(MESSAGE + '!')
         self.check(calls_function, mutate, 'arg_differs')
 
-    def test_debug_log_dropped(self):
+    def test_popn_dropped(self):
         def mutate(mlil):
-            block, index, _ = first(mlil, is_debug_log)
+            block, index, _ = first(mlil, is_print)
             del block.instructions[index]
         self.check(calls_function, mutate, 'missing_effect')
 
-    def test_debug_log_duplicated(self):
+    def test_popn_duplicated(self):
         def mutate(mlil):
-            block, index, inst = first(mlil, is_debug_log)
+            block, index, inst = first(mlil, is_print)
             block.instructions.insert(index, inst.rebuild(*inst.args))
         self.check(calls_function, mutate, 'added_effect')
+
+    def test_debug_int_value_changed(self):
+        def mutate(mlil):
+            inst = first(mlil, lambda inst: is_print(inst) and inst.name == 'DEBUG_INT')[2]
+            inst.args[0] = MLILConst(DEBUG_VALUE + 1)
+        self.check(calls_function, mutate, 'arg_differs')
 
     def test_flipped_branch(self):
         def mutate(mlil):

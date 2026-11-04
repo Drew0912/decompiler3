@@ -9,7 +9,8 @@ class LowLevelILFalcomOperation(IntEnum):
 
     LLIL_GLOBAL_LOAD           = LowLevelILOperation.LLIL_USER_DEFINED      # Load from global variable array
     LLIL_GLOBAL_STORE          = LowLevelILOperation.LLIL_USER_DEFINED + 1  # Store to global variable array
-    LLIL_DEBUG_LOG             = LowLevelILOperation.LLIL_USER_DEFINED + 2  # Debug print of stack values
+    LLIL_POPN                  = LowLevelILOperation.LLIL_USER_DEFINED + 2  # Pop stack values, kept as one statement
+    LLIL_DEBUG_INT             = LowLevelILOperation.LLIL_USER_DEFINED + 3  # Log an immediate at level 0
     LLIL_CALL_SCRIPT           = LowLevelILOperation.LLIL_USER_DEFINED + 4  # Call script function
     LLIL_CALL_SCRIPT_NO_RETURN = LowLevelILOperation.LLIL_USER_DEFINED + 5  # Tail-call script function
 
@@ -85,16 +86,27 @@ class LowLevelILGlobalStore(LowLevelILStatement):
         return f'GLOBAL[{self.index}] = {self.value}'
 
 
-class LowLevelILDebugLog(LowLevelILStatement):
-    """DEBUG_LOG - Debug print of the top argc stack values, message first (statement)"""
+class LowLevelILPopN(LowLevelILStatement):
+    """POPN - the top count stack values, message first, which it pops (statement); the VM prints nothing"""
 
-    def __init__(self, args: list[LowLevelILExpr]):
-        super().__init__(LowLevelILFalcomOperation.LLIL_DEBUG_LOG)
-        self.args = args    # Top of stack first (from vstack)
+    def __init__(self, values: list[LowLevelILExpr]):
+        super().__init__(LowLevelILFalcomOperation.LLIL_POPN)
+        self.values = values    # Top of stack first (from vstack)
 
     def operands(self) -> tuple[LowLevelILInstruction, ...]:
-        return tuple(self.args)
+        return tuple(self.values)
 
     def __str__(self) -> str:
-        args_str = ', '.join(str(arg) for arg in self.args)
-        return f'DEBUG_LOG({args_str})'
+        values_str = ', '.join(str(value) for value in self.values)
+        return f'POPN({values_str})'
+
+
+class LowLevelILDebugInt(LowLevelILStatement):
+    """DEBUG_INT - log an immediate at level 0, which the VM's logger drops (statement)"""
+
+    def __init__(self, value: int):
+        super().__init__(LowLevelILFalcomOperation.LLIL_DEBUG_INT)
+        self.value = value
+
+    def __str__(self) -> str:
+        return f'DEBUG_INT({self.value})'

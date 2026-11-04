@@ -254,7 +254,6 @@ class TestExternCallCodegen(unittest.TestCase):
 
 CALLEE = 'g'                    # g(arg1, arg2 = 3, arg3 = -1)
 ONE_PARAM_CALLEE = 'h'          # h(arg1 = <the row's default>)
-LOG_FUNCTION = 'log'
 DEFAULT_INT = 3
 DEFAULT_NEGATIVE = -1
 OTHER_INT = 5
@@ -343,8 +342,6 @@ class TestTrailingDefaultArguments(unittest.TestCase):
             # Another argument count (never in a lifted call, which pushes every argument): the last argument is the
             # last default, so only the count keeps it
             (call(CALLEE, var('a'), DEFAULT_NEGATIVE), DEFAULTS, 'g(a, -1);'),
-            # DEBUG_LOG's call is named debug.log; a script function named log is another callee
-            (call('debug.log', DEFAULT_INT), {LOG_FUNCTION: (DEFAULT_INT,)}, 'debug.log(3);'),
         ]
         for expr, defaults, expected in rows:
             with self.subTest(expected):

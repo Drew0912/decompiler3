@@ -401,8 +401,8 @@ class TestCanonicalArgc(unittest.TestCase):
 
 class TestWriterOnlyInputs(unittest.TestCase):
     """What only the writer feeds the tracker - its DSL arguments, which the parser would never decode: a raw PUSH, a
-    POP of a partial slot, UNKNOWN_28; and a CALL_SCRIPT with no caller frame below its arguments (unreachable code the
-    compile check skips, or a branch inside the arguments)"""
+    POP of a partial slot; and a CALL_SCRIPT with no caller frame below its arguments (unreachable code the compile
+    check skips, or a branch inside the arguments)"""
 
     @classmethod
     def tracker_holding(cls, count: int) -> CallDebugInfoTracker:
@@ -423,12 +423,6 @@ class TestWriterOnlyInputs(unittest.TestCase):
         tracker = self.tracker_holding(2)
         tracker.on_opcode(ED9Opcode.POP, [WORD_SIZE + WORD_SIZE // 2])
         self.assertEqual(len(tracker.stack), 1)
-
-    def test_unknown_28_changes_nothing(self):
-        tracker = self.tracker_holding(1)
-        before = list(tracker.stack)
-        tracker.on_opcode(ED9Opcode.UNKNOWN_28, [b'\0'])
-        self.assertEqual((tracker.stack, tracker.registers, tracker.frames, tracker.calls), (before, {}, [], []))
 
     @classmethod
     def call_script(cls, tracker: CallDebugInfoTracker, with_frame: bool):

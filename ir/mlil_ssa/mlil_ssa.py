@@ -164,7 +164,7 @@ def reaching_version(function: MediumLevelILFunction, block: MediumLevelILBasicB
             if isinstance(inst, MediumLevelILCall):
                 if inst.output is not None and inst.output.base_var == var:
                     return inst.output
-                if function.call_may_clobber(inst, var):
+                if function.call_may_clobber(var):
                     return None
         for predecessor in current.incoming_edges:
             if predecessor not in visited:
@@ -513,7 +513,7 @@ class SSAConstructor:
     def _clobbered_reg_global_vars(self, inst: MediumLevelILCall) -> list[MLILVariable]:
         """Registers/globals a call may clobber, excluding its own output"""
         return [var for var in [*self.function.register_vars.values(), *self.function.global_vars.values()]
-                if var != inst.output and self.function.call_may_clobber(inst, var)]
+                if var != inst.output and self.function.call_may_clobber(var)]
 
     def _insert_phi_nodes(self):
         """Insert Phi nodes at dominance frontiers (worklist algorithm)"""

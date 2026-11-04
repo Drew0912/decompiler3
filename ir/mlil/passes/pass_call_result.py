@@ -69,7 +69,7 @@ class CallResultPass(Pass):
         if isinstance(inst, MLILStoreReg):
             return inst.index == self.register
 
-        return isinstance(inst, MediumLevelILCall) and inst.clobbers_registers
+        return isinstance(inst, MediumLevelILCall)
 
     # === Reads forwarded ===
 

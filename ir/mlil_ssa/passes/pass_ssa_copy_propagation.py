@@ -44,7 +44,7 @@ def reaches_without_redefinition(func: MediumLevelILFunction, base_var, def_bloc
 
         if isinstance(inst, MediumLevelILCall):
             return ((inst.output is not None and inst.output.base_var == base_var)
-                    or func.call_may_clobber(inst, base_var))
+                    or func.call_may_clobber(base_var))
 
         return False
 

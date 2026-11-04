@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""DSL argument checks (types, bool operands, CALL's function argument, value ranges), UNKNOWN_28's raw bytes, what
-handle_opcode tracks, every opcode function handing the writer its own opcode, PUSH, and an int enum pushed as its
-value."""
+"""DSL argument checks (types, bool operands, CALL's function argument, value ranges), DEBUG_INT's signed operand,
+what handle_opcode tracks, every opcode function handing the writer its own opcode, PUSH, and an int enum pushed as
+its value."""
 
 from enum import IntEnum, StrEnum
 import inspect
@@ -109,23 +109,23 @@ class TestCall(unittest.TestCase):
 
 
 class TestHandleOpcode(unittest.TestCase):
-    """handle_opcode itself: UNKNOWN_28's raw bytes, and what it hands the tracker"""
+    """handle_opcode itself: DEBUG_INT's signed operand, and what it hands the tracker"""
 
     def setUp(self):
         self.writer = body_writer()
 
-    def test_unknown_28_writes_its_operand_bytes_as_given(self):
-        # No table row, so no operand format; tracked like any opcode (the real tracker ignores it, so a stub records)
+    def test_debug_int_writes_a_signed_operand(self):
+        # The VM prints it with %d: a negative value is its two's complement
         calls = []
         self.writer.call_tracker = SimpleNamespace(on_opcode=lambda *call: calls.append(call))
-        UNKNOWN_28(b'\x01\x02')
+        DEBUG_INT(-5)
 
-        self.assertEqual(self.writer.fs.ReadAll(), bytes.fromhex('28 01 02'))
-        self.assertEqual(calls, [(ED9Opcode.UNKNOWN_28, (b'\x01\x02',), None, None)])
+        self.assertEqual(self.writer.fs.ReadAll(), bytes.fromhex('28 FB FF FF FF'))
+        self.assertEqual(calls, [(ED9Opcode.DEBUG_INT, (-5,), None, None)])
 
     def test_tracked_once_after_its_write(self):
         """Tracked once, after its write, with the normalized operands and a pushed constant's value and pooled string;
-        an opcode whose write raises is not tracked. UNKNOWN_28's branch: the test above"""
+        an opcode whose write raises is not tracked"""
         calls = []
         self.writer.call_tracker = SimpleNamespace(on_opcode=lambda *call: calls.append(call))
         self.writer._build_function_table()             # PUSH_CURRENT_FUNC_ID writes the function's table index
@@ -156,7 +156,7 @@ class TestOpcodeFunctions(unittest.TestCase):
         'SET_REG': (0,), 'JMP': ('target',), 'CALL': (lambda: None, 2, False), 'POP_JMP_NOT_ZERO': ('target',),
         'POP_JMP_ZERO': ('target',), 'CALL_SCRIPT': ('this', 'func', 0), 'CALL_SCRIPT_NO_RETURN': ('this', 'func', 0),
         'SYSCALL': (1, 2, 3), 'PUSH_CALLER_FRAME': ('target',), 'DEBUG_SET_LINENO': (1,), 'POPN': (1,),
-        'UNKNOWN_28': (b'',), 'PUSH_RET_ADDR': ('target',), 'PUSH_RAW': (RawInt(1),), 'PUSH_INT': (1,),
+        'DEBUG_INT': (-1,), 'PUSH_RET_ADDR': ('target',), 'PUSH_RAW': (RawInt(1),), 'PUSH_INT': (1,),
         'PUSH_FLOAT': (1.0,), 'PUSH_STR': ('s',),
     }
 

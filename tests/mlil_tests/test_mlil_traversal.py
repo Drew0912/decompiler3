@@ -15,7 +15,7 @@ from ir.mlil.mlil import (
     MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILCall, MediumLevelILFunction,
     MLILVariable, MLILConst, MLILUndef, MLILVar, MLILSetVar, MLILBinaryOp, MLILUnaryOp, MLILAdd, MLILMul,
     MLILNeg, MLILAddressOf, MLILGoto, MLILIf, MLILRet, MLILCall, MLILSyscall, MLILCallScript,
-    MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILNop, MLILDebug, MLILStoreDeref,
+    MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILNop, MLILDebug, MLILIntrinsic, MLILStoreDeref,
     walk, map_operands,
 )
 from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILPhi, iter_ssa_reads
@@ -38,7 +38,7 @@ def c() -> MLILConst:
 def samples() -> list:
     """One instance of every concrete MLIL node type, with distinct expression operands and telling
     values in the fields a rebuild must keep (branch targets, store indices, a call's output and
-    clobber flag)"""
+    tail-call mark, an intrinsic's name)"""
     block = MediumLevelILBasicBlock(0)
     other_block = MediumLevelILBasicBlock(1)
     var = MLILVariable('x')
@@ -47,11 +47,11 @@ def samples() -> list:
     nodes = [
         c(), MLILUndef(), MLILVar(var), MLILSetVar(var, c()),
         MLILGoto(block), MLILIf(c(), block, other_block), MLILRet(c()), MLILRet(),
-        MLILCall('f', [c(), c()], output, clobbers_registers=False),
-        MLILSyscall(1, 2, [c(), c()], output, clobbers_registers=False),
-        MLILCallScript('m', 'f', [c(), c()], output, clobbers_registers=False),
+        MLILCall('f', [c(), c()], output, tail_call=True),
+        MLILSyscall(1, 2, [c(), c()], output, tail_call=True),
+        MLILCallScript('m', 'f', [c(), c()], output, tail_call=True),
         MLILLoadGlobal(0), MLILStoreGlobal(1, c()), MLILLoadReg(0), MLILStoreReg(2, c()),
-        MLILNop(), MLILDebug('line', 5), MLILStoreDeref(c(), c()),
+        MLILNop(), MLILDebug('line', 5), MLILIntrinsic('POPN', [c(), c()]), MLILStoreDeref(c(), c()),
         MLILVarSSA(ssa_var), MLILSetVarSSA(ssa_var, c()), MLILPhi(ssa_var, [(MLILVariableSSA(var, 0), block)]),
     ]
     nodes += [cls(c(), c()) for cls in concrete_subclasses(MLILBinaryOp)]

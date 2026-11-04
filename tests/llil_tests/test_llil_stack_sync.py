@@ -62,13 +62,13 @@ class TestPopKeepsVstackInSync(unittest.TestCase):
         self.assertEqual(add_inst.lhs.slot_index, 0)
         self.assertEqual(add_inst.rhs.slot_index, 1)
 
-    def test_debug_log_then_arithmetic(self):
-        # DEBUG_LOG discards its logged args via pop_n internally - same bug class.
+    def test_popn_then_arithmetic(self):
+        # POPN discards its values via pop_n internally - same bug class.
         builder = make_builder()
 
         builder.push_int(1)
         builder.push_int(2)
-        builder.debug_log(1)   # logs and discards the '2'
+        builder.popn(1)        # discards the '2'
         builder.push_int(3)
         add_inst = builder.add()
 
@@ -148,9 +148,9 @@ class TestArgumentCountReachingIntoParameters(unittest.TestCase):
 
         self.assert_lift_fails_at('SYSCALL', build)
 
-    def test_debug_log_with_more_arguments_than_pushed(self):
+    def test_popn_with_more_values_than_pushed(self):
         def build(asm: Asm):
-            asm.push_int(PUSHED_VALUE); asm.debug_log(2); asm.ret()
+            asm.push_int(PUSHED_VALUE); asm.popn(2); asm.ret()
 
         self.assert_lift_fails_at('POPN', build)
 

@@ -50,7 +50,8 @@ label), `HLILSwitch`/`HLILSwitchCase` (supports multi-value case labels for merg
 was removed (Step H, 2026-09-22) — nothing ever constructed one, and its renderers were already
 wrong for the shape.
 
-**Other statements:** `HLILBlock`, `HLILAssign`, `HLILExprStmt`, `HLILComment` (carries `line(N)`
+**Other statements:** `HLILBlock`, `HLILAssign`, `HLILExprStmt`, `HLILIntrinsic` (a VM instruction kept as a
+statement of its own, `POPN(...)` / `DEBUG_INT(n)`), `HLILComment` (carries `line(N)`
 markers that the branch-order pass reads to recover original source ordering; with `line_markers` off
 (`ScenaDecompileConfig.line_markers`) they are dropped after every pass that reads them), `HLILUnstructured`
 (a jump the tree cannot express - HLIL has no goto; terminal: the path ends there visibly instead
@@ -128,7 +129,8 @@ living in `ir/mlil_ssa/mlil_ssa.py`, entirely outside `ir/hlil/`.
 `codegen/typescript.py` is a real TypeScript emitter, not generic pseudocode: typed signatures and
 `let` declarations, a generated header with `GLOBALS`/`REGS` arrays, a `Pointer` type for
 out-parameters (`type Pointer = number;`, so a `Pointer` takes the same `int(...)` coercion as a
-number) and `addr_of`/`deref`/`deref_set`/`int`/`extern_call`/`syscall`/`debug.log` intrinsics.
+number) and `addr_of`/`deref`/`deref_set`/`int`/`extern_call`/`syscall` intrinsics, and `POPN`/`DEBUG_INT`
+placeholders for the VM's intrinsic statements.
 TypeScript has no `*ptr` syntax, so a pointer read is a `deref(ptr)` call and a store through one
 (`HLILAssign` whose `dest` is `HLILDeref`) becomes a `deref_set(ptr, value)` call instead of an
 assignment - matching the existing `addr_of(x)` convention for `&x`. It

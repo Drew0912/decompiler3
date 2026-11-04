@@ -10,13 +10,12 @@ from itertools import count
 from ir.core.il_literals import is_int_zero
 from ir.hlil.hlil import (
     BinaryOp, HighLevelILFunction, HLILAddressOf, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak, HLILCall,
-    HLILComment, HLILConst, HLILContinue, HLILDeref, HLILDoWhile, HLILExprStmt, HLILExternCall, HLILIf, HLILReturn,
-    HLILSwitch, HLILSyscall, HLILUnaryOp, HLILUnstructured, HLILVar, HLILVariable, HLILWhile, UnaryOp, VariableKind,
+    HLILComment, HLILConst, HLILContinue, HLILDeref, HLILDoWhile, HLILExprStmt, HLILExternCall, HLILIf,
+    HLILIntrinsic, HLILReturn, HLILSwitch, HLILSyscall, HLILUnaryOp, HLILUnstructured, HLILVar, HLILVariable,
+    HLILWhile, UnaryOp, VariableKind,
     iter_tree, resolve_exit_target, unwrap_address_taken_var,
 )
-from ir.mlil.mlil import (
-    MediumLevelILCall, MediumLevelILFunction, MLILSetVar, MLILVar, MLILVariable, walk,
-)
+from ir.mlil.mlil import MediumLevelILFunction, MLILSetVar, MLILVar, MLILVariable, walk
 from .facts import Branch, Effect, Facts
 from .mlil_layer import MLILStorage
 from .state import MEMORY_EPOCH, State
@@ -116,11 +115,6 @@ def mlil_variables_by_name(mlil: MediumLevelILFunction) -> dict[str, MLILVariabl
     return variables
 
 
-def mlil_calls_by_index(mlil: MediumLevelILFunction) -> dict[int, MediumLevelILCall]:
-    """MLIL instruction index -> its call, which says whether the call clobbers"""
-    return {inst.inst_index: inst for inst in mlil.iter_instructions() if isinstance(inst, MediumLevelILCall)}
-
-
 class HLILLayer:
     OWN_STORAGE_NAMES = True        # MLIL's own storage (split ranges, ...), kept by HLIL
     VM_EFFECTS        = VMEffects   # the effects of its engine's VM
@@ -128,7 +122,6 @@ class HLILLayer:
     def __init__(self, func: HighLevelILFunction, mlil: MediumLevelILFunction):
         self.mlil_storage = MLILStorage(mlil)
         self.variables = mlil_variables_by_name(mlil)
-        self.calls = mlil_calls_by_index(mlil)
         self.vm = self.VM_EFFECTS(self.neutral_key)     # before anything evaluates
         self.nodes: list[Node] = []
         self.branch_numbers, self.switch_numbers = count(), count()
@@ -161,7 +154,7 @@ class HLILLayer:
     def build_statement(self, stmt, follow: Node, exit_targets: list) -> Node:
         if isinstance(stmt, HLILComment):
             return follow
-        if isinstance(stmt, (HLILAssign, HLILExprStmt)):
+        if isinstance(stmt, (HLILAssign, HLILExprStmt, HLILIntrinsic)):
             return self.new_node([stmt], [follow])
         if isinstance(stmt, (HLILReturn, HLILUnstructured)):
             return self.new_node([stmt])
@@ -304,6 +297,10 @@ class HLILLayer:
             self.assign(inst, state, effects)
         elif isinstance(inst, HLILExprStmt):
             self.evaluate(inst.expr, state, effects)
+        elif isinstance(inst, HLILIntrinsic):
+            # Its args first: a call folded into them is an effect of its own, before the print
+            args = tuple(self.evaluate(arg, state, effects) for arg in inst.args)
+            effects.append(self.vm.print(inst.address, inst.name, args))
         elif isinstance(inst, HLILReturn):
             value = None if inst.value is None else self.evaluate(inst.value, state, effects)
             effects.append(self.vm.ret(state, inst.address, value))
@@ -370,7 +367,5 @@ class HLILLayer:
         else:
             kind, target = 'call', expr.func_name
 
-        source = self.calls.get(expr.mlil_index)
-        effects.append(self.vm.call(state, expr.address, kind, target, args,
-                                    clobbers=source is None or source.clobbers_registers, delivers_result=False))
+        effects.append(self.vm.call(state, expr.address, kind, target, args, delivers_result=False))
         return ('call', expr.address)

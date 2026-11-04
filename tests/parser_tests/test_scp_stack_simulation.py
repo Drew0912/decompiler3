@@ -1245,7 +1245,7 @@ class TestStackLayout(unittest.TestCase):
 
     def test_arguments_of_every_kind_of_call_are_numbered(self):
         """arg1 is a call's last push: a local call, a script call, a SYSCALL (whose arguments a POP removes later) and a
-        tail call; a POP or DEBUG_LOG numbers nothing"""
+        tail call; a POP or POPN numbers nothing"""
         asm = Asm()
         asm.push_raw(CALLER_ID); asm.push_raw('local_return')
         asm.label('local_arg'); asm.push_int(LEFT_VALUE); asm.call(CALLEE_ID)
@@ -1254,7 +1254,7 @@ class TestStackLayout(unittest.TestCase):
         asm.label('script_return'); asm.label('syscall_arg2'); asm.push_int(LEFT_VALUE)
         asm.label('syscall_arg1'); asm.push_int(RIGHT_VALUE)
         asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2); asm.pop(2 * WORD_SIZE)
-        asm.push_int(LEFT_VALUE); asm.debug_log(1)
+        asm.push_int(LEFT_VALUE); asm.popn(1)
         asm.label('tail_arg'); asm.push_int(LEFT_VALUE); asm.call_script_no_return(1)
         program, layout = self.layout_of(asm, 0, returning_callee(argc=1))
 

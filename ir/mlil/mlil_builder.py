@@ -91,6 +91,9 @@ class MLILBuilder:
     def debug(self, debug_type: str, value):
         self.add_instruction(MLILDebug(debug_type, value))
 
+    def intrinsic(self, name: str, args: list[MediumLevelILInstruction]):
+        self.add_instruction(MLILIntrinsic(name, args))
+
     # === Control Flow ===
 
     def goto(self, target: MediumLevelILBasicBlock):
@@ -109,9 +112,8 @@ class MLILBuilder:
 
     # === Function Calls ===
 
-    def call(self, target: str, args: list[MediumLevelILInstruction], output: MLILVariable | None = None,
-             *, clobbers_registers: bool = True):
-        self.add_instruction(MLILCall(target, args, output, clobbers_registers=clobbers_registers))
+    def call(self, target: str, args: list[MediumLevelILInstruction], output: MLILVariable | None = None):
+        self.add_instruction(MLILCall(target, args, output))
 
     def syscall(self, subsystem: int, cmd: int, args: list[MediumLevelILInstruction],
                 output: MLILVariable | None = None):

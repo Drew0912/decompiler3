@@ -10,7 +10,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from falcom.ed9.ir.mlil.stack_translator import DEBUG_LOG_CALL_TARGET
 from ir.llil.llil import WORD_SIZE
 from tests.shared.logic_check_functions import (
     GLOBAL_A, GLOBAL_B, MESSAGE, OUT_INITIAL, REG_INDEX, STORED, UNRELATED_ARG, call, categories, hlil_categories,
@@ -33,11 +32,11 @@ def pointer_store_function() -> tuple[Asm, int]:
     return asm, 0
 
 
-def debug_log_after_call_function() -> tuple[Asm, int]:
-    """callee(); a DEBUG_LOG; GLOBAL_A = REG[0]: a call that clobbers nothing between a call and its result's read"""
+def popn_after_call_function() -> tuple[Asm, int]:
+    """callee(); a POPN; GLOBAL_A = REG[0]: an intrinsic, which changes nothing, between a call and its result's read"""
     asm = Asm()
     call(asm, 'after')
-    asm.push_str(MESSAGE); asm.debug_log(1)
+    asm.push_str(MESSAGE); asm.popn(1)
     asm.get_reg(0); asm.set_global(GLOBAL_A)
     return_nothing(asm)
     return asm, 0
@@ -133,13 +132,10 @@ class TestVMEffects(unittest.TestCase):
             ('reg', VMEffects.RESULT_REGISTER): ('uncaptured', self.ADDRESS),
             GLOBAL_EPOCH: self.ADDRESS, REGISTER_EPOCH: ('after', self.ADDRESS), MEMORY_EPOCH: self.ADDRESS})
 
-    def test_call_that_does_not_clobber(self):
-        state = State({self.PASSED: const(STORED), ('reg', REG_INDEX): const(OUT_INITIAL)})
-        before = dict(state.items)
+    def test_print(self):
+        """A print is its name and args, and takes no state: it changes nothing"""
         args = (('address', self.PASSED),)
-        self.assertEqual(self.vm.call(state, self.ADDRESS, 'call', DEBUG_LOG_CALL_TARGET, args, clobbers=False),
-                         Effect(self.ADDRESS, 'call', DEBUG_LOG_CALL_TARGET, args))
-        self.assertEqual(state.items, before)
+        self.assertEqual(VMEffects.print(self.ADDRESS, 'POPN', args), Effect(self.ADDRESS, 'print', 'POPN', args))
 
     def test_write(self):
         """An address written to a register, or to a de-SSA split of one, escapes; to a stack slot not"""
@@ -165,11 +161,10 @@ class TestLayerOperands(unittest.TestCase):
         self.assertEqual(categories(*reference_and_mlil(pointer_store_function, 1)), set())
         self.assertEqual(hlil_categories(*mlil_and_hlil(pointer_store_function, 1)), set())
 
-    def test_result_kept_across_a_call_that_clobbers_nothing(self):
-        """callee(); a DEBUG_LOG; GLOBAL_A = REG[0]: the debug.log call, which has no output, leaves the result where
-        the call put it"""
-        self.assertEqual(categories(*reference_and_mlil(debug_log_after_call_function)), set())
-        self.assertEqual(hlil_categories(*mlil_and_hlil(debug_log_after_call_function)), set())
+    def test_result_kept_across_a_popn(self):
+        """callee(); a POPN; GLOBAL_A = REG[0]: the POPN leaves the result where the call put it"""
+        self.assertEqual(categories(*reference_and_mlil(popn_after_call_function)), set())
+        self.assertEqual(hlil_categories(*mlil_and_hlil(popn_after_call_function)), set())
 
     def test_local_written_in_its_memory_form(self):
         """v = OUT_INITIAL before callee(&v): HLIL writes v as *(&v), the local, not memory behind a pointer"""

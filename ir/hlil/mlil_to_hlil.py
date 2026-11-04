@@ -1134,6 +1134,8 @@ class MLILToHLILConverter:
             stmt = HLILAssign(HLILVar(var), self._convert_expr(instr.value))
         elif isinstance(instr, MLILStoreDeref):
             stmt = HLILAssign(HLILDeref(self._convert_expr(instr.dest)), self._convert_expr(instr.value))
+        elif isinstance(instr, MLILIntrinsic):
+            stmt = HLILIntrinsic(instr.name, [self._convert_expr(arg) for arg in instr.args])
         elif isinstance(instr, MediumLevelILCall):
             # The call keeps its own provenance, also where it folds into the instruction reading it
             call_expr = self._convert_expr(instr)

@@ -120,7 +120,7 @@ class TestWriteModel(StackTranslatorTestCase):
         'the local':       lambda asm: (asm.push_int(CHANGED), asm.pop_to(-2 * WORD_SIZE)),
         'the parameter':   lambda asm: (asm.push_int(CHANGED), asm.pop_to(-3 * WORD_SIZE)),
         'memory':          lambda asm: (asm.push_int(CHANGED), asm.pop_to_deref(-3 * WORD_SIZE)),
-        'a debug log':     lambda asm: (asm.push_int(CHANGED), asm.debug_log(1)),
+        'a popn':          lambda asm: (asm.push_int(CHANGED), asm.popn(1)),
     }
     CALL_COPIES = {'call result': ['REG[0]'], 'register': [f'REG[{REG_INDEX}]'], 'global': [f'GLOBAL[{GLOBAL_A}]'],
                    'dereference': ['*arg1']}
@@ -602,14 +602,14 @@ class TestResultRegister(StackTranslatorTestCase):
 
         self.assertIn(f'GLOBAL[{GLOBAL_A}] = REG[0]', statements(mlil))
 
-    def test_read_after_a_debug_log(self):
+    def test_read_after_a_popn(self):
         asm = Asm()
-        call(asm, 'after'); asm.push_str(MESSAGE); asm.debug_log(1); asm.get_reg(0); asm.set_global(GLOBAL_A)
+        call(asm, 'after'); asm.push_str(MESSAGE); asm.popn(1); asm.get_reg(0); asm.set_global(GLOBAL_A)
         return_nothing(asm)
         mlil = self.translate(asm)
 
         self.assertEqual(statements(mlil)[:4], [
-            't1 = callee()', 'REG[0] = t1', f'debug.log("{MESSAGE}")', f'GLOBAL[{GLOBAL_A}] = REG[0]',
+            't1 = callee()', 'REG[0] = t1', f'POPN("{MESSAGE}")', f'GLOBAL[{GLOBAL_A}] = REG[0]',
         ])
 
     def test_a_bare_return_reads_the_callers_result_register(self):

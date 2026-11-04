@@ -5,10 +5,9 @@ from falcom.ed9.ir.llil.constants import (
     LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstFrameMarker,
 )
 from falcom.ed9.ir.llil.llil_ext import (
-    LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugLog, LowLevelILGlobalLoad,
-    LowLevelILGlobalStore,
+    LowLevelILCallScript, LowLevelILCallScriptNoReturn, LowLevelILDebugInt, LowLevelILGlobalLoad,
+    LowLevelILGlobalStore, LowLevelILPopN,
 )
-from falcom.ed9.ir.mlil.stack_translator import DEBUG_LOG_CALL_TARGET
 from ir.llil.llil import (
     LowLevelILBinaryOp, LowLevelILCall, LowLevelILConst, LowLevelILDebug, LowLevelILFrameAddr, LowLevelILFrameLoad,
     LowLevelILFrameStore, LowLevelILFunction, LowLevelILIf, LowLevelILJmp, LowLevelILLoad, LowLevelILRegLoad,
@@ -110,10 +109,10 @@ class LLILLayer:
         elif isinstance(inst, LowLevelILStore):
             value = self.evaluate(inst.value, state)
             return [self.vm.store_deref(state, address, self.evaluate(inst.dest, state), value)]
-        elif isinstance(inst, LowLevelILDebugLog):
-            # As MLIL translates it: a debug.log call with no output that changes nothing
-            return [self.vm.call(state, address, 'call', DEBUG_LOG_CALL_TARGET, self.arguments(inst, state),
-                                 clobbers=False)]
+        elif isinstance(inst, LowLevelILPopN):
+            return [self.vm.print(address, 'POPN', tuple(self.evaluate(value, state) for value in inst.values))]
+        elif isinstance(inst, LowLevelILDebugInt):
+            return [self.vm.print(address, 'DEBUG_INT', (const(inst.value),))]
         elif isinstance(inst, LowLevelILSyscall):
             return [self.call(inst, 'syscall', (inst.subsystem, inst.cmd), state)]
         elif isinstance(inst, LowLevelILCallScriptNoReturn):

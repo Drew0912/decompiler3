@@ -356,8 +356,9 @@ function extern_call(target: string, ...args: any[]): any { return undefined; }
 // Placeholder function: system call
 function syscall(subsystem: number, cmd: number, ...args: any[]): any { return undefined; }
 
-// Placeholder function: VM debug print (DEBUG_LOG opcode)
-const debug = { log(...args: any[]): void {} };
+// Placeholder functions: VM instructions kept as statements, which change no variable
+function POPN(...values: any[]): void { }
+function DEBUG_INT(value: number): void { }
 
 """
 

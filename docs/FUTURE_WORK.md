@@ -55,7 +55,7 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
 - **Small moves, done by the opcode-table plan** (Step 7 `89063e4`, no output change; Step 7b `f8f4682` changed only
   the `POP_TO_DEREF` lines of `.llil.asm`):
   - `LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` live only in `LowLevelILFalcomOperation`
-    (`falcom/ed9/ir/llil/llil_ext.py`) with the global ops, numbered after `LLIL_DEBUG_LOG` (`LLIL_PUSH_CALLER_FRAME`,
+    (`falcom/ed9/ir/llil/llil_ext.py`) with the global ops, numbered after `LLIL_POPN` (`LLIL_PUSH_CALLER_FRAME`,
     moved with them, was later removed with its node, which no block ever held).
   - The pop shapes are `FalcomLLILFormatter`'s: a shape is Falcom's when the pop it shows is done by a
     `FalcomVMBuilder` method that hides it (`set_reg`, `pop_jmp_zero`/`pop_jmp_not_zero`, `pop_to`, `pop_to_deref`:
@@ -67,8 +67,8 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
     generic slot rule (`_holds_parameter`) and `tests/llil_tests/test_llil_slot_lifetime.py` assume parameters at the
     frame base.
 - **Game-specific by design:** all of `codegen/` - the TypeScript header (`generate_typescript_header`: `GLOBALS`,
-  `REGS`, `debug.log`, `extern_call`, `syscall`) and the syscall and extern-call rendering; no change planned. If a
-  second game ever needs different output, that is the time to move or split it.
+  `REGS`, `POPN`, `DEBUG_INT`, `extern_call`, `syscall`) and the syscall and extern-call rendering; no change
+  planned. If a second game ever needs different output, that is the time to move or split it.
 - **Noted as game-specific, no fix scheduled:** the `(subsystem, cmd)` syscall pair that runs through LLIL, MLIL
   and HLIL (`LowLevelILSyscall`, `MLILSyscall`, `HLILSyscall`).
 - **Left as is:** `is_raw` on constants, 4-byte slots (`WORD_SIZE`), 32-bit ints, the call-clobber model, and
@@ -103,7 +103,7 @@ from decompiler2's ED8.x support:
     with other opcodes (user, unverified). ED6 / ED62 are another engine that shares the RPN operator numbering.
     Layout: one package per engine (`falcom/ed8/`, `falcom/ed6/`).
   - **Registers:** built-in commands touch registers only through explicit register-index operands
-    (`BattleTargetsIterReset(regIndex, ..)` writes it), so they can be lifted with `clobbers_registers = False`. A
+    (`BattleTargetsIterReset(regIndex, ..)` writes it), so they can be lifted as calls that write no register. A
     script `Call` can change registers: `AniCheckDeadTarget` sets reg 7, and four callers branch on reg 7 right after
     calling it. Calls between script functions keep the clobbering default, or get a per-callee summary of the
     registers they write (41 of the 133 functions write one, directly or through a call). Registers must be MLIL

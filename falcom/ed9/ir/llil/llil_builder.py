@@ -245,10 +245,14 @@ class FalcomVMBuilder(LowLevelILBuilder):
         args = self.vstack_peek_many(argc)   # read in place, last pushed first
         self.add_instruction(LowLevelILSyscall(subsystem, cmd, argc, args))
 
-    def debug_log(self, argc: int):
-        """DEBUG_LOG operation - log the top argc stack values (message first), then pop them"""
-        args = self.vstack_peek_many(argc)
-        self.add_instruction(LowLevelILDebugLog(args))
+    def popn(self, count: int):
+        """POPN operation - the top count stack values (message first) as one statement, then popped"""
+        values = self.vstack_peek_many(count)
+        self.add_instruction(LowLevelILPopN(values))
 
-        if argc > 0:
-            self.pop_n(argc)
+        if count > 0:
+            self.pop_n(count)
+
+    def debug_int(self, value: int):
+        """DEBUG_INT operation - log an immediate at level 0"""
+        self.add_instruction(LowLevelILDebugInt(value))

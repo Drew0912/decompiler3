@@ -117,6 +117,9 @@ __all__ = [
     'MLILDeref',
     'MLILStoreDeref',
 
+    # Intrinsics
+    'MLILIntrinsic',
+
     # Debug
     'MLILNop',
     'MLILDebug',

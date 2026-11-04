@@ -136,15 +136,16 @@ def syscall_program() -> tuple[Func, ...]:
     return (main_function(asm),)
 
 
-def debug_log_program() -> tuple[Func, ...]:
+def intrinsics_program() -> tuple[Func, ...]:
     asm = Asm()
-    asm.push_str(MODULE_NAME); asm.push_int(LEFT_VALUE); asm.debug_log(2); asm.ret()      # logs the 2 values pushed
+    asm.push_str(MODULE_NAME); asm.push_int(LEFT_VALUE); asm.popn(2)                 # pops the 2 values pushed
+    asm.debug_int(-LEFT_VALUE); asm.ret()
     return (main_function(asm),)
 
 
 PROGRAMS = (
     constants_program, slots_program, deref_program, globals_and_registers_program, operators_program,
-    branches_program, local_call_program, script_call_program, tail_call_program, syscall_program, debug_log_program,
+    branches_program, local_call_program, script_call_program, tail_call_program, syscall_program, intrinsics_program,
 )
 
 
@@ -290,20 +291,11 @@ class TestLocalCallArgumentCount(unittest.TestCase):
 
 
 class TestDescriptorLookup(unittest.TestCase):
-    """An opcode without a row: UNKNOWN_28's operand format is unknown, any other opcode is unknown itself; neither
-    error is chained to anything"""
+    """An opcode without a row is unknown; the error is chained to nothing"""
 
     def assert_unchained(self, error: Exception):
         self.assertIsNone(error.__cause__)
         self.assertIsNone(error.__context__)
-
-    def test_unknown_28_is_not_implemented(self):
-        with self.assertRaises(NotImplementedError) as caught:
-            ED9_INSTRUCTION_TABLE.get_descriptor(ED9Opcode.UNKNOWN_28)
-
-        self.assertEqual(str(caught.exception), f'opcode 0x{ED9Opcode.UNKNOWN_28:02X} decoded - never seen in a sample '
-                                                'script, operand format unknown')
-        self.assert_unchained(caught.exception)
 
     def test_an_opcode_without_a_row_is_unknown(self):
         opcode = max(ED9_INSTRUCTION_TABLE.descriptors) + 1

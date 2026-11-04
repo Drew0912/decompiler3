@@ -99,14 +99,14 @@ class TestDroppedStores(CallResultTestCase):
 
 
 class TestForwarding(CallResultTestCase):
-    def test_through_a_debug_log(self):
-        """DEBUG_LOG writes no register"""
+    def test_through_a_popn(self):
+        """POPN writes no register"""
         asm = Asm()
-        call(asm, 'after'); asm.push_str(MESSAGE); asm.debug_log(1); asm.get_reg(0); asm.set_global(GLOBAL_A)
+        call(asm, 'after'); asm.push_str(MESSAGE); asm.popn(1); asm.get_reg(0); asm.set_global(GLOBAL_A)
         return_nothing(asm)
         mlil = self.convert(asm)
 
-        self.assertEqual(statements(mlil)[:3], ['t1 = callee()', f'debug.log("{MESSAGE}")', f'GLOBAL[{GLOBAL_A}] = t1'])
+        self.assertEqual(statements(mlil)[:3], ['t1 = callee()', f'POPN("{MESSAGE}")', f'GLOBAL[{GLOBAL_A}] = t1'])
 
     def test_stopped_by_a_store_to_the_register(self):
         asm = Asm()

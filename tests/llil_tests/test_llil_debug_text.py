@@ -24,6 +24,7 @@ from tests.shared.scp_asm import (
 
 
 FIRST_VALUE = 7
+DEBUG_VALUE = -5
 
 
 def lifted_text_function():
@@ -37,13 +38,13 @@ def lifted_text_function():
     asm.load_global(GLOBAL_INDEX); asm.set_reg(REG_INDEX)
     asm.get_reg(REG_INDEX); asm.push_int(-FIRST_VALUE); asm.eq(); asm.pop_to(-WORD_SIZE)
     asm.push_float(1.5); asm.push_raw(255); asm.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2); asm.pop(2 * WORD_SIZE)
-    asm.push_str(MODULE_NAME); asm.push_int(2); asm.debug_log(2)
+    asm.push_str(MODULE_NAME); asm.push_int(2); asm.popn(2)
     asm.get_reg(REG_INDEX); asm.jz('else')
     asm.push_raw(CALLER_ID); asm.push_raw('back'); asm.push_int(9); asm.call(CALLEE_ID); asm.label('back')
     asm.jmp('end')
     asm.label('else')
     asm.frame('after'); asm.push_int(4); asm.call_script(1); asm.label('after')
-    asm.label('end'); asm.pop(WORD_SIZE); asm.ret()
+    asm.label('end'); asm.debug_int(DEBUG_VALUE); asm.pop(WORD_SIZE); asm.ret()
     return lift_asm(asm, argc=1, others=(callee,))[1]
 
 
@@ -86,7 +87,7 @@ block_0(0x0000), f, [sp = 1, fp = 0]
   sp++
   STACK[sp] = 2 ; [2]
   sp++
-  DEBUG_LOG(STACK[sp<2>], STACK[sp<1>])
+  POPN(STACK[sp<2>], STACK[sp<1>])
   sp -= 2
   STACK[sp] = REG[0] ; [1]
   sp++
@@ -120,6 +121,7 @@ block_3(0x006D), loc_6D, [sp = 1]
   call_script(`this.g`, [STACK[sp<6>]]) -> loc_82
 
 block_4(0x0082), loc_82, [sp = 1]
+  DEBUG_INT(-5)
   sp--
   return
 """.strip('\n').splitlines()
@@ -302,7 +304,8 @@ class TestNodeKinds(unittest.TestCase):
         'LowLevelILCall': LowLevelILOperation.LLIL_CALL,
         'LowLevelILGlobalLoad': LowLevelILFalcomOperation.LLIL_GLOBAL_LOAD,
         'LowLevelILGlobalStore': LowLevelILFalcomOperation.LLIL_GLOBAL_STORE,
-        'LowLevelILDebugLog': LowLevelILFalcomOperation.LLIL_DEBUG_LOG,
+        'LowLevelILPopN': LowLevelILFalcomOperation.LLIL_POPN,
+        'LowLevelILDebugInt': LowLevelILFalcomOperation.LLIL_DEBUG_INT,
         'LowLevelILCallScript': LowLevelILFalcomOperation.LLIL_CALL_SCRIPT,
         'LowLevelILCallScriptNoReturn': LowLevelILFalcomOperation.LLIL_CALL_SCRIPT_NO_RETURN,
     }

@@ -550,6 +550,28 @@ class TestGlobalVarOpcodes(WriterTestCase):
         self.assertEqual(globals_used, [('SET_GLOBAL', 1), ('SET_GLOBAL', 0), ('LOAD_GLOBAL', 0), ('LOAD_GLOBAL', 1)])
 
 
+class TestDebugInt(WriterTestCase):
+    """DEBUG_INT's operand is a signed 32-bit number: compiled, decoded and printed back as the statement it was"""
+
+    def test_compiles_decodes_and_prints_back(self):
+        values = (-5, -2 ** 31, 2 ** 31 - 1)
+
+        @self.writer.LLILCode()
+        def Main():
+            for value in values:
+                DEBUG_INT(value)
+            RETURN()
+
+        parser, functions = parse(self.writer.build({}))
+        decoded = [inst.operands[0].value for inst in parser.get_instructions(functions['Main'])
+                   if inst.opcode == ED9Opcode.DEBUG_INT]
+        script = parser.gen_python_script(list(functions.values()))
+
+        self.assertEqual(decoded, list(values))
+        for value in values:
+            self.assertIn(f'    DEBUG_INT({value})\n', script)
+
+
 class TestOperandRanges(WriterTestCase):
     """A global index must be in the declared table, and an operand out of its type's range (test_scp_writer_dsl.py's
     TestValueRanges) fails at its line"""

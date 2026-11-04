@@ -188,8 +188,10 @@ function at LLIL level only when it has to.
   `falcom/ed9/parser/scp.py`). The round-trip validator's `{stem}.py` and `{stem}_out.py` are internal
   run files and can keep their names.
 
-The debug print in `ai_chr5122_e00`'s `CheckAlgoUse`, written as opcodes to show a list (the printer
-would use a statement for it, as the TypeScript output does with `debug.log`):
+The `POPN` in `ai_chr5122_e00`'s `CheckAlgoUse`, written as opcodes to show a list. The printer would use the
+statement the TypeScript output has, `POPN("駆動解除レジストできないやつ発見：chrid：", v.var_s5)`: its values top of
+stack first, so it lowers to their pushes in reverse, then `POPN(2)`. `DEBUG_INT(n)` is a statement the same way,
+lowering to its opcode:
 
 ```python
 If(btl_check_resist_condition(65507, 50, 0) == 0, [

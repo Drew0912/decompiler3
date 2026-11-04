@@ -1,7 +1,6 @@
 """What the VM's effects do to a layer's storage, one definition for every layer: a global's store, a store through a
-pointer, a return, a call with its clobbering, and the write through which a local's address escapes. A layer's rule
-picks its IR's operands, a call's kind and target and whether it clobbers, and calls the operation its instruction
-makes"""
+pointer, a return, a call with its clobbering, a print, and the write through which a local's address escapes. A
+layer's rule picks its IR's operands and a call's kind and target, and calls the operation its instruction makes"""
 
 from typing import Callable
 
@@ -55,23 +54,25 @@ class VMEffects:
         state.set(MEMORY_EPOCH, address)
         return Effect(address, 'store deref', None, (pointer, value))
 
+    @classmethod
+    def print(cls, address: int, name: str, args: tuple) -> Effect:
+        """An intrinsic (POPN, DEBUG_INT), which prints its args where the logger takes its level and changes nothing"""
+        return Effect(address, 'print', name, args)
+
     def ret(self, state: State, address: int, value=None) -> Effect:
         """value returned, or for none (a bare return) the result register's; every other register passed on"""
         if value is None:
             value = state.register(self.RESULT_REGISTER)
         return Effect(address, 'return', None, (value,), storage=self.return_registers(state))
 
-    def call(self, state: State, address: int, kind: str, target, args: tuple, clobbers: bool = True,
+    def call(self, state: State, address: int, kind: str, target, args: tuple,
              delivers_result: bool = True) -> Effect:
-        """A call; one that clobbers passes the locals it can reach (reachable_locals) as local_values gives them, then
+        """A call; it passes the locals it can reach (reachable_locals) as local_values gives them, then
         changes every register (the result to the call's, every other read after it: REGISTER_EPOCH), every global,
         memory behind a pointer and those locals. Where the layer's call does not write the result register
         (delivers_result False: an MLIL call with another output or none, every HLIL call), the register holds
         uncaptured, a value no LLIL holds, so a read the layer never stored the result for differs"""
         effect = Effect(address, kind, target, args)
-        if not clobbers:
-            return effect
-
         pointed = self.reachable_locals(state, args)
         effect.storage = self.local_values(state, pointed)
         for key in [key for key in state.items if key[0] in ('global', 'reg')]:

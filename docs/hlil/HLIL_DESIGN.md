@@ -64,7 +64,7 @@ The concrete model is small and source-oriented:
 | Containers | `HLILBlock` owns an ordered list of statements. `HighLevelILFunction` owns one root block. |
 | Structured control flow | `HLILIf`, `HLILWhile`, `HLILDoWhile`, `HLILSwitch`, `HLILBreak`, `HLILContinue`, `HLILReturn`. |
 | Unexpressible jump | `HLILUnstructured` - a jump the tree cannot express; the path ends there (see Basic Blocks & Functions). |
-| Ordinary statements | `HLILAssign`, `HLILExprStmt`, `HLILComment`. |
+| Ordinary statements | `HLILAssign`, `HLILExprStmt`, `HLILComment`, `HLILIntrinsic` (a VM instruction with no HLIL form of its own, its name and args: `POPN`, `DEBUG_INT`; never skipped by a pass that skips comments). |
 | Leaf expressions | `HLILVar`, `HLILConst`. Constants retain an `is_hex` display hint. |
 | Operators | `HLILBinaryOp`, `HLILUnaryOp`, `HLILAddressOf`, using `BinaryOp` and `UnaryOp`. |
 | Pointer dereference | `HLILDeref` (`*ptr`, from `MLILDeref`) - like `HLILAddressOf`, not a subclass of `HLILUnaryOp`. A store through one (`MLILStoreDeref`) lowers to an ordinary `HLILAssign` whose `dest` is an `HLILDeref` - no dedicated store node. |

@@ -14,7 +14,7 @@ __all__ = (
     'LOCAL_SETUP_SLOTS',
     'CALLER_FRAME_SLOTS',
     'POP_SIZE_OPERAND',
-    'DEBUG_LOG_ARGC_OPERAND',
+    'POPN_COUNT_OPERAND',
     'ARGC_OPERAND',
     'SLOT_OFFSET_OPERAND',
     'CALLEE_OPERAND',
@@ -26,7 +26,7 @@ __all__ = (
 LOCAL_SETUP_SLOTS       = 2     # CALL: func_id, ret_addr
 CALLER_FRAME_SLOTS      = 5     # PUSH_CALLER_FRAME: func_id, ret_addr, script pointer (2 slots), frame marker
 POP_SIZE_OPERAND        = 0     # POP's byte count
-DEBUG_LOG_ARGC_OPERAND  = 0
+POPN_COUNT_OPERAND      = 0     # POPN's slot count
 ARGC_OPERAND            = 2     # the argument count of every argument call but CALL, whose count is its callee's parameters
 SLOT_OFFSET_OPERAND     = 0     # the byte offset of a slot-addressing opcode
 CALLEE_OPERAND          = 0     # CALL's callee, whose parameters are its argument count
@@ -62,7 +62,8 @@ class InstructionKind(Enum):
     SYSCALL             = auto()
     RETURN              = auto()
     DEBUG_LINE          = auto()    # DEBUG_SET_LINENO
-    DEBUG_LOG           = auto()
+    POPN                = auto()
+    DEBUG_INT           = auto()
 
 
 @dataclass(frozen=True)
@@ -136,5 +137,6 @@ STACK_EFFECTS = {
     InstructionKind.SYSCALL             : StackEffect(reads=OperandCount(ARGC_OPERAND)),       # a later POP removes them
     InstructionKind.RETURN              : StackEffect(exits=True),
     InstructionKind.DEBUG_LINE          : StackEffect(),
-    InstructionKind.DEBUG_LOG           : StackEffect(pops=OperandCount(DEBUG_LOG_ARGC_OPERAND)),
+    InstructionKind.POPN                : StackEffect(pops=OperandCount(POPN_COUNT_OPERAND)),
+    InstructionKind.DEBUG_INT           : StackEffect(),
 }

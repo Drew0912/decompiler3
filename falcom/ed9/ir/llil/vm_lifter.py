@@ -142,7 +142,10 @@ class ED9VMLifter:
                 builder.debug_line(int(inst.operands[0].value))
 
             case ED9Opcode.POPN:
-                builder.debug_log(int(inst.operands[0].value))
+                builder.popn(int(inst.operands[0].value))
+
+            case ED9Opcode.DEBUG_INT:
+                builder.debug_int(int(inst.operands[0].value))
 
             case ED9Opcode.CALL:
                 func_id = int(inst.operands[0].value)

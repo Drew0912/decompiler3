@@ -103,6 +103,9 @@ class MediumLevelILOperation(IntEnum2):
     MLIL_DEREF              = 120
     MLIL_STORE_DEREF        = 121
 
+    # A VM instruction with no MLIL form of its own
+    MLIL_INTRINSIC          = 130
+
     # Falcom VM specific
     MLIL_CALL_SCRIPT        = 1000
 
@@ -504,13 +507,9 @@ class MediumLevelILCall(MediumLevelILStatement):
 
     output is the variable receiving the call result (the VM result register),
     or None when the result is unused. It holds an MLILVariable, or an
-    MLILVariableSSA while the function is in SSA form.
-
-    clobbers_registers is True for an ordinary call, whose callee may change any VM
-    register/global other than its own output - SSA construction gives every one of
-    them a fresh, unknown-valued pseudo-definition here. False marks a call proven to
-    have no VM register/global side effects at all (e.g. a pure debug print), so
-    nothing but its own output (if any) is treated as redefined.
+    MLILVariableSSA while the function is in SSA form. The callee may change any VM
+    register or global other than its own output: SSA construction gives every one
+    of them a fresh, unknown-valued pseudo-definition here.
 
     tail_call marks a call that never gives control back (the LLIL's returns=False): the
     stack translator follows it with the return that passes its result on, and only the
@@ -518,11 +517,10 @@ class MediumLevelILCall(MediumLevelILStatement):
     """
 
     def __init__(self, operation: MediumLevelILOperation, args: list[MediumLevelILInstruction],
-                 output: Any | None = None, *, clobbers_registers: bool = True, tail_call: bool = False, **kwargs):
+                 output: Any | None = None, *, tail_call: bool = False, **kwargs):
         super().__init__(operation, **kwargs)
         self.args = args
         self.output = output
-        self.clobbers_registers = clobbers_registers
         self.tail_call = tail_call
 
     def operands(self) -> tuple[MediumLevelILInstruction, ...]:
@@ -536,22 +534,19 @@ class MediumLevelILCall(MediumLevelILStatement):
         return f'{self.output} = {call_str}'
 
     def rebuild(self, *args: MediumLevelILInstruction) -> MediumLevelILCall:
-        """Copy of this call with new arguments, keeping target, output, clobbers_registers, tail_call and metadata"""
+        """Copy of this call with new arguments, keeping target, output, tail_call and metadata"""
         raise NotImplementedError
 
 
 class MLILCall(MediumLevelILCall):
     """Function call"""
 
-    def __init__(self, target: str, args: list[MediumLevelILInstruction], output: Any | None = None,
-                 *, clobbers_registers: bool = True, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_CALL, args, output, clobbers_registers=clobbers_registers,
-                         **kwargs)
+    def __init__(self, target: str, args: list[MediumLevelILInstruction], output: Any | None = None, **kwargs):
+        super().__init__(MediumLevelILOperation.MLIL_CALL, args, output, **kwargs)
         self.target = target
 
     def rebuild(self, *args: MediumLevelILInstruction) -> MLILCall:
-        return MLILCall(self.target, list(args), self.output, clobbers_registers=self.clobbers_registers,
-                        tail_call=self.tail_call).copy_metadata_from(self)
+        return MLILCall(self.target, list(args), self.output, tail_call=self.tail_call).copy_metadata_from(self)
 
     def __str__(self) -> str:
         args_str = ', '.join(str(arg) for arg in self.args)
@@ -568,7 +563,7 @@ class MLILSyscall(MediumLevelILCall):
         self.cmd = cmd
 
     def rebuild(self, *args: MediumLevelILInstruction) -> MLILSyscall:
-        return MLILSyscall(self.subsystem, self.cmd, list(args), self.output, clobbers_registers=self.clobbers_registers,
+        return MLILSyscall(self.subsystem, self.cmd, list(args), self.output,
                            tail_call=self.tail_call).copy_metadata_from(self)
 
     def __str__(self) -> str:
@@ -586,7 +581,7 @@ class MLILCallScript(MediumLevelILCall):
         self.func = func
 
     def rebuild(self, *args: MediumLevelILInstruction) -> MLILCallScript:
-        return MLILCallScript(self.module, self.func, list(args), self.output, clobbers_registers=self.clobbers_registers,
+        return MLILCallScript(self.module, self.func, list(args), self.output,
                               tail_call=self.tail_call).copy_metadata_from(self)
 
     def __str__(self) -> str:
@@ -654,6 +649,28 @@ class MLILStoreReg(MediumLevelILStatement):
 
     def __str__(self) -> str:
         return f'REG[{self.index}] = {self.value}'
+
+
+# === Intrinsics ===
+
+class MLILIntrinsic(MediumLevelILStatement):
+    """A VM instruction with no MLIL form of its own, named by the VM (name) and kept as a statement: its args are
+    evaluated, and it changes no variable, register or global"""
+
+    def __init__(self, name: str, args: list[MediumLevelILInstruction], **kwargs):
+        super().__init__(MediumLevelILOperation.MLIL_INTRINSIC, **kwargs)
+        self.name = name
+        self.args = args
+
+    def rebuild(self, *args: MediumLevelILInstruction) -> MLILIntrinsic:
+        return MLILIntrinsic(self.name, list(args)).copy_metadata_from(self)
+
+    def operands(self) -> tuple[MediumLevelILInstruction, ...]:
+        return tuple(self.args)
+
+    def __str__(self) -> str:
+        args_str = ', '.join(str(arg) for arg in self.args)
+        return f'{self.name}({args_str})'
 
 
 # === Debug ===
@@ -869,9 +886,9 @@ class MediumLevelILFunction:
     def is_global_var(self, var: MLILVariable) -> bool:
         return var in self.global_vars.values()
 
-    def call_may_clobber(self, call: MediumLevelILCall, var: MLILVariable) -> bool:
-        """Whether `call` may clobber the register/global storage represented by `var`"""
-        return call.clobbers_registers and (self.is_register_var(var) or self.is_global_var(var))
+    def call_may_clobber(self, var: MLILVariable) -> bool:
+        """Whether a call may clobber the storage var represents: a register or a global"""
+        return self.is_register_var(var) or self.is_global_var(var)
 
     def global_index_of(self, var: MLILVariable) -> int | None:
         """Global var table index of a variable, or None if it does not model a global"""

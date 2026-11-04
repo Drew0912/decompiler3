@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Callable
 from dc3 import fileio
 from dc3.logging import log
 from assembler import Instruction
-from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, InstructionKind
+from ..disasm import ED9_INSTRUCTION_TABLE, InstructionKind
 from ..disasm.ed9_optable import opcodes_of
 from ..disasm.stack_effects import CALLEE_OPERAND, REGISTER_OPERAND, RESULT_REGISTER
 from .string_pool import read_text, read_u32, string_offset
@@ -84,10 +84,6 @@ class CallDebugInfoTracker:
         ArgType = ScpFunctionCallDebugInfoArg.Type
         CallType = ScpFunctionCallDebugInfo.CallType
 
-        # No row (its operand format is unknown) and nothing to track; only a DSL feeds it
-        if opcode == ED9Opcode.UNKNOWN_28:
-            return
-
         descriptor = ED9_INSTRUCTION_TABLE.get_descriptor(opcode)
         effect = descriptor.effect
 
@@ -122,7 +118,7 @@ class CallDebugInfoTracker:
                 self.add_call(CallType.Syscall, (subsystem, cmd), None, args, returns=True)
 
             case (InstructionKind.POP | InstructionKind.CONDITIONAL_JUMP | InstructionKind.STORE_SLOT
-                  | InstructionKind.STORE_DEREF | InstructionKind.STORE_GLOBAL | InstructionKind.DEBUG_LOG):
+                  | InstructionKind.STORE_DEREF | InstructionKind.STORE_GLOBAL | InstructionKind.POPN):
                 self.pop(effect.pop_count(operands))
 
             # LOAD_DEREF / LOAD_GLOBAL are unverified - no sample script passes them as call args
@@ -144,7 +140,7 @@ class CallDebugInfoTracker:
                 operand_values = self.pop(effect.pops)
                 self.stack.append(TrackedValue(ArgType.Expression, calls=nested_calls(reversed(operand_values))))
 
-            case InstructionKind.JUMP | InstructionKind.RETURN:
+            case InstructionKind.JUMP | InstructionKind.RETURN | InstructionKind.DEBUG_INT:
                 pass
 
             case InstructionKind.CALL_SCRIPT:

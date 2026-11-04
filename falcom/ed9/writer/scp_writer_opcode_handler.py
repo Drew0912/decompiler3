@@ -266,11 +266,11 @@ def POPN(count: uint8):
     return get_scp_writer().handle_opcode(ED9Opcode.POPN, count)
 
 
-def UNKNOWN_28(operand_bytes: bytes = b''):
-    """Never seen in a script, operand format unknown - writes the opcode then operand_bytes as-is, for testing
-    (Opcode 0x28)"""
-    _require_type('UNKNOWN_28', 'operand_bytes', operand_bytes, bytes)
-    return get_scp_writer().handle_opcode(ED9Opcode.UNKNOWN_28, operand_bytes)
+def DEBUG_INT(value: sint32):
+    """Log value at level 0: a raw 32-bit number, not a tagged Integer like PUSH_INT's; prints nothing unless the
+    logger takes level 0 (Opcode 0x28)"""
+    _require_type('DEBUG_INT', 'value', value, sint32)
+    return get_scp_writer().handle_opcode(ED9Opcode.DEBUG_INT, value)
 
 
 def PUSH_CURRENT_FUNC_ID():

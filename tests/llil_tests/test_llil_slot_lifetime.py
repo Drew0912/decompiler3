@@ -214,7 +214,7 @@ class TestParameterUsedInPlace(unittest.TestCase):
     def test_reader_names_the_parameter_slots(self):
         for opcode, emit in (
             ('SYSCALL', lambda builder: builder.syscall(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 2)),
-            ('DEBUG_LOG', lambda builder: builder.debug_log(2)),
+            ('POPN', lambda builder: builder.popn(2)),
         ):
             with self.subTest(opcode):
                 self.assert_in_place(emit, r'the slots of parameters 1-2 \(arg1, arg2\)', num_params=2)

@@ -382,14 +382,14 @@ class TestStackMistakes(CheckTestCase):
         self.assertCheckFails(rf"{at(__file__, 'read past a parameter')}Syscall: SYSCALL at {HEX}: reads 3 entries, "
                               rf'the stack has 2: \[param_0, PUSH_INT@{HEX} \(line {push}\)\]$')
 
-    def test_debug_log_count_past_the_pushes(self):
+    def test_popn_count_past_the_pushes(self):
         @self.writer.LLILCode()
         def Log(arg1: Value32):
             PUSH_INT(1)
-            POPN(2)                                 # line: debug log past the pushes
+            POPN(2)                                 # line: popn past the pushes
             RETURN()
 
-        self.assertCheckFails(rf"{at(__file__, 'debug log past the pushes')}Log: POPN at {HEX}: ")
+        self.assertCheckFails(rf"{at(__file__, 'popn past the pushes')}Log: POPN at {HEX}: ")
 
     def test_tail_call_count_past_the_pushes(self):
         @self.writer.LLILCode()

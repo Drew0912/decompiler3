@@ -35,7 +35,7 @@ OFFSET_OPS = {
     'frame': ED9Opcode.PUSH_CALLER_FRAME,
 }
 BYTE_OPERAND_OPS = {
-    'pop': ED9Opcode.POP, 'get_reg': ED9Opcode.GET_REG, 'set_reg': ED9Opcode.SET_REG, 'debug_log': ED9Opcode.POPN,
+    'pop': ED9Opcode.POP, 'get_reg': ED9Opcode.GET_REG, 'set_reg': ED9Opcode.SET_REG, 'popn': ED9Opcode.POPN,
 }
 NO_OPERAND_OPS = {
     'add': ED9Opcode.ADD, 'sub': ED9Opcode.SUB, 'mul': ED9Opcode.MUL, 'div': ED9Opcode.DIV, 'mod': ED9Opcode.MOD,
@@ -53,7 +53,8 @@ STACK_SLOT_OPS = {
     'pop_to': ED9Opcode.POP_TO, 'pop_to_deref': ED9Opcode.POP_TO_DEREF,
 }
 GLOBAL_OPS = {'load_global': ED9Opcode.LOAD_GLOBAL, 'set_global': ED9Opcode.SET_GLOBAL}
-OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_float', 'push_str', 'call', 'syscall', 'debug_set_lineno')
+OTHER_OPS = ('label', 'push_raw', 'push_int', 'push_float', 'push_str', 'call', 'syscall', 'debug_set_lineno',
+             'debug_int')
 MNEMONICS = (*OFFSET_OPS, *BYTE_OPERAND_OPS, *NO_OPERAND_OPS, *SCRIPT_CALL_OPS, *STACK_SLOT_OPS, *GLOBAL_OPS,
              *OTHER_OPS)
 PARAM_COUNT = 3
@@ -142,6 +143,9 @@ class Asm:
 
             case 'debug_set_lineno':
                 return bytes([ED9Opcode.DEBUG_SET_LINENO]) + struct.pack('<H', args[0])
+
+            case 'debug_int':
+                return bytes([ED9Opcode.DEBUG_INT]) + struct.pack('<i', args[0])
 
             case _ if name in OFFSET_OPS:
                 return bytes([OFFSET_OPS[name]]) + word(resolve(args[0]))

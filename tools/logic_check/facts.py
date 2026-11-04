@@ -12,7 +12,7 @@ RETURN_KEY = (None, 'return')   # a gated layer's returns, one effect: HLIL may 
 @dataclass
 class Effect:
     address: int
-    kind: str               # 'call' (debug.log too), 'script call', 'syscall', 'store global', 'store deref', 'return';
+    kind: str               # 'call', 'script call', 'syscall', 'print', 'store global', 'store deref', 'return';
                             # gated, a loop's 'loop' and 'loop continue' (GatedNaming.loop_effects)
     target: Hashable
     args: tuple

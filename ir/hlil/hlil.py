@@ -76,6 +76,7 @@ class HLILOperation(IntEnum2):
     HLIL_ASSIGN         = auto()
     HLIL_EXPR_STMT      = auto()
     HLIL_COMMENT        = auto()
+    HLIL_INTRINSIC      = auto()
 
     # Expressions
     HLIL_VAR            = auto()
@@ -652,6 +653,22 @@ class HLILComment(HLILStatement):
         return f'HLILComment({self.text})'
 
 
+class HLILIntrinsic(HLILStatement):
+    """A VM instruction with no HLIL form of its own, named by the VM (name) and kept as a statement: its args are
+    evaluated, and it changes no variable"""
+
+    def __init__(self, name: str, args: list[HLILExpression]):
+        super().__init__(HLILOperation.HLIL_INTRINSIC)
+        self.name = name
+        self.args = args
+
+    def __str__(self) -> str:
+        return f'{self.name}({", ".join(str(arg) for arg in self.args)})'
+
+    def __repr__(self) -> str:
+        return f'HLILIntrinsic({self.name}, {len(self.args)} args)'
+
+
 def is_boolean_expr(expr: HLILExpression) -> bool:
     """Whether expr's value is a boolean: a comparison, && / ||, or !"""
     if isinstance(expr, HLILBinaryOp):
@@ -843,6 +860,9 @@ def node_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
 
     if isinstance(node, HLILExprStmt):
         return [node.expr]
+
+    if isinstance(node, HLILIntrinsic):
+        return list(node.args)
 
     if isinstance(node, HLILReturn):
         return [node.value] if node.value is not None else []

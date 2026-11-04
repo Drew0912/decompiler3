@@ -28,6 +28,7 @@ from ir.hlil import (
     HLILExprStmt,
     HLILFormatter,
     HLILIf,
+    HLILIntrinsic,
     HLILReturn,
     HLILStatement,
     HLILSwitch,
@@ -670,6 +671,24 @@ class TestBooleanTempInliningCaseLabelInsideTheIfItself(unittest.TestCase):
         if_stmt = HLILIf(
             HLILBinaryOp(BinaryOp.NE, make_flag_var(), HLILConst(0)),
             HLILBlock([switch_stmt]),
+            HLILBlock(),
+        )
+
+        func = run_cfo(assign_stmt, if_stmt)
+
+        self.assertEqual(len(func.body.statements), 2)
+        self.assertIsInstance(func.body.statements[0], HLILAssign)
+
+
+class TestBooleanTempInliningIntrinsicInsideTheIf(unittest.TestCase):
+    """An intrinsic reading the boolean temp inside the if (POPN popping it): the read check has no case of its own
+    for the statement, so it reads through the shared walker; answering "reads nothing" deleted the assignment"""
+
+    def test_intrinsic_read_inside_the_if_blocks_deletion(self):
+        assign_stmt = make_flag_assign()
+        if_stmt = HLILIf(
+            HLILBinaryOp(BinaryOp.NE, make_flag_var(), HLILConst(0)),
+            HLILBlock([HLILIntrinsic('POPN', [make_flag_var()])]),
             HLILBlock(),
         )
 

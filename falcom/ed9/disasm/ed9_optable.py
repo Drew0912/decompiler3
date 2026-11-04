@@ -178,7 +178,8 @@ ED9_OPCODE_TABLE = [
     InstructionEntry(0x24, 'SYSCALL',                 'CBB',                               kind=InstructionKind.SYSCALL),
     InstructionEntry(0x25, 'PUSH_CALLER_FRAME',       'O',   InstructionFlags.START_BLOCK, kind=InstructionKind.PUSH_CALLER_FRAME),
     InstructionEntry(0x26, 'DEBUG_SET_LINENO',        'H',                                 kind=InstructionKind.DEBUG_LINE),
-    InstructionEntry(0x27, 'POPN',                    'C',                                 kind=InstructionKind.DEBUG_LOG),
+    InstructionEntry(0x27, 'POPN',                    'C',                                 kind=InstructionKind.POPN),
+    InstructionEntry(0x28, 'DEBUG_INT',               'i',                                 kind=InstructionKind.DEBUG_INT),
 
     # Pseudo-instructions (optimized from other instructions)
     InstructionEntry(0x1000, 'PUSH_CURRENT_FUNC_ID',  '',                                  kind=InstructionKind.PUSH_FUNC_ID),
@@ -258,9 +259,7 @@ class ED9Opcode(IntEnum2):
     PUSH_CALLER_FRAME       = _opcode('PUSH_CALLER_FRAME')
     DEBUG_SET_LINENO        = _opcode('DEBUG_SET_LINENO')
     POPN                    = _opcode('POPN')
-
-    # Never seen in a sample script and its operand format is unknown - not in the table, so decoding it raises
-    UNKNOWN_28              = 0x28
+    DEBUG_INT               = _opcode('DEBUG_INT')
 
     # Pseudo-instructions
     PUSH_CURRENT_FUNC_ID    = _opcode('PUSH_CURRENT_FUNC_ID')
@@ -323,10 +322,7 @@ class ED9InstructionTable(InstructionTable):
         try:
             return self.descriptors[opcode]
         except KeyError:
-            pass        # no row: the errors are raised below, outside the handler, so they carry no KeyError context
-
-        if opcode == ED9Opcode.UNKNOWN_28:
-            raise NotImplementedError(f'opcode 0x{opcode:02X} decoded - never seen in a sample script, operand format unknown')
+            pass        # no row: the error is raised below, outside the handler, so it carries no KeyError context
 
         raise ValueError(f'Unknown opcode: 0x{opcode:02X}')
 

@@ -5,7 +5,6 @@ from ir.mlil import *
 from ir.mlil_ssa import *
 from ..llil.llil_ext import *
 from ..llil.constants import *
-from ..mlil.stack_translator import DEBUG_LOG_CALL_TARGET
 
 # REG[0] is the VM result register: calls write it and RETURN reads it
 RESULT_REG_INDEX = 0
@@ -47,8 +46,10 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
             self._translate_call_script(llil_inst)
         elif isinstance(llil_inst, LowLevelILSyscall):
             self._translate_syscall(llil_inst)
-        elif isinstance(llil_inst, LowLevelILDebugLog):
-            self._translate_debug_log(llil_inst)
+        elif isinstance(llil_inst, LowLevelILPopN):
+            self.builder.intrinsic('POPN', [self._translate_expr(value) for value in llil_inst.values])
+        elif isinstance(llil_inst, LowLevelILDebugInt):
+            self.builder.intrinsic('DEBUG_INT', [MLILConst(llil_inst.value)])
         else:
             # Fall back to generic handling
             super()._translate_instruction(llil_inst)
@@ -93,17 +94,6 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
 
         # Generate MLIL Syscall
         self.builder.syscall(llil_inst.subsystem, llil_inst.cmd, mlil_args, self._result_reg_var())
-
-    def _translate_debug_log(self, llil_inst: LowLevelILDebugLog):
-        """Translate Falcom debug log to a debug.log call (not a block terminal, so no goto)
-
-        No output, and clobbers_registers=False: a debug print has no VM register/global
-        side effects at all, so it must not clobber reg0 (or anything else) either - it
-        leaves every register alone (verified in the sample scripts, where no GET_REG ever
-        follows a DEBUG_LOG)
-        """
-        mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
-        self.builder.call(DEBUG_LOG_CALL_TARGET, mlil_args, clobbers_registers=False)
 
     def _translate_expr(self, llil_expr: LowLevelILInstruction) -> MediumLevelILInstruction:
         """Translate LLIL expression, handling Falcom-specific types"""

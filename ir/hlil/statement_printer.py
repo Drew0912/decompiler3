@@ -132,6 +132,9 @@ class HLILStatementPrinter:
         elif isinstance(stmt, HLILExprStmt):
             expr_str = cls._format_expr(stmt.expr)
             lines.append(f'{indent_str}{expr_str};')
+        elif isinstance(stmt, HLILIntrinsic):
+            args_str = ', '.join(cls._format_expr(arg) for arg in stmt.args)
+            lines.append(f'{indent_str}{stmt.name}({args_str});')
         elif isinstance(stmt, HLILComment):
             lines.append(f'{indent_str}// {stmt.text}')
         elif isinstance(stmt, HLILBlock):

@@ -88,8 +88,9 @@ OPCODE_SIZE             = 1     # every opcode is one byte, followed by its oper
 PLAIN_VALUE_KINDS = (
     InstructionKind.PUSH_CONST, InstructionKind.DEBUG_LINE, InstructionKind.SYSCALL, InstructionKind.LOAD_SLOT,
     InstructionKind.BINARY, InstructionKind.LOAD_REG, InstructionKind.CONDITIONAL_JUMP, InstructionKind.STORE_REG,
-    InstructionKind.JUMP, InstructionKind.UNARY, InstructionKind.DEBUG_LOG, InstructionKind.SLOT_ADDRESS,
+    InstructionKind.JUMP, InstructionKind.UNARY, InstructionKind.POPN, InstructionKind.SLOT_ADDRESS,
     InstructionKind.LOAD_DEREF, InstructionKind.STORE_DEREF, InstructionKind.LOAD_GLOBAL, InstructionKind.STORE_GLOBAL,
+    InstructionKind.DEBUG_INT,
 )
 
 # Calls that take arguments from the stack; SYSCALL leaves them there for a later POP

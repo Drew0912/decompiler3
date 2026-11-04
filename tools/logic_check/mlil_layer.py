@@ -9,8 +9,8 @@ import re
 from ir.core import reverse_post_order
 from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILAddressOf, MLILBinaryOp, MLILCallScript, MLILConst, MLILDebug,
-    MLILDeref, MLILGoto, MLILIf, MLILLoadGlobal, MLILLoadReg, MLILNop, MLILRet, MLILSetVar, MLILStoreDeref,
-    MLILStoreGlobal, MLILStoreReg, MLILSyscall, MLILUnaryOp, MLILUndef, MLILVar, MLILVariable,
+    MLILDeref, MLILGoto, MLILIf, MLILIntrinsic, MLILLoadGlobal, MLILLoadReg, MLILNop, MLILRet, MLILSetVar,
+    MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILSyscall, MLILUnaryOp, MLILUndef, MLILVar, MLILVariable,
     UNASSIGNED_SLOT_INDEX, mlil_stack_var_name,
 )
 from .facts import Branch, Effect, Facts
@@ -219,6 +219,8 @@ class MLILLayer(MLILStorage):
             return [self.vm.store_deref(state, address, self.evaluate(inst.dest, state), value)]
         elif isinstance(inst, MediumLevelILCall):
             return [self.call(inst, state)]
+        elif isinstance(inst, MLILIntrinsic):
+            return [self.vm.print(address, inst.name, tuple(self.evaluate(arg, state) for arg in inst.args))]
         elif isinstance(inst, MLILIf):
             facts.branches[address] = Branch(address, self.evaluate(inst.condition, state), inst.true_target.start,
                                              inst.false_target.start)
@@ -239,7 +241,7 @@ class MLILLayer(MLILStorage):
 
         delivers = inst.output is not None and self.key(inst.output) == ('reg', self.vm.RESULT_REGISTER)
         effect = self.vm.call(state, inst.address, kind, target, tuple(self.evaluate(arg, state) for arg in inst.args),
-                              clobbers=inst.clobbers_registers, delivers_result=delivers)
+                              delivers_result=delivers)
         if inst.output is not None:
             state.set(self.key(inst.output), ('call', inst.address))
         return effect
