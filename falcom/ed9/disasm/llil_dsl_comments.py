@@ -1,7 +1,9 @@
 """Comments of the LLIL DSL (.py): the global var index, what each stack slot holds and which argument each push
-becomes (read from the parser's StackLayout), float bits and function ids; trailing comments share one column"""
+becomes (read from the parser's StackLayout), what a NaN's word holds, float bits and function ids; trailing comments
+share one column"""
 
 from dataclasses import dataclass
+import math
 from typing import TYPE_CHECKING
 
 from dc3.utils import display_width
@@ -55,7 +57,8 @@ def function_comments(func: 'Function', options: CommentOptions) -> list[str]:
 
 def instruction_comments(layout: 'StackLayout | None', inst: 'Instruction', options: CommentOptions) -> list[str]:
     """Every trailing comment of an instruction line, in order: the global var index, the stack parts, the call
-    arguments, the float bits. The stack and argument parts need the layout's state, so unreachable code gets none"""
+    arguments, what a NaN's word holds, the float bits. The stack and argument parts need the layout's state, so
+    unreachable code gets none"""
     comments = []
     if inst.operands and inst.operands[0].descriptor.type == ED9OperandType.GlobalVar:
         comments.append(f'{GLOBAL_VAR_INDEX_COMMENT} {inst.operands[0].value}')
@@ -68,6 +71,10 @@ def instruction_comments(layout: 'StackLayout | None', inst: 'Instruction', opti
         arguments = ', '.join(f'arg{number}' for number in layout.arg_numbers[inst.offset])
         slot_shown = options.stack_slots and inst.offset in layout.slot_refs
         comments.append(f'passed as {arguments}' if slot_shown else arguments)
+
+    # FloatWord(0x..) shows the word, not what it holds
+    if inst.opcode == ED9Opcode.PUSH_FLOAT and math.isnan(inst.operands[0].value):
+        comments.append(ScpValue.nan_text(inst.operands[0].value))
 
     if options.float_bits and inst.opcode == ED9Opcode.PUSH_FLOAT:
         comments.append(ScpValue.float_bits_text(inst.operands[0].value))

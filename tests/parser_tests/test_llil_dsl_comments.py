@@ -16,7 +16,7 @@ from falcom.ed9.disasm import CommentOptions, Formatter, FormatterContext
 from falcom.ed9.disasm.llil_dsl_comments import COMMENT_COLUMN, MIN_COMMENT_GAP, append_comment
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import SlotRef
-from falcom.ed9.structs.scp_types import ScpValue
+from falcom.ed9.structs.scp_types import FloatWord, ScpValue
 from falcom.ed9.scena2py_base import process_file
 from falcom.ed9.scena2py_config import ScenaDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import RETURN
@@ -100,6 +100,24 @@ class TestFunctionComments(unittest.TestCase):
         self.assertEqual(function_lines(asm, 2), [
             'POP(6)                          # 1 slot + 2 bytes',
             'POP(2)                          # 1 slot',
+            'RETURN()',
+        ])
+
+    def test_nan_push_gives_what_its_word_holds(self):
+        """FloatWord(0x..) shows the word; the comment its sign and, unless it is the plain NaN, signaling and the
+        payload"""
+        words = (0x9FF00000, 0xBFF00000, 0x9FF048D1, 0xBFE88D14)
+        asm = Asm()
+        for word in words:
+            asm.push_float(FloatWord(word))
+
+        asm.pop(len(words) * WORD_SIZE); asm.ret()
+        self.assertEqual(function_lines(asm), [
+            'PUSH_FLOAT(FloatWord(0x9FF00000))  # NaN',
+            'PUSH_FLOAT(FloatWord(0xBFF00000))  # -NaN',
+            'PUSH_FLOAT(FloatWord(0x9FF048D1))  # NaN, payload 0x12344',
+            'PUSH_FLOAT(FloatWord(0xBFE88D14))  # -NaN, signaling, payload 0x223450',
+            'POP(16)                         # 4 slots',
             'RETURN()',
         ])
 

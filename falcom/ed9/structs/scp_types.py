@@ -2,7 +2,6 @@ import math
 from typing import TypeAlias
 
 from dc3 import fileio, format_uint32_hex, IntEnum2, StrictBase, UINT32_MASK
-from dc3.logging import log
 from dc3.utils import float32_bits as _float32_bits, float32_from_bits as _float32_from_bits
 
 UINT32_SIZE = fileio.struct_layout('L').size  # one u32 field of the .dat format
@@ -103,6 +102,16 @@ class RawInt(int):
         return f'RawInt(0x{self:08X})'
 
 
+def FloatWord(word: int) -> float:
+    """The float a stored Float word holds, a NaN's sign and payload kept: how a .py spells a NaN, since
+    float('nan') stores one word only"""
+    if not 0 <= word <= UINT32_MASK or word >> ScpValue.TYPE_SHIFT != ScpValue.Type.Float:
+        raise ValueError(f'FloatWord takes a 32-bit word tagged Float (its top 2 bits {ScpValue.Type.Float:02b}), not '
+                         f'0x{word:08X}')
+
+    return ScpValue.decode_word(word)[1]
+
+
 class ScpValue:
     TYPE_SHIFT      = 30                         # type tag is the top 2 bits
     PAYLOAD_MASK    = (1 << TYPE_SHIFT) - 1      # value, or string pool offset for String
@@ -167,8 +176,6 @@ class ScpValue:
 
             case cls.Type.Float:
                 value = _float32_from_bits(cls.word_float32_bits(word))
-                if not math.isfinite(value):
-                    log.warning(f"non-finite float {value} (word 0x{word:08X}): the game can't use it, so compiling the .py will fail")
 
             case cls.Type.String:
                 with fs.PositionSaver:
@@ -225,9 +232,10 @@ class ScpValue:
     def float_literal(cls, value: float) -> str:
         """Shortest Python float literal that stores the same word as value - PUSH_FLOAT(0.3), not
         PUSH_FLOAT(0.2999999523162842). Always a float literal ('1.0', never '1', which would encode an
-        Integer). Non-finite values, which the game can't use, print as a float() call."""
+        Integer). An inf prints as a float() call, a NaN as its word, FloatWord(0x..), which keeps its sign and
+        payload"""
         if math.isnan(value):
-            return "float('nan')"
+            return f'FloatWord(0x{cls.encode_float(value):08X})'
 
         if math.isinf(value):
             return "float('inf')" if value > 0 else "-float('inf')"
@@ -269,6 +277,22 @@ class ScpValue:
         """The float32 bits the VM computes with and the stored word: 'f32 0x41D99998, raw 0x90766666'"""
         word = cls.encode_float(value)
         return f'f32 {format_uint32_hex(cls.word_float32_bits(word))}, raw {format_uint32_hex(word)}'
+
+    @classmethod
+    def nan_text(cls, value: float) -> str:
+        """What a NaN's word holds: its sign, then whether it is signaling (its quiet bit clear) and its payload (the
+        float32 mantissa below the quiet bit) when they are not the plain NaN's: 'NaN', '-NaN, signaling, payload
+        0x223450'"""
+        bits = _float32_bits(value)
+        text = '-NaN' if math.copysign(1.0, value) < 0 else 'NaN'
+        if not bits & fileio.FLOAT_QUIET_NAN_BIT:
+            text += ', signaling'
+
+        payload = bits & (fileio.FLOAT_QUIET_NAN_BIT - 1)
+        if payload:
+            text += f', payload 0x{payload:X}'
+
+        return text
 
     def __str__(self) -> str:
         return f'ScpValue({self.value!r})'

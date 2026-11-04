@@ -487,7 +487,6 @@ class TestRejected(HookTestCase):
             'wrong type': r"unsupported type: <class 'int'>$",
             'None default': 'a default is an int, float or str, not None$',
             'None type': 'needs a type: Value32, Nullable32, str, NullableStr or Pointer$',
-            'non-finite default': "non-finite float nan: the game can't use it$",
             '*args': r'must be positional \(no \*args, keyword-only or \*\*kwargs\)$',
             'keyword-only': r'must be positional \(no \*args, keyword-only or \*\*kwargs\)$',
             '**kwargs': r'must be positional \(no \*args, keyword-only or \*\*kwargs\)$',
@@ -518,10 +517,6 @@ class TestRejected(HookTestCase):
                     elif case == 'None type':
                         @self.writer.LLILCode()
                         def New(arg1: Value32, arg2: None):             # line: None type
-                            RETURN()
-                    elif case == 'non-finite default':
-                        @self.writer.LLILCode()
-                        def New(arg1: Value32, arg2: Value32 = float('nan')):   # line: non-finite default
                             RETURN()
                     elif case == '*args':
                         @self.writer.LLILCode()

@@ -1,7 +1,6 @@
 """Writer runtime for reassembling ED9 VM bytecode from decompiled Python script output"""
 
 import inspect
-import math
 import sys
 from dataclasses import dataclass, field
 from enum import Enum
@@ -835,14 +834,11 @@ class ScpWriter:
 
     @classmethod
     def _value_bytes(cls, value: ScpValue) -> bytes:
-        """A non-string value's on-disk word; ValueError for one the game can't use (checked here, not in ScpValue,
-        which must still decode and re-encode any word)"""
-        if value.type == ScpValue.Type.Float:
-            if not math.isfinite(value.value):
-                raise ValueError(f"non-finite float {value.value}: the game can't use it")
-
-            if ScpValue.float_word(value.value) is None:
-                raise ValueError(f"float {value.value} is outside float32's range: the game can't use it")
+        """A non-string value's on-disk word; ValueError for a float past float32's range, which has no word (checked
+        here, not in ScpValue, which must still decode and re-encode any word). +-inf and NaN store as the VM stores
+        its own results, the 2 dropped bits cut (docs/falcom/ed9/ED9_VM.md, Floats)"""
+        if value.type == ScpValue.Type.Float and ScpValue.float_word(value.value) is None:
+            raise ValueError(f"float {value.value} is outside float32's range: the game can't use it")
 
         return value.to_bytes()
 

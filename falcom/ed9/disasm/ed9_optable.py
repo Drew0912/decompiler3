@@ -7,7 +7,7 @@ from dc3 import fileio, IntEnum2, quote_string
 from assembler.instruction_table import *
 from assembler.instruction import *
 from assembler.basic_block import *
-from .stack_effects import STACK_EFFECTS, InstructionKind
+from .stack_effects import REGISTER_COUNT, STACK_EFFECTS, InstructionKind
 from ..structs.scp_types import *
 
 if TYPE_CHECKING:
@@ -94,6 +94,13 @@ def _ed9_oprdesc(opr_type: OperandType | ED9OperandType, is_hex: bool = False):
     return ED9OperandDescriptor(OperandFormat(opr_type, is_hex=is_hex))
 
 
+def _register_oprdesc() -> ED9OperandDescriptor:
+    """A register index: a byte, below REGISTER_COUNT (the VM stops the thread on any other)"""
+    descriptor = _ed9_oprdesc(OperandType.UInt8)
+    descriptor.format.value_range = range(REGISTER_COUNT)
+    return descriptor
+
+
 # Extend format table with ED9-specific types
 ED9_FORMAT_TABLE = OperandDescriptor.format_table.copy()
 ED9_FORMAT_TABLE.update({
@@ -103,6 +110,7 @@ ED9_FORMAT_TABLE.update({
     'V' : _ed9_oprdesc(ED9OperandType.Value),
     'S' : _ed9_oprdesc(OperandType.String),
     'G' : _ed9_oprdesc(ED9OperandType.GlobalVar),
+    'R' : _register_oprdesc(),                  # GET_REG / SET_REG
 })
 
 
@@ -134,8 +142,8 @@ ED9_OPCODE_TABLE = [
     InstructionEntry(0x08, 'SET_GLOBAL',              'G',                                 kind=InstructionKind.STORE_GLOBAL),
 
     # Registers
-    InstructionEntry(0x09, 'GET_REG',                 'C',                                 kind=InstructionKind.LOAD_REG),
-    InstructionEntry(0x0A, 'SET_REG',                 'C',                                 kind=InstructionKind.STORE_REG),
+    InstructionEntry(0x09, 'GET_REG',                 'R',                                 kind=InstructionKind.LOAD_REG),
+    InstructionEntry(0x0A, 'SET_REG',                 'R',                                 kind=InstructionKind.STORE_REG),
 
     # Control flow
     InstructionEntry(0x0B, 'JMP',                     'O',   InstructionFlags.END_BLOCK,   kind=InstructionKind.JUMP),

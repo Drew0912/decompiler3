@@ -375,6 +375,6 @@ Decided against on 2026-10-01 (reasons in the handoff):
   scripts always use the same flags, fidelity output is recognizable without it (no library manifest,
   unreachable code kept), and it adds lines to every file.
 
-Known and left as is: `ScpValue` quiets signaling-NaN float words (none in the corpus). (`common_all.py`'s own
-`except ModuleNotFoundError`, which swallowed a failed import inside a library module, went in 3f-2: a script's
-library import now re-raises it, like the hook import.)
+Gone: `common_all.py`'s own `except ModuleNotFoundError`, which swallowed a failed import inside a library module
+(3f-2: a script's library import now re-raises it, like the hook import), and the quieted signaling-NaN float words
+(2026-11-04: Python 3.14 keeps a NaN's bits, and the `.py` prints a NaN as `FloatWord(0x..)`).

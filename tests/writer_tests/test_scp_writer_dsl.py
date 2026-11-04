@@ -5,7 +5,6 @@ its value."""
 
 from enum import IntEnum, StrEnum
 import inspect
-import math
 from pathlib import Path
 import re
 import sys
@@ -20,6 +19,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from dc3.enum import IntEnum2, IntFlag2
 from ir.llil import WORD_SIZE
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
+from falcom.ed9.disasm.stack_effects import REGISTER_COUNT
 from falcom.ed9.structs.scp_types import RawInt, ScpValue
 from falcom.ed9.writer import scp_writer_opcode_handler
 from falcom.ed9.writer.scp_writer_helper import *
@@ -136,7 +136,7 @@ class TestHandleOpcode(unittest.TestCase):
         POP(WORD_SIZE)
 
         with self.assertRaises(ValueError):
-            PUSH_FLOAT(math.inf)                        # raises after the PUSH header is written
+            PUSH_FLOAT(3.5e38)                          # past float32's range: raises after the PUSH header
 
         self.assertEqual([call[:2] for call in calls], [
             (ED9Opcode.PUSH_FLOAT, (1.0,)), (ED9Opcode.PUSH_STR, ('text',)), (ED9Opcode.PUSH_CURRENT_FUNC_ID, ()),
@@ -228,26 +228,10 @@ class TestPushFloat(unittest.TestCase):
         with self.assertRaisesRegex(TypeError, 'PUSH_FLOAT takes no bool operand: True'):
             PUSH_FLOAT(True)
 
-    def test_non_finite_float_does_not_compile(self):
-        for value in (math.inf, -math.inf, math.nan):
-            with self.subTest(value=value):
-                with self.assertRaisesRegex(ValueError, f"^Body: PUSH_FLOAT non-finite float {value}: the game can't "
-                                                        "use it$"):
-                    PUSH_FLOAT(value)
-
     def test_float_past_float32_range_does_not_compile(self):
         with self.assertRaisesRegex(ValueError, r"^Body: PUSH_FLOAT float 3\.5e\+38 is outside float32's range: the "
                                                 r"game can't use it$"):
             PUSH_FLOAT(3.5e38)
-
-    def test_non_finite_default_does_not_compile(self):
-        """Rejected at its def, with the line: defaults are written apart from the bodies"""
-        writer = fresh_writer()
-        with self.assertRaisesRegex(TypeError, rf"^{at(__file__, 'nan default')}parameter arg1 of NanDefault: "
-                                               "non-finite float nan: the game can't use it$"):
-            @writer.LLILCode()
-            def NanDefault(arg1: Nullable32 = math.nan):    # line: nan default
-                RETURN()
 
 
 class TestPush(unittest.TestCase):
@@ -377,8 +361,8 @@ class TestValueRanges(unittest.TestCase):
         """SET_REG(256) used to compile as SET_REG(0)"""
         cases = [
             # (mnemonic, emit, operand number, last value that fits, first that doesn't, the range)
-            ('SET_REG', SET_REG, 1, 255, 256, '0..255'),
-            ('GET_REG', GET_REG, 1, 0, -1, '0..255'),
+            ('SET_REG', SET_REG, 1, REGISTER_COUNT - 1, REGISTER_COUNT, f'0..{REGISTER_COUNT - 1}'),
+            ('GET_REG', GET_REG, 1, 0, -1, f'0..{REGISTER_COUNT - 1}'),
             ('POP', POP, 1, 255, 256, '0..255'),
             ('SYSCALL', lambda value: SYSCALL(1, value, 0), 2, 255, 256, '0..255'),
             ('CALL_SCRIPT', lambda value: CALL_SCRIPT('this', 'Main', value), 3, 255, 256, '0..255'),

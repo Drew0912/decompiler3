@@ -7,7 +7,6 @@ string the pool can't store failing where it enters, and the string pool without
 
 from enum import StrEnum
 import logging
-import math
 from pathlib import Path
 import re
 import struct
@@ -595,6 +594,50 @@ class TestSplitPop(WriterTestCase):
             self.assertIn(f'    POP({byte_count})', script)
 
 
+class TestNonFiniteFloats(WriterTestCase):
+    """+-inf and NaN store as the VM stores them, and a NaN prints as its word, FloatWord(0x..), so its sign and payload
+    compile back: compiled, decoded, printed and compiled again to the same bytes"""
+
+    WORDS = (
+        0x9FE00000,     # +inf
+        0xBFE00000,     # -inf
+        0x9FF00000,     # quiet NaN, float('nan')'s word
+        0xBFF00000,     # quiet NaN, negative
+        0x9FE80001,     # signaling NaN with a payload
+        0xBFE88D14,     # signaling NaN, negative, with a payload
+    )
+    DEFAULT_WORD = 0xBFE88D14
+
+    def build(self, values: list[float], default: float) -> bytes:
+        writer = self.fresh_writer()
+
+        @writer.LLILCode()
+        def Main(arg1: Value32 = default):
+            for value in values:
+                PUSH_FLOAT(value)
+            POP((len(values) + 1) * WORD_SIZE)             # the pushes and the parameter
+            RETURN()
+
+        return writer.build({})
+
+    def test_compile_decode_print_compile_again(self):
+        compiled = self.build([FloatWord(word) for word in self.WORDS], FloatWord(self.DEFAULT_WORD))
+        parser, functions = parse(compiled)
+        texts = [ScpValue.float_literal(inst.operands[0].value) for inst in parser.get_instructions(functions['Main'])
+                 if inst.opcode == ED9Opcode.PUSH_FLOAT]
+        script = parser.gen_python_script(list(functions.values()))
+
+        nan_texts = [f'FloatWord(0x{word:08X})' for word in self.WORDS[2:]]
+        self.assertEqual(texts, ["float('inf')", "-float('inf')", *nan_texts])
+        for text in texts:
+            self.assertIn(f'    PUSH_FLOAT({text})', script)
+        self.assertIn(f'arg1: Value32 = FloatWord(0x{self.DEFAULT_WORD:08X})', script)
+
+        # Each printed literal, run as the .py runs it
+        names = {'FloatWord': FloatWord}
+        self.assertEqual(self.build([eval(text, names) for text in texts], FloatWord(self.DEFAULT_WORD)), compiled)
+
+
 class TestOperandRanges(WriterTestCase):
     """A global index must be in the declared table, and an operand out of its type's range (test_scp_writer_dsl.py's
     TestValueRanges) fails at its line"""
@@ -668,8 +711,6 @@ class TestOperandRanges(WriterTestCase):
             'PUSH_RAW': (lambda: PUSH_RAW(RawInt(0x40000001)), ValueError,
                          r'PUSH_RAW RawInt 0x40000001 is outside 0\.\.0x3fffffff: '),
             'PUSH': (lambda: PUSH(600000000), ValueError, 'PUSH Integer 600000000 is outside '),
-            'PUSH_FLOAT inf': (lambda: PUSH_FLOAT(math.inf), ValueError,
-                               "PUSH_FLOAT non-finite float inf: the game can't use it$"),
             'PUSH_FLOAT past float32': (lambda: PUSH_FLOAT(3.5e38), ValueError,
                                         r"PUSH_FLOAT float 3\.5e\+38 is outside float32's range: "),
             'PUSH_STR str enum': (lambda: PUSH_STR(Kind.A), TypeError,
@@ -957,7 +998,7 @@ class TestCheckOffLocations(WriterTestCase):
             SET_REG(256)
             RETURN()
 
-        with self.assertRaisesRegex(ValueError, r'^Main: SET_REG operand 1 is 256, outside 0\.\.255$'):
+        with self.assertRaisesRegex(ValueError, r'^Main: SET_REG operand 1 is 256, outside 0\.\.15$'):
             writer.build({})
 
     def test_pushed_value_out_of_range_names_only_the_function(self):

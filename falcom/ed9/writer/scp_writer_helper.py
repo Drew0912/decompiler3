@@ -1,9 +1,10 @@
 """DSL statements that emit no instruction (label, GLOBAL_VAR) and genLabel(), layered over the per-opcode primitives;
-also re-exports the hook-file API (scp_writer_hooks), create_scp_writer (every script's first call) and WORD_SIZE (hook
-bodies)"""
+also re-exports the hook-file API (scp_writer_hooks), create_scp_writer (every script's first call), WORD_SIZE (hook
+bodies) and log (scripts and hook files: a public name, docs/dsl/HOOKS.md)"""
 
 import uuid
 
+from dc3.logging import log
 from ir.llil import WORD_SIZE
 from .scp_writer import create_scp_writer, require_type as _require_type
 from .scp_writer_opcode_handler import *

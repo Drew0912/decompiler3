@@ -56,9 +56,10 @@ shortest float literal that stores the same word (`ScpValue.float_literal`): `PU
 decoded `PUSH_FLOAT(0.2999999523162842)`, and the same for float parameter defaults (`= 0.2`). It is
 always a float literal (`1.0`, `-0.0`), because the writer picks the encoding from the Python type;
 `PUSH_FLOAT` itself converts an `int` with `float()`, so a hand-written `PUSH_FLOAT(1)` still pushes a
-float, and `PUSH_INT` a `RawInt` with `int()`, so `PUSH_INT(RawInt(5))` pushes an Integer. Non-finite floats
-print as `float('inf')`/`float('nan')`: decoding one logs a warning and compiling it raises, though the VM handles
-them (`docs/falcom/ed9/ED9_VM.md`, Values). `CALL_SCRIPT`/`CALL_SCRIPT_NO_RETURN` names print as plain
+float, and `PUSH_INT` a `RawInt` with `int()`, so `PUSH_INT(RawInt(5))` pushes an Integer. An inf prints as
+`float('inf')` / `-float('inf')`, and a NaN as its stored word, `FloatWord(0xBFE88D14)`, which keeps its sign and
+payload (`float('nan')` stores one word only); both compile as the VM stores its own results, the 2 dropped bits
+cut (`docs/falcom/ed9/ED9_VM.md`, Values, Floats). `CALL_SCRIPT`/`CALL_SCRIPT_NO_RETURN` names print as plain
 strings, `CALL_SCRIPT("this", "GetCoolClone", 0)` - the writer wraps a bare `str` itself. An `int` must
 fit the 30-bit Integer payload (`ScpValue.INTEGER_MIN..INTEGER_MAX`, -0x20000000..0x1FFFFFFF) and a
 `RawInt` `0..0x3FFFFFFF`; past that, compiling raises at its line instead of storing a different number
@@ -73,7 +74,10 @@ stack the way the `.llil.asm` does, read from the parser's simulated stack (`Fun
 what it holds, `*` marking a dereference and `&` an address (`POP_TO` and `POP_TO_DEREF` count their
 offset from sp after their pop); the instruction that opened a local the code addresses gets
 `(local)`; `POP(n)` gets its slot count (in a split pop, the first `POP` also the bytes it leaves for the next:
-`POP(255)  # 63 slots + 3 bytes`, `POP(77)  # 20 slots`); each label gets the depth there:
+`POP(255)  # 63 slots + 3 bytes`, `POP(77)  # 20 slots`); each label gets the depth there. Whatever the stack
+comments' setting, a `PUSH_FLOAT` of a NaN gets what its word holds: its sign and, unless it is the plain NaN,
+`signaling` (its quiet bit clear) and its payload, as in
+`PUSH_FLOAT(FloatWord(0xBFE88D14))  # -NaN, signaling, payload 0x223450`. The stack comments look like this:
 ```python
     LOAD_STACK(-16)                 # slot 1 = arg2
     POP(12)                         # 3 slots
@@ -138,8 +142,8 @@ statement, the argument and the types it takes - `PUSH_INT value is 5.0 (float),
 its line. `CALL` of a function the script never registered says where one comes from: a library function
 listed in `@scena.CommonImports()`, a script function with `@scena.LLILCode()`, a hook function with
 `@add_function`. An integer operand must fit what its type reads back, and a global index the declared
-table - `SET_REG(256)` fails at its line (`SET_REG operand 1 is 256, outside 0..255`; `POP` takes at most
-255 bytes) instead of being truncated. A string - pushed, a `CALL_SCRIPT` name, a `str` default or a
+table - `SET_REG(16)` fails at its line (`SET_REG operand 1 is 16, outside 0..15`: the VM has 16 registers;
+`POP` takes at most 255 bytes) instead of being truncated. A string - pushed, a `CALL_SCRIPT` name, a `str` default or a
 global name - can't hold a NUL (the game ends the string there) or a lone surrogate (it can't be encoded):
 `PUSH_STR('a\x00b')` fails at its line (`PUSH_STR string 'a\x00b' contains a NUL, ..`), a default at its
 `def`. Errors raised while a body runs carry the `.py` line in their traceback.

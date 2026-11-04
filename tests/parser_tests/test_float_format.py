@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """ScpValue.float_literal: the .py spells a stored float as the shortest float literal that stores the same
-word (PUSH_FLOAT(0.3), not PUSH_FLOAT(0.2999999523162842)); non-finite floats, which the game can't use, print
-as a float() call and warn when decoded."""
+word (PUSH_FLOAT(0.3), not PUSH_FLOAT(0.2999999523162842)); an inf prints as a float() call, a NaN as its word,
+FloatWord(0x..), which takes only a word tagged Float."""
 
 import ast
 import math
@@ -14,8 +14,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from dc3.utils import float32_from_bits
-from falcom.ed9.structs import scp_types
-from falcom.ed9.structs.scp_types import ScpValue
+from falcom.ed9.structs.scp_types import FloatWord, ScpValue
 
 FLOAT_TAG       = ScpValue.Type.Float << ScpValue.TYPE_SHIFT
 RANDOM_WORDS    = 20000
@@ -103,23 +102,24 @@ class TestShortestText(unittest.TestCase):
 
 
 class TestNonFinite(unittest.TestCase):
-    def test_printed_as_a_float_call(self):
+    def test_inf_prints_as_a_float_call_and_nan_as_its_word(self):
         self.assertEqual(ScpValue.float_literal(math.inf), "float('inf')")
         self.assertEqual(ScpValue.float_literal(-math.inf), "-float('inf')")
 
-        # Any NaN word, not just the canonical one: it can't compile, so its bits don't matter
-        self.assertEqual(ScpValue.float_literal(float32_from_bits(F32_INF | (1 << ScpValue.FLOAT_DROPPED_BITS))), "float('nan')")
-
-    def test_decoding_warns(self):
-        word = float_word(F32_INF)
-        with self.assertLogs(scp_types.log, level='WARNING') as logs:
-            self.assertEqual(decode(word), math.inf)
-
-        self.assertIn(f"non-finite float inf (word 0x{word:08X}): the game can't use it", logs.output[0])
+        # Any NaN word, not just the canonical one
+        nan_bits = F32_INF | (1 << ScpValue.FLOAT_DROPPED_BITS)
+        self.assertEqual(ScpValue.float_literal(float32_from_bits(nan_bits)),
+                         f'FloatWord(0x{float_word(nan_bits):08X})')
 
     def test_still_encodable(self):
-        # The writer rejects it (test_scp_writer_dsl.py); ScpValue itself must still represent any word
+        # ScpValue represents any word
         self.assertEqual(ScpValue(math.inf).to_word(), float_word(F32_INF))
+
+    def test_float_word_takes_only_a_word_tagged_float(self):
+        """The likely slip: the float32 bits written for the word"""
+        with self.assertRaisesRegex(ValueError, r'^FloatWord takes a 32-bit word tagged Float \(its top 2 bits 10\), '
+                                                r'not 0x7FC00000$'):
+            FloatWord(0x7FC00000)
 
 
 class TestWord(unittest.TestCase):
