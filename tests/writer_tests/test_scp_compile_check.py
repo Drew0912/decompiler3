@@ -386,10 +386,10 @@ class TestStackMistakes(CheckTestCase):
         @self.writer.LLILCode()
         def Log(arg1: Value32):
             PUSH_INT(1)
-            DEBUG_LOG(2)                            # line: debug log past the pushes
+            POPN(2)                                 # line: debug log past the pushes
             RETURN()
 
-        self.assertCheckFails(rf"{at(__file__, 'debug log past the pushes')}Log: DEBUG_LOG at {HEX}: ")
+        self.assertCheckFails(rf"{at(__file__, 'debug log past the pushes')}Log: POPN at {HEX}: ")
 
     def test_tail_call_count_past_the_pushes(self):
         @self.writer.LLILCode()

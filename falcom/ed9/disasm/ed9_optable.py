@@ -178,7 +178,7 @@ ED9_OPCODE_TABLE = [
     InstructionEntry(0x24, 'SYSCALL',                 'CBB',                               kind=InstructionKind.SYSCALL),
     InstructionEntry(0x25, 'PUSH_CALLER_FRAME',       'O',   InstructionFlags.START_BLOCK, kind=InstructionKind.PUSH_CALLER_FRAME),
     InstructionEntry(0x26, 'DEBUG_SET_LINENO',        'H',                                 kind=InstructionKind.DEBUG_LINE),
-    InstructionEntry(0x27, 'DEBUG_LOG',               'C',                                 kind=InstructionKind.DEBUG_LOG),
+    InstructionEntry(0x27, 'POPN',                    'C',                                 kind=InstructionKind.DEBUG_LOG),
 
     # Pseudo-instructions (optimized from other instructions)
     InstructionEntry(0x1000, 'PUSH_CURRENT_FUNC_ID',  '',                                  kind=InstructionKind.PUSH_FUNC_ID),
@@ -257,7 +257,7 @@ class ED9Opcode(IntEnum2):
     SYSCALL                 = _opcode('SYSCALL')
     PUSH_CALLER_FRAME       = _opcode('PUSH_CALLER_FRAME')
     DEBUG_SET_LINENO        = _opcode('DEBUG_SET_LINENO')
-    DEBUG_LOG               = _opcode('DEBUG_LOG')
+    POPN                    = _opcode('POPN')
 
     # Never seen in a sample script and its operand format is unknown - not in the table, so decoding it raises
     UNKNOWN_28              = 0x28

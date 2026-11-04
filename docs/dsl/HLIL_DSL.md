@@ -197,7 +197,7 @@ If(btl_check_resist_condition(65507, 50, 0) == 0, [
     EmitLLIL([
         LOAD_STACK(v.var_s5),     # +1, compiles to LOAD_STACK(-8)
         PUSH_STR("駆動解除レジストできないやつ発見：chrid："),   # +1
-        DEBUG_LOG(2),             # -2, pops both
+        POPN(2),                  # -2, pops both
     ]),
     Return(1),
 ]),

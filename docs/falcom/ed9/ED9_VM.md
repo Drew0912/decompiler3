@@ -57,7 +57,7 @@ Every value is a 32-bit word; its top 2 bits are the tag [exe]:
 - 0x27 `POPN`: a u8 count; it pops that many slots and does nothing else (nothing is logged) [exe].
 - 0x28 `DEBUG_INT`: a u32 operand, 5 bytes in all; it calls the logger at level 0, which drops everything below level
   2, so it does nothing at runtime [exe].
-- decompiler3's opcode table still names 0x27 `DEBUG_LOG` and has no 0x28 row.
+- decompiler3's opcode table has no 0x28 row.
 - 0x20 `EZ` is the logical not, 0x21 `NOT` the bitwise not [exe].
 - 0x26 `DEBUG_SET_LINENO` stores its u16 in the thread and does nothing else; nothing in the VM reads it [exe].
 - `PUSH` (0x00): a size byte, then a 4-byte word. It checks `sp + size <= stack size`, copies `size` bytes from the

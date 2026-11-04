@@ -260,10 +260,10 @@ def DEBUG_SET_LINENO(lineno: uint16):
     return get_scp_writer().handle_opcode(ED9Opcode.DEBUG_SET_LINENO, lineno)
 
 
-def DEBUG_LOG(argc: uint8):
-    """Debug print of the top argc stack values, message first; pops them (Opcode 0x27)"""
-    _require_type('DEBUG_LOG', 'argc', argc, uint8)
-    return get_scp_writer().handle_opcode(ED9Opcode.DEBUG_LOG, argc)
+def POPN(count: uint8):
+    """Pop count values and discard them; logs nothing (Opcode 0x27)"""
+    _require_type('POPN', 'count', count, uint8)
+    return get_scp_writer().handle_opcode(ED9Opcode.POPN, count)
 
 
 def UNKNOWN_28(operand_bytes: bytes = b''):

@@ -141,7 +141,7 @@ class ED9VMLifter:
             case ED9Opcode.DEBUG_SET_LINENO:
                 builder.debug_line(int(inst.operands[0].value))
 
-            case ED9Opcode.DEBUG_LOG:
+            case ED9Opcode.POPN:
                 builder.debug_log(int(inst.operands[0].value))
 
             case ED9Opcode.CALL:

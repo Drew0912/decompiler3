@@ -37,7 +37,7 @@ Compilation (the actual recompilation direction):
 ## 1. The DSL Itself
 
 `falcom/ed9/writer/scp_writer_opcode_handler.py` defines one Python function per VM opcode
-(`PUSH`, `LOAD_STACK`, `JMP`, `CALL_SCRIPT`, `DEBUG_LOG`, etc.), each calling
+(`PUSH`, `LOAD_STACK`, `JMP`, `CALL_SCRIPT`, `POPN`, etc.), each calling
 `get_scp_writer().handle_opcode(...)`, which rejects a `bool` operand (`True` would otherwise
 pass the `int` checks and encode as 1). `falcom/ed9/writer/scp_writer_helper.py` layers the DSL
 statements that emit no instruction over that (`label()`, `GLOBAL_VAR`, and `genLabel()`, a fresh
@@ -219,7 +219,7 @@ WARNING   test.py:12: Main: SYSCALL at 0x3C: reads 2 values, but the POP after i
 ```
 A slot offset that isn't a multiple of `WORD_SIZE` fails decompiling too, like a partial `POP`.
 An opcode can't use a parameter's slot in place - consume it (`SET_REG`, `ADD`, `POP_TO`, ...),
-read it (`SYSCALL`, `DEBUG_LOG`) or forward it to `CALL_SCRIPT_NO_RETURN`: that is valid VM code, but
+read it (`SYSCALL`, `POPN`) or forward it to `CALL_SCRIPT_NO_RETURN`: that is valid VM code, but
 the decompiler doesn't follow it, so the check fails naming the parameter (`uses the slot of parameter 1
 (arg1) in place`). Work on a `LOAD_STACK` copy, which moves every offset below it one slot further:
 `POP_TO(-WORD_SIZE)` (`arg1` into `arg2`) becomes `LOAD_STACK(-WORD_SIZE)`, `POP_TO(-2 * WORD_SIZE)`,

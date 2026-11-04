@@ -155,7 +155,7 @@ class TestOpcodeFunctions(unittest.TestCase):
         'POP_TO': (0,), 'POP_TO_DEREF': (0,), 'LOAD_GLOBAL': (0,), 'SET_GLOBAL': (0,), 'GET_REG': (0,),
         'SET_REG': (0,), 'JMP': ('target',), 'CALL': (lambda: None, 2, False), 'POP_JMP_NOT_ZERO': ('target',),
         'POP_JMP_ZERO': ('target',), 'CALL_SCRIPT': ('this', 'func', 0), 'CALL_SCRIPT_NO_RETURN': ('this', 'func', 0),
-        'SYSCALL': (1, 2, 3), 'PUSH_CALLER_FRAME': ('target',), 'DEBUG_SET_LINENO': (1,), 'DEBUG_LOG': (1,),
+        'SYSCALL': (1, 2, 3), 'PUSH_CALLER_FRAME': ('target',), 'DEBUG_SET_LINENO': (1,), 'POPN': (1,),
         'UNKNOWN_28': (b'',), 'PUSH_RET_ADDR': ('target',), 'PUSH_RAW': (RawInt(1),), 'PUSH_INT': (1,),
         'PUSH_FLOAT': (1.0,), 'PUSH_STR': ('s',),
     }

@@ -35,7 +35,7 @@ OFFSET_OPS = {
     'frame': ED9Opcode.PUSH_CALLER_FRAME,
 }
 BYTE_OPERAND_OPS = {
-    'pop': ED9Opcode.POP, 'get_reg': ED9Opcode.GET_REG, 'set_reg': ED9Opcode.SET_REG, 'debug_log': ED9Opcode.DEBUG_LOG,
+    'pop': ED9Opcode.POP, 'get_reg': ED9Opcode.GET_REG, 'set_reg': ED9Opcode.SET_REG, 'debug_log': ED9Opcode.POPN,
 }
 NO_OPERAND_OPS = {
     'add': ED9Opcode.ADD, 'sub': ED9Opcode.SUB, 'mul': ED9Opcode.MUL, 'div': ED9Opcode.DIV, 'mod': ED9Opcode.MOD,

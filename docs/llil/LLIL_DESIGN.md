@@ -65,7 +65,7 @@ count from the current `sp`, frame offsets from the frame base.
 
 **Reading is shared**, as in MLIL. Every node's `operands()` returns the expressions it holds, in
 evaluation order (a binary operation its `lhs` and `rhs`, a store its `value`, a pointer store its
-`dest` and `value`, a branch its `condition`, a call, syscall or `DEBUG_LOG` its arguments; a leaf
+`dest` and `value`, a branch its `condition`, a call, syscall or `POPN` its arguments; a leaf
 none); the Falcom nodes answer the same way (`falcom/ed9/ir/llil/`). `walk()` (`ir/llil/llil.py`)
 visits a node and everything below it, pre-order, with an optional `skip` of types it yields but does
 not descend into. A search over LLIL expressions is built on them, so a new node type needs only its
@@ -153,8 +153,8 @@ stack empty with no setup pending; the parser checks it at every exit.
 `RETURN` reads (`RESULT_REGISTER`, `falcom/ed9/disasm/stack_effects.py`).
 
 **Not terminals:** `SYSCALL` reads its `argc` arguments from the top of the stack without popping
-them and leaves `sp` unchanged; `DEBUG_LOG argc` reads its arguments (message first), then pops
-them.
+them and leaves `sp` unchanged; `POPN count` pops `count` slots, which the lifter keeps as a debug
+print's arguments (message first).
 
 ## Control Flow and Per-Edge Stack State
 

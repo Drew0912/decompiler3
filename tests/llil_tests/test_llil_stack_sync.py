@@ -152,7 +152,7 @@ class TestArgumentCountReachingIntoParameters(unittest.TestCase):
         def build(asm: Asm):
             asm.push_int(PUSHED_VALUE); asm.debug_log(2); asm.ret()
 
-        self.assert_lift_fails_at('DEBUG_LOG', build)
+        self.assert_lift_fails_at('POPN', build)
 
     def test_tail_call_with_more_arguments_than_pushed(self):
         def build(asm: Asm):
