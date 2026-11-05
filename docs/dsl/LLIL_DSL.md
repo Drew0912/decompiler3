@@ -214,7 +214,11 @@ WARNING   test.py:31: A: 2 opcodes at 0x3D..0x45 never run (no path reaches them
 A fidelity decompile keeps the game's own dead code, which warns the same way. A script turns the
 warning off with `scena.warn_unreachable_code = False` (`ScpWriter.warn_unreachable_code`, on by
 default; turning the compile check off also silences it). Not checked: a stack that balances but reads
-the wrong slot. A read or write outside the live stack fails at once; decompiling a game `.dat` only
+the wrong slot. Nor the stack's depth: a script thread has 512 bytes and a push past them stops it
+(`docs/falcom/ed9/ED9_VM.md`, The thread and its loop); the deepest `sora2` call chain uses 368. Nor a
+String that crosses files, as an argument to another file's function or as its result: it is an offset
+into one file's string pool, read in the other's (`ED9_VM.md`, Values); no `sora2` script passes one.
+A read or write outside the live stack fails at once; decompiling a game `.dat` only
 warns about it. A `SYSCALL` whose argc reaches past the stack fails at once too (`reads 2 entries, the
 stack has 1: [..]`); decompiling fails only that function's lift. While the stack balances, nothing checks a
 `SYSCALL`'s argc, so it must match its own `POP` right after it, the only form the game's compiler emits:

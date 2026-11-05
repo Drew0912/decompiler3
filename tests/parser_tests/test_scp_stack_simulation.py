@@ -188,7 +188,9 @@ class TestEdgeStates(unittest.TestCase):
                     asm.pop(WORD_SIZE * (2 if pops else 3)); asm.ret()          # balanced, as for a whole slot
                     program = Program(main_function(asm))
                     assert_fails_at(self, program, program.label('access'), mnemonic,
-                                    f'addresses byte offset {offset}, not a whole slot ({WORD_SIZE} bytes each)')
+                                    f'addresses byte offset {offset}, not a whole slot ({WORD_SIZE} bytes each), '
+                                    "which the VM allows (it reaches across two slots) but the decompiler can't "
+                                    'follow - offsets count bytes')
 
     def test_return_with_a_value_left_raises(self):
         asm = Asm()
@@ -735,7 +737,8 @@ class TestScriptCalls(unittest.TestCase):
         caller = Asm()
         caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE); caller.call_script_no_return(1)
         assert_fails_at(self, Program(main_function(caller)), 0xC, 'CALL_SCRIPT_NO_RETURN',
-                        'leaves [PUSH_INT@0x0] below its args')
+                        'leaves [PUSH_INT@0x0] below its args, which the VM allows (it discards them, setting sp to '
+                        "0) but the decompiler can't follow - pass the args through registers (SET_REG, POP, GET_REG)")
 
     def test_plain_disassembler_keeps_the_frame_edge(self):
         """Without the parser nothing simulates calls, so PUSH_CALLER_FRAME still declares its return block"""
@@ -807,7 +810,8 @@ class TestCheckOrder(unittest.TestCase):
         asm = Asm()
         asm.pop_to(-1); asm.ret()                                                        # on an empty stack
         assert_fails_at(self, Program(main_function(asm)), 0x0, 'POP_TO',
-                        f'addresses byte offset -1, not a whole slot ({WORD_SIZE} bytes each)')
+                        f'addresses byte offset -1, not a whole slot ({WORD_SIZE} bytes each), which the VM allows '
+                        "(it reaches across two slots) but the decompiler can't follow - offsets count bytes")
 
     def test_pop_to_pops_before_it_writes(self):
         asm = Asm()

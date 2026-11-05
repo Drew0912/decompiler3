@@ -29,6 +29,8 @@ from ir.hlil.hlil import (
 from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
 from tests.shared.llil_utils import FUNC_START, SECOND_BLOCK_START, THIRD_BLOCK_START, make_builder
 
+NOT_A_PARAMETER_SLOT_1 = '^dereferences slot 1, which holds no caller parameter: '
+
 
 def build_function_with_deref(num_params: int, offset: int, *, deref_write: bool, with_ret: bool = False):
     """1-param function: load_stack_deref(offset) if not deref_write, else push a marker then
@@ -79,12 +81,12 @@ class TestDerefLift(unittest.TestCase):
 
     def test_load_stack_deref_at_non_parameter_slot_raises(self):
         # 1 parameter (slot 0). offset=0 -> slot_index = 1, not a parameter slot.
-        with self.assertRaises(NotImplementedError):
+        with self.assertRaisesRegex(NotImplementedError, NOT_A_PARAMETER_SLOT_1):
             build_function_with_deref(num_params=1, offset=0, deref_write=False)
 
     def test_pop_to_deref_at_non_parameter_slot_raises(self):
         # 1 parameter (slot 0). offset=0 after the push -> slot_index 1, not a parameter slot.
-        with self.assertRaises(NotImplementedError):
+        with self.assertRaisesRegex(NotImplementedError, NOT_A_PARAMETER_SLOT_1):
             build_function_with_deref(num_params=1, offset=0, deref_write=True)
 
 

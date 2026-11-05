@@ -793,7 +793,9 @@ class ScpParser(StrictBase):
         if effect.addresses_slot:
             offset = inst.operands[SLOT_OFFSET_OPERAND].value
             if offset % WORD_SIZE:
-                context.fail(f'addresses byte offset {offset}, not a whole slot ({WORD_SIZE} bytes each)', inst)
+                context.fail(f'addresses byte offset {offset}, not a whole slot ({WORD_SIZE} bytes each), which '
+                             "the VM allows (it reaches across two slots) but the decompiler can't follow - "
+                             'offsets count bytes', inst)
 
         match inst.descriptor.kind:
             case kind if kind in PLAIN_VALUE_KINDS:
@@ -899,7 +901,9 @@ class ScpParser(StrictBase):
         """CALL_SCRIPT_NO_RETURN: the callee takes over the args, which must be all that is left on the stack"""
         context.pop_entries(context.call_argc(inst))
         if context.stack_simulation:
-            context.fail(f'leaves {format_stack(context.stack_simulation)} below its args', inst)
+            context.fail(f'leaves {format_stack(context.stack_simulation)} below its args, which the VM allows (it '
+                         "discards them, setting sp to 0) but the decompiler can't follow - pass the args through "
+                         'registers (SET_REG, POP, GET_REG)', inst)
 
     def require_code_before_strings(self, functions: list[Function]):
         """Every reachable instruction must end before the string pool, whose start is known only from references: the

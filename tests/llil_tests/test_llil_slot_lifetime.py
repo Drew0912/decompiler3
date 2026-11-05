@@ -182,7 +182,7 @@ class TestAccessBelowTheStack(unittest.TestCase):
 
     def test_dereference_raises_as_not_a_parameter(self):
         # Guard: a dereference needs a parameter slot, a rule older than the below-stack one
-        with self.assertRaisesRegex(NotImplementedError, 'requires a slot still holding a caller parameter, got slot -1'):
+        with self.assertRaisesRegex(NotImplementedError, '^dereferences slot -1, which holds no caller parameter: '):
             self.builder().load_stack_deref(self.BELOW_ONE_PARAMETER)
 
     def test_lowest_slot_is_still_in_the_frame(self):

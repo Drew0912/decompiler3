@@ -280,7 +280,8 @@ class TestStackMistakes(CheckTestCase):
             RETURN()
 
         self.assertCheckFails(rf'{at(__file__, "offset in slots")}Main: LOAD_STACK at {HEX}: addresses byte offset -1, '
-                              rf'not a whole slot \({WORD_SIZE} bytes each\)$')
+                              rf'not a whole slot \({WORD_SIZE} bytes each\), which the VM allows \(it reaches across '
+                              r"two slots\) but the decompiler can't follow - offsets count bytes$")
 
     def test_pop_ending_inside_a_slot_fails_at_its_line(self):
         """A POP's bytes end on a slot, alone or with the POPs right after it"""

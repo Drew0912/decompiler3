@@ -117,6 +117,10 @@ clean; MLIL -> HLIL 3 functions, all real. The 8 scripts left out were the parse
   too; a formula whose key's diagram passes 20,000 has no key, so a choice under it is told apart by the
   formula's digest. Answers are remembered by the formulas' digests, so of two comparisons of formulas equal but for
   the order of their `&&` / `||` items, the first decides whether the cap is passed.
+- Tests of one value against constants other than floats are read as excluding each other (`OVERLAPPING_CONSTANT_TYPES`,
+  `tools/logic_check/formulas.py`), but the VM's `EQ` makes a Raw word equal to 0 and to every other Raw word
+  (`docs/falcom/ed9/ED9_VM.md`, Comparisons): a test against a Raw constant overlaps the tests against 0 and against
+  other Raw constants. No `sora2` script compares against a Raw constant.
 
 ## Keeping this doc current
 

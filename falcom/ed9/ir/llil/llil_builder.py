@@ -188,20 +188,21 @@ class FalcomVMBuilder(LowLevelILBuilder):
         # offset is relative to sp after the pop
         self._store_slot(val, self._slot_index(offset), offset)
 
-    def _resolve_deref_param_ptr(self, slot_index: int, opcode_name: str):
+    def _resolve_deref_param_ptr(self, slot_index: int):
         """The pointer a dereference goes through - only a caller-supplied one, in a parameter the function still
         holds: a pointer in any other slot may point into this function's own frame. A decompiler rule: the compiler
         dereferences only parameters, while the VM follows any Integer (docs/falcom/ed9/ED9_VM.md, Pointers)"""
         if not self._holds_parameter(slot_index):
             raise NotImplementedError(
-                f'{opcode_name} requires a slot still holding a caller parameter, got slot {slot_index}'
+                f"dereferences slot {slot_index}, which holds no caller parameter: the VM follows any Integer but the "
+                "decompiler can't - dereference a pointer parameter, or address the slot directly (LOAD_STACK, POP_TO)"
             )
 
         return self.frame_load(self._frame_offset(slot_index))
 
     def load_stack_deref(self, offset: int):
         """LOAD_STACK_DEREF operation - dereference the pointer at STACK[sp + offset], push *ptr"""
-        ptr = self._resolve_deref_param_ptr(self._slot_index(offset), 'LOAD_STACK_DEREF')
+        ptr = self._resolve_deref_param_ptr(self._slot_index(offset))
         self.push(LowLevelILLoad(ptr))
 
     def pop_to_deref(self, offset: int):
@@ -209,7 +210,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
         (*ptr = value)"""
         val = self.pop(hidden_for_formatter=True)
         # offset is relative to sp after the pop (mirrors pop_to)
-        ptr = self._resolve_deref_param_ptr(self._slot_index(offset), 'POP_TO_DEREF')
+        ptr = self._resolve_deref_param_ptr(self._slot_index(offset))
         self.add_instruction(LowLevelILStore(ptr, val))
 
     def pop_jmp_zero(self, true_target, false_target):
