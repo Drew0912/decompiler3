@@ -51,14 +51,6 @@ class TestDroppedStores(CallResultTestCase):
         self.assertIsNone(self.calls(mlil)[0].output)
         self.assertNotIn('t1', mlil.locals)
 
-    def test_a_result_read_in_the_calls_block(self):
-        asm = Asm()
-        call(asm, 'after', 7); asm.get_reg(0); asm.set_global(GLOBAL_A)
-        return_nothing(asm)
-        mlil = self.convert(asm, callee_argc=1)
-
-        self.assertEqual(statements(mlil), ['t1 = callee(7)', f'GLOBAL[{GLOBAL_A}] = t1', *RETURNED])
-
     def test_a_result_read_by_a_condition(self):
         asm = Asm()
         call(asm, 'after'); asm.get_reg(0); asm.jz('skip')

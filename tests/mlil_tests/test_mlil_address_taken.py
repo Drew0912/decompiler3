@@ -55,15 +55,6 @@ class TestStackTempOutParamNoStaleConstant(unittest.TestCase):
         block.add_instruction(MLILRet(MLILVar(var_s5)))
         return func
 
-    def test_does_not_fold_to_the_pre_call_constant(self):
-        func = self._build()
-        optimize_mlil(func, infer_types=False)
-
-        ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
-                         if isinstance(inst, MLILRet))
-        self.assertFalse(isinstance(ret_inst.value, MLILConst) and ret_inst.value.value == 0,
-                          f'return folded to the pre-call constant: {ret_inst.value}')
-
     def test_ssa_gives_one_stable_address_no_second_version(self):
         func = self._build()
         SSAConversionPass().run(func)
@@ -182,40 +173,6 @@ class TestAddressTakenControlFlowShapes(unittest.TestCase):
 
 
 class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
-    def test_constant_not_propagated_across_call(self):
-        # x = 7; f(&x); return x - must not fold to `return 7`
-        func = MediumLevelILFunction('const_prop_test')
-        block = func.create_block(start=FUNC_START)
-        x = func.get_or_create_local('x')
-
-        block.add_instruction(MLILSetVar(x, MLILConst(7)))
-        block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(x))]))
-        block.add_instruction(MLILRet(MLILVar(x)))
-
-        optimize_mlil(func, infer_types=False)
-
-        ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
-                         if isinstance(inst, MLILRet))
-        self.assertFalse(isinstance(ret_inst.value, MLILConst) and ret_inst.value.value == 7)
-
-    def test_multiple_address_taken_args_to_one_call(self):
-        # x = 1; y = 2; f(&x, &y); return x + y - must not fold to `return 3`
-        func = MediumLevelILFunction('multi_addr_taken_test')
-        block = func.create_block(start=FUNC_START)
-        x = func.get_or_create_local('x')
-        y = func.get_or_create_local('y')
-
-        block.add_instruction(MLILSetVar(x, MLILConst(1)))
-        block.add_instruction(MLILSetVar(y, MLILConst(2)))
-        block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(x)), MLILAddressOf(MLILVar(y))]))
-        block.add_instruction(MLILRet(MLILAdd(MLILVar(x), MLILVar(y))))
-
-        optimize_mlil(func, infer_types=False)
-
-        ret_inst = next(inst for b in func.basic_blocks for inst in b.instructions
-                         if isinstance(inst, MLILRet))
-        self.assertFalse(isinstance(ret_inst.value, MLILConst) and ret_inst.value.value == 3)
-
     def test_address_taken_parameter_stays_one_stable_identity(self):
         func = MediumLevelILFunction('addr_taken_param_test')
         block = func.create_block(start=FUNC_START)

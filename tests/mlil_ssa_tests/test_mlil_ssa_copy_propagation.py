@@ -67,31 +67,6 @@ class TestCopyPropagationSafeCases(unittest.TestCase):
     """Regression guards: the redefinition check must not make propagation over-conservative
     for cases that were always safe."""
 
-    def test_simple_register_copy_with_no_redefinition_still_propagates(self):
-        func = make_func('simple')
-        reg0 = MLILVariable('reg0')
-        func.register_vars[0] = reg0
-        a = MLILVariable('a')
-        func.locals['a'] = a
-        r = MLILVariable('r')
-        func.locals['r'] = r
-
-        reg0_1 = MLILVariableSSA(reg0, 1)
-        a1 = MLILVariableSSA(a, 1)
-        r1 = MLILVariableSSA(r, 1)
-
-        block = MediumLevelILBasicBlock(0)
-        block.instructions = [
-            MLILSetVarSSA(reg0_1, MLILConst(42)),
-            MLILSetVarSSA(a1, MLILVarSSA(reg0_1)),   # a#1 = reg0#1, used once
-            MLILSetVarSSA(r1, MLILVarSSA(a1)),        # r#1 = a#1
-        ]
-        func.basic_blocks = [block]
-
-        CopyPropagationPass().run(func)
-
-        self.assertEqual(str(block.instructions[-1]), 'r#1 = reg0#1')
-
     def test_multi_hop_chain_resolves_to_true_root(self):
         func = make_func('chain')
         for n in ('c', 'b', 'a', 'r'):

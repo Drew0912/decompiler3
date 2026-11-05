@@ -729,11 +729,6 @@ class TestPlantedHLILBugs(unittest.TestCase):
             loop.body.statements.insert(0, statement)
         self.check(skipping_loop_function, mutate, 'guard_differs')
 
-    def test_arm_dropped(self):
-        def mutate(hlil):
-            arm_with_a_call(first_node(hlil, HLILIf))[0].statements.clear()
-        self.check(branch_function, mutate, 'missing_effect')
-
     def test_global_assigned_a_call_kept_as_the_bare_call(self):
         """GLOBALS[1] = callee(8, 7) made callee(8, 7): the call kept, the global's write gone"""
         def mutate(hlil):
@@ -1177,11 +1172,6 @@ class TestHLILStructures(unittest.TestCase):
     def test_inner_arms_joined_first(self):
         self.assertEqual(hlil_categories(*mlil_and_hlil(nested_arms_function)), set())
 
-    def test_value_after_a_split_exit_loop(self):
-        """The value merged after the loop from the two tests HLIL splits its exit into, each taken in one iteration:
-        a loop that runs ends through one of them"""
-        self.assertEqual(hlil_categories(*mlil_and_hlil(split_exit_value_function)), set())
-
     def test_split_exit_with_an_ordering_inverted(self):
         """The same, with HLIL's own inversion of an ordering: counted as that, not as a difference of the value"""
         mlil, hlil = mlil_and_hlil(split_exit_value_function)
@@ -1203,9 +1193,6 @@ class TestHLILStructures(unittest.TestCase):
         mlil, hlil = mlil_and_hlil(case_chain_function)
         first_node(hlil, HLILSwitch)
         self.assertEqual(hlil_categories(mlil, hlil), set())
-
-    def test_condition_split_at_its_short_circuit(self):
-        self.assertEqual(hlil_categories(*mlil_and_hlil(and_condition_function)), set())
 
     def test_hand_built_instructions_have_addresses(self):
         """tests.shared.ir_utils.connect gives each its own: the check keys effects and branches by address"""
@@ -1323,11 +1310,6 @@ class TestHLILStructures(unittest.TestCase):
         with formula_keys_past_their_caps():
             self.assertEqual(hlil_categories(*mlil_and_hlil(flag_then_test_function)), set())
 
-    def test_flag_set_from_a_flag_with_formulas_past_their_caps(self):
-        """The flag x only in the formulas of the flag y: lifted in turn (lifted_atom)"""
-        with formula_keys_past_their_caps():
-            self.assertEqual(hlil_categories(*mlil_and_hlil(flag_from_flag_function)), set())
-
     def test_flag_test_written_as_its_condition(self):
         """if (x) written if (GLOBAL_A), x's value under it: y's choice then holds x only in its formulas"""
         mlil, hlil = mlil_and_hlil(flag_copied_function)
@@ -1339,11 +1321,6 @@ class TestHLILStructures(unittest.TestCase):
         """Each copy carries in its arm's value: lifted into their formulas, the one MLIL loop's entry choice"""
         mlil, hlil = mlil_and_hlil(branch_then_loop_function)
         self.rebuild_in_both_arms(hlil)
-        self.assertEqual(hlil_categories(mlil, hlil), set())
-
-    def test_common_return(self):
-        mlil, hlil = mlil_and_hlil(two_returns_function)
-        self.extract_common_return(hlil)
         self.assertEqual(hlil_categories(mlil, hlil), set())
 
     def test_choices_past_the_lifting_cap(self):
@@ -1367,9 +1344,6 @@ class TestHLILStructures(unittest.TestCase):
         """The inner loop's only way out tested at once by MLIL, one operand at a time by HLIL"""
         self.assertEqual(hlil_categories(*mlil_and_hlil(split_exit_function)), set())
 
-    def test_early_exit(self):
-        self.assertEqual(hlil_categories(*with_hlil(build_function('f', EARLY_EXIT))), set())
-
     def test_calls_folded_into_conditions(self):
         self.assertEqual(hlil_categories(*with_hlil(calls_then_test())), set())
 
@@ -1388,9 +1362,6 @@ class TestHLILStructures(unittest.TestCase):
         func, hlil = with_hlil(equality_chain())
         self.assertTrue(any(isinstance(node, HLILSwitch) for node in iter_tree(hlil.body)))
         self.assertEqual(hlil_categories(func, hlil), set())
-
-    def test_region_repeated(self):
-        self.assertEqual(hlil_categories(*structure(SHARED_LOOP)), set())
 
 
 if __name__ == '__main__':

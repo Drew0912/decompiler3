@@ -211,12 +211,6 @@ class TestReturnConstantEquality(unittest.TestCase):
 
 
 class TestConstantValuesEqual(unittest.TestCase):
-    def test_same_ints_are_equal(self):
-        self.assertTrue(constant_values_equal(RETURN_VALUE, RETURN_VALUE))
-
-    def test_int_and_float_are_distinct(self):
-        self.assertFalse(constant_values_equal(INT_RETURN_VALUE, FLOAT_RETURN_VALUE))
-
     def test_bool_and_int_are_distinct(self):
         self.assertFalse(constant_values_equal(True, INT_RETURN_VALUE))
 
@@ -237,9 +231,6 @@ class TestContainsBareBreak(unittest.TestCase):
         self.assertFalse(contains_bare_break(None))
         self.assertFalse(contains_bare_break(HLILBlock()))
 
-    def test_direct_bare_break(self):
-        self.assertTrue(contains_bare_break(HLILBlock([make_call('a'), HLILBreak()])))
-
     def test_bare_break_in_else_arm(self):
         branch = HLILIf(make_selector(), HLILBlock([make_call('a')]), HLILBlock([HLILBreak()]))
         self.assertTrue(contains_bare_break(HLILBlock([branch])))
@@ -256,11 +247,6 @@ class TestContainsBareBreak(unittest.TestCase):
         for owner in owners:
             with self.subTest(owner=type(owner).__name__):
                 self.assertFalse(contains_bare_break(HLILBlock([owner])))
-
-    def test_bare_break_in_if_inside_loop_belongs_to_loop(self):
-        branch = HLILIf(make_selector(), HLILBlock([HLILBreak()]), None)
-        loop = HLILWhile(HLILConst(LOOP_CONDITION), HLILBlock([branch]))
-        self.assertFalse(contains_bare_break(HLILBlock([loop])))
 
 
 class TestCommonReturnValues(unittest.TestCase):

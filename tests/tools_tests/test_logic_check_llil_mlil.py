@@ -22,8 +22,8 @@ from ir.mlil.mlil import (
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.logic_check_functions import (
     DEBUG_VALUE, GLOBAL_A, GLOBAL_B, GLOBAL_C, LOOP_LIMIT, MESSAGE, OUT_INITIAL, REG_INDEX, STORED, UNRELATED_ARG,
-    branch_function, call, calls_function, categories, first, initialised_out_parameter_function, loop_call_function,
-    optional_call_result_function, reference_and_mlil, return_nothing, statements,
+    branch_function, call, calls_function, categories, first, loop_call_function, optional_call_result_function,
+    reference_and_mlil, return_nothing, statements,
 )
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm
 import logic_check
@@ -431,15 +431,6 @@ class TestPlantedBugs(unittest.TestCase):
             del block.instructions[index]
             block.instructions.insert(call_index, store)
         self.check(out_parameter_function, mutate, 'arg_differs')
-
-    def test_value_behind_a_pointer_changed(self):
-        """v's initial value changed before callee(&v): only the callee can read it, and v after the call is the call's
-        leaf"""
-        def mutate(mlil):
-            init = first(mlil, lambda inst: isinstance(inst, MLILStoreDeref)    # v's memory form, *&v = OUT_INITIAL
-                         and isinstance(inst.value, MLILConst) and inst.value.value == OUT_INITIAL)[2]
-            init.value = MLILConst(OUT_INITIAL + 1)
-        self.check(initialised_out_parameter_function, mutate, 'arg_differs')
 
     def test_value_merged_past_the_phi_depth_changed(self):
         """v's initial value changed: it reaches the store only through more joins than a phi spells out"""

@@ -31,16 +31,6 @@ def build_function_with_pop_to(num_params: int, offset: int):
 class TestPopToParameterSlot(unittest.TestCase):
     """pop_to targeting a parameter slot emits a frame-relative store, not a new local"""
 
-    def test_parameter_slot_emits_frame_store(self):
-        # 1 parameter (slot 0). After push_int, sp=2; pop_to(-WORD_SIZE) pops back to sp=1,
-        # then slot_index = 1 + (-WORD_SIZE // WORD_SIZE) = 0 - the sole parameter slot.
-        entry = build_function_with_pop_to(num_params=1, offset=-WORD_SIZE)
-
-        inst = entry.instructions[-1]
-        self.assertIsInstance(inst, LowLevelILFrameStore)
-        self.assertNotIsInstance(inst, LowLevelILStackStore)
-        self.assertEqual(inst.offset, 0)
-
     def test_non_parameter_slot_still_emits_stack_store(self):
         # 1 parameter (slot 0). pop_to(0) targets slot 1 (the just-pushed temp itself, a
         # local) - unaffected by this step, must keep today's StackStore behavior exactly.

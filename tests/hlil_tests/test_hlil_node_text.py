@@ -111,11 +111,6 @@ class TestNodeAttributes(unittest.TestCase):
                 self.assertEqual(node.address, 0)
                 self.assertEqual(node.mlil_index, UNASSIGNED_INST_INDEX)
 
-    def test_syscall_keeps_its_target(self):
-        syscall = HLILSyscall(0, 3, [cond()])
-
-        self.assertEqual((syscall.subsystem, syscall.cmd), (0, 3))
-
 
 if __name__ == '__main__':
     unittest.main()

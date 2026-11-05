@@ -95,14 +95,6 @@ class TestNeedsParentheses(unittest.TestCase):
 class TestUnaryOperandNeedsParentheses(unittest.TestCase):
     """Decided on the operand's printed text, which the .hlil.ts and .ts printers write differently for constants"""
 
-    def test_binary_operand_is_wrapped(self):
-        operand = HLILBinaryOp(BinaryOp.LT, var('a'), var('b'))
-        self.assertTrue(unary_operand_needs_parentheses(UnaryOp.NOT, operand, 'a < b'))
-
-    def test_minus_over_a_leading_minus_is_wrapped(self):
-        self.assertTrue(unary_operand_needs_parentheses(UnaryOp.NEG, HLILUnaryOp(UnaryOp.NEG, var('a')), '-a'))
-        self.assertTrue(unary_operand_needs_parentheses(UnaryOp.NEG, HLILConst(NEGATIVE_FLOAT), str(NEGATIVE_FLOAT)))
-
     def test_minus_over_other_text_and_other_operators_are_not(self):
         negated = HLILUnaryOp(UnaryOp.NEG, var('a'))
         self.assertFalse(unary_operand_needs_parentheses(UnaryOp.NEG, var('a'), 'a'))

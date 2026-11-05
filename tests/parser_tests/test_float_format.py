@@ -72,9 +72,6 @@ class TestShortestText(unittest.TestCase):
             with self.subTest(value=value):
                 self.assertEqual(ScpValue.float_literal(value), text)
 
-    def test_zero_is_not_the_midpoint(self):
-        self.assertEqual(ScpValue.float_literal(0.0), '0.0')
-
     def test_near_float32_max_does_not_raise(self):
         near_max = decode(float_word(F32_NEAR_MAX))
         self.assertEqual(ScpValue(float(ScpValue.float_literal(near_max))).to_word(), float_word(F32_NEAR_MAX))

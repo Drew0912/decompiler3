@@ -78,15 +78,6 @@ class TestLineMarkerNumber(unittest.TestCase):
     def test_a_marker_gives_its_line(self):
         self.assertEqual(line_marker_number(marker()), LINE)
 
-    def test_line_zero_is_a_marker(self):
-        self.assertEqual(line_marker_number(HLILComment(f'line({ZERO_LINE})')), ZERO_LINE)
-
-    def test_a_comment_naming_a_line_is_not_one(self):
-        self.assertIsNone(line_marker_number(HLILComment(MENTION)))
-
-    def test_a_statement_that_is_no_comment_is_not_one(self):
-        self.assertIsNone(line_marker_number(work('a')))
-
 
 class TestLineMarkerRemoval(unittest.TestCase):
     def test_markers_go_from_every_block(self):

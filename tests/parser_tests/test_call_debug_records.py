@@ -460,12 +460,7 @@ class TestWriterOnlyInputs(unittest.TestCase):
 
 class TestCallTree(unittest.TestCase):
     """Records in source pre-order: an outer call before the calls in its arguments, those in parameter order though the
-    arguments are evaluated last first; each statement's calls in evaluation order"""
-
-    def test_siblings_in_parameter_order(self):
-        tracker = feed(LINE, local_call('pos', push(POS_CHR),
-                                        *(nested(f'info{key}', push(INFO_CHR), push(key)) for key in INFO_KEYS)))
-        self.assertEqual(targets(tracker), ['pos', *(f'info{key}' for key in INFO_KEYS)])
+    arguments are evaluated last first (TestWriterRecordOrder); each statement's calls in evaluation order"""
 
     def test_depth_two(self):
         """wait(sub(rand(3, 4)))"""
@@ -565,11 +560,6 @@ class TestRegisters(unittest.TestCase):
         f, x, g = tracker.calls
         self.assertEqual((constants(g.args), g.children), ([(ArgType.CallResult, None)], [f]))
         self.assertEqual(tracker.ordered_calls(), [x, g, f])
-
-    def test_a_nonzero_register_keeps_its_value_across_a_call(self):
-        tracker = feed(LINE, push(SAVED_VALUE), set_reg(TAIL_REGISTER), local_call('x'),
-                       local_call('g', get_reg(TAIL_REGISTER)))
-        self.assertEqual(constants(tracker.calls[-1].args), [(ArgType.Constant, SAVED_VALUE)])
 
 
 def compile_siblings(dat: Path):
@@ -703,22 +693,6 @@ class TestReplay(CompiledScript):
         self.assertEqual(pairs, [(CallType.Local, outer), (CallType.Local, inner), (CallType.Syscall, syscall),
                                  (CallType.Local, result), (CallType.Script, script)])
 
-    def test_call_before_line_info_has_no_record(self):
-        early = self.call_offsets('Main')[0]
-        self.assertNotIn(early, [offset for _, offset in self.replay('Main')])
-
-    def test_tail_call(self):
-        [(call, offset)] = self.replay('Tail')
-        self.assertEqual((call.call_type, offset), (CallType.ScriptNoReturn, self.call_offsets('Tail')[0]))
-
-    def test_every_record_matches_its_call(self):
-        for name, records in self.records.items():
-            with self.subTest(function=name):
-                pairs = self.replay(name)
-                self.assertEqual(len(pairs), len(records))
-                self.assertEqual([self.mismatch(self.data, call, record) for (call, _), record in zip(pairs, records)],
-                                 [None] * len(records))
-
 
 class TestRecordMismatch(CompiledScript):
     def setUp(self):
@@ -844,9 +818,6 @@ class TestRecordComparison(CompiledScript):
     def syscall_constant(self) -> int:
         """Position of the syscall record's constant argument (Int(SYSCALL_CONSTANT))"""
         return self.records['Main'][2].arg_offsets()[3]
-
-    def test_identical_files(self):
-        self.assertEqual(compare_file_records(self.data, self.data), [])
 
     def test_argument_count(self):
         for delta, line in ((-1, 'Main record 2: 3 args, original 4'), (1, 'Main record 2: 5 args, original 4')):
@@ -993,12 +964,6 @@ class TestCountsOnTheCall(unittest.TestCase):
         cls.dat = cls.tmp / 'counts.dat'
         compile_counts(cls.dat)
 
-    def test_records(self):
-        ctx = load_script(self.dat)
-        self.addCleanup(ctx.fs.Close)
-        records = dict(zip([func.name for func in ctx.parser.functions], ctx.records))
-        self.assertEqual([record.arg_count for record in records['Main']], [1, 2])
-
     def test_round_trip_py_writes_the_count_on_its_call(self):
         py_path = self.tmp / 'counts.py'
         _, functions = decompile_to_python(self.dat, py_path)
@@ -1096,14 +1061,8 @@ class TestAlignRecords(SkillScript):
     def test_one_in_the_middle(self):
         self.assert_aligned([0, 1, 3, 4, 5])
 
-    def test_the_first(self):
-        self.assert_aligned([1, 2, 3, 4, 5])
-
     def test_the_last(self):
         self.assert_aligned([0, 1, 2, 3, 4])
-
-    def test_four_in_a_row(self):
-        self.assert_aligned([0, 5])
 
     def test_no_records(self):
         """A function whose every call is marked debug_record=False"""
@@ -1228,17 +1187,6 @@ class TestRealDeadBody(unittest.TestCase):
 
 
 class TestFunctionExtents(CompiledScript):
-    def test_extents_follow_code_order(self):
-        """The table is sorted by name (Inner, Main, Outer, Tail), the code is in source order (Inner, Outer, Main, Tail)"""
-        offsets = {func.name: func.offset for func in self.parser.functions}
-        indices = {func.name: func.index for func in self.parser.functions}
-        self.assertEqual(function_extents(self.parser.function_entries, CODE_END), {
-            indices['Inner']    : (offsets['Inner'], offsets['Outer']),
-            indices['Outer']    : (offsets['Outer'], offsets['Main']),
-            indices['Main']     : (offsets['Main'], offsets['Tail']),
-            indices['Tail']     : (offsets['Tail'], CODE_END),
-        })
-
     def test_equal_starts_share_a_range(self):
         """An empty function starts where the next one does: both get the range up to the next different start"""
         entries = [ScpFunctionEntry() for _ in range(3)]

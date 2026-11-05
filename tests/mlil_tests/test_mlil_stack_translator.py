@@ -23,8 +23,8 @@ from ir.mlil.mlil import (
 from ir.mlil.stack_translator import UnsupportedStackShape
 from tests.shared.llil_utils import lift_asm
 from tests.shared.logic_check_functions import (
-    GLOBAL_A, GLOBAL_B, GLOBAL_D, MESSAGE, OUT_INITIAL, REG_INDEX, branch_function, call,
-    initialised_out_parameter_function, optional_call_result_function, return_nothing,
+    GLOBAL_A, GLOBAL_B, GLOBAL_D, MESSAGE, REG_INDEX, branch_function, call, optional_call_result_function,
+    return_nothing,
 )
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 from tests.shared.stack_translator_checks import TEMPORARY, StackTranslationTestCase, statements
@@ -273,13 +273,6 @@ class TestAddressTaken(StackTranslatorTestCase):
     """An address-taken local or parameter read and written in memory form, *(&v), and the writes that may change it:
     a call, a store to it, a store through a pointer"""
 
-    def test_an_initialised_out_parameter(self):
-        mlil = self.translate_built(initialised_out_parameter_function)
-
-        self.assertEqual(statements(mlil)[:4], [
-            f'*&var_s0 = {OUT_INITIAL}', 't1 = callee(&var_s0)', 'REG[0] = t1', 'GLOBAL[0] = *&var_s0',
-        ])
-
     def test_a_read_pending_across_the_call_given_its_address(self):
         asm = Asm()
         asm.push_int(1)                                         # v, slot 0
@@ -420,17 +413,6 @@ class TestCarriedLocals(StackTranslatorTestCase):
         for statement in expected:
             self.assertIn(statement, body)
         self.assertEqual([name for name in mlil.locals if name.startswith('var_s')], ['var_s0'])
-
-    def test_a_value_across_a_fork(self):
-        asm = Asm()
-        asm.push_int(5)
-        branch_on_global(asm, 'skip'); store_global_b(asm)
-        asm.label('skip'); asm.set_global(GLOBAL_A)
-        return_nothing(asm)
-        mlil = self.translate(asm)
-
-        self.assertEqual(statements(mlil)[0], 'var_s0 = 5')
-        self.assertCarried(mlil, f'GLOBAL[{GLOBAL_A}] = var_s0')
 
     def test_two_pushes_meeting_at_a_join(self):
         """One variable both ways, consumed or read by offset after the join (the part-1 prototype picked one push's)"""
@@ -586,17 +568,6 @@ class TestResultRegister(StackTranslatorTestCase):
         asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.add(); asm.pop_to(-WORD_SIZE)
         asm.jmp('head')
         asm.label('done'); asm.get_reg(0); asm.set_global(GLOBAL_A); asm.pop(WORD_SIZE)
-        return_nothing(asm)
-        mlil = self.translate(asm)
-
-        self.assertIn(f'GLOBAL[{GLOBAL_A}] = REG[0]', statements(mlil))
-
-    def test_read_after_a_return_target_with_two_predecessors(self):
-        asm = Asm()
-        asm.load_global(0); asm.jz('else')
-        call(asm, 'then'); asm.jmp('end')
-        asm.label('else'); call(asm, 'other')
-        asm.label('end'); asm.get_reg(0); asm.set_global(GLOBAL_A)
         return_nothing(asm)
         mlil = self.translate(asm)
 

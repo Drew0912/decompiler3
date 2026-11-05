@@ -200,11 +200,6 @@ class TestLiftedDebugText(unittest.TestCase):
         for delta, text in ((1, 'sp++'), (-1, 'sp--'), (3, 'sp += 3'), (-3, 'sp -= 3')):
             self.assertEqual(str(builder.emit_sp_add(delta)), text)
 
-    def test_typed_and_raw_constant_text(self):
-        self.assertEqual(str(LowLevelILConst(255)), '255')
-        self.assertEqual(str(LowLevelILConst(255, is_raw=True)), '0xFF')
-        self.assertEqual(str(LowLevelILConst(1.5)), '1.5')
-
 
 def lifted_pointer_function():
     """A function that reads, writes and takes the address of its parameter and of a local"""

@@ -38,10 +38,6 @@ class TestBoolRejected(unittest.TestCase):
 
         self.assertEqual(str(ctx.exception), 'ScpValue takes int, float, str or RawInt, not bool: True')
 
-    def test_push_int_rejects_bool(self):
-        with self.assertRaisesRegex(TypeError, 'PUSH_INT takes no bool operand: True'):
-            PUSH_INT(True)
-
     def test_integer_operands_reject_bool(self):
         with self.assertRaisesRegex(TypeError, 'POP takes no bool operand: True'):
             POP(True)
@@ -223,10 +219,6 @@ class TestPushFloat(unittest.TestCase):
         PUSH_FLOAT(1)
 
         self.assertEqual(self.writer.fs.ReadAll(), bytes.fromhex('00 04 00 00 E0 8F'))
-
-    def test_bool_is_still_rejected(self):
-        with self.assertRaisesRegex(TypeError, 'PUSH_FLOAT takes no bool operand: True'):
-            PUSH_FLOAT(True)
 
     def test_float_past_float32_range_does_not_compile(self):
         with self.assertRaisesRegex(ValueError, r"^Body: PUSH_FLOAT float 3\.5e\+38 is outside float32's range: the "

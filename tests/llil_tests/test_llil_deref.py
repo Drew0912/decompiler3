@@ -9,7 +9,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ir.llil.llil import LowLevelILLoad, LowLevelILStore, LowLevelILFrameLoad, WORD_SIZE
+from ir.llil.llil import LowLevelILLoad, LowLevelILFrameLoad, WORD_SIZE
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.ir.mlil_ssa.mlil_translator import FalcomLLILToMLILTranslator
 from ir.mlil.mlil import (
@@ -56,7 +56,7 @@ def build_function_with_deref(num_params: int, offset: int, *, deref_write: bool
 
 class TestDerefLift(unittest.TestCase):
     """LLIL-level shape: a dereference targeting a parameter slot builds a pointer expression
-    exactly like load_stack (frame-relative), then wraps it in Load/Store."""
+    exactly like load_stack (frame-relative), then wraps it in Load/Store (the Store: TestDerefFormatting)."""
 
     def test_load_stack_deref_wraps_frame_load(self):
         # 1 parameter (slot 0). offset=0 at entry (sp=1) -> slot_index = 1 + 0 = 1... use
@@ -69,15 +69,6 @@ class TestDerefLift(unittest.TestCase):
         self.assertIsInstance(store_inst.value, LowLevelILLoad)
         self.assertIsInstance(store_inst.value.src, LowLevelILFrameLoad)
         self.assertEqual(store_inst.value.src.offset, 0)
-
-    def test_pop_to_deref_wraps_frame_load_as_store_target(self):
-        # 1 parameter (slot 0). pop_to_deref(-WORD_SIZE) -> slot_index 0, the parameter.
-        _, entry = build_function_with_deref(num_params=1, offset=-WORD_SIZE, deref_write=True)
-
-        inst = entry.instructions[-1]
-        self.assertIsInstance(inst, LowLevelILStore)
-        self.assertIsInstance(inst.dest, LowLevelILFrameLoad)
-        self.assertEqual(inst.dest.offset, 0)
 
     def test_load_stack_deref_at_non_parameter_slot_raises(self):
         # 1 parameter (slot 0). offset=0 -> slot_index = 1, not a parameter slot.

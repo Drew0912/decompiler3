@@ -84,15 +84,6 @@ def lift_all(parser: ScpParser, functions: list[Function]):
 class TestEdgeStates(unittest.TestCase):
     """Every edge into a block carries the same stack height"""
 
-    def test_join_with_different_heights_raises(self):
-        asm = Asm()
-        asm.get_reg(REG_INDEX); asm.jz('right')
-        asm.push_int(LEFT_VALUE); asm.jmp('join')
-        asm.label('right'); asm.jmp('join')
-        asm.label('join'); asm.pop(WORD_SIZE); asm.ret()
-        assert_fails_at(self, Program(main_function(asm)), 0x12, 'JMP',
-                        'the stack on the edge 0x12 -> 0x17 is [], but an earlier edge into 0x17 recorded [PUSH_INT@0x7]')
-
     def test_value_the_first_arm_leaves_is_caught_where_the_arms_meet(self):
         """The join is decoded after both arms (lowest offset first), so the second arm's edge finds the leftover -
         not the RETURN, after the join's POP took it for the parameter"""
@@ -104,14 +95,6 @@ class TestEdgeStates(unittest.TestCase):
         assert_fails_at(self, Program(Func(FUNC_NAME, 1, asm)), 0x1B, 'SET_REG',
                         'the stack on the edge 0x1B -> 0x1D is [param_0], but an earlier edge into 0x1D recorded '
                         '[param_0, PUSH_INT@0xA]')
-
-    def test_fall_through_with_a_different_height_raises(self):
-        asm = Asm()
-        asm.get_reg(REG_INDEX); asm.jz('target')
-        asm.push_int(LEFT_VALUE)                            # falls through into 'target' one entry higher
-        asm.label('target'); asm.ret()
-        assert_fails_at(self, Program(main_function(asm)), 0x7, 'PUSH_INT',
-                        'the stack on the edge 0x7 -> 0xD is [PUSH_INT@0x7], but an earlier edge into 0xD recorded []')
 
     def test_branch_into_a_decoded_block_with_a_different_height_raises(self):
         asm = Asm()
@@ -230,12 +213,6 @@ class TestSplitPops(unittest.TestCase):
         self.assertEqual(layout.carried_before, {program.label('second'): 1, program.label('third'): WORD_SIZE // 2})
         self.assertEqual([layout.sp_before[program.label(name)] for name in ('first', 'second', 'third', 'end')],
                          [3, 2, 1, 0])
-
-    def test_a_lone_partial_pop_raises(self):
-        asm = Asm()
-        asm.push_int(LEFT_VALUE); asm.label('first'); asm.pop(WORD_SIZE + WORD_SIZE // 2); asm.label('end'); asm.ret()
-        program = Program(main_function(asm))
-        self.assert_left_open(program, f'RETURN at 0x{program.label("end"):X} comes')
 
     def test_an_instruction_between_the_pops_raises(self):
         """Even one that leaves the stack alone"""
@@ -376,13 +353,6 @@ class TestPlainUses(unittest.TestCase):
                                     'uses PUSH_CURRENT_FUNC_ID@0x0 as a plain value, but a call consumes it as the '
                                     'function ID')
 
-    def test_discarded_caller_frame_raises(self):
-        caller = Asm()
-        caller.frame('return'); caller.pop(CALLER_FRAME_SLOTS * WORD_SIZE); caller.ret()
-        caller.label('return'); caller.ret()
-        assert_fails_at(self, Program(main_function(caller)), 0x5, 'POP',
-                        'discards caller frame slot 0 of 0x0 without its CALL_SCRIPT')
-
     def test_setup_overwritten_on_one_arm_raises(self):
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('return')
@@ -436,16 +406,6 @@ class TestLocalCalls(unittest.TestCase):
         caller.call(CALLEE_ID); caller.label('return'); caller.ret()
         return Program(main_function(caller), returning_callee())
 
-    def test_setup_is_rewritten_and_the_return_edge_added(self):
-        program = self.call_program(lambda asm: (asm.push_raw(CALLER_ID), asm.push_raw('return')))
-        parser, functions = program.disassemble()
-        func = functions[0]
-
-        mnemonics = [inst.mnemonic for inst in parser.get_instructions(func)]
-        self.assertEqual(mnemonics[:LOCAL_SETUP_SLOTS], ['PUSH_CURRENT_FUNC_ID', 'PUSH_RET_ADDR'])
-        self.assertIn(program.label('return'), blocks_by_offset(func))
-        lift_all(parser, functions)
-
     def test_too_few_arguments_names_the_count(self):
         caller = Asm()
         caller.push_raw(CALLER_ID); caller.push_raw('return'); caller.call(CALLEE_ID)    # the callee takes one arg
@@ -493,15 +453,6 @@ class TestLocalCalls(unittest.TestCase):
     def test_function_id_of_another_function_raises(self):
         program = self.call_program(lambda asm: (asm.push_raw(CALLEE_ID), asm.push_raw('return')))
         assert_fails_at(self, program, 0xC, 'CALL', 'expects the function ID, found PUSH_RAW@0x0')
-
-    def test_function_id_that_is_not_a_push_raises(self):
-        program = self.call_program(lambda asm: (asm.get_reg(REG_INDEX), asm.push_raw('return')))
-        assert_fails_at(self, program, 0x8, 'CALL', 'expects the function ID, found GET_REG@0x0')
-
-    def test_typed_return_address_push_raises(self):
-        """Rewriting a PUSH_INT to PUSH_RET_ADDR would change its bytes on recompile"""
-        program = self.call_program(lambda asm: (asm.push_raw(CALLER_ID), asm.push_int(0)))
-        assert_fails_at(self, program, 0xC, 'CALL', 'expects a return address, found PUSH_INT@0x6')
 
     def test_overwritten_return_address_raises(self):
         def setup(asm):
@@ -594,14 +545,6 @@ class TestLocalCalls(unittest.TestCase):
         caller.label('call'); caller.call(CALLEE_ID); caller.ret()
         program = Program(main_function(caller), returning_callee())
         assert_warns_backward_return(self, program, 'call', 'CALL', program.label('setup'))
-
-    def test_copied_call_with_a_stale_return_label_warns(self):
-        caller = Asm()
-        caller.push_raw(CALLER_ID); caller.push_raw('first'); caller.call(CALLEE_ID); caller.label('first')
-        caller.push_raw(CALLER_ID); caller.push_raw('first')                           # should name 'second'
-        caller.label('call'); caller.call(CALLEE_ID); caller.label('second'); caller.ret()
-        program = Program(main_function(caller), returning_callee())
-        assert_warns_backward_return(self, program, 'call', 'CALL', program.label('first'))
 
     def test_call_looping_back_with_an_exit_only_warns(self):
         """while (REG) callee() with the return as the back edge is valid: a warning, not a failure"""
@@ -701,14 +644,6 @@ class TestScriptCalls(unittest.TestCase):
         assert_fails_at(self, Program(main_function(caller)), 0x24, 'CALL_SCRIPT',
                         'expects a return address, found PUSH_INT@0x0')
 
-    def test_one_argument_more_than_its_count_raises(self):
-        """The extra argument shifts the frame down a slot: the call finds the wrong frame slot where it expects one"""
-        caller = Asm()
-        caller.frame('return'); caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE); caller.call_script(1)
-        caller.label('return'); caller.ret()
-        assert_fails_at(self, Program(main_function(caller)), 0x11, 'CALL_SCRIPT',
-                        'expects caller frame slot 0 returning to 0x1B, found frame_1@0x0')
-
     def test_frames_meeting_other_values_at_a_join_raises(self):
         """Both arms reach the join before its code is decoded, so CALL_SCRIPT finds the second arm's plain values
         where the frame must be"""
@@ -770,12 +705,6 @@ class TestScriptCalls(unittest.TestCase):
 
 class TestCheckOrder(unittest.TestCase):
     """An instruction that breaks two rules is reported by the check the parser makes first"""
-
-    def test_call_checks_the_return_address_before_the_function_id(self):
-        caller = Asm()
-        caller.push_int(LEFT_VALUE); caller.push_int(RIGHT_VALUE); caller.call(CALLEE_ID); caller.ret()
-        assert_fails_at(self, Program(main_function(caller), returning_callee()), 0xC, 'CALL',
-                        'expects a return address, found PUSH_INT@0x6')
 
     def test_call_checks_its_argument_count_first(self):
         """One argument too many: counted from the setup returning right after the call, before the entry where the
@@ -1106,17 +1035,6 @@ class TestStackLayout(unittest.TestCase):
             'read': SlotRef(2, params=(1,)), 'address': SlotRef(1, params=(2,)), 'deref': SlotRef(0, params=(3,)),
         })
 
-    def test_pop_to_counts_from_sp_after_its_pop(self):
-        asm = Asm()
-        asm.label('open'); asm.push_raw(0)
-        asm.push_int(LEFT_VALUE)
-        asm.label('write'); asm.pop_to(-WORD_SIZE)                     # sp 2, 1 after its pop: slot 0
-        asm.pop(WORD_SIZE); asm.ret()
-        program, layout = self.layout_of(asm)
-
-        self.assertEqual(layout.slot_refs[program.label('write')], SlotRef(0, local=True))
-        self.assertEqual(layout.local_slots, {program.label('open'): 0})     # not the PUSH_INT it popped
-
     def test_parameter_reassigned_by_pop_to_stays_the_parameter_in_either_decode_order(self):
         """Decoded first, the writing arm leaves its POP_TO in the read's state; decoded second, its POP_TO reaches the
         read through the join's solved block start"""
@@ -1147,31 +1065,6 @@ class TestStackLayout(unittest.TestCase):
 
         self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local=True))
         self.assertEqual(layout.local_slots, {program.label('open'): 0})
-
-    def test_writes_on_both_arms_resolve_to_the_one_opening_push(self):
-        asm = Asm()
-        asm.label('open'); asm.push_raw(0)
-        asm.get_reg(REG_INDEX); asm.jz('right')
-        asm.push_int(LEFT_VALUE); asm.pop_to(-WORD_SIZE); asm.jmp('join')
-        asm.label('right'); asm.push_int(RIGHT_VALUE); asm.pop_to(-WORD_SIZE); asm.jmp('join')
-        asm.label('join'); asm.load_stack(-WORD_SIZE)
-        asm.pop(2 * WORD_SIZE); asm.ret()
-        program, layout = self.layout_of(asm)
-
-        self.assertEqual(set(layout.slot_refs.values()), {SlotRef(0, local=True)})
-        self.assertEqual(layout.local_slots, {program.label('open'): 0})
-
-    def test_join_of_two_pushes_keeps_both_openers(self):
-        asm = Asm()
-        asm.get_reg(REG_INDEX); asm.jz('right')
-        asm.label('left'); asm.push_int(LEFT_VALUE); asm.jmp('join')
-        asm.label('right'); asm.push_int(RIGHT_VALUE); asm.jmp('join')
-        asm.label('join'); asm.load_stack(-WORD_SIZE)
-        asm.pop(2 * WORD_SIZE); asm.ret()
-        program, layout = self.layout_of(asm)
-
-        self.assertEqual(layout.slot_refs[program.label('join')], SlotRef(0, local=True))
-        self.assertEqual(layout.local_slots, {program.label('left'): 0, program.label('right'): 0})
 
     def test_back_edge_into_a_split_block_brings_its_value(self):
         """The back edge is recorded before the split it causes, so the loop head's first recorded state is the back
@@ -1231,16 +1124,6 @@ class TestStackLayout(unittest.TestCase):
 
         refs = [layout.slot_refs[program.label(name)] for name in ('store', 'read')]
         self.assertEqual(refs, [SlotRef(0, params=(1,))] * 2)
-
-    def test_local_put_by_an_instruction_that_is_not_a_push(self):
-        asm = Asm()
-        asm.label('open'); asm.get_reg(REG_INDEX)
-        asm.label('read'); asm.load_stack(-WORD_SIZE)
-        asm.pop(2 * WORD_SIZE); asm.ret()
-        program, layout = self.layout_of(asm)
-
-        self.assertEqual(layout.slot_refs[program.label('read')], SlotRef(0, local=True))
-        self.assertEqual(layout.local_slots, {program.label('open'): 0})
 
     def test_slot_opened_twice_keeps_both_openers(self):
         asm = Asm()

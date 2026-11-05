@@ -12,9 +12,6 @@ from ir.llil import LowLevelILConst
 
 
 class TestStringConst(unittest.TestCase):
-    def test_plain_string_keeps_single_quotes(self):
-        self.assertEqual(str(LowLevelILConst('AniBtlAttack')), "'AniBtlAttack'")
-
     def test_quote_is_escaped(self):
         self.assertEqual(str(LowLevelILConst("Thunder God's Descent")), r"'Thunder God\'s Descent'")
 

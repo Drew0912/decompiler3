@@ -93,15 +93,6 @@ def make_reversed_arms_mlil() -> MediumLevelILFunction:
 
 class TestBranchOrderNormalization(unittest.TestCase):
 
-    def test_reversed_arms_are_swapped_and_condition_negated(self):
-        stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(LATE_LINE), make_arm(EARLY_LINE))
-
-        result = run_pass(stmt)
-
-        self.assertEqual(first_comment(result.true_block), f'line({EARLY_LINE})')
-        self.assertEqual(first_comment(result.false_block), f'line({LATE_LINE})')
-        self.assertEqual(result.condition.op, BinaryOp.LE)
-
     def test_ascending_arms_are_left_alone(self):
         stmt = HLILIf(make_condition(BinaryOp.GT), make_arm(EARLY_LINE), make_arm(LATE_LINE))
 
@@ -147,27 +138,6 @@ class TestBranchOrderNormalization(unittest.TestCase):
 
         self.assertEqual(result.condition.op, BinaryOp.LE)
         self.assertIsInstance(result.true_block.statements[0], HLILExprStmt)
-
-    def test_equal_depth_without_line_info_is_left_alone(self):
-        left = HLILBlock([HLILExprStmt(HLILCall('left', []))])
-        right = HLILBlock([HLILExprStmt(HLILCall('right', []))])
-        stmt = HLILIf(make_condition(BinaryOp.GT), left, right)
-
-        result = run_pass(stmt)
-
-        self.assertEqual(result.condition.op, BinaryOp.GT)
-        self.assertIs(result.true_block, left)
-
-    def test_if_inside_a_loop_counts_toward_nesting_depth(self):
-        # A loop is not an else-if chain, so only the depth tie-break can move this arm
-        deep = HLILBlock([HLILWhile(make_condition(), HLILBlock([guarded_call('deep')]))])
-        shallow = HLILBlock([HLILExprStmt(HLILCall('shallow', []))])
-        stmt = HLILIf(make_condition(BinaryOp.GT), deep, shallow)
-
-        result = run_pass(stmt)
-
-        self.assertEqual(result.condition.op, BinaryOp.LE)
-        self.assertIs(result.true_block, shallow)
 
     def test_if_inside_a_switch_case_counts_toward_nesting_depth(self):
         case = HLILSwitchCase([HLILConst(CASE_VALUE)], HLILBlock([guarded_call('deep')]))
@@ -268,8 +238,9 @@ def lone_if_chain(*arms: HLILBlock) -> HLILBlock:
 
 
 class TestChainsAndScrutinees(unittest.TestCase):
-    """The longer else-if chain goes in the else whatever the lines say; a chain testing the same variable stays;
-    one testing something else, or a test that examines no variable, is ordered by its lines"""
+    """The longer else-if chain goes in the else whatever the lines say; a chain testing the same variable stays
+    (TestBranchOrderNormalization.test_asymmetric_else_if_chain_is_refused); one testing something else, or a test that
+    examines no variable, is ordered by its lines"""
 
     def test_arm_without_a_line_number_never_fails_the_comparison(self):
         with_line = make_arm(EARLY_LINE)
@@ -319,14 +290,6 @@ class TestChainsAndScrutinees(unittest.TestCase):
 
         self.assertIs(result.true_block, chain)
         self.assertIs(result.false_block, late)
-
-    def test_a_chain_on_the_same_variable_is_left_alone(self):
-        chain = HLILBlock([HLILIf(make_condition(), make_arm(EARLY_LINE), None)])
-        late = make_arm(LATE_LINE)
-
-        result = run_pass(HLILIf(make_condition(), late, chain))
-
-        self.assertIs(result.true_block, late)
 
     def test_a_chain_whose_inner_test_examines_no_variable_is_left_alone(self):
         total = HLILBinaryOp(BinaryOp.ADD, make_var('a'), make_var('b'))

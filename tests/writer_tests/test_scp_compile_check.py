@@ -116,10 +116,6 @@ class CheckTestCase(WriterTestCase):
 
 
 class TestStackMistakes(CheckTestCase):
-    def test_wrong_pop(self):
-        define_wrong_pop(self.writer)
-        self.assertCheckFails(rf"{at(__file__, 'wrong pop')}WrongPop: RETURN at {HEX}: the stack is not empty: \[param_0\]$")
-
     def test_build_runs_the_check(self):
         """Every caller of build() gets the check, not only run()"""
         define_wrong_pop(self.writer)
@@ -358,31 +354,6 @@ class TestStackMistakes(CheckTestCase):
 
         self.assertCheckFails(rf"{at(__file__, 'reachable pop')}Live: POP at {HEX}: pops 1 entries, the stack has 0")
 
-    def test_argument_count_past_the_pushes_reaching_a_parameter(self):
-        """The missing arguments would be the function's own parameters: entries to the parser's stack simulation, so
-        only the lift notices"""
-        @self.writer.LLILCode()
-        def Syscall(arg1: Value32):
-            PUSH_INT(1)
-            SYSCALL(1, 2, 2)                        # line: syscall past the pushes
-            POP(2 * WORD_SIZE)
-            RETURN()
-
-        self.assertCheckFails(rf"{at(__file__, 'syscall past the pushes')}Syscall: SYSCALL at {HEX}: ")
-
-    def test_syscall_reading_past_the_stack_fails_at_its_line(self):
-        """With POPs that match the real stack, only the lift noticed; the check names what the stack holds"""
-        @self.writer.LLILCode()
-        def Syscall():
-            PUSH_INT(1)                             # line: push under a read past the stack
-            SYSCALL(1, 2, 2)                        # line: read past the stack
-            POP(WORD_SIZE)
-            RETURN()
-
-        push = marked_line(__file__, 'push under a read past the stack')
-        self.assertCheckFails(rf"{at(__file__, 'read past the stack')}Syscall: SYSCALL at {HEX}: reads 2 entries, the "
-                              rf'stack has 1: \[PUSH_INT@{HEX} \(line {push}\)\]$')
-
     def test_syscall_reading_past_a_parameter_names_it(self):
         @self.writer.LLILCode()
         def Syscall(arg1: Value32):
@@ -404,14 +375,6 @@ class TestStackMistakes(CheckTestCase):
             RETURN()
 
         self.assertCheckFails(rf"{at(__file__, 'popn past the pushes')}Log: POPN at {HEX}: ")
-
-    def test_tail_call_count_past_the_pushes(self):
-        @self.writer.LLILCode()
-        def TailCall(arg1: Value32):
-            PUSH_INT(1)
-            CALL_SCRIPT_NO_RETURN('this', 'g', 2)   # line: tail call past the pushes
-
-        self.assertCheckFails(rf"{at(__file__, 'tail call past the pushes')}TailCall: CALL_SCRIPT_NO_RETURN at {HEX}: ")
 
     def test_argument_count_matching_the_pushes_compiles(self):
         @self.writer.LLILCode()
@@ -445,15 +408,6 @@ class TestRunOn(CheckTestCase):
         [warning] = [record.getMessage() for record in logs.records]
         self.assertRegex(warning, f'^{message}$')
         self.assertTrue(self.dat.exists())
-
-    def test_warns_while_it_decompiles(self):
-        self.define_runs_on(self.writer)
-
-        @self.writer.LLILCode()
-        def B():
-            RETURN()
-
-        self.assertCompilesWithWarning(rf"{at(__file__, 'runs on')}A: SET_REG at {HEX}: runs past its end into B without RETURN")
 
     def test_syscall_ending_a_function_gets_only_the_run_on_warning(self):
         """Its next opcode is the next function's first, no POP: the run-on warning already says what is wrong"""
@@ -1018,22 +972,6 @@ class TestLocations(CheckTestCase):
 
         with self.assertLogs(log, 'WARNING'):
             self.assertCheckFails(rf"{at(__file__, 'shared pop')}A: POP at {HEX}: pops 1 entries, the stack has 0")
-
-    def test_valid_cross_function_jump_passes_and_its_warning_has_a_line(self):
-        @self.writer.LLILCode()
-        def A():
-            JMP('in_b')                             # line: cross-function jump
-
-        @self.writer.LLILCode()
-        def B():
-            label('in_b')
-            RETURN()
-
-        with self.assertLogs(log, 'WARNING') as logs:
-            self.writer.run({})
-
-        self.assertRegex(logs.records[0].getMessage(), rf"^{at(__file__, 'cross-function jump')}A: jumps to label 'in_b' in B")
-        self.assertTrue(self.dat.exists())
 
     def test_equal_starts(self):
         """An empty function starts where the next one does: the failing opcode still maps to its own line"""

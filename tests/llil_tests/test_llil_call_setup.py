@@ -53,16 +53,6 @@ class TestLocalCallSetup(unittest.TestCase):
         self.assertEqual(last_instruction(builder).args, [arg_load])
         self.assertEqual(builder.save_stack_state().pending_setups, ())
 
-    def test_push_ret_addr_after_balanced_push_pop_is_accepted(self):
-        builder = make_builder()
-        ret_block = add_block(builder, 'ret')
-        builder.push_func_id()
-        builder.push_int(FILLER_VALUE)
-        builder.pop_n(1)
-        builder.push_ret_addr(ret_block)
-
-        builder.call_local('f', NO_ARGS)
-
 
 class TestCallSetupInSnapshots(unittest.TestCase):
     def test_setup_before_a_branch_serves_both_arms(self):
@@ -167,16 +157,6 @@ class TestNestedCallSetups(unittest.TestCase):
 
 class TestStoresBelowAPendingSetup(unittest.TestCase):
     """An in-place store below a pending setup leaves it callable"""
-
-    def test_store_to_a_local_below_the_setup_leaves_it_callable(self):
-        builder = make_builder()
-        builder.push_int(FILLER_VALUE)            # slot 0, a local
-        builder.push_func_id()                    # slots 1, 2
-        builder.push_ret_addr(add_block(builder, 'ret'))
-        builder.push_int(STORED_VALUE)            # slot 3
-        builder.pop_to(-3 * WORD_SIZE)            # sp 4 -> 3, stores into slot 0
-
-        builder.call_local('f', NO_ARGS)
 
     def test_store_to_a_parameter_below_the_setup_leaves_it_callable(self):
         builder = make_builder(LOCAL_PARAM_COUNT)

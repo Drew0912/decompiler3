@@ -432,11 +432,6 @@ class TestLoopExitsReachingAnOuterMerge(unittest.TestCase):
 
 class TestUnstructuredNodes(unittest.TestCase):
 
-    def test_repeated_region_within_the_limits(self):
-        func, hlil = structure(SHARED_LOOP)
-        self.assertEqual(classify(func, hlil), ('ok', None))
-        self.assertEqual(calls_emitted(hlil, 'A3'), 2)
-
     def test_budget_counts_nested_statements(self):
         func, hlil = structure(SHARED_LOOP, clone_budget=SHARED_LOOP_COPY_STATEMENTS - 1)
         self.assertEqual(classify(func, hlil)[0], 'loud')

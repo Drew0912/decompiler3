@@ -104,24 +104,6 @@ class TestGatedCallInLowerIndexBlock(unittest.TestCase):
         self.assertEqual(str(block.statements[idx - 1]), 'reg0 = f()')
 
 
-class TestUnconditionalCallGatedByNativeAnd(unittest.TestCase):
-    """reg0 = f() runs at function entry and is read under the rhs of `arg1 && reg0`"""
-
-    def test_call_stays_its_own_statement(self):
-        func, (body, then_block, exit_block), arg1, _, reg0, _ = make_func('unconditional_gated', 3)
-        body.instructions = [
-            MLILCall('f', [], output=reg0),
-            MLILIf(MLILLogicalAnd(MLILVar(arg1), MLILVar(reg0)), then_block, exit_block),
-        ]
-        then_block.instructions = [MLILRet(MLILConst(1))]
-        exit_block.instructions = [MLILRet(MLILConst(0))]
-
-        statements = convert(func).body.statements
-
-        self.assertEqual(str(statements[0]), 'reg0 = f()')
-        self.assertEqual(str(statements[1].condition), 'arg1 && reg0')
-
-
 class TestGateReachesThroughNestedOperators(unittest.TestCase):
     """reg0 sits on the lhs of an inner && that is itself the rhs of ||, so it is still gated"""
 

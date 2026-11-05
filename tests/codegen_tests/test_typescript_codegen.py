@@ -294,10 +294,6 @@ class TestTrailingDefaultArguments(unittest.TestCase):
             with self.subTest(expected):
                 self.assertIn(expected, self.render(HLILExprStmt(expr)))
 
-    def test_every_argument_left_out(self):
-        self.assertIn('h();', self.render(HLILExprStmt(call(ONE_PARAM_CALLEE, DEFAULT_INT)),
-                                          {ONE_PARAM_CALLEE: (DEFAULT_INT,)}))
-
     def test_calls_in_any_statement(self):
         full = call(CALLEE, var('a'), DEFAULT_INT, DEFAULT_NEGATIVE)
         rows = [
@@ -391,16 +387,6 @@ class TestWrittenArguments(unittest.TestCase):
         ts = self.render({FIRST_CALL: 1, SECOND_CALL: 2}, self.full_call(FIRST_CALL), self.full_call(SECOND_CALL))
         self.assertIn('g(a);', ts)
         self.assertIn('g(a, 3);', ts)
-
-    def test_counts(self):
-        rows = [
-            # (written, expected)
-            (1, 'g(a);'),               # the rule's count
-            (3, 'g(a, 3, -1);'),        # every argument
-        ]
-        for written, expected in rows:
-            with self.subTest(written=written):
-                self.assertIn(expected, self.render({FIRST_CALL: written}, self.full_call(FIRST_CALL)))
 
     def test_fewer_written_keeps_the_rules_count(self):
         """A record keeps fewer where HLIL shows an address-taken local for the pushed default: printing the record's

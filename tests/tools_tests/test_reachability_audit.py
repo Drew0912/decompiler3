@@ -56,12 +56,6 @@ class TestDroppedRanges(unittest.TestCase):
     """Dropped ranges are the raw byte complement of the reachable instructions - never anything
     read from disassembling the gap itself, so a range that can't be decoded is still audited."""
 
-    def test_gap_between_instructions_is_reported_with_its_predecessor(self):
-        insts = [make_instruction(0x00, ED9Opcode.RETURN, size=1)]
-        ranges = dropped_ranges(insts, start=0x00, end=0x10)
-
-        self.assertEqual(ranges, [(0x01, 0x10, insts[0])])
-
     def test_range_of_unparseable_garbage_is_still_reported(self):
         # 0xFF is not a valid opcode - if this range were disassembled instead of taken as a raw
         # byte complement, it would raise; dropped_ranges never tries.

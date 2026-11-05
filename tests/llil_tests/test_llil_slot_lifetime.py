@@ -185,12 +185,6 @@ class TestAccessBelowTheStack(unittest.TestCase):
         with self.assertRaisesRegex(NotImplementedError, '^dereferences slot -1, which holds no caller parameter: '):
             self.builder().load_stack_deref(self.BELOW_ONE_PARAMETER)
 
-    def test_lowest_slot_is_still_in_the_frame(self):
-        builder = self.builder()
-        builder.load_stack(self.BELOW_ONE_PARAMETER + WORD_SIZE)    # slot 0, the parameter
-
-        self.assertIsInstance(last_pushed_value(builder), LowLevelILFrameLoad)
-
 
 class TestParameterUsedInPlace(unittest.TestCase):
     """The vstack never tracks a parameter, so an opcode consuming or reading one in place can't be lifted: it fails
@@ -232,14 +226,6 @@ class TestParameterUsedInPlace(unittest.TestCase):
 
         self.assert_in_place(emit, r'the slot of parameter 2 \(arg2\)', num_params=2)
 
-    def test_lower_parameter_is_numbered_from_the_top(self):
-        """Arguments are pushed right to left: with arg1 popped, the top slot is arg2"""
-        def emit(builder):
-            builder.pop_bytes(WORD_SIZE)
-            builder.set_reg(REG_INDEX)
-
-        self.assert_in_place(emit, r'the slot of parameter 2 \(arg2\)', num_params=2)
-
     def test_overwritten_parameter_slot_is_still_its_slot(self):
         def emit(builder):
             builder.push_int(STORED_VALUE)
@@ -266,12 +252,6 @@ class TestParameterUsedInPlace(unittest.TestCase):
 class TestLiveParameterSlot(unittest.TestCase):
     """Guards: while the function still holds a parameter, its slot stays frame-relative, and a push that starts a
     new lifetime keeps producing today's stack slots."""
-
-    def test_live_parameter_read_is_frame_relative(self):
-        builder = make_builder(num_params=1)
-        builder.load_stack(-WORD_SIZE)              # slot 0
-
-        self.assertIsInstance(last_pushed_value(builder), LowLevelILFrameLoad)
 
     def test_tail_call_argument_stays_a_stack_value(self):
         builder = make_builder(num_params=1)

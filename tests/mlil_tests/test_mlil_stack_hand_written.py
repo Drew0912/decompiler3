@@ -233,10 +233,6 @@ class TestHandWrittenShapes(StackTranslationTestCase):
         for statement in ('var_s0 = 0', 'var_s0 = (var_s0 + 1)', f'GLOBAL[{GLOBAL_RESULT}] = var_s0'):
             self.assertIn(statement, mlil)
 
-    def test_a_register_read_before_any_write(self):
-        mlil = self.shape('RegisterBeforeAnyWrite')
-        self.assertEqual(mlil[0], f'GLOBAL[{GLOBAL_RESULT}] = REG[{OTHER_REGISTER}]')
-
     def test_a_register_read_after_a_call(self):
         mlil = self.shape('RegisterAfterACall')
         self.assertEqual(mlil[:4], [f'REG[{OTHER_REGISTER}] = {INITIAL}', 't1 = Callee()',

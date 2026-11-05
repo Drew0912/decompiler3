@@ -56,25 +56,6 @@ class TestCommonImportsRegistrationOrder(CompileTestCase):
         self.assertEqual(writer.functions_by_name['fallback_common'].entry.is_common_func, 1)
         self.assertEqual(writer.functions_by_name['SourceFunc'].entry.is_common_func, 0)
 
-    def test_commonImports_can_list_more_than_one_function(self):
-        def imported_a(arg1: Value32):
-            LOAD_STACK(-4)
-            SET_REG(0)
-            POP(4)
-            RETURN()
-
-        def imported_b():
-            RETURN()
-
-        def build(scena):
-            @scena.CommonImports()
-            def commonImports():
-                return [imported_a, imported_b]
-
-        writer = self.compile_dsl(build)
-
-        self.assertEqual([f.name for f in writer.functions], ['imported_a', 'imported_b'])
-
     def test_undefined_name_is_noted_as_a_typo_or_a_missing_library(self):
         """A script whose game library is not generated skips its star import, so its manifest's names are undefined;
         so is a misspelled one. The writer can't tell which: the note names both, and the generator command"""

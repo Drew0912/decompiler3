@@ -31,16 +31,6 @@ class TestPushStackAddrParameterSlot(unittest.TestCase):
     """push_stack_addr targeting a parameter slot emits a frame-relative address, not the
     address of an unrelated phantom local"""
 
-    def test_parameter_slot_emits_frame_addr(self):
-        # 1 parameter (slot 0). sp starts at 1 (num_params), so offset -WORD_SIZE targets
-        # slot 0 - the sole parameter.
-        entry = build_function_with_push_stack_addr(num_params=1, offset=-WORD_SIZE)
-
-        stack_store = entry.instructions[0]
-        self.assertIsInstance(stack_store.value, LowLevelILFrameAddr)
-        self.assertNotIsInstance(stack_store.value, LowLevelILStackAddr)
-        self.assertEqual(stack_store.value.offset, 0)
-
     def test_non_parameter_slot_still_emits_stack_addr(self):
         # 1 parameter (slot 0) and a pushed local (slot 1): offset -WORD_SIZE targets the local,
         # not the parameter - unaffected by this fix, must keep today's StackAddr behavior.

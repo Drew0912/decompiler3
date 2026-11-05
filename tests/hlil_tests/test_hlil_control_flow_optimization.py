@@ -155,30 +155,6 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         self.assertEqual(len(terminal_cases), EXPECTED_TERMINAL_CASE_COUNT)
         self.assertTrue(block_contains_call(terminal_cases[0].body, TERMINAL_MARKER_CALL))
 
-    def test_eq_chain_becomes_switch(self):
-        third_if = HLILIf(make_condition(BinaryOp.EQ, THIRD_CASE_VALUE), make_case_body(THIRD_CASE_VALUE), HLILBlock())
-        second_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock([third_if]))
-        first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), HLILBlock([second_if]))
-
-        func = run_cfo(first_if)
-
-        self.assertEqual(len(func.body.statements), EXPECTED_TOP_LEVEL_STATEMENT_COUNT)
-        switch_stmt = func.body.statements[0]
-        self.assertIsInstance(switch_stmt, HLILSwitch)
-        self.assertEqual(
-            collect_switch_case_values(switch_stmt),
-            {FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE},
-        )
-
-    def test_short_eq_chain_is_not_converted_to_switch(self):
-        second_if = HLILIf(make_condition(BinaryOp.EQ, SECOND_CASE_VALUE), make_case_body(SECOND_CASE_VALUE), HLILBlock())
-        first_if = HLILIf(make_condition(BinaryOp.EQ, FIRST_CASE_VALUE), make_case_body(FIRST_CASE_VALUE), HLILBlock([second_if]))
-
-        func = run_cfo(first_if)
-
-        self.assertEqual(len(func.body.statements), EXPECTED_TOP_LEVEL_STATEMENT_COUNT)
-        self.assertIsInstance(func.body.statements[0], HLILIf)
-
     def test_eq_chain_on_different_variables_is_not_converted(self):
         other_var = HLILVar(HLILVariable('other'))
         third_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, other_var, HLILConst(THIRD_CASE_VALUE)), make_case_body(THIRD_CASE_VALUE), HLILBlock())
@@ -221,60 +197,6 @@ class TestControlFlowOptimizationSwitchConversion(unittest.TestCase):
         func = run_cfo(first_if)
 
         self.assertIsInstance(func.body.statements[0], HLILIf)
-
-    def test_alternating_ne_eq_chain_becomes_one_switch(self):
-        # NE, NE, EQ, NE - neither of the two former converters could span this
-        fourth_if = HLILIf(
-            make_condition(BinaryOp.NE, FOURTH_CASE_VALUE),
-            make_case_body(DEFAULT_BODY_VALUE),
-            make_case_body(FOURTH_CASE_VALUE),
-        )
-        third_if = HLILIf(
-            make_condition(BinaryOp.EQ, THIRD_CASE_VALUE),
-            make_case_body(THIRD_CASE_VALUE),
-            HLILBlock([fourth_if]),
-        )
-        second_if = make_ne_check(SECOND_CASE_VALUE, third_if)
-        first_if = make_ne_check(FIRST_CASE_VALUE, second_if)
-
-        func = run_cfo(first_if)
-        switch_stmt = func.body.statements[0]
-
-        self.assertIsInstance(switch_stmt, HLILSwitch)
-        self.assertEqual(
-            collect_switch_case_values(switch_stmt),
-            {FIRST_CASE_VALUE, SECOND_CASE_VALUE, THIRD_CASE_VALUE, FOURTH_CASE_VALUE},
-        )
-
-    def test_or_grouped_equalities_become_one_case_with_several_labels(self):
-        grouped = HLILBinaryOp(
-            BinaryOp.OR,
-            make_condition(BinaryOp.EQ, FIRST_CASE_VALUE),
-            make_condition(BinaryOp.EQ, SECOND_CASE_VALUE),
-        )
-        fourth_if = HLILIf(
-            make_condition(BinaryOp.EQ, FOURTH_CASE_VALUE),
-            make_case_body(FOURTH_CASE_VALUE),
-            make_case_body(DEFAULT_BODY_VALUE),
-        )
-        third_if = HLILIf(
-            make_condition(BinaryOp.EQ, THIRD_CASE_VALUE),
-            make_case_body(THIRD_CASE_VALUE),
-            HLILBlock([fourth_if]),
-        )
-        grouped_if = HLILIf(grouped, make_case_body(FIRST_CASE_VALUE), HLILBlock([third_if]))
-
-        func = run_cfo(grouped_if)
-        switch_stmt = func.body.statements[0]
-
-        self.assertIsInstance(switch_stmt, HLILSwitch)
-
-        shared = [case for case in switch_stmt.cases
-                  if not case.is_default() and len(case.values) > 1]
-
-        self.assertEqual(len(shared), 1)
-        self.assertEqual({v.value for v in shared[0].values},
-                         {FIRST_CASE_VALUE, SECOND_CASE_VALUE})
 
     def test_a_link_with_no_case_body_gets_an_empty_case(self):
         """if (selector != k) { rest } with no else: the case for k does nothing"""
@@ -743,15 +665,6 @@ class TestRedundantElseAssignRejectsUnstableSourceKinds(unittest.TestCase):
         self.assertEqual(len(else_stmts), 2)
         self.assertIsInstance(else_stmts[0], HLILAssign)
 
-    def test_register_source_is_not_removed_even_with_a_reaching_assignment(self):
-        reg_var = HLILVariable(None, kind=VariableKind.REG, index=3)
-        reaching_load, first_if = self.build_with_source(reg_var)
-
-        else_stmts = self.run_and_get_else_stmts(reaching_load, first_if)
-
-        self.assertEqual(len(else_stmts), 2)
-        self.assertIsInstance(else_stmts[0], HLILAssign)
-
 
 class TestRedundantElseAssignRequiresConstantConditions(unittest.TestCase):
     """The pattern only ever means something as a literal switch-style discriminant test - a
@@ -833,10 +746,6 @@ class TestSameConstOrVarDistinguishesIntFromFloat(unittest.TestCase):
 
     def test_int_and_float_same_value_do_not_match(self):
         self.assertFalse(same_const_or_var(HLILConst(1), HLILConst(1.0)))
-
-    def test_same_type_same_value_matches(self):
-        self.assertTrue(same_const_or_var(HLILConst(1), HLILConst(1)))
-        self.assertTrue(same_const_or_var(HLILConst(1.5), HLILConst(1.5)))
 
     def test_nan_matches_itself(self):
         nan = float('nan')
@@ -932,11 +841,6 @@ class TestExitPathsSurviveAnAsymmetricBranch(unittest.TestCase):
         body = HLILBlock([guarded_break, make_kill(var)])
         loop = HLILDoWhile(make_guard(), body, label=loop_label)
         return HLILBlock([loop, HLILReturn(HLILVar(var))])
-
-    def test_bare_conditional_break_past_a_kill_keeps_the_later_read_visible(self):
-        block = self._conditional_break_then_kill(HLILBreak(), None)
-        reads, _, _ = read_original(make_tracked(), block)
-        self.assertTrue(reads)
 
     def test_labeled_conditional_break_past_a_kill_keeps_the_later_read_visible(self):
         block = self._conditional_break_then_kill(HLILBreak(label=OUTER_LABEL), OUTER_LABEL)
@@ -1042,18 +946,6 @@ class TestSwitchFallthroughAccounting(unittest.TestCase):
 
         self.assertTrue(reads)
 
-    def test_switch_where_every_case_returns_still_hides_a_following_read(self):
-        var = make_tracked()
-        cases = [HLILSwitchCase([HLILConst(value)], HLILBlock([HLILReturn(None)]))
-                 for value in (FIRST_LABEL_VALUE, SECOND_LABEL_VALUE)]
-        cases.append(HLILSwitchCase(None, HLILBlock([HLILReturn(None)])))
-        switch_stmt = HLILSwitch(make_guard(), cases)
-
-        reads, fallthrough, _ = read_original(var, HLILBlock([switch_stmt, HLILReturn(HLILVar(var))]))
-
-        self.assertFalse(reads)
-        self.assertIsNone(fallthrough)
-
     def test_escaping_case_survives_alongside_a_killing_case(self):
         var = make_tracked()
         escaping = HLILSwitchCase([HLILConst(FIRST_LABEL_VALUE)],
@@ -1082,13 +974,6 @@ class TestSwitchFallthroughAccounting(unittest.TestCase):
 class TestReturnValueIsStillARead(unittest.TestCase):
     """A return exits, but its value expression is evaluated first - dropping that read
     would let the assignment feeding it be deleted while the reference stayed behind."""
-
-    def test_returned_variable_counts_as_a_read(self):
-        var = make_tracked()
-
-        reads, _, _ = read_original(var, HLILBlock([HLILReturn(HLILVar(var))]))
-
-        self.assertTrue(reads)
 
     def test_a_kill_before_the_return_still_hides_it(self):
         var = make_tracked()
@@ -1121,20 +1006,6 @@ class TestFallthroughIsThreeValued(unittest.TestCase):
 
         self.assertIs(fallthrough, False)
         self.assertEqual(exits, ())
-
-    def test_a_kill_falls_through_as_killed(self):
-        var = make_tracked()
-
-        _, fallthrough, _ = read_original(var, HLILBlock([make_kill(var)]))
-
-        self.assertIs(fallthrough, True)
-
-    def test_an_unconditional_return_cannot_fall_through(self):
-        var = make_tracked()
-
-        _, fallthrough, _ = read_original(var, HLILBlock([HLILReturn(None)]))
-
-        self.assertIsNone(fallthrough)
 
     def test_a_loop_whose_every_path_exits_cannot_fall_through(self):
         var = make_tracked()

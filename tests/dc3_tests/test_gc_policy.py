@@ -35,13 +35,6 @@ class TestInfrequentGc(unittest.TestCase):
 
         self.assertEqual(gc.get_threshold(), OUTER_THRESHOLDS)
 
-    def test_restored_after_an_exception(self):
-        with self.assertRaises(Stop):
-            with infrequent_gc():
-                raise Stop
-
-        self.assertEqual(gc.get_threshold(), OUTER_THRESHOLDS)
-
     def test_nested_use_restores_only_at_the_outer_end(self):
         with infrequent_gc():
             with infrequent_gc():

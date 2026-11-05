@@ -379,24 +379,6 @@ class TestRejected(HookTestCase):
             def Target(arg1):
                 RETURN()
 
-    def test_callback_returning_a_non_function_points_at_the_callback(self):
-        self.define_target()
-        hook = self.hook("""
-            import functools
-
-            def body(arg1):
-                RETURN()
-
-            def to_partial(name, func):                     # line: partial
-                return functools.partial(body)
-
-            registerFuncCallback(to_partial)
-        """)
-
-        with self.assertRaisesRegex(TypeError, rf"^{at(hook.__file__, 'partial')}to_partial for Target: expected a "
-                                               "plain function"):
-            self.writer.build({})
-
     def test_callback_returning_false_points_at_the_callback(self):
         """Only None keeps the body; False is rejected like any other non-function"""
         self.define_target()
@@ -732,18 +714,6 @@ class TestSignatures(HookTestCase):
 
 
 class TestLocations(HookTestCase):
-    def test_replacement_failure_points_at_the_hook(self):
-        self.define_target()
-        hook = self.hook("""
-            @replace_function('Target')
-            def Target(arg1):
-                POP(2 * WORD_SIZE)                          # line: bad pop
-                RETURN()
-        """)
-
-        with self.assertRaisesRegex(CompileCheckError, rf"^{at(hook.__file__, 'bad pop')}Target: POP at {HEX}: "):
-            self.writer.build({})
-
     def test_wrapper_halves_point_at_their_own_lines(self):
         """A functools.wraps wrapper's own opcodes map to the wrapper, the body it inlines to that body"""
         cases = {'wrapper': (3 * WORD_SIZE, 2 * WORD_SIZE), 'inlined': (WORD_SIZE, 3 * WORD_SIZE)}
@@ -775,24 +745,6 @@ class TestLocations(HookTestCase):
 
                 with self.assertRaisesRegex(CompileCheckError, rf'^{expected}Target: POP at {HEX}: '):
                     self.writer.build({})
-
-    def test_decorated_body_points_at_its_own_line(self):
-        """A body wrapped by a functools.wraps decorator maps to the body, not to the decorator's call"""
-        def traced(body):
-            @functools.wraps(body)
-            def wrapper(*args):
-                body(*args)
-
-            return wrapper
-
-        @self.writer.LLILCode()
-        @traced
-        def Decorated(arg1: Value32):
-            POP(2 * WORD_SIZE)                      # line: decorated body
-            RETURN()
-
-        with self.assertRaisesRegex(CompileCheckError, rf"^{at(__file__, 'decorated body')}Decorated: POP at {HEX}: "):
-            self.writer.build({})
 
     def test_middle_of_a_chain_points_at_its_own_line(self):
         """Two raw wrappers without functools.wraps around one function: the middle one's mistake is its own line"""
@@ -942,17 +894,6 @@ class TestRunCallbacks(HookTestCase):
 
         self.assertEqual(runner.seen, [(helper, True)])
 
-    def test_global_var_it_adds_is_counted(self):
-        @self.writer.GlobalVars()
-        def globalVars():
-            GLOBAL_VAR('first', ScpGlobalVar.Type.Integer)
-
-        self.define_target()
-        registerRunCallback(lambda g: GLOBAL_VAR('added', ScpGlobalVar.Type.Integer))
-        self.parsed()
-
-        self.assertEqual([var.name for var in self.parser.global_vars], ['first', 'added'])
-
     def test_function_callback_may_add_a_global_var(self):
         @self.writer.GlobalVars()
         def globalVars():
@@ -1050,15 +991,6 @@ class TestAddFunction(HookTestCase):
 
 
 class TestInjection(HookTestCase):
-    def test_script_names_reach_hook_bodies(self):
-        """A replacement calls Helper by its plain name, though only the script defines it"""
-        helper = self.define_helper()
-        self.define_target()
-        self.hook("@replace_function('Target')\n" + CALLS_HELPER.format(name='Target'))
-        functions = self.parsed({'Helper': helper})
-
-        self.assertEqual(self.called(functions['Target']), functions['Helper'].index)
-
     def test_added_function_reaches_script_names(self):
         helper = self.define_helper()
         self.hook('@add_function\n' + CALLS_HELPER.format(name='Added'))

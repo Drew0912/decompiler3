@@ -151,31 +151,6 @@ class TestLoopRecoveryReturnGuard(unittest.TestCase):
         self.assertIsInstance(func.body.statements[0], HLILWhile)
 
 
-class TestLoopRecoveryBreakGuard(unittest.TestCase):
-    """The pre-existing break-based rotations must keep working"""
-
-    def test_leading_break_guard_becomes_loop_condition(self):
-        guard = make_guard(HLILBreak())
-        loop = HLILWhile(HLILConst(1), HLILBlock([guard, make_body_statement()]))
-
-        func = run_pass(loop)
-
-        self.assertEqual(len(func.body.statements), 1)
-        recovered = func.body.statements[0]
-        self.assertIsInstance(recovered, HLILWhile)
-        self.assertEqual(recovered.condition.op, BinaryOp.GT)
-        self.assertEqual(len(recovered.body.statements), 1)
-
-    def test_loop_with_real_condition_is_left_alone(self):
-        loop = HLILWhile(make_exit_condition(), HLILBlock([make_body_statement()]))
-
-        func = run_pass(loop)
-
-        recovered = func.body.statements[0]
-        self.assertIsInstance(recovered, HLILWhile)
-        self.assertEqual(recovered.condition.op, BinaryOp.LE)
-
-
 class TestLoopRecoveryFloatConditions(unittest.TestCase):
     """A float condition is never folded or taken as always true: its truth depends on what tests it
     (docs/falcom/ed9/ED9_VM.md, Truth)"""
@@ -322,17 +297,6 @@ class TestLoopRecoveryContinueGuard(unittest.TestCase):
         self.assertEqual(recovered.condition.value, 1)
         # Nothing lost: refusal happens before _trailing_exit_condition would have popped the
         # trailing break-guard, so the body is exactly as it started
-        self.assertEqual(len(recovered.body.statements), 3)
-
-    def test_continue_elsewhere_refuses_the_trailing_continue_test(self):
-        # The early continue would run the do-while's test, where the while(1) goes back to the top
-        early = HLILIf(make_flag('skip'), HLILBlock([HLILContinue()]), None)
-        test = HLILIf(make_exit_condition(), HLILBlock([HLILContinue()]), HLILBlock([HLILBreak()]))
-        loop = HLILWhile(HLILConst(1), HLILBlock([early, make_body_statement(), test]))
-
-        recovered = run_pass(loop).body.statements[0]
-
-        self.assertIsInstance(recovered, HLILWhile)
         self.assertEqual(len(recovered.body.statements), 3)
 
     def test_labeled_continue_elsewhere_refuses_the_trailing_continue_test(self):

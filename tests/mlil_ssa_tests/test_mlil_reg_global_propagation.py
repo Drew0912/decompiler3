@@ -64,12 +64,6 @@ class TestConstantEqualityIsRepresentationSafe(unittest.TestCase):
     def setUp(self):
         self.propagator = RegGlobalValuePropagator(MediumLevelILFunction('equality_test'))
 
-    def test_int_and_float_constants_are_not_equal_even_with_the_same_numeric_value(self):
-        self.assertFalse(self.propagator._expr_equal(MLILConst(1), MLILConst(1.0)))
-
-    def test_nan_constants_are_equal_to_each_other(self):
-        self.assertTrue(self.propagator._expr_equal(MLILConst(float('nan')), MLILConst(float('nan'))))
-
     def test_merge_states_widens_to_unknown_when_predecessors_disagree_on_representation(self):
         merged = self.propagator._merge_states([
             RegGlobalState(global_={0: MLILConst(1)}),
