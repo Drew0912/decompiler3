@@ -177,14 +177,12 @@ their side effects are preserved; calls with non-foldable outputs remain assignm
 
 The fold moves the call to the read's position, so that position must run exactly when the
 statement did (`CallResultFolder._read_unsafe_to_fold`). A fold is refused when an impure read (a
-deref or a `REG[]`/`GLOBAL[]` load) comes earlier in the reader's evaluation order, when the read
-sits under `&x`, and when it sits on the right of an MLIL logical AND/OR. The VM evaluates both
-sides of those, but HLIL `&&`/`||` short-circuit, so **no call is ever folded under a native VM
-logical op**. The converter's other `||` chains (funnel collapse) take in a later test, calls folded
-into it included, only when that test is entered from the previous one alone, so its calls run only
-when the earlier tests failed: a call on the right side of an HLIL `&&`/`||` really is conditional.
-The cost: a refused call sits between `else` and the next test, so such `else if` chains nest
-instead of printing flat (`docs/hlil/HLIL_FUTURE_WORK.md`, "HLIL Nesting Depth").
+deref or a `REG[]`/`GLOBAL[]` load) comes earlier in the reader's evaluation order, and when the read
+sits under `&x`. A read under the VM's eager `AND`/`OR` folds on either side: both operands always
+run, in order. `.ts` keeps that true where TypeScript's `&&`/`||` would not, with `and_`/`or_`. The
+converter's `OR_ELSE` chains (funnel collapse) take in a later test, calls folded into it included,
+only when that test is entered from the previous one alone, so its calls run only when the earlier
+tests failed: a call on the right of `AND_THEN`/`OR_ELSE` really is conditional.
 
 This specialized folding belongs in conversion rather than a post-conversion tree pass: it
 uses MLIL instruction positions, CFG predecessor information, and call evaluation order before the
@@ -307,8 +305,8 @@ Several dedicated HLIL unit-test files exist today:
 - `tests/hlil_tests/test_hlil_loop_traversal.py` (Step H, 2026-09-22) covers `DeadCodeEliminationPass`,
   `CommonReturnExtractionPass`, and `TypeScriptGenerator._infer_return_type` each correctly seeing
   into a do-while body via the shared `sub_blocks` helper.
-- `tests/hlil_tests/test_hlil_call_fold_short_circuit.py` covers the MLIL->HLIL call-fold short-circuit safety
-  work.
+- `tests/hlil_tests/test_hlil_call_fold_short_circuit.py` covers calls folding under the VM's eager logic and
+  into funnel tests.
 - `tests/hlil_tests/test_hlil_long_functions.py` checks that long runs of sequential ifs and loops convert
   without recursing once per statement.
 - `tests/hlil_tests/test_hlil_common_return_extraction.py` covers when `CommonReturnExtractionPass` may hoist a

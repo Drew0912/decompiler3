@@ -5,22 +5,13 @@
 
 ## HLIL Nesting Depth (`docs/hlil/HLIL_GUIDE.md`)
 
-A call whose result is read on the right side of the VM's eager `&&`/`||` stays its own statement,
-since HLIL `&&`/`||` short-circuit (`CallResultFolder` in `ir/hlil/mlil_to_hlil.py`). Inside an
-`else if` chain that statement sits between `else` and the next test, so the chain can no longer
-print flat and nests one level per such test: `sound.dat` `InitBGM` went from 53 to 230 indent
-levels on 2026-09-24 (only 3 files in the corpus got deeper). Accepted for now as faithful output.
+Calls fold under the VM's eager `&&`/`||` since 2026-11-06, so `else if` chains print flat again:
+`sound.dat` `InitBGM` is back to 53 indent levels from 230, three functions of `sora2` stay over 16.
 
 **Not started:**
 - **Check indent levels** across the corpus: report each function's maximum nesting depth and flag
   outliers, so a readability regression like this shows up in a dump diff instead of being noticed
   by hand.
-- **Keep chains flat where it's safe:** when the left operand is side-effect free and reads nothing
-  the call could change (no call, deref or `REG[]`/`GLOBAL[]` load), swapping the operands puts the
-  call on the always-evaluated side, so it can stay folded: `var_s2 == 102 && flag(16002) == 0`
-  becomes `flag(16002) == 0 && var_s2 == 102`. It reorders operands the script author wrote, and the
-  folder and the converter would have to agree on when the swap applies. A separate eager-logic node
-  (HLIL, TypeScript Output) would keep every chain flat without reordering.
 - **Iterative tree walkers.** The MLIL->HLIL converter, the HLIL passes and the TS generator recurse
   once or twice per nesting level, and an `else if` cascade nests one level per test (TS prints it
   flat): `InitBGM`'s ~490-level cascade needs 989 frames in the converter, just under Python's default
@@ -42,11 +33,8 @@ The output was correct in every function traced; what it costs is readability.
 
 - **Line markers:** print one trailing annotation per statement, or make them optional. Multi-line
   source calls produce reversed runs of `// line(N)`, and markers land between `}` and `else if`.
-- **Eager logic:** give the VM's eager `&&`/`||` its own HLIL node that calls may fold into (both sides
-  always run, in order). Today those calls are hoisted into temporaries, which breaks `else if` chains
-  into deep nesting (HLIL Nesting Depth) and leaves wait loops as
-  `while (1) { temps; if (c) break; else { wait; continue; } }`. With the node, loop recovery also
-  needs `if (c) { break; } else { X; continue; }` → `if (c) break; X;`.
+- **Wait loops:** with calls folded under the VM's eager logic, loop recovery could also turn
+  `if (c) { break; } else { X; continue; }` into `if (c) break; X;`.
 - **Unnamed syscalls:** a handful of syscall IDs cover most raw `syscall(...)` sites, dialogue `(5, 19)` first. Name
   them in the one naming table the DSL uses (`docs/dsl/HLIL_DSL.md`, HLIL DSL: Form, Tooling), and merge the `10`
   newline codes into the dialogue strings.

@@ -20,6 +20,11 @@ TYPESCRIPT_TYPES = {
 }
 
 
+# The VM's eager && and ||, where TypeScript's would skip a call or give an operand
+EAGER_LOGIC_HELPERS = {BinaryOp.AND: 'and_', BinaryOp.OR: 'or_'}
+CALLS = (HLILCall, HLILSyscall, HLILExternCall)
+
+
 class TypeScriptGenerator(HLILStatementPrinter):
     CASE_BLOCKS = True
 
@@ -132,7 +137,8 @@ class TypeScriptGenerator(HLILStatementPrinter):
         dest_str = cls._format_expr(dest)
         src_str = cls._format_expr(src)
 
-        if is_boolean_expr(src) and cls._is_number_var(dest):
+        boolean = is_boolean_expr(src) and not cls._prints_as_helper(cls._printed_node(src), False)
+        if boolean and cls._is_number_var(dest):
             src_str = f'int({src_str})'
 
         return f'{dest_str} = {src_str};'
@@ -171,12 +177,12 @@ class TypeScriptGenerator(HLILStatementPrinter):
         return None
 
     @classmethod
-    def _format_zero_comparison(cls, negated: bool, node: HLILExpression) -> str:
-        text = cls._format_expr(node)
+    def _format_zero_comparison(cls, negated: bool, node: HLILExpression, in_condition: bool) -> str:
+        text = cls._format_expr(node, in_condition or negated)
         if not negated:
             return text
 
-        if cls._unary_operand_needs_parentheses(UnaryOp.NOT, node, text):
+        if cls._unary_operand_needs_parentheses(UnaryOp.NOT, node, text, True):
             text = f'({text})'
         return f'!{text}'
 
@@ -192,19 +198,38 @@ class TypeScriptGenerator(HLILStatementPrinter):
         return HLILUnaryOp(UnaryOp.NOT, node) if negated else cls._printed_node(node)
 
     @classmethod
-    def _operand_needs_parentheses(cls, operand: HLILExpression, parent_op: BinaryOp, is_left: bool) -> bool:
-        """By the operand and by the node it prints - today's parentheses all stay"""
+    def _prints_as_helper(cls, expr: HLILExpression, in_condition: bool) -> bool:
+        """An eager op prints as and_ / or_ where && / || would differ: as a value, or with a call under it"""
+        return (isinstance(expr, HLILBinaryOp) and expr.op in EAGER_LOGIC_HELPERS
+                and (not in_condition or any(isinstance(node, CALLS) for node in iter_tree(expr))))
+
+    @classmethod
+    def _format_condition(cls, expr: HLILExpression) -> str:
+        return cls._format_expr(expr, True)
+
+    @classmethod
+    def _operand_needs_parentheses(cls, operand: HLILExpression, parent_op: BinaryOp, is_left: bool,
+                                   in_condition: bool) -> bool:
+        """By the operand and by the node it prints - today's parentheses all stay; a helper prints as a call"""
+        if cls._prints_as_helper(cls._printed_node(operand), in_condition):
+            return False
+
         return any(isinstance(node, HLILBinaryOp) and needs_parentheses(node.op, parent_op, is_left)
                    for node in (operand, cls._printed_node(operand)))
 
     @classmethod
-    def _unary_operand_needs_parentheses(cls, op: UnaryOp, operand: HLILExpression, operand_text: str) -> bool:
-        """By the operand and by the node it prints - today's parentheses all stay"""
+    def _unary_operand_needs_parentheses(cls, op: UnaryOp, operand: HLILExpression, operand_text: str,
+                                         in_condition: bool) -> bool:
+        """By the operand and by the node it prints - today's parentheses all stay; a helper prints as a call"""
+        if cls._prints_as_helper(cls._printed_node(operand), in_condition):
+            return False
+
         return (unary_operand_needs_parentheses(op, operand, operand_text)
                 or isinstance(cls._printed_node(operand), HLILBinaryOp))
 
     @classmethod
-    def _format_expr(cls, expr: HLILExpression) -> str:
+    def _format_expr(cls, expr: HLILExpression, in_condition: bool = False) -> str:
+        """in_condition: expr is tested for truth, so && / || can stand for the eager ops"""
         if isinstance(expr, HLILVar):
             return str(expr.var)
         elif isinstance(expr, HLILConst):
@@ -221,26 +246,33 @@ class TypeScriptGenerator(HLILStatementPrinter):
 
             simplified = cls._zero_comparison(expr)
             if simplified is not None:
-                return cls._format_zero_comparison(*simplified)
+                return cls._format_zero_comparison(*simplified, in_condition)
 
-            lhs_str = cls._format_expr(expr.lhs)
-            rhs_str = cls._format_expr(expr.rhs)
+            if cls._prints_as_helper(expr, in_condition):
+                operands = ', '.join(cls._format_condition(operand) for operand in cls._chain_operands(expr))
+                return f'{EAGER_LOGIC_HELPERS[expr.op]}({operands})'
+
+            # A logical op tests its operands for truth too
+            logic = expr.op in DE_MORGAN_OP
+            lhs_str = cls._format_expr(expr.lhs, logic)
+            rhs_str = cls._format_expr(expr.rhs, logic)
 
             # Add parentheses if needed based on precedence
-            if cls._operand_needs_parentheses(expr.lhs, expr.op, True):
+            if cls._operand_needs_parentheses(expr.lhs, expr.op, True, logic):
                 lhs_str = f'({lhs_str})'
 
-            if cls._operand_needs_parentheses(expr.rhs, expr.op, False):
+            if cls._operand_needs_parentheses(expr.rhs, expr.op, False, logic):
                 rhs_str = f'({rhs_str})'
 
             return f'{lhs_str} {BINARY_OP_STR[expr.op]} {rhs_str}'
         elif isinstance(expr, HLILUnaryOp):
             simplified = cls._zero_comparison(expr)
             if simplified is not None:
-                return cls._format_zero_comparison(*simplified)
+                return cls._format_zero_comparison(*simplified, in_condition)
 
-            operand = cls._format_expr(expr.operand)
-            if cls._unary_operand_needs_parentheses(expr.op, expr.operand, operand):
+            tested = expr.op == UnaryOp.NOT
+            operand = cls._format_expr(expr.operand, tested)
+            if cls._unary_operand_needs_parentheses(expr.op, expr.operand, operand, tested):
                 operand = f'({operand})'
             return f'{UNARY_OP_STR[expr.op]}{operand}'
         elif isinstance(expr, HLILAddressOf):
@@ -349,6 +381,11 @@ function deref_set<T>(ptr: T, value: T): void { }
 
 // Intrinsic function: boolean/number to int conversion
 function int(b: number | boolean): number { return +b; }
+
+// Intrinsic functions: the VM's eager && and ||, every argument running in order, the result 0 or 1
+// (truth as TypeScript tests it: the VM differs for NaN and strings)
+function and_(...values: any[]): number { return +values.every(Boolean); }
+function or_(...values: any[]): number { return +values.some(Boolean); }
 
 // Placeholder function: external script call
 function extern_call(target: string, ...args: any[]): any { return undefined; }

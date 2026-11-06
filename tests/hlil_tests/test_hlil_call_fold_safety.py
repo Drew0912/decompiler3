@@ -2,8 +2,8 @@
 """CallResultFolder never folds a call result into its reader when that loses the result or reorders
 the call: a later read of the same register (in the same block, in a SetVar, or in another block)
 keeps the call a statement; calls folded into one expression keep their execution order; an impure
-read (a global) ahead of the folded read, or a read under a native &&, keeps the call where it is.
-The safe folds stay folded: a reader in the next block, a chain of calls, a return."""
+read (a global) ahead of the folded read keeps the call where it is.
+The safe folds stay folded: a reader in the next block, a chain of calls, a return, a read under a native &&."""
 
 from pathlib import Path
 import sys
@@ -191,19 +191,16 @@ class TestImpureReadAheadOfTheFold(unittest.TestCase):
 
 
 class TestReadUnderANativeAnd(unittest.TestCase):
-    """The VM evaluates both operands of && ; HLIL's && skips the rhs, so f() would only run sometimes"""
+    """The VM evaluates both operands of &&, so f() runs whichever side it folds into"""
 
-    def test_returned_and_keeps_the_call_a_statement(self):
+    def test_returned_and_folds_the_call(self):
         func, (body,), arg1, reg0, _, _, _ = make_func('return_and', 1)
         body.instructions = [
             MLILCall('f', [], output=reg0),
             MLILRet(MLILLogicalAnd(MLILVar(arg1), MLILVar(reg0))),
         ]
 
-        lines = lines_of(func)
-
-        self.assertIn('reg0 = f();', lines)
-        self.assertIn('return arg1 && reg0;', lines)
+        self.assertIn('return arg1 && f();', lines_of(func))
 
 
 if __name__ == '__main__':

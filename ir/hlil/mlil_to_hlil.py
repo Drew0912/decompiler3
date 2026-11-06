@@ -345,7 +345,7 @@ class CallResultFolder:
         """
         return any(isinstance(sub, (MLILDeref, MLILLoadReg, MLILLoadGlobal)) for sub in walk(node))
 
-    def _read_unsafe_to_fold(self, node: MediumLevelILInstruction, var_name: str, gated: bool = False) -> bool:
+    def _read_unsafe_to_fold(self, node: MediumLevelILInstruction, var_name: str) -> bool:
         """Whether replacing var_name's read inside node with its call changes what the call does.
 
         Folding moves the call to the read's position, and that position differs from the
@@ -353,26 +353,19 @@ class CallResultFolder:
         - an impure read (pointer dereference or REG[]/GLOBAL[] load) sits earlier in node's
           evaluation order (e.g. MLILStoreDeref evaluates dest before value) - the call would now
           run after it instead of before, so the read could miss what the call changes
-        - it is under the rhs of MLILLogicalAnd/Or (gated) - the VM evaluates both operands, but
-          HLIL's && / || short-circuit, so the call would only run sometimes
         - it is under MLILAddressOf - &var names the variable's storage, which a call has not got
         """
-        if isinstance(node, MLILVar):
-            return gated and node.var.name == var_name
-
         if isinstance(node, MLILAddressOf):
             return self._count_reads(node.operand, var_name) > 0
 
-        # Each operand in evaluation order: unsafe inside it, or reading var_name after an earlier impure operand;
-        # the right operand of a logical AND/OR is gated
-        short_circuit = isinstance(node, (MLILLogicalAnd, MLILLogicalOr))
+        # Each operand in evaluation order: unsafe inside it, or reading var_name after an earlier impure operand
         seen_impure = False
 
-        for position, operand in enumerate(node.operands()):
+        for operand in node.operands():
             if seen_impure and self._count_reads(operand, var_name) > 0:
                 return True
 
-            if self._read_unsafe_to_fold(operand, var_name, gated or (short_circuit and position == 1)):
+            if self._read_unsafe_to_fold(operand, var_name):
                 return True
 
             seen_impure = seen_impure or self._contains_impure_read(operand)

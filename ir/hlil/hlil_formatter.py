@@ -85,13 +85,6 @@ class HLILFormatter(HLILStatementPrinter):
         return f'!{text}'
 
     @classmethod
-    def _chain_operands(cls, expr: HLILBinaryOp) -> list[HLILExpression]:
-        """A recovered op's operands, a left chain of the same op read as one: orElse(a, b, c)"""
-        if isinstance(expr.lhs, HLILBinaryOp) and expr.lhs.op == expr.op:
-            return [*cls._chain_operands(expr.lhs), expr.rhs]
-        return [expr.lhs, expr.rhs]
-
-    @classmethod
     def _operand_needs_parentheses(cls, operand: HLILExpression, parent_op: BinaryOp, is_left: bool) -> bool:
         """By the node it prints: a truth test prints what it tests, a recovered op prints as a call"""
         test, negated = strip_truth_test(operand)

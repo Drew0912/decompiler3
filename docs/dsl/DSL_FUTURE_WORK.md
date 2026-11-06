@@ -276,8 +276,9 @@ comparison (see `docs/FUTURE_WORK.md`, "Static Game-Logic Check") in cross-progr
 bytecode emulator) was considered and deliberately not pursued.
 
 **Prerequisites.** Once HLIL compiles back, every HLIL pass must preserve game logic exactly, not just
-readability. Before starting: calls never folded under a native VM logical op (met 2026-09-24 - see
-`docs/hlil/HLIL_DESIGN.md`, Call Results as Expressions); copy propagation never
+readability. Before starting: the VM's eager logic kept apart from logic recovered from jumps, so a call
+folded under an eager op still always runs (met 2026-11-06 - see `docs/hlil/HLIL_DESIGN.md`, Call Results
+as Expressions); copy propagation never
 forwarding a register/global past a redefinition (met 2026-09-24 - including clobbering calls whose
 record dead-code elimination drops; see `docs/mlil/MLIL_DESIGN.md`, Optimization Passes); HLIL never silently dropping a path (met
 2026-09-28 - a jump the tree cannot express is an `HLILUnstructured` node, which the DSL must refuse

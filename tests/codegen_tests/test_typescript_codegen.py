@@ -23,6 +23,7 @@ from ir.hlil import (
     HLILBlock,
     HLILCall,
     HLILConst,
+    HLILDoWhile,
     HLILExpression,
     HLILExprStmt,
     HLILExternCall,
@@ -30,10 +31,12 @@ from ir.hlil import (
     HLILReturn,
     HLILSwitch,
     HLILSwitchCase,
+    HLILSyscall,
     HLILTypeKind,
     HLILUnaryOp,
     HLILVar,
     HLILVariable,
+    HLILWhile,
     UnaryOp,
     VariableKind,
 )
@@ -65,6 +68,18 @@ def render_call(argument, parameters=()) -> str:
     func.parameters = list(parameters)
     func.body.add_statement(HLILExprStmt(HLILCall('f', [argument])))
     return generate_typescript(func)
+
+
+def render_statements(*statements) -> str:
+    func = HighLevelILFunction(TEST_FUNCTION_NAME)
+    for statement in statements:
+        func.body.add_statement(statement)
+    return generate_typescript(func)
+
+
+def render_test(condition) -> str:
+    """The TypeScript of a function whose body is if (condition) f()"""
+    return render_statements(HLILIf(condition, HLILBlock([HLILExprStmt(HLILCall('f', []))])))
 
 
 def var(name: str) -> HLILVar:
@@ -105,26 +120,116 @@ class TestEmptyThenArm(unittest.TestCase):
 
 class TestZeroComparisonParentheses(unittest.TestCase):
     """A comparison with 0 that prints as another node's text ((a || b) != 0 prints a || b) is parenthesized by
-    that node: it printed f(a || b && c), read as a || (b && c)"""
+    that node: it printed if (a || b && c), read as a || (b && c)"""
 
     def test_operand_is_parenthesized_by_what_it_prints(self):
         a_or_b = HLILBinaryOp(BinaryOp.OR, var('a'), var('b'))
         rows = [
             (HLILBinaryOp(BinaryOp.AND, HLILBinaryOp(BinaryOp.NE, a_or_b, HLILConst(0)), var('c')),
-             'f((a || b) && c);'),
+             'if ((a || b) && c) {'),
             (HLILUnaryOp(UnaryOp.NOT, HLILUnaryOp(UnaryOp.NOT, HLILBinaryOp(BinaryOp.EQ, a_or_b, HLILConst(0)))),
-             'f(!(a || b));'),
+             'if (!(a || b)) {'),
             # Unchanged: a tighter operand, and the simplification on its own
             (HLILBinaryOp(BinaryOp.AND,
                           HLILBinaryOp(BinaryOp.NE, HLILBinaryOp(BinaryOp.LT, var('a'), var('b')), HLILConst(0)),
                           var('c')),
-             'f(a < b && c);'),
-            (HLILBinaryOp(BinaryOp.NE, a_or_b, HLILConst(0)), 'f(a || b);'),
+             'if (a < b && c) {'),
+            (HLILBinaryOp(BinaryOp.NE, a_or_b, HLILConst(0)), 'if (a || b) {'),
         ]
 
         for expr, text in rows:
             with self.subTest(text=text):
-                self.assertIn(text, render_call(expr))
+                self.assertIn(text, render_test(expr))
+
+
+class TestEagerLogicHelpers(unittest.TestCase):
+    """The VM's eager && and || print as and_ / or_ where TypeScript's would differ: as a value, where they give an
+    operand and the VM 0 or 1, and with a call under them, which they could skip. The logic check reads the tree, not
+    this text"""
+
+    @classmethod
+    def call(cls, name: str = 'g') -> HLILCall:
+        return HLILCall(name, [])
+
+    @classmethod
+    def both(cls) -> HLILBinaryOp:
+        return HLILBinaryOp(BinaryOp.AND, var('a'), cls.call())
+
+    @classmethod
+    def number_var(cls) -> HLILVar:
+        return HLILVar(HLILVariable('x', HLILTypeKind.INT))
+
+    def check_statements(self, rows):
+        for statement, line in rows:
+            with self.subTest(line=line):
+                self.assertIn(line, render_statements(statement))
+
+    def check_tests(self, rows):
+        for condition, text in rows:
+            with self.subTest(text=text):
+                self.assertIn(f'if ({text}) {{', render_test(condition))
+
+    def test_every_statement_it_can_sit_in(self):
+        body = HLILBlock([HLILExprStmt(self.call('f'))])
+        self.check_statements([
+            (HLILIf(self.both(), body), 'if (and_(a, g())) {'),
+            (HLILIf(var('c'), body, HLILBlock([HLILIf(self.both(), body)])), '} else if (and_(a, g())) {'),
+            (HLILWhile(self.both(), body), 'while (and_(a, g())) {'),
+            (HLILDoWhile(self.both(), body), '} while (and_(a, g()));'),
+            (HLILSwitch(self.both(), [HLILSwitchCase([HLILConst(FIRST_CASE_VALUE)], body)]), 'switch (and_(a, g())) {'),
+            (HLILReturn(self.both()), 'return and_(a, g());'),
+            (HLILAssign(self.number_var(), self.both()), 'x = and_(a, g());'),
+            (HLILExprStmt(HLILCall('f', [self.both()])), 'f(and_(a, g()));'),
+            (HLILIf(HLILBinaryOp(BinaryOp.NE, self.both(), HLILConst(0)), HLILBlock(), body), 'if (!and_(a, g())) {'),
+        ])
+
+    def test_under_truth_tests_and_other_logic(self):
+        a, b, c = var('a'), var('b'), var('c')
+        self.check_tests([
+            (HLILBinaryOp(BinaryOp.NE, self.both(), HLILConst(0)), 'and_(a, g())'),
+            (HLILBinaryOp(BinaryOp.EQ, self.both(), HLILConst(0)), '!and_(a, g())'),
+            (HLILUnaryOp(UnaryOp.NOT, self.both()), '!and_(a, g())'),
+            (HLILBinaryOp(BinaryOp.OR_ELSE, c, self.both()), 'c || and_(a, g())'),
+            (HLILBinaryOp(BinaryOp.AND, self.both(), b), 'and_(a, g(), b)'),
+            (HLILBinaryOp(BinaryOp.AND, b, self.both()), 'and_(b, and_(a, g()))'),
+            (HLILBinaryOp(BinaryOp.OR, HLILBinaryOp(BinaryOp.AND, a, b), self.call()), 'or_(a && b, g())'),
+            (HLILBinaryOp(BinaryOp.AND, self.call(), a), 'and_(g(), a)'),
+        ])
+
+    def test_every_call_node(self):
+        a = var('a')
+        self.check_tests([
+            (HLILBinaryOp(BinaryOp.OR, a, self.call()), 'or_(a, g())'),
+            (HLILBinaryOp(BinaryOp.OR, a, HLILSyscall(1, 2, [])), 'or_(a, syscall(1, 2))'),
+            (HLILBinaryOp(BinaryOp.OR, a, HLILExternCall('m:f', [])), "or_(a, extern_call('m:f'))"),
+        ])
+
+    def test_a_value_with_no_call(self):
+        either = HLILBinaryOp(BinaryOp.OR, var('a'), var('b'))
+        self.check_statements([
+            (HLILAssign(self.number_var(), either), 'x = or_(a, b);'),
+            (HLILExprStmt(HLILCall('f', [either])), 'f(or_(a, b));'),
+            (HLILExprStmt(HLILCall('f', [HLILBinaryOp(BinaryOp.ADD, HLILConst(0), either)])), 'f(0 + or_(a, b));'),
+        ])
+        self.check_tests([(HLILBinaryOp(BinaryOp.EQ, var('c'), either), 'c == or_(a, b)')])
+
+    def test_plain_logic_keeps_its_operators(self):
+        a, b = var('a'), var('b')
+        self.check_tests([
+            (HLILBinaryOp(BinaryOp.AND, a, b), 'a && b'),
+            (HLILBinaryOp(BinaryOp.OR, a, b), 'a || b'),
+            (HLILBinaryOp(BinaryOp.OR_ELSE, self.call(), self.call('h')), 'g() || h()'),
+            (HLILBinaryOp(BinaryOp.AND_THEN, a, self.call()), 'a && g()'),
+        ])
+        self.check_statements([
+            (HLILAssign(self.number_var(), HLILBinaryOp(BinaryOp.LT, a, b)), 'x = int(a < b);'),
+        ])
+
+    def test_the_header_declares_them(self):
+        header = generate_typescript_header()
+
+        self.assertIn('function and_(...values: any[]): number { return +values.every(Boolean); }', header)
+        self.assertIn('function or_(...values: any[]): number { return +values.some(Boolean); }', header)
 
 
 class TestSwitchEmptyCase(unittest.TestCase):

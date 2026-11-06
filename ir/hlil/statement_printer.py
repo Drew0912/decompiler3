@@ -18,6 +18,18 @@ class HLILStatementPrinter:
         raise NotImplementedError
 
     @classmethod
+    def _format_condition(cls, expr: HLILExpression) -> str:
+        """An expression tested for truth, where a printer may spell logic more plainly"""
+        return cls._format_expr(expr)
+
+    @classmethod
+    def _chain_operands(cls, expr: HLILBinaryOp) -> list[HLILExpression]:
+        """A logical op's operands, a left chain of the same op read as one: orElse(a, b, c)"""
+        if isinstance(expr.lhs, HLILBinaryOp) and expr.lhs.op == expr.op:
+            return [*cls._chain_operands(expr.lhs), expr.rhs]
+        return [expr.lhs, expr.rhs]
+
+    @classmethod
     def _format_assign(cls, stmt: HLILAssign) -> str:
         raise NotImplementedError
 
@@ -39,7 +51,7 @@ class HLILStatementPrinter:
         """if / else if / else"""
         indent_str = default_indent() * indent
         condition, true_block, false_block = cls._if_arms(stmt)
-        lines = [f'{indent_str}if ({cls._format_expr(condition)}) {{']
+        lines = [f'{indent_str}if ({cls._format_condition(condition)}) {{']
         lines.extend(cls._format_block(true_block, indent + 1))
 
         while false_block and false_block.statements:
@@ -54,7 +66,7 @@ class HLILStatementPrinter:
             for comment in comments:
                 lines.extend(cls._format_statement(comment, indent))
 
-            lines.append(f'{indent_str}}} else if ({cls._format_expr(inner_if.condition)}) {{')
+            lines.append(f'{indent_str}}} else if ({cls._format_condition(inner_if.condition)}) {{')
             lines.extend(cls._format_block(inner_if.true_block, indent + 1))
             false_block = inner_if.false_block
 
@@ -101,14 +113,14 @@ class HLILStatementPrinter:
             lines.extend(cls._format_if_chain(stmt, indent))
         elif isinstance(stmt, HLILWhile):
             # while (condition) { ... }, optionally labeled
-            cond_str = cls._format_expr(stmt.condition)
+            cond_str = cls._format_condition(stmt.condition)
             label_prefix = f'{stmt.label}: ' if stmt.label else ''
             lines.append(f'{indent_str}{label_prefix}while ({cond_str}) {{')
             lines.extend(cls._format_block(stmt.body, indent + 1))
             lines.append(f'{indent_str}}}')
         elif isinstance(stmt, HLILDoWhile):
             # do { ... } while (condition);, optionally labeled
-            cond_str = cls._format_expr(stmt.condition)
+            cond_str = cls._format_condition(stmt.condition)
             label_prefix = f'{stmt.label}: ' if stmt.label else ''
             lines.append(f'{indent_str}{label_prefix}do {{')
             lines.extend(cls._format_block(stmt.body, indent + 1))

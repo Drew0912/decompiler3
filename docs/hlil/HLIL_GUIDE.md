@@ -71,8 +71,8 @@ args), `HLILExternCall` (`"module:func"` cross-script calls).
 `GLOBALS[index]`. Registers are ordinary `HLILVar`s with a different `VariableKind`. Separately,
 `CallResultFolder` decides when an MLIL call's `output` can be inlined straight into its single
 reader instead of materializing as a `REG` assignment — turning `reg0 = f(); use(reg0)` into
-`use(f())` wherever safe. It never folds a call under the right side of a native VM logical op:
-the VM evaluates both sides, HLIL `&&`/`||` short-circuit (see `docs/hlil/HLIL_DESIGN.md`).
+`use(f())` wherever safe, under the VM's eager logical ops too, which evaluate both sides (see
+`docs/hlil/HLIL_DESIGN.md`).
 
 ## Conversion Pipeline
 
@@ -129,7 +129,7 @@ living in `ir/mlil_ssa/mlil_ssa.py`, entirely outside `ir/hlil/`.
 `codegen/typescript.py` is a real TypeScript emitter, not generic pseudocode: typed signatures and
 `let` declarations, a generated header with `GLOBALS`/`REGS` arrays, a `Pointer` type for
 out-parameters (`type Pointer = number;`, so a `Pointer` takes the same `int(...)` coercion as a
-number) and `addr_of`/`deref`/`deref_set`/`int`/`extern_call`/`syscall` intrinsics, and `POPN`/`DEBUG_INT`
+number) and `addr_of`/`deref`/`deref_set`/`int`/`and_`/`or_`/`extern_call`/`syscall` intrinsics, and `POPN`/`DEBUG_INT`
 placeholders for the VM's intrinsic statements.
 TypeScript has no `*ptr` syntax, so a pointer read is a `deref(ptr)` call and a store through one
 (`HLILAssign` whose `dest` is `HLILDeref`) becomes a `deref_set(ptr, value)` call instead of an
@@ -169,7 +169,9 @@ no visible trace of the underlying memory-form representation.
 
 Two outputs exist side by side, printed from the same tree. A fact about the bytecode goes in HLIL and
 shows in both; a TypeScript concern goes in `.ts` only.
-- **`.ts`** — `generate_typescript()`'s readable TypeScript pseudocode.
+- **`.ts`** — `generate_typescript()`'s readable TypeScript pseudocode. The VM's eager `&&`/`||` print
+  as `and_(a, b)`/`or_(a, b)` where TypeScript's would differ: as a value (theirs gives an operand, the
+  VM 0 or 1) and with a call under them (theirs could skip it).
 - **`.hlil.ts`** — `HLILFormatter`'s high-level form of the bytecode. It is not TypeScript (the
   suffix is only for editor highlighting) and not recompilable, and it follows the VM's evaluation
   rules, not TypeScript's. `&&`/`||` are the VM's eager `LOGICAL_AND`/`LOGICAL_OR`, both sides always
