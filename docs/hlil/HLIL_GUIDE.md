@@ -24,7 +24,7 @@ deals with VM-level calls, branches, and CFG shape.
 | --- | --- |
 | `ir/hlil/__init__.py` | Public API surface — re-exports node types, formatter, converter, passes. |
 | `ir/hlil/hlil.py` | Core node/instruction class definitions (statements, expressions, variables). |
-| `ir/hlil/statement_printer.py` | The statement printer (`HLILStatementPrinter`) the debug formatter and `codegen/typescript.py` share; each prints expressions itself. |
+| `ir/hlil/statement_printer.py` | The statement printer (`HLILStatementPrinter`) the `.hlil.ts` formatter and `codegen/typescript.py` share; each prints expressions itself. |
 | `ir/hlil/hlil_formatter.py` | Debug text pretty-printer (`HLILFormatter`) — tree dump, not codegen. |
 | `ir/hlil/mlil_to_hlil.py` | The MLIL → HLIL converter: CFG build, call-result folding, structural reconstruction. |
 | `ir/hlil/structural_analysis.py` | Dominator / natural-loop / region-reduction CFG analysis (`StructuralAnalyzer`), used by the converter. |
@@ -167,15 +167,21 @@ copy of it - the shared `unwrap_address_taken_var`/its own `_format_var_assignme
 Real output therefore reads naturally - `chr_set_pos(65533, var_s5, var_s6, var_s7, var_s8)` - with
 no visible trace of the underlying memory-form representation.
 
-Two output modes exist side by side:
-- **`.ts`** — `generate_typescript()`'s real pseudocode output.
-- **`.hlil.ts`** — a raw `HLILFormatter` tree dump, explicitly documented in-repo as
-  "not recompilable code." Useful for debugging the IR, not as generated output. It prints the
-  same operator symbols, precedence parentheses and case `break`s as `.ts`, from the shared
-  tables in `ir/hlil/hlil.py`, the same string literals (`dc3.utils.quote_string`) and hex
-  constants (`0xFFFFFFFF`, not `-1`). In
-  both, a minus over an operand that already starts with one keeps its parentheses (`-(-a)`,
-  never `--a`, a decrement).
+Two outputs exist side by side, printed from the same tree. A fact about the bytecode goes in HLIL and
+shows in both; a TypeScript concern goes in `.ts` only.
+- **`.ts`** — `generate_typescript()`'s readable TypeScript pseudocode.
+- **`.hlil.ts`** — `HLILFormatter`'s high-level form of the bytecode. It is not TypeScript (the
+  suffix is only for editor highlighting) and not recompilable, and it follows the VM's evaluation
+  rules, not TypeScript's. `&&`/`||` are the VM's eager `LOGICAL_AND`/`LOGICAL_OR`, both sides always
+  run; `andThen(a, b)`/`orElse(a, b)` are logic recovered from jumps, the right side conditional, a
+  chain of one reading as one (`orElse(a, b, c)`). A truth test of a boolean is read off
+  (`x == 0 != 0` prints `x == 0`, `(x > 0) == 0` prints `!(x > 0)`, never `x <= 0`, which differs for
+  NaN); a plain value's test stays (`x != 0`).
+
+They share the operator symbols, precedence parentheses and case `break`s, from the tables in
+`ir/hlil/hlil.py`, the string literals (`dc3.utils.quote_string`) and hex constants (`0xFFFFFFFF`, not
+`-1`). In both, a minus over an operand that already starts with one keeps its parentheses (`-(-a)`,
+never `--a`, a decrement).
 
 ## Known Gaps / Active Work
 

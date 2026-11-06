@@ -272,7 +272,7 @@ class TestHookTemplateWritten(unittest.TestCase):
         self.out = Path(self.enterContext(tempfile.TemporaryDirectory()))
         self.config = ScenaDecompileConfig()
         self.config.output_dir = self.out
-        self.config.write_ts = self.config.write_mlil_asm = False
+        self.config.write_ts = self.config.write_hlil_ts = self.config.write_mlil_asm = False
 
     def hooks(self) -> list[Path]:
         return sorted(self.out.rglob('*_hook.py'))

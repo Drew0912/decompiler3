@@ -1,30 +1,43 @@
-"""HLIL Formatter - Format HLIL for debugging"""
+"""HLIL Formatter - the .hlil.ts text: the bytecode's high-level form, not TypeScript (the suffix is for editors)"""
 
 from dc3 import default_indent
 from .hlil import *
 from .statement_printer import HLILStatementPrinter
 
+# Logic recovered from jumps; `&&` and `||` here are the VM's eager ops
+RECOVERED_LOGIC_NAMES = {BinaryOp.AND_THEN: 'andThen', BinaryOp.OR_ELSE: 'orElse'}
+
 
 class HLILFormatter(HLILStatementPrinter):
-    """Format HLIL functions for debugging"""
+    """Format HLIL functions as .hlil.ts"""
 
     @classmethod
     def _format_expr(cls, expr: HLILExpression) -> str:
         """Format an HLIL expression"""
+        test, negated = strip_truth_test(expr)
+        if negated:
+            return cls._format_not(test)
+        if test is not expr:
+            return cls._format_expr(test)
+
         if isinstance(expr, HLILVar):
             return str(expr.var)  # Use __str__ to handle GLOBAL/REG properly
         elif isinstance(expr, HLILConst):
             # The constant's own text: quoted strings, true/false, hex constants unsigned as in the .ts
             return str(expr)
         elif isinstance(expr, HLILBinaryOp):
+            if expr.op in RECOVERED_LOGIC_NAMES:
+                operands = ', '.join(cls._format_expr(operand) for operand in cls._chain_operands(expr))
+                return f'{RECOVERED_LOGIC_NAMES[expr.op]}({operands})'
+
             lhs_str = cls._format_expr(expr.lhs)
             rhs_str = cls._format_expr(expr.rhs)
 
             # Add parentheses if needed based on precedence
-            if isinstance(expr.lhs, HLILBinaryOp) and needs_parentheses(expr.lhs.op, expr.op, True):
+            if cls._operand_needs_parentheses(expr.lhs, expr.op, True):
                 lhs_str = f'({lhs_str})'
 
-            if isinstance(expr.rhs, HLILBinaryOp) and needs_parentheses(expr.rhs.op, expr.op, False):
+            if cls._operand_needs_parentheses(expr.rhs, expr.op, False):
                 rhs_str = f'({rhs_str})'
 
             return f'{lhs_str} {BINARY_OP_STR[expr.op]} {rhs_str}'
@@ -61,8 +74,33 @@ class HLILFormatter(HLILStatementPrinter):
             return str(expr)
 
     @classmethod
+    def _is_recovered_logic(cls, expr: HLILExpression) -> bool:
+        return isinstance(expr, HLILBinaryOp) and expr.op in RECOVERED_LOGIC_NAMES
+
+    @classmethod
+    def _format_not(cls, test: HLILExpression) -> str:
+        text = cls._format_expr(test)
+        if not cls._is_recovered_logic(test) and unary_operand_needs_parentheses(UnaryOp.NOT, test, text):
+            text = f'({text})'
+        return f'!{text}'
+
+    @classmethod
+    def _chain_operands(cls, expr: HLILBinaryOp) -> list[HLILExpression]:
+        """A recovered op's operands, a left chain of the same op read as one: orElse(a, b, c)"""
+        if isinstance(expr.lhs, HLILBinaryOp) and expr.lhs.op == expr.op:
+            return [*cls._chain_operands(expr.lhs), expr.rhs]
+        return [expr.lhs, expr.rhs]
+
+    @classmethod
+    def _operand_needs_parentheses(cls, operand: HLILExpression, parent_op: BinaryOp, is_left: bool) -> bool:
+        """By the node it prints: a truth test prints what it tests, a recovered op prints as a call"""
+        test, negated = strip_truth_test(operand)
+        return (not negated and isinstance(test, HLILBinaryOp) and not cls._is_recovered_logic(test)
+                and needs_parentheses(test.op, parent_op, is_left))
+
+    @classmethod
     def format_function(cls, func: HighLevelILFunction) -> list[str]:
-        """Format an HLIL function for debugging"""
+        """Format an HLIL function as .hlil.ts"""
         lines = []
 
         # Function header (simple, no types)

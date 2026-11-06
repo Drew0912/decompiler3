@@ -1,5 +1,5 @@
-"""The decompile pipeline each game's scena2py.py runs: ED9 .dat scripts into the Python DSL, TypeScript, and optional
-IR debug dumps.
+"""The decompile pipeline each game's scena2py.py runs: ED9 .dat scripts into the Python DSL, TypeScript, .hlil.ts and
+optional IR debug dumps.
 
 Usage, from a game's launcher:
     python falcom/ed9/games/{game}/scena2py.py {file_path} [-o {output_dir}]
@@ -189,7 +189,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
 
 def main(game: str) -> int:
     arg_parser = argparse.ArgumentParser(
-        description=f'Decompile {game} .dat scripts into the Python DSL, TypeScript, and optional IR debug dumps')
+        description=f'Decompile {game} .dat scripts into the Python DSL, TypeScript, .hlil.ts and optional debug dumps')
     arg_parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
     arg_parser.add_argument('-o', '--output-dir', type=Path,
                             help=f"output folder (default: scena2py_config.py's output_dir, or {game}'s out/)")

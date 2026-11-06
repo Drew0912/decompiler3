@@ -404,7 +404,7 @@ class TestRealScript(unittest.TestCase):
             with self.subTest(flipped=flipped), tempfile.TemporaryDirectory() as tmp_dir:
                 config = ScenaDecompileConfig()
                 config.output_dir = Path(tmp_dir)
-                config.write_ts = config.write_mlil_asm = False
+                config.write_ts = config.write_hlil_ts = config.write_mlil_asm = False
                 if flipped is not None:
                     setattr(config, flipped, not getattr(config, flipped))
 

@@ -1,5 +1,5 @@
-"""The statement printer HLIL's two text outputs share: the debug dump (hlil_formatter.py) and the TypeScript
-generator (codegen/typescript.py)"""
+"""The statement printer HLIL's two text outputs share: .hlil.ts (hlil_formatter.py) and the TypeScript generator
+(codegen/typescript.py)"""
 
 from dc3 import default_indent
 from .hlil import *

@@ -245,7 +245,7 @@ COMPARISON_FUNCTIONS = {
 
 
 # ============================================================================
-# C-Family Syntax (TypeScript codegen and the debug formatter - a non-C output
+# C-Family Syntax (TypeScript codegen and the .hlil.ts formatter - a non-C output
 # needs its own symbols and precedence)
 # ============================================================================
 
@@ -302,8 +302,8 @@ BINARY_OP_PRECEDENCE = {
     BinaryOp.MOD        : 10,
 }
 
-# a - (b - c) is not (a - b) - c
-NON_ASSOCIATIVE_OPS = frozenset({BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD})
+# a - (b - c) is not (a - b) - c, nor a < (b > c) (a < b) > c, nor a * (b / c) (a * b) / c
+NON_ASSOCIATIVE_OPS = COMPARISON_OPS | {BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD, BinaryOp.SHL, BinaryOp.SHR}
 
 
 def needs_parentheses(child_op: BinaryOp, parent_op: BinaryOp, is_left: bool) -> bool:
@@ -314,7 +314,7 @@ def needs_parentheses(child_op: BinaryOp, parent_op: BinaryOp, is_left: bool) ->
     if child_precedence != parent_precedence:
         return child_precedence < parent_precedence
 
-    return not is_left and parent_op in NON_ASSOCIATIVE_OPS
+    return not is_left and (parent_op in NON_ASSOCIATIVE_OPS or child_op in NON_ASSOCIATIVE_OPS)
 
 
 def unary_operand_needs_parentheses(op: UnaryOp, operand: HLILExpression, operand_text: str) -> bool:
@@ -823,7 +823,7 @@ def drop_trailing_continue(body: HLILBlock):
 def unwrap_address_taken_var(expr: HLILExpression) -> HLILVar | None:
     """*(&x) - the memory form of address-taken local x (the stack translator's, and ir/mlil_ssa/mlil_ssa.py's
     lowering) - collapses to plain x. Returns the HLILVar, or None if expr is not that exact shape.
-    Shared by every consumer of this shape (the TS codegen, the debug formatter, and CFO's
+    Shared by every consumer of this shape (the TS codegen, the .hlil.ts formatter, and CFO's
     modifies-check) so they cannot independently drift on what counts as the canonical form."""
     if (isinstance(expr, HLILDeref) and isinstance(expr.operand, HLILAddressOf)
             and isinstance(expr.operand.operand, HLILVar)):

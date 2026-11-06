@@ -14,6 +14,7 @@ class ScenaDecompileConfig(StrictBase):
     # Primary outputs
     write_py: bool = True   # round-trippable VM-bytecode Python DSL (.py)
     write_ts: bool = True   # final TypeScript (.ts)
+    write_hlil_ts: bool = True  # the bytecode's high-level form (.hlil.ts): not TypeScript, not recompilable
     write_hook_template: bool = False   # a starting <stem>_hook.py next to the .py (with write_py); never over an existing file
 
     # .py comments (scripts only; the common library always has the stack comments and never the others)
@@ -27,7 +28,6 @@ class ScenaDecompileConfig(StrictBase):
     write_llil_dot: bool = False    # one .llil.<func>.dot CFG per function. Use Graphviz Online
     write_mlil_asm: bool = True    # .mlil.asm text dump
     write_mlil_dot: bool = False    # one .mlil.<func>.dot CFG per function. Use Graphviz Online
-    write_hlil_ts: bool = False     # .hlil.ts text dump (HLILFormatter text, not recompilable code)
 
     # .hlil.ts and .ts: a // line(N) comment where each source line starts (the .py keeps its DEBUG_SET_LINENO)
     line_markers: bool = True

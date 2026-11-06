@@ -36,8 +36,8 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `ir/hlil/hlil.py` | Core enums and tree nodes: expressions, statements, variables, switch cases, and `HighLevelILFunction`. |
 | `ir/hlil/mlil_to_hlil.py` | Generic MLIL → HLIL conversion, including CFG construction, call-result folding, loop/branch reconstruction, shared-region cloning, and variable declaration. |
 | `ir/hlil/structural_analysis.py` | Dominator calculation, natural-loop discovery, iterative region reduction, and merge-point queries used by the converter. |
-| `ir/hlil/statement_printer.py` | `HLILStatementPrinter`, the statement printer the debug formatter and the TypeScript code generator share: each prints expressions its own way and overrides the hooks where its statements differ (assignments, unstructured jumps, an if's arms, switch case blocks). |
-| `ir/hlil/hlil_formatter.py` | Debug formatter for rendering an HLIL tree, on the shared statement printer. It is separate from the TypeScript code generator. |
+| `ir/hlil/statement_printer.py` | `HLILStatementPrinter`, the statement printer the `.hlil.ts` formatter and the TypeScript code generator share: each prints expressions its own way and overrides the hooks where its statements differ (assignments, unstructured jumps, an if's arms, switch case blocks). |
+| `ir/hlil/hlil_formatter.py` | The `.hlil.ts` formatter, on the shared statement printer: the bytecode's high-level form, not TypeScript. It is separate from the TypeScript code generator. |
 | `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: control-flow optimization, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, the statement printer, the formatter and the passes (the conversion pass `MLILToHLILPass` among them). |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry point, `convert_falcom_mlil_to_hlil()`, and its pass ordering/configuration. |
@@ -78,8 +78,9 @@ with zero; other unary operations map to negation or bitwise-not.
 The boolean operators come in two kinds. `AND`/`OR` are the VM's eager `LOGICAL_AND`/`LOGICAL_OR`: both
 operands always run. `AND_THEN`/`OR_ELSE` are logic recovered from jumps (`_collapse_funnel_chain`,
 `if (C || true)`, and what `negate_condition` makes of those): the right operand runs only when the left
-leaves the answer open. Both print as `&&`/`||`. `DE_MORGAN_OP` keeps the kind, `OR_OPS` is either `||`,
-and the logic check (`tools/logic_check/`) tests an eager op whole and a recovered one operand by operand.
+leaves the answer open. `.ts` prints both as `&&`/`||`, `.hlil.ts` the recovered ones as `andThen`/`orElse`.
+`DE_MORGAN_OP` keeps the kind, `OR_OPS` is either `||`, and the logic check (`tools/logic_check/`) tests an
+eager op whole and a recovered one operand by operand.
 
 Operator knowledge lives once, in `ir/hlil/hlil.py`, in two groups. The language-neutral group -
 `COMPARISON_OPS`, `BOOLEAN_BINARY_OPS`/`is_boolean_expr`, `NEGATED_COMPARISON_OP`, `DE_MORGAN_OP`,
@@ -87,7 +88,7 @@ Operator knowledge lives once, in `ir/hlil/hlil.py`, in two groups. The language
 tests, `(c) != 0`, `(c) == 0` and `!c`, read off without changing the tree) - is what any output language
 needs, including the planned HLIL DSL. The C-family syntax group - the `BINARY_OP_STR`/`UNARY_OP_STR`
 symbols, `BINARY_OP_PRECEDENCE`, `NON_ASSOCIATIVE_OPS` and `needs_parentheses` - serves only the
-TypeScript generator and the debug formatter; a non-C output needs its own. `TERMINAL_STATEMENTS`
+TypeScript generator and the `.hlil.ts` formatter; a non-C output needs its own. `TERMINAL_STATEMENTS`
 (return, break, continue, `HLILUnstructured`) is the one list of statements that never fall through.
 `ControlFlowOptimizationPass` negates with the shared `negate_condition`, and its switch recognizer reads
 each chain link through `strip_truth_test`: the stack translator keeps the LLIL's jump test, so a link
@@ -314,8 +315,8 @@ Several dedicated HLIL unit-test files exist today:
   shared return (switch default and bare-break guards, `if` without `else`, int/float and NaN
   constants) plus the shared `constant_values_equal` and `contains_bare_break` helpers.
 - `tests/hlil_tests/test_hlil_operators.py` covers the shared operator tables (comparison negation is the
-  complement), `negate_condition`, `strip_truth_test`, `needs_parentheses`, and the debug formatter's operator
-  symbols and switch-case `break`s.
+  complement), `negate_condition`, `strip_truth_test`, `needs_parentheses`, and the `.hlil.ts` formatter's operator
+  symbols, recovered logic, truth tests and switch-case `break`s.
 - `tests/hlil_tests/test_hlil_traversal.py` covers the shared tree walkers: every node type's children, source
   order, `iter_tree`'s exclusion, the escaping-exit rules, `sole_statement`, declaration order, and
   control-flow optimization reaching into a do-while body.

@@ -83,13 +83,19 @@ class TestNeedsParentheses(unittest.TestCase):
     def test_equal_precedence_wraps_only_the_rhs_of_a_non_associative_op(self):
         self.assertFalse(needs_parentheses(BinaryOp.SUB, BinaryOp.SUB, True))
 
-        for op in (BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD):
+        for op in (BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD, BinaryOp.SHL, BinaryOp.SHR, BinaryOp.EQ, BinaryOp.LT):
             with self.subTest(op=op.name):
                 self.assertTrue(needs_parentheses(op, op, False))
 
         for op in (BinaryOp.ADD, BinaryOp.MUL):
             with self.subTest(op=op.name):
                 self.assertFalse(needs_parentheses(op, op, False))
+
+    def test_equal_precedence_wraps_a_non_associative_rhs_under_any_parent(self):
+        for child, parent in ((BinaryOp.DIV, BinaryOp.MUL), (BinaryOp.SUB, BinaryOp.ADD), (BinaryOp.GT, BinaryOp.LT)):
+            with self.subTest(child=child.name, parent=parent.name):
+                self.assertTrue(needs_parentheses(child, parent, False))
+                self.assertFalse(needs_parentheses(child, parent, True))
 
 
 class TestUnaryOperandNeedsParentheses(unittest.TestCase):
@@ -192,7 +198,7 @@ class TestIsBooleanExpr(unittest.TestCase):
 
 
 class TestFormatterOperators(unittest.TestCase):
-    """The .hlil.ts debug dump prints operator symbols and precedence parentheses - it used to
+    """.hlil.ts prints operator symbols and precedence parentheses - it used to
     print enum names (`a ADD b MUL 2`), and its string-keyed precedence lookup never matched."""
 
     def format(self, expr) -> str:
@@ -214,6 +220,50 @@ class TestFormatterOperators(unittest.TestCase):
         self.assertEqual(self.format(HLILUnaryOp(UnaryOp.NOT, HLILBinaryOp(BinaryOp.LT, a, b))), '!(a < b)')
         self.assertEqual(self.format(HLILUnaryOp(UnaryOp.NEG, a)), '-a')
         self.assertEqual(self.format(HLILUnaryOp(UnaryOp.BIT_NOT, a)), '~a')
+
+    def test_recovered_logic_prints_as_calls(self):
+        a, b, c = var('a'), var('b'), var('c')
+        either = HLILBinaryOp(BinaryOp.OR_ELSE, a, b)
+        both = HLILBinaryOp(BinaryOp.AND_THEN, a, b)
+        rows = [
+            (both, 'andThen(a, b)'),
+            (either, 'orElse(a, b)'),
+            (HLILBinaryOp(BinaryOp.OR_ELSE, either, c), 'orElse(a, b, c)'),
+            (HLILBinaryOp(BinaryOp.OR_ELSE, both, c), 'orElse(andThen(a, b), c)'),
+            (HLILBinaryOp(BinaryOp.OR_ELSE, HLILBinaryOp(BinaryOp.OR, a, b), c), 'orElse(a || b, c)'),
+            (HLILBinaryOp(BinaryOp.AND, either, c), 'orElse(a, b) && c'),
+            (HLILBinaryOp(BinaryOp.EQ, either, HLILConst(0)), '!orElse(a, b)'),
+        ]
+
+        for expr, text in rows:
+            with self.subTest(text=text):
+                self.assertEqual(self.format(expr), text)
+
+    def test_truth_tests_of_a_boolean_read_off(self):
+        a, b, c = var('a'), var('b'), var('c')
+        zero = HLILConst(0)
+        a_is_zero = HLILBinaryOp(BinaryOp.EQ, a, zero)
+        a_is_big = HLILBinaryOp(BinaryOp.GT, a, HLILConst(MULTIPLIER))
+        either = HLILBinaryOp(BinaryOp.OR, a, b)
+        rows = [
+            (HLILBinaryOp(BinaryOp.NE, a_is_zero, zero), 'a == 0'),
+            (HLILBinaryOp(BinaryOp.EQ, a_is_zero, zero), '!(a == 0)'),
+            (HLILBinaryOp(BinaryOp.EQ, a_is_big, zero), f'!(a > {MULTIPLIER})'),
+            (HLILBinaryOp(BinaryOp.NE, HLILBinaryOp(BinaryOp.AND, a, b), zero), 'a && b'),
+            (HLILBinaryOp(BinaryOp.AND, HLILBinaryOp(BinaryOp.NE, either, zero), c), '(a || b) && c'),
+            (HLILBinaryOp(BinaryOp.AND, HLILBinaryOp(BinaryOp.EQ, either, zero), c), '!(a || b) && c'),
+            (HLILBinaryOp(BinaryOp.LT, c, HLILBinaryOp(BinaryOp.NE, a_is_big, zero)), f'c < (a > {MULTIPLIER})'),
+        ]
+
+        for expr, text in rows:
+            with self.subTest(text=text):
+                self.assertEqual(self.format(expr), text)
+
+    def test_a_plain_value_keeps_its_test(self):
+        a = var('a')
+
+        self.assertEqual(self.format(HLILBinaryOp(BinaryOp.NE, a, HLILConst(0))), 'a != 0')
+        self.assertEqual(self.format(HLILBinaryOp(BinaryOp.EQ, a, HLILConst(0))), 'a == 0')
 
     def test_minus_over_a_leading_minus_keeps_its_parentheses(self):
         a, b = var('a'), var('b')
