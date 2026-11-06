@@ -79,7 +79,7 @@ from ir.llil import WORD_SIZE
 from assembler import Instruction, OperandType
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.games import game_names
-from falcom.ed9.metadata.fingerprint import function_fingerprint
+from falcom.ed9.structs.fingerprint import function_fingerprint
 from falcom.ed9.structs.call_debug_records import RecordView, pair_records, read_debug_records, record_view
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.structs.crc32 import hash_function_name

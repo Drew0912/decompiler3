@@ -21,10 +21,10 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT, RECURSION_LIMIT, write_text_lf
-from falcom.ed9.metadata import (COMMON_ALL_MODULE, COMMON_LIBRARY_FOLDER, SCP_WRITER_HELPER_IMPORT,
-                                 game_metadata_module)
-from falcom.ed9.metadata import gen_common_library as gen
-from falcom.ed9.parser.scp import SYS_PATH_SETUP_LINES, ScpParser
+from falcom.ed9.structs.common_library import COMMON_ALL_MODULE, COMMON_LIBRARY_FOLDER, game_metadata_module
+from falcom.ed9.structs.generated_script import SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES
+from falcom.ed9.tools import gen_common_library as gen
+from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import GlobalVar
 from falcom.ed9.structs.scp_types import ScpGlobalVar
 from falcom.ed9.scena2py_base import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file

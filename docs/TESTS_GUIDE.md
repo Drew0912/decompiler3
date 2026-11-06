@@ -26,7 +26,7 @@ A test sits in the folder of the code it tests. Each folder is named after that 
 | `hlil_tests/` | MLIL->HLIL structuring and the HLIL passes (`ir/hlil/`, `falcom/ed9/ir/hlil/`) |
 | `parser_tests/` | reading a `.dat` (`falcom/ed9/parser/`, `falcom/ed9/structs/`, `falcom/ed9/disasm/`, `assembler/`): stack simulation, string pool, call records, listings, the opcode table's stack effects, and the `.py` text scena2py writes; reading a `.tbl` (`falcom/ed9/parser/tbl.py`) |
 | `writer_tests/` | `ScpWriter` (`falcom/ed9/writer/`): compiling the LLIL DSL, hooks, the compile check |
-| `common_functions_tests/` | the shared common-function library (`falcom/ed9/metadata/`): fingerprints, matching, what a script imports, and its generator (the facts, rendering, the closure and input checks) |
+| `common_functions_tests/` | the shared common-function library (`falcom/ed9/tools/`, `falcom/ed9/structs/`): fingerprints, matching, what a script imports, and its generator (the facts, rendering, the closure and input checks) |
 | `tools_tests/` | the scripts in `tools/`: the validators, the logic check, the line-order report |
 | `dc3_tests/` | `dc3/`: logging, file I/O, the GC policy |
 | `codegen_tests/` | the TypeScript code generator (`codegen/`) |
@@ -56,7 +56,7 @@ need goes in `tests/shared/`.
 - A few tests need sora2's generated common-function library (`falcom/ed9/games/sora2/metadata/common/`,
   `common_index.py`, `common_all.py`, all gitignored): they call `require_library('sora2')`, which skips the test
   without it and returns the index. Make it with
-  `python falcom/ed9/metadata/gen_common_library.py falcom/ed9/games/sora2/extracted/script_en` (it writes only into
+  `python falcom/ed9/tools/gen_common_library.py falcom/ed9/games/sora2/extracted/script_en` (it writes only into
   `falcom/ed9/games/sora2/metadata/`).
 
 ## Adding tests

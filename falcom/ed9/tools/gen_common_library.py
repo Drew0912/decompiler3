@@ -3,8 +3,8 @@ but its __init__.py): falcom/ed9/games/<game>/metadata/common/ (the modules), co
 a script folder of the game (script or script_<lang>).
 
 Usage:
-    python falcom/ed9/metadata/gen_common_library.py falcom/ed9/games/<game>/extracted/script_<lang>
-    python falcom/ed9/metadata/gen_common_library.py <folder>/script_<lang> --game <game>
+    python falcom/ed9/tools/gen_common_library.py falcom/ed9/games/<game>/extracted/script_<lang>
+    python falcom/ed9/tools/gen_common_library.py <folder>/script_<lang> --game <game>
 
 The game is the one the path names, <game>/extracted/script(_<lang>) wherever it is, <game> a game in falcom/ed9/games/
 (names compared ignoring case, as the Windows file system does); else --game. Both given, they must agree.
@@ -52,9 +52,10 @@ from falcom.ed9.disasm.ed9_optable import ED9Opcode, ED9OperandType
 from falcom.ed9.disasm.formatter import Formatter, FormatterContext
 from falcom.ed9.disasm.llil_dsl_comments import CommentOptions, append_comment, instruction_comments, label_comments
 from falcom.ed9.games import GAMES_DIR, game_names
-from falcom.ed9.metadata import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_FOLDER,
-                                 GAME_METADATA_FOLDER, SCP_WRITER_HELPER_IMPORT, game_metadata_module)
-from falcom.ed9.metadata.fingerprint import function_fingerprint, fingerprint_digest
+from falcom.ed9.structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_FOLDER,
+                                               GAME_METADATA_FOLDER, game_metadata_module)
+from falcom.ed9.structs.fingerprint import function_fingerprint, fingerprint_digest
+from falcom.ed9.structs.generated_script import SCP_WRITER_HELPER_IMPORT
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import Function
 from falcom.ed9.writer import scp_writer_helper

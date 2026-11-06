@@ -19,9 +19,9 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.metadata import COMMON_LIBRARY_FOLDER, game_metadata_module
-from falcom.ed9.metadata import gen_common_library as gen
-from falcom.ed9.metadata.fingerprint import function_fingerprint, fingerprint_digest
+from falcom.ed9.structs.common_library import COMMON_LIBRARY_FOLDER, game_metadata_module
+from falcom.ed9.tools import gen_common_library as gen
+from falcom.ed9.structs.fingerprint import function_fingerprint, fingerprint_digest
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import Function
 from ir.llil.llil import WORD_SIZE

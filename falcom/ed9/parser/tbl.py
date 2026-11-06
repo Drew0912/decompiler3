@@ -1,7 +1,7 @@
 """ED9 .tbl tables into Python, read-only: a header, one entry per section, the sections' fixed-size records, then a
 data block the records' pointers reach
 
-A game's record classes live in its tbl_records.py. A section is read through the class of its name and record size;
+A game's record classes live in its tbl/tbl_records.py. A section is read through the class of its name and record size;
 with none, or when a pointer does not fit, it stays raw hex.
 
 Usage, from a game's launcher:
@@ -18,7 +18,7 @@ from dc3 import default_encoding, default_indent, fileio, quote_string
 from dc3.logging import log
 from dc3.utils import float32_bits, write_text_lf
 from falcom.ed9.games import GAMES_DIR
-from .scp import DEFINITION_SPACING, SYS_PATH_SETUP_LINES
+from ..structs.generated_script import DEFINITION_SPACING, SYS_PATH_SETUP_LINES
 
 TBL_PATTERN      = '*.tbl'
 TBL_OUTPUT_DIR   = Path('out') / 'tables'    # a game's default output folder, beside its launcher

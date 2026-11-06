@@ -9,7 +9,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from falcom.ed9.games.sora2 import tbl_records
+from falcom.ed9.games.sora2.tbl import tbl_records
 from falcom.ed9.parser.tbl import main
 
 

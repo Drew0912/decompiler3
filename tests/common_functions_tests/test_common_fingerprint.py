@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the common-function fingerprint (falcom/ed9/metadata/fingerprint.py): real common functions,
+"""Unit tests for the common-function fingerprint (falcom/ed9/structs/fingerprint.py): real common functions,
 branch targets by where they land and relative to the function, global operands by name"""
 
 from pathlib import Path
@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from assembler import Disassembler, DisassemblerContext, Instruction
 from falcom.ed9.disasm import *
 from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
-from falcom.ed9.metadata.fingerprint import (
+from falcom.ed9.structs.fingerprint import (
     GLOBAL_INDEX_TAG, GLOBAL_TAG, UNRESOLVED_BRANCH_TAG, body_fingerprint, function_fingerprint,
 )
 from falcom.ed9.parser.scp import ScpParser

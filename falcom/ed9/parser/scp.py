@@ -20,18 +20,13 @@ from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_O
 from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
 from ..structs.call_debug_records import PUSH_CONSTANT_OPS, canonical_argc, pair_records
 from ..structs.string_pool import string_offset
-from ..metadata import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_MISSING_HINT, SCP_WRITER_HELPER_IMPORT,
-                        game_metadata_module)
-from ..metadata.fingerprint import function_fingerprint, fingerprint_digest
+from ..structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_MISSING_HINT,
+                                      game_metadata_module)
+from ..structs.fingerprint import function_fingerprint, fingerprint_digest
+from ..structs.generated_script import DEFINITION_SPACING, SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT
 from ir.llil import WORD_SIZE
-
-# First lines of every generated script: the generating checkout's root, so it runs without PYTHONPATH
-SYS_PATH_SETUP_LINES = ['import sys', f'sys.path.insert(0, {str(PROJECT_ROOT)!r})']
-
-# PEP 8's two blank lines after each top-level definition of a generated script, and after its header
-DEFINITION_SPACING = ['', '']
 
 
 @functools.cache

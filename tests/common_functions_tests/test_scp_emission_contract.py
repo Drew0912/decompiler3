@@ -15,8 +15,8 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.metadata import COMMON_ALL_MODULE, COMMON_INDEX_MODULE, game_metadata_module
-from falcom.ed9.metadata.fingerprint import function_fingerprint, fingerprint_digest
+from falcom.ed9.structs.common_library import COMMON_ALL_MODULE, COMMON_INDEX_MODULE, game_metadata_module
+from falcom.ed9.structs.fingerprint import function_fingerprint, fingerprint_digest
 from falcom.ed9.parser.scp import ScpParser, common_library_index
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.corpus import SORA2_SCRIPTS, require, require_library

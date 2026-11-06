@@ -9,7 +9,7 @@ Two tiers, in priority order:
    every decompile using `round_trip=False, keep_unreachable_code=False` (the everyday
    `scena2py_config.py` defaults). Every function in each recompiled `.dat` must match its source
    counterpart: normalized body + signature (position-independent fingerprint, keyed by name —
-   `falcom/ed9/metadata/fingerprint.py`), `is_common_func`, the global table as ordered
+   `falcom/ed9/structs/fingerprint.py`), `is_common_func`, the global table as ordered
    `(name, type)` tuples, and header `dword_14`. Function order and label names may differ.
    Dropping unreachable code only counts as logic-preserving where the reachability audit
    (`tools/scp_roundtrip_validator.py`'s `check_reachability`) confirms the dropped bytes are

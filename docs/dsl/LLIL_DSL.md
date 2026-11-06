@@ -333,7 +333,7 @@ also compares the two files' debug records function by function and reports the 
 function they used: across the `sora2` corpus, tens of thousands of copies of the shared functions, hundreds in
 the largest scripts (`mp2000.py`).
 
-**Design:** `falcom/ed9/metadata/gen_common_library.py` walks one game's scripts once and generates
+**Design:** `falcom/ed9/tools/gen_common_library.py` walks one game's scripts once and generates
 that game's library in its metadata package `falcom/ed9/games/<game>/metadata/` (tracked, the generated
 files in it gitignored; later the game's chr table too): `common/scp_writer_common_{N}.py`
 (one module per first-syscall subsystem, or `scp_writer_common_no_syscall.py`), plus
@@ -385,7 +385,7 @@ script's game doesn't define (a misspelled name, or a library deleted after the 
 with a `NameError`, to which `CommonImports` adds a note naming both causes and the generator
 command.
 
-**Regenerating the library:** `python falcom/ed9/metadata/gen_common_library.py
+**Regenerating the library:** `python falcom/ed9/tools/gen_common_library.py
 falcom/ed9/games/sora2/extracted/script_en` walks the game's scripts (round_trip=False,
 keep_unreachable_code=False), fingerprints every
 `is_common_func` occurrence (noting, once per fingerprint, whether it touches a global, what it

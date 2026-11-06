@@ -31,7 +31,7 @@ Compilation (the actual recompilation direction — needs only a DSL file, not a
 header types, the string pool, the call debug records)
 
 `.tbl` game tables have their own read-only reader beside it, outside the decompile path: `parser/tbl.py` (`TblParser`)
-reads a table's sections through the game's record classes (`games/<game>/tbl_records.py`; `sora2`'s star-import
+reads a table's sections through the game's record classes (`games/<game>/tbl/tbl_records.py`; `sora2`'s star-import
 `sora1`'s and add what differs). A section with no class, or whose pointers do not fit its class, stays raw hex.
 
 Reads the SCP file: the header, the function table with parameters and defaults, call-site debug records, global
@@ -102,9 +102,9 @@ the game's conventions ("Generic/Falcom Boundary" below).
 
 **Location:** `falcom/ed9/writer/` (`scp_writer.py`, `scp_writer_opcode_handler.py`,
 `scp_writer_helper.py`, `scp_writer_hooks.py`, `scp_writer_hook_registry.py`, `scp_compile_check.py`) and
-`falcom/ed9/metadata/` (the common-function library, its generator `gen_common_library.py` and the fingerprints
-in `fingerprint.py`), driven by each game's `scena2py.py` (`falcom/ed9/scena2py_base.py`), validated by
-`tools/scp_roundtrip_validator.py`.
+`falcom/ed9/tools/gen_common_library.py` (generates the common-function library), `falcom/ed9/structs/common_library.py`
+(its names) and `falcom/ed9/structs/fingerprint.py` (the fingerprints), driven by each game's `scena2py.py`
+(`falcom/ed9/scena2py_base.py`), validated by `tools/scp_roundtrip_validator.py`.
 
 A `.py` source file — sequential calls to per-opcode functions, one per VM opcode — executed
 against a `ScpWriter` to emit bytecode. Compilation itself only needs that `.py` file. The Parser

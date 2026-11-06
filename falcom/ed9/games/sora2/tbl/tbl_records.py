@@ -1,6 +1,6 @@
 """sora2's .tbl record classes: sora1's, plus what differs here (a class of the same name replaces sora1's)"""
 
-from falcom.ed9.games.sora1.tbl_records import *
+from falcom.ed9.games.sora1.tbl.tbl_records import *
 
 # A DESCRIPTOR's kinds, defined in FIELD_KINDS (falcom/ed9/parser/tbl.py); integers are unsigned
 #   W   Word: 2-byte integer, printed in hex
