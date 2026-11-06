@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for the shared HLIL tree walkers in ir/hlil/hlil.py - expr_children, node_children,
-read_children, iter_tree, contains_escaping_exit and sole_statement - which the passes and the
+iter_tree, contains_escaping_exit and sole_statement - which the passes and the
 converter are built on instead of each hand-listing the node kinds."""
 
 from pathlib import Path
@@ -13,7 +13,6 @@ sys.path.insert(0, str(REPO_ROOT))
 from ir.hlil import (
     BinaryOp,
     UnaryOp,
-    ControlFlowOptimizationPass,
     HighLevelILFunction,
     HLILAddressOf,
     HLILAssign,
@@ -42,10 +41,10 @@ from ir.hlil import (
     HLILWhile,
     contains_escaping_exit,
     iter_tree,
-    read_children,
     sole_statement,
     split_else_if_arm,
     node_children,
+    SwitchRecoveryPass,
 )
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from tests.shared.ir_utils import concrete_subclasses
@@ -122,12 +121,6 @@ class TestChildrenCoverEveryNode(unittest.TestCase):
             with self.subTest(node=type(node).__name__):
                 self.assertCountEqual(ids(node_children(node)), ids(held_nodes(node)))
 
-    def test_read_children_drop_only_a_plain_assignment_target(self):
-        for node in samples():
-            with self.subTest(node=type(node).__name__):
-                expected = [node.src] if isinstance(node, HLILAssign) else node_children(node)
-                self.assertEqual(ids(read_children(node)), ids(expected))
-
 
 class TestSourceOrder(unittest.TestCase):
 
@@ -149,10 +142,6 @@ class TestSourceOrder(unittest.TestCase):
 
         self.assertEqual(ids(node_children(switch)), ids([scrutinee, first, second, first_body, default_body]))
 
-    def test_a_store_through_a_pointer_reads_the_pointer(self):
-        dest, src = HLILDeref(var('p')), c(FIRST_VALUE)
-        self.assertEqual(ids(read_children(HLILAssign(dest, src))), ids([dest, src]))
-
 
 class TestIterTree(unittest.TestCase):
 
@@ -163,20 +152,6 @@ class TestIterTree(unittest.TestCase):
         if_stmt = HLILIf(cond, true_block)
 
         self.assertEqual(ids(iter_tree(if_stmt)), ids([if_stmt, cond, true_block, ret, value, bare_ret]))
-
-    def test_exclude_skips_the_whole_subtree(self):
-        inner = HLILExprStmt(HLILCall('f', [var('x')]))
-        outer = HLILExprStmt(var('y'))
-        block = HLILBlock([inner, outer])
-
-        self.assertEqual(ids(iter_tree(block, exclude=(inner,))), ids([block, outer, outer.expr]))
-
-    def test_children_function_decides_what_is_visited(self):
-        dest = var('x')
-        assign = HLILAssign(dest, c(FIRST_VALUE))
-
-        self.assertIn(id(dest), ids(iter_tree(assign)))
-        self.assertNotIn(id(dest), ids(iter_tree(assign, read_children)))
 
 
 class TestContainsEscapingExit(unittest.TestCase):
@@ -262,7 +237,7 @@ class TestWalkerUsers(unittest.TestCase):
         func = HighLevelILFunction('f')
         func.body.add_statement(loop)
 
-        ControlFlowOptimizationPass().run(func)
+        SwitchRecoveryPass().run(func)
 
         self.assertIsInstance(sole_statement(loop.body), HLILSwitch)
 

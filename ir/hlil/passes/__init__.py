@@ -1,7 +1,7 @@
 """HLIL Optimization Passes"""
 
 from .pass_mlil_to_hlil import MLILToHLILPass
-from .pass_control_flow_optimization import ControlFlowOptimizationPass
+from .pass_switch_recovery import SwitchRecoveryPass
 from .pass_loop_recovery import LoopRecoveryPass
 from .pass_common_return_extraction import CommonReturnExtractionPass
 from .pass_dead_code_elimination import DeadCodeEliminationPass
@@ -10,7 +10,7 @@ from .pass_line_marker_removal import LineMarkerRemovalPass
 
 __all__ = [
     'MLILToHLILPass',
-    'ControlFlowOptimizationPass',
+    'SwitchRecoveryPass',
     'LoopRecoveryPass',
     'CommonReturnExtractionPass',
     'DeadCodeEliminationPass',

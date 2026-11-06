@@ -5,7 +5,7 @@ from ir.hlil import HighLevelILFunction
 from ir.pipeline import Pipeline
 from ir.hlil.passes import (
     MLILToHLILPass,
-    ControlFlowOptimizationPass,
+    SwitchRecoveryPass,
     LoopRecoveryPass,
     CommonReturnExtractionPass,
     DeadCodeEliminationPass,
@@ -36,7 +36,7 @@ def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Func
     if scp_func:
         pipeline.add_pass(FalcomTypeInferencePass(scp_func))
 
-    pipeline.add_pass(ControlFlowOptimizationPass())
+    pipeline.add_pass(SwitchRecoveryPass())
     pipeline.add_pass(LoopRecoveryPass())
     pipeline.add_pass(CommonReturnExtractionPass())
     pipeline.add_pass(DeadCodeEliminationPass())

@@ -39,11 +39,11 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `ir/hlil/structural_analysis.py` | Dominator calculation, natural-loop discovery, iterative region reduction, and merge-point queries used by the converter. |
 | `ir/hlil/statement_printer.py` | `HLILStatementPrinter`, the statement printer the `.hlil.ts` formatter and the TypeScript code generator share: each prints expressions its own way and overrides the hooks where its statements differ (assignments, unstructured jumps, an if's arms, switch case blocks). |
 | `ir/hlil/hlil_formatter.py` | The `.hlil.ts` formatter, on the shared statement printer: the bytecode's high-level form, not TypeScript. It is separate from the TypeScript code generator. |
-| `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: control-flow optimization, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
+| `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: switch recovery, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, the statement printer, the formatter and the passes (the conversion pass `MLILToHLILPass` among them). |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry point, `convert_falcom_mlil_to_hlil()`, and its pass ordering/configuration. |
 | `tests/hlil_tests/test_hlil_branch_order_normalization.py` | Unit tests for source-order arm normalization and its pipeline flag. |
-| `tests/hlil_tests/test_hlil_control_flow_optimization.py` | Unit tests for equality-chain and grouped-label switch recovery. |
+| `tests/hlil_tests/test_hlil_switch_recovery.py` | Unit tests for equality-chain and grouped-label switch recovery. |
 | `tests/hlil_tests/test_hlil_loop_recovery.py` | Unit tests for guarded-loop recovery and its safety checks. |
 
 The generic/project-specific split is deliberate. The core converter understands MLIL nodes and
@@ -91,15 +91,14 @@ needs, including the planned HLIL DSL. The C-family syntax group - the `BINARY_O
 symbols, `BINARY_OP_PRECEDENCE` and `needs_parentheses` - serves only the
 TypeScript generator and the `.hlil.ts` formatter; a non-C output needs its own. `TERMINAL_STATEMENTS`
 (return, break, continue, `HLILUnstructured`) is the one list of statements that never fall through.
-`ControlFlowOptimizationPass` negates with the shared `negate_condition`, and its switch recognizer reads
-each chain link through `strip_truth_test`: the stack translator keeps the LLIL's jump test, so a link
-arrives as `(x == k) == 0`, or `(x == k) != 0` once negated.
+`SwitchRecoveryPass` reads each chain link through `strip_truth_test`: the stack translator keeps the
+LLIL's jump test, so a link arrives as `(x == k) == 0`, or `(x == k) != 0` once negated.
 
 Tree walking is shared the same way. `sub_blocks` gives the blocks a structured statement owns;
 `node_children` gives every child of a node in source order (a switch contributes each case's
-labels, then its body), `read_children` the same without a plain assignment target, and
-`iter_tree` walks a whole subtree without recursion. `contains_escaping_exit` says whether a
-`break`/`continue` leaves a block (a loop owns both, a switch only a `break`), and `sole_statement`
+labels, then its body), and `iter_tree` walks a whole subtree without recursion.
+`contains_escaping_exit` says whether a `break`/`continue` leaves a block (a loop owns both, a switch
+only a `break`), and `sole_statement`
 finds a block's one non-comment statement. The passes, the converter's variable declaration and
 the renderers are built on these, so a new node type needs a sample in
 `tests/hlil_tests/test_hlil_traversal.py` and an entry in `node_children` (a statement) or `expr_children` (an
@@ -267,13 +266,13 @@ The production entry point is `convert_falcom_mlil_to_hlil()` in
 
 ```
 MLILToHLILPass → FalcomTypeInferencePass (when the script function is given) →
-ControlFlowOptimizationPass → LoopRecoveryPass → CommonReturnExtractionPass →
+SwitchRecoveryPass → LoopRecoveryPass → CommonReturnExtractionPass →
 DeadCodeEliminationPass → BranchOrderNormalizationPass (enabled by default) →
 LineMarkerRemovalPass (only with line_markers off)
 ```
 
 The post-conversion passes operate on the tree, not on the original CFG. In architectural terms,
-they divide into shape recovery (`ControlFlowOptimizationPass`, `LoopRecoveryPass`), cleanup
+they divide into shape recovery (`SwitchRecoveryPass`, `LoopRecoveryPass`), cleanup
 (`CommonReturnExtractionPass`, `DeadCodeEliminationPass`), and presentation-preserving ordering
 (`BranchOrderNormalizationPass`), which is optional through `normalize_branch_order` because it
 deliberately prefers recovered source-line order over bytecode emission order.
@@ -293,7 +292,7 @@ Several dedicated HLIL unit-test files exist today:
 
 - `tests/hlil_tests/test_hlil_branch_order_normalization.py` covers line-based swaps, nesting-depth fallback,
   chain preservation, De Morgan negation, nested ordering, and the production enable/disable flag.
-- `tests/hlil_tests/test_hlil_control_flow_optimization.py` covers switch conversion thresholds, mixed
+- `tests/hlil_tests/test_hlil_switch_recovery.py` covers switch conversion thresholds, mixed
   equality/inequality chains, grouped labels, duplicate rejection, scrutinee consistency, where the line
   comments before each later test end up, and links under a truth test (each form, `||` groups, label 0, a
   register scrutinee, and the tests that are no link).
@@ -317,8 +316,8 @@ Several dedicated HLIL unit-test files exist today:
   complement), `negate_condition`, `strip_truth_test`, `needs_parentheses`, and the `.hlil.ts` formatter's operator
   symbols, recovered logic, truth tests and switch-case `break`s.
 - `tests/hlil_tests/test_hlil_traversal.py` covers the shared tree walkers: every node type's children, source
-  order, `iter_tree`'s exclusion, the escaping-exit rules, `sole_statement`, declaration order, and
-  control-flow optimization reaching into a do-while body.
+  order, the escaping-exit rules, `sole_statement`, declaration order, and
+  switch recovery reaching into a do-while body.
 - `tests/hlil_tests/test_hlil_structuring.py` (CX Step G, 2026-09-28) runs small CFGs through structuring
   against their MLIL for every parameter assignment: merge points, loop exits and headers, the
   region-repeat limits, and the `HLILUnstructured` node (reachability, passes, rendering, validator
@@ -353,7 +352,7 @@ still have no dedicated test file of their own.
   - used to skip `HLILDoWhile` entirely; all three now share one traversal helper (`sub_blocks` in
     `ir/hlil/hlil.py`) covering every structured node that owns a nested block, so a future node
   type needs one edit there instead of one per walker. Since PR Step 6b (2026-09-27) the
-  general-purpose walkers in control-flow optimization, branch-order normalization, loop recovery and
+  general-purpose walkers in branch-order normalization, loop recovery and
   the converter's variable declaration use the shared tree helpers too (see Operations & Node Types);
   since PR Step 10c (2026-09-28) so does branch order's `_if_depth`, the arm-order tie-break for
   arms without distinct line numbers: it counts ifs inside loops and switches too, and only an if

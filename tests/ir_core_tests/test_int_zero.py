@@ -12,11 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from codegen.typescript import TypeScriptGenerator
 from ir.core import SourceFloat, is_int_zero
-from ir.hlil import (
-    BinaryOp, HighLevelILFunction, HLILAssign, HLILBinaryOp, HLILBlock, HLILCall, HLILConst, HLILExprStmt, HLILIf,
-    HLILUnaryOp, HLILVar, HLILVariable, UnaryOp,
-)
-from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
+from ir.hlil import BinaryOp, HLILBinaryOp, HLILConst, HLILUnaryOp, HLILVar, HLILVariable, UnaryOp
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILEq, MLILNe, MLILLt, MLILLogicalNot,
 )
@@ -68,24 +64,6 @@ class TestMLILConditionSimplification(unittest.TestCase):
 
 def less_than_one() -> HLILBinaryOp:
     return HLILBinaryOp(BinaryOp.LT, HLILVar(HLILVariable('a')), HLILConst(1))
-
-
-class TestHLILConditionInlining(unittest.TestCase):
-    """flag = a < 1; if (flag != zero) f() becomes if (a < 1) f() only for an int zero"""
-
-    def statements_after_pass(self, zero) -> list:
-        flag = HLILVariable('flag')
-        func = HighLevelILFunction('inline_test')
-        func.body.add_statement(HLILAssign(HLILVar(flag), less_than_one()))
-        func.body.add_statement(HLILIf(HLILBinaryOp(BinaryOp.NE, HLILVar(flag), HLILConst(zero)),
-                                  HLILBlock([HLILExprStmt(HLILCall('f', []))]), HLILBlock()))
-        return ControlFlowOptimizationPass().run(func).body.statements
-
-    def test_float_zero_is_not_inlined(self):
-        self.assertEqual([type(stmt) for stmt in self.statements_after_pass(FLOAT_ZERO)], [HLILAssign, HLILIf])
-
-    def test_int_zero_is_inlined(self):
-        self.assertEqual([type(stmt) for stmt in self.statements_after_pass(INT_ZERO)], [HLILIf])
 
 
 class TestTypeScriptZeroComparisons(unittest.TestCase):

@@ -25,11 +25,10 @@ from ir.mlil_ssa.mlil_optimizer import optimize_mlil
 from ir.mlil_ssa.passes import SSAConversionPass, SSATypeInferencePass, RegGlobalValuePropagationPass
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from ir.hlil.hlil import (
-    HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock, HLILAddressOf,
-    HLILBinaryOp, BinaryOp, HighLevelILFunction, HLILIf, HLILCall, HLILExprStmt, HLILTypeKind, iter_tree,
+    HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILAddressOf,
+    HLILBinaryOp, BinaryOp, HLILCall, HLILTypeKind, iter_tree,
 )
 from ir.hlil.hlil_formatter import HLILFormatter
-from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
 from codegen.typescript import TypeScriptGenerator
 
 
@@ -250,38 +249,6 @@ class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
 
         self.assertFalse(any(isinstance(node, HLILCall) for node in iter_tree(y_assigns[0].src)),
                          f'f() was re-inlined into y = ...: {y_assigns[0].src}')
-
-
-class TestCFORedundantElseAssignAddressTakenReload(unittest.TestCase):
-    """The discriminant stays a plain HLILVar (_remove_redundant_else_assign returns
-    immediately for any other discriminant, so an address-taken one would never reach
-    _stmt_modifies_any); the reloaded value reads a different, address-taken variable that
-    the case body writes through *(&x)."""
-
-    def test_reload_of_address_taken_source_is_not_removed(self):
-        # if (selector == 1) { *(&addr_var) = 99 }
-        # else { selector = *(&addr_var); if (selector == 2) { case_2() } }
-        selector = HLILVariable('selector')
-        addr_var = HLILVariable('addr_var')
-        addr_read = HLILDeref(HLILAddressOf(HLILVar(addr_var)))
-
-        case_body = HLILBlock([HLILAssign(addr_read, HLILConst(99))])
-        inner_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, HLILVar(selector), HLILConst(2)),
-                           HLILBlock([HLILExprStmt(HLILCall('case_2', []))]), HLILBlock())
-        reload_assign = HLILAssign(HLILVar(selector), addr_read)
-        false_block = HLILBlock([reload_assign, inner_if])
-        first_if = HLILIf(HLILBinaryOp(BinaryOp.EQ, HLILVar(selector), HLILConst(1)),
-                           case_body, false_block)
-
-        func = HighLevelILFunction('cfo_addr_taken_reload_test')
-        func.body.add_statement(first_if)
-        func = ControlFlowOptimizationPass().run(func)
-
-        else_stmts = func.body.statements[0].false_block.statements
-        # The reload must survive: the true-block's *(&addr_var) = 99 really did modify the
-        # value source_expr reads, even though it is now wrapped in deref/addr_of form
-        self.assertEqual(len(else_stmts), 2, f'reload was wrongly removed: {[str(s) for s in else_stmts]}')
-        self.assertIsInstance(else_stmts[0], HLILAssign)
 
 
 class TestAddressTakenBackwardTypeInference(unittest.TestCase):

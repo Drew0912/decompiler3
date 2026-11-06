@@ -31,7 +31,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLILDoWhile, HLILSwitch, HLILSwitchCase,
-                          HLILBreak, HLILContinue, HLILReturn, HLILUnstructured, HLILAssign, HLILExprStmt, HLILCall,
+                          HLILBreak, HLILContinue, HLILReturn, HLILUnstructured, HLILExprStmt, HLILCall,
                           HLILConst, HLILVar, HLILVariable, HLILBinaryOp, HLILUnaryOp, HLILComment, BinaryOp,
                           UnaryOp, constant_truth, reachable_statements, iter_tree)
 from ir.hlil.hlil_formatter import HLILFormatter
@@ -41,7 +41,6 @@ from ir.mlil.mlil import (
     MLILVariable,
 )
 from ir.hlil.structural_analysis import StructuralAnalyzer
-from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
 from ir.hlil.passes.pass_dead_code_elimination import DeadCodeEliminationPass
 from ir.hlil.passes.pass_loop_recovery import LoopRecoveryPass
 from codegen.typescript import generate_typescript
@@ -515,13 +514,6 @@ class TestNodeInPasses(unittest.TestCase):
         func = DeadCodeEliminationPass().run(function(node(), HLILExprStmt(HLILCall('after', []))))
         self.assertEqual([type(s) for s in func.body.statements], [HLILUnstructured])
 
-    def test_condition_is_not_inlined_past_the_node(self):
-        # tmp = p == 0; if (tmp != 0) { <node> } - whatever the node jumps to may read tmp
-        assign = HLILAssign(var('tmp'), HLILBinaryOp(BinaryOp.EQ, var('p'), HLILConst(0)))
-        test = HLILIf(HLILBinaryOp(BinaryOp.NE, var('tmp'), HLILConst(0)), HLILBlock([node()]))
-        func = ControlFlowOptimizationPass().run(function(assign, test))
-        self.assertIsInstance(func.body.statements[0], HLILAssign)
-
     def test_loop_holding_the_node_is_not_rewritten(self):
         # while (1) { if (c) { f(); <node> } else { break } } would otherwise become while (c)
         body = HLILBlock([HLILIf(var('c'), HLILBlock([HLILExprStmt(HLILCall('f', [])), node()]),
@@ -795,7 +787,6 @@ class TestLineMarkersInGotoOnlyBlocks(unittest.TestCase):
 
         self.assertEqual([marker_count(hlil.body, line) for line in (NEXT_LINE, LEAD_LINE)], [1, 1])
         self.assertEqual([marker_count(outer, line) for line in (NEXT_LINE, LEAD_LINE)], [0, 0])
-
 
 
 class TestEarlyReturnArms(unittest.TestCase):

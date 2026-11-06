@@ -21,9 +21,7 @@ from ir.hlil.hlil import (
     HLILWhile, UnaryOp, VariableKind, iter_tree,
 )
 from ir.llil.llil import WORD_SIZE
-from ir.mlil.mlil import (
-    MediumLevelILFunction, MLILCall, MLILConst, MLILEq, MLILGoto, MLILIf, MLILNe, MLILRet, MLILSetVar, MLILVar,
-)
+from ir.mlil.mlil import MediumLevelILFunction, MLILCall, MLILConst, MLILEq, MLILGoto, MLILIf, MLILRet, MLILVar
 from tests.shared.hlil_cfg_utils import EARLY_EXIT, SHARED_LOOP, build_function, structure, to_hlil
 from tests.shared.ir_utils import connect
 from tests.shared.logic_check_functions import (
@@ -574,19 +572,6 @@ def returns_call_result() -> MediumLevelILFunction:
     reg0 = func.get_or_create_local('reg0')
     block = func.create_block(label='B')
     block.instructions = [MLILCall('value', [], output=reg0), MLILRet(MLILVar(reg0))]
-    return connect(func)
-
-
-def temporary_condition() -> MediumLevelILFunction:
-    """tmp = p == 0; if (tmp != 0) ...: ControlFlowOptimizationPass folds tmp into the if"""
-    func = MediumLevelILFunction('f', 0)
-    p = func.get_or_create_parameter(1, 'p')
-    tmp = func.get_or_create_local('tmp')
-    test, yes, no = (func.create_block(label=label) for label in ('T', 'Y', 'N'))
-    test.instructions = [MLILSetVar(tmp, MLILEq(MLILVar(p), MLILConst(0))),
-                         MLILIf(MLILNe(MLILVar(tmp), MLILConst(0)), yes, no)]
-    yes.instructions = [MLILCall('yes', []), MLILRet(MLILConst(1))]
-    no.instructions = [MLILCall('no', []), MLILRet(MLILConst(0))]
     return connect(func)
 
 
@@ -1365,9 +1350,6 @@ class TestHLILStructures(unittest.TestCase):
         """if (1 == 1): the dead arm's call on neither level"""
         blocks = {'C': ([], ('if', ('==', 1, 1), 'L', 'D')), 'L': (['live'], ('ret', 1)), 'D': (['dead'], ('ret', 0))}
         self.assertEqual(hlil_categories(*with_hlil(build_function('f', blocks))), set())
-
-    def test_temporary_an_hlil_pass_folds_away(self):
-        self.assertEqual(hlil_categories(*with_hlil(temporary_condition())), set())
 
     def test_call_folded_into_a_return(self):
         self.assertEqual(hlil_categories(*with_hlil(returns_call_result())), set())

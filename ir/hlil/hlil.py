@@ -1,6 +1,6 @@
 """HLIL - Structured control flow (if/while/do-while) from unstructured MLIL (goto/label)"""
 
-from typing import Callable, Collection, Iterator, Sequence
+from typing import Iterator, Sequence
 from enum import auto
 import operator
 import re
@@ -821,8 +821,8 @@ def drop_trailing_continue(body: HLILBlock):
 def unwrap_address_taken_var(expr: HLILExpression) -> HLILVar | None:
     """*(&x) - the memory form of address-taken local x (the stack translator's, and ir/mlil_ssa/mlil_ssa.py's
     lowering) - collapses to plain x. Returns the HLILVar, or None if expr is not that exact shape.
-    Shared by every consumer of this shape (the TS codegen, the .hlil.ts formatter, and CFO's
-    modifies-check) so they cannot independently drift on what counts as the canonical form."""
+    Shared by every consumer of this shape (the TS codegen, the .hlil.ts formatter, the logic check's
+    HLIL layer) so they cannot independently drift on what counts as the canonical form."""
     if (isinstance(expr, HLILDeref) and isinstance(expr.operand, HLILAddressOf)
             and isinstance(expr.operand.operand, HLILVar)):
         return expr.operand.operand
@@ -901,28 +901,16 @@ def node_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
     return expr_children(node)
 
 
-def read_children(node: HLILInstruction) -> Sequence[HLILInstruction]:
-    """node_children without a plain assignment target: writing x does not read it, while a
-    store through a pointer (*p = v) still reads p"""
-    if isinstance(node, HLILAssign) and not isinstance(node.dest, HLILDeref):
-        return [node.src]
-
-    return node_children(node)
-
-
-def iter_tree(node: HLILInstruction | None,
-              children: Callable[[HLILInstruction], Sequence[HLILInstruction]] = node_children,
-              exclude: Collection[HLILInstruction] = ()) -> Iterator[HLILInstruction]:
-    """node and everything below it, pre-order in children's order, without recursion. A node
-    in exclude is skipped together with everything below it."""
+def iter_tree(node: HLILInstruction | None) -> Iterator[HLILInstruction]:
+    """node and everything below it, pre-order, without recursion"""
     pending = [node]
     while pending:
         current = pending.pop()
-        if current is None or current in exclude:
+        if current is None:
             continue
 
         yield current
-        pending.extend(reversed(children(current)))
+        pending.extend(reversed(node_children(current)))
 
 
 def contains_escaping_exit(block: HLILBlock | None, exit_type: type, include_labeled: bool = False) -> bool:

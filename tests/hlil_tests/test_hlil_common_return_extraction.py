@@ -28,6 +28,7 @@ from ir.hlil import (
     HLILVariable,
     HLILWhile,
     contains_bare_break,
+    same_const_or_var,
 )
 
 FIRST_CASE_VALUE = 1
@@ -224,6 +225,19 @@ class TestConstantValuesEqual(unittest.TestCase):
     def test_strings_compare_by_value(self):
         self.assertTrue(constant_values_equal('abc', 'abc'))
         self.assertFalse(constant_values_equal('abc', 'abd'))
+
+
+class TestSameConstOrVarDistinguishesIntFromFloat(unittest.TestCase):
+    """Mirrors pass_reg_global_propagation.py's established _expr_equal contract: int and
+    float constants are distinct representations even at equal numeric value, and NaN
+    compares equal to itself."""
+
+    def test_int_and_float_same_value_do_not_match(self):
+        self.assertFalse(same_const_or_var(HLILConst(1), HLILConst(1.0)))
+
+    def test_nan_matches_itself(self):
+        nan = float('nan')
+        self.assertTrue(same_const_or_var(HLILConst(nan), HLILConst(nan)))
 
 
 class TestContainsBareBreak(unittest.TestCase):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for dereference opcodes (LOAD_STACK_DEREF/POP_TO_DEREF), how POP_TO_DEREF prints in LLIL, and the
-pointer reads and writes they become in MLIL and HLIL."""
+pointer reads and writes they become in MLIL."""
 
 from pathlib import Path
 import sys
@@ -23,10 +23,6 @@ from ir.mlil_ssa.passes import (
     SSAConversionPass, SSADeconstructionPass, CopyPropagationPass, ExpressionInliningPass,
     SSADeadCodeEliminationPass, RegGlobalValuePropagationPass,
 )
-from ir.hlil.hlil import (
-    HLILDeref, HLILVar, HLILVariable, HLILConst, HLILAssign, HLILBlock,
-)
-from ir.hlil.passes.pass_control_flow_optimization import ControlFlowOptimizationPass
 from tests.shared.llil_utils import FUNC_START, SECOND_BLOCK_START, THIRD_BLOCK_START, make_builder
 
 NOT_A_PARAMETER_SLOT_1 = '^dereferences slot 1, which holds no caller parameter: '
@@ -217,23 +213,6 @@ class TestDerefMetadataPreservation(unittest.TestCase):
         self.assertEqual(restored_inst.address, SOURCE_ADDRESS)
         self.assertEqual(restored_inst.inst_index, SOURCE_INST_INDEX)
         self.assertEqual(restored_inst.llil_index, SOURCE_LLIL_INDEX)
-
-
-class TestHLILDerefStoreReadsPointer(unittest.TestCase):
-    """A store through a pointer (*dest = value) reads dest's own value too, same as it reads
-    value - ControlFlowOptimizationPass (the HLIL pass that inspects assignment reads/kills) must
-    not treat the pointer variable as unread just because it only appears on the dest side of a
-    deref-store."""
-
-    def test_deref_store_dest_counts_as_a_read_of_the_pointer(self):
-        ptr = HLILVariable('arg1')
-        block = HLILBlock([HLILAssign(HLILDeref(HLILVar(ptr)), HLILConst(1))])
-
-        reads, fallthrough_killed, exit_paths = ControlFlowOptimizationPass()._can_read_original_value(ptr, block)
-
-        self.assertTrue(reads)
-        self.assertIs(fallthrough_killed, False)
-        self.assertEqual(exit_paths, ())
 
 
 class TestRegGlobalPropagationSkipsDerefReads(unittest.TestCase):

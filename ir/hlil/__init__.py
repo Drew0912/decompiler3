@@ -93,7 +93,6 @@ __all__ = [
     # Tree walking
     'expr_children',
     'node_children',
-    'read_children',
     'iter_tree',
 
     # Function
@@ -105,7 +104,7 @@ __all__ = [
 
     # Passes
     'MLILToHLILPass',
-    'ControlFlowOptimizationPass',
+    'SwitchRecoveryPass',
     'LoopRecoveryPass',
     'CommonReturnExtractionPass',
     'DeadCodeEliminationPass',
