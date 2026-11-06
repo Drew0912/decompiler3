@@ -16,7 +16,7 @@ from typing import Callable, NamedTuple
 
 from dc3 import default_encoding, default_indent, fileio, quote_string
 from dc3.logging import log
-from dc3.utils import write_text_lf
+from dc3.utils import float32_bits, write_text_lf
 from falcom.ed9.games import GAMES_DIR
 from .scp import DEFINITION_SPACING, SYS_PATH_SETUP_LINES
 
@@ -25,21 +25,44 @@ TBL_OUTPUT_DIR   = Path('out') / 'tables'    # a game's default output folder, b
 
 FILE_HEADER      = fileio.struct_layout('4xI')       # magic, section count
 SECTION_ENTRY    = fileio.struct_layout('64s4xIII')  # name, name hash, records' offset, record size, record count
+UINT16           = fileio.struct_layout('H')
+UINT32           = fileio.struct_layout('I')
 UINT64           = fileio.struct_layout('Q')
+FLOAT32          = fileio.struct_layout('f')
+ARRAY_FIELD      = fileio.struct_layout('QI')        # pointer, element count
 
-STRING_KIND      = 'S'
+FLOAT32_MAX_DIGITS  = 9     # enough to name any float32 exactly
+STRING_KIND         = 'S'
 
 
 class FieldKind(NamedTuple):
     layout  : struct.Struct
     format  : Callable
+    element : struct.Struct | None = None   # an array's element
 
 
-# A DESCRIPTOR's field kinds: how a field is stored and how it prints
+def float_literal(value: float) -> str:
+    """Shortest float literal that stores the same float32: 0.3, not 0.30000001192092896"""
+    bits = float32_bits(value)
+    for digits in range(1, FLOAT32_MAX_DIGITS):
+        text = repr(float(f'{value:.{digits}g}'))
+        if float32_bits(float(text)) == bits:
+            return text
+
+    return repr(float(f'{value:.{FLOAT32_MAX_DIGITS}g}'))
+
+
+# The letters a DESCRIPTOR's (field, kind) pairs use: how a field is stored and how it prints. Integers are unsigned
 FIELD_KINDS = {
-    'Q'         : FieldKind(UINT64, str),
-    'X'         : FieldKind(UINT64, lambda value: f'0x{value:04X}'),
-    STRING_KIND : FieldKind(UINT64, lambda value: quote_string(value, "'")),
+    'W'         : FieldKind(UINT16, lambda value: f'0x{value:04X}'),                # 2-byte integer, printed in hex
+    'I'         : FieldKind(UINT32, str),                                           # 4-byte integer, in decimal
+    'L'         : FieldKind(UINT32, lambda value: f'0x{value:08X}'),                # 4-byte integer, printed in hex
+    'Q'         : FieldKind(UINT64, str),                                           # 8-byte integer, in decimal
+    'X'         : FieldKind(UINT64, lambda value: f'0x{value:04X}'),                # 8-byte integer, printed in hex
+    'f'         : FieldKind(FLOAT32, float_literal),                                # 4-byte float
+    STRING_KIND : FieldKind(UINT64, lambda value: quote_string(value, "'")),        # 8-byte pointer to a string
+    'A2'        : FieldKind(ARRAY_FIELD, str, UINT16),                              # pointer, count: 2-byte integers
+    'A4'        : FieldKind(ARRAY_FIELD, str, UINT32),                              # pointer, count: 4-byte integers
 }
 
 
@@ -114,7 +137,7 @@ class TblParser:
         self.entries: list[TableDataEntry | RawTableEntry] = []
         self.raw_sections: list[str] = []
         self.problems: list[str] = []
-        self._string_spans: set[tuple[int, int]] = set()
+        self._block_items: set[tuple[int, int, int]] = set()    # start, end, alignment
 
         for section in self.sections:
             self._read_section(section, classes)
@@ -162,10 +185,16 @@ class TblParser:
     def _read_record(self, record_class: type[TableDataEntry], at: int) -> TableDataEntry:
         fields = {}
         for name, kind in record_class.DESCRIPTOR:
-            layout = FIELD_KINDS[kind].layout
-            value = layout.unpack_from(self.data, at)[0]
-            fields[name] = self._read_string(value, at) if kind == STRING_KIND else value
-            at += layout.size
+            field = FIELD_KINDS[kind]
+            stored = field.layout.unpack_from(self.data, at)
+            if kind == STRING_KIND:
+                fields[name] = self._read_string(stored[0], at)
+            elif field.element:
+                fields[name] = self._read_array(field.element, *stored, at)
+            else:
+                fields[name] = stored[0]
+
+            at += field.layout.size
 
         return record_class(**fields)
 
@@ -183,15 +212,30 @@ class TblParser:
         except UnicodeDecodeError:
             raise RecordMismatch(f'pointer {pointer:#x} at {field_at:#x} does not reach a string') from None
 
-        self._string_spans.add((pointer, end + 1))
+        self._block_items.add((pointer, end + 1, 1))
         return text
 
+    def _read_array(self, element: struct.Struct, pointer: int, count: int, field_at: int) -> list[int]:
+        end = pointer + count * element.size
+        if not self.data_block <= pointer <= end <= len(self.data) or pointer % element.size:
+            raise RecordMismatch(f'array {pointer:#x}, {count} elements, at {field_at:#x} does not fit the data block')
+
+        # An empty array still aligns the block, so it counts as an item
+        self._block_items.add((pointer, end, element.size))
+        return [value for value, in element.iter_unpack(self.data[pointer:end])]
+
     def _check_data_block(self) -> None:
-        """Every byte of the data block belongs to one string; a wrong pointer field leaves a gap or an overlap"""
+        """Every byte of the data block belongs to one item or pads the next to its alignment; a wrong pointer field
+        leaves a gap or an overlap"""
         cursor = self.data_block
-        for start, end in sorted(self._string_spans):
-            if start != cursor:
-                self.problems.append(f'data block: {'gap' if start > cursor else 'overlap'} at {min(start, cursor):#x}')
+        for start, end, alignment in sorted(self._block_items):
+            if start < cursor:
+                self.problems.append(f'data block: overlap at {start:#x}')
+                return
+
+            padding = self.data[cursor:start]
+            if any(padding) or (padding and len(padding) >= alignment):
+                self.problems.append(f'data block: gap at {cursor:#x}')
                 return
 
             cursor = end
