@@ -34,7 +34,11 @@ Every launcher runs the shared pipeline in `falcom/ed9/scena2py_base.py`, so it 
 the outputs before a change, again after it, and diff them. Like the tests and generated scripts, the launchers and the
 `tools/` and `demos/` scripts put the repo root on `sys.path` themselves: no `PYTHONPATH`.
 
+`sora1` and `sora2` also have `falcom/ed9/games/<game>/tbl2py.py <file or folder>`, which reads `.tbl` tables into
+Python `entries` lists in the game's `out/tables/`, or `<folder>/` with `-o <folder>`.
+
 A test or verification run writes nothing inside the repo:
+- `tbl2py`: `python falcom/ed9/games/<game>/tbl2py.py <file or folder> -o <scratch folder>`.
 - `scena2py`: `python falcom/ed9/games/<game>/scena2py.py <file or folder> -o <scratch folder>`. A run that needs
   other settings (e.g. `round_trip = True`) uses a driver script in a scratch folder:
 

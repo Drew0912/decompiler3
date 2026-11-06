@@ -30,6 +30,10 @@ Compilation (the actual recompilation direction — needs only a DSL file, not a
 **Location:** `falcom/ed9/parser/`, and `falcom/ed9/structs/` for what it shares with the writer (the value and
 header types, the string pool, the call debug records)
 
+`.tbl` game tables have their own read-only reader beside it, outside the decompile path: `parser/tbl.py` (`TblParser`)
+reads a table's sections through the game's record classes (`games/<game>/tbl_records.py`; `sora2`'s star-import
+`sora1`'s and add what differs). A section with no class, or whose pointers do not fit its class, stays raw hex.
+
 Reads the SCP file: the header, the function table with parameters and defaults, call-site debug records, global
 variables and the string pool (`ScpParser`). While the disassembler decodes a function, the parser simulates the VM
 stack to find each call's setup, and rejects code it cannot trust: overlapping instructions, a branch target inside an
