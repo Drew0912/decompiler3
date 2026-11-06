@@ -121,7 +121,7 @@ so none of the 27 improved the output.
 
 A separate, smaller mechanism worth knowing about: `_collapse_funnel_chain` (in the converter, not
 a pass) merges same-target tests - a switch case's labels, a short-circuit `||` written with jumps -
-into one `||`. It's unrelated to MLIL-SSA critical-edge splitting, which is deconstruction machinery
+into one `||` (`BinaryOp.OR_ELSE`). It's unrelated to MLIL-SSA critical-edge splitting, which is deconstruction machinery
 living in `ir/mlil_ssa/mlil_ssa.py`, entirely outside `ir/hlil/`.
 
 ## Codegen

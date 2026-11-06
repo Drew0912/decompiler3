@@ -75,6 +75,12 @@ matters because MLIL `AND`/`OR` become bitwise operators, while MLIL `LOGICAL_AN
 become boolean operators. MLIL logical-not and test-zero operations are represented as equality
 with zero; other unary operations map to negation or bitwise-not.
 
+The boolean operators come in two kinds. `AND`/`OR` are the VM's eager `LOGICAL_AND`/`LOGICAL_OR`: both
+operands always run. `AND_THEN`/`OR_ELSE` are logic recovered from jumps (`_collapse_funnel_chain`,
+`if (C || true)`, and what `negate_condition` makes of those): the right operand runs only when the left
+leaves the answer open. Both print as `&&`/`||`. `DE_MORGAN_OP` keeps the kind, `OR_OPS` is either `||`,
+and the logic check (`tools/logic_check/`) tests an eager op whole and a recovered one operand by operand.
+
 Operator knowledge lives once, in `ir/hlil/hlil.py`, in two groups. The language-neutral group -
 `COMPARISON_OPS`, `BOOLEAN_BINARY_OPS`/`is_boolean_expr`, `NEGATED_COMPARISON_OP`, `DE_MORGAN_OP`,
 `negate_condition` (negation distributed through `&&`/`||`) and `strip_truth_test` (a boolean's truth

@@ -21,7 +21,7 @@ falcom/ed9/ir/hlil/hlil_converter.py.
 
 from ir.pipeline import Pass
 from ..hlil import (
-    BinaryOp,
+    DE_MORGAN_OP,
     HighLevelILFunction,
     HLILBinaryOp,
     HLILBlock,
@@ -155,7 +155,7 @@ class BranchOrderNormalizationPass(Pass):
             if condition.op in COMPARISON_OPS:
                 return condition.lhs
 
-            if condition.op in (BinaryOp.AND, BinaryOp.OR):
+            if condition.op in DE_MORGAN_OP:
                 return cls._scrutinee(condition.lhs)
 
         return condition

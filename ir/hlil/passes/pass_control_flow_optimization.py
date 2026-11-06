@@ -29,6 +29,7 @@ from ..hlil import (
     HLILVariable,
     VariableKind,
     BinaryOp,
+    OR_OPS,
     unwrap_address_taken_var,
     contains_bare_break,
     is_boolean_expr,
@@ -598,7 +599,7 @@ class ControlFlowOptimizationPass(Pass):
         if not isinstance(test, HLILBinaryOp):
             return None
 
-        if test.op == BinaryOp.OR:
+        if test.op in OR_OPS:
             left = self._equality_labels(test.lhs)
             right = self._equality_labels(test.rhs)
 

@@ -744,16 +744,25 @@ class TestPlantedHLILBugs(unittest.TestCase):
             other.statements.extend(calling.statements)
         self.check(branch_function, mutate, 'guard_differs')
 
+    def move_call_into_the_test(self, hlil) -> HLILBinaryOp:
+        """x = callee(1); if ((GLOBAL_A && x) != 0) made if ((GLOBAL_A && callee(1)) != 0): the && it wrote"""
+        assignment = first_node(hlil, HLILAssign, lambda node: isinstance(node.src, HLILCall))
+        hlil.body.statements.remove(assignment)
+        test = first_node(hlil, HLILIf).condition.lhs
+        self.assertIsInstance(test.rhs, HLILVar)
+        test.rhs = assignment.src
+        return test
+
     def test_call_moved_into_a_short_circuit_right_operand(self):
-        """x = callee(1); if ((GLOBAL_A && x) != 0) made if ((GLOBAL_A && callee(1)) != 0): the call no longer runs on
-        every path"""
+        """The call moved under the right of a recovered &&: it no longer runs on every path"""
         def mutate(hlil):
-            assignment = first_node(hlil, HLILAssign, lambda node: isinstance(node.src, HLILCall))
-            hlil.body.statements.remove(assignment)
-            test = first_node(hlil, HLILIf).condition.lhs
-            self.assertIsInstance(test.rhs, HLILVar)
-            test.rhs = assignment.src
+            self.move_call_into_the_test(hlil).op = BinaryOp.AND_THEN
         self.check(and_condition_function, mutate, 'guard_differs')
+
+    def test_global_read_moved_before_a_call(self):
+        """The call moved under the right of the VM's eager &&: it runs on every path, but GLOBAL_A, read after it, is
+        read before it now"""
+        self.check(and_condition_function, self.move_call_into_the_test, 'guard_differs')
 
     def test_loop_test_polarity_flipped(self):
         def mutate(hlil):
@@ -1130,10 +1139,13 @@ class TestPlantedHLILBugs(unittest.TestCase):
         self.check_built(*with_hlil(returns_parameter()), mutate, 'return_differs')
 
     def test_short_circuit_made_eager(self):
-        """second() runs only when first() returned 0: || keeps that, | runs both whatever first() returned"""
+        """second() runs only when first() returned 0: a recovered || keeps that, the eager || and | run both whatever
+        first() returned"""
         func = calls_then_test()
-        self.assertEqual(hlil_categories(func, either_call_hlil(func, BinaryOp.OR)), set())
-        self.assertIn('guard_differs', hlil_categories(func, either_call_hlil(func, BinaryOp.BIT_OR)))
+        self.assertEqual(hlil_categories(func, either_call_hlil(func, BinaryOp.OR_ELSE)), set())
+        for op in (BinaryOp.OR, BinaryOp.BIT_OR):
+            with self.subTest(op=op.name):
+                self.assertIn('guard_differs', hlil_categories(func, either_call_hlil(func, op)))
 
     def test_one_wrong_copy_of_a_repeated_region(self):
         """continue made break in the second of the loop's two copies only: that copy no longer repeats"""
@@ -1202,11 +1214,13 @@ class TestHLILStructures(unittest.TestCase):
         self.assertEqual(len(set(addresses)), len(addresses))
         self.assertNotIn(0, addresses)
 
-    def test_arm_a_decided_condition_never_reaches(self):
-        """HLIL splits `x && 0` and folds the 0, so its arm has no predecessor; the MLIL branch is decided alike"""
+    def test_arm_behind_a_decisive_constant_compared(self):
+        """`x && 0` is one test on both sides, so the arm the VM never runs is compared like any other"""
         mlil, hlil = mlil_and_hlil(dead_arm_function)
         self.assertEqual(sum(isinstance(inst, MLILIf) for inst in mlil.iter_instructions()), 1)  # the && stays whole
         self.assertEqual(hlil_categories(mlil, hlil), set())
+        first_node(hlil, HLILIf).false_block.statements.clear()     # callee(3), the arm that never runs
+        self.assertIn('missing_effect', hlil_categories(mlil, hlil))
 
     @classmethod
     def extract_common_return(cls, hlil):

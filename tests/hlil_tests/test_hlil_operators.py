@@ -126,6 +126,12 @@ class TestNegateCondition(unittest.TestCase):
         self.assertEqual(negated.op, BinaryOp.OR)
         self.assertEqual((negated.lhs.op, negated.rhs.op), (BinaryOp.GE, BinaryOp.NE))
 
+    def test_de_morgan_keeps_the_kind_of_logic(self):
+        for op, negated in ((BinaryOp.AND, BinaryOp.OR), (BinaryOp.OR, BinaryOp.AND),
+                            (BinaryOp.AND_THEN, BinaryOp.OR_ELSE), (BinaryOp.OR_ELSE, BinaryOp.AND_THEN)):
+            with self.subTest(op=op.name):
+                self.assertEqual(negate_condition(HLILBinaryOp(op, var('a'), var('b'))).op, negated)
+
     def test_anything_else_is_wrapped_in_not(self):
         x = var('x')
         negated = negate_condition(x)

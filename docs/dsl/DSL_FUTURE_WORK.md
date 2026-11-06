@@ -249,8 +249,8 @@ HLIL → HLIL DSL (.py) → exec() → lower → LLIL DSL (.py, exists today) �
   comparisons); this output must be exact. Its natural sibling is the LLIL `.py` formatter
   (`falcom/ed9/disasm/`): exact float literals (`ScpValue.float_literal`),
   `Formatter.format_param` signatures, decorators, common-function library conventions. With TS it
-  shares only HLIL-level structure helpers and language-neutral operator tables. Once it exists,
-  retire `HLILFormatter` / `.hlil.ts` (an unused debug dump) — this output is the faithful HLIL view.
+  shares only HLIL-level structure helpers and language-neutral operator tables. Whether `.hlil.ts`
+  stays beside it, as the reading view, is decided once it exists.
 
 Design rules for an executed DSL:
 - Every DSL expression's `__bool__` raises, so an accidental Python `if`/`while`/`and`/`or`/`not` or

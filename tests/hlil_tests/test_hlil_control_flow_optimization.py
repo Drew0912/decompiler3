@@ -279,7 +279,7 @@ class TestTruthTestedChainLinks(unittest.TestCase):
         first, second = (make_condition(BinaryOp.EQ, value) for value in (FIRST_CASE_VALUE, SECOND_CASE_VALUE))
         groups = {
             'each test under its own (a funnel)':
-                HLILBinaryOp(BinaryOp.OR, truth_test(first, BinaryOp.NE), truth_test(second, BinaryOp.NE)),
+                HLILBinaryOp(BinaryOp.OR_ELSE, truth_test(first, BinaryOp.NE), truth_test(second, BinaryOp.NE)),
             'one over the || (an eager ||)': truth_test(HLILBinaryOp(BinaryOp.OR, first, second), BinaryOp.NE),
         }
         for name, group in groups.items():

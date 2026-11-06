@@ -696,7 +696,7 @@ class MLILToHLILConverter:
         # Both branches go to same block. Condition C may have side effects,
         # so we generate: if (C || true) { A } to preserve C's evaluation
         if true_target_idx == false_target_idx:
-            always_true = HLILBinaryOp(BinaryOp.OR, condition, HLILConst(1))
+            always_true = HLILBinaryOp(BinaryOp.OR_ELSE, condition, HLILConst(1))
             body = HLILBlock()
             self._reconstruct_control_flow(true_target_idx, body, stop_at=stop_at, jump_source=if_instr)
             if_stmt = HLILIf(always_true, body)
@@ -891,7 +891,7 @@ class MLILToHLILConverter:
 
             combined = conditions[0]
             for cond in conditions[1:]:
-                combined = HLILBinaryOp(BinaryOp.OR, combined, cond)
+                combined = HLILBinaryOp(BinaryOp.OR_ELSE, combined, cond)
 
             return combined, shared, current
 

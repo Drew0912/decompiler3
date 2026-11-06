@@ -1,8 +1,8 @@
 """The HLIL side of the evaluation: the statement tree as a control-flow graph with real edges - statement to statement,
 an if's arms and their join, a loop's header, body, back and exit edges, a switch's tests in case order, break,
-continue and return - with one test per operand of a condition's && and ||, as the .ts evaluates them. Storage is
-named through the MLIL function the HLIL came from, whose variable names HLIL keeps; evaluated gated
-(naming.GatedNaming), a loop header named by its loop's stamp"""
+continue and return - with one test per operand of an && or || recovered from jumps, the VM's eager ones one test
+whole, both operands evaluated, as the bytecode has them. Storage is named through the MLIL function the HLIL came
+from, whose variable names HLIL keeps; evaluated gated (naming.GatedNaming), a loop header named by its loop's stamp"""
 
 from dataclasses import dataclass
 from itertools import count
@@ -47,7 +47,6 @@ UNARY_OPERATIONS = {
     UnaryOp.NOT     : 'LOGICAL_NOT',
     UnaryOp.BIT_NOT : 'BITWISE_NOT',
 }
-SHORT_CIRCUIT = (BinaryOp.AND, BinaryOp.OR)
 CALLS = (HLILCall, HLILSyscall, HLILExternCall)
 CONSTANT_EXPRESSIONS = (HLILConst, HLILBinaryOp, HLILUnaryOp)
 
@@ -192,14 +191,14 @@ class HLILLayer:
         return node
 
     def build_condition(self, expr, true_node: Node, false_node: Node) -> Node:
-        """The tests deciding expr, one per operand of && and ||, entered at the first; a constant one is none, its arm
-        taken (as MLILLayer follows a constant branch)"""
+        """The tests deciding expr, one per operand of a recovered && or ||, an eager one whole, entered at the first; a
+        constant one is none, its arm taken (as MLILLayer follows a constant branch)"""
         expr, negated = self.strip_truth_tests(expr)
         if negated:
             true_node, false_node = false_node, true_node
-        if isinstance(expr, HLILBinaryOp) and expr.op == BinaryOp.AND:
+        if isinstance(expr, HLILBinaryOp) and expr.op == BinaryOp.AND_THEN:
             return self.build_condition(expr.lhs, self.build_condition(expr.rhs, true_node, false_node), false_node)
-        if isinstance(expr, HLILBinaryOp) and expr.op == BinaryOp.OR:
+        if isinstance(expr, HLILBinaryOp) and expr.op == BinaryOp.OR_ELSE:
             return self.build_condition(expr.lhs, true_node, self.build_condition(expr.rhs, true_node, false_node))
         if all(isinstance(node, CONSTANT_EXPRESSIONS) for node in iter_tree(expr)):
             always = constant_truth(self.evaluate(expr, State(), []))
@@ -210,7 +209,7 @@ class HLILLayer:
 
     @classmethod
     def strip_truth_tests(cls, expr) -> tuple:
-        """(expr, negated) with `x == 0`, `x != 0` and `!x` stripped, so a && or || under them is split too"""
+        """(expr, negated) with `x == 0`, `x != 0` and `!x` stripped, so a recovered && or || under them is split too"""
         negated = False
         while True:
             if isinstance(expr, HLILUnaryOp) and expr.op == UnaryOp.NOT:
@@ -337,8 +336,6 @@ class HLILLayer:
         if isinstance(expr, HLILVar):
             return self.read(expr.var, state)
         if isinstance(expr, HLILBinaryOp):
-            if expr.op in SHORT_CIRCUIT and any(isinstance(node, CALLS) for node in iter_tree(expr.rhs)):
-                raise RuntimeError(f'a call under the right operand of {expr.op.name} outside a condition')
             lhs = self.evaluate(expr.lhs, state, effects)
             return op(BINARY_OPERATIONS[expr.op], [lhs, self.evaluate(expr.rhs, state, effects)])
         if isinstance(expr, HLILUnaryOp):

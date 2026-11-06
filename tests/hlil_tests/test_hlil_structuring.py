@@ -574,6 +574,8 @@ class TestConstantTruth(unittest.TestCase):
         self.assertIs(constant_truth(HLILBinaryOp(BinaryOp.OR, var('c'), HLILConst(1))), True)
         self.assertIs(constant_truth(HLILBinaryOp(BinaryOp.AND, var('c'), HLILConst(0))), False)
         self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.AND, var('c'), HLILConst(1))))
+        self.assertIs(constant_truth(HLILBinaryOp(BinaryOp.OR_ELSE, var('c'), HLILConst(1))), True)
+        self.assertIs(constant_truth(HLILBinaryOp(BinaryOp.AND_THEN, var('c'), HLILConst(0))), False)
 
     def test_logical_operators_decided_by_both_sides(self):
         false, true, other_true = HLILConst(0), HLILConst(1), HLILConst(2)

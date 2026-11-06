@@ -38,9 +38,13 @@ class BinaryOp(IntEnum2):
     GT      = auto()
     GE      = auto()
 
-    # Logical
+    # Logical: the VM's eager ops, both operands always run
     AND     = auto()
     OR      = auto()
+
+    # Logical, recovered from jumps: the right operand runs only when the left leaves the answer open
+    AND_THEN = auto()
+    OR_ELSE  = auto()
 
     # Bitwise
     BIT_AND = auto()
@@ -205,8 +209,11 @@ class HLILConst(HLILExpression):
 
 COMPARISON_OPS = frozenset({BinaryOp.EQ, BinaryOp.NE, BinaryOp.LT, BinaryOp.LE, BinaryOp.GT, BinaryOp.GE})
 
+# Either kind of ||
+OR_OPS = frozenset({BinaryOp.OR, BinaryOp.OR_ELSE})
+
 # Binary operators whose result is a boolean
-BOOLEAN_BINARY_OPS = COMPARISON_OPS | {BinaryOp.AND, BinaryOp.OR}
+BOOLEAN_BINARY_OPS = COMPARISON_OPS | OR_OPS | {BinaryOp.AND, BinaryOp.AND_THEN}
 
 # !(a op b) == a NEGATED_COMPARISON_OP[op] b
 NEGATED_COMPARISON_OP = {
@@ -218,10 +225,12 @@ NEGATED_COMPARISON_OP = {
     BinaryOp.GE : BinaryOp.LT,
 }
 
-# De Morgan's: negating && / || swaps the operator
+# De Morgan's: negating && / || swaps the operator, within its kind
 DE_MORGAN_OP = {
-    BinaryOp.AND : BinaryOp.OR,
-    BinaryOp.OR  : BinaryOp.AND,
+    BinaryOp.AND      : BinaryOp.OR,
+    BinaryOp.OR       : BinaryOp.AND,
+    BinaryOp.AND_THEN : BinaryOp.OR_ELSE,
+    BinaryOp.OR_ELSE  : BinaryOp.AND_THEN,
 }
 
 # What each comparison computes, for evaluating one between two constants
@@ -254,6 +263,8 @@ BINARY_OP_STR = {
     BinaryOp.GE         : '>=',
     BinaryOp.AND        : '&&',
     BinaryOp.OR         : '||',
+    BinaryOp.AND_THEN   : '&&',
+    BinaryOp.OR_ELSE    : '||',
     BinaryOp.BIT_AND    : '&',
     BinaryOp.BIT_OR     : '|',
     BinaryOp.BIT_XOR    : '^',
@@ -270,7 +281,9 @@ UNARY_OP_STR = {
 # Higher binds tighter
 BINARY_OP_PRECEDENCE = {
     BinaryOp.OR         : 1,
+    BinaryOp.OR_ELSE    : 1,
     BinaryOp.AND        : 2,
+    BinaryOp.AND_THEN   : 2,
     BinaryOp.BIT_OR     : 3,
     BinaryOp.BIT_XOR    : 4,
     BinaryOp.BIT_AND    : 5,
@@ -733,7 +746,7 @@ def constant_truth(cond: HLILExpression) -> bool | None:
 
     if cond.op in DE_MORGAN_OP:
         # True decides || on its own, False decides &&
-        decisive = cond.op == BinaryOp.OR
+        decisive = cond.op in OR_OPS
         sides = (constant_truth(cond.lhs), constant_truth(cond.rhs))
 
         if decisive in sides:

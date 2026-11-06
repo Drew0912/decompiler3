@@ -16,6 +16,7 @@ __all__ = [
 
     # Operator semantics (language-neutral)
     'COMPARISON_OPS',
+    'OR_OPS',
     'BOOLEAN_BINARY_OPS',
     'NEGATED_COMPARISON_OP',
     'DE_MORGAN_OP',

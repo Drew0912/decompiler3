@@ -11,7 +11,7 @@ from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILAddressOf, MLILBinaryOp, MLILCallScript, MLILConst, MLILDebug,
     MLILDeref, MLILGoto, MLILIf, MLILIntrinsic, MLILLoadGlobal, MLILLoadReg, MLILNop, MLILRet, MLILSetVar,
     MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILSyscall, MLILUnaryOp, MLILUndef, MLILVar, MLILVariable,
-    UNASSIGNED_SLOT_INDEX, mlil_stack_var_name,
+    UNASSIGNED_SLOT_INDEX, mlil_stack_var_name, walk,
 )
 from .facts import Branch, Effect, Facts
 from .post_dominators import back_edges
@@ -24,6 +24,7 @@ PARAMETER_NAME = re.compile(r'^arg(\d+)$')
 STACK_NAME = re.compile(r'^var_s(\d+)$')
 IGNORED = (MLILGoto, MLILDebug, MLILNop)
 COPIES = (MLILSetVar, MLILStoreReg, *IGNORED)
+CONSTANT_EXPRESSIONS = (MLILConst, MLILBinaryOp, MLILUnaryOp)
 
 
 class MLILStorage:
@@ -75,11 +76,10 @@ class MLILStorage:
 
 
 class MLILLayer(MLILStorage):
-    """The MLIL's graph as written, or with hlil_view as HLIL structures it (against HLIL): a branch on a decided
-    condition is a jump to the target it always takes (HLIL folds a loop's constant test, and the constant operand of a
-    split && or ||, so the arm it never reaches is dead), and a block holding only
-    jumps, line markers and nops, a loop's header aside, passes control on to where it leads (the converter skips such
-    a block, so HLIL joins arms where they lead)"""
+    """The MLIL's graph as written, or with hlil_view as HLIL structures it (against HLIL): a branch on a constant
+    condition is a jump to the target it always takes (HLIL folds a loop's constant test and a recovered && or ||'s
+    constant operand), and a block holding only jumps, line markers and nops, a loop's header aside, passes control on
+    to where it leads (the converter skips such a block, so HLIL joins arms where they lead)"""
 
     OWN_STORAGE_NAMES = True        # a split range, a variable named apart within its slot or a minted local
     VM_EFFECTS        = VMEffects   # the effects of its engine's VM
@@ -150,9 +150,12 @@ class MLILLayer(MLILStorage):
         return None
 
     def constant_target(self, block):
-        """The target a branch whose condition is decided always takes, or None: a constant, or an && / || with a
-        decisive constant operand (`x && 0`), as HLIL folds each operand of a split condition"""
+        """The target a branch on a constant condition always takes, or None. Not `x && 0`: the eager op is one test in
+        HLIL too, so both sides keep the arm and compare it"""
         terminal = block.instructions[-1]
+        if not all(isinstance(node, CONSTANT_EXPRESSIONS) for node in walk(terminal.condition)):
+            return None
+
         always = constant_truth(self.evaluate(terminal.condition, State()))
         if always is None:
             return None

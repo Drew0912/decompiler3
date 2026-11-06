@@ -144,10 +144,10 @@ def _value(expr, env: dict[str, bool]):
     if isinstance(expr, HLILUnaryOp) and expr.op == UnaryOp.NOT:
         return not _value(expr.operand, env)
 
-    if isinstance(expr, HLILBinaryOp) and expr.op == BinaryOp.AND:
+    if isinstance(expr, HLILBinaryOp) and expr.op in (BinaryOp.AND, BinaryOp.AND_THEN):
         return bool(_value(expr.lhs, env)) and bool(_value(expr.rhs, env))
 
-    if isinstance(expr, HLILBinaryOp) and expr.op == BinaryOp.OR:
+    if isinstance(expr, HLILBinaryOp) and expr.op in (BinaryOp.OR, BinaryOp.OR_ELSE):
         return bool(_value(expr.lhs, env)) or bool(_value(expr.rhs, env))
 
     if isinstance(expr, HLILBinaryOp) and expr.op in COMPARISON_FUNCTIONS:
