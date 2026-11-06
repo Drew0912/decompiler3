@@ -158,9 +158,10 @@ hooks included) are left out. A call whose original record breaks the rule carri
 writes, dead code included: the parser pairs a function's records with every call the `.py` prints
 (`call_debug_records.pair_records`, shared with the listing and the validator; each pair content-checked),
 and a function whose records don't pair gets no `debug_argc` and a warning (`records not paired: ...`).
-The original compiler gives no record to a call whose statement has no line marker of its own (the first
-statement of an `if` body: `ai_chr5004p`, `ai_chr5106p`); with more calls than records the parser finds the
-one order-preserving alignment of records with calls (`align_records`; none or several: not paired), and
+The original compiler leaves a few `btl_ai_skill` calls in `ai/` scripts without a record
+(`docs/falcom/ed9/ED9_FORMAT.md`, Call-Site Debug Records, rule 2: `ai_chr5004p`, `ai_chr5106p`); with more
+calls than records the parser finds the one order-preserving alignment of records with calls
+(`align_records`; none or several: not paired), and
 each local call left over carries `CALL(btl_ai_skill, debug_record=False)` - no record, so a `debug_argc`
 beside it is unused. `debug_argc` must be an `int` (`CALL debug_argc is True (bool), not int`) and is used
 as given, `debug_record` a `bool`; opcode callbacks never see either, and they go with their `CALL` when one
@@ -168,7 +169,8 @@ drops it. An everyday `.py` (decompiled with `ScpParser.round_trip` off: neither
 writer's default gets rule-trimmed
 records; `ScpWriter.round_trip = False` writes no records at all. `ScpWriter.round_trip` covers the other
 half of a byte-exact file too: on, the string pool is never deduplicated and is written in section order,
-as the original compiler wrote it; off, equal strings share one entry. Neither half changes the logic. An older
+as the original compiler wrote it; off, equal strings share one entry. The string pool's half doesn't change
+the logic; the records' does (`docs/ROUND_TRIP_POLICY.md`, Records the engine reads). An older
 round-trip `.py` with `@scena.LLILCode(debug_argc={...})` stops at Python's `TypeError` there: decompile
 the `.dat` again.
 
@@ -253,10 +255,10 @@ round 2, no logic regressions. **Full 1082-file re-run with the library active, 
 **structural**-only difference (function order and/or rebuilt debug records, 7 also string-pool
 counts) against source when checked with `validate_file`'s format checks: common functions are now
 always registered before source functions (`@scena.CommonImports()` runs eagerly, ahead of the
-inline definitions), which reorders them relative to source and shifts debug-record layout — both
-explicitly excluded from the "game logic" definition in `docs/ROUND_TRIP_POLICY.md` (function order, debug records,
-string-pool layout). This is the expected, designed consequence of pulling matched functions out of
-their original source position into the shared-library import path, not a regression. 127 files'
+inline definitions), which reorders them relative to source and shifts where the records sit in the file:
+neither changes a record's content, and function order and string-pool layout are outside the "game logic"
+definition in `docs/ROUND_TRIP_POLICY.md`. This is the expected, designed consequence of pulling matched
+functions out of their original source position into the shared-library import path, not a regression. 127 files'
 worst status was an informational WARN (mostly pre-existing "N unreachable ranges" notes, same
 category as the pre-library baseline). **Re-run 2026-10-06** at `ebf2578`, with the compile check
 (§1) in every compile: again 0 logic round-trip failures and 0 errors, every file at the fixed point

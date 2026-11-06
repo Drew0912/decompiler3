@@ -542,6 +542,11 @@ also calls names it reads from objects and scripts, below) [exe]:
 
   Not function names: Debug 10 does nothing (Debug has no handlers). Chr 23, 25, 26, 32, 43, 190, 209, 230 and Map 21
   take animation clip names. Map 39, 40 take object group names, and Map 61, 125, 126 lookpoint names.
+- **In `sora2`'s scripts:** 19 of the 22 occur; Chr 215, Map 36 and Map 81 don't. Only Sys 3, Chr 47, Chr 208 and Map 20
+  take a constant name at the syscall. The other 15 sit in common functions that pass a parameter through
+  (`set_end_hook_function`, `menu_open`, `chr_load_animeclip_by_anifunc`), so the name is at that function's call. No
+  constant name uses a form its handler refuses; a few name a function no script has, which fails the same after a
+  rebuild [scripts].
 - **Names from data tables**, with no script argument involved [exe]:
   - Btl 0, 76, 77: a table row's text, for a battle row type, so only the Module forms; three Integers (the row's id,
     the type and a third value), and the result is read. The table is not identified.

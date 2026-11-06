@@ -131,7 +131,8 @@ only, check `get_scp_writer().current_function.name`. Pitfalls:
   error has no location.
 - In round-trip mode, dropping part of a call sequence (`PUSH_CALLER_FRAME`, `PUSH_RET_ADDR`, an argument push)
   shifts the function's later debug records, and calls before the function's first kept `DEBUG_SET_LINENO` get none
-  (dropping every one loses them all). The records don't affect the logic.
+  (dropping every one loses them all). The engine reads these records (`docs/ROUND_TRIP_POLICY.md`, Records the engine
+  reads): a lost one can leave a clip unloaded or change a message window's size.
 
 **Where errors point.** The writer's errors about a hook (a bad registration, a signature, an unknown name) and
 compile-check failures name the hook's own line: a replacement's opcode, a wrapper's own opcode, an inlined
@@ -163,7 +164,8 @@ then name the decorator's wrapper `def`.
 - `inline_original_func()` skips every other replacement too: a raw callback's wrapper that should keep earlier
   wrappers calls the `func` it was given (`func(*args)`, LLIL only).
 - In round-trip mode a replaced function loses the original's debug-record argument trimming, even when the
-  replacement only inlines the original: the bytes may differ, the logic doesn't.
+  replacement only inlines the original: the bytes may differ, and a record may lose a trailing argument equal to its
+  default, as an everyday recompile's does.
 
 **Pylance.** Hooks see the script's names only at runtime. The `TYPE_CHECKING` lines in the example show them to
 Pylance: `from <stem> import *` for plain names, and `import <stem> as original` for `original.Name(...)` with the real

@@ -139,7 +139,8 @@ class ScpWriter:
     """Compiles the opcode calls of an executed DSL script into a .dat"""
 
     # Byte-exact round trip with the original compiler: a never-deduplicated string pool in section order and
-    # call-site debug-info records. Neither is believed to change behavior in-game.
+    # call-site debug-info records. False drops the records too, and the engine reads those
+    # (docs/falcom/ed9/ED9_VM.md, Who reads the call-site records): only tests turn it off.
     round_trip = True
 
     # Check that the compiled bytes decompile again (disassemble and lift), with errors pointing at script lines

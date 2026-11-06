@@ -15,7 +15,7 @@
 | `docs/dsl/HOOKS.md` | HLIL DSL hooks and line-anchored patches (after the HLIL DSL writer) |
 | `docs/mlil/MLIL_FUTURE_WORK.md` | VM-accurate DIV/MOD and float folding (needs an in-game oracle) |
 | `docs/hlil/HLIL_FUTURE_WORK.md` | HLIL nesting depth, TypeScript output readability, the remaining reducible shapes |
-| this file | the static game-logic check, generic / Falcom boundary leftovers, ED8 support, `kuro1` byte-exact debug records |
+| this file | the static game-logic check, generic / Falcom boundary leftovers, ED8 support, older-compiler byte-exact debug records |
 
 ## Static Game-Logic Check (`tools/logic_check/`, `tools/ir_semantic_validator.py`)
 
@@ -123,18 +123,12 @@ from decompiler2's ED8.x support:
     side (`llil_layer.py`) and driver (`scripts.py`) get ED85 counterparts. The lifter stays outside the check, as
     ED9's bytecode -> LLIL lifter does.
 
-## kuro1 Byte-Exact Debug Records (`falcom/ed9/structs/call_debug_records.py`, `falcom/ed9/writer/`)
+## Older-Compiler Byte-Exact Debug Records (`falcom/ed9/structs/call_debug_records.py`, `falcom/ed9/writer/`)
 
-**Planned, not started; much later, after the HLIL DSL is done** (user, 2026-10-18). A three-game census
-(every file, `tools/scp_roundtrip_validator.py` checks plus `--round-trip`) found `sora2`, `sora1` and `kuro1` share
-one format: the same 45 instructions, header, value encoding and table field values; every file parses but one
-(`kuro1` `ani/mon9996_c00.dat`, a broken script, never to be supported). Only the call debug records differ: `kuro1`
-rebuilds byte-identical in only 26 of 634 files, the other two games in nearly all. Its older compiler leaves two
-patterns the record tracker does not reproduce:
-- **Records written twice:** a function's whole record list appears again after itself (`ani/chrx001.dat`
-  `AniAttachE07kmo05`: 5 calls, 10 records, the second five a repeat of the first).
-- **Records for calls without a line marker,** where the `sora` compilers write none (`ai/ai_chr0002.dat`
-  `btl_ai_algo`: no line marker, one record, for its `SYSCALL`).
+**Planned, not started; much later** (user, 2026-11-06). `kuro1`, `kuro2`, `kai1` and `sora`'s older-built `chr` files
+come from the older compiler (`docs/falcom/ed9/ED9_FORMAT.md`, Call-Site Debug Records), and `kuro1` rebuilds
+byte-identical in only 26 of 634 files. Byte-exact needs its three differences: records on common functions, each
+record's own debug-only Strings, and doubling, which needs the transitive simulation of rule 8.
 
-Records are debug data, so this is a byte-exact gap, not a logic one (the census did not run the logic round trip on
-`kuro1`).
+Whether those engines read the records isn't known, since their exes are unread. The 2026-10-18 census did not run the
+logic round trip on `kuro1`.

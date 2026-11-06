@@ -177,6 +177,12 @@ byte.
 - **Simpler Integer decode** (found in Step 5's review; done, `64a7c86`). The Integer decode
   sign-extended by shifting through `0xC0000000`/`0x80000000` and a bytes round trip; it is now the payload
   (`word & PAYLOAD_MASK`), less `1 << TYPE_SHIFT` past `INTEGER_MAX` (`ScpValue.decode_word`).
+- **A check of function names passed to the engine** (not started). Nothing renames or drops a function
+  today, so nothing needs it; a hand edit or the HLIL DSL would. It would test each name at the 22 handlers
+  (`docs/falcom/ed9/ED9_VM.md`, Syscalls that take a function name) against the forms its handler allows and
+  the function tables. It must look through wrappers, since most of these names sit at a common function's
+  call. `sora2` as shipped: no name in a form its handler refuses, and 177 sites naming a function no script
+  has, so a new check needs that list as its baseline.
 
 ## Listings and Docstrings
 
