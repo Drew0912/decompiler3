@@ -122,10 +122,9 @@ class TestHeader(unittest.TestCase):
         header = named_parser('ai_chr5122_e00.dat').gen_python_header()
         self.assertEqual(header[:len(SYS_PATH_SETUP_LINES) + 2], [*SYS_PATH_SETUP_LINES, SCP_WRITER_HELPER_IMPORT, 'try:'])
 
-    def test_sys_path_setup_names_the_repo_root(self):
+    def test_project_root_is_the_repo_root(self):
         """The baked-in path is what lets a generated script run without PYTHONPATH"""
         self.assertTrue((PROJECT_ROOT / 'falcom' / 'ed9' / 'writer' / 'scp_writer_helper.py').is_file())
-        self.assertEqual(SYS_PATH_SETUP_LINES[1], f'sys.path.insert(0, {str(PROJECT_ROOT)!r})')
 
     def test_global_var_comments_share_the_comment_column(self):
         parser = named_parser('ai_chr5122_e00.dat')

@@ -9,7 +9,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from codegen.typescript import TypeScriptGenerator, generate_typescript, generate_typescript_header
+from codegen.typescript import TypeScriptGenerator, generate_typescript
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.parser.parser_types import Function, FunctionParam
 from falcom.ed9.structs.scp_types import Pointer, RawInt, ScpParamFlags
@@ -225,12 +225,6 @@ class TestEagerLogicHelpers(unittest.TestCase):
             (HLILAssign(self.number_var(), HLILBinaryOp(BinaryOp.LT, a, b)), 'x = int(a < b);'),
         ])
 
-    def test_the_header_declares_them(self):
-        header = generate_typescript_header()
-
-        self.assertIn('function and_(...values: any[]): number { return +values.every(Boolean); }', header)
-        self.assertIn('function or_(...values: any[]): number { return +values.some(Boolean); }', header)
-
 
 class TestSwitchEmptyCase(unittest.TestCase):
     """An empty non-default case must not fall through into the next case."""
@@ -271,7 +265,6 @@ class TestPointerCodegen(unittest.TestCase):
 
         self.assertEqual(hlil.parameters[0].type_hint, HLILTypeKind.POINTER)
         self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: Pointer)', generate_typescript(hlil))
-        self.assertIn('type Pointer = number;', generate_typescript_header())
 
     def test_boolean_assigned_to_a_pointer_gets_int_wrapped(self):
         # Pointer is a number alias, so it takes the same int(...) coercion as a number

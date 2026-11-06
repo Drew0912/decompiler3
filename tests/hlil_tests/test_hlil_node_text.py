@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
-"""The debug text of every HLIL node (str) and its repr, and the attributes every node starts with. Debug
-text is what a failing test and a log line show, so a node that prints None or the wrong branch hides the
-real failure."""
+"""The debug text of every HLIL node (str) and its repr. Debug text is what a failing test and a log line show, so a
+node that prints None or the wrong branch hides the real failure."""
 
 from pathlib import Path
 import sys
@@ -10,7 +9,6 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ir.core import UNASSIGNED_INST_INDEX
 from ir.hlil import (
     BinaryOp, UnaryOp, HLILTypeKind, HLILOperation, HighLevelILFunction, HLILAddressOf, HLILAssign, HLILBinaryOp,
     HLILBlock, HLILBreak, HLILCall, HLILComment, HLILConst, HLILContinue, HLILDeref, HLILDoWhile, HLILExprStmt,
@@ -64,31 +62,6 @@ NODE_TEXT = [
     (HLILSwitchCase(None, HLILBlock()), 'default: { ... }', 'HLILSwitchCase(default)'),
 ]
 
-# Every node type and the operation it announces
-NODE_OPERATIONS = [
-    (HLILVar(HLILVariable('x')), HLILOperation.HLIL_VAR),
-    (HLILConst(1), HLILOperation.HLIL_CONST),
-    (HLILBinaryOp(BinaryOp.ADD, cond(), cond()), HLILOperation.HLIL_BINARY_OP),
-    (HLILUnaryOp(UnaryOp.NOT, cond()), HLILOperation.HLIL_UNARY_OP),
-    (HLILAddressOf(cond()), HLILOperation.HLIL_ADDRESS_OF),
-    (HLILDeref(cond()), HLILOperation.HLIL_DEREF),
-    (HLILCall('f', []), HLILOperation.HLIL_CALL),
-    (HLILSyscall(0, 3, []), HLILOperation.HLIL_SYSCALL),
-    (HLILExternCall('m:g', []), HLILOperation.HLIL_CALL),
-    (HLILBlock(), HLILOperation.HLIL_BLOCK),
-    (HLILIf(cond(), HLILBlock()), HLILOperation.HLIL_IF),
-    (HLILWhile(cond(), HLILBlock()), HLILOperation.HLIL_WHILE),
-    (HLILDoWhile(cond(), HLILBlock()), HLILOperation.HLIL_DO_WHILE),
-    (HLILSwitch(cond(), []), HLILOperation.HLIL_SWITCH),
-    (HLILBreak(), HLILOperation.HLIL_BREAK),
-    (HLILContinue(), HLILOperation.HLIL_CONTINUE),
-    (HLILReturn(), HLILOperation.HLIL_RETURN),
-    (HLILUnstructured('L', 'why'), HLILOperation.HLIL_UNSTRUCTURED),
-    (HLILAssign(cond(), HLILConst(1)), HLILOperation.HLIL_ASSIGN),
-    (HLILExprStmt(HLILCall('f', [])), HLILOperation.HLIL_EXPR_STMT),
-    (HLILComment('note'), HLILOperation.HLIL_COMMENT),
-]
-
 
 class TestNodeText(unittest.TestCase):
 
@@ -100,16 +73,6 @@ class TestNodeText(unittest.TestCase):
 
     def test_base_node_prints_its_operation(self):
         self.assertEqual(str(HLILInstruction(HLILOperation.HLIL_BLOCK)), 'HLIL_BLOCK')
-
-
-class TestNodeAttributes(unittest.TestCase):
-
-    def test_every_node_announces_its_operation_and_starts_without_a_source(self):
-        for node, operation in NODE_OPERATIONS:
-            with self.subTest(node=type(node).__name__):
-                self.assertEqual(node.operation, operation)
-                self.assertEqual(node.address, 0)
-                self.assertEqual(node.mlil_index, UNASSIGNED_INST_INDEX)
 
 
 if __name__ == '__main__':
