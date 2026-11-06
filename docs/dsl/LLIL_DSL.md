@@ -320,10 +320,9 @@ and `script_en/ai/ai_chr0100_e00.dat`), and `--logic-round-trip` converges at ro
 all 5 (2026-10-01). On a 300-file quota sample of `sora2` that includes them (list and results
 in the gitignored `notes/validator300/`), all but 2 files are byte-identical and all converge at round 2.
 The logic round trip is also measured corpus-wide (above), and so is the byte-exact one: all but 6 `sora2`
-files are byte-identical. The 6 left are known and out of the debug-records plan's scope: 4 differently built
-`chr*` files (`chr0000`, `chr5001`, `chr5003`, `chr5007`: records missing for some calls, record strings sharing pool
-entries), `chr5110` (dead code ranges the decompiler drops) and `mp0090` (bytes before its first
-function); `notes/debug_records_handoff.md` has the details. When a rebuilt file differs, `--round-trip`
+files are byte-identical. The 6 left are known and out of the debug-records plan's scope: 4 `chr*` files from the older
+compiler (`chr0000`, `chr5001`, `chr5003`, `chr5007`: `docs/falcom/ed9/ED9_FORMAT.md`, Call-Site Debug Records),
+`chr5110` (dead code ranges the decompiler drops) and `mp0090` (bytes before its first function); `notes/debug_records_handoff.md` has the details. When a rebuilt file differs, `--round-trip`
 also compares the two files' debug records function by function and reports the first difference in each
 (`compare_file_records`, e.g. `AniDamage record 3: 1 args, original 2`).
 
