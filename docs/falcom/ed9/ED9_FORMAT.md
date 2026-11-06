@@ -2,7 +2,7 @@
 
 > Status: current. How `falcom/ed9/parser/`, `falcom/ed9/structs/` and `falcom/ed9/disasm/` (on the generic
 > `assembler/`) read an ED9 script (`.dat`), and how the games on this format differ. What the VM does with a script:
-> `docs/falcom/ed9/ED9_VM.md`.
+> `docs/falcom/ed9/ED9_VM.md`. Game tables (`.tbl`): `docs/falcom/ed9/TBL_FORMAT.md`.
 
 ## Layer 1: Parser — Done
 
