@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for the readable .dat listing (.debug.txt, falcom/ed9/parser/scp_listing.py): the sections, every code byte
-listed once, record tags at their calls, escaped text, and scena2py's write_debug_info / debug_sections."""
+listed once, record tags at their calls, escaped text, and scp2py's write_debug_info / debug_sections."""
 
 from dataclasses import fields
 from pathlib import Path
@@ -19,8 +19,8 @@ from falcom.ed9.disasm import ED9Opcode
 from falcom.ed9.parser.code_layout import code_start
 from falcom.ed9.parser.scp_listing import BYTES_WIDTH, COLUMN_GAP, ListingSections, ScpListing
 from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo
-from falcom.ed9.scena2py_base import process_file
-from falcom.ed9.scena2py_config import ScenaDecompileConfig
+from falcom.ed9.scp2py_base import process_file
+from falcom.ed9.scp2py_config import ScpDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
@@ -373,7 +373,7 @@ class TestProcessFile(unittest.TestCase):
 
     def listing_text(self, dat: Path, **settings) -> str:
         """dat's .debug.txt from process_file, every other output off, into an output folder of its own"""
-        config = ScenaDecompileConfig()
+        config = ScpDecompileConfig()
         config.output_dir = Path(tempfile.mkdtemp(dir=self.tmp))
         for flag in IR_OUTPUTS:
             setattr(config, flag, False)

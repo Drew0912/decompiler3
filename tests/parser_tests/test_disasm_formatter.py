@@ -19,7 +19,7 @@ FALLTHROUGH_TARGET = 0x20
 
 
 def disasm_to_dsl(name: str, bytecode: bytes) -> list[str]:
-    """Disassemble hand-coded bytecode and format it, same path scena2py.py uses for .py output"""
+    """Disassemble hand-coded bytecode and format it, same path scp2py.py uses for .py output"""
     context = DisassemblerContext(create_fallthrough_jump=ed9_create_fallthrough_jump)
     disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
 

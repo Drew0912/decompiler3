@@ -97,11 +97,11 @@ jumps to adds `jumped to by unreachable code`; unreachable code itself (fidelity
 stack and gets no stack comments. A slot that holds anything but one parameter or a local prints
 everything it may hold (`slot 2 = arg1 or local`, `slot 1 = caller frame`, `slot 0 = call setup`,
 `slot -1 (below the stack)`, `slot 5 (above the stack)`), and the parser logs a warning; none occur in
-the `sora2` scripts. `ScenaDecompileConfig.stack_slot_comments` (on by default) turns the stack
+the `sora2` scripts. `ScpDecompileConfig.stack_slot_comments` (on by default) turns the stack
 comments off in scripts; the common-function library (§3) always has them, labels named `L0`, `L1`, ...
 (`label(L0)  # sp = 3`). Comments don't change the compiled bytes.
 
-Three more kinds are opt-in, script `.py` only (`ScenaDecompileConfig`, all off by default):
+Three more kinds are opt-in, script `.py` only (`ScpDecompileConfig`, all off by default):
 `call_arg_comments` numbers each push by the argument it becomes (`arg1` is the last push), for `CALL`,
 `CALL_SCRIPT`, `CALL_SCRIPT_NO_RETURN` and `SYSCALL` - after an offset opcode's slot reference it reads
 `passed as`; `float_bits_comments` adds `PUSH_FLOAT`'s float32 bits and stored word;
@@ -267,9 +267,9 @@ checks only).
 
 **Generation** (bytecode → `.py`): `Formatter.format_function`/`format_block`
 (`falcom/ed9/disasm/formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
-`scena2py_base.write_python_dsl` (`falcom/ed9/scena2py_base.py`). `ScpParser.gen_python_script(functions,
+`scp2py_base.write_python_dsl` (`falcom/ed9/scp2py_base.py`). `ScpParser.gen_python_script(functions,
 comments = CommentOptions(...))` picks the optional comments (`falcom/ed9/disasm/llil_dsl_comments.py`;
-`scena2py` builds them from its config); the validator keeps the defaults, so the logic round trip
+`scp2py` builds them from its config); the validator keeps the defaults, so the logic round trip
 checks that the stack comments reach the fixed point too. A generated script first puts the repo root on `sys.path` (`import sys` and
 `sys.path.insert(0, '<root>')`, the root of the checkout that generated it - `SYS_PATH_SETUP_LINES` in
 `falcom/ed9/parser/scp.py`, from `dc3.utils.PROJECT_ROOT`), so it runs from any folder without `PYTHONPATH`; moving the
@@ -279,7 +279,7 @@ ignored; an import error inside the hook stops the compile; `docs/dsl/HOOKS.md`,
 library (§3). Its footer calls `main()`, which compiles the script when it is run directly. Every generated text file is written
 with `\n` line endings.
 
-**The `.dat` listing** (`.debug.txt`, `ScenaDecompileConfig.write_debug_info`, off by default): the
+**The `.dat` listing** (`.debug.txt`, `ScpDecompileConfig.write_debug_info`, off by default): the
 byte-level companion of the `.py`, read-only and never compiled - the whole file as the VM sees it
 (`falcom/ed9/parser/scp_listing.py`). Sections, each switched in `debug_sections = ListingSections(...)`:
 the header, the global vars, each function's table entry (parameters as the `.py` declares them), its
@@ -310,10 +310,10 @@ file name, so a two-suffix input (`X.original.dat`) compiles to `X.original.dat`
 name.
 
 **What's opt-in, not default:** round-trip fidelity depends on
-`ScpParser(round_trip=True, keep_unreachable_code=True)`. `scena2py_config.py` — the everyday CLI
+`ScpParser(round_trip=True, keep_unreachable_code=True)`. `scp2py_config.py` — the everyday CLI
 config — sets both to `False`. The validator passes both explicitly (`decompile_to_python`: `True`
 for `--round-trip`, `False` for `--logic-round-trip`), so it does not depend on `ScpParser`'s class
-defaults. Anyone using `scena2py.py` directly for byte-exact recompilation needs to set both flags
+defaults. Anyone using `scp2py.py` directly for byte-exact recompilation needs to set both flags
 to `True`.
 
 **What's actually verified, and what isn't:** `--round-trip` is byte-identical on the validator's 5
@@ -342,7 +342,7 @@ files in it gitignored; later the game's chr table too): `common/scp_writer_comm
 (re-exports every generated module via `import *`). Each module lists only its own functions in
 `__all__`, so `common_all` exports library functions and nothing else: re-exporting the helper's
 names a second time made type checkers treat aliases like `Value32` as variables. A parser knows its
-game (`ScpParser.load(..., game=...)`; each game's `scena2py.py` passes its own, `None` means no
+game (`ScpParser.load(..., game=...)`; each game's `scp2py.py` passes its own, `None` means no
 library). At decompile time, `ScpParser` (`scp.py`) matches each of a script's own common functions
 against its game's index by name *and* fingerprint (`match_library_functions`) — a name whose body
 diverges from the canonical library variant is left inline, unchanged. **Every script decompiled for
@@ -374,7 +374,7 @@ a failed import inside the library — re-raises instead of being swallowed. A s
 without a game (`game=None`: the
 round-trip validator without `--game`, most tests) has no library import at all. The *manifest* —
 i.e. what actually gets matched and baked into bytecode — is gated in `match_library_functions` on
-a game, on `not (self.round_trip or self.keep_unreachable_code)` (the everyday `scena2py_config.py`
+a game, on `not (self.round_trip or self.keep_unreachable_code)` (the everyday `scp2py_config.py`
 default; the library was generated with unreachable code already stripped, so either fidelity flag
 falls back to inlining everything, exactly as before this existed), and on the game's index
 (`common_library_index` in `parser/scp.py`, loaded once per game per process). It **imports the

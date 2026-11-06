@@ -178,7 +178,7 @@ ignore on the star-import line lets a replacement keep its function's name: basi
 imported `CheckAlgoUse` as clashing with the hook's own `def`. A hook that assigns its own `original` hides the
 helper's. Importing the script for real from its hook would run it a second time ("duplicate function name").
 
-**Hook template.** `ScenaDecompileConfig.write_hook_template` (off by default; only with `write_py`) writes a
+**Hook template.** `ScpDecompileConfig.write_hook_template` (off by default; only with `write_py`) writes a
 starting `<stem>_hook.py` next to `<stem>.py` (`ScpParser.gen_hook_template`), never over an existing file (a log
 line instead). It holds the Pylance lines above, then three hooks with their `register*` lines commented out: a
 `run_hook(g)` that adds each function in its list (decompiler2's way of adding functions) and no-op `func_hook` and

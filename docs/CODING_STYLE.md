@@ -54,7 +54,7 @@ open, plus the project's own rules. `CLAUDE.md` imports this file; `AGENTS.md` t
   adds lines is fine. Split a large module into several files when its parts do separate jobs, each file named for
   its job; do not split only to make files smaller.
 - **A standalone script's settings:** a plain class in its own module whose typed attribute defaults are the
-  settings, instantiated by the script that uses it (e.g. `ScenaDecompileConfig`, `falcom/ed9/scena2py_config.py`);
+  settings, instantiated by the script that uses it (e.g. `ScpDecompileConfig`, `falcom/ed9/scp2py_config.py`);
   no module-level instance, and no `--config` flag or dynamic loading unless asked.
 
 ## Files

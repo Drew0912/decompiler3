@@ -117,7 +117,7 @@ def collect_hlil_lines(hlil_func) -> list[int]:
 
 
 def analyse_file(path: Path) -> list[FunctionReport]:
-    """Line sequences per function, from the pipeline scena2py.py decompiles with"""
+    """Line sequences per function, from the pipeline scp2py.py decompiles with"""
     raise_recursion_limit()
     reports = []
 

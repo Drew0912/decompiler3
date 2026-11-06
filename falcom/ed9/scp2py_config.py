@@ -1,4 +1,4 @@
-"""User-editable settings for scena2py.py. Edit the class attribute defaults below directly."""
+"""User-editable settings for scp2py.py. Edit the class attribute defaults below directly."""
 
 from pathlib import Path
 from typing import Callable
@@ -8,8 +8,8 @@ from .parser.scp_listing import ListingSections
 from .parser.parser_types import Function
 
 
-class ScenaDecompileConfig(StrictBase):
-    """Output and parser flags for scena2py.py, read directly off this instance's attributes"""
+class ScpDecompileConfig(StrictBase):
+    """Output and parser flags for scp2py.py, read directly off this instance's attributes"""
 
     # Primary outputs
     write_py: bool = True   # round-trippable VM-bytecode Python DSL (.py)

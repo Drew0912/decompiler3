@@ -18,8 +18,8 @@ from codegen.typescript import TypeScriptGenerator
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.structs.scp_types import ScpValue
-from falcom.ed9.scena2py_base import process_file
-from falcom.ed9.scena2py_config import ScenaDecompileConfig
+from falcom.ed9.scp2py_base import process_file
+from falcom.ed9.scp2py_config import ScpDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
 from ir.core import SourceFloat, constant_values_equal
 from ir.hlil import HLILConst
@@ -158,7 +158,7 @@ class TestDecompiledFloats(unittest.TestCase):
 
             writer.run({'Short': Short, 'Exact': Exact, 'Negative': Negative})
 
-            config = ScenaDecompileConfig()
+            config = ScpDecompileConfig()
             config.output_dir = Path(tmp) / 'out'
             config.write_llil_asm = True
             config.write_hlil_ts = True

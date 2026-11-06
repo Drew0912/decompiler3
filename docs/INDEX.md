@@ -25,12 +25,12 @@ languages, touches the generic / Falcom boundary, or the pipeline is not known y
 
 ## Running the decompiler
 
-Each game has its own launcher, as in decompiler2: `python falcom/ed9/games/<game>/scena2py.py <file or folder>`
+Each game has its own launcher, as in decompiler2: `python falcom/ed9/games/<game>/scp2py.py <file or folder>`
 decompiles that game's `.dat` scripts (folders are searched recursively; the game's own are in
-`falcom/ed9/games/<game>/extracted/`) with the settings in `falcom/ed9/scena2py_config.py` (`ScenaDecompileConfig`:
+`falcom/ed9/games/<game>/extracted/`) with the settings in `falcom/ed9/scp2py_config.py` (`ScpDecompileConfig`:
 which outputs, the parser flags; one config for every game) into the game's `out/<stem>/`, or `<folder>/<stem>/` with
 `-o <folder>`, matching common functions against the game's own library once it is generated (`dsl/LLIL_DSL.md` §3).
-Every launcher runs the shared pipeline in `falcom/ed9/scena2py_base.py`, so it is the way to check a decompile: write
+Every launcher runs the shared pipeline in `falcom/ed9/scp2py_base.py`, so it is the way to check a decompile: write
 the outputs before a change, again after it, and diff them. Like the tests and generated scripts, the launchers and the
 `tools/` and `demos/` scripts put the repo root on `sys.path` themselves: no `PYTHONPATH`.
 
@@ -39,17 +39,17 @@ Python `entries` lists in the game's `out/tables/`, or `<folder>/` with `-o <fol
 
 A test or verification run writes nothing inside the repo:
 - `tbl2py`: `python falcom/ed9/games/<game>/tbl2py.py <file or folder> -o <scratch folder>`.
-- `scena2py`: `python falcom/ed9/games/<game>/scena2py.py <file or folder> -o <scratch folder>`. A run that needs
+- `scp2py`: `python falcom/ed9/games/<game>/scp2py.py <file or folder> -o <scratch folder>`. A run that needs
   other settings (e.g. `round_trip = True`) uses a driver script in a scratch folder:
 
   ```python
   import sys
   from pathlib import Path
   sys.path.insert(0, r'<repo root>')
-  from falcom.ed9.scena2py_base import process_file
-  from falcom.ed9.scena2py_config import ScenaDecompileConfig
+  from falcom.ed9.scp2py_base import process_file
+  from falcom.ed9.scp2py_config import ScpDecompileConfig
 
-  config = ScenaDecompileConfig()
+  config = ScpDecompileConfig()
   config.output_dir = Path(r'<scratch folder>')
   process_file(Path(r'<script>.dat'), config, game='sora2')
   ```

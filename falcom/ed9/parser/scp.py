@@ -618,7 +618,7 @@ class ScpParser(StrictBase):
         game: str | None = None,
         filter_func: Callable[[Function], bool] | None = None,
     ) -> tuple[ScpParser, list[Function]]:
-        """Read path, parse, and disassemble every function - the setup every caller (scena2py.py,
+        """Read path, parse, and disassemble every function - the setup every caller (scp2py.py,
         the common-function generator, the round-trip validator, tests) otherwise repeats by hand.
         The parser stays fully usable afterward (get_instructions, get_func_name_from_func_id, etc.
         are all in-memory)."""
@@ -1168,7 +1168,7 @@ class ScpParser(StrictBase):
     def gen_python_script(self, functions: list[Function], *, preamble: list[str] = (),
                           comments: CommentOptions = CommentOptions()) -> str:
         """Full generated .py text: header (incl. shared-library imports/manifest), an optional
-        preamble (e.g. scena2py_base.py's common-functions-omitted warning), every function this script
+        preamble (e.g. scp2py_base.py's common-functions-omitted warning), every function this script
         must still define itself, then the footer. match_library_functions runs once here and its
         result feeds both the header and the inline-function filter, so the two never disagree about
         which functions are imported"""

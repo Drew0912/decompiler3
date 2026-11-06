@@ -16,8 +16,8 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.ir.llil import ED9LiftError, ED9VMLifter
 from falcom.ed9.parser.scp import ScpDisassemblyError, ScpParser
-from falcom.ed9.scena2py_base import main
-from falcom.ed9.scena2py_config import ScenaDecompileConfig
+from falcom.ed9.scp2py_base import main
+from falcom.ed9.scp2py_config import ScpDecompileConfig
 from falcom.ed9.writer.scp_compile_check import CompileCheckError, definition_line
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_asm import SPLIT_POP_BYTES
@@ -1091,7 +1091,7 @@ class TestErrors(CheckTestCase):
         self.assertIsInstance(error.__cause__, NotImplementedError)
 
     def test_decompiling_reports_the_new_types(self):
-        """scena2py's main() logs type(e).__name__: a file the parser rejects (ERROR, exit code 1), and a function the
+        """scp2py's main() logs type(e).__name__: a file the parser rejects (ERROR, exit code 1), and a function the
         lifter rejects (WARNING, the file still decompiles)"""
         file_error = rf'^{re.escape(str(self.dat))}: ScpDisassemblyError: WrongPop: RETURN at {HEX}: the stack is not empty'
         lift_warning = rf'\[Above\]: ED9LiftError: Above: LOAD_STACK at {HEX}: Read of slot 0 at or above sp=0'
@@ -1103,8 +1103,8 @@ class TestErrors(CheckTestCase):
             with self.subTest(define=define.__name__):
                 self.dat.write_bytes(self.compiled(define))
                 with (
-                    mock.patch.object(sys, 'argv', ['scena2py', str(self.dat)]),
-                    mock.patch.object(ScenaDecompileConfig, 'output_dir', self.tmp / 'out'),
+                    mock.patch.object(sys, 'argv', ['scp2py', str(self.dat)]),
+                    mock.patch.object(ScpDecompileConfig, 'output_dir', self.tmp / 'out'),
                     self.assertLogs(log, level) as logs,
                 ):
                     self.assertEqual(main('sora2'), exit_code)

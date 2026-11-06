@@ -12,8 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from dc3.gc_policy import GC_THRESHOLD, infrequent_gc
-from falcom.ed9 import scena2py_base
-from falcom.ed9.scena2py_config import ScenaDecompileConfig
+from falcom.ed9 import scp2py_base
+from falcom.ed9.scp2py_config import ScpDecompileConfig
 from falcom.ed9.writer.scp_writer import ScpWriter
 
 OUTER_THRESHOLDS = (700, 11, 12)
@@ -77,9 +77,9 @@ class TestEntryPoints(unittest.TestCase):
         raise Stop
 
     def test_decompile_runs_under_it(self):
-        with mock.patch.object(scena2py_base.ScpParser, 'load', side_effect=self.record_and_stop):
+        with mock.patch.object(scp2py_base.ScpParser, 'load', side_effect=self.record_and_stop):
             with self.assertRaises(Stop):
-                scena2py_base.process_file(Path('x.dat'), ScenaDecompileConfig(), game='sora2')
+                scp2py_base.process_file(Path('x.dat'), ScpDecompileConfig(), game='sora2')
 
         self.assertEqual(self.seen, [GC_THRESHOLD])
         self.assertEqual(gc.get_threshold(), OUTER_THRESHOLDS)

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""End to end: scena2py's .ts leaves out a local call's trailing arguments equal to the callee's defaults, with the
+"""End to end: scp2py's .ts leaves out a local call's trailing arguments equal to the callee's defaults, with the
 defaults converted as the lifter converts them (so a float default matches its argument), from the whole function
 table (a callee left out of the output still counts); a Raw argument is not an Integer default. In a round trip it
 keeps the arguments a call's debug record says its author wrote."""
@@ -14,8 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
-from falcom.ed9.scena2py_base import process_file
-from falcom.ed9.scena2py_config import ScenaDecompileConfig
+from falcom.ed9.scp2py_base import process_file
+from falcom.ed9.scp2py_config import ScpDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_writer_test_utils import fresh_writer
 
@@ -66,7 +66,7 @@ def decompile(filter_func=None) -> str:
 
         writer.run({'Callee': Callee, 'Main': Main})
 
-        config = ScenaDecompileConfig()
+        config = ScpDecompileConfig()
         config.output_dir = Path(tmp) / 'out'
         config.filter_func = filter_func
         process_file(dat, config, game='sora2')
@@ -100,7 +100,7 @@ def decompile_written(round_trip: bool) -> str:
 
         writer.run({})
 
-        config = ScenaDecompileConfig()
+        config = ScpDecompileConfig()
         config.output_dir = Path(tmp) / 'out'
         config.round_trip = round_trip
         process_file(dat, config, game='sora2')

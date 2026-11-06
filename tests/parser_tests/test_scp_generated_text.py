@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Text of the generated LLIL DSL .py (header, hook import, label spacers, footer, the omitted-commons comment),
-scena2py's recursion limit and summary, the opt-in hook template, a fidelity script compiling back to its bytes,
-and LF line endings in every generated text file (scena2py_base.process_file, the common-library generator, the
+scp2py's recursion limit and summary, the opt-in hook template, a fidelity script compiling back to its bytes,
+and LF line endings in every generated text file (scp2py_base.process_file, the common-library generator, the
 round-trip validator's intermediate scripts)."""
 
 from pathlib import Path
@@ -27,8 +27,8 @@ from falcom.ed9.tools import gen_common_library as gen
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import GlobalVar
 from falcom.ed9.structs.scp_types import ScpGlobalVar
-from falcom.ed9.scena2py_base import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file
-from falcom.ed9.scena2py_config import ScenaDecompileConfig
+from falcom.ed9.scp2py_base import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file
+from falcom.ed9.scp2py_config import ScpDecompileConfig
 import scp_roundtrip_validator
 from scp_roundtrip_validator import compile_round, decompile_to_python
 from tests.shared.corpus import SORA2_SCRIPTS, require, require_library
@@ -234,7 +234,7 @@ class TestHookImportRuns(unittest.TestCase):
 
 
 class TestHookTemplate(unittest.TestCase):
-    """The starting <stem>_hook.py written with ScenaDecompileConfig.write_hook_template"""
+    """The starting <stem>_hook.py written with ScpDecompileConfig.write_hook_template"""
 
     def test_text(self):
         self.assertEqual(named_parser('ai_chr5122_e00.dat').gen_hook_template(), HOOK_TEMPLATE)
@@ -269,7 +269,7 @@ class TestHookTemplateWritten(unittest.TestCase):
     def setUp(self):
         require(SMALL_FILE)
         self.out = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.config = ScenaDecompileConfig()
+        self.config = ScpDecompileConfig()
         self.config.output_dir = self.out
         self.config.write_ts = self.config.write_hlil_ts = self.config.write_mlil_asm = False
 
@@ -327,7 +327,7 @@ class TestHookTemplateCompiles(unittest.TestCase):
     def setUp(self):
         require(SMALL_FILE)
         out = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        config = ScenaDecompileConfig()
+        config = ScpDecompileConfig()
         config.output_dir = out
         config.write_ts = config.write_mlil_asm = False
         config.write_hook_template = True
@@ -439,7 +439,7 @@ class TestLineEndings(unittest.TestCase):
 
     def test_process_file_writes_lf(self):
         require(TEST_FILE)
-        config = ScenaDecompileConfig()
+        config = ScpDecompileConfig()
         config.write_llil_asm = config.write_llil_dot = config.write_mlil_asm = config.write_mlil_dot = True
         config.write_hlil_ts = config.write_debug_info = config.write_hook_template = True
 
@@ -481,8 +481,8 @@ class TestScena2py(unittest.TestCase):
         require(SMALL_FILE)
         self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
 
-    def config(self, **settings) -> ScenaDecompileConfig:
-        config = ScenaDecompileConfig()
+    def config(self, **settings) -> ScpDecompileConfig:
+        config = ScpDecompileConfig()
         config.output_dir = self.tmp
         config.write_ts = config.write_mlil_asm = False
         for name, value in settings.items():
@@ -517,8 +517,8 @@ class TestScena2py(unittest.TestCase):
 
     def test_main_logs_how_many_files_succeeded(self):
         with (
-            mock.patch.object(sys, 'argv', ['scena2py', str(SMALL_FILE)]),
-            mock.patch.object(ScenaDecompileConfig, 'output_dir', self.tmp),
+            mock.patch.object(sys, 'argv', ['scp2py', str(SMALL_FILE)]),
+            mock.patch.object(ScpDecompileConfig, 'output_dir', self.tmp),
             self.assertLogs(log, logging.INFO) as logs,
         ):
             self.assertEqual(main('sora2'), 0)

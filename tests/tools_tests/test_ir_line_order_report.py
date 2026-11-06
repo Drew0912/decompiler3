@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for tools/ir_line_order_report.py: MLIL line directives are read in address order, and
-analyse_file gives itself scena2py_base.py's recursion headroom. BlockMergePass splices a block onto its only
+analyse_file gives itself scp2py_base.py's recursion headroom. BlockMergePass splices a block onto its only
 predecessor wherever that sits in the block list, so reading MLIL in block order reports line
 reorders the bytecode does not have."""
 
@@ -67,7 +67,7 @@ class TestMLILLinesInAddressOrder(unittest.TestCase):
 
 
 class TestAnalyseFileMatchesScena2py(unittest.TestCase):
-    """The report describes the generated .ts only with scena2py's recursion headroom: the most deeply nested
+    """The report describes the generated .ts only with scp2py's recursion headroom: the most deeply nested
     scripts are not dropped"""
 
     def setUp(self):
@@ -75,7 +75,7 @@ class TestAnalyseFileMatchesScena2py(unittest.TestCase):
         self.addCleanup(sys.setrecursionlimit, sys.getrecursionlimit())
         sys.setrecursionlimit(PYTHON_DEFAULT_RECURSION_LIMIT)
 
-    def test_raises_the_recursion_limit_to_scena2py_headroom(self):
+    def test_raises_the_recursion_limit_to_scp2py_headroom(self):
         analyse_file(SMALL_SCRIPT)
 
         self.assertGreaterEqual(sys.getrecursionlimit(), RECURSION_LIMIT)

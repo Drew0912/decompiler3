@@ -35,7 +35,7 @@ byte.
 - **Float bits comment, opt-in** (item 2; Step 8a, done). `PUSH_FLOAT(0.3)  # f32 0x3E999998, raw 0x8FA66666`:
   the float32 the VM computes with and the stored word a hex editor shows, in unreachable code too; not on
   float defaults in `def` lines (a line with several would get long). Off by default:
-  `ScenaDecompileConfig.float_bits_comments` (`falcom/ed9/scena2py_config.py`).
+  `ScpDecompileConfig.float_bits_comments` (`falcom/ed9/scp2py_config.py`).
 - **Stack-slot comments, on by default** (item 8; Steps 6a, 6b, 7). The same variable gets a different
   offset as the stack moves: `LOAD_STACK(-16)` is `arg2` at `CheckAlgoUse`'s source line 162 and `arg3`
   at line 168. Step 6a (done) keeps the parser's simulated stack on `Function` as `stack_layout`
@@ -51,7 +51,7 @@ byte.
 
   Parameters are numbered as in every other output (`arg1` is the highest parameter slot); a parameter
   slot that is popped and pushed again (the tail-call idiom) is a local from then on. Unreachable code
-  (fidelity mode) has no simulated stack, so it gets no stack comments. A `ScenaDecompileConfig` flag turns
+  (fidelity mode) has no simulated stack, so it gets no stack comments. A `ScpDecompileConfig` flag turns
   them off in scripts; the validator keeps the default, so the logic round trip checks that the comments
   reach the fixed point too.
   ```python
@@ -88,12 +88,12 @@ byte.
   Every call kind that takes arguments gets them: `CALL`, `CALL_SCRIPT`, `CALL_SCRIPT_NO_RETURN` and
   `SYSCALL`, which leaves its arguments on the stack (a push two calls read gets both numbers). When two
   branches push an argument, both pushes get its number. Off by default:
-  `ScenaDecompileConfig.call_arg_comments`. Script `.py` only, not the library.
+  `ScpDecompileConfig.call_arg_comments`. Script `.py` only, not the library.
 - **Per-function comment, opt-in** (item 3; Step 8a, done), with the function's table index (what
   `PUSH_CURRENT_FUNC_ID` pushes; the table is sorted by name) and code offset, as decompiler2's output
   had: `# id: 0x0000 offset: 0x33FF` above the decorator. The offset changes after the first recompile
   (library functions are registered first), like `loc_` labels; the fixed point still holds from round 2.
-  Off by default: `ScenaDecompileConfig.function_id_comments`.
+  Off by default: `ScpDecompileConfig.function_id_comments`.
 - **The hook import re-raises real errors** (item 6; Step 2a, done). The generated
   `except ModuleNotFoundError: pass` also swallowed a failed import inside the hook: the registrations
   before the failing line ran, the rest were skipped, and the script exited 0. The block
@@ -160,7 +160,7 @@ byte.
   (`original.Name(...)`, `inline_original_func()`); the writer's errors about a hook and compile-check
   failures in it point at the hook's own line. The bare names come from
   `falcom/ed9/writer/scp_writer_hooks.py`; hooks reach the writer through `get_scp_writer()`, no
-  `get_scena()`; `ScenaDecompileConfig.write_hook_template` writes a starting hook next to a decompiled
+  `get_scena()`; `ScpDecompileConfig.write_hook_template` writes a starting hook next to a decompiled
   script. Full description: `docs/dsl/HOOKS.md`. Tree hooks stay with the HLIL DSL
   (`docs/dsl/HOOKS.md`, HLIL DSL: Hooks and Patching).
 - **Clear errors for bad values** (item 12; Step 2b, done). `ScpValue(True)` failed with a bare

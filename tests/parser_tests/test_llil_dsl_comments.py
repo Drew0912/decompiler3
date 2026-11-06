@@ -17,8 +17,8 @@ from falcom.ed9.disasm.llil_dsl_comments import COMMENT_COLUMN, MIN_COMMENT_GAP,
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import SlotRef
 from falcom.ed9.structs.scp_types import FloatWord, ScpValue
-from falcom.ed9.scena2py_base import process_file
-from falcom.ed9.scena2py_config import ScenaDecompileConfig
+from falcom.ed9.scp2py_base import process_file
+from falcom.ed9.scp2py_config import ScpDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import RETURN
 from ir.llil.llil import WORD_SIZE
 from tests.shared.corpus import SORA2_SCRIPTS, require
@@ -392,7 +392,7 @@ class TestRealScript(unittest.TestCase):
         self.assertIn('    LOAD_STACK(-16)                 # slot 1 = arg2, passed as arg2', lines)
         self.assertIn('    LOAD_STACK(-24)                 # slot 0 = arg3, passed as arg1', lines)
 
-    def test_scena2py_flags(self):
+    def test_scp2py_flags(self):
         """The defaults, then each flag the other way on its own"""
         markers = {
             'stack_slot_comments'   : '# slot 2 = arg1',
@@ -402,7 +402,7 @@ class TestRealScript(unittest.TestCase):
         }
         for flipped in (None, *markers):
             with self.subTest(flipped=flipped), tempfile.TemporaryDirectory() as tmp_dir:
-                config = ScenaDecompileConfig()
+                config = ScpDecompileConfig()
                 config.output_dir = Path(tmp_dir)
                 config.write_ts = config.write_hlil_ts = config.write_mlil_asm = False
                 if flipped is not None:

@@ -54,10 +54,10 @@ wrong for the shape.
 **Other statements:** `HLILBlock`, `HLILAssign`, `HLILExprStmt`, `HLILIntrinsic` (a VM instruction kept as a
 statement of its own, `POPN(...)` / `DEBUG_INT(n)`), `HLILComment` (carries `line(N)`
 markers that the branch-order pass reads to recover original source ordering; with `line_markers` off
-(`ScenaDecompileConfig.line_markers`) they are dropped after every pass that reads them), `HLILUnstructured`
+(`ScpDecompileConfig.line_markers`) they are dropped after every pass that reads them), `HLILUnstructured`
 (a jump the tree cannot express - HLIL has no goto; terminal: the path ends there visibly instead
 of falling through. TypeScript renders it as a comment plus `throw new Error("unstructured: loc_X")`,
-the `.hlil.ts` listing as `goto loc_X;`. `falcom/ed9/scena2py_base.py` warns about every one on a path that
+the `.hlil.ts` listing as `goto loc_X;`. `falcom/ed9/scp2py_base.py` warns about every one on a path that
 can run (`reachable_statements`), and the logic check (`tools/logic_check/`, run by `tools/ir_semantic_validator.py`)
 reports it as the difference `unstructured_jump`; none occurs in the sora2 corpus, two in `TestEmotion` of
 `scena/a0000.dat` in kuro1, kuro2 and kai1).
@@ -145,7 +145,7 @@ out a call's longest tail of literal constants equal to the callee's declared de
 compiler's own rule, and the signature prints the defaults: `camera_lookat(63.153, 29.174, -63.103, 0, 3,
 -1)` prints `camera_lookat(63.153, 29.174, -63.103, 0)`. Equal is `constant_values_equal`, as the HLIL
 passes compare constants: the same type (an Integer `0` is not a Raw `0` or `0.0`), floats by bits and
-spelling. `scena2py` passes `generate_typescript` every function's defaults as the lifter converts them
+spelling. `scp2py` passes `generate_typescript` every function's defaults as the lifter converts them
 (`ED9VMLifter.source_value`), from the whole function table. In a round trip (`ScpParser.round_trip`) it
 also passes the function's `call_written_argc` - each paired local call's debug-record count by CALL offset -
 and a call never drops an argument its author wrote: it prints the larger of the two counts, found by

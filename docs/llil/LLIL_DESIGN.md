@@ -183,7 +183,7 @@ Each block also keeps `sp_in`, the `sp` at its start.
 
 ## Formatting
 
-`falcom/ed9/scena2py_base.py` writes `FalcomLLILFormatter.format_llil_function()` to `<script>.llil.asm`:
+`falcom/ed9/scp2py_base.py` writes `FalcomLLILFormatter.format_llil_function()` to `<script>.llil.asm`:
 one header per block (`block_N(0xADDR), label, [sp = N]`, plus `fp` on the entry) and each
 instruction in an expanded pseudo-code form (`STACK[sp] = ...`, `STACK[--sp]`). String constants
 print single-quoted with Python escapes (`quote_string`), so a quote or line break stays inside

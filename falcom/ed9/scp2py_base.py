@@ -1,11 +1,11 @@
-"""The decompile pipeline each game's scena2py.py runs: ED9 .dat scripts into the Python DSL, TypeScript, .hlil.ts and
+"""The decompile pipeline each game's scp2py.py runs: ED9 .dat scripts into the Python DSL, TypeScript, .hlil.ts and
 optional IR debug dumps.
 
 Usage, from a game's launcher:
-    python falcom/ed9/games/{game}/scena2py.py {file_path} [-o {output_dir}]
+    python falcom/ed9/games/{game}/scp2py.py {file_path} [-o {output_dir}]
 
-Flags live in scena2py_config.py, not on the command line (only the output folder has an
-override, -o) - edit scena2py_config.py to change which outputs are written and which
+Flags live in scp2py_config.py, not on the command line (only the output folder has an
+override, -o) - edit scp2py_config.py to change which outputs are written and which
 ScpParser flags are used.
 """
 
@@ -28,7 +28,7 @@ from ir.mlil.mlil_formatter import MLILFormatter
 from ir.hlil.hlil import HLILUnstructured, reachable_statements
 from ir.hlil.hlil_formatter import HLILFormatter
 from codegen import generate_typescript, generate_typescript_header
-from falcom.ed9.scena2py_config import ScenaDecompileConfig
+from falcom.ed9.scp2py_config import ScpDecompileConfig
 
 GAME_OUTPUT_FOLDER = 'out'      # a game's default output folder, beside its launcher
 
@@ -60,7 +60,7 @@ def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
         log.info(f'{path} exists - not overwritten')
 
 
-def output_root(config: ScenaDecompileConfig, game: str) -> Path:
+def output_root(config: ScpDecompileConfig, game: str) -> Path:
     """config.output_dir, or the game's out/ when it is None"""
     if config.output_dir is None:
         return GAMES_DIR / game / GAME_OUTPUT_FOLDER
@@ -69,7 +69,7 @@ def output_root(config: ScenaDecompileConfig, game: str) -> Path:
 
 
 @infrequent_gc()
-def process_file(path: Path, config: ScenaDecompileConfig, *, game: str) -> None:
+def process_file(path: Path, config: ScpDecompileConfig, *, game: str) -> None:
     raise_recursion_limit()
 
     output_dir = output_root(config, game) / path.stem
@@ -114,7 +114,7 @@ def callee_default_values(parser: ScpParser) -> dict[str, tuple]:
             for func in parser.functions}
 
 
-def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScenaDecompileConfig,
+def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScpDecompileConfig,
                      out: Path) -> None:
     """The .llil.asm, .mlil.asm, .hlil.ts, .ts and .dot outputs the config asks for"""
     output_dir = out.parent
@@ -192,11 +192,11 @@ def main(game: str) -> int:
         description=f'Decompile {game} .dat scripts into the Python DSL, TypeScript, .hlil.ts and optional debug dumps')
     arg_parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
     arg_parser.add_argument('-o', '--output-dir', type=Path,
-                            help=f"output folder (default: scena2py_config.py's output_dir, or {game}'s out/)")
+                            help=f"output folder (default: scp2py_config.py's output_dir, or {game}'s out/)")
 
     args = arg_parser.parse_args()
     files = collect_paths(args.paths)
-    config = ScenaDecompileConfig()
+    config = ScpDecompileConfig()
     if args.output_dir is not None:
         config.output_dir = args.output_dir
 

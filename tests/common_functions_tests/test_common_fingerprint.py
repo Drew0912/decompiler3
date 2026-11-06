@@ -24,7 +24,7 @@ OTHER_BASE = 0x40
 
 
 def load_function(relative_path: str, name: str):
-    """(parser, function) for one common function of a local sora2_1.0 script, decompiled like scena2py.py"""
+    """(parser, function) for one common function of a local sora2_1.0 script, decompiled like scp2py.py"""
     path = require(SORA2_SCRIPTS / relative_path)
     parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False,
                                        filter_func=lambda f: f.name == name)

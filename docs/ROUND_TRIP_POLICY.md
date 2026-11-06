@@ -7,7 +7,7 @@ Two tiers, in priority order:
 
 1. **Logic round trip — required, high priority.** `source.dat → out1.py → c1.dat → out2.py → c2.dat → …`, with
    every decompile using `round_trip=False, keep_unreachable_code=False` (the everyday
-   `scena2py_config.py` defaults). Every function in each recompiled `.dat` must match its source
+   `scp2py_config.py` defaults). Every function in each recompiled `.dat` must match its source
    counterpart: normalized body + signature (position-independent fingerprint, keyed by name —
    `falcom/ed9/structs/fingerprint.py`), `is_common_func`, the global table as ordered
    `(name, type)` tuples, and header `dword_14`. Function order and label names may differ.
@@ -69,5 +69,5 @@ the engine's own calls: `docs/falcom/ed9/ED9_VM.md`, Engine-called names), and a
 found" or, on some engine paths, is skipped with no log, or another name runs, so dropping it fails silently in game.
 Dead-code elimination removes unreachable code inside a function, never the function; a design that would drop one is
 a finding. The exceptions are opt-in inspection settings in
-`scena2py_config.py` (`include_common_functions = False`, `filter_func`): their output is partial on purpose and its
+`scp2py_config.py` (`include_common_functions = False`, `filter_func`): their output is partial on purpose and its
 `.py` is not meant to recompile.

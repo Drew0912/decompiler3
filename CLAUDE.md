@@ -37,7 +37,7 @@ Tests, guards, reviews and bug hunts follow `docs/HARDENING_POLICY.md` (read it 
 On a cold start, or when asked for an overview, read `docs/INDEX.md` first and follow its routing. Docs are the first stop, not ground truth: check a claim against the source before acting on it.
 
 ## Runs Write Nothing in the Repo
-A run of a repo script (`scena2py.py`, the writer, a `tools/` or `demos/` script, a generated script, a validator)
+A run of a repo script (`scp2py.py`, the writer, a `tools/` or `demos/` script, a generated script, a validator)
 writes nothing inside the repo. Point its outputs at a scratch folder with absolute paths. A script whose outputs
 cannot be redirected (it writes next to its input, next to itself or into the current folder) runs from a scratch
 copy: of its input, or, when it also needs its place in the repo (its `sys.path` line), of the repo or the files it

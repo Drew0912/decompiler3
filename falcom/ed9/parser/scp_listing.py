@@ -34,7 +34,7 @@ GLOBAL_TYPE_NAMES   = {var_type.value: var_type.name for var_type in ScpGlobalVa
 
 @dataclass(frozen=True)
 class ListingSections:
-    """Which sections .debug.txt prints (ScenaDecompileConfig.debug_sections)"""
+    """Which sections .debug.txt prints (ScpDecompileConfig.debug_sections)"""
 
     header              : bool = True
     global_vars         : bool = True
@@ -55,7 +55,7 @@ class ListingSections:
 def write_listing(path: Path, out_path: Path, sections: ListingSections, selected: set[int] | None = None):
     """Write path's listing to out_path; selected = the table indices that get per-function sections (None: all)"""
     if sections.empty:
-        log.warning(f'{path}: every .debug.txt section is off (ScenaDecompileConfig.debug_sections)')
+        log.warning(f'{path}: every .debug.txt section is off (ScpDecompileConfig.debug_sections)')
         lines = [ScpListing.title(path)]
     else:
         lines = ScpListing(path).lines(sections, selected)

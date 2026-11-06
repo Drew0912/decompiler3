@@ -15,7 +15,7 @@ Calls fold under the VM's eager `&&`/`||` since 2026-11-06, so `else if` chains 
 - **Iterative tree walkers.** The MLIL->HLIL converter, the HLIL passes and the TS generator recurse
   once or twice per nesting level, and an `else if` cascade nests one level per test (TS prints it
   flat): `InitBGM`'s ~490-level cascade needs 989 frames in the converter, just under Python's default
-  limit of 1000. `falcom/ed9/scena2py_base.py` and `tools/ir_semantic_validator.py` raise the limit to
+  limit of 1000. `falcom/ed9/scp2py_base.py` and `tools/ir_semantic_validator.py` raise the limit to
   10,000 for now; building cascades in a loop and walking the tree with explicit stacks would remove
   the dependence on it.
 
