@@ -18,7 +18,7 @@ from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLI
                           HLILContinue, HLILReturn, HLILUnstructured, HLILExprStmt, HLILCall, HLILConst, HLILVar,
                           HLILUnaryOp, HLILBinaryOp, UnaryOp, BinaryOp, COMPARISON_FUNCTIONS, HLILStatement,
                           iter_tree, reachable_statements)
-from ir.hlil.mlil_to_hlil import MLILToHLILConverter, constant_condition_truth
+from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from tests.shared.ir_utils import connect
 
@@ -100,6 +100,17 @@ def parameters(func: MediumLevelILFunction) -> list[str]:
     return [p.name for p in func.parameters if p is not None]
 
 
+def _taken(cond, env: dict[str, bool]) -> bool:
+    """Whether a condition _condition built holds"""
+    if isinstance(cond, MLILVar):
+        return env[cond.var.name]
+
+    if isinstance(cond, MLILEq):
+        return cond.lhs.value == cond.rhs.value
+
+    return bool(cond.value)
+
+
 def mlil_run(func: MediumLevelILFunction, env: dict[str, bool]) -> tuple[tuple, tuple, set]:
     """(calls, end, {(block label, calls made before entering it)})"""
     trace, entries, fuel = [], set(), FUEL
@@ -121,9 +132,7 @@ def mlil_run(func: MediumLevelILFunction, env: dict[str, bool]) -> tuple[tuple, 
             block = term.target
             continue
 
-        truth = constant_condition_truth(term.condition)
-        taken = truth if truth is not None else env[term.condition.var.name]
-        block = term.true_target if taken else term.false_target
+        block = term.true_target if _taken(term.condition, env) else term.false_target
 
     return tuple(trace), ('fuel',), entries
 

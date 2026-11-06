@@ -34,7 +34,8 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | Path | Responsibility |
 | --- | --- |
 | `ir/hlil/hlil.py` | Core enums and tree nodes: expressions, statements, variables, switch cases, and `HighLevelILFunction`. |
-| `ir/hlil/mlil_to_hlil.py` | Generic MLIL → HLIL conversion, including CFG construction, call-result folding, loop/branch reconstruction, shared-region cloning, and variable declaration. |
+| `ir/hlil/mlil_to_hlil.py` | Generic MLIL → HLIL conversion, including CFG construction, loop/branch reconstruction, shared-region cloning, and variable declaration. |
+| `ir/hlil/call_result_folder.py` | `CallResultFolder`: which call results fold into the instruction reading them, decided on the MLIL before the converter emits anything. |
 | `ir/hlil/structural_analysis.py` | Dominator calculation, natural-loop discovery, iterative region reduction, and merge-point queries used by the converter. |
 | `ir/hlil/statement_printer.py` | `HLILStatementPrinter`, the statement printer the `.hlil.ts` formatter and the TypeScript code generator share: each prints expressions its own way and overrides the hooks where its statements differ (assignments, unstructured jumps, an if's arms, switch case blocks). |
 | `ir/hlil/hlil_formatter.py` | The `.hlil.ts` formatter, on the shared statement printer: the bytecode's high-level form, not TypeScript. It is separate from the TypeScript code generator. |

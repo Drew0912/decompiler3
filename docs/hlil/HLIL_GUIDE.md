@@ -26,7 +26,8 @@ deals with VM-level calls, branches, and CFG shape.
 | `ir/hlil/hlil.py` | Core node/instruction class definitions (statements, expressions, variables). |
 | `ir/hlil/statement_printer.py` | The statement printer (`HLILStatementPrinter`) the `.hlil.ts` formatter and `codegen/typescript.py` share; each prints expressions itself. |
 | `ir/hlil/hlil_formatter.py` | Debug text pretty-printer (`HLILFormatter`) — tree dump, not codegen. |
-| `ir/hlil/mlil_to_hlil.py` | The MLIL → HLIL converter: CFG build, call-result folding, structural reconstruction. |
+| `ir/hlil/mlil_to_hlil.py` | The MLIL → HLIL converter: CFG build, structural reconstruction. |
+| `ir/hlil/call_result_folder.py` | `CallResultFolder`: which call results fold into the instruction reading them. |
 | `ir/hlil/structural_analysis.py` | Dominator / natural-loop / region-reduction CFG analysis (`StructuralAnalyzer`), used by the converter. |
 | `tools/logic_check/` | Checks the final HLIL against its MLIL: the effects, the conditions each runs under, the values they pass, their order, every reachable unstructured jump (`docs/VALIDATOR_GUIDE.md`); not part of the pipeline. |
 | `ir/hlil/passes/*.py` | Seven pass modules (below) — one is the conversion wrapper itself, six are post-conversion transformations (line-marker removal only with `line_markers` off). |

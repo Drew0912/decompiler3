@@ -35,7 +35,7 @@ from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLI
                           HLILConst, HLILVar, HLILVariable, HLILBinaryOp, HLILUnaryOp, HLILComment, BinaryOp,
                           UnaryOp, constant_truth, reachable_statements, iter_tree)
 from ir.hlil.hlil_formatter import HLILFormatter
-from ir.hlil.mlil_to_hlil import MLILToHLILConverter, constant_condition_truth
+from ir.hlil.mlil_to_hlil import MLILToHLILConverter
 from ir.mlil.mlil import (
     MediumLevelILFunction, MLILCall, MLILConst, MLILIf, MLILLogicalNot, MLILRet, MLILSetVar, MLILTestZero, MLILVar,
     MLILVariable,
@@ -55,7 +55,6 @@ from tests.shared.ir_utils import connect
 TARGET = 'loc_1'
 REASON = 'region not repeatable'
 START_ADDRESS = 0x40
-NONZERO_VALUE = 5
 CALL_ADDRESS = 0x1234
 BRANCH_BASE_ADDRESS = 0x2000
 BRANCH_STEP = 0x10
@@ -700,10 +699,6 @@ class TestLogicalNot(unittest.TestCase):
                 lines = [line.strip() for line in HLILFormatter.format_function(hlil)]
 
                 self.assertIn('if (arg1 == 0) {', lines)
-
-    def test_constant_truth_of_a_negated_constant(self):
-        self.assertIs(constant_condition_truth(MLILLogicalNot(MLILConst(0))), True)
-        self.assertIs(constant_condition_truth(MLILTestZero(MLILConst(NONZERO_VALUE))), False)
 
 
 class TestProvenance(unittest.TestCase):
