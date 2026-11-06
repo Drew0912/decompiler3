@@ -25,6 +25,7 @@ TBL_OUTPUT_DIR   = Path('out') / 'tables'    # a game's default output folder, b
 
 FILE_HEADER      = fileio.struct_layout('4xI')       # magic, section count
 SECTION_ENTRY    = fileio.struct_layout('64s4xIII')  # name, name hash, records' offset, record size, record count
+UINT8            = fileio.struct_layout('B')
 UINT16           = fileio.struct_layout('H')
 UINT32           = fileio.struct_layout('I')
 UINT64           = fileio.struct_layout('Q')
@@ -61,6 +62,7 @@ FIELD_KINDS = {
     'X'         : FieldKind(UINT64, lambda value: f'0x{value:04X}'),                # 8-byte integer, printed in hex
     'f'         : FieldKind(FLOAT32, float_literal),                                # 4-byte float
     STRING_KIND : FieldKind(UINT64, lambda value: quote_string(value, "'")),        # 8-byte pointer to a string
+    'A1'        : FieldKind(ARRAY_FIELD, str, UINT8),                               # pointer, count: 1-byte integers
     'A2'        : FieldKind(ARRAY_FIELD, str, UINT16),                              # pointer, count: 2-byte integers
     'A4'        : FieldKind(ARRAY_FIELD, str, UINT32),                              # pointer, count: 4-byte integers
 }

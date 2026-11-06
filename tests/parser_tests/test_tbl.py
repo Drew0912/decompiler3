@@ -20,6 +20,8 @@ NAME_TABLES = {
     'sora1': GAMES_DIR / 'sora1' / 'extracted' / 'table_en' / 't_name.tbl',
     'sora2': GAMES_DIR / 'sora2' / 'extracted' / 'table_en' / 't_name.tbl',
 }
+# No pointers, so nothing could check a class for them
+UNCHECKED_SECTIONS = {'ConstantValue', 'BTResultTable', 'DLCAppIDConvertTableData'}
 ENTRY_HEADER_SIZE = 8
 SECTION_SIZE      = 0x50
 NAME_SIZE         = 64
@@ -257,11 +259,6 @@ class TestRecordClasses(unittest.TestCase):
         self.assertIs(classes['MonsterSettingParam', 0xa8], sora2_records.MonsterSettingParamA8)
         self.assertIs(record_classes(sora1_records)['MonsterSettingParam', 0xa8], sora1_records.MonsterSettingParam)
 
-    def test_each_class_has_its_measured_size(self):
-        sizes = {cls: cls.record_size() for cls in record_classes(sora2_records).values()}
-        self.assertEqual(sizes, {sora1_records.NameTableData: 0x68, sora1_records.NPCParam: 0xa0,
-                                 sora1_records.NPCParam98: 0x98, sora2_records.MonsterSettingParam: 0xb0,
-                                 sora2_records.MonsterSettingParamA8: 0xa8})
 
 
 class TestGeneratedScript(unittest.TestCase):
@@ -276,7 +273,7 @@ class TestGeneratedScript(unittest.TestCase):
         record = [0x10, text, 'model', 'face', 'ani', 30, 'F', 2, 'npc', 0, '', '', '']
         entry = self.generated_entries(build_tbl([('NameTableData', 13 * SLOT, [record])]))[0]
         self.assertIsInstance(entry, sora1_records.NameTableData)
-        self.assertEqual((entry.chrId, entry.chrName, entry.num28), (0x10, text, 30))
+        self.assertEqual((entry.chrId, entry.chrName, entry.uint64_28), (0x10, text, 30))
 
     def test_a_raw_section_survives_in_the_script(self):
         entries = self.generated_entries(build_tbl([('Other', SLOT, [[1]])]))
@@ -292,16 +289,14 @@ class TestNameTables(unittest.TestCase):
                 self.assertEqual(parser.problems, [])
                 self.assertEqual(parser.raw_sections, [])
 
-    def test_each_games_npc_and_monster_tables_read_with_every_byte_accounted_for(self):
-        tables = (('sora1', sora1_records, ('t_npc_a1000', 't_npc_c0000', 't_mon_a1000')),
-                  ('sora2', sora2_records, ('t_npc_a1000', 't_npc_c0000', 't_mon_a1000', 't_mon_mp8500_02')))
-        for game, records, names in tables:
-            for name in names:
-                with self.subTest(game=game, table=name):
-                    path = require(NAME_TABLES[game].with_name(f'{name}.tbl'))
-                    parser = TblParser(path.read_bytes(), record_classes(records))
+    def test_every_table_reads_with_every_byte_accounted_for(self):
+        for game, records in (('sora1', sora1_records), ('sora2', sora2_records)):
+            classes = record_classes(records)
+            for path in sorted(require(NAME_TABLES[game]).parent.glob('*.tbl')):
+                with self.subTest(game=game, table=path.name):
+                    parser = TblParser(path.read_bytes(), classes)
                     self.assertEqual(parser.problems, [])
-                    self.assertEqual(parser.raw_sections, [])
+                    self.assertLessEqual(set(parser.raw_sections), UNCHECKED_SECTIONS)
 
     def test_sora2s_first_row(self):
         path = require(NAME_TABLES['sora2'])

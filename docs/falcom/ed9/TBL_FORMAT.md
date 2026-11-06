@@ -1,7 +1,8 @@
 # ED9 Table Format (`.tbl`)
 
-> Status: current for `sora1` and `sora2`; the other games on this format are not checked. How a `.tbl` game table is
-> laid out, how `falcom/ed9/parser/tbl.py` reads one, and how to add a table. Read-only: nothing rebuilds a `.tbl` yet.
+> Status: current for `sora1` and `sora2`, whose tables all have classes but three; the other games on this format are
+> not checked. How a `.tbl` game table is laid out, how `falcom/ed9/parser/tbl.py` reads one, and how to add a table.
+> Read-only: nothing rebuilds a `.tbl` yet.
 
 ## File Layout
 
@@ -67,7 +68,8 @@ entries = [
 
 Another script imports `entries` when it needs the data. `TblParser` reads each section through the class of its name
 and record size. A section with no such class stays raw hex (`RawTableEntry`), one entry per record. `problems` holds
-whatever did not fit, and the launcher logs each as a warning.
+whatever did not fit, and the launcher logs each as a warning. `ConstantValue`, `BTResultTable` and
+`DLCAppIDConvertTableData` have no class on purpose: single sections with no pointers, so nothing could check one.
 
 ## Record Classes
 
@@ -83,7 +85,7 @@ Adding a table:
 1. Find the section's name and record size in the file's header.
 2. Write the class in the earliest game of the group that has it. Name it for the section. A second size of one section
    gets its own class with `SECTION` set and its size as a suffix (`NPCParam98`), since the name alone cannot pick it.
-3. Name a field only where the data shows what it is; name the rest by offset (`str08`, `int44`).
+3. Name a field only where the data shows what it is; name the rest by size and offset (`str08`, `uint32_44`, `arr16_10`).
 4. Run `tbl2py.py` on the table in every game of the group, and fix anything in `problems`.
 5. Where a later game's layout differs, define the class in that game's file. A size can match and the layout still
    differ: `MonsterSettingParam` `0xa8` is one layout in `sora1` and another in `sora2`.
@@ -108,7 +110,7 @@ field's name is only a reading of its values. A wrong type gives a wrong value i
   proved.
 - `0xFFFF` marks a row with no ID of its own, mostly costumes.
 - An ID may repeat, and a name repeats often (`Estelle` has three IDs), so a name is not a key.
-- Scripts use IDs that are not in the table: scene-local ones such as `20851`, and pseudo IDs such as `65534`.
+- Scripts use IDs that are not in the table, such as `20851` and `65534`.
 
 ## Games on This Format
 
