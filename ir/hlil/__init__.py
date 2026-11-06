@@ -31,7 +31,6 @@ __all__ = [
     'BINARY_OP_STR',
     'UNARY_OP_STR',
     'BINARY_OP_PRECEDENCE',
-    'NON_ASSOCIATIVE_OPS',
     'needs_parentheses',
     'unary_operand_needs_parentheses',
 

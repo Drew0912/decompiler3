@@ -80,19 +80,21 @@ class TestNeedsParentheses(unittest.TestCase):
     def test_higher_precedence_child_is_not_wrapped(self):
         self.assertFalse(needs_parentheses(BinaryOp.MUL, BinaryOp.ADD, False))
 
-    def test_equal_precedence_wraps_only_the_rhs_of_a_non_associative_op(self):
+    def test_equal_precedence_wraps_the_rhs_but_of_one_logical_op(self):
         self.assertFalse(needs_parentheses(BinaryOp.SUB, BinaryOp.SUB, True))
 
-        for op in (BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD, BinaryOp.SHL, BinaryOp.SHR, BinaryOp.EQ, BinaryOp.LT):
+        for op in (BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD, BinaryOp.SHL, BinaryOp.SHR, BinaryOp.EQ, BinaryOp.LT,
+                   BinaryOp.ADD, BinaryOp.MUL, BinaryOp.BIT_AND, BinaryOp.BIT_OR):
             with self.subTest(op=op.name):
                 self.assertTrue(needs_parentheses(op, op, False))
 
-        for op in (BinaryOp.ADD, BinaryOp.MUL):
+        for op in (BinaryOp.AND, BinaryOp.OR, BinaryOp.AND_THEN, BinaryOp.OR_ELSE):
             with self.subTest(op=op.name):
                 self.assertFalse(needs_parentheses(op, op, False))
 
-    def test_equal_precedence_wraps_a_non_associative_rhs_under_any_parent(self):
-        for child, parent in ((BinaryOp.DIV, BinaryOp.MUL), (BinaryOp.SUB, BinaryOp.ADD), (BinaryOp.GT, BinaryOp.LT)):
+    def test_equal_precedence_wraps_a_different_rhs(self):
+        for child, parent in ((BinaryOp.DIV, BinaryOp.MUL), (BinaryOp.SUB, BinaryOp.ADD), (BinaryOp.GT, BinaryOp.LT),
+                              (BinaryOp.OR, BinaryOp.OR_ELSE), (BinaryOp.AND, BinaryOp.AND_THEN)):
             with self.subTest(child=child.name, parent=parent.name):
                 self.assertTrue(needs_parentheses(child, parent, False))
                 self.assertFalse(needs_parentheses(child, parent, True))

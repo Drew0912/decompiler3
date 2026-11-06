@@ -302,19 +302,17 @@ BINARY_OP_PRECEDENCE = {
     BinaryOp.MOD        : 10,
 }
 
-# a - (b - c) is not (a - b) - c, nor a < (b > c) (a < b) > c, nor a * (b / c) (a * b) / c
-NON_ASSOCIATIVE_OPS = COMPARISON_OPS | {BinaryOp.SUB, BinaryOp.DIV, BinaryOp.MOD, BinaryOp.SHL, BinaryOp.SHR}
-
 
 def needs_parentheses(child_op: BinaryOp, parent_op: BinaryOp, is_left: bool) -> bool:
-    """Whether a binary child printed as parent_op's lhs (is_left) or rhs needs parentheses"""
+    """Whether a binary child printed as parent_op's lhs (is_left) or rhs needs parentheses: the text groups as the
+    tree does, but for a chain of one logical op, the one regrouping that is exact (a + (b + c) is not, for floats)"""
     child_precedence = BINARY_OP_PRECEDENCE[child_op]
     parent_precedence = BINARY_OP_PRECEDENCE[parent_op]
 
     if child_precedence != parent_precedence:
         return child_precedence < parent_precedence
 
-    return not is_left and (parent_op in NON_ASSOCIATIVE_OPS or child_op in NON_ASSOCIATIVE_OPS)
+    return not is_left and not (child_op == parent_op and child_op in DE_MORGAN_OP)
 
 
 def unary_operand_needs_parentheses(op: UnaryOp, operand: HLILExpression, operand_text: str) -> bool:

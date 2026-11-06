@@ -87,7 +87,7 @@ Operator knowledge lives once, in `ir/hlil/hlil.py`, in two groups. The language
 `negate_condition` (negation distributed through `&&`/`||`) and `strip_truth_test` (a boolean's truth
 tests, `(c) != 0`, `(c) == 0` and `!c`, read off without changing the tree) - is what any output language
 needs, including the planned HLIL DSL. The C-family syntax group - the `BINARY_OP_STR`/`UNARY_OP_STR`
-symbols, `BINARY_OP_PRECEDENCE`, `NON_ASSOCIATIVE_OPS` and `needs_parentheses` - serves only the
+symbols, `BINARY_OP_PRECEDENCE` and `needs_parentheses` - serves only the
 TypeScript generator and the `.hlil.ts` formatter; a non-C output needs its own. `TERMINAL_STATEMENTS`
 (return, break, continue, `HLILUnstructured`) is the one list of statements that never fall through.
 `ControlFlowOptimizationPass` negates with the shared `negate_condition`, and its switch recognizer reads
