@@ -1,8 +1,8 @@
 # ED9 Table Format (`.tbl`)
 
 > Status: current for `sora1` and `sora2`, whose tables all have classes but three; the other games on this format are
-> not checked. How a `.tbl` game table is laid out, how `falcom/ed9/parser/tbl.py` reads one, and how to add a table.
-> Read-only: nothing rebuilds a `.tbl` yet.
+> not checked. How a `.tbl` game table is laid out, how `falcom/ed9/parser/tbl.py` reads and rebuilds one, how the game
+> reads one, and how to add a table.
 
 ## File Layout
 
@@ -20,7 +20,7 @@ A section entry:
 | Offset | Size | Field |
 |---|---|---|
 | `0x00` | 64 | Name, ASCII, NUL-padded |
-| `0x40` | 4 | Name hash: `~crc32(name)`, as `hash_function_name` in `falcom/ed9/structs/crc32.py`; the reader ignores it |
+| `0x40` | 4 | Name hash: `~crc32(name)`, as `hash_function_name` in `falcom/ed9/structs/crc32.py`; the reader ignores it, a rebuild sets it |
 | `0x44` | 4 | Offset of the section's first record, from the start of the file |
 | `0x48` | 4 | Record size in bytes |
 | `0x4c` | 4 | Record count, which may be 0 |
@@ -38,20 +38,19 @@ A record has a fixed size, and its fields have no tags: only a schema says where
 - **Two fields may share 8 bytes:** `NPCParam` `+0x00` holds two 2-byte IDs. A value that reads as one large number may
   be two small ones.
 
-The data block has no header. In `t_name.tbl` its strings follow the order of the record fields that point to them.
-Rules a reader needs:
+The data block has no header. Its items follow the records in order, and each record's fields in order. Nothing is
+shared: two equal strings are two items. Every table of `sora1` and `sora2` is packed this way. The rules:
 
-- A string item is its text and NUL. Identical pointers share one item (`t_bgmset.tbl`); in `t_name.tbl` nothing is
-  shared, and even an empty string has its own NUL.
+- A string item is its text and NUL; even an empty string has its own NUL.
 - An array aligns to its element size, so up to 3 zero bytes of padding can come before it.
 - **An empty array still aligns the block and keeps a pointer.** So padding can appear before a string, and an empty
-  array's pointer can equal the next item's, which makes it look like a string pointer.
-- A string pointer equal to the file size is an empty string (`t_bgmset.tbl`).
+  array's pointer can equal the next item's, or the file size when nothing follows (`t_bgmset.tbl`), which makes it look
+  like a string pointer.
 
 ## Reading a Table
 
 `python falcom/ed9/games/<game>/tbl2py.py <file or folder> [-o <folder>]` writes each table as a Python file, by default
-to the game's `out/tables/`:
+to the game's `out/tbl/`:
 
 ```python
 from falcom.ed9.games.sora2.tbl.tbl_records import *
@@ -64,12 +63,44 @@ entries = [
         ...
     ),
 ]
+
+
+if __name__ == '__main__':
+    # Sections come from entries; a file they cannot describe lists them in order:
+    # sections=[(record class, row count), ...]
+    create_tbl('t_name.tbl', *entries)
 ```
 
 Another script imports `entries` when it needs the data. `TblParser` reads each section through the class of its name
 and record size. A section with no such class stays raw hex (`RawTableEntry`), one entry per record. `problems` holds
 whatever did not fit, and the launcher logs each as a warning. `ConstantValue`, `BTResultTable` and
 `DLCAppIDConvertTableData` have no class on purpose: single sections with no pointers, so nothing could check one.
+
+## Rebuilding a Table
+
+Running a generated script writes its `.tbl` to the current folder: byte for byte the original when unedited, with every
+pointer worked out again when edited. Rows can be changed, added or removed. `create_tbl` works out the sections from
+`entries`, in the order the rows name them.
+
+When `entries` cannot describe a file, its script lists the sections, as (record class, row count) in file order. That
+happens when a section is empty, so no row names it, or when a section name repeats, as in `t_status.tbl`. Editing the
+rows of such a script means editing its counts too: counts that do not fit `entries` are an error. A section with no
+class is listed as `RawSection(name, record size)`:
+
+```python
+create_tbl('t_skill.tbl', *entries, sections=[
+    (SkillParam, 218),
+    (SkillPowerIcon, 13),
+    (RawSection('SkillGetParam', 0xa), 0),
+])
+```
+
+A row with an unknown or missing field, or a number too big for its field, is an error at that row's line in the script.
+A raw row whose hex is not the length of the rows before it is an error too, naming its place in `entries`.
+
+A raw section rebuilds from its hex, so any pointers in it stay as they were. That is right only in a file with no data
+block, which holds for every raw section in `sora1` and `sora2`; a later game's raw section in a file with a data block
+would rebuild wrong.
 
 ## Record Classes
 
@@ -100,17 +131,24 @@ Adding a table:
 
 So a table with no problems has the right record size and the right pointer fields. The checks say nothing about the
 rest: two 2-byte fields read as one 4-byte field, or an integer read as a float of the same width, give no error, and a
-field's name is only a reading of its values. A wrong type gives a wrong value in `entries`, not a wrong file.
+field's name is only a reading of its values. A wrong type gives a wrong value in `entries`, not a wrong file, so a
+byte-for-byte rebuild does not catch it either.
 
 ## Character IDs
 
-`NameTableData` (`t_name.tbl`) lists characters and their costumes. What is known about its IDs:
+`NameTableData` (`t_name.tbl`) lists characters and their costumes. What is known about its IDs, from the same read of
+the `sora2` exe, with the counts from `sora2`'s tables and all 1,082 scripts:
 
-- `chrId` looks like the ID scripts pass to `chr_*` calls: `chr_create` agrees with the table's model on most calls. Not
-  proved.
-- `0xFFFF` marks a row with no ID of its own, mostly costumes.
+- `chrId` is the ID `chr_create` looks up, read as 2 bytes. Other `chr_*` calls find the live character, not a row.
+- **Choosing a row:** `chr_create` tries its ID against `chrId`, then its third argument against `+0x40`, then its
+  second against `model`. The first row that matches wins; no match leaves the character with no row, which is allowed.
+- `0xFFFF` marks a row with no ID of its own, mostly costumes, reached by text.
 - An ID may repeat, and a name repeats often (`Estelle` has three IDs), so a name is not a key.
-- Scripts use IDs that are not in the table, such as `20851` and `65534`.
+- **IDs outside the table:** of 7,401 `chr_create` calls, 53% pass an ID in the table, 28% one that is not, and 20% a
+  variable. An ID that is not in the table often serves several models (`21050` takes 56), so it names a slot, not a
+  character.
+- **Pseudo IDs:** `65534` (the thread's owner) and others are resolved before any lookup, and no `chrId` but `0xFFFF`
+  falls among them. 22000..22032 are an owner's local characters; no `chrId` is in that range either.
 
 ## Games on This Format
 

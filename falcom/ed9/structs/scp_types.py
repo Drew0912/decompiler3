@@ -2,7 +2,8 @@ import math
 from typing import TypeAlias
 
 from dc3 import fileio, format_uint32_hex, IntEnum2, StrictBase, UINT32_MASK
-from dc3.utils import float32_bits as _float32_bits, float32_from_bits as _float32_from_bits
+from dc3.utils import (FLOAT32_MAX_SIGNIFICANT_DIGITS, float32_bits as _float32_bits,
+                       float32_from_bits as _float32_from_bits)
 
 UINT32_SIZE = fileio.struct_layout('L').size  # one u32 field of the .dat format
 
@@ -121,7 +122,6 @@ class ScpValue:
 
     FLOAT32_BITS                    = 32
     FLOAT_DROPPED_BITS              = FLOAT32_BITS - TYPE_SHIFT     # a Float payload is float32 bits >> FLOAT_DROPPED_BITS
-    FLOAT32_MAX_SIGNIFICANT_DIGITS  = 9                             # enough to name any float32 exactly
     # float_literal's candidate formats, fewest significant digits first
     FLOAT_LITERAL_FORMATS           = tuple(f'.{digits}g' for digits in range(1, FLOAT32_MAX_SIGNIFICANT_DIGITS + 1))
 

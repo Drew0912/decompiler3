@@ -1,4 +1,4 @@
-"""Read sora2's .tbl tables with falcom/ed9/parser/tbl.py, into this folder's out/tables/
+"""Read sora2's .tbl tables with falcom/ed9/parser/tbl.py, into this folder's out/tbl/
 
 Usage:
     python falcom/ed9/games/sora2/tbl2py.py {file_path} [-o {output_dir}]

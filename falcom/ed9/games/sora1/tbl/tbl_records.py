@@ -1,7 +1,8 @@
 """sora1's .tbl record classes, the base of sora2's: falcom/ed9/parser/tbl.py reads a section through them. Fields named
 by offset have no known meaning yet"""
 
-from falcom.ed9.parser.tbl import RawTableEntry, TableDataEntry    # RawTableEntry: for generated files' star import
+from falcom.ed9.parser.tbl import TableDataEntry
+from falcom.ed9.parser.tbl import RawSection, RawTableEntry, create_tbl    # for generated scripts' star import
 
 # A DESCRIPTOR's kinds, defined in FIELD_KINDS (falcom/ed9/parser/tbl.py); integers are unsigned
 #   W   Word: 2-byte integer, printed in hex

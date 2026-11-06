@@ -19,8 +19,10 @@ __all__ = (
     'write_text_lf',
     'int_to_bytes',
     'pad_string',
+    'FLOAT32_MAX_SIGNIFICANT_DIGITS',
     'float32_bits',
     'float32_from_bits',
+    'float32_literal',
 )
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent   # dc3/ sits directly under the repo root
@@ -113,6 +115,8 @@ def pad_string(s: str, padding: int) -> bytes:
 _FLOAT32 = struct.Struct('<f')  # a float32 cast to or from its bits: any one byte order on both sides
 _UINT32 = struct.Struct('<I')   # the float32's 32 bits
 
+FLOAT32_MAX_SIGNIFICANT_DIGITS = 9  # enough to name any float32 exactly
+
 
 def float32_bits(value: float) -> int:
     """value's IEEE float32 bits"""
@@ -121,3 +125,14 @@ def float32_bits(value: float) -> int:
 
 def float32_from_bits(bits: int) -> float:
     return _FLOAT32.unpack(_UINT32.pack(bits))[0]
+
+
+def float32_literal(value: float) -> str:
+    """Shortest float literal that stores the same float32: 0.3, not 0.30000001192092896"""
+    bits = float32_bits(value)
+    for digits in range(1, FLOAT32_MAX_SIGNIFICANT_DIGITS):
+        text = repr(float(f'{value:.{digits}g}'))
+        if float32_bits(float(text)) == bits:
+            return text
+
+    return repr(float(f'{value:.{FLOAT32_MAX_SIGNIFICANT_DIGITS}g}'))
