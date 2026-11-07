@@ -66,9 +66,7 @@ FIELD_KINDS = {
     'H'         : FieldKind(UINT16, str),                                           # 2-byte integer, in decimal
     'i'         : FieldKind(INT32, str),                                            # 4-byte signed integer, in decimal
     'I'         : FieldKind(UINT32, str),                                           # 4-byte integer, in decimal
-    'L'         : FieldKind(UINT32, lambda value: f'0x{value:08X}'),                # 4-byte integer, printed in hex
     'Q'         : FieldKind(UINT64, str),                                           # 8-byte integer, in decimal
-    'X'         : FieldKind(UINT64, lambda value: f'0x{value:04X}'),                # 8-byte integer, printed in hex
     'f'         : FieldKind(FLOAT32, float32_literal),                              # 4-byte float
     STRING_KIND : FieldKind(UINT64, lambda value: quote_string(value, "'")),        # 8-byte pointer to a string
     'A1'        : FieldKind(ARRAY_FIELD, str, UINT8),                               # pointer, count: 1-byte integers

@@ -11,9 +11,7 @@ from falcom.ed9.parser.tbl import RawSection, RawTableEntry, create_tbl    # for
 #   H   Half: 2-byte integer, printed in decimal
 #   i   Int: 4-byte signed integer, printed in decimal
 #   I   Int: 4-byte integer, printed in decimal
-#   L   Long: 4-byte integer, printed in hex
 #   Q   Quad: 8-byte integer, printed in decimal
-#   X   heX: 8-byte integer, printed in hex
 #   f   float: 4 bytes
 #   S   String: 8-byte pointer to a NUL-ended string in the data block
 #   A1  Array of 1-byte integers: 8-byte pointer into the data block, 4-byte element count

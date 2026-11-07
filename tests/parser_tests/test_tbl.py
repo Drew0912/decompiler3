@@ -35,17 +35,16 @@ NAME_TABLE_SIZE   = 13 * SLOT
 
 
 class Pair(TableDataEntry):
-    DESCRIPTOR = (('id', 'X'), ('text', 'S'))
+    DESCRIPTOR = (('id', 'Q'), ('text', 'S'))
 
 
 class PairWide(TableDataEntry):
     SECTION = 'Pair'
-    DESCRIPTOR = (('id', 'X'), ('text', 'S'), ('more', 'Q'))
+    DESCRIPTOR = (('id', 'Q'), ('text', 'S'), ('more', 'Q'))
 
 
 class Mixed(TableDataEntry):
-    DESCRIPTOR = (('low', 'W'), ('high', 'W'), ('count', 'I'), ('code', 'L'), ('ratio', 'f'), ('wide', 'X'),
-                  ('big', 'Q'))
+    DESCRIPTOR = (('low', 'W'), ('high', 'W'), ('count', 'I'), ('ratio', 'f'), ('big', 'Q'))
 
 
 class Lists(TableDataEntry):
@@ -142,11 +141,10 @@ class TestReading(unittest.TestCase):
 
 class TestFieldKinds(unittest.TestCase):
     def test_each_number_kind_reads_its_width(self):
-        record = struct.pack('<HHIIfQQ', 0x1234, 0x5678, 7, 0xAABBCCDD, 1.5, 0x10, 20)
+        record = struct.pack('<HHIfQ', 0x1234, 0x5678, 7, 1.5, 20)
         parser = TblParser(build_tbl([('Mixed', len(record), [[record]])]), {('Mixed', len(record)): Mixed})
         entry = parser.entries[0]
-        self.assertEqual((entry.low, entry.high, entry.count, entry.code, entry.ratio, entry.wide, entry.big),
-                         (0x1234, 0x5678, 7, 0xAABBCCDD, 1.5, 0x10, 20))
+        self.assertEqual((entry.low, entry.high, entry.count, entry.ratio, entry.big), (0x1234, 0x5678, 7, 1.5, 20))
         self.assertEqual(parser.problems, [])
 
     def test_signed_kinds_read_negative_numbers(self):
@@ -245,7 +243,7 @@ class TestMismatches(unittest.TestCase):
         """MonsterSettingParam 0xa8 in sora1 and sora2: the size matches, the class's pointer slot holds 0"""
         class Moved(TableDataEntry):
             SECTION = 'Pair'
-            DESCRIPTOR = (('text', 'S'), ('id', 'X'))
+            DESCRIPTOR = (('text', 'S'), ('id', 'Q'))
 
         data = build_tbl([('Pair', 2 * SLOT, [[0, 'a']])])
         parser = TblParser(data, {('Pair', Moved.record_size()): Moved})
@@ -313,7 +311,7 @@ class TestRebuilding(unittest.TestCase):
         self.assert_rebuilds(build_tbl([('Pair', 2 * SLOT, [[7, 'Estelle'], [8, ''], [9, 'エステル']])]), CLASSES)
 
     def test_each_number_kind_writes_its_width(self):
-        record = struct.pack('<HHIIfQQ', 0x1234, 0x5678, 7, 0xAABBCCDD, 1.5, 0x10, 20)
+        record = struct.pack('<HHIfQ', 0x1234, 0x5678, 7, 1.5, 20)
         self.assert_rebuilds(build_tbl([('Mixed', len(record), [[record]])]), {('Mixed', len(record)): Mixed})
 
     def test_negative_numbers_come_back_byte_for_byte(self):
@@ -385,7 +383,7 @@ class TestRowMistakes(unittest.TestCase):
 
     def test_a_float_too_big_is_an_error(self):
         with self.assertRaisesRegex(ValueError, 'Mixed: ratio = 1e[+]40 does not fit its field'):
-            Mixed(low=0, high=0, count=0, code=0, ratio=1e40, wide=0, big=0)
+            Mixed(low=0, high=0, count=0, ratio=1e40, big=0)
 
 
 class TestGeneratedScript(unittest.TestCase):

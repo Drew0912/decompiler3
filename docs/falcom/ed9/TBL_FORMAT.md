@@ -144,6 +144,15 @@ Adding a table:
 5. Where a later game's layout differs, define the class in that game's `schema/` folder. A size can match and the
    layout still differ: `MonsterSettingParam` `0xa8` is one layout in `sora1` and another in `sora2`.
 
+Naming fields:
+
+- **A name** comes from what the exe shows a field doing, or from strings that leave no doubt what it holds. A meaning
+  that is only a reading keeps the field's offset name, but for positions.
+- **An offset name** gives the size and offset: `uint8_40`, `uint16_02`, `uint32_44`, `uint64_28`, `int16_166`,
+  `float32_2c`, `str08`, `arr16_10`, `arrf32_78`.
+- **Padding** is only the zero bytes a narrow field leaves in the slot it shares. Any other unread bytes stay a field,
+  zero or not, so a script can still set them.
+
 ## What the Checks Prove
 
 | Check | Catches | Does not catch |
