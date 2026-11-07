@@ -172,6 +172,11 @@ the `sora2` exe, with the counts from `sora2`'s tables and all 1,082 scripts:
 - **Pseudo IDs:** `65534` (the thread's owner) and others are resolved before any lookup, and no `chrId` but `0xFFFF`
   falls among them. 22000..22032 are an owner's local characters; no `chrId` is in that range either.
 
+`falcom/ed9/tools/gen_tables.py` builds `ChrIdTable` from this table, in the game's `metadata/chr_table.py` (gitignored,
+`sora2` only so far): one dict that maps each name to its ID and each ID to its name. The first row of an ID wins, as in
+the game, and `0xFFFF` rows and pseudo IDs stay out. The first ID of a repeated name keeps it plain; a later one adds
+its ID in hex (`Estelle`, `Estelle_00A5`). Nothing prints these names yet.
+
 ## Games on This Format
 
 | Game | Tables | Section names | Layouts (name and size) |

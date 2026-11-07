@@ -28,5 +28,8 @@ falcom/ed9/games/*/metadata/common/
 falcom/ed9/games/*/metadata/common_index.py
 falcom/ed9/games/*/metadata/common_all.py
 
+# each game's generated character table (falcom/ed9/tools/gen_tables.py)
+falcom/ed9/games/*/metadata/chr_table.py
+
 decompiler2
 notes
