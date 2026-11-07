@@ -18,6 +18,7 @@ from falcom.ed9.games.sora1.tbl.tbl_records import *
 #   A1  Array of 1-byte integers: 8-byte pointer into the data block, 4-byte element count
 #   A2  Array of 2-byte integers: the same
 #   A4  Array of 4-byte integers: the same
+#   AF  Array of 4-byte floats: the same
 #   P1  Padding: 1 zero byte, not a field of a row; P2 to P7 the same
 
 
@@ -46,9 +47,9 @@ class BreakObjectTableData(TableDataEntry):
         ('statusKey', 'S'),
         ('function',  'S'),
         ('flag',      'W'),
-        ('uint16_22', 'W'),
-        ('uint16_24', 'W'),
-        ('uint16_26', 'W'),
+        ('itemGroup', 'W'),
+        ('countA',    'W'),
+        ('countB',    'W'),
         ('str28',     'S'),
         ('flags',     'S'),
         ('uint64_38', 'Q'),

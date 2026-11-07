@@ -20,6 +20,7 @@ from falcom.ed9.parser.tbl import RawSection, RawTableEntry, create_tbl    # for
 #   A1  Array of 1-byte integers: 8-byte pointer into the data block, 4-byte element count
 #   A2  Array of 2-byte integers: the same
 #   A4  Array of 4-byte integers: the same
+#   AF  Array of 4-byte floats: the same
 #   P1  Padding: 1 zero byte, not a field of a row; P2 to P7 the same
 
 
@@ -320,11 +321,11 @@ class WeedingTableData(TableDataEntry):
     DESCRIPTOR = (
         ('mapKey',    'S'),
         ('name',      'S'),
-        ('str10',     'S'),
+        ('function',  'S'),
         ('chance',    'W'),
-        ('uint16_1a', 'W'),
-        ('uint16_1c', 'W'),
-        ('uint16_1e', 'W'),
+        ('itemGroup', 'W'),
+        ('countA',    'W'),
+        ('countB',    'W'),
     )
 
 
@@ -648,24 +649,26 @@ class EventTableData(TableDataEntry):
         ('id',            'W'),
         ('pad02',         'P6'),
         ('function',      'S'),
-        ('key',           'S'),
+        ('triggerName',   'S'),
         ('uint64_18',     'Q'),
         ('title',         'S'),
         ('str28',         'S'),
         ('flag',          'W'),
         ('pad32',         'P6'),
         ('mapKey',        'S'),
-        ('uint8_40',      'B'),
+        ('selector',      'B'),
         ('kind',          'B'),
         ('linkedEvent',   'W'),
-        ('uint32_44',     'I'),
+        ('selectorId',    'W'),
+        ('pad46',         'P2'),
         ('checkFunction', 'S'),
         ('flagsSet',      'A2'),
         ('uint32_5c',     'I'),
         ('flagsClear',    'A2'),
         ('uint32_6c',     'I'),
         ('flags',         'S'),
-        ('uint64_78',     'Q'),
+        ('mapEnv',        'B'),
+        ('pad79',         'P7'),
     )
 
 
@@ -775,8 +778,8 @@ class FieldItemTableData(TableDataEntry):
         ('flagSet',   'W'),
         ('flagClear', 'W'),
         ('takenFlag', 'W'),
-        ('uint16_1a', 'W'),
-        ('uint16_1c', 'W'),
+        ('itemId',    'W'),
+        ('amount',    'W'),
         ('pad1e',     'P2'),
     )
 
@@ -1608,7 +1611,7 @@ class PlaceTableData(TableDataEntry):
         ('str68',      'S'),
         ('float32_70', 'f'),
         ('float32_74', 'f'),
-        ('arr32_78',   'A4'),
+        ('arrf32_78',  'AF'),
         ('float32_84', 'f'),
         ('float32_88', 'f'),
         ('float32_8c', 'f'),

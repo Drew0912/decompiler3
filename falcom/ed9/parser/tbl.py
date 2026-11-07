@@ -49,6 +49,10 @@ class FieldKind(NamedTuple):
     element : struct.Struct | None = None   # an array's element
 
 
+def float32_list(values: list[float]) -> str:
+    return f'[{', '.join(map(float32_literal, values))}]'
+
+
 # Zero bytes after a narrow field, by size: never a row's field, a rebuild writes them again
 PADDING_KINDS = {f'P{size}': FieldKind(fileio.struct_layout(f'{size}s'), bytes.hex) for size in range(1, 8)}
 
@@ -70,6 +74,7 @@ FIELD_KINDS = {
     'A1'        : FieldKind(ARRAY_FIELD, str, UINT8),                               # pointer, count: 1-byte integers
     'A2'        : FieldKind(ARRAY_FIELD, str, UINT16),                              # pointer, count: 2-byte integers
     'A4'        : FieldKind(ARRAY_FIELD, str, UINT32),                              # pointer, count: 4-byte integers
+    'AF'        : FieldKind(ARRAY_FIELD, float32_list, FLOAT32),                    # pointer, count: 4-byte floats
     **PADDING_KINDS,
 }
 

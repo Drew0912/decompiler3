@@ -64,6 +64,10 @@ class Half(TableDataEntry):
     DESCRIPTOR = (('page', 'H'), ('pad02', 'P6'))
 
 
+class Floats(TableDataEntry):
+    DESCRIPTOR = (('values', 'AF'), ('pad0c', 'P4'))
+
+
 CLASSES = {('Pair', Pair.record_size()): Pair}
 LIST_CLASSES = {('Lists', Lists.record_size()): Lists}
 LISTS_SIZE = Lists.record_size()
@@ -182,6 +186,12 @@ class TestArrays(unittest.TestCase):
         entry = parser.entries[0]
         self.assertEqual(parser.problems, [])
         self.assertEqual((entry.shorts, entry.text, entry.words), ([3, 4], 'a', [9]))
+
+    def test_a_float_array_prints_its_elements_as_float32(self):
+        size = Floats.record_size()
+        data = build_tbl([('Floats', size, [[array(block_start(1, size), 2)]])], pool=struct.pack('<2f', 0.1, 20.0))
+        entry = TblParser(data, {('Floats', size): Floats}).entries[0]
+        self.assertIn('values = [0.1, 20.0],', '\n'.join(entry.to_python()))
 
     def test_padding_may_align_an_array_after_a_string(self):
         block = self.lists_block()
