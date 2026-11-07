@@ -16,7 +16,7 @@ class IntEnum2(IntEnum):
 
 class IntFlag2(IntFlag):
     def __str__(self):
-        return self.name
+        return self.name or str(int(self))
 
     def __repr__(self):
-        return self.name
+        return self.__str__()

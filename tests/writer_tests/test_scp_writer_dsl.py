@@ -269,7 +269,7 @@ class TestPushEnum(unittest.TestCase):
             'IntEnum': (lambda: PUSH_INT(Mode.A), lambda: PUSH_INT(3)),
             'IntEnum2 through PUSH': (lambda: PUSH(ChrId.Self), lambda: PUSH_INT(0xFFFE)),
             'IntFlag2 mask': (lambda: PUSH_INT(MoveFlags.A | MoveFlags.B), lambda: PUSH_INT(0xC000000)),
-            # No member is 0, so its repr raises (IntFlag2 prints the name): converted before a message formats it
+            # No member is 0, so the value has no name
             'IntFlag2 without a name': (lambda: PUSH_INT(MoveFlags(0)), lambda: PUSH_INT(0)),
             'PUSH_FLOAT': (lambda: PUSH_FLOAT(Mode.A), lambda: PUSH_FLOAT(3.0)),
         }
