@@ -50,7 +50,7 @@ class FieldKind(NamedTuple):
 
 
 # Zero bytes after a narrow field, by size: never a row's field, a rebuild writes them again
-PADDING_KINDS = {f'P{size}': FieldKind(fileio.struct_layout(f'{size}s'), bytes.hex) for size in (1, 2, 3, 4, 6, 7)}
+PADDING_KINDS = {f'P{size}': FieldKind(fileio.struct_layout(f'{size}s'), bytes.hex) for size in range(1, 8)}
 
 # The letters a DESCRIPTOR's (field, kind) pairs use: how a field is stored and how it prints. Integers are unsigned
 # but for b, w and i
@@ -59,6 +59,7 @@ FIELD_KINDS = {
     'B'         : FieldKind(UINT8, str),                                            # 1-byte integer, in decimal
     'w'         : FieldKind(INT16, str),                                            # 2-byte signed integer, in decimal
     'W'         : FieldKind(UINT16, lambda value: f'0x{value:04X}'),                # 2-byte integer, printed in hex
+    'H'         : FieldKind(UINT16, str),                                           # 2-byte integer, in decimal
     'i'         : FieldKind(INT32, str),                                            # 4-byte signed integer, in decimal
     'I'         : FieldKind(UINT32, str),                                           # 4-byte integer, in decimal
     'L'         : FieldKind(UINT32, lambda value: f'0x{value:08X}'),                # 4-byte integer, printed in hex

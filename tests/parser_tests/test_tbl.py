@@ -60,11 +60,16 @@ class Signed(TableDataEntry):
     DESCRIPTOR = (('byte', 'b'), ('pad01', 'P1'), ('short', 'w'), ('word', 'i'))
 
 
+class Half(TableDataEntry):
+    DESCRIPTOR = (('page', 'H'), ('pad02', 'P6'))
+
+
 CLASSES = {('Pair', Pair.record_size()): Pair}
 LIST_CLASSES = {('Lists', Lists.record_size()): Lists}
 LISTS_SIZE = Lists.record_size()
 PADDED_CLASSES = {('Padded', Padded.record_size()): Padded}
 SIGNED_CLASSES = {('Signed', Signed.record_size()): Signed}
+HALF_CLASSES = {('Half', Half.record_size()): Half}
 
 
 def array(pointer: int, count: int) -> bytes:
@@ -144,6 +149,11 @@ class TestFieldKinds(unittest.TestCase):
         record = struct.pack('<bxhi', -15, -5, -10)
         entry = TblParser(build_tbl([('Signed', len(record), [[record]])]), SIGNED_CLASSES).entries[0]
         self.assertEqual((entry.byte, entry.short, entry.word), (-15, -5, -10))
+
+    def test_a_half_word_is_unsigned_and_prints_in_decimal(self):
+        record = struct.pack('<H6x', 40000)
+        entry = TblParser(build_tbl([('Half', len(record), [[record]])]), HALF_CLASSES).entries[0]
+        self.assertIn('page = 40000,', '\n'.join(entry.to_python()))
 
     def test_padding_is_read_past_and_is_no_field_of_the_row(self):
         record = struct.pack('<H6xB7x', 0x1234, 200)

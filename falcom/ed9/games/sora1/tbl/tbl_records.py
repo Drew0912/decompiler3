@@ -9,6 +9,7 @@ from falcom.ed9.parser.tbl import RawSection, RawTableEntry, create_tbl    # for
 #   B   Byte: 1-byte integer, printed in decimal
 #   w   Word: 2-byte signed integer, printed in decimal
 #   W   Word: 2-byte integer, printed in hex
+#   H   Half: 2-byte integer, printed in decimal
 #   i   Int: 4-byte signed integer, printed in decimal
 #   I   Int: 4-byte integer, printed in decimal
 #   L   Long: 4-byte integer, printed in hex
@@ -19,7 +20,7 @@ from falcom.ed9.parser.tbl import RawSection, RawTableEntry, create_tbl    # for
 #   A1  Array of 1-byte integers: 8-byte pointer into the data block, 4-byte element count
 #   A2  Array of 2-byte integers: the same
 #   A4  Array of 4-byte integers: the same
-#   P1  Padding: 1 zero byte, not a field of a row; P2, P3, P4, P6 and P7 the same
+#   P1  Padding: 1 zero byte, not a field of a row; P2 to P7 the same
 
 
 # t_name.tbl
@@ -271,24 +272,31 @@ class BattleBGM(TableDataEntry):
 # t_books.tbl
 class BooksTitle(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('uint32_10', 'I'),
-        ('uint32_14', 'I'),
+        ('id',         'W'),
+        ('categoryId', 'W'),
+        ('pad04',      'P4'),
+        ('title',      'S'),
+        ('itemId',     'W'),
+        ('uint16_12',  'W'),
+        ('uint8_14',   'B'),
+        ('pad15',      'P3'),
     )
 
 
 class BooksText(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('str10',     'S'),
+        ('bookId', 'W'),
+        ('page',   'H'),
+        ('pad04',  'P4'),
+        ('text',   'S'),
+        ('image',  'S'),
     )
 
 
 class BooksCategory(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
+        ('uint16_00', 'W'),
+        ('pad02',     'P6'),
         ('str08',     'S'),
         ('str10',     'S'),
     )
@@ -385,7 +393,8 @@ class BattleLevelTurn(TableDataEntry):
 
 class BattleEnemyLevelStatusAdjust(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
+        ('int16_00',  'w'),
+        ('int16_02',  'w'),
         ('uint32_04', 'I'),
         ('uint32_08', 'I'),
         ('uint32_0c', 'I'),
@@ -549,26 +558,32 @@ class OverDriveEffect(TableDataEntry):
 # t_costume.tbl
 class CostumeParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('str08',     'S'),
-        ('str10',     'S'),
-        ('uint64_18', 'Q'),
-        ('str20',     'S'),
-        ('str28',     'S'),
-        ('str30',     'S'),
+        ('chrId',   'W'),
+        ('kind',    'B'),
+        ('pad03',   'P1'),
+        ('variant', 'W'),
+        ('flag',    'W'),
+        ('flags',   'S'),
+        ('name',    'S'),
+        ('partId',  'I'),
+        ('pad1c',   'P4'),
+        ('str20',   'S'),
+        ('str28',   'S'),
+        ('str30',   'S'),
     )
 
 
 class CostumeAttachOffset(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
-        ('str08',      'S'),
-        ('uint32_10',  'I'),
+        ('chrId',      'W'),
+        ('pad02',      'P6'),
+        ('name',       'S'),
+        ('float32_10', 'f'),
         ('float32_14', 'f'),
         ('float32_18', 'f'),
-        ('uint32_1c',  'I'),
-        ('uint64_20',  'Q'),
+        ('float32_1c', 'f'),
+        ('float32_20', 'f'),
+        ('float32_24', 'f'),
         ('float32_28', 'f'),
         ('float32_2c', 'f'),
         ('float32_30', 'f'),
@@ -941,7 +956,8 @@ class SkillEffectTypeHelpData(TableDataEntry):
 
 class SkillEffectHelpData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
+        ('id',        'W'),
+        ('pad02',     'P6'),
         ('str08',     'S'),
         ('arr32_10',  'A4'),
         ('uint32_1c', 'I'),
@@ -958,9 +974,11 @@ class SkillEffectHelpData(TableDataEntry):
 
 class AttrTypeHelpData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('uint64_10', 'Q'),
+        ('id',        'W'),
+        ('pad02',     'P6'),
+        ('name',      'S'),
+        ('uint16_10', 'W'),
+        ('pad12',     'P6'),
     )
 
 
@@ -974,9 +992,11 @@ class SkillTypeHelpData(TableDataEntry):
 
 class SkillRangeHelpData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('uint64_10', 'Q'),
+        ('id',        'W'),
+        ('pad02',     'P6'),
+        ('name',      'S'),
+        ('uint32_10', 'I'),
+        ('pad14',     'P4'),
         ('str18',     'S'),
         ('str20',     'S'),
     )
@@ -984,11 +1004,13 @@ class SkillRangeHelpData(TableDataEntry):
 
 class ItemKindHelpData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('str08',     'S'),
-        ('uint64_10', 'Q'),
-        ('str18',     'S'),
+        ('category',    'W'),
+        ('subcategory', 'W'),
+        ('uint32_04',   'I'),
+        ('str08',       'S'),
+        ('uint32_10',   'I'),
+        ('pad14',       'P4'),
+        ('name',        'S'),
     )
 
 
@@ -1005,23 +1027,27 @@ class SkillItemStatusData(TableDataEntry):
 
 class SkillConnectListData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('arr16_08',  'A2'),
+        ('uint16_00', 'W'),
+        ('pad02',     'P6'),
+        ('ids',       'A2'),
         ('uint32_14', 'I'),
     )
 
 
 class SkillTextArrayData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('str10',     'S'),
+        ('key1',  'W'),
+        ('key2',  'W'),
+        ('pad04', 'P4'),
+        ('str08', 'S'),
+        ('str10', 'S'),
     )
 
 
 class SkillRangeData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00',  'I'),
+        ('uint16_00',  'W'),
+        ('pad02',      'P2'),
         ('float32_04', 'f'),
         ('float32_08', 'f'),
         ('float32_0c', 'f'),
@@ -1375,9 +1401,10 @@ class PokerTrickLevel(TableDataEntry):
 # t_notemenu.tbl
 class NoteMainCategory(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('str10',     'S'),
+        ('uint8_00', 'B'),
+        ('pad01',    'P7'),
+        ('str08',    'S'),
+        ('str10',    'S'),
     )
 
 
@@ -1390,14 +1417,16 @@ class NoteMainBadge(TableDataEntry):
 class NoteMainAffiliation(TableDataEntry):
     DESCRIPTOR = (
         ('str00',     'S'),
-        ('uint64_08', 'Q'),
+        ('uint16_08', 'W'),
+        ('pad0a',     'P6'),
     )
 
 
 class NoteMainHistory(TableDataEntry):
     DESCRIPTOR = (
         ('str00',     'S'),
-        ('uint64_08', 'Q'),
+        ('uint16_08', 'W'),
+        ('pad0a',     'P6'),
     )
 
 
@@ -1502,31 +1531,56 @@ class OrbmentSlotParam(TableDataEntry):
 
 class QuartzParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('uint32_10', 'I'),
-        ('uint32_14', 'I'),
-        ('uint32_18', 'I'),
-        ('uint32_1c', 'I'),
-        ('uint32_20', 'I'),
-        ('uint32_24', 'I'),
+        ('itemId',       'W'),
+        ('family',       'B'),
+        ('pad03',        'P5'),
+        ('flags',        'S'),
+        ('minSlotLevel', 'W'),
+        ('uint16_12',    'W'),
+        ('uint16_14',    'W'),
+        ('uint16_16',    'W'),
+        ('uint16_18',    'W'),
+        ('uint16_1a',    'W'),
+        ('uint16_1c',    'W'),
+        ('uint16_1e',    'W'),
+        ('uint8_20',     'B'),
+        ('uint8_21',     'B'),
+        ('uint8_22',     'B'),
+        ('uint8_23',     'B'),
+        ('uint8_24',     'B'),
+        ('uint8_25',     'B'),
+        ('uint8_26',     'B'),
+        ('pad27',        'P1'),
     )
 
 
 class ArtsParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('uint64_08', 'Q'),
+        ('id',       'I'),
+        ('uint8_04', 'B'),
+        ('uint8_05', 'B'),
+        ('uint8_06', 'B'),
+        ('uint8_07', 'B'),
+        ('uint8_08', 'B'),
+        ('uint8_09', 'B'),
+        ('uint8_0a', 'B'),
+        ('pad0b',    'P1'),
+        ('flag',     'I'),
     )
 
 
 class AttrData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
+        ('id',        'B'),
+        ('pad01',     'P3'),
         ('uint32_04', 'I'),
-        ('uint32_08', 'I'),
-        ('uint32_0c', 'I'),
+        ('uint8_08',  'B'),
+        ('uint8_09',  'B'),
+        ('uint8_0a',  'B'),
+        ('uint8_0b',  'B'),
+        ('uint8_0c',  'B'),
+        ('uint8_0d',  'B'),
+        ('pad0e',     'P2'),
         ('str10',     'S'),
     )
 
@@ -1597,9 +1651,10 @@ class PopupFaceParam(TableDataEntry):
 # t_quest.tbl
 class QuestRank(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('uint32_10', 'I'),
+        ('rank',      'I'),
+        ('pad04',     'P4'),
+        ('name',      'S'),
+        ('threshold', 'I'),
         ('uint32_14', 'I'),
     )
 
@@ -1616,31 +1671,49 @@ class QuestChapterRank(TableDataEntry):
 
 class QuestTitle(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('str10',     'S'),
-        ('uint64_18', 'Q'),
-        ('str20',     'S'),
-        ('uint32_28', 'I'),
-        ('uint32_2c', 'I'),
-        ('uint32_30', 'I'),
-        ('uint32_34', 'I'),
-        ('uint32_38', 'I'),
-        ('uint32_3c', 'I'),
-        ('uint32_40', 'I'),
-        ('uint32_44', 'I'),
-        ('uint64_48', 'Q'),
-        ('str50',     'S'),
-        ('str58',     'S'),
-        ('uint64_60', 'Q'),
+        ('id',            'W'),
+        ('flags',         'B'),
+        ('pad03',         'P5'),
+        ('title',         'S'),
+        ('client',        'S'),
+        ('flags2',        'B'),
+        ('pad19',         'P1'),
+        ('uint8_1a',      'B'),
+        ('pad1b',         'P5'),
+        ('mapKey',        'S'),
+        ('points',        'B'),
+        ('pad29',         'P3'),
+        ('uint32_2c',     'I'),
+        ('startFlag',     'W'),
+        ('uint16_32',     'W'),
+        ('listedFlag',    'W'),
+        ('uint16_36',     'W'),
+        ('uint16_38',     'W'),
+        ('uint16_3a',     'W'),
+        ('uint16_3c',     'W'),
+        ('uint16_3e',     'W'),
+        ('uint16_40',     'W'),
+        ('pad42',         'P2'),
+        ('importance',    'I'),
+        ('uint8_48',      'B'),
+        ('pad49',         'P1'),
+        ('category',      'W'),
+        ('pad4c',         'P4'),
+        ('str50',         'S'),
+        ('reportComment', 'S'),
+        ('linkedQuest',   'W'),
+        ('pad62',         'P6'),
     )
 
 
 class QuestText(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('uint64_10', 'Q'),
+        ('questId',   'W'),
+        ('uint16_02', 'W'),
+        ('pad04',     'P4'),
+        ('text',      'S'),
+        ('flag',      'W'),
+        ('pad12',     'P6'),
         ('str18',     'S'),
     )
 
@@ -1659,16 +1732,17 @@ class NaviText(TableDataEntry):
 
 class QuestReportVoice(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('arr32_08',  'A4'),
+        ('key',       'W'),
+        ('pad02',     'P6'),
+        ('listKind0', 'A4'),
         ('uint32_14', 'I'),
-        ('arr32_18',  'A4'),
+        ('listKind1', 'A4'),
         ('uint32_24', 'I'),
-        ('arr32_28',  'A4'),
+        ('listKind2', 'A4'),
         ('uint32_34', 'I'),
-        ('arr32_38',  'A4'),
+        ('listKind3', 'A4'),
         ('uint32_44', 'I'),
-        ('arr32_48',  'A4'),
+        ('listKind4', 'A4'),
         ('uint32_54', 'I'),
     )
 
@@ -1724,11 +1798,13 @@ class ShopInfo(TableDataEntry):
     DESCRIPTOR = (
         ('id',         'W'),
         ('pad02',      'P6'),
-        ('str08',      'S'),
+        ('name',       'S'),
         ('shopType',   'B'),
         ('pad11',      'P7'),
-        ('str18',      'S'),
-        ('uint32_20',  'I'),
+        ('flags',      'S'),
+        ('convId',     'B'),
+        ('pad21',      'P1'),
+        ('priceRate',  'H'),
         ('float32_24', 'f'),
         ('float32_28', 'f'),
         ('float32_2c', 'f'),
@@ -1743,34 +1819,39 @@ class ShopInfo(TableDataEntry):
 
 class ShopItem(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('arr16_08',  'A2'),
-        ('uint32_14', 'I'),
-        ('arr16_18',  'A2'),
-        ('uint32_24', 'I'),
+        ('shopId',     'W'),
+        ('itemId',     'W'),
+        ('uint8_04',   'B'),
+        ('pad05',      'P3'),
+        ('flagsAny',   'A2'),
+        ('uint32_14',  'I'),
+        ('flagsClear', 'A2'),
+        ('kind',       'B'),
+        ('pad25',      'P3'),
     )
 
 
 class ShopTypeDesc(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('uint8_10',  'B'),
-        ('uint8_11',  'B'),
-        ('uint8_12',  'B'),
-        ('uint8_13',  'B'),
-        ('uint8_14',  'B'),
-        ('uint8_15',  'B'),
-        ('uint8_16',  'B'),
-        ('pad17',     'P1'),
+        ('id',       'W'),
+        ('pad02',    'P6'),
+        ('flags',    'S'),
+        ('uint8_10', 'B'),
+        ('uint8_11', 'B'),
+        ('uint8_12', 'B'),
+        ('uint8_13', 'B'),
+        ('uint8_14', 'B'),
+        ('uint8_15', 'B'),
+        ('uint8_16', 'B'),
+        ('pad17',    'P1'),
     )
 
 
 class ShopConv(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00',  'I'),
-        ('float32_04', 'f'),
+        ('id',         'W'),
+        ('pad02',      'P2'),
+        ('rate',       'f'),
         ('float32_08', 'f'),
         ('float32_0c', 'f'),
         ('float32_10', 'f'),
@@ -1783,17 +1864,18 @@ class ShopConv(TableDataEntry):
 
 class TradeItem(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
+        ('itemId',    'I'),
+        ('item1',     'I'),
         ('uint32_08', 'I'),
-        ('uint32_0c', 'I'),
+        ('item2',     'I'),
         ('uint32_10', 'I'),
-        ('uint32_14', 'I'),
+        ('item3',     'I'),
         ('uint32_18', 'I'),
-        ('uint32_1c', 'I'),
+        ('item4',     'I'),
         ('uint32_20', 'I'),
-        ('uint32_24', 'I'),
-        ('uint64_28', 'Q'),
+        ('item5',     'I'),
+        ('uint32_28', 'I'),
+        ('item6',     'I'),
         ('uint32_30', 'I'),
     )
 
@@ -1986,7 +2068,9 @@ class StatusParam(TableDataEntry):
 # t_support_ability.tbl
 class SupportAbilityParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
+        ('uint8_00',  'B'),
+        ('uint8_01',  'B'),
+        ('uint16_02', 'W'),
         ('uint32_04', 'I'),
         ('uint64_08', 'Q'),
         ('uint32_10', 'I'),
@@ -1994,16 +2078,19 @@ class SupportAbilityParam(TableDataEntry):
         ('uint64_18', 'Q'),
         ('str20',     'S'),
         ('str28',     'S'),
-        ('str30',     'S'),
+        ('name',      'S'),
         ('str38',     'S'),
     )
 
 
 class SupportLevelData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('uint32_08', 'I'),
+        ('chrId',     'W'),
+        ('level',     'B'),
+        ('pad03',     'P1'),
+        ('threshold', 'I'),
+        ('abilityId', 'B'),
+        ('pad09',     'P3'),
     )
 
 
@@ -2035,15 +2122,19 @@ class TextTableData(TableDataEntry):
 # t_tips.tbl
 class TipsTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('arr16_08',  'A2'),
-        ('uint32_14', 'I'),
-        ('str18',     'S'),
-        ('uint32_20', 'I'),
-        ('uint32_24', 'I'),
-        ('str28',     'S'),
-        ('str30',     'S'),
+        ('id',         'W'),
+        ('uint16_02',  'W'),
+        ('flag',       'W'),
+        ('pad06',      'P2'),
+        ('flagsClear', 'A2'),
+        ('uint16_14',  'W'),
+        ('pad16',      'P2'),
+        ('flags',      'S'),
+        ('uint8_20',   'B'),
+        ('pad21',      'P3'),
+        ('uint32_24',  'I'),
+        ('title',      'S'),
+        ('text',       'S'),
     )
 
 

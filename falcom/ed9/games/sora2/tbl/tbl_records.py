@@ -7,6 +7,7 @@ from falcom.ed9.games.sora1.tbl.tbl_records import *
 #   B   Byte: 1-byte integer, printed in decimal
 #   w   Word: 2-byte signed integer, printed in decimal
 #   W   Word: 2-byte integer, printed in hex
+#   H   Half: 2-byte integer, printed in decimal
 #   i   Int: 4-byte signed integer, printed in decimal
 #   I   Int: 4-byte integer, printed in decimal
 #   L   Long: 4-byte integer, printed in hex
@@ -17,7 +18,7 @@ from falcom.ed9.games.sora1.tbl.tbl_records import *
 #   A1  Array of 1-byte integers: 8-byte pointer into the data block, 4-byte element count
 #   A2  Array of 2-byte integers: the same
 #   A4  Array of 4-byte integers: the same
-#   P1  Padding: 1 zero byte, not a field of a row; P2, P3, P4, P6 and P7 the same
+#   P1  Padding: 1 zero byte, not a field of a row; P2 to P7 the same
 
 
 # t_mon_*.tbl: sora1's, up to its last four fields
@@ -753,40 +754,59 @@ class NoteCookChara(TableDataEntry):
 # t_orbment.tbl
 class OrbmentSlotParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('uint32_08', 'I'),
-        ('uint32_0c', 'I'),
-        ('uint32_10', 'I'),
-        ('uint32_14', 'I'),
-        ('uint32_18', 'I'),
-        ('uint32_1c', 'I'),
-        ('uint32_20', 'I'),
-        ('uint32_24', 'I'),
-        ('uint32_28', 'I'),
-        ('uint32_2c', 'I'),
-        ('uint32_30', 'I'),
-        ('uint32_34', 'I'),
-        ('uint32_38', 'I'),
-        ('uint32_3c', 'I'),
+        ('chrId',     'I'),
+        ('line',      'b'),
+        ('uint8_05',  'B'),
+        ('kind',      'B'),
+        ('uint8_07',  'B'),
+        ('uint16_08', 'W'),
+        ('uint16_0a', 'W'),
+        ('uint16_0c', 'W'),
+        ('uint16_0e', 'W'),
+        ('uint16_10', 'W'),
+        ('uint16_12', 'W'),
+        ('uint16_14', 'W'),
+        ('uint16_16', 'W'),
+        ('uint16_18', 'W'),
+        ('uint16_1a', 'W'),
+        ('uint16_1c', 'W'),
+        ('uint16_1e', 'W'),
+        ('uint16_20', 'W'),
+        ('uint16_22', 'W'),
+        ('uint16_24', 'W'),
+        ('uint16_26', 'W'),
+        ('uint16_28', 'W'),
+        ('uint16_2a', 'W'),
+        ('uint16_2c', 'W'),
+        ('uint16_2e', 'W'),
+        ('uint16_30', 'W'),
+        ('uint16_32', 'W'),
+        ('uint16_34', 'W'),
+        ('uint16_36', 'W'),
+        ('uint16_38', 'W'),
+        ('uint16_3a', 'W'),
+        ('uint16_3c', 'W'),
+        ('pad3e',     'P2'),
     )
 
 
 # t_quest.tbl
 class QuestRankBefore(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('str08',     'S'),
+        ('rank',      'I'),
+        ('threshold', 'I'),
+        ('name',      'S'),
     )
 
 
 class QuestText38(TableDataEntry):
     SECTION = 'QuestText'
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('arr16_10',  'A2'),
+        ('questId',   'W'),
+        ('stage',     'W'),
+        ('pad04',     'P4'),
+        ('text',      'S'),
+        ('flagsSet',  'A2'),
         ('uint32_1c', 'I'),
         ('arr16_20',  'A2'),
         ('uint32_2c', 'I'),
@@ -796,39 +816,41 @@ class QuestText38(TableDataEntry):
 
 class NaviText(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('str10',     'S'),
-        ('arr16_18',  'A2'),
-        ('uint32_24', 'I'),
-        ('arr16_28',  'A2'),
-        ('uint32_34', 'I'),
+        ('uint64_00',  'Q'),
+        ('text',       'S'),
+        ('altText',    'S'),
+        ('flagsSet',   'A2'),
+        ('uint32_24',  'I'),
+        ('flagsClear', 'A2'),
+        ('uint32_34',  'I'),
     )
 
 
 # t_shop.tbl
 class MedalItem(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
+        ('itemId', 'I'),
+        ('price',  'I'),
     )
 
 
 class CharaArrange(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00',  'I'),
-        ('uint32_04',  'I'),
-        ('str08',      'S'),
-        ('str10',      'S'),
-        ('str18',      'S'),
-        ('float32_20', 'f'),
-        ('float32_24', 'f'),
-        ('uint32_28',  'I'),
-        ('float32_2c', 'f'),
-        ('str30',      'S'),
-        ('float32_38', 'f'),
-        ('float32_3c', 'f'),
-        ('uint64_40',  'Q'),
+        ('uint16_00',   'W'),
+        ('pad02',       'P2'),
+        ('uint32_04',   'I'),
+        ('aniFunction', 'S'),
+        ('str10',       'S'),
+        ('str18',       'S'),
+        ('x',           'f'),
+        ('y',           'f'),
+        ('z',           'f'),
+        ('angle',       'f'),
+        ('flags',       'S'),
+        ('float32_38',  'f'),
+        ('float32_3c',  'f'),
+        ('float32_40',  'f'),
+        ('pad44',       'P4'),
     )
 
 
