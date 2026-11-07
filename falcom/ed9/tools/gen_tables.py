@@ -1,17 +1,17 @@
-"""Generate a game's two-way character table from its t_name.tbl, into the game's metadata package:
-falcom/ed9/games/<game>/metadata/chr_table.py (gitignored), or the file -o names
+"""Generate a game's two-way ID tables from its .tbl files, into the game's metadata package (gitignored):
+falcom/ed9/games/<game>/metadata/chr_table.py and item_table.py, or the folder -o names
 
 Usage:
-    python falcom/ed9/tools/gen_tables.py {game} [-o {output_file}]
+    python falcom/ed9/tools/gen_tables.py {game} [-o {output_dir}]
 
-Every run is a full rewrite: hand edits to the generated file don't survive.
+Every run is a full rewrite: hand edits to the generated files don't survive.
 """
 
 import argparse
 import importlib
 from pathlib import Path
 import sys
-from typing import Sequence
+from typing import Callable, Iterable, NamedTuple, Sequence
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
@@ -21,66 +21,90 @@ from dc3.utils import write_text_lf
 from falcom.ed9.games import GAMES_DIR, GAMES_PACKAGE
 from falcom.ed9.parser.tbl import TblParser, record_classes
 
-TABLE_GAMES      = ['sora2']
-NAME_TABLE       = Path('extracted') / 'table_en' / 't_name.tbl'
-CHR_TABLE_FILE   = Path('metadata') / 'chr_table.py'
-CHR_TABLE_NAME   = 'ChrIdTable'
-NO_CHR_ID        = 0xFFFF        # a row with no ID of its own, mostly a costume
+TABLE_GAMES   = ['sora2']
+TABLES_DIR    = Path('extracted') / 'table_en'
+METADATA_DIR  = Path('metadata')
+NO_CHR_ID     = 0xFFFF        # a row with no ID of its own, mostly a costume
 
 
-def chr_id_digits(chr_id: int) -> str:
-    return f'{chr_id:04X}'
+def id_digits(value: int) -> str:
+    return f'{value:04X}'
 
 
-def chr_names(entries: Sequence) -> dict[int, str]:
-    """Each ID's name, from the first row of that ID as in the game. The first ID of a name keeps it plain; a later one
+def unique_names(rows: Iterable[tuple[int, str]]) -> dict[int, str]:
+    """Each ID's name, from the first row of that ID, as in the game. The first ID of a name keeps it plain; a later one
     adds its ID, since a name can repeat"""
     names = {}
     taken = set()
-    for entry in entries:
-        if entry.chrId == NO_CHR_ID or entry.chrId in names:
+    for row_id, text in rows:
+        if row_id in names:
             continue
 
-        name = entry.chrName.strip()
+        name = text.strip()
         if name in taken:
-            name = f'{name}_{chr_id_digits(entry.chrId)}'
+            name = f'{name}_{id_digits(row_id)}'
             if name in taken:
-                raise ValueError(f'chrId 0x{chr_id_digits(entry.chrId)}: {name} is already a name')
+                raise ValueError(f'ID 0x{id_digits(row_id)}: {name} is already a name')
 
         taken.add(name)
-        names[entry.chrId] = name
+        names[row_id] = name
 
     return names
 
 
-def chr_table_text(names: dict[int, str]) -> str:
+def chr_names(entries: Sequence) -> dict[int, str]:
+    return unique_names((entry.chrId, entry.chrName) for entry in entries if entry.chrId != NO_CHR_ID)
+
+
+def item_names(entries: Sequence) -> dict[int, str]:
+    return unique_names((entry.id, entry.name) for entry in entries)
+
+
+class IdTable(NamedTuple):
+    name        : str
+    module      : str
+    tbl_file    : str
+    section     : str
+    names       : Callable[[Sequence], dict[int, str]]
+
+
+ID_TABLES = [
+    IdTable('ChrIdTable',  'chr_table.py',  't_name.tbl', 'NameTableData', chr_names),
+    IdTable('ItemIdTable', 'item_table.py', 't_item.tbl', 'ItemTableData', item_names),
+]
+
+
+def id_table_text(table: IdTable, names: dict[int, str]) -> str:
     """The table both ways, as a module: every name to its ID, then every ID to its name"""
-    pairs = [(f'0x{chr_id_digits(chr_id)}', quote_string(name, "'")) for chr_id, name in names.items()]
-    lines = [f'{default_indent()}{name}: {chr_id},' for chr_id, name in pairs]
-    lines += [f'{default_indent()}{chr_id}: {name},' for chr_id, name in pairs]
-    return '\n'.join(['"""Generated from t_name.tbl by falcom/ed9/tools/gen_tables.py"""', '',
-                      f'{CHR_TABLE_NAME} = {{', *lines, '}', ''])
+    pairs = [(f'0x{id_digits(row_id)}', quote_string(name, "'")) for row_id, name in names.items()]
+    lines = [f'{default_indent()}{name}: {row_id},' for row_id, name in pairs]
+    lines += [f'{default_indent()}{row_id}: {name},' for row_id, name in pairs]
+    return '\n'.join([f'"""Generated from {table.tbl_file} by falcom/ed9/tools/gen_tables.py"""', '',
+                      f'{table.name} = {{', *lines, '}', ''])
 
 
-def read_name_table(game: str) -> list:
+def read_section(game: str, table: IdTable) -> list:
     records = importlib.import_module(f'{GAMES_PACKAGE}.{game}.tbl.tbl_records')
-    parser = TblParser((GAMES_DIR / game / NAME_TABLE).read_bytes(), record_classes(records))
+    parser = TblParser((GAMES_DIR / game / TABLES_DIR / table.tbl_file).read_bytes(), record_classes(records))
     if parser.problems:
-        raise ValueError(f'{NAME_TABLE.name}: {parser.problems}')
+        raise ValueError(f'{table.tbl_file}: {parser.problems}')
 
-    return parser.entries
+    return [entry for entry in parser.entries if entry.section_name() == table.section]
 
 
 def main() -> int:
     arg_parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     arg_parser.add_argument('game', choices=TABLE_GAMES)
-    arg_parser.add_argument('-o', '--output-file', type=Path, help=f"default: the game's {CHR_TABLE_FILE}")
+    arg_parser.add_argument('-o', '--output-dir', type=Path, help=f"default: the game's {METADATA_DIR}/")
 
     args = arg_parser.parse_args()
-    output_file = args.output_file or GAMES_DIR / args.game / CHR_TABLE_FILE
-    names = chr_names(read_name_table(args.game))
-    write_text_lf(output_file, chr_table_text(names))
-    log.info(f'{output_file}: {len(names)} characters')
+    output_dir = args.output_dir or GAMES_DIR / args.game / METADATA_DIR
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for table in ID_TABLES:
+        names = table.names(read_section(args.game, table))
+        write_text_lf(output_dir / table.module, id_table_text(table, names))
+        log.info(f'{table.module}: {len(names)} names')
+
     return 0
 
 
