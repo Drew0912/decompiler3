@@ -10,7 +10,7 @@ class QuestTitle(TableDataEntry):
         ('title',         'S'),
         ('client',        'S'),
         ('flags2',        'B'),
-        ('pad19',         'P1'),
+        ('uint8_19',      'B'),
         ('uint8_1a',      'B'),
         ('pad1b',         'P5'),
         ('mapKey',        'S'),

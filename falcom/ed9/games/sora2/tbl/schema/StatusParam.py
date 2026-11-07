@@ -38,7 +38,7 @@ class StatusParam(TableDataEntry):
         ('float32_94',  'f'),
         ('flags2',      'S'),
         ('uint32_a0',   'I'),
-        ('pada4',       'P4'),
+        ('uint32_a4',   'I'),
         ('uint32_a8',   'I'),
         ('float32_ac',  'f'),
         ('float32_b0',  'f'),

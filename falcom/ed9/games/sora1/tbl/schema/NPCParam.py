@@ -30,7 +30,7 @@ class NPCParam(TableDataEntry):
         ('uint32_74',     'I'),
         ('talkFunction',  'S'),
         ('nearFunction',  'S'),
-        ('pad88',         'P4'),
+        ('uint32_88',     'I'),
         ('talkFlag',      'I'),
         ('shopIds',       'A2'),
         ('uint32_9c',     'I'),
