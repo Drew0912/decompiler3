@@ -4,11 +4,14 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_btlsys.tbl
 class ATBonusParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('uint32_10', 'I'),
-        ('uint32_14', 'I'),
-        ('uint32_18', 'I'),
-        ('uint32_1c', 'I'),
-        ('str20',     'S'),
+        ('id',         'B'),
+        ('linkId',     'B'),
+        ('pad02',      'P6'),
+        ('flags',      'S'),
+        ('effectKind', 'B'),
+        ('pad11',      'P3'),
+        ('int32_14',   'i'),
+        ('int32_18',   'i'),
+        ('int32_1c',   'i'),
+        ('name',       'S'),
     )

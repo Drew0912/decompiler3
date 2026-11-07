@@ -4,8 +4,8 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_btlsys.tbl
 class BattleLevelField(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00',  'I'),
+        ('key',        'I'),
         ('uint32_04',  'I'),
-        ('uint32_08',  'I'),
+        ('percent',    'I'),
         ('float32_0c', 'f'),
     )

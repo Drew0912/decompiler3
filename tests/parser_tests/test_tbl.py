@@ -26,7 +26,7 @@ NAME_TABLES = {
     'sora2': GAMES_DIR / 'sora2' / 'extracted' / 'table_en' / 't_name.tbl',
 }
 # No pointers, so nothing could check a class for them
-UNCHECKED_SECTIONS = {'ConstantValue', 'BTResultTable', 'DLCAppIDConvertTableData'}
+UNCHECKED_SECTIONS = {'BTResultTable', 'DLCAppIDConvertTableData'}
 ENTRY_HEADER_SIZE = 8
 SECTION_SIZE      = 0x50
 NAME_SIZE         = 64

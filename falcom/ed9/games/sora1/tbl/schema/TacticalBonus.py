@@ -5,6 +5,9 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class TacticalBonus(TableDataEntry):
     DESCRIPTOR = (
         ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('str08',     'S'),
+        ('amount',    'B'),
+        ('progress',  'B'),
+        ('maxCount',  'B'),
+        ('pad07',     'P1'),
+        ('name',      'S'),
     )

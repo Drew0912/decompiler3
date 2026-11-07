@@ -4,11 +4,12 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_chapter.tbl
 class ChapterParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('uint32_08', 'I'),
-        ('uint32_0c', 'I'),
-        ('str10',     'S'),
+        ('key',       'I'),
+        ('flagSet',   'I'),
+        ('flagClear', 'I'),
+        ('eventKey',  'W'),
+        ('pad0e',     'P2'),
+        ('flags',     'S'),
         ('str18',     'S'),
         ('str20',     'S'),
         ('str28',     'S'),

@@ -4,7 +4,8 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_chrdata.tbl
 class PortraitDataParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
+        ('key',        'W'),
+        ('pad02',      'P6'),
         ('str08',      'S'),
         ('str10',      'S'),
         ('float32_18', 'f'),

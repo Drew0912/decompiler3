@@ -59,6 +59,7 @@ from falcom.ed9.games.sora1.tbl.schema.CollisionFootStepInfo import CollisionFoo
 from falcom.ed9.games.sora1.tbl.schema.ConditionHelpData import ConditionHelpData
 from falcom.ed9.games.sora1.tbl.schema.ConditionInfoTableData import ConditionInfoTableData
 from falcom.ed9.games.sora1.tbl.schema.ConditionTypeParam import ConditionTypeParam
+from falcom.ed9.games.sora1.tbl.schema.ConstantValue import ConstantValue
 from falcom.ed9.games.sora1.tbl.schema.CostumeAttachOffset import CostumeAttachOffset
 from falcom.ed9.games.sora1.tbl.schema.CostumeParam import CostumeParam
 from falcom.ed9.games.sora1.tbl.schema.DLCTableData import DLCTableData

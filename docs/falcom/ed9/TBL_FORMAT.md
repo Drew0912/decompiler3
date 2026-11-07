@@ -75,8 +75,8 @@ if __name__ == '__main__':
 
 Another script imports `entries` when it needs the data. `TblParser` reads each section through the class of its name
 and record size. A section with no such class stays raw hex (`RawTableEntry`), one entry per record. `problems` holds
-whatever did not fit, and the launcher logs each as a warning. `ConstantValue`, `BTResultTable` and
-`DLCAppIDConvertTableData` have no class on purpose: single sections with no pointers, so nothing could check one.
+whatever did not fit, and the launcher logs each as a warning. `BTResultTable` and `DLCAppIDConvertTableData` have no
+class on purpose: single sections with no pointers, so nothing could check one.
 
 ## Rebuilding a Table
 
