@@ -62,6 +62,7 @@ from falcom.ed9.games.sora1.tbl.schema.ConditionTypeParam import ConditionTypePa
 from falcom.ed9.games.sora1.tbl.schema.ConstantValue import ConstantValue
 from falcom.ed9.games.sora1.tbl.schema.CostumeAttachOffset import CostumeAttachOffset
 from falcom.ed9.games.sora1.tbl.schema.CostumeParam import CostumeParam
+from falcom.ed9.games.sora1.tbl.schema.DLCAppIDConvertTableData import DLCAppIDConvertTableData
 from falcom.ed9.games.sora1.tbl.schema.DLCTableData import DLCTableData
 from falcom.ed9.games.sora1.tbl.schema.EffectTableData import EffectTableData
 from falcom.ed9.games.sora1.tbl.schema.EventBoxTableData import EventBoxTableData

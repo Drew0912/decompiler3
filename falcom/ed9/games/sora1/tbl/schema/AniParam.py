@@ -4,8 +4,8 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_ani_param.tbl
 class AniParam(TableDataEntry):
     DESCRIPTOR = (
-        ('str00',      'S'),
-        ('uint32_08',  'I'),
+        ('name',       'S'),
+        ('key',        'I'),
         ('float32_0c', 'f'),
         ('float32_10', 'f'),
         ('float32_14', 'f'),

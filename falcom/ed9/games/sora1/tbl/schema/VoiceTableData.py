@@ -4,11 +4,14 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_voice.tbl
 class VoiceTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
-        ('str08',      'S'),
-        ('uint32_10',  'I'),
+        ('id',         'I'),
+        ('pad04',      'P4'),
+        ('name',       'S'),
+        ('uint8_10',   'B'),
+        ('pad11',      'P3'),
         ('float32_14', 'f'),
-        ('uint32_18',  'I'),
+        ('uint16_18',  'W'),
+        ('pad1a',      'P2'),
         ('float32_1c', 'f'),
         ('str20',      'S'),
     )

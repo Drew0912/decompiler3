@@ -4,14 +4,15 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_viewer.tbl
 class ViewerCharaList(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
+        ('id',         'W'),
+        ('pad02',      'P6'),
         ('str08',      'S'),
         ('str10',      'S'),
-        ('str18',      'S'),
-        ('uint32_20',  'I'),
-        ('uint32_24',  'I'),
-        ('str28',      'S'),
-        ('str30',      'S'),
+        ('name',       'S'),
+        ('saveBit',    'I'),
+        ('saveBit2',   'I'),
+        ('flags',      'S'),
+        ('flags2',     'S'),
         ('float32_38', 'f'),
         ('float32_3c', 'f'),
     )

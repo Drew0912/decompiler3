@@ -4,14 +4,16 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_help.tbl
 class HelpIconList(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00',  'I'),
+        ('titleId',    'W'),
+        ('page',       'B'),
+        ('pad03',      'P1'),
         ('uint32_04',  'I'),
-        ('str08',      'S'),
+        ('text1',      'S'),
         ('float32_10', 'f'),
         ('uint32_14',  'I'),
-        ('str18',      'S'),
+        ('text2',      'S'),
         ('float32_20', 'f'),
         ('uint32_24',  'I'),
-        ('str28',      'S'),
-        ('str30',      'S'),
+        ('text3',      'S'),
+        ('flags',      'S'),
     )

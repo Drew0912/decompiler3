@@ -4,7 +4,8 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_minigame_slot.tbl
 class SlotMonsterInfo(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
+        ('id',        'W'),
+        ('pad02',     'P6'),
         ('str08',     'S'),
         ('uint32_10', 'I'),
         ('uint32_14', 'I'),

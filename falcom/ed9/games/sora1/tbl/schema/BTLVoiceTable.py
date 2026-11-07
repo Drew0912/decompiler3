@@ -4,10 +4,10 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_btl_voice.tbl
 class BTLVoiceTable(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
+        ('key',       'I'),
+        ('key2',      'I'),
         ('uint32_08', 'I'),
-        ('uint32_0c', 'I'),
+        ('filterKey', 'I'),
         ('arr16_10',  'A2'),
         ('uint32_1c', 'I'),
         ('arr16_20',  'A2'),

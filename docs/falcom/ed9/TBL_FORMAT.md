@@ -1,6 +1,6 @@
 # ED9 Table Format (`.tbl`)
 
-> Status: current for `sora1` and `sora2`, whose tables all have classes but three; the other games on this format are
+> Status: current for `sora1` and `sora2`, whose tables all have classes but one; the other games on this format are
 > not checked. How a `.tbl` game table is laid out, how `falcom/ed9/parser/tbl.py` reads and rebuilds one, how the game
 > reads one, and how to add a table.
 
@@ -75,8 +75,8 @@ if __name__ == '__main__':
 
 Another script imports `entries` when it needs the data. `TblParser` reads each section through the class of its name
 and record size. A section with no such class stays raw hex (`RawTableEntry`), one entry per record. `problems` holds
-whatever did not fit, and the launcher logs each as a warning. `BTResultTable` and `DLCAppIDConvertTableData` have no
-class on purpose: single sections with no pointers, so nothing could check one.
+whatever did not fit, and the launcher logs each as a warning. `BTResultTable` has no class on
+purpose: a single section with no pointers and no reader in the exe, so nothing could check one.
 
 ## Rebuilding a Table
 

@@ -4,8 +4,9 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_viewer.tbl
 class ViewerBGMList(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
+        ('id',        'I'),
         ('uint32_04', 'I'),
-        ('str08',     'S'),
-        ('uint64_10', 'Q'),
+        ('name',      'S'),
+        ('saveBit',   'I'),
+        ('pad14',     'P4'),
     )

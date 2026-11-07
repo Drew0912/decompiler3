@@ -4,10 +4,14 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_se.tbl
 class SETableData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
-        ('str08',      'S'),
-        ('uint32_10',  'I'),
+        ('id',         'I'),
+        ('pad04',      'P4'),
+        ('name',       'S'),
+        ('uint8_10',   'B'),
+        ('pad11',      'P3'),
         ('float32_14', 'f'),
-        ('uint32_18',  'I'),
-        ('float32_1c', 'f'),
+        ('uint16_18',  'W'),
+        ('uint8_1a',   'B'),
+        ('uint8_1b',   'B'),
+        ('distance',   'f'),
     )

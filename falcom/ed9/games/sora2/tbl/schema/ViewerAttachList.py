@@ -4,10 +4,13 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_viewer.tbl
 class ViewerAttachList(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('str08',     'S'),
-        ('uint32_10', 'I'),
-        ('uint32_14', 'I'),
-        ('uint64_18', 'Q'),
+        ('chrId',     'W'),
+        ('pad02',     'P2'),
+        ('id',        'I'),
+        ('name',      'S'),
+        ('saveBit',   'I'),
+        ('int8_14',   'b'),
+        ('pad15',     'P3'),
+        ('uint32_18', 'I'),
+        ('pad1c',     'P4'),
     )

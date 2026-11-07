@@ -4,7 +4,8 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_minigame_poker.tbl
 class PokerRollRate(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
+        ('key',       'I'),
+        ('pad04',     'P4'),
         ('str08',     'S'),
         ('str10',     'S'),
         ('str18',     'S'),

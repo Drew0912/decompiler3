@@ -4,6 +4,9 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_face_anime.tbl
 class EyePresetData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint16_04', 'W'),
+        ('chrId',    'W'),
+        ('pattern',  'B'),
+        ('uint8_03', 'B'),
+        ('uint8_04', 'B'),
+        ('uint8_05', 'B'),
     )

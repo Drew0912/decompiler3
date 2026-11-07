@@ -4,8 +4,11 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_help.tbl
 class HelpPage(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00', 'Q'),
-        ('str08',     'S'),
-        ('str10',     'S'),
-        ('str18',     'S'),
+        ('titleId', 'W'),
+        ('layout',  'B'),
+        ('page',    'B'),
+        ('pad04',   'P4'),
+        ('str08',   'S'),
+        ('text',    'S'),
+        ('subText', 'S'),
     )

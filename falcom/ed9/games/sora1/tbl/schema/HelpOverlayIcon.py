@@ -4,11 +4,15 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_help.tbl
 class HelpOverlayIcon(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
-        ('str08',      'S'),
+        ('titleId',    'W'),
+        ('page',       'B'),
+        ('pad03',      'P5'),
+        ('text',       'S'),
         ('float32_10', 'f'),
         ('float32_14', 'f'),
-        ('uint32_18',  'I'),
+        ('uint8_18',   'B'),
+        ('pad19',      'P3'),
         ('float32_1c', 'f'),
-        ('uint64_20',  'Q'),
+        ('kind',       'B'),
+        ('pad21',      'P7'),
     )

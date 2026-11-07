@@ -4,9 +4,10 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_minigame_blackjack.tbl
 class BlackJackMessage(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
-        ('uint32_04', 'I'),
-        ('str08',     'S'),
-        ('uint64_10', 'Q'),
-        ('str18',     'S'),
+        ('chrId',       'W'),
+        ('pad02',       'P2'),
+        ('state',       'I'),
+        ('text',        'S'),
+        ('uint64_10',   'Q'),
+        ('aniFunction', 'S'),
     )

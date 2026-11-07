@@ -4,8 +4,9 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_popup_face.tbl
 class PopupFaceParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
-        ('str08',      'S'),
+        ('chrId',      'W'),
+        ('pad02',      'P6'),
+        ('nodeName',   'S'),
         ('str10',      'S'),
         ('uint32_18',  'I'),
         ('float32_1c', 'f'),

@@ -4,8 +4,10 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_help.tbl
 class HelpTitle(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00', 'I'),
+        ('id',        'W'),
+        ('flag',      'W'),
         ('uint32_04', 'I'),
-        ('str08',     'S'),
-        ('uint64_10', 'Q'),
+        ('title',     'S'),
+        ('uint8_10',  'B'),
+        ('pad11',     'P7'),
     )
