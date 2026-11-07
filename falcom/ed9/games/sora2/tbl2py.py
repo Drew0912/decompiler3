@@ -9,9 +9,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4]))
 
-from falcom.ed9.games.sora2.tbl import tbl_records
+from falcom.ed9.games.sora2.tbl import schema_all
 from falcom.ed9.parser.tbl import main
 
 
 if __name__ == '__main__':
-    sys.exit(main('sora2', tbl_records))
+    sys.exit(main('sora2', schema_all))

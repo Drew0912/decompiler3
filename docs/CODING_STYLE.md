@@ -14,6 +14,8 @@ open, plus the project's own rules. `CLAUDE.md` imports this file; `AGENTS.md` t
   templates and the common-function library have none.
 - **The DSL's names** follow the opcodes and decompiler2: `PUSH_INT`, `LLILCode`, `registerRunCallback`,
   `fileio.Open`.
+- **A record class's file** is named exactly for its table section, as the DSL's names follow the opcodes:
+  `games/<game>/tbl/schema/QuestTitle.py`, not `quest_title.py`.
 - **Docstrings where they help:** a module, class or function whose name and signature say what it does needs none
   (Readable code, below).
 - **Docstrings and comments are concise phrases** (Concise comments, below), not full sentences: no closing period;

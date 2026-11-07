@@ -1,0 +1,40 @@
+from falcom.ed9.parser.tbl import TableDataEntry
+
+
+# t_orbment.tbl
+class OrbmentSlotParam(TableDataEntry):
+    DESCRIPTOR = (
+        ('chrId',     'I'),
+        ('line',      'b'),
+        ('uint8_05',  'B'),
+        ('kind',      'B'),
+        ('uint8_07',  'B'),
+        ('uint16_08', 'W'),
+        ('uint16_0a', 'W'),
+        ('uint16_0c', 'W'),
+        ('uint16_0e', 'W'),
+        ('uint16_10', 'W'),
+        ('uint16_12', 'W'),
+        ('uint16_14', 'W'),
+        ('uint16_16', 'W'),
+        ('uint16_18', 'W'),
+        ('uint16_1a', 'W'),
+        ('uint16_1c', 'W'),
+        ('uint16_1e', 'W'),
+        ('uint16_20', 'W'),
+        ('uint16_22', 'W'),
+        ('uint16_24', 'W'),
+        ('uint16_26', 'W'),
+        ('uint16_28', 'W'),
+        ('uint16_2a', 'W'),
+        ('uint16_2c', 'W'),
+        ('uint16_2e', 'W'),
+        ('uint16_30', 'W'),
+        ('uint16_32', 'W'),
+        ('uint16_34', 'W'),
+        ('uint16_36', 'W'),
+        ('uint16_38', 'W'),
+        ('uint16_3a', 'W'),
+        ('uint16_3c', 'W'),
+        ('pad3e',     'P2'),
+    )

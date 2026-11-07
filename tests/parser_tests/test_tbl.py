@@ -14,8 +14,8 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.games.sora1.tbl import tbl_records as sora1_records
-from falcom.ed9.games.sora2.tbl import tbl_records as sora2_records
+from falcom.ed9.games.sora1.tbl import schema_all as sora1_records
+from falcom.ed9.games.sora2.tbl import schema_all as sora2_records
 from falcom.ed9.parser.tbl import RawSection, RawTableEntry, TableDataEntry, TblParser, record_classes, tbl_bytes
 from falcom.ed9.structs.crc32 import hash_function_name
 from tests.shared.corpus import require

@@ -55,7 +55,7 @@ shared: two equal strings are two items. Every table of `sora1` and `sora2` is p
 to the game's `out/tbl/`:
 
 ```python
-from falcom.ed9.games.sora2.tbl.tbl_records import *
+from falcom.ed9.games.sora2.tbl.schema_all import *
 
 
 entries = [
@@ -121,23 +121,28 @@ read.
 
 ## Record Classes
 
-A game's classes are in `falcom/ed9/games/<game>/tbl/tbl_records.py`. A class's `DESCRIPTOR` lists its fields in record
-order; each kind is a letter or two, defined in `FIELD_KINDS` (`parser/tbl.py`), with a key at the top of every
-`tbl_records.py`. A new kind updates each key.
+A game's classes are in `falcom/ed9/games/<game>/tbl/schema/`, one file per section, named exactly for it
+(`QuestTitle.py`); a comment above each class names the tables that hold it. `tbl/schema_all.py` imports every class by
+name, and it is the one module everything else imports. A class's `DESCRIPTOR` lists its fields in record order; each
+kind is a letter or two, defined in `FIELD_KINDS` (`parser/tbl.py`), with a key at the top of every `schema_all.py`. A
+new kind updates each key.
 
-`sora2`'s file star-imports `sora1`'s and defines what differs, since the two are remakes in one series; a class of the
-same name replaces `sora1`'s. `kuro1`, `kuro2` and `kai1` are a separate group: they do not build on these files.
+`sora2`'s `schema_all.py` star-imports `sora1`'s, then imports its own classes, which are what differs, since the two
+are remakes in one series; a class of the same name replaces `sora1`'s. `kuro1`, `kuro2` and `kai1` are a separate
+group: they do not build on these files.
 
 Adding a table:
 
 1. Find the section's name and record size in the file's header.
-2. Write the class in the earliest game of the group that has it. Name it for the section. A second size of one section
-   gets its own class with `SECTION` set and its size as a suffix (`NPCParam98`), since the name alone cannot pick it.
+2. Write the class in the earliest game of the group that has it, in a file named for the section, and import the class
+   in that game's `schema_all.py`: without that the table stays raw. Name the class for the section. A second size of
+   one section gets its own class in the same file, imported the same way, with `SECTION` set and its size as a suffix
+   (`NPCParam98`), since the name alone cannot pick it.
 3. Name a field only where the data or the exe shows what it is; name the rest by size and offset (`str08`, `uint32_44`,
    `arr16_10`). The exe read is `sora2`'s, so a name in `sora1`'s class rests on the offsets agreeing.
 4. Run `tbl2py.py` on the table in every game of the group, and fix anything in `problems`.
-5. Where a later game's layout differs, define the class in that game's file. A size can match and the layout still
-   differ: `MonsterSettingParam` `0xa8` is one layout in `sora1` and another in `sora2`.
+5. Where a later game's layout differs, define the class in that game's `schema/` folder. A size can match and the
+   layout still differ: `MonsterSettingParam` `0xa8` is one layout in `sora1` and another in `sora2`.
 
 ## What the Checks Prove
 

@@ -90,7 +90,7 @@ def id_table_text(table: IdTable, names: dict[int, str]) -> str:
 
 
 def read_section(game: str, table: IdTable) -> list:
-    records = importlib.import_module(f'{GAMES_PACKAGE}.{game}.tbl.tbl_records')
+    records = importlib.import_module(f'{GAMES_PACKAGE}.{game}.tbl.schema_all')
     parser = TblParser((GAMES_DIR / game / TABLES_DIR / table.tbl_file).read_bytes(), record_classes(records))
     if parser.problems:
         raise ValueError(f'{table.tbl_file}: {parser.problems}')

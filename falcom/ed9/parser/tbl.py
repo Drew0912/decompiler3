@@ -1,7 +1,7 @@
 """ED9 .tbl tables into Python and back: a header, one entry per section, the sections' fixed-size records, then a data
 block the records' pointers reach
 
-A game's record classes live in its tbl/tbl_records.py. A section is read through the class of its name and record size;
+A game's record classes live in its tbl/schema_all.py. A section is read through the class of its name and record size;
 with none, or when a pointer does not fit, it stays raw hex. Running a generated script writes its table again.
 
 Usage, from a game's launcher:
@@ -200,7 +200,7 @@ class RecordMismatch(Exception):
 
 
 def record_classes(records: ModuleType) -> RecordClasses:
-    """A tbl_records module's classes, star-imported ones included, by section name and record size"""
+    """A schema_all module's classes, star-imported ones included, by section name and record size"""
     classes = [value for value in vars(records).values()
                if isinstance(value, type) and issubclass(value, TableDataEntry) and value.DESCRIPTOR]
     return {(cls.section_name(), cls.record_size()): cls for cls in classes}

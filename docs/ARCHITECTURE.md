@@ -31,8 +31,8 @@ Compilation (the actual recompilation direction — needs only a DSL file, not a
 header types, the string pool, the call debug records)
 
 `.tbl` game tables have their own reader beside it, outside the decompile path: `parser/tbl.py` (`TblParser`) reads a
-table's sections through the game's record classes (`games/<game>/tbl/tbl_records.py`; `sora2`'s star-import `sora1`'s
-and add what differs). A section with no class, or whose pointers do not fit its class, stays raw hex. A generated
+table's sections through the game's record classes (`games/<game>/tbl/schema/`, one file per section, gathered by
+`schema_all.py`; `sora2`'s star-imports `sora1`'s and adds what differs). A section with no class, or whose pointers do not fit its class, stays raw hex. A generated
 table script writes its `.tbl` again through `create_tbl` in `parser/tbl.py`. The format and how to add a table:
 `docs/falcom/ed9/TBL_FORMAT.md`.
 
