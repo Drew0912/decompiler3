@@ -265,13 +265,11 @@ class TestReplace(HookTestCase):
 
         @self.writer.LLILCode()
         def Caller():
-            DEBUG_SET_LINENO(1)                     # call records start at a function's first line number
             local_call(Callee, 'ret', ((PUSH_INT, 1), (PUSH_INT, 2)), debug_argc=1)
             RETURN()
 
         @replace_function('Caller')
         def Copied():
-            DEBUG_SET_LINENO(1)
             local_call(Callee, 'ret', ((PUSH_INT, 3), (PUSH_INT, 4)))
             RETURN()
 
@@ -300,7 +298,6 @@ class TestReplace(HookTestCase):
 
         @self.writer.LLILCode()
         def Caller():
-            DEBUG_SET_LINENO(1)
             local_call(Callee, 'callee', ((PUSH_INT, 5), (PUSH_INT, 1)))
             local_call(Added, 'added', ((PUSH_INT, 5), (PUSH_INT, 1)))
             RETURN()
@@ -1138,7 +1135,6 @@ class TestOriginal(HookTestCase):
         self.hook("""
             @add_function
             def Caller():
-                DEBUG_SET_LINENO(1)                     # call records start at a function's first line number
                 PUSH_CURRENT_FUNC_ID()
                 PUSH_RET_ADDR('ret')
                 PUSH_INT(1)
@@ -1216,7 +1212,6 @@ class TestOpcodeCallbacks(HookTestCase):
     def script_call(self):
         """A body calling the script function this.Old, not yet registered"""
         def Target():
-            DEBUG_SET_LINENO(1)                     # call records start at a function's first line number
             PUSH_CALLER_FRAME('ret')
             CALL_SCRIPT('this', 'Old', 0)
             label('ret')
@@ -1284,7 +1279,6 @@ class TestOpcodeCallbacks(HookTestCase):
 
                 @self.writer.LLILCode()
                 def Main():
-                    DEBUG_SET_LINENO(1)
                     local_call(Callee, 'annotated', ((PUSH_INT, 2), (PUSH_INT, 1), (PUSH_INT, 5)), **keywords)
                     local_call(Callee, 'next', ((PUSH_INT, 2), (PUSH_INT, 1), (PUSH_INT, 5)))
                     RETURN()

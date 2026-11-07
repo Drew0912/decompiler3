@@ -98,8 +98,8 @@ def JMP(target: str):
 def CALL(func: Callable, debug_argc: int | None = None, debug_record: bool = True):
     """Call a script function, passed as the function itself - CALL(Foo), not CALL('Foo') (Opcode 0x0C). debug_argc:
     how many args the call's debug record keeps, where the original's differs from the compiler's rule (trailing
-    args equal to the callee's defaults dropped); debug_record=False: the call gets no record (the original's
-    statement had no line marker of its own), and debug_argc has nothing to apply to. The round-trip .py writes both"""
+    args equal to the callee's defaults dropped); debug_record=False: the call gets no record (the original compiler
+    left it without one), and debug_argc has nothing to apply to. The round-trip .py writes both"""
     if not callable(func):
         raise TypeError(get_scp_writer().at_statement(f'CALL takes the function itself, not {func!r}'))
 

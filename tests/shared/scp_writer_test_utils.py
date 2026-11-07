@@ -9,6 +9,7 @@ import tempfile
 import unittest
 
 from dc3 import fileio
+from falcom.ed9.structs.call_debug_records import CallDebugInfoTracker
 from falcom.ed9.writer import scp_writer
 from falcom.ed9.writer.scp_writer_helper import CALL, PUSH_CURRENT_FUNC_ID, PUSH_RET_ADDR, label
 
@@ -71,6 +72,7 @@ def body_writer() -> scp_writer.ScpWriter:
 
     writer.LLILCode()(Body)
     writer.current_function = writer.functions_by_name['Body']
+    writer.call_tracker = CallDebugInfoTracker(writer._get_param_count)
     writer.fs = fileio.FileStream().OpenMemory()
     return writer
 

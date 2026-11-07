@@ -231,7 +231,6 @@ class TestDebugArgc(WriterTestCase):
 
         @self.writer.LLILCode()
         def Main():
-            DEBUG_SET_LINENO(1)  # a call gets a debug record only after line info
             for number, (pushes, keywords, _) in enumerate(cases.values()):
                 local_call(Callee, f'ret{number}', (*pushes, (PUSH_INT, 5)), **keywords)
 
@@ -283,7 +282,6 @@ class TestDebugArgc(WriterTestCase):
 
         @self.writer.LLILCode()
         def Main():
-            DEBUG_SET_LINENO(1)
             local_call(Later, 'later', self.ALL_DEFAULTS)
             local_call(Imported, 'imported', self.ALL_DEFAULTS)
             RETURN()
@@ -312,7 +310,6 @@ class TestDebugArgc(WriterTestCase):
 
                 @self.writer.LLILCode()
                 def Main():
-                    DEBUG_SET_LINENO(1)
                     for ret, keywords in calls:
                         local_call(callee, ret, self.ALL_DEFAULTS, **keywords)
 
@@ -900,7 +897,7 @@ class TestStrings(WriterTestCase):
 
 
 class TestWriterWithoutRoundTrip(WriterTestCase):
-    """scena.round_trip = False: equal strings share one pool entry and no debug records are written"""
+    """scena.round_trip = False: equal strings share one pool entry"""
 
     def define_repeating_strings(self):
         @self.writer.LLILCode()
@@ -929,31 +926,6 @@ class TestWriterWithoutRoundTrip(WriterTestCase):
 
         self.assertEqual(data.count(b'same\x00'), 2)
         self.assertEqual(self.pushed_strings(data), ['same', 'same'])
-
-    def test_call_keywords_compile_to_the_same_bytes(self):
-        """No call is tracked, so a CALL's debug_argc or debug_record changes nothing: no records, the bytes of the
-        call without it"""
-        compiled = {}
-        for case, keywords in {'debug_argc': {'debug_argc': 2}, 'debug_record': {'debug_record': False}, 'plain': {}}.items():
-            self.writer = self.fresh_writer()
-            self.writer.round_trip = False
-
-            @self.writer.LLILCode()
-            def Callee(arg1: Value32, arg2: Value32 = 0):
-                POP(2 * WORD_SIZE)
-                RETURN()
-
-            @self.writer.LLILCode()
-            def Main():
-                DEBUG_SET_LINENO(1)
-                local_call(Callee, 'ret', ((PUSH_INT, 0), (PUSH_INT, 1)), **keywords)
-                RETURN()
-
-            compiled[case] = self.writer.build({})
-            self.assertEqual([f.debug_records for f in self.writer.functions], [[], []])
-
-        self.assertEqual(compiled['debug_argc'], compiled['plain'])
-        self.assertEqual(compiled['debug_record'], compiled['plain'])
 
 
 class TestCheckOffLocations(WriterTestCase):

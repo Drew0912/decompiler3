@@ -366,9 +366,9 @@ def check_debug_records(ctx: ScriptContext) -> CheckResult:
     for index, func in enumerate(ctx.parser.functions):
         # Dead calls have records too: pair over the code the .py prints, reachable and dead
         pairing = pair_records(ctx.data, ctx.parser.code_instructions(func), ctx.records[index],
-                               ctx.parser.get_func_argc, ctx.parser.get_func_index)
+                               ctx.parser.get_func_argc, ctx.parser.get_func_index, func.is_common_func)
         if pairing.call_count != pairing.record_count and not pairing.paired:
-            failures.append(f'{func.name}: {pairing.call_count} call sites with line info, {pairing.record_count} debug records')
+            failures.append(f'{func.name}: {pairing.call_count} call sites, {pairing.record_count} debug records')
             continue
 
         # A call the compiler left without a record (aligned): a new one may be a tracker regression

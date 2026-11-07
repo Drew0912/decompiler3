@@ -87,7 +87,6 @@ def decompile_written(round_trip: bool) -> str:
 
         @writer.LLILCode()
         def Main():
-            DEBUG_SET_LINENO(1)
             for ret, keywords in (('by_rule', {}), ('written_out', {'debug_argc': 2})):
                 PUSH_CURRENT_FUNC_ID()
                 PUSH_RET_ADDR(ret)

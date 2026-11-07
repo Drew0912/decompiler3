@@ -138,9 +138,8 @@ class ScpFunction:
 class ScpWriter:
     """Compiles the opcode calls of an executed DSL script into a .dat"""
 
-    # Byte-exact round trip with the original compiler: a never-deduplicated string pool in section order and
-    # call-site debug-info records. False drops the records too, and the engine reads those
-    # (docs/falcom/ed9/ED9_VM.md, Who reads the call-site records): only tests turn it off.
+    # Byte-exact round trip with the original compiler: a never-deduplicated string pool in section order. Only tests
+    # turn it off.
     round_trip = True
 
     # Check that the compiled bytes decompile again (disassemble and lift), with errors pointing at script lines
@@ -166,7 +165,7 @@ class ScpWriter:
         self.fs: fileio.FileStream = None                    # the code buffer, then the .dat being written (in memory)
         self.code_offset: int = None                         # file offset of the code buffer
         self.current_function: ScpFunction = None            # the function compiling; None outside a body
-        self.call_tracker: CallDebugInfoTracker = None       # round_trip only: the body's calls for the debug records
+        self.call_tracker: CallDebugInfoTracker = None       # the body's calls for the debug records
 
         # Labels and strings
         self.labels: dict[str, LabelSite] = {}
@@ -457,13 +456,11 @@ class ScpWriter:
             for f in self.functions:
                 self.current_function = f
                 self.call_tracker = CallDebugInfoTracker(get_param_count=self._get_param_count,
-                                                         warn=self._warn_at_opcode) if self.round_trip else None
+                                                         warn=self._warn_at_opcode)
                 f.entry.offset = code.Position
                 log.debug(f'{f.name} @ code+0x{f.entry.offset:08X}')
                 self._run_body(f, f.body)
-
-                if self.call_tracker is not None:
-                    f.calls = self.call_tracker.ordered_calls()
+                f.calls = self.call_tracker.ordered_calls()
         finally:
             # Also after a failed body: no statement compiles outside one
             self.current_function = None
@@ -517,12 +514,15 @@ class ScpWriter:
 
     def _build_debug_records(self):
         """Turn tracked call sites into debug-info records, in table order like the original compiler"""
-        if not self.round_trip:
-            return
-
         defaults = {f.name: self._parameter_defaults(f) for f in self.function_table}
         for f in self.function_table:
-            f.debug_records = [self._debug_record(call, defaults) for call in f.calls]
+            if self._gets_debug_records(f):
+                f.debug_records = [self._debug_record(call, defaults) for call in f.calls]
+
+    @classmethod
+    def _gets_debug_records(cls, f: ScpFunction) -> bool:
+        """The newer compiler writes no records for a common function; a line marker plays no part"""
+        return not f.entry.is_common_func
 
     @classmethod
     def _parameter_defaults(cls, f: ScpFunction) -> list[ScpValue | None]:
@@ -738,13 +738,12 @@ class ScpWriter:
         else:
             self._emit_described_opcode(opcode, args)
 
-        if self.call_tracker is not None:
-            self.call_tracker.on_opcode(opcode, args, value, string)
-            if debug_argc is not None:
-                self.call_tracker.calls[-1].debug_argc = debug_argc
+        self.call_tracker.on_opcode(opcode, args, value, string)
+        if debug_argc is not None:
+            self.call_tracker.calls[-1].debug_argc = debug_argc
 
-            if not debug_record:
-                self.call_tracker.calls[-1].recorded = False
+        if not debug_record:
+            self.call_tracker.calls[-1].recorded = False
 
     def _opcode_site(self) -> SourceSite | None:
         """Where the opcode being compiled was emitted: the innermost frame running an opcode emitter or a function it

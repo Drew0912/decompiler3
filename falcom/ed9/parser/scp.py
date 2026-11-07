@@ -1019,7 +1019,7 @@ class ScpParser(StrictBase):
         prints (reachable and decoded dead code); where that isn't the compiler's rule (canonical_argc) the .py writes
         it on the CALL, and on a call the compiler left without a record, debug_record=False"""
         pairing = pair_records(self.data, self.code_instructions(func), func.debug_info, self.get_func_argc,
-                               self.get_func_index)
+                               self.get_func_index, func.is_common_func)
         if not pairing.paired:
             log.warning(f'{func.name}: records not paired: {pairing.reason}; the .py writes no debug_argc')
             return

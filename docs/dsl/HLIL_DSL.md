@@ -129,9 +129,9 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   - warn when a function's last statement is not a return or a jump (a bare Python `return` stopped
     the build early); `return Return()` stays a deliberate early exit.
 - **Line numbers:** none in the DSL, and none planned (user, 2026-10-05): hand edits wouldn't carry
-  `DEBUG_SET_LINENO`, so an HLIL function compiles without it. It must still get its call-site debug
-  records, which the engine reads (`docs/ROUND_TRIP_POLICY.md`, Records the engine reads), so records can't
-  depend on a line marker, as `CallDebugInfoTracker` makes them do today.
+  `DEBUG_SET_LINENO`, so an HLIL function compiles without it. It still gets its call-site debug
+  records, which the engine reads (`docs/ROUND_TRIP_POLICY.md`, Records the engine reads): records don't
+  depend on a line marker.
   Line-Anchored Patches (`docs/dsl/HOOKS.md`) then need an anchor that doesn't use line numbers.
 - **Printer:** one statement per line, a trailing comma on every list item, comments allowed inside
   brackets; named pseudo-IDs, hex bit flags, the shortest float that encodes identically.

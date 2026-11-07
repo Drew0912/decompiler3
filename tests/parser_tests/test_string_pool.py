@@ -28,7 +28,7 @@ SCRIPT_SECTIONS = {
     StringPoolSection.Code      : ['zeta', 'dead', 'hello', 'arg', 'this', 'Zeta', 'mod', 'Tail'],
     StringPoolSection.Name      : ['Alpha', 'Mid', 'Zeta'],
     StringPoolSection.Default   : ['fallback'],
-    StringPoolSection.Debug     : ['this.Zeta'],
+    StringPoolSection.Debug     : ['this.Zeta', 'mod.Tail'],
     StringPoolSection.Global    : ['flag'],
 }
 
@@ -55,7 +55,6 @@ def compile_script(dat: Path):
 
     @writer.LLILCode()
     def Alpha():
-        DEBUG_SET_LINENO(1)  # a call gets a debug record only after line info
         PUSH_STR('hello')
         POP(WORD_SIZE)
         PUSH_CURRENT_FUNC_ID()

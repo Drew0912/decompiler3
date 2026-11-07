@@ -282,7 +282,7 @@ class ScpListing:
         """Each record's call offset and the calls left without a record when every record holds what its call gets
         (content only), else why not"""
         pairing = pair_records(self.data, self.parser.code_instructions(func), self.records[func.index],
-                               self.parser.get_func_argc, self.parser.get_func_index)
+                               self.parser.get_func_argc, self.parser.get_func_index, func.is_common_func)
         if not pairing.paired:
             return {}, [], f'records not paired: {pairing.reason}'
 

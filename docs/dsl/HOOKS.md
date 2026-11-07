@@ -130,9 +130,8 @@ only, check `get_scp_writer().current_function.name`. Pitfalls:
 - Labels a callback emits need fresh names (`genLabel()`): a fixed name fails on the callback's second hit, and that
   error has no location.
 - In round-trip mode, dropping part of a call sequence (`PUSH_CALLER_FRAME`, `PUSH_RET_ADDR`, an argument push)
-  shifts the function's later debug records, and calls before the function's first kept `DEBUG_SET_LINENO` get none
-  (dropping every one loses them all). The engine reads these records (`docs/ROUND_TRIP_POLICY.md`, Records the engine
-  reads): a lost one can leave a clip unloaded or change a message window's size.
+  shifts the function's later debug records. The engine reads these records (`docs/ROUND_TRIP_POLICY.md`, Records the
+  engine reads): a lost one can leave a clip unloaded or change a message window's size.
 
 **Where errors point.** The writer's errors about a hook (a bad registration, a signature, an unknown name) and
 compile-check failures name the hook's own line: a replacement's opcode, a wrapper's own opcode, an inlined

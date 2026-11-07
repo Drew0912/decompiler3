@@ -106,7 +106,6 @@ def branches_program() -> tuple[Func, ...]:
 
 def local_call_program() -> tuple[Func, ...]:
     asm = Asm()
-    asm.debug_set_lineno(LINE)                                          # the tracker records calls after line info
     asm.push_raw(CALLER_ID); asm.push_raw('return')
     asm.push_int(LEFT_VALUE); asm.push_int(RIGHT_VALUE); asm.call(CALLEE_ID)
     asm.label('return'); asm.ret()

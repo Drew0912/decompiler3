@@ -54,9 +54,9 @@ IR_OUTPUTS = ('write_py', 'write_ts', 'write_llil_asm', 'write_llil_dot', 'write
 
 
 def compile_main(dat: Path):
-    """Global var types 1 and 2; Outer has a float and a string default; Main makes a call before any line info, pushes a
-    string with every character that needs escaping, nests Inner() in Outer's arguments (records in source order: Outer's
-    first), and calls Inner again in dead code after its RETURN"""
+    """Global var types 1 and 2; Outer has a float and a string default; Main pushes a string with every character that
+    needs escaping, nests Inner() in Outer's arguments (records in source order: Outer's first), and calls Inner again
+    in dead code after its RETURN"""
     writer = fresh_writer(dat)
 
     @writer.GlobalVars()
@@ -77,11 +77,6 @@ def compile_main(dat: Path):
 
     @writer.LLILCode()
     def Main():
-        PUSH_CURRENT_FUNC_ID()
-        PUSH_RET_ADDR('early')
-        CALL(Inner)
-        label('early')
-        DEBUG_SET_LINENO(1)  # a call gets a debug record only after line info
         PUSH_STR(SPECIAL_TEXT)
         POP(WORD_SIZE)
         PUSH_FLOAT(0.3)
@@ -273,11 +268,6 @@ class TestListing(unittest.TestCase):
         dead_call = next(i for i, line in enumerate(lines) if 'CALL 0' in line and 'unreachable' in line)
         self.assertIn('record 4: Local Inner()', lines[dead_call + 1])
 
-    def test_call_before_line_info_has_no_record(self):
-        lines = group_lines(self.lines, 'Main')
-        first_call = next(i for i, line in enumerate(lines) if 'CALL 0' in line)
-        self.assertNotIn('record', lines[first_call + 1])
-
     def test_text_is_escaped(self):
         text = '\n'.join(self.lines)
         self.assertNotIn('\r', text)
@@ -394,7 +384,7 @@ class TestProcessFile(unittest.TestCase):
     def test_selected_functions_only(self):
         lines = self.listing_text(self.main, filter_func=lambda func: func.name in ('Main', 'Inner')).splitlines()
         self.assertEqual(function_headings(lines), ['Inner', 'Main'])
-        self.assertIn('0x1B1  name     "Outer"', lines)     # the pool lists an unselected function's name too
+        self.assertIn('0x19F  name     "Outer"', lines)     # the pool lists an unselected function's name too
         self.assertFalse([line for line in lines if 'not decoded' in line])
 
     def test_common_functions_left_out(self):
@@ -440,8 +430,8 @@ class TestRealScripts(unittest.TestCase):
         self.assertEqual(code_area(listing, lines), whole_code_area(listing))
 
     def test_unmarked_call_is_tagged(self):
-        """SkillTable's first if-body call has no record (no line marker of its own): its records pair with the other
-        calls, and that CALL is tagged"""
+        """SkillTable's first if-body call has no record: its records pair with the other calls, and that CALL is
+        tagged"""
         listing = ScpListing(require(UNMARKED_CALL_FILE))
         call_offsets, unrecorded, note = listing.pairing(listing.parser.function_map[UNMARKED_CALL_FUNCTION])
         self.assertEqual((len(call_offsets), unrecorded, note), (UNMARKED_CALL_RECORDS, [UNMARKED_CALL_OFFSET], None))

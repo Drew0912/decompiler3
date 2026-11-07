@@ -45,7 +45,7 @@ class TrackedCall:
     target      : Any                               # CALL operand, (module, func) or (subsystem, cmd)
     ret_label   : Any                               # PUSH_RET_ADDR operand of a local CALL
     args        : list[TrackedValue]                # top of stack first (parameter order)
-    recorded    : bool                              # has a debug record: made after line info, no debug_record=False
+    recorded    : bool = True                       # has a debug record: no debug_record=False
     children    : list[TrackedCall] = field(default_factory=list)  # the calls nested in its args, parameter order
     parent      : TrackedCall | None = None
     debug_argc  : int | None = None                 # the writer's CALL(f, debug_argc=N): args its record keeps
@@ -78,7 +78,6 @@ class CallDebugInfoTracker:
         self.registers          : dict[int, TrackedValue] = {}
         self.calls              : list[TrackedCall] = []            # every call made, in evaluation order
         self.pop_carry          = PopCarry()                        # bytes the last POP left inside a slot
-        self.has_line_info      = False
 
     def on_opcode(self, opcode: int, operands: list | tuple, payload: ScpValue | None = None, string: Any = None):
         """payload (and the writer's pooled string) of a constant push"""
@@ -94,7 +93,7 @@ class CallDebugInfoTracker:
                 self.stack.append(TrackedValue(ArgType.Constant, payload, string))
 
             case InstructionKind.DEBUG_LINE:
-                self.has_line_info = True
+                pass
 
             # A call's setup pushes placeholders: its first push opens the call's frame, the return address labels it
             case InstructionKind.PUSH_FUNC_ID | InstructionKind.PUSH_CALLER_FRAME:
@@ -226,9 +225,8 @@ class CallDebugInfoTracker:
     def add_call(self, call_type: ScpFunctionCallDebugInfo.CallType, target: Any, ret_label: Any,
                  args: list[TrackedValue], returns: bool):
         """A call adopts each call nested in its args that has no parent yet (a result read twice adopts once); a
-        returning call's result goes to RESULT_REGISTER. Calls compiled without line info (common functions, calls
-        before the first DEBUG_SET_LINENO) get no record, even when a recorded call adopts them."""
-        call = TrackedCall(call_type, target, ret_label, args, recorded=self.has_line_info)
+        returning call's result goes to RESULT_REGISTER"""
+        call = TrackedCall(call_type, target, ret_label, args)
         for value in args:
             for child in value.calls:
                 if child.parent is None:
@@ -374,11 +372,16 @@ class RecordPairing:
 
 
 def pair_records(data: bytes, instructions: list[Instruction], records: list[ScpFunctionCallDebugInfo],
-                 get_param_count: Callable[[Any], int], table_index: Callable[[str], int | None]) -> RecordPairing:
+                 get_param_count: Callable[[Any], int], table_index: Callable[[str], int | None],
+                 is_common: bool) -> RecordPairing:
     """A function's records (raw, read from data) against the recorded calls of its instructions (address order),
     content-checked (record_mismatch): with equal counts each record pairs with the call at its index; with more calls
-    than records, by their unique alignment (align_records); with more records than calls nothing is matched"""
+    than records, by their unique alignment (align_records); with more records than calls nothing is matched. A common
+    function with no records has nothing to pair: the newer compiler writes none for them"""
     calls = CallDebugInfoTracker.replay(instructions, get_param_count)
+    if is_common and not records:
+        return RecordPairing([], [], [], [], [], len(calls), 0)
+
     if len(calls) > len(records):
         return align_records(data, calls, records, table_index)
 
@@ -399,10 +402,10 @@ def pair_records(data: bytes, instructions: list[Instruction], records: list[Scp
 
 def align_records(data: bytes, calls: list[tuple[TrackedCall, int]], records: list[ScpFunctionCallDebugInfo],
                   table_index: Callable[[str], int | None]) -> RecordPairing:
-    """More calls than records: the compiler gives no record to a call whose statement has no line marker of its own
-    (the first statement of an if body). Every record matches a call, in order, content-checked; the calls left over
-    must be local (only CALL takes debug_record=False). Paired only when exactly one such alignment exists: a wrong
-    skip would shift every later record."""
+    """More calls than records: the compiler leaves a few local calls without a record (docs/falcom/ed9/ED9_FORMAT.md,
+    Call-Site Debug Records, rule 2). Every record matches a call, in order, content-checked; the calls left over must
+    be local (only CALL takes debug_record=False). Paired only when exactly one such alignment exists: a wrong skip
+    would shift every later record."""
     call_count, record_count = len(calls), len(records)
     slack = call_count - record_count       # the calls left over: a record j matches a call in [j, j + slack]
     is_local = [call.call_type == ScpFunctionCallDebugInfo.CallType.Local for call, _ in calls]

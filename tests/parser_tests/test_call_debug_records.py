@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Unit tests for pairing call-site debug records with their calls: CallDebugInfoTracker (its call tree, registers and
-line gate; replay's record order and each call's instruction offset), falcom/ed9/structs/call_debug_records.py
+line markers; replay's record order and each call's instruction offset), falcom/ed9/structs/call_debug_records.py
 (canonical_argc, record_args, record_mismatch, script_call_identity, pair_records and its alignment of more calls than
 records), a local call's count on its CALL through a round trip - a dead call's too, and a call without a record
 (debug_record=False), function_extents, and the round-trip validator's debug-records check and record comparison
@@ -25,6 +25,7 @@ from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, RESULT_REGISTER
 from falcom.ed9.structs.call_debug_records import (CallDebugInfoTracker, TrackedValue, canonical_argc, pair_records,
                                                    record_args, record_mismatch, script_call_identity)
 from falcom.ed9.parser.code_layout import function_extents
+from falcom.ed9.parser.scp_listing import ScpListing
 from falcom.ed9.structs.string_pool import NUL, read_text, string_offset
 from falcom.ed9.structs.scp_types import (RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg,
                                           ScpFunctionEntry, ScpValue)
@@ -144,9 +145,9 @@ def constants(args: list[TrackedValue]) -> list:
 
 def compile_script(dat: Path, extra_function: bool = False):
     """Main's records are in source order, not address order: Outer's record comes before the Inner call in its argument,
-    and the SYSCALL's before the Inner call whose result it takes. Main's first call is made before any line info, so it
-    has no record. Defined in source order Inner, Outer, Main, Tail; the table is sorted by name. extra_function adds
-    EXTRA_FUNCTION, whose name sorts first: every table id and every debug string's pool offset shifts."""
+    and the SYSCALL's before the Inner call whose result it takes. Defined in source order Inner, Outer, Main, Tail; the
+    table is sorted by name. extra_function adds EXTRA_FUNCTION, whose name sorts first: every table id and every debug
+    string's pool offset shifts."""
     writer = fresh_writer(dat)
 
     if extra_function:
@@ -167,11 +168,6 @@ def compile_script(dat: Path, extra_function: bool = False):
 
     @writer.LLILCode()
     def Main():
-        PUSH_CURRENT_FUNC_ID()
-        PUSH_RET_ADDR('early')
-        CALL(Inner)
-        label('early')
-        DEBUG_SET_LINENO(1)  # a call gets a debug record only after line info
         PUSH_CURRENT_FUNC_ID()
         PUSH_RET_ADDR('outer')
         PUSH_CURRENT_FUNC_ID()
@@ -198,6 +194,35 @@ def compile_script(dat: Path, extra_function: bool = False):
     def Tail():
         DEBUG_SET_LINENO(2)
         CALL_SCRIPT_NO_RETURN('mod', 'Tail', 0)
+
+    writer.run({})
+
+
+def compile_common_and_unmarked(dat: Path):
+    """Common, a common function, and Plain, with no line marker, each make a syscall and a local call"""
+    writer = fresh_writer(dat)
+
+    def syscall_and_call(ret: str):
+        PUSH_INT(SYSCALL_CONSTANT)
+        SYSCALL(SYSCALL_SUBSYSTEM, SYSCALL_FUNC, 1)
+        POP(WORD_SIZE)
+        PUSH_CURRENT_FUNC_ID()
+        PUSH_RET_ADDR(ret)
+        CALL(Callee)
+        label(ret)
+        RETURN()
+
+    @writer.LLILCommonCode()
+    def Common():
+        syscall_and_call('common')
+
+    @writer.LLILCode()
+    def Callee():
+        RETURN()
+
+    @writer.LLILCode()
+    def Plain():
+        syscall_and_call('plain')
 
     writer.run({})
 
@@ -266,7 +291,6 @@ def compile_dead_call(dat: Path):
 
     @writer.LLILCode()
     def Main():
-        DEBUG_SET_LINENO(1)
         RETURN()
         PUSH_CURRENT_FUNC_ID()
         PUSH_RET_ADDR('dead')
@@ -291,7 +315,6 @@ def compile_counts(dat: Path):
 
     @writer.LLILCode()
     def Main():
-        DEBUG_SET_LINENO(1)
         for ret, keywords in (('by_rule', {}), ('written_out', {'debug_argc': 2})):
             PUSH_CURRENT_FUNC_ID()
             PUSH_RET_ADDR(ret)
@@ -323,7 +346,6 @@ def compile_skills(dat: Path):
 
     def skill_calls(prefix: str, *calls: tuple[int, bool]):
         """Skill(value) calls, recorded or not; labels prefix0, prefix1, ... (labels are script-wide)"""
-        DEBUG_SET_LINENO(1)
         for index, (value, recorded) in enumerate(calls):
             PUSH_CURRENT_FUNC_ID()
             PUSH_RET_ADDR(f'{prefix}{index}')
@@ -464,41 +486,35 @@ class TestCallTree(unittest.TestCase):
 
     def test_depth_two(self):
         """wait(sub(rand(3, 4)))"""
-        tracker = feed(LINE, local_call('wait', nested('sub', nested('rand', push(3), push(4)))))
+        tracker = feed(local_call('wait', nested('sub', nested('rand', push(3), push(4)))))
         self.assertEqual(targets(tracker), ['wait', 'sub', 'rand'])
 
     def test_calls_in_a_binary_expression_argument_in_evaluation_order(self):
         """g(f() + x())"""
-        tracker = feed(LINE, local_call('g', nested('f') + nested('x') + [(ED9Opcode.ADD, [])]))
+        tracker = feed(local_call('g', nested('f') + nested('x') + [(ED9Opcode.ADD, [])]))
         f, x, g = tracker.calls
         self.assertEqual((constants(g.args), g.children), ([(ArgType.Expression, None)], [f, x]))
         self.assertEqual(tracker.ordered_calls(), [g, f, x])
 
     def test_a_call_in_a_unary_expression_argument(self):
         """g(-f())"""
-        tracker = feed(LINE, local_call('g', nested('f') + [(ED9Opcode.NEG, [])]))
+        tracker = feed(local_call('g', nested('f') + [(ED9Opcode.NEG, [])]))
         f, g = tracker.calls
         self.assertEqual((constants(g.args), g.children), ([(ArgType.Expression, None)], [f]))
         self.assertEqual(tracker.ordered_calls(), [g, f])
 
     def test_a_result_read_twice_is_adopted_once(self):
         """x = f(); g(x, x), x read through register 0 twice"""
-        tracker = feed(LINE, local_call('f'), local_call('g2', get_reg(), get_reg()))
+        tracker = feed(local_call('f'), local_call('g2', get_reg(), get_reg()))
         f, g = tracker.calls
         self.assertEqual((targets(tracker), g.children, f.parent), (['g2', 'f'], [f], g))
 
 
-class TestLineGate(unittest.TestCase):
-    """A call gets a record only when it is made after line info"""
-
-    def test_a_call_before_line_info_stays_unrecorded_when_a_recorded_call_takes_its_result(self):
+class TestLineMarkers(unittest.TestCase):
+    def test_a_call_before_the_first_marker_has_a_record(self):
         tracker = feed(local_call('f'), LINE, local_call('g', get_reg()))
         f, g = tracker.calls
-        self.assertEqual((targets(tracker), g.children), (['g'], [f]))
-
-    def test_a_call_set_up_before_line_info_and_made_after_it_has_a_record(self):
-        tracker = feed(local_call('g', LINE + push(SAVED_VALUE)))
-        self.assertEqual(targets(tracker), ['g'])
+        self.assertEqual((targets(tracker), g.children), (['g', 'f'], [f]))
 
 
 class TestRegisters(unittest.TestCase):
@@ -508,8 +524,8 @@ class TestRegisters(unittest.TestCase):
     def test_a_tail_call_argument_parked_in_a_register(self):
         """PUSH_FLOAT(0.2); SET_REG(1); POP(20); GET_REG(1); CALL_SCRIPT_NO_RETURN('', 'AniWait', 1): the previous
         line's call keeps its record first"""
-        tracker = feed(LINE, local_call('speed', push(POS_CHR), push(ANIME_SPEED)),
-                       LINE, push(TAIL_ARG), set_reg(TAIL_REGISTER), [(ED9Opcode.POP, [LOCALS_SIZE])],
+        tracker = feed(local_call('speed', push(POS_CHR), push(ANIME_SPEED)),
+                       push(TAIL_ARG), set_reg(TAIL_REGISTER), [(ED9Opcode.POP, [LOCALS_SIZE])],
                        get_reg(TAIL_REGISTER), tail_call(1))
         speed, tail = tracker.calls
         self.assertEqual(tracker.ordered_calls(), [speed, tail])
@@ -518,7 +534,7 @@ class TestRegisters(unittest.TestCase):
     def test_several_registers_keep_each_argument(self):
         """A tail call of three arguments, pushed last first: SET_REG(1..3) park them top first, GET_REG(3..1) push them
         back"""
-        tracker = feed(LINE, push(THIRD_ARG), nested('f'), push(FIRST_ARG), set_reg(1), set_reg(2), set_reg(3),
+        tracker = feed(push(THIRD_ARG), nested('f'), push(FIRST_ARG), set_reg(1), set_reg(2), set_reg(3),
                        get_reg(3), get_reg(2), get_reg(1), tail_call(3))
         f, tail = tracker.calls
         self.assertEqual(constants(tail.args), [(ArgType.Constant, FIRST_ARG), (ArgType.CallResult, None),
@@ -528,24 +544,24 @@ class TestRegisters(unittest.TestCase):
     def test_each_returning_call_leaves_its_result_in_register_zero(self):
         for name, made in (('CALL', local_call('f')), ('CALL_SCRIPT', script_call(0)), ('SYSCALL', syscall(0))):
             with self.subTest(call=name):
-                tracker = feed(LINE, local_call('x'), made, local_call('g', get_reg()))
+                tracker = feed(local_call('x'), made, local_call('g', get_reg()))
                 _, call, g = tracker.calls
                 self.assertEqual(g.children, [call])
 
     def test_a_tail_call_leaves_register_zero(self):
-        tracker = feed(LINE, local_call('x'), tail_call(0), local_call('g', get_reg()))
+        tracker = feed(local_call('x'), tail_call(0), local_call('g', get_reg()))
         x, _, g = tracker.calls
         self.assertEqual(g.children, [x])
 
     def test_an_unset_register_reads_as_a_result_of_no_call(self):
-        tracker = feed(LINE, local_call('x'), local_call('g', get_reg(UNSET_REGISTER)))
+        tracker = feed(local_call('x'), local_call('g', get_reg(UNSET_REGISTER)))
         _, g = tracker.calls
         self.assertEqual((constants(g.args), g.children), ([(ArgType.CallResult, None)], []))
 
     def test_a_register_set_in_both_branch_arms_reads_the_later_arm(self):
         """r1 = f() if c else SAVED_VALUE; g(r1): replay reads both arms in a row, so g gets the later arm's constant
         and f stays a statement of its own (compiler provenance in address order, not path dataflow)"""
-        tracker = feed(LINE, push(0), [(ED9Opcode.POP_JMP_ZERO, ['else'])], nested('f'), set_reg(TAIL_REGISTER),
+        tracker = feed(push(0), [(ED9Opcode.POP_JMP_ZERO, ['else'])], nested('f'), set_reg(TAIL_REGISTER),
                        [(ED9Opcode.JMP, ['end'])], push(SAVED_VALUE), set_reg(TAIL_REGISTER),
                        local_call('g', get_reg(TAIL_REGISTER)))
         f, g = tracker.calls
@@ -555,7 +571,7 @@ class TestRegisters(unittest.TestCase):
     def test_a_register_set_in_one_branch_arm_is_read_after_the_join(self):
         """if c: r1 = f() else: x(); g(r1): replay reads straight through the JMP, so g takes f's result from the arm
         before it (compiler provenance in address order, not path dataflow)"""
-        tracker = feed(LINE, push(0), [(ED9Opcode.POP_JMP_ZERO, ['else'])], nested('f'), set_reg(TAIL_REGISTER),
+        tracker = feed(push(0), [(ED9Opcode.POP_JMP_ZERO, ['else'])], nested('f'), set_reg(TAIL_REGISTER),
                        [(ED9Opcode.JMP, ['end'])], local_call('x'), local_call('g', get_reg(TAIL_REGISTER)))
         f, x, g = tracker.calls
         self.assertEqual((constants(g.args), g.children), ([(ArgType.CallResult, None)], [f]))
@@ -580,7 +596,6 @@ def compile_siblings(dat: Path):
 
     @writer.LLILCode()
     def Siblings():
-        DEBUG_SET_LINENO(1)
         PUSH_CURRENT_FUNC_ID()
         PUSH_RET_ADDR('pos')
         for key in reversed(INFO_KEYS):
@@ -688,7 +703,7 @@ class CompiledScript(unittest.TestCase):
 
 class TestReplay(CompiledScript):
     def test_calls_in_record_order_with_their_instruction(self):
-        early, inner, outer, result, syscall, script = self.call_offsets('Main')
+        inner, outer, result, syscall, script = self.call_offsets('Main')
         pairs = [(call.call_type, offset) for call, offset in self.replay('Main')]
         self.assertEqual(pairs, [(CallType.Local, outer), (CallType.Local, inner), (CallType.Syscall, syscall),
                                  (CallType.Local, result), (CallType.Script, script)])
@@ -993,7 +1008,8 @@ class TestPairRecords(CompiledScript):
     is matched"""
 
     def pairing(self, data: bytes, records: list):
-        return pair_records(data, self.instructions['Main'], records, self.parser.get_func_argc, self.parser.get_func_index)
+        return pair_records(data, self.instructions['Main'], records, self.parser.get_func_argc,
+                            self.parser.get_func_index, is_common=False)
 
     def test_every_record_matches(self):
         pairing = self.pairing(self.data, self.records['Main'])
@@ -1018,6 +1034,39 @@ class TestPairRecords(CompiledScript):
         self.assertEqual((pairing.matches, pairing.unrecorded, pairing.unmatched_calls, pairing.unmatched_records,
                           pairing.mismatches), ([], [], [0, 1, 2, 3, 4], [0, 1, 2, 3, 4, 5], []))
         self.assertEqual(pairing.reason, '5 calls, 6 records')
+
+
+class TestWhichFunctionsGetRecords(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.dat = Path(cls.enterClassContext(tempfile.TemporaryDirectory())) / 'test.dat'
+        compile_common_and_unmarked(cls.dat)
+        cls.ctx = load_script(cls.dat)
+        cls.addClassCleanup(cls.ctx.fs.Close)
+        cls.records = dict(zip([func.name for func in cls.ctx.parser.functions], cls.ctx.records))
+
+    def pairing(self, is_common: bool):
+        parser = self.ctx.parser
+        return pair_records(self.ctx.data, parser.code_instructions(parser.function_map['Common']), [],
+                            parser.get_func_argc, parser.get_func_index, is_common)
+
+    def test_a_function_with_no_line_marker_gets_its_records(self):
+        self.assertEqual([record.call_type for record in self.records['Plain']], [CallType.Syscall, CallType.Local])
+
+    def test_a_common_function_gets_none(self):
+        self.assertEqual(self.records['Common'], [])
+
+    def test_only_a_common_function_pairs_with_no_records(self):
+        """The syscall can't be a call left without a record, so any other function's calls don't pair"""
+        self.assertEqual((self.pairing(is_common=True).paired, self.pairing(is_common=False).paired), (True, False))
+
+    def test_no_reader_complains_of_a_common_function_with_no_records(self):
+        with self.assertNoLogs(log, 'WARNING'):
+            self.ctx.parser.pair_call_debug_info(self.ctx.parser.function_map['Common'])
+
+        listing = ScpListing(self.dat)
+        self.assertEqual(listing.pairing(listing.parser.function_map['Common']), ({}, [], None))
+        self.assertEqual(check_debug_records(self.ctx).status, Status.PASS)
 
 
 class SkillScript(unittest.TestCase):
@@ -1047,7 +1096,7 @@ class TestAlignRecords(SkillScript):
     def pairing(self, name: str, kept: list[int]):
         """name's calls against its records at the indices kept"""
         return pair_records(self.data, self.instructions[name], [self.records[name][i] for i in kept],
-                            self.parser.get_func_argc, self.parser.get_func_index)
+                            self.parser.get_func_argc, self.parser.get_func_index, is_common=False)
 
     def assert_aligned(self, kept: list[int]):
         pairing = self.pairing('Distinct', kept)

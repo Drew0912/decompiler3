@@ -33,8 +33,9 @@ Two tiers, in priority order:
 Behaviour that exists only to reproduce the original bytes (the string pool's section order and duplicate entries, a
 record's exact argument count and its pairing with the original) is optional, on by default, behind the `round_trip`
 flag of the class doing it (`ScpParser.round_trip`, `ScpWriter.round_trip`), so it can be turned off, e.g. for another
-game's scripts where the fidelity rules may not hold. `ScpWriter.round_trip = False` also drops every record today, so
-only tests set it. A change to the generated `.py` text alone needs no flag. Format-correctness fixes are
+game's scripts where the fidelity rules may not hold. `ScpWriter.round_trip` covers the string pool only: the records
+themselves are behind no flag (Records the engine reads), and only tests set it off. A change to the generated `.py`
+text alone needs no flag. Format-correctness fixes are
 always on (the function table sorted by name, the `PUSH_CURRENT_FUNC_ID` index, default-parameter order, header
 offsets, functions kept in source order); say why it is not gated when adding one. The table's order is the
 compiler's: the VM's lookup by name ignores it (`docs/falcom/ed9/ED9_VM.md`, Calls by name).
@@ -56,9 +57,7 @@ the function's order, and a new or replaced function gets them too. Which functi
 - **Common functions' records in `sora`'s older-built files:** they hold no Chr 47 and no clip name.
 - **A trailing argument equal to the callee's default** can leave a local record (`ED9_FORMAT.md`, rule 6).
 
-Not there yet: a call before its function's first `DEBUG_SET_LINENO` gets no record (`CallDebugInfoTracker`), so a hook
-or a new function with no marker loses them; and `--logic-round-trip` doesn't compare records, so only `--round-trip`
-would notice a loss.
+Not there yet: `--logic-round-trip` doesn't compare records, so only `--round-trip` would notice a loss.
 
 ## Every function stays
 

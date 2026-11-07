@@ -78,7 +78,7 @@ only: their callee's defaults are in this script's function table. Two ways:
   *&var_s4)` after `var_s4 = -1`) - printing the record's count would leave the assignment dangling; the
   cause, a call argument in a reused stack slot, is a work-order follow-up. A call with no written count
   prints (a): functions without records (common functions), unpaired functions (the 4 differently built
-  `chr*` files, `chr5110`), calls before the first `DEBUG_SET_LINENO`, `debug_record=False` calls, and
+  `chr*` files, `chr5110`), `debug_record=False` calls, and
   every everyday decompile. In `sora2` about one recorded call in seven prints more than (a). Dead code isn't in
   `.ts`.
 

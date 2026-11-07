@@ -148,9 +148,9 @@ global name - can't hold a NUL (the game ends the string there) or a lone surrog
 `PUSH_STR('a\x00b')` fails at its line (`PUSH_STR string 'a\x00b' contains a NUL, ..`), a default at its
 `def`. Errors raised while a body runs carry the `.py` line in their traceback.
 
-**Call-site debug records.** With `ScpWriter.round_trip` on (the default), every call made after a
-function's first `DEBUG_SET_LINENO` gets a debug record of its arguments, unless its `CALL` says
-`debug_record=False` (below). A local call's record keeps them
+**Call-site debug records.** Every call of a non-common function gets a debug record of its arguments,
+with or without a `DEBUG_SET_LINENO` before it, unless its `CALL` says `debug_record=False` (below); a common
+function gets none (`ScpWriter._gets_debug_records`). A local call's record keeps them
 up to the last one its author wrote, by the original compiler's rule: trailing constant arguments equal to
 the callee's defaults (the same type and stored word, a string by its text; the callee's final signature,
 hooks included) are left out. A call whose original record breaks the rule carries its count on the `CALL`
@@ -165,12 +165,11 @@ calls than records the parser finds the one order-preserving alignment of record
 each local call left over carries `CALL(btl_ai_skill, debug_record=False)` - no record, so a `debug_argc`
 beside it is unused. `debug_argc` must be an `int` (`CALL debug_argc is True (bool), not int`) and is used
 as given, `debug_record` a `bool`; opcode callbacks never see either, and they go with their `CALL` when one
-drops it. An everyday `.py` (decompiled with `ScpParser.round_trip` off: neither keyword) compiled with the
-writer's default gets rule-trimmed
-records; `ScpWriter.round_trip = False` writes no records at all. `ScpWriter.round_trip` covers the other
-half of a byte-exact file too: on, the string pool is never deduplicated and is written in section order,
-as the original compiler wrote it; off, equal strings share one entry. The string pool's half doesn't change
-the logic; the records' does (`docs/ROUND_TRIP_POLICY.md`, Records the engine reads). An older
+drops it. An everyday `.py` (decompiled with `ScpParser.round_trip` off: neither keyword) gets rule-trimmed
+records, and a record for each call the original left without one. `ScpWriter.round_trip` covers the string
+pool only: on (the default), it is never deduplicated and is written in section order, as the original
+compiler wrote it; off, equal strings share one entry. That doesn't change the logic, and only tests turn it
+off. The records do (`docs/ROUND_TRIP_POLICY.md`, Records the engine reads), so no flag touches them. An older
 round-trip `.py` with `@scena.LLILCode(debug_argc={...})` stops at Python's `TypeError` there: decompile
 the `.dat` again.
 
