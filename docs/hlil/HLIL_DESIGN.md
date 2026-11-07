@@ -297,7 +297,8 @@ Several dedicated HLIL unit-test files exist today:
   comments before each later test end up, and links under a truth test (each form, `||` groups, label 0, a
   register scrutinee, and the tests that are no link).
 - `tests/hlil_tests/test_hlil_switch_on_stack_path.py` runs dispatch chains as the compiler writes them through
-  both LLIL -> MLIL paths: the same switch on each, and the logic check's MLIL -> HLIL pair clean.
+  the stack translator: the expected switch, and the logic check's MLIL -> HLIL pair clean;
+  `tests/mlil_ssa_tests/test_mlil_ssa_switch.py` runs the same chains through the SSA path.
 - `tests/hlil_tests/test_hlil_loop_recovery.py` covers leading break/return guards, unsafe rotations, nested
   switch breaks, preservation of already-tested loops, the while(1)->do-while rotation (from a trailing
   `if (c) break;` and, since 2026-10-28, from a trailing `if (c) continue; else break;`), and its

@@ -12,7 +12,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
     MediumLevelILCall, MLILAdd, MLILAddressOf, MLILConst, MLILEq, MLILGe, MLILIf, MLILIntrinsic, MLILLoadGlobal,
@@ -565,17 +564,13 @@ class TestPlantedBugs(unittest.TestCase):
 
 
 class TestTranslatorShapes(unittest.TestCase):
-    """MLIL in shapes the symbolic-stack translator gives (IR rewrite part 2), planted in the SSA path's MLIL: the check
-    reads them as the LLIL's storage"""
-
-    @classmethod
-    def reference_and_ssa_mlil(cls, build) -> tuple:
-        return reference_and_mlil(build, convert=lambda llil: convert_falcom_llil_to_mlil_ssa(llil, infer_types=False))
+    """MLIL in shapes the symbolic-stack translator gives, as it makes them or planted: the check reads them as the
+    LLIL's storage"""
 
     def test_sibling_scopes_named_apart(self):
         """The joined slot's writes and read all named as one sibling scope's local: storage of its own, read where it
         was written"""
-        reference, mlil = self.reference_and_ssa_mlil(joined_slot_function)
+        reference, mlil = reference_and_mlil(joined_slot_function)
         writes, read = joined_slot_writes_and_read(mlil)
         local = writes[0][2].var
         for write in writes:
@@ -586,18 +581,14 @@ class TestTranslatorShapes(unittest.TestCase):
     def test_address_taken_siblings_in_one_slot(self):
         """Two out-parameter locals named apart in one slot: one neutral key, two addresses, so each call reaches the
         local it was passed, not both"""
-        reference, mlil = self.reference_and_ssa_mlil(sibling_out_parameters_function)
+        reference, mlil = reference_and_mlil(sibling_out_parameters_function)
         out_parameters_named_apart(mlil)
         self.assertEqual(categories(reference, mlil), set())
 
     def test_register_stored_before_a_loop_at_the_start(self):
-        """The entry block's register write as a register store, not the SSA path's register variable: the block still
-        only copies, so the loop's entry edge is named as the LLIL names it"""
-        reference, mlil = self.reference_and_ssa_mlil(register_before_loop_function)
-        registers = list(mlil.register_vars.values())
-        block, index, inst = first(mlil, lambda inst: isinstance(inst, MLILSetVar) and inst.var in registers)
-        block.instructions[index] = MLILStoreReg(REG_INDEX, inst.value).copy_metadata_from(inst)
-        self.assertEqual(categories(reference, mlil), set())
+        """The entry block's register write is a register store: the block still only copies, so the loop's entry edge
+        is named as the LLIL names it"""
+        self.assertEqual(categories(*reference_and_mlil(register_before_loop_function)), set())
 
 
 class TestEffectValues(unittest.TestCase):

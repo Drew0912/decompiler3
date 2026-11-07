@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 """IR helpers for hand-built test functions, node-type coverage and source metadata"""
 
+import itertools
 import unittest
 
-from ir.mlil.mlil import MediumLevelILFunction, MLILGoto, MLILIf, MLILRet
+from ir.mlil.mlil import (
+    MediumLevelILFunction, MediumLevelILInstruction, MLILConst, MLILGoto, MLILIf, MLILRet,
+)
 
 ADDRESS_STEP = 4        # between the addresses given to instructions that have none
 
@@ -11,6 +14,8 @@ ADDRESS_STEP = 4        # between the addresses given to instructions that have 
 SOURCE_ADDRESS = 0x1234
 SOURCE_INST_INDEX = 7
 SOURCE_LLIL_INDEX = 9
+
+_const_values = itertools.count()
 
 
 def connect(func: MediumLevelILFunction) -> MediumLevelILFunction:
@@ -49,6 +54,34 @@ def concrete_subclasses(base: type) -> set:
             found.add(cls)
 
     return found
+
+
+def c() -> MLILConst:
+    """A constant whose value no other c() call returns, so every operand is distinct"""
+    return MLILConst(next(_const_values))
+
+
+def expression_fields(node) -> list:
+    """Every MLIL expression a node holds in a field, lists included."""
+    found = []
+    for value in vars(node).values():
+        for item in (value if isinstance(value, (list, tuple)) else [value]):
+            if isinstance(item, MediumLevelILInstruction):
+                found.append(item)
+
+    return found
+
+
+def replaced(value, replacements: dict):
+    """value with every MLIL expression in it, a list's or tuple's items included, swapped for its
+    replacement (keyed by id)"""
+    if isinstance(value, MediumLevelILInstruction):
+        return replacements[id(value)]
+
+    if isinstance(value, (list, tuple)):
+        return type(value)(replaced(item, replacements) for item in value)
+
+    return value
 
 
 def set_metadata(inst, address: int, inst_index: int, llil_index: int):

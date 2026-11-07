@@ -43,6 +43,15 @@ def stamp(inst, address: int, llil_index: int):
 class TestTranslatedProvenance(ProvenanceTestCase):
     """Through the SSA path's converter, with and without its optimizer"""
 
+    def test_every_statement_names_its_llil_instruction(self):
+        for path, convert in (('translated', lambda llil: convert_falcom_llil_to_mlil_ssa(llil, optimize=False)),
+                              ('optimized', convert_falcom_llil_to_mlil_ssa)):
+            with self.subTest(path=path):
+                llil = build_call_function()
+                mlil = convert(llil)
+                self.assertIs(mlil.llil_function, llil)
+                self.check_contract(mlil, llil)
+
     def test_call_and_its_goto_share_the_call(self):
         llil = build_call_function()
         mlil = convert_falcom_llil_to_mlil_ssa(llil, optimize=False)

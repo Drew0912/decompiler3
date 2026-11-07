@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Unit tests for iter_ssa_reads(), what an SSA node reads, and the rule copy propagation keeps on top of the shared
-traversal"""
+"""Unit tests for the SSA nodes' traversal: operands() and map_operands() over them, iter_ssa_reads(), what an SSA node
+reads, and the rule copy propagation keeps on top of the shared traversal"""
 
 from pathlib import Path
 import sys
@@ -10,10 +10,63 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILBasicBlock, MediumLevelILFunction, MLILVariable, MLILAdd, MLILAddressOf, MLILRet, MLILCall,
+    MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILFunction, MLILVariable, MLILAdd, MLILAddressOf,
+    MLILRet, MLILCall, map_operands,
 )
-from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILPhi, iter_ssa_reads
+from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILPhi, iter_ssa_reads
 from ir.mlil_ssa.passes.pass_ssa_copy_propagation import CopyPropagationPass
+from tests.shared.ir_utils import (
+    SOURCE_ADDRESS, SOURCE_INST_INDEX, SOURCE_LLIL_INDEX, c, concrete_subclasses, expression_fields, replaced,
+)
+
+
+def samples() -> list:
+    """One instance of every SSA node type, with distinct expression operands"""
+    var = MLILVariable('x')
+    ssa_var = MLILVariableSSA(var, 1)
+    return [MLILVarSSA(ssa_var), MLILSetVarSSA(ssa_var, c()),
+            MLILPhi(ssa_var, [(MLILVariableSSA(var, 0), MediumLevelILBasicBlock(0))])]
+
+
+class TestOperandsCoverEveryExpressionField(unittest.TestCase):
+    """operands() on the SSA nodes, as tests/mlil_tests/test_mlil_traversal.py reads every other node. A new SSA node
+    type fails here until it has a sample and its own operands()."""
+
+    def test_every_node_type_has_a_sample(self):
+        sampled = {type(node) for node in samples()}
+        node_types = {cls for cls in concrete_subclasses(MediumLevelILInstruction)
+                      if cls.__module__ == MLILVarSSA.__module__}
+        missing = node_types - sampled
+        self.assertEqual(missing, set(), [cls.__name__ for cls in missing])
+
+    def test_operands_are_exactly_the_expression_fields(self):
+        for node in samples():
+            with self.subTest(node=type(node).__name__):
+                self.assertCountEqual(map(id, node.operands()), map(id, expression_fields(node)))
+
+
+class TestMapOperands(unittest.TestCase):
+    """map_operands() over the SSA nodes: each expression field gets its replacement and every other field, metadata
+    included, is kept."""
+
+    def test_unchanged_operands_give_the_node_itself(self):
+        for node in samples():
+            with self.subTest(node=type(node).__name__):
+                self.assertIs(map_operands(node, lambda operand: operand), node)
+
+    def test_each_expression_field_is_replaced_and_every_other_field_kept(self):
+        for node in samples():
+            if not expression_fields(node):
+                continue
+
+            with self.subTest(node=type(node).__name__):
+                node.address, node.inst_index, node.llil_index = SOURCE_ADDRESS, SOURCE_INST_INDEX, SOURCE_LLIL_INDEX
+                replacements = {id(operand): c() for operand in expression_fields(node)}
+                rebuilt = map_operands(node, lambda operand: replacements[id(operand)])
+
+                expected = {name: replaced(value, replacements) for name, value in vars(node).items()}
+                self.assertIs(type(rebuilt), type(node))
+                self.assertEqual(vars(rebuilt), expected)
 
 
 class TestIterSSAReads(unittest.TestCase):

@@ -88,13 +88,13 @@ def optional_call_result_function() -> tuple[Asm, int]:
     return asm, 0
 
 
-def reference_and_mlil(build, argc: int = 0, convert=convert_falcom_llil_to_mlil_stack) -> tuple:
-    """The function's LLIL facts (taken before the conversion) and its MLIL as the decompiler makes it, or as convert
-    does; argc its parameters"""
+def reference_and_mlil(build, argc: int = 0) -> tuple:
+    """The function's LLIL facts (taken before the conversion) and its MLIL as the decompiler makes it; argc its
+    parameters"""
     asm, callee_argc = build()
     _, llil = lift_asm(asm, argc=argc, others=(returning_callee(callee_argc),))
     reference = logic_check.analyze(logic_check.LLILLayer(llil))
-    return reference, convert(llil)
+    return reference, convert_falcom_llil_to_mlil_stack(llil)
 
 
 def categories(reference, mlil) -> set[str]:

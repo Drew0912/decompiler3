@@ -4,7 +4,6 @@ the one shared answer to "what does this node read" that every use collector and
 is built on."""
 
 from pathlib import Path
-import itertools
 import sys
 import unittest
 
@@ -12,25 +11,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILCall, MLILVariable, MLILConst, MLILUndef,
-    MLILVar, MLILSetVar, MLILBinaryOp, MLILUnaryOp, MLILAdd, MLILMul, MLILNeg, MLILAddressOf, MLILGoto, MLILIf,
-    MLILRet, MLILCall, MLILSyscall, MLILCallScript, MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg,
-    MLILNop, MLILDebug, MLILIntrinsic, MLILStoreDeref, walk, map_operands,
+    MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILCall, MLILVariable, MLILUndef, MLILVar,
+    MLILSetVar, MLILBinaryOp, MLILUnaryOp, MLILAdd, MLILMul, MLILNeg, MLILAddressOf, MLILGoto, MLILIf, MLILRet,
+    MLILCall, MLILSyscall, MLILCallScript, MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILNop,
+    MLILDebug, MLILIntrinsic, MLILStoreDeref, walk, map_operands,
 )
-from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILPhi
-from tests.shared.ir_utils import concrete_subclasses
-
-
-_const_values = itertools.count()
-
-SOURCE_ADDRESS = 0x1234
-SOURCE_INST_INDEX = 7
-SOURCE_LLIL_INDEX = 9
-
-
-def c() -> MLILConst:
-    """A constant whose value no other c() call returns, so every operand is distinct"""
-    return MLILConst(next(_const_values))
+from tests.shared.ir_utils import (
+    SOURCE_ADDRESS, SOURCE_INST_INDEX, SOURCE_LLIL_INDEX, c, concrete_subclasses, expression_fields, replaced,
+)
 
 
 def samples() -> list:
@@ -41,7 +29,6 @@ def samples() -> list:
     other_block = MediumLevelILBasicBlock(1)
     var = MLILVariable('x')
     output = MLILVariable('result')
-    ssa_var = MLILVariableSSA(var, 1)
     nodes = [
         c(), MLILUndef(), MLILVar(var), MLILSetVar(var, c()),
         MLILGoto(block), MLILIf(c(), block, other_block), MLILRet(c()), MLILRet(),
@@ -50,34 +37,10 @@ def samples() -> list:
         MLILCallScript('m', 'f', [c(), c()], output, tail_call=True),
         MLILLoadGlobal(0), MLILStoreGlobal(1, c()), MLILLoadReg(0), MLILStoreReg(2, c()),
         MLILNop(), MLILDebug('line', 5), MLILIntrinsic('POPN', [c(), c()]), MLILStoreDeref(c(), c()),
-        MLILVarSSA(ssa_var), MLILSetVarSSA(ssa_var, c()), MLILPhi(ssa_var, [(MLILVariableSSA(var, 0), block)]),
     ]
     nodes += [cls(c(), c()) for cls in concrete_subclasses(MLILBinaryOp)]
     nodes += [cls(c()) for cls in concrete_subclasses(MLILUnaryOp)]
     return nodes
-
-
-def expression_fields(node) -> list:
-    """Every MLIL expression a node holds in a field, lists included."""
-    found = []
-    for value in vars(node).values():
-        for item in (value if isinstance(value, (list, tuple)) else [value]):
-            if isinstance(item, MediumLevelILInstruction):
-                found.append(item)
-
-    return found
-
-
-def replaced(value, replacements: dict):
-    """value with every MLIL expression in it, a list's or tuple's items included, swapped for its
-    replacement (keyed by id)"""
-    if isinstance(value, MediumLevelILInstruction):
-        return replacements[id(value)]
-
-    if isinstance(value, (list, tuple)):
-        return type(value)(replaced(item, replacements) for item in value)
-
-    return value
 
 
 class TestOperandsCoverEveryExpressionField(unittest.TestCase):
@@ -87,7 +50,9 @@ class TestOperandsCoverEveryExpressionField(unittest.TestCase):
 
     def test_every_node_type_has_a_sample(self):
         sampled = {type(node) for node in samples()}
-        missing = concrete_subclasses(MediumLevelILInstruction) - sampled
+        node_types = {cls for cls in concrete_subclasses(MediumLevelILInstruction)
+                      if cls.__module__ == MediumLevelILInstruction.__module__}
+        missing = node_types - sampled
         self.assertEqual(missing, set(), [cls.__name__ for cls in missing])
 
     def test_operands_are_exactly_the_expression_fields(self):
