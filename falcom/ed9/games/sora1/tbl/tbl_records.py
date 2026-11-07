@@ -296,10 +296,10 @@ class BooksText(TableDataEntry):
 
 class BooksCategory(TableDataEntry):
     DESCRIPTOR = (
-        ('uint16_00', 'W'),
-        ('pad02',     'P6'),
-        ('str08',     'S'),
-        ('str10',     'S'),
+        ('id',    'W'),
+        ('pad02', 'P6'),
+        ('text',  'S'),
+        ('ruby',  'S'),
     )
 
 
@@ -576,19 +576,19 @@ class CostumeParam(TableDataEntry):
 
 class CostumeAttachOffset(TableDataEntry):
     DESCRIPTOR = (
-        ('chrId',      'W'),
-        ('pad02',      'P6'),
-        ('name',       'S'),
-        ('float32_10', 'f'),
-        ('float32_14', 'f'),
-        ('float32_18', 'f'),
-        ('float32_1c', 'f'),
-        ('float32_20', 'f'),
-        ('float32_24', 'f'),
-        ('float32_28', 'f'),
-        ('float32_2c', 'f'),
-        ('float32_30', 'f'),
-        ('uint32_34',  'I'),
+        ('chrId',     'W'),
+        ('pad02',     'P6'),
+        ('name',      'S'),
+        ('x',         'f'),
+        ('y',         'f'),
+        ('z',         'f'),
+        ('rotationX', 'f'),
+        ('rotationY', 'f'),
+        ('rotationZ', 'f'),
+        ('scaleX',    'f'),
+        ('scaleY',    'f'),
+        ('scaleZ',    'f'),
+        ('uint32_34', 'I'),
     )
 
 
@@ -619,13 +619,13 @@ class EffectTableData(TableDataEntry):
 # t_eventbox.tbl
 class EventBoxTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('mapKey',      'S'),
-        ('name',        'S'),
-        ('function',    'S'),
-        ('conditionsA', 'A2'),
-        ('uint32_24',   'I'),
-        ('conditionsB', 'A2'),
-        ('uint32_34',   'I'),
+        ('mapKey',     'S'),
+        ('name',       'S'),
+        ('function',   'S'),
+        ('flagsSet',   'A2'),
+        ('uint32_24',  'I'),
+        ('flagsClear', 'A2'),
+        ('uint32_34',  'I'),
     )
 
 
@@ -1049,11 +1049,11 @@ class SkillTextArrayData(TableDataEntry):
 
 class SkillRangeData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint16_00',  'W'),
+        ('id',         'W'),
         ('pad02',      'P2'),
-        ('float32_04', 'f'),
-        ('float32_08', 'f'),
-        ('float32_0c', 'f'),
+        ('thresholdS', 'f'),
+        ('thresholdM', 'f'),
+        ('thresholdL', 'f'),
         ('float32_10', 'f'),
     )
 
@@ -1061,14 +1061,14 @@ class SkillRangeData(TableDataEntry):
 # t_lookpoint.tbl
 class LookPointTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('mapKey',      'S'),
-        ('name',        'S'),
-        ('str10',       'S'),
-        ('function',    'S'),
-        ('conditionsA', 'A2'),
-        ('uint32_2c',   'I'),
-        ('conditionsB', 'A2'),
-        ('uint32_3c',   'I'),
+        ('mapKey',     'S'),
+        ('name',       'S'),
+        ('str10',      'S'),
+        ('function',   'S'),
+        ('flagsSet',   'A2'),
+        ('uint32_2c',  'I'),
+        ('flagsClear', 'A2'),
+        ('uint32_3c',  'I'),
     )
 
 
@@ -1112,42 +1112,42 @@ class MapJumpSpotData(TableDataEntry):
         ('flags',        'S'),
         ('variant',      'B'),
         ('pad61',        'P7'),
-        ('str68',        'S'),
-        ('arr16_70',     'A2'),
+        ('defaultText',  'S'),
+        ('flagsSet',     'A2'),
         ('uint32_7c',    'I'),
-        ('arr16_80',     'A2'),
+        ('flagsClear',   'A2'),
         ('uint32_8c',    'I'),
-        ('str90',        'S'),
+        ('altText',      'S'),
     )
 
 
 # t_marker.tbl
 class MarkerTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint16_00',   'W'),
-        ('uint16_02',   'W'),
-        ('pad04',       'P4'),
-        ('keys',        'A4'),
-        ('uint32_14',   'I'),
-        ('conditionsA', 'A2'),
-        ('uint32_24',   'I'),
-        ('conditionsB', 'A2'),
-        ('kind',        'B'),
-        ('pad35',       'P1'),
-        ('chrId',       'W'),
-        ('uint32_38',   'I'),
-        ('pad3c',       'P4'),
-        ('str40',       'S'),
-        ('areaId',      'W'),
-        ('spotId',      'W'),
-        ('float32_4c',  'f'),
-        ('float32_50',  'f'),
-        ('float32_54',  'f'),
-        ('float32_58',  'f'),
-        ('float32_5c',  'f'),
-        ('float32_60',  'f'),
-        ('uint32_64',   'I'),
-        ('str68',       'S'),
+        ('eventKind',  'W'),
+        ('clipKind',   'W'),
+        ('pad04',      'P4'),
+        ('keys',       'A4'),
+        ('uint32_14',  'I'),
+        ('flagsSet',   'A2'),
+        ('uint32_24',  'I'),
+        ('flagsClear', 'A2'),
+        ('kind',       'B'),
+        ('pad35',      'P1'),
+        ('chrId',      'W'),
+        ('uint32_38',  'I'),
+        ('pad3c',      'P4'),
+        ('str40',      'S'),
+        ('areaId',     'W'),
+        ('spotId',     'W'),
+        ('float32_4c', 'f'),
+        ('float32_50', 'f'),
+        ('float32_54', 'f'),
+        ('float32_58', 'f'),
+        ('float32_5c', 'f'),
+        ('float32_60', 'f'),
+        ('uint32_64',  'I'),
+        ('str68',      'S'),
     )
 
 
@@ -1404,10 +1404,10 @@ class PokerTrickLevel(TableDataEntry):
 # t_notemenu.tbl
 class NoteMainCategory(TableDataEntry):
     DESCRIPTOR = (
-        ('uint8_00', 'B'),
-        ('pad01',    'P7'),
-        ('str08',    'S'),
-        ('str10',    'S'),
+        ('id',    'B'),
+        ('pad01', 'P7'),
+        ('text',  'S'),
+        ('ruby',  'S'),
     )
 
 
@@ -1419,17 +1419,17 @@ class NoteMainBadge(TableDataEntry):
 
 class NoteMainAffiliation(TableDataEntry):
     DESCRIPTOR = (
-        ('str00',     'S'),
-        ('uint16_08', 'W'),
-        ('pad0a',     'P6'),
+        ('text',  'S'),
+        ('flag',  'W'),
+        ('pad0a', 'P6'),
     )
 
 
 class NoteMainHistory(TableDataEntry):
     DESCRIPTOR = (
-        ('str00',     'S'),
-        ('uint16_08', 'W'),
-        ('pad0a',     'P6'),
+        ('text',  'S'),
+        ('flag',  'W'),
+        ('pad0a', 'P6'),
     )
 
 
@@ -1816,7 +1816,7 @@ class ShopInfo(TableDataEntry):
         ('uint32_38',  'I'),
         ('float32_3c', 'f'),
         ('float32_40', 'f'),
-        ('uint32_44',  'I'),
+        ('voiceId',    'I'),
     )
 
 
@@ -2071,18 +2071,18 @@ class StatusParam(TableDataEntry):
 # t_support_ability.tbl
 class SupportAbilityParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint8_00',  'B'),
-        ('uint8_01',  'B'),
-        ('uint16_02', 'W'),
-        ('uint32_04', 'I'),
-        ('uint64_08', 'Q'),
-        ('uint32_10', 'I'),
-        ('uint32_14', 'I'),
-        ('uint64_18', 'Q'),
-        ('str20',     'S'),
-        ('str28',     'S'),
-        ('name',      'S'),
-        ('str38',     'S'),
+        ('id',          'B'),
+        ('linkId',      'B'),
+        ('uint16_02',   'W'),
+        ('uint32_04',   'I'),
+        ('uint64_08',   'Q'),
+        ('uint32_10',   'I'),
+        ('uint32_14',   'I'),
+        ('uint64_18',   'Q'),
+        ('flags',       'S'),
+        ('aniFunction', 'S'),
+        ('name',        'S'),
+        ('description', 'S'),
     )
 
 

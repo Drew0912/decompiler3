@@ -719,7 +719,7 @@ class NoteMainPartnerInfo(TableDataEntry):
 class NoteMainHistory8(TableDataEntry):
     SECTION = 'NoteMainHistory'
     DESCRIPTOR = (
-        ('str00', 'S'),
+        ('text', 'S'),
     )
 
 
@@ -1016,23 +1016,24 @@ class TalkTableData(TableDataEntry):
 # t_tbox.tbl
 class TBoxParam(TableDataEntry):
     DESCRIPTOR = (
-        ('mapKey',      'S'),
-        ('name',        'S'),
-        ('uint64_10',   'Q'),
-        ('flags',       'S'),
-        ('function',    'S'),
-        ('flag1',       'W'),
-        ('flag2',       'W'),
-        ('pad2c',       'P4'),
-        ('arr16_30',    'A2'),
-        ('uint32_3c',   'I'),
-        ('uint64_40',   'Q'),
-        ('arr16_48',    'A2'),
-        ('uint32_54',   'I'),
-        ('conditionsA', 'A2'),
-        ('uint32_64',   'I'),
-        ('conditionsB', 'A2'),
-        ('uint32_74',   'I'),
+        ('mapKey',     'S'),
+        ('name',       'S'),
+        ('uint64_10',  'Q'),
+        ('flags',      'S'),
+        ('function',   'S'),
+        ('flag1',      'W'),
+        ('flag2',      'W'),
+        ('pad2c',      'P4'),
+        ('items',      'A2'),
+        ('uint32_3c',  'I'),
+        ('altFlag',    'W'),
+        ('pad42',      'P6'),
+        ('altItems',   'A2'),
+        ('uint32_54',  'I'),
+        ('flagsSet',   'A2'),
+        ('uint32_64',  'I'),
+        ('flagsClear', 'A2'),
+        ('uint32_74',  'I'),
     )
 
 
