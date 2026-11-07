@@ -1,5 +1,5 @@
 """Generate a game's two-way ID tables from its .tbl files, into the game's metadata package (gitignored):
-falcom/ed9/games/<game>/metadata/chr_table.py and item_table.py, or the folder -o names
+falcom/ed9/games/<game>/metadata/chr_table.py, item_table.py and craft_table.py, or the folder -o names
 
 Usage:
     python falcom/ed9/tools/gen_tables.py {game} [-o {output_dir}]
@@ -60,6 +60,11 @@ def item_names(entries: Sequence) -> dict[int, str]:
     return unique_names((entry.id, entry.name) for entry in entries)
 
 
+def craft_names(entries: Sequence) -> dict[int, str]:
+    """A craft has a row per character or use, so its ID repeats; an ID with no name is not a craft a script can name"""
+    return unique_names((entry.id, entry.name) for entry in entries if entry.name.strip())
+
+
 class IdTable(NamedTuple):
     name        : str
     module      : str
@@ -69,8 +74,9 @@ class IdTable(NamedTuple):
 
 
 ID_TABLES = [
-    IdTable('ChrIdTable',  'chr_table.py',  't_name.tbl', 'NameTableData', chr_names),
-    IdTable('ItemIdTable', 'item_table.py', 't_item.tbl', 'ItemTableData', item_names),
+    IdTable('ChrIdTable',   'chr_table.py',   't_name.tbl',  'NameTableData', chr_names),
+    IdTable('ItemIdTable',  'item_table.py',  't_item.tbl',  'ItemTableData', item_names),
+    IdTable('CraftIdTable', 'craft_table.py', 't_skill.tbl', 'SkillParam',    craft_names),
 ]
 
 

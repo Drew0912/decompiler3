@@ -36,8 +36,8 @@ the outputs before a change, again after it, and diff them. Like the tests and g
 
 `sora1` and `sora2` also have `falcom/ed9/games/<game>/tbl2py.py <file or folder>`, which reads `.tbl` tables into
 Python `entries` lists in the game's `out/tbl/`, or `<folder>/` with `-o <folder>`. Running one of those scripts
-writes its `.tbl` to the current folder. `python falcom/ed9/tools/gen_tables.py sora2` writes `sora2`'s character and
-item tables into its `metadata/`.
+writes its `.tbl` to the current folder. `python falcom/ed9/tools/gen_tables.py sora2` writes `sora2`'s character, item
+and craft tables into its `metadata/`.
 
 A test or verification run writes nothing inside the repo:
 - `tbl2py`: `python falcom/ed9/games/<game>/tbl2py.py <file or folder> -o <scratch folder>`; run a generated table
