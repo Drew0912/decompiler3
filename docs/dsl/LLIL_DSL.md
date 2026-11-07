@@ -279,7 +279,7 @@ checks only).
 
 **Generation** (bytecode → `.py`): `Formatter.format_function`/`format_block`
 (`falcom/ed9/disasm/formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
-`scp2py_base.write_python_dsl` (`falcom/ed9/scp2py_base.py`). `ScpParser.gen_python_script(functions,
+`scp2py_base.process_file` (`falcom/ed9/scp2py_base.py`). `ScpParser.gen_python_script(functions,
 comments = CommentOptions(...))` picks the optional comments (`falcom/ed9/disasm/llil_dsl_comments.py`;
 `scp2py` builds them from its config); the validator keeps the defaults, so the logic round trip
 checks that the stack comments reach the fixed point too. A generated script first puts the repo root on `sys.path` (`import sys` and
@@ -305,8 +305,8 @@ once: under the function whose range holds it (functions starting at the same of
 or as raw bytes where no instruction covers it (`mp0090`'s 21 bytes before its first function). A call's
 debug record is printed under it when every record of the function holds what its call gets
 (`call_debug_records.pair_records`, content only); otherwise the function notes `records not paired: ...`,
-as for the `chr0000`-style files and calls without a record. `filter_func` and `include_common_functions`
-pick the functions listed; the listing is written after every other output.
+as for the `chr0000`-style files and calls without a record. `filter_func` picks the functions listed; the
+listing is written after every other output.
 
 **Compilation** (`.py` → bytecode): the `.py` file is executed (`python e0000.py`, or the
 validator's `runpy.run_path(...)['main']()`) against a `ScpWriter`, which emits bytecode via the same

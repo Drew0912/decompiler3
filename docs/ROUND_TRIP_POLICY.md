@@ -72,6 +72,5 @@ DSL), even when its only reachable body is a `return` and the real body is dead 
 the engine's own calls: `docs/falcom/ed9/ED9_VM.md`, Engine-called names), and a missing one logs "function not
 found" or, on some engine paths, is skipped with no log, or another name runs, so dropping it fails silently in game.
 Dead-code elimination removes unreachable code inside a function, never the function; a design that would drop one is
-a finding. The exceptions are opt-in inspection settings in
-`scp2py_config.py` (`include_common_functions = False`, `filter_func`): their output is partial on purpose and its
-`.py` is not meant to recompile.
+a finding. The exception is the opt-in inspection setting `filter_func` (`scp2py_config.py`): its output is partial on
+purpose and its `.py` is not meant to recompile.

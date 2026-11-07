@@ -32,18 +32,6 @@ from falcom.ed9.scp2py_config import ScpDecompileConfig
 
 GAME_OUTPUT_FOLDER = 'out'      # a game's default output folder, beside its launcher
 
-COMMON_FUNCTIONS_OMITTED_COMMENT = (
-    '# Common/shared functions were omitted (include_common_functions = False).\n'
-    '# This script will NOT compile back to a .dat file: calls below reference\n'
-    '# common function definitions that are not present in this file.'
-)
-
-
-def write_python_dsl(parser: ScpParser, functions: list[Function], out_path: Path, *,
-                     comments: CommentOptions = CommentOptions(), common_functions_omitted: bool = False) -> None:
-    preamble = [*COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines(), ''] if common_functions_omitted else []
-    write_text_lf(out_path, parser.gen_python_script(functions, preamble=preamble, comments=comments))
-
 
 def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
     """A starting <stem>_hook.py next to the .py, never over an existing file"""
@@ -79,10 +67,6 @@ def process_file(path: Path, config: ScpDecompileConfig, *, game: str) -> None:
                                        keep_unreachable_code=config.keep_unreachable_code, game=game,
                                        filter_func=config.filter_func)
 
-    common_functions_omitted = not config.include_common_functions
-    if common_functions_omitted:
-        functions = [func for func in functions if not func.is_common_func]
-
     # Only create the output folder once parsing has actually produced something to write
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -93,8 +77,7 @@ def process_file(path: Path, config: ScpDecompileConfig, *, game: str) -> None:
             function_ids=config.function_id_comments,
             call_args=config.call_arg_comments,
         )
-        write_python_dsl(parser, functions, out.with_suffix('.py'), comments=comments,
-                         common_functions_omitted=common_functions_omitted)
+        write_text_lf(out.with_suffix('.py'), parser.gen_python_script(functions, comments=comments))
         if config.write_hook_template:
             write_hook_template(parser, output_dir)
 

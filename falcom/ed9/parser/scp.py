@@ -1166,17 +1166,14 @@ class ScpParser(StrictBase):
         formatter = Formatter(formatter_context)
         return formatter.format_function(func)
 
-    def gen_python_script(self, functions: list[Function], *, preamble: list[str] = (),
-                          comments: CommentOptions = CommentOptions()) -> str:
-        """Full generated .py text: header (incl. shared-library imports/manifest), an optional
-        preamble (e.g. scp2py_base.py's common-functions-omitted warning), every function this script
-        must still define itself, then the footer. match_library_functions runs once here and its
+    def gen_python_script(self, functions: list[Function], *, comments: CommentOptions = CommentOptions()) -> str:
+        """Full generated .py text: header (incl. shared-library imports/manifest), every function this
+        script must still define itself, then the footer. match_library_functions runs once here and its
         result feeds both the header and the inline-function filter, so the two never disagree about
         which functions are imported"""
         matched = self.match_library_functions(functions)
 
         lines = self.gen_python_header(functions, matched=matched)
-        lines.extend(preamble)
 
         for func in self.get_inline_functions(functions, matched=matched):
             lines.extend(self.format_function(func, comments))

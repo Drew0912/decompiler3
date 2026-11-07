@@ -34,7 +34,7 @@ class ScpDecompileConfig(StrictBase):
 
     # .debug.txt: a listing of the whole .dat as the VM sees it (header, global vars, each function's table entry, code
     # and call-site debug records, the string pool), loaded on its own with the unreachable code decoded. Written last;
-    # filter_func / include_common_functions pick the functions listed
+    # filter_func picks the functions listed
     write_debug_info: bool = False
     debug_sections: ListingSections = ListingSections()     # what it prints: every section; e.g. ListingSections(code = False)
 
@@ -42,13 +42,9 @@ class ScpDecompileConfig(StrictBase):
     round_trip: bool = False
     keep_unreachable_code: bool = False
 
-    # Exclude common/shared functions (is_common_func) from every output format, to make
-    # scripts shorter and easier to read. The .py DSL output will not compile back to a
-    # .dat file with this on, since callers still reference the now-missing definitions.
-    include_common_functions: bool = True
-
     # Output location: None is the game's out/ (falcom/ed9/games/<game>/out); -o sets it for one run
     output_dir: Path | None = None
 
-    # Optional function filter, forwarded to ScpParser.disasm_all_functions(filter_func=...)
+    # Optional function filter, forwarded to ScpParser.disasm_all_functions(filter_func=...).
+    # The output is partial on purpose: its .py is not meant to compile back to a .dat file
     filter_func: Callable[[Function], bool] | None = None  # lambda f: f.name == 'TestCitySet'

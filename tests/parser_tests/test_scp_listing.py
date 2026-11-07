@@ -387,16 +387,9 @@ class TestProcessFile(unittest.TestCase):
         self.assertIn('0x19F  name     "Outer"', lines)     # the pool lists an unselected function's name too
         self.assertFalse([line for line in lines if 'not decoded' in line])
 
-    def test_common_functions_left_out(self):
-        for settings, expected in (
-            ({}, ['CommonOne', 'Main', 'Other']),
-            ({'include_common_functions': False}, ['Main', 'Other']),
-            ({'include_common_functions': False, 'filter_func': lambda func: func.name in ('CommonOne', 'Other')}, ['Other']),
-        ):
-            with self.subTest(settings=sorted(settings)):
-                lines = self.listing_text(self.common, **settings).splitlines()
-                self.assertEqual(function_headings(lines), expected)
-                self.assertTrue(any(line.endswith(' name     "CommonOne"') for line in lines))
+    def test_common_functions_listed(self):
+        lines = self.listing_text(self.common).splitlines()
+        self.assertEqual(function_headings(lines), ['CommonOne', 'Main', 'Other'])
 
     def test_every_section_off(self):
         no_sections = ListingSections(**{field.name: False for field in fields(ListingSections)})

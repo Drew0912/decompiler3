@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Text of the generated LLIL DSL .py (header, hook import, label spacers, footer, the omitted-commons comment),
+"""Text of the generated LLIL DSL .py (header, hook import, label spacers, footer),
 scp2py's recursion limit and summary, the opt-in hook template, a fidelity script compiling back to its bytes,
 and LF line endings in every generated text file (scp2py_base.process_file, the common-library generator, the
 round-trip validator's intermediate scripts)."""
@@ -28,7 +28,7 @@ from falcom.ed9.tools import gen_common_library as gen
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import GlobalVar
 from falcom.ed9.structs.scp_types import ScpGlobalVar
-from falcom.ed9.scp2py_base import COMMON_FUNCTIONS_OMITTED_COMMENT, main, process_file
+from falcom.ed9.scp2py_base import main, process_file
 from falcom.ed9.scp2py_config import ScpDecompileConfig
 import scp_roundtrip_validator
 from scp_roundtrip_validator import compile_round, decompile_to_python
@@ -495,15 +495,6 @@ class TestScena2py(unittest.TestCase):
             setattr(config, name, value)
 
         return config
-
-    def py_text(self) -> str:
-        return (self.tmp / SMALL_FILE.stem / f'{SMALL_FILE.stem}.py').read_text(encoding='utf-8')
-
-    def test_omitted_common_functions_comment_only_when_they_are_omitted(self):
-        for include, expected in ((True, False), (False, True)):
-            with self.subTest(include_common_functions=include):
-                process_file(SMALL_FILE, self.config(include_common_functions=include), game='sora2')
-                self.assertEqual(COMMON_FUNCTIONS_OMITTED_COMMENT.splitlines()[0] in self.py_text(), expected)
 
     def test_line_markers_reach_both_hlil_outputs(self):
         """On by default; off, neither .hlil.ts nor .ts has a // line(N) comment"""
