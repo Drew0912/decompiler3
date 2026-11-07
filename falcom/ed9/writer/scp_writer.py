@@ -532,42 +532,49 @@ class ScpWriter:
         return [None if param.default is param.empty else ScpValue(param.default) for param in params]
 
     def _debug_record(self, call: TrackedCall, defaults: dict[str, list[ScpValue | None]]) -> DebugRecord:
-        args = [self._debug_arg(value) for value in call.args]
         if call.call_type == ScpFunctionCallDebugInfo.CallType.Local:
-            return self._local_call_record(call, args, defaults)
+            return self._local_call_record(call, defaults)
 
         if call.call_type == ScpFunctionCallDebugInfo.CallType.Syscall:
-            return self._syscall_record(call, args)
+            return self._syscall_record(call)
 
-        return self._script_call_record(call, args)  # Script and ScriptNoReturn
+        return self._script_call_record(call)  # Script and ScriptNoReturn
 
-    @classmethod
-    def _debug_arg(cls, value: TrackedValue) -> DebugArg:
+    def _debug_args(self, values: list[TrackedValue]) -> list[DebugArg]:
+        return [self._debug_arg(value) for value in values]
+
+    def _debug_arg(self, value: TrackedValue) -> DebugArg:
         if value.type == ScpFunctionCallDebugInfoArg.Type.Constant:
-            return DebugArg(value.type, value.payload, value.string)
+            return DebugArg(value.type, value.payload, self._debug_string(value.string))
 
         return DebugArg(value.type, ScpValue(ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE))
 
-    def _local_call_record(self, call: TrackedCall, args: list[DebugArg],
-                           defaults: dict[str, list[ScpValue | None]]) -> DebugRecord:
+    @classmethod
+    def _debug_string(cls, string: PooledString | None) -> PooledString | None:
+        """The pool entry a record's constant points to: the newer compiler's is the code's own"""
+        return string
+
+    def _local_call_record(self, call: TrackedCall, defaults: dict[str, list[ScpValue | None]]) -> DebugRecord:
         """The callee by table index; the arguments up to the last one written: the CALL's debug_argc, else the
-        compiler's rule on the callee's final defaults"""
+        compiler's rule on the callee's final defaults. Only those are built: an argument may pool a string"""
         callee = self._find_function(call.target)
         count = call.debug_argc if call.debug_argc is not None else canonical_argc(call.args, defaults[callee.name])
-        return DebugRecord(call_type=call.call_type, func_id=callee.index, args=args[:count])
+        return DebugRecord(call_type=call.call_type, func_id=callee.index, args=self._debug_args(call.args[:count]))
 
-    @classmethod
-    def _syscall_record(cls, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
+    def _syscall_record(self, call: TrackedCall) -> DebugRecord:
         """No callee id; the subsystem and the command lead the arguments"""
-        args = [DebugArg(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(value)) for value in call.target] + args
+        args = [DebugArg(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(value)) for value in call.target]
+        args += self._debug_args(call.args)
         return DebugRecord(call_type=call.call_type, func_id=ScpFunctionCallDebugInfo.NO_FUNC_ID, args=args)
 
-    def _script_call_record(self, call: TrackedCall, args: list[DebugArg]) -> DebugRecord:
-        """The callee id and the pooled name script_call_identity gives; the name leads the arguments"""
+    def _script_call_record(self, call: TrackedCall) -> DebugRecord:
+        """The callee id and the pooled name script_call_identity gives; the name leads the arguments and is pooled
+        before them"""
         module, func = (value.value if isinstance(value, ScpValue) else value for value in call.target)
         func_id, text = script_call_identity(call.call_type, module, func, self._table_index)
         name = self._add_string(text, StringPoolSection.Debug)
-        args = [DebugArg(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(name.text), name)] + args
+        args = [DebugArg(ScpFunctionCallDebugInfoArg.Type.Constant, ScpValue(name.text), name)]
+        args += self._debug_args(call.args)
         return DebugRecord(call_type=call.call_type, func_id=func_id, args=args)
 
     def _table_index(self, name: str) -> int | None:

@@ -126,9 +126,11 @@ from decompiler2's ED8.x support:
 ## Older-Compiler Byte-Exact Debug Records (`falcom/ed9/structs/call_debug_records.py`, `falcom/ed9/writer/`)
 
 **Planned, not started; much later** (user, 2026-11-06). `kuro1`, `kuro2`, `kai1` and `sora`'s older-built `chr` files
-come from the older compiler (`docs/falcom/ed9/ED9_FORMAT.md`, Call-Site Debug Records), and `kuro1` rebuilds
-byte-identical in only 26 of 634 files. Byte-exact needs its three differences: records on common functions, each
-record's own debug-only Strings, and doubling, which needs the transitive simulation of rule 8.
+come from the older compiler (`docs/falcom/ed9/ED9_FORMAT.md`, Call-Site Debug Records). `Kuro1ScpWriter` writes two of
+its three differences, records on common functions and each record's own debug-only Strings, so `kuro1` rebuilds
+byte-identical in 397 of 634 files (2026-11-07; 26 without them). The third is doubling, which needs the transitive
+simulation of rule 8: each of the other 237 rebuilds fewer records than its original. `sora`'s older-built files get
+neither of the two, since `sora`'s writer is the newer compiler's.
 
-Whether those engines read the records isn't known, since their exes are unread. The 2026-10-18 census did not run the
-logic round trip on `kuro1`.
+Whether those engines read the records isn't known, since their exes are unread. The logic round trip passed on a
+30-file sample of each of `kuro1`, `kuro2` and `kai1` (2026-11-07), but it doesn't compare records yet.

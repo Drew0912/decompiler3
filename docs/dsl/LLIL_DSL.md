@@ -150,7 +150,8 @@ global name - can't hold a NUL (the game ends the string there) or a lone surrog
 
 **Call-site debug records.** Every call of a non-common function gets a debug record of its arguments,
 with or without a `DEBUG_SET_LINENO` before it, unless its `CALL` says `debug_record=False` (below); a common
-function gets none (`ScpWriter._gets_debug_records`). A local call's record keeps them
+function gets none (`ScpWriter._gets_debug_records`; the `kuro` games' writer differs: Each game's writer, below).
+A local call's record keeps them
 up to the last one its author wrote, by the original compiler's rule: trailing constant arguments equal to
 the callee's defaults (the same type and stored word, a string by its text; the callee's final signature,
 hooks included) are left out. A call whose original record breaks the rule carries its count on the `CALL`
@@ -177,7 +178,10 @@ the `.dat` again.
 falcom.ed9.games.<game>.writer.scp_writer_helper import *` (`ScpParser.gen_python_header`): the shared helper's
 names, with the game's `ScpWriter` subclass installed as the writer (`install_scp_writer`) before any hook file
 registers. The classes are in `falcom/ed9/games/<game>/writer/scp_writer.py`, chained `kai1` <- `kuro2` <-
-`kuro1` and `sora2` <- `sora1`; what a game writes differently goes in its class. Hook files and library modules
+`kuro1` and `sora2` <- `sora1`; what a game writes differently goes in its class. `Kuro1ScpWriter` writes the
+older compiler's records (`docs/falcom/ed9/ED9_FORMAT.md`, Call-Site Debug Records): common functions get them too,
+and a record's constant String gets a debug-only pool entry of its own (`_debug_string`), not the code's. Doubled
+record lists stay out (`docs/FUTURE_WORK.md`, Older-Compiler Byte-Exact Debug Records). Hook files and library modules
 keep the shared import: their statements reach the game's writer through `get_scp_writer()`. A `.py` with no game,
 or an older one, compiles with `ScpWriter`, which writes as the `sora` games do. One game per interpreter: a
 second helper imported in a process replaces the writer.
