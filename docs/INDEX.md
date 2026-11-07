@@ -21,7 +21,7 @@ languages, touches the generic / Falcom boundary, or the pipeline is not known y
 | `llil/` | LLIL design | `ir/llil/`, `falcom/ed9/ir/llil/` |
 | `mlil/` | MLIL design, guide, future work | `ir/mlil/`, `falcom/ed9/ir/mlil/` |
 | `hlil/` | HLIL design, guide (with the TypeScript codegen), future work | `ir/hlil/`, `falcom/ed9/ir/hlil/`, `codegen/` |
-| `dsl/` | the editing interface: the LLIL DSL and its writer, hooks, the planned HLIL DSL | `falcom/ed9/writer/`, `falcom/ed9/tools/`, generated `.py` scripts, hook files |
+| `dsl/` | the editing interface: the LLIL DSL and its writer, hooks, the planned HLIL DSL | `falcom/ed9/writer/`, `falcom/ed9/games/<game>/writer/`, `falcom/ed9/tools/`, generated `.py` scripts, hook files |
 
 ## Running the decompiler
 

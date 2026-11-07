@@ -10,8 +10,9 @@ Usage:
     python tools/scp_roundtrip_validator.py falcom/ed9/games/sora2/extracted/script_en/scena/e0000.dat --round-trip --game sora2
     python tools/scp_roundtrip_validator.py falcom/ed9/games/sora2/extracted/script_en/scena/e0000.dat --logic-round-trip --game sora2
 
---game <game>: the game whose common-function library the decompiles of --round-trip and --logic-round-trip use
-(falcom/ed9/games/<game>/); without it none: every common function inline, no library import in the .py.
+--game <game>: the game whose common-function library and writer the decompiles of --round-trip and --logic-round-trip
+use (falcom/ed9/games/<game>/); without it none: every common function inline, no library import in the .py, and the
+shared ScpWriter, which writes as the sora games do.
 
 Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler limitation):
     layout          default params, param flags, debug records and debug args are contiguous in table
@@ -866,7 +867,7 @@ def create_parser() -> argparse.ArgumentParser:
     arg_parser.add_argument('--logic-round-trip', action='store_true', help='decompile with round_trip=False and verify game logic is preserved and compile/decompile reaches a fixed point')
     arg_parser.add_argument('--work-dir', metavar='DIR', help='where --round-trip / --logic-round-trip write their files (default: a new temp dir)')
     arg_parser.add_argument('--game', choices=game_names(),
-                            help="the game whose common-function library --round-trip / --logic-round-trip's decompiles use (default: none, every common function inline)")
+                            help="the game whose common-function library and writer --round-trip / --logic-round-trip's decompiles use (default: none, every common function inline, the shared ScpWriter)")
     arg_parser.add_argument('--verbose', action='store_true', help='print every detail, including for passing checks')
     return arg_parser
 

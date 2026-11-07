@@ -23,7 +23,8 @@ from ..structs.string_pool import string_offset
 from ..structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_MISSING_HINT,
                                       game_metadata_module)
 from ..structs.fingerprint import function_fingerprint, fingerprint_digest
-from ..structs.generated_script import DEFINITION_SPACING, SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES
+from ..structs.generated_script import (DEFINITION_SPACING, SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES,
+                                        game_writer_helper_import)
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT
 from ir.llil import WORD_SIZE
@@ -1194,12 +1195,15 @@ class ScpParser(StrictBase):
         matched lets gen_python_script pass in an already-computed match set instead of this
         recomputing it.
 
-        With a game, the whole-library import (gen_library_import) follows the hook import, whatever
+        With a game, the first import is the game's helper, which installs the game's writer before
+        the hook import can register on it, and the whole-library import (gen_library_import) follows
+        the hook import, whatever
         the fidelity mode and whether or not there is a function list, so a human editing the script
         has every common function in scope for CALL()/autocomplete even when adding one this script
         never originally used.
         """
-        lines = [*SYS_PATH_SETUP_LINES, SCP_WRITER_HELPER_IMPORT, *self.gen_hook_import().splitlines(), '']
+        helper_import = SCP_WRITER_HELPER_IMPORT if self.game is None else game_writer_helper_import(self.game)
+        lines = [*SYS_PATH_SETUP_LINES, helper_import, *self.gen_hook_import().splitlines(), '']
         if self.game is not None:
             lines += [*self.gen_library_import().splitlines(), '']
 

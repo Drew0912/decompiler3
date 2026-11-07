@@ -173,6 +173,15 @@ off. The records do (`docs/ROUND_TRIP_POLICY.md`, Records the engine reads), so 
 round-trip `.py` with `@scena.LLILCode(debug_argc={...})` stops at Python's `TypeError` there: decompile
 the `.dat` again.
 
+**Each game's writer.** A `.py` decompiled with a game starts with that game's helper, `from
+falcom.ed9.games.<game>.writer.scp_writer_helper import *` (`ScpParser.gen_python_header`): the shared helper's
+names, with the game's `ScpWriter` subclass installed as the writer (`install_scp_writer`) before any hook file
+registers. The classes are in `falcom/ed9/games/<game>/writer/scp_writer.py`, chained `kai1` <- `kuro2` <-
+`kuro1` and `sora2` <- `sora1`; what a game writes differently goes in its class. Hook files and library modules
+keep the shared import: their statements reach the game's writer through `get_scp_writer()`. A `.py` with no game,
+or an older one, compiles with `ScpWriter`, which writes as the `sora` games do. One game per interpreter: a
+second helper imported in a process replaces the writer.
+
 **The compile check** (`ScpWriter.check_compiled`, on by default; a script turns it off with
 `scena.check_compiled = False`). At the end of `build()` the bytes are parsed and lifted again in memory
 by the decompiler's own `ScpParser` and `ED9VMLifter` (`falcom/ed9/writer/scp_compile_check.py`), so a

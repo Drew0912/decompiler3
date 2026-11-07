@@ -22,7 +22,8 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT, RECURSION_LIMIT, write_text_lf
 from falcom.ed9.structs.common_library import COMMON_ALL_MODULE, COMMON_LIBRARY_FOLDER, game_metadata_module
-from falcom.ed9.structs.generated_script import SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES
+from falcom.ed9.structs.generated_script import (SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES,
+                                                  game_writer_helper_import)
 from falcom.ed9.tools import gen_common_library as gen
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import GlobalVar
@@ -121,6 +122,11 @@ class TestHeader(unittest.TestCase):
         """Guard: no provenance comment above the imports (decided against, 2026-10-02)"""
         header = named_parser('ai_chr5122_e00.dat').gen_python_header()
         self.assertEqual(header[:len(SYS_PATH_SETUP_LINES) + 2], [*SYS_PATH_SETUP_LINES, SCP_WRITER_HELPER_IMPORT, 'try:'])
+
+    def test_a_game_script_imports_its_game_helper_first(self):
+        parser = named_parser('ai_chr5122_e00.dat')
+        parser.game = 'kuro1'
+        self.assertEqual(parser.gen_python_header()[len(SYS_PATH_SETUP_LINES)], game_writer_helper_import('kuro1'))
 
     def test_project_root_is_the_repo_root(self):
         """The baked-in path is what lets a generated script run without PYTHONPATH"""

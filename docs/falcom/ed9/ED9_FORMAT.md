@@ -84,7 +84,8 @@ Every file comes from one of two compilers, and their traits never mix within a 
 | A record's String | the code's own pool entry | its own debug-only pool entry |
 | Doubled record lists | never | rule 8 |
 
-Which file came from which: Games on This Format, below.
+Which file came from which: Games on This Format, below. What the writer does with these rules, per game:
+`docs/dsl/LLIL_DSL.md`, Each game's writer.
 
 1. **Which functions.** Newer: every non-common function that makes a call; a common function never. Older: every
    function that makes a call.

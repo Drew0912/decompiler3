@@ -917,6 +917,12 @@ class ScpWriter:
 _gScp = ScpWriter()
 
 
+def install_scp_writer(writer: ScpWriter):
+    """Make writer the one every DSL statement reaches: a game's helper does this, before any hook registers"""
+    global _gScp
+    _gScp = writer
+
+
 def create_scp_writer(name: str) -> ScpWriter:
     _gScp.dat_name = name
 

@@ -103,7 +103,8 @@ the game's conventions ("Generic/Falcom Boundary" below).
 ## Recompilation Pipeline — Core mechanism implemented, extensions planned
 
 **Location:** `falcom/ed9/writer/` (`scp_writer.py`, `scp_writer_opcode_handler.py`,
-`scp_writer_helper.py`, `scp_writer_hooks.py`, `scp_writer_hook_registry.py`, `scp_compile_check.py`) and
+`scp_writer_helper.py`, `scp_writer_hooks.py`, `scp_writer_hook_registry.py`, `scp_compile_check.py`), each game's
+subclass and helper (`falcom/ed9/games/<game>/writer/`) and
 `falcom/ed9/tools/gen_common_library.py` (generates the common-function library), `falcom/ed9/structs/common_library.py`
 (its names) and `falcom/ed9/structs/fingerprint.py` (the fingerprints), driven by each game's `scp2py.py`
 (`falcom/ed9/scp2py_base.py`), validated by `tools/scp_roundtrip_validator.py`.

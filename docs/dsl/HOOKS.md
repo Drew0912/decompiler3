@@ -85,8 +85,8 @@ the user's OK. `create_scp_writer`, `get_scp_writer`, positional `run(globals())
 `LLILCommonCode`, `CommonImports`, `GlobalVars`, the camelCase `register*` hook names, `replace_function`,
 `add_function`, `original`, `inline_original_func`, `label`, `GLOBAL_VAR`, `get_scp_writer().globals`, every opcode
 function and type the helper exports (`RawInt`, `FloatWord`; it has no `__all__`, so every public name in it), and the
-import paths `falcom.ed9.writer.scp_writer_helper` and `falcom.ed9.games.<game>.metadata.common_all`. Documented here,
-not frozen.
+import paths `falcom.ed9.writer.scp_writer_helper`, `falcom.ed9.games.<game>.writer.scp_writer_helper` and
+`falcom.ed9.games.<game>.metadata.common_all`. Documented here, not frozen.
 
 **What `build()` does, in order.** (1) Saves the script's globals. (2) Registers the queued `@add_function`s. (3) Sets
 the script's names in the hook modules (below). (4) Runs the run callbacks. (5) Runs every function through the function
