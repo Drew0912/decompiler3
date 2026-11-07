@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
-"""IR helpers for hand-built test functions and node-type coverage"""
+"""IR helpers for hand-built test functions, node-type coverage and source metadata"""
+
+import unittest
 
 from ir.mlil.mlil import MediumLevelILFunction, MLILGoto, MLILIf, MLILRet
 
 ADDRESS_STEP = 4        # between the addresses given to instructions that have none
+
+# What with_metadata stamps
+SOURCE_ADDRESS = 0x1234
+SOURCE_INST_INDEX = 7
+SOURCE_LLIL_INDEX = 9
 
 
 def connect(func: MediumLevelILFunction) -> MediumLevelILFunction:
@@ -42,3 +49,21 @@ def concrete_subclasses(base: type) -> set:
             found.add(cls)
 
     return found
+
+
+def set_metadata(inst, address: int, inst_index: int, llil_index: int):
+    inst.address = address
+    inst.inst_index = inst_index
+    inst.llil_index = llil_index
+    return inst
+
+
+def with_metadata(inst):
+    return set_metadata(inst, SOURCE_ADDRESS, SOURCE_INST_INDEX, SOURCE_LLIL_INDEX)
+
+
+class MetadataTestCase(unittest.TestCase):
+    def assert_metadata(self, inst, address: int, inst_index: int, llil_index: int):
+        self.assertEqual(inst.address, address)
+        self.assertEqual(inst.inst_index, inst_index)
+        self.assertEqual(inst.llil_index, llil_index)

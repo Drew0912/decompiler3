@@ -154,9 +154,9 @@ debug dumps — analogous to `HLILFormatter` on the HLIL side.
 
 - Four SSA optimizer passes have no behaviour test of their own: negation normal form, expression
   simplification, constant propagation and dead-`Phi` elimination (three appear only in metadata
-  checks: `test_mlil_rebuild.py`, `test_mlil_provenance.py`).
+  checks: `test_mlil_ssa_rebuild.py`, `test_mlil_ssa_provenance.py`).
 
 ## Testing
 
-`tests/mlil_tests/test_mlil_*.py`, the SSA path's in `tests/mlil_ssa_tests/` (and `tests/llil_tests/test_llil_deref.py`)
-- see `docs/mlil/MLIL_DESIGN.md`'s Testing section.
+`tests/mlil_tests/test_mlil_*.py`, the SSA path's in `tests/mlil_ssa_tests/` - see `docs/mlil/MLIL_DESIGN.md`'s Testing
+section.

@@ -1,0 +1,285 @@
+#!/usr/bin/env python3
+"""Unit tests for the SSA path's pointer reads and writes: the MLIL the dereference opcodes become, and what the SSA
+passes keep of it."""
+
+from pathlib import Path
+import sys
+import unittest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO_ROOT))
+
+from ir.llil.llil import WORD_SIZE
+from falcom.ed9.ir.mlil_ssa.mlil_translator import FalcomLLILToMLILTranslator
+from ir.mlil.mlil import (
+    MediumLevelILFunction, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILVariable,
+    MLILConst, MLILCall, MLILStoreReg, MLILLoadReg, MLILRet, MLILAddressOf, MLILIf, MLILGoto,
+    MLILAdd, MLILEq,
+)
+from ir.mlil_ssa.mlil_ssa import MLILVarSSA, MLILPhi
+from ir.mlil_ssa.mlil_optimizer import optimize_mlil
+from ir.mlil_ssa.passes import (
+    SSAConversionPass, SSADeconstructionPass, CopyPropagationPass, ExpressionInliningPass,
+    SSADeadCodeEliminationPass, RegGlobalValuePropagationPass,
+)
+from tests.shared.llil_utils import FUNC_START, SECOND_BLOCK_START, THIRD_BLOCK_START, build_function_with_deref
+
+
+class TestDerefMLILTranslation(unittest.TestCase):
+    """LLIL Load/Store translate to MLILDeref/MLILStoreDeref, not plain variable access."""
+
+    def test_store_translates_to_store_deref(self):
+        llil_func, _ = build_function_with_deref(num_params=1, offset=-WORD_SIZE,
+                                                   deref_write=True, with_ret=True)
+
+        mlil_func = FalcomLLILToMLILTranslator().translate(llil_func)
+        inst = mlil_func.basic_blocks[0].instructions[-2]  # last is the translated ret
+
+        self.assertIsInstance(inst, MLILStoreDeref)
+        self.assertEqual(inst.dest.var.name, 'arg1')
+
+    def test_load_translates_to_deref(self):
+        llil_func, _ = build_function_with_deref(num_params=1, offset=-WORD_SIZE,
+                                                   deref_write=False, with_ret=True)
+
+        mlil_func = FalcomLLILToMLILTranslator().translate(llil_func)
+        # load_stack_deref's StackStore -> MLIL SetVar(local, MLILDeref(arg1))
+        set_var_inst = mlil_func.basic_blocks[0].instructions[-2]  # last is the translated ret
+
+        self.assertIsInstance(set_var_inst, MLILSetVar)
+        self.assertIsInstance(set_var_inst.value, MLILDeref)
+        self.assertEqual(set_var_inst.value.operand.var.name, 'arg1')
+
+
+class TestDerefStoreSurvivesDCE(unittest.TestCase):
+    """A store through a pointer is an observable side effect - DCE must not remove the
+    definition feeding it, even though nothing else reads that variable (this was the
+    actual bug this step fixed: SSAConstructor never versioned StoreDeref's operands, so
+    downstream passes could not see the use at all)."""
+
+    def test_definition_feeding_a_store_deref_is_kept(self):
+        func = MediumLevelILFunction('dce_test')
+        block = func.create_block(start=FUNC_START)
+        ptr_param = func.get_or_create_parameter(1, 'arg1')
+        temp = MLILVariable('var_s1')
+
+        block.add_instruction(MLILSetVar(temp, MLILCall('side_effect', [], temp)))
+        block.add_instruction(MLILStoreDeref(MLILVar(ptr_param), MLILVar(temp)))
+
+        SSAConversionPass().run(func)
+        SSADeadCodeEliminationPass().run(func)
+        SSADeconstructionPass().run(func)
+
+        kinds = [type(inst).__name__ for inst in block.instructions]
+        self.assertIn('MLILStoreDeref', kinds)
+
+        # The value stored through the pointer must still be defined somewhere before the
+        # store, not a bare reference to a variable nobody assigns (the exact bug shape).
+        store_inst = next(inst for inst in block.instructions if isinstance(inst, MLILStoreDeref))
+        stored_name = store_inst.value.var.name
+        earlier = block.instructions[:block.instructions.index(store_inst)]
+        self.assertTrue(any(
+            isinstance(inst, MLILSetVar) and inst.var.name == stored_name
+            for inst in earlier
+        ))
+
+
+class TestDerefLoadNotInlinedAcrossCall(unittest.TestCase):
+    """A load through a pointer is impure (aliasing means it cannot be assumed unchanged) -
+    the expression inliner must not move it past an intervening call."""
+
+    def test_deref_read_stays_put_across_a_call(self):
+        func = MediumLevelILFunction('inline_test')
+        block = func.create_block(start=FUNC_START)
+        ptr_param = func.get_or_create_parameter(1, 'arg1')
+        temp = MLILVariable('var_s1')
+        result = MLILVariable('reg0')
+
+        block.add_instruction(MLILSetVar(temp, MLILDeref(MLILVar(ptr_param))))
+        block.add_instruction(MLILSetVar(result, MLILCall('unrelated_call', [], result)))
+        block.add_instruction(MLILSetVar(MLILVariable('var_s2'), MLILVar(temp)))
+
+        SSAConversionPass().run(func)
+        CopyPropagationPass().run(func)
+        ExpressionInliningPass().run(func)
+        SSADeconstructionPass().run(func)
+
+        # The deref read must still happen as its own statement before the call - it must
+        # not have been inlined into the later var_s2 assignment, which would move the read
+        # to after unrelated_call() executes.
+        deref_index = next(i for i, inst in enumerate(block.instructions)
+                            if isinstance(inst, MLILSetVar) and isinstance(inst.value, MLILDeref))
+        call_index = next(i for i, inst in enumerate(block.instructions)
+                           if isinstance(inst, MLILSetVar) and isinstance(inst.value, MLILCall))
+        self.assertLess(deref_index, call_index)
+
+
+class TestDerefMetadataPreservation(unittest.TestCase):
+    """SSA construction/deconstruction must preserve source tracking on MLILStoreDeref,
+    the same guarantee test_mlil_ssa_metadata.py already covers for MLILSetVar."""
+
+    def test_ssa_roundtrip_preserves_store_deref_metadata(self):
+        SOURCE_ADDRESS = 0x2000
+        SOURCE_INST_INDEX = 7
+        SOURCE_LLIL_INDEX = 3
+
+        func = MediumLevelILFunction('metadata_test')
+        block = func.create_block(start=FUNC_START)
+        ptr_param = func.get_or_create_parameter(1, 'arg1')
+
+        store_inst = MLILStoreDeref(MLILVar(ptr_param), MLILConst(42), address=SOURCE_ADDRESS)
+        store_inst.inst_index = SOURCE_INST_INDEX
+        store_inst.llil_index = SOURCE_LLIL_INDEX
+        block.add_instruction(store_inst)
+
+        SSAConversionPass().run(func)
+
+        ssa_inst = block.instructions[0]
+        self.assertIsInstance(ssa_inst, MLILStoreDeref)
+        self.assertEqual(ssa_inst.address, SOURCE_ADDRESS)
+        self.assertEqual(ssa_inst.inst_index, SOURCE_INST_INDEX)
+        self.assertEqual(ssa_inst.llil_index, SOURCE_LLIL_INDEX)
+        # The rename walk must have actually versioned the pointer operand, not left it as a
+        # bare pre-SSA MLILVar (the exact bug this step fixed)
+        self.assertIsInstance(ssa_inst.dest, MLILVarSSA)
+
+        SSADeconstructionPass().run(func)
+
+        restored_inst = block.instructions[0]
+        self.assertIsInstance(restored_inst, MLILStoreDeref)
+        self.assertEqual(restored_inst.address, SOURCE_ADDRESS)
+        self.assertEqual(restored_inst.inst_index, SOURCE_INST_INDEX)
+        self.assertEqual(restored_inst.llil_index, SOURCE_LLIL_INDEX)
+
+
+class TestRegGlobalPropagationSkipsDerefReads(unittest.TestCase):
+    """A REG/GLOBAL value read through a pointer (e.g. REG[0] = *arg1) must never be propagated
+    across a later store through a pointer - otherwise the propagator could re-evaluate a stale
+    expression after the store instead of using the value actually captured into REG[0]
+    beforehand. RegGlobalValuePropagator's closed-form-only caching (_is_closed_form) achieves
+    this by never caching a deref read under a REG/GLOBAL slot in the first place, rather than
+    caching it and invalidating on a later pointer store."""
+
+    def test_deref_read_is_not_propagated_past_a_later_store_deref(self):
+        func = MediumLevelILFunction('reg_global_test')
+        block = func.create_block(start=FUNC_START)
+        ptr_param = func.get_or_create_parameter(1, 'arg1')
+
+        block.add_instruction(MLILStoreReg(0, MLILDeref(MLILVar(ptr_param))))
+        block.add_instruction(MLILStoreDeref(MLILVar(ptr_param), MLILConst(1)))
+        block.add_instruction(MLILRet(MLILLoadReg(0)))
+
+        RegGlobalValuePropagationPass().run(func)
+
+        # If wrongly propagated, this would become MLILDeref(arg1), re-reading *arg1 AFTER
+        # the store instead of using REG[0]'s actual (pre-store) captured value.
+        final_ret = block.instructions[-1]
+        self.assertIsInstance(final_ret.value, MLILLoadReg)
+
+
+class TestAddressTakenLocalStoresUseMemoryForm(unittest.TestCase):
+    """An address-taken local is lowered to explicit *(&x) memory form during SSA construction
+    and never scalar-versioned, so its reads and writes all go through that form and a stale
+    scalar version can never be read."""
+
+    def test_address_taken_local_lowers_to_memory_form_not_scalar_ssa(self):
+        # x = 1; *(&x) = 2; return x - both writes become *(&x) stores and the read becomes
+        # *(&x); x itself never advances past its seeded version, since a memory-form
+        # variable has no scalar SSA identity for a store to clobber
+        func = MediumLevelILFunction('addr_taken_store_test')
+        block = func.create_block(start=FUNC_START)
+        x = func.get_or_create_local('x')
+
+        block.add_instruction(MLILSetVar(x, MLILConst(1)))
+        block.add_instruction(MLILStoreDeref(MLILAddressOf(MLILVar(x)), MLILConst(2)))
+        block.add_instruction(MLILRet(MLILVar(x)))
+
+        SSAConversionPass().run(func)
+
+        first_store, second_store, ret_inst = block.instructions
+        self.assertIsInstance(first_store, MLILStoreDeref)
+        self.assertIsInstance(second_store, MLILStoreDeref)
+        self.assertIsInstance(ret_inst, MLILRet)
+        self.assertIsInstance(ret_inst.value, MLILDeref)
+
+        # One stable address identity throughout, not a chain of scalar SSA values
+        ret_var = ret_inst.value.operand.operand.var
+        self.assertEqual(ret_var.version, 0)
+
+    def test_deref_store_does_not_let_sccp_fold_a_stale_constant(self):
+        # x = 1; *(&x) = 2; return x - full optimizer must not fold this to `return 1`
+        func = MediumLevelILFunction('addr_taken_store_sccp_test')
+        block = func.create_block(start=FUNC_START)
+        x = func.get_or_create_local('x')
+
+        block.add_instruction(MLILSetVar(x, MLILConst(1)))
+        block.add_instruction(MLILStoreDeref(MLILAddressOf(MLILVar(x)), MLILConst(2)))
+        block.add_instruction(MLILRet(MLILVar(x)))
+
+        optimize_mlil(func, infer_types=False)
+
+        ret_inst = next(inst for inst in block.instructions if isinstance(inst, MLILRet))
+        self.assertFalse(isinstance(ret_inst.value, MLILConst) and ret_inst.value.value == 1)
+
+
+class TestCallAddressTakenArgNeedsNoPhi(unittest.TestCase):
+    """A local whose address a call receives is lowered to explicit *(&x) memory form and never
+    scalar-versioned, so a merge after a conditional call needs no phi for it: every read sees
+    the one stable address."""
+
+    def _build_diamond_with_addr_taken_call(self, name: str) -> MediumLevelILFunction:
+        # var_s0 = 0; if (arg1 == 0) { f(&var_s0) } ; return var_s0 + 1
+        func = MediumLevelILFunction(name)
+        entry = func.create_block(start=FUNC_START)
+        call_block = func.create_block(start=SECOND_BLOCK_START)
+        merge_block = func.create_block(start=THIRD_BLOCK_START)
+
+        arg1 = func.get_or_create_parameter(1, 'arg1')
+        var_s0 = func.get_or_create_local('var_s0')
+
+        entry.add_instruction(MLILSetVar(var_s0, MLILConst(0)))
+        entry.add_instruction(MLILIf(MLILEq(MLILVar(arg1), MLILConst(0)), call_block, merge_block))
+        entry.add_outgoing_edge(call_block)
+        entry.add_outgoing_edge(merge_block)
+
+        call_block.add_instruction(MLILCall('f', [MLILAddressOf(MLILVar(var_s0))]))
+        call_block.add_instruction(MLILGoto(merge_block))
+        call_block.add_outgoing_edge(merge_block)
+
+        merge_block.add_instruction(MLILRet(MLILAdd(MLILVar(var_s0), MLILConst(1))))
+
+        return func
+
+    def test_no_phi_needed_after_conditional_call_with_addr_arg(self):
+        # var_s0 = 0; if (arg1 == 0) { f(&var_s0) }; return var_s0 + 1 - address-taken var_s0
+        # is memory-form, so the merge needs no phi to reconcile a call-clobbered version
+        # against the entry's initial version: there is only ever the one stable address
+        func = self._build_diamond_with_addr_taken_call('addr_arg_phi_test')
+        merge_block = func.basic_blocks[2]
+        var_s0 = func.locals['var_s0']
+
+        SSAConversionPass().run(func)
+
+        phi = next((inst for inst in merge_block.instructions if isinstance(inst, MLILPhi)), None)
+        self.assertIsNone(phi)
+
+        ret_inst = merge_block.instructions[-1]
+        self.assertIsInstance(ret_inst.value, MLILAdd)
+        self.assertIsInstance(ret_inst.value.lhs, MLILDeref)
+
+        ret_var = ret_inst.value.lhs.operand.operand.var
+        self.assertEqual(ret_var.base_var, var_s0)
+        self.assertEqual(ret_var.version, 0)
+
+    def test_optimizer_does_not_fold_past_the_conditional_call(self):
+        func = self._build_diamond_with_addr_taken_call('addr_arg_phi_sccp_test')
+
+        optimize_mlil(func, infer_types=False)
+
+        ret_inst = next(inst for block in func.basic_blocks for inst in block.instructions
+                         if isinstance(inst, MLILRet))
+        self.assertFalse(isinstance(ret_inst.value, MLILConst) and ret_inst.value.value == 1)
+
+
+if __name__ == '__main__':
+    unittest.main()

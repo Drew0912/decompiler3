@@ -26,7 +26,6 @@ from ir.hlil import HLILConst
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.llil.llil import WORD_SIZE, LowLevelILConst, LowLevelILStackStore
 from ir.mlil.mlil import MLILConst
-from ir.mlil_ssa.mlil_ssa_optimizer import SSAOptimizer
 from tests.shared.scp_writer_test_utils import fresh_writer
 
 STORED_0_3 = 0.2999999523162842     # what 0.3 decodes to
@@ -109,12 +108,6 @@ class TestConstantIdentity(unittest.TestCase):
         self.assertTrue(constant_values_equal(value, SourceFloat(1.0, '1.0')))
         self.assertFalse(constant_values_equal(value, SourceFloat(1.0, '1e0')))
         self.assertFalse(constant_values_equal(value, 1.0))
-
-    def test_optimizer_sees_a_changed_text_as_a_change(self):
-        key = SSAOptimizer._structural_key(SourceFloat(STORED_0_3, '0.3'))
-        for other in (STORED_0_3, SourceFloat(STORED_0_3), SourceFloat(STORED_0_3, '0.30')):
-            with self.subTest(other=repr(other)):
-                self.assertNotEqual(key, SSAOptimizer._structural_key(other))
 
 
 class TestLLILBitsComment(unittest.TestCase):

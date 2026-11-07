@@ -13,9 +13,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from dc3.logging import log
+from ir.core import SourceFloat
 from ir.mlil.mlil import MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILLogicalNot, MLILNe
 from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILIf, MLILRet
 from ir.mlil_ssa.mlil_ssa_optimizer import SSA_OPTIMIZER_MAX_ITERATIONS, SSAOptimizer
+
+STORED_0_3 = 0.2999999523162842     # what 0.3 decodes to
 
 
 def make_func(name: str) -> MediumLevelILFunction:
@@ -126,6 +129,12 @@ class TestStructuralKeyExactness(unittest.TestCase):
         class_b = type('Dummy', (), {})
         self.assertEqual(class_a.__name__, class_b.__name__)
         self.assertNotEqual(SSAOptimizer._structural_key(class_a()), SSAOptimizer._structural_key(class_b()))
+
+    def test_optimizer_sees_a_changed_text_as_a_change(self):
+        key = SSAOptimizer._structural_key(SourceFloat(STORED_0_3, '0.3'))
+        for other in (STORED_0_3, SourceFloat(STORED_0_3), SourceFloat(STORED_0_3, '0.30')):
+            with self.subTest(other=repr(other)):
+                self.assertNotEqual(key, SSAOptimizer._structural_key(other))
 
     def test_operand_change_alters_snapshot(self):
         func = make_func('operand_change')

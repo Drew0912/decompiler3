@@ -342,9 +342,8 @@ in one slot at a block entry (the disassembler) and an address of a slot no push
 
 The SSA path's tests are in `tests/mlil_ssa_tests/` (`test_mlil_ssa_optimizer.py`, `test_mlil_sccp_folding.py`,
 `test_mlil_reg_global_propagation.py`, and others), covering SSA construction/deconstruction, the SSA
-optimizer's passes, and register/global propagation; a few files in `tests/mlil_tests/` test it beside the code
-that stays (`test_mlil_address_taken.py`, `test_mlil_types.py`, `test_mlil_metadata.py`, `test_mlil_rebuild.py`,
-`test_mlil_traversal.py`, `test_mlil_provenance.py`). `test_mlil_stack_translator.py` covers
+optimizer's passes, and register/global propagation; two files in `tests/mlil_tests/` test it beside the code
+that stays (`test_mlil_traversal.py`, `test_mlil_provenance.py`). `test_mlil_stack_translator.py` covers
 the stack translator on assembled functions, each case also compared clean by the logic check on both pairs;
 `test_mlil_stack_hand_written.py` on the shapes only a hand edit makes, written in the LLIL DSL and compiled by the
 writer, through the same checks
@@ -356,7 +355,7 @@ whole entry point.
 
 - Four SSA optimizer passes have no behaviour test of their own: negation normal form, expression
   simplification, constant propagation and dead-`Phi` elimination (three appear only in metadata
-  checks: `test_mlil_rebuild.py`, `test_mlil_provenance.py`).
+  checks: `test_mlil_ssa_rebuild.py`, `test_mlil_ssa_provenance.py`).
 - SCCP's edge reachability is coarse, and kept that way on purpose: a statement it does not model (a
   call, a store) marks every edge out of its block reachable, and so does an `if` whose condition is
   not known yet. This only loses folding - SCCP never removes blocks - and tighter

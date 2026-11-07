@@ -13,11 +13,6 @@ sys.path.insert(0, str(REPO_ROOT))
 from codegen.typescript import TypeScriptGenerator
 from ir.core import SourceFloat, is_int_zero
 from ir.hlil import BinaryOp, HLILBinaryOp, HLILConst, HLILUnaryOp, HLILVar, HLILVariable, UnaryOp
-from ir.mlil.mlil import (
-    MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILEq, MLILNe, MLILLt, MLILLogicalNot,
-)
-from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILIf, MLILRet
-from ir.mlil_ssa.passes.pass_ssa_condition_simplification import ConditionSimplificationPass
 
 INT_ZERO = 0
 FLOAT_ZERO = 0.0
@@ -29,37 +24,6 @@ class TestIsIntZero(unittest.TestCase):
         for value in (FLOAT_ZERO, -0.0, SourceFloat(FLOAT_ZERO, '0.0'), 1, '0'):
             with self.subTest(value=repr(value)):
                 self.assertFalse(is_int_zero(value))
-
-
-def read_x() -> MLILVarSSA:
-    return MLILVarSSA(MLILVariableSSA(MLILVariable('x'), 0))
-
-
-def simplify_mlil_condition(condition):
-    """if (condition) - runs ConditionSimplificationPass, returns the condition it leaves"""
-    func = MediumLevelILFunction('condition_test')
-    entry, true_block, false_block = (MediumLevelILBasicBlock(index) for index in range(3))
-    entry.instructions = [MLILIf(condition, true_block, false_block)]
-    true_block.instructions = [MLILRet()]
-    false_block.instructions = [MLILRet()]
-    func.basic_blocks = [entry, true_block, false_block]
-
-    ConditionSimplificationPass().run(func)
-
-    return entry.instructions[0].condition
-
-
-class TestMLILConditionSimplification(unittest.TestCase):
-    def test_float_zero_is_left_alone(self):
-        for condition in (MLILEq(read_x(), MLILConst(FLOAT_ZERO)),
-                          MLILNe(MLILLt(read_x(), MLILConst(1)), MLILConst(FLOAT_ZERO))):
-            with self.subTest(condition=str(condition)):
-                self.assertIs(simplify_mlil_condition(condition), condition)
-
-    def test_int_zero_still_simplifies(self):
-        self.assertIsInstance(simplify_mlil_condition(MLILEq(read_x(), MLILConst(INT_ZERO))), MLILLogicalNot)
-        condition = MLILNe(MLILLt(read_x(), MLILConst(1)), MLILConst(INT_ZERO))
-        self.assertIsInstance(simplify_mlil_condition(condition), MLILLt)
 
 
 def less_than_one() -> HLILBinaryOp:
