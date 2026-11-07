@@ -13,5 +13,5 @@ class VoiceTableData(TableDataEntry):
         ('uint16_18',  'W'),
         ('pad1a',      'P2'),
         ('float32_1c', 'f'),
-        ('str20',      'S'),
+        ('transcript', 'S'),
     )

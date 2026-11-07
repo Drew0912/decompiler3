@@ -6,7 +6,7 @@ class GraphicsPresetTableData(TableDataEntry):
     DESCRIPTOR = (
         ('id',       'I'),
         ('pad04',    'P4'),
-        ('str08',    'S'),
+        ('textKey',  'S'),
         ('flags',    'S'),
         ('uint8_18', 'B'),
         ('uint8_19', 'B'),
