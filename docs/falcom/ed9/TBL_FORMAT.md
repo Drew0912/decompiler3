@@ -115,9 +115,9 @@ read.
 - **Not checked:** the magic, the name hash and the record size. The size is only the step between rows; a field's
   offset is fixed in the code, so a row of another size is misread, not rejected.
 - **Pointers** are fixed up once, at load: a non-zero value gets the file's address added, and 0 stays a null pointer.
-- **Letter fields:** a few strings hold letters that the load turns into flags, in place of the pointer: `flags` in
-  `NameTableData`, `NPCParam` and `MonsterSettingParam`. An unknown letter is ignored or logged. Such a field has no
-  null check.
+- **Letter fields:** some strings hold letters that the load turns into flags, in place of the pointer: `flags`, and
+  `flags2` where a table has a second, as in `NameTableData`, `ItemTableData` and `StatusParam`. An unknown letter is
+  ignored or logged. Such a field has no null check.
 
 ## Record Classes
 
@@ -166,9 +166,9 @@ the `sora2` exe, with the counts from `sora2`'s tables and all 1,082 scripts:
   variable. An ID that is not in the table often serves several models (`21050` takes 56), so it names a slot, not a
   character.
 - **NPC rows:** an `NPCParam` row makes a character with its `chrId`. Its `model`, when set, works as in `chr_create`;
-  when empty, a non-zero `altChrId` replaces the ID for the row lookup. `altChrId` is set only on a `chrId` outside the
-  table, and such a `chrId` can have several, so the name belongs to the row, not the ID. A row with `X` in `flags` is
-  not created, but another row's `lookPoint` can name it.
+  when empty, a non-zero `overrideChrId` replaces the ID for the row lookup. `overrideChrId` is set only on a `chrId`
+  outside the table, and such a `chrId` can have several, so the name belongs to the row, not the ID. A row with `X` in
+  `flags` is not created, but another row's `lookPoint` can name it.
 - **Pseudo IDs:** `65534` (the thread's owner) and others are resolved before any lookup, and no `chrId` but `0xFFFF`
   falls among them. 22000..22032 are an owner's local characters; no `chrId` is in that range either.
 

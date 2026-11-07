@@ -57,7 +57,7 @@ class Padded(TableDataEntry):
 
 
 class Signed(TableDataEntry):
-    DESCRIPTOR = (('byte', 'b'), ('pad01', 'P1'), ('pad02', 'P2'), ('word', 'i'))
+    DESCRIPTOR = (('byte', 'b'), ('pad01', 'P1'), ('short', 'w'), ('word', 'i'))
 
 
 CLASSES = {('Pair', Pair.record_size()): Pair}
@@ -141,9 +141,9 @@ class TestFieldKinds(unittest.TestCase):
         self.assertEqual(parser.problems, [])
 
     def test_signed_kinds_read_negative_numbers(self):
-        record = struct.pack('<b3xi', -15, -10)
+        record = struct.pack('<bxhi', -15, -5, -10)
         entry = TblParser(build_tbl([('Signed', len(record), [[record]])]), SIGNED_CLASSES).entries[0]
-        self.assertEqual((entry.byte, entry.word), (-15, -10))
+        self.assertEqual((entry.byte, entry.short, entry.word), (-15, -5, -10))
 
     def test_padding_is_read_past_and_is_no_field_of_the_row(self):
         record = struct.pack('<H6xB7x', 0x1234, 200)
@@ -297,7 +297,7 @@ class TestRebuilding(unittest.TestCase):
         self.assert_rebuilds(build_tbl([('Mixed', len(record), [[record]])]), {('Mixed', len(record)): Mixed})
 
     def test_negative_numbers_come_back_byte_for_byte(self):
-        record = struct.pack('<b3xi', -15, -10)
+        record = struct.pack('<bxhi', -15, -5, -10)
         self.assert_rebuilds(build_tbl([('Signed', len(record), [[record]])]), SIGNED_CLASSES)
 
     def test_padding_comes_back_as_zeros_at_its_place(self):

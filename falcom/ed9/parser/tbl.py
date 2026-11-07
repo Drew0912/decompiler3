@@ -29,6 +29,7 @@ TBL_OUTPUT_DIR   = Path('out') / 'tbl'       # a game's default output folder, b
 FILE_HEADER      = fileio.struct_layout('4sI')       # magic, section count
 SECTION_ENTRY    = fileio.struct_layout('64sIIII')   # name, name hash, records' offset, record size, record count
 INT8             = fileio.struct_layout('b')
+INT16            = fileio.struct_layout('h')
 INT32            = fileio.struct_layout('i')
 UINT8            = fileio.struct_layout('B')
 UINT16           = fileio.struct_layout('H')
@@ -49,13 +50,14 @@ class FieldKind(NamedTuple):
 
 
 # Zero bytes after a narrow field, by size: never a row's field, a rebuild writes them again
-PADDING_KINDS = {f'P{size}': FieldKind(fileio.struct_layout(f'{size}s'), bytes.hex) for size in (1, 2, 4, 6, 7)}
+PADDING_KINDS = {f'P{size}': FieldKind(fileio.struct_layout(f'{size}s'), bytes.hex) for size in (1, 2, 3, 4, 6, 7)}
 
 # The letters a DESCRIPTOR's (field, kind) pairs use: how a field is stored and how it prints. Integers are unsigned
-# but for b and i
+# but for b, w and i
 FIELD_KINDS = {
     'b'         : FieldKind(INT8, str),                                             # 1-byte signed integer, in decimal
     'B'         : FieldKind(UINT8, str),                                            # 1-byte integer, in decimal
+    'w'         : FieldKind(INT16, str),                                            # 2-byte signed integer, in decimal
     'W'         : FieldKind(UINT16, lambda value: f'0x{value:04X}'),                # 2-byte integer, printed in hex
     'i'         : FieldKind(INT32, str),                                            # 4-byte signed integer, in decimal
     'I'         : FieldKind(UINT32, str),                                           # 4-byte integer, in decimal
