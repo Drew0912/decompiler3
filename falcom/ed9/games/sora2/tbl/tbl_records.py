@@ -2,9 +2,11 @@
 
 from falcom.ed9.games.sora1.tbl.tbl_records import *
 
-# A DESCRIPTOR's kinds, defined in FIELD_KINDS (falcom/ed9/parser/tbl.py); integers are unsigned
+# A DESCRIPTOR's kinds, defined in FIELD_KINDS (falcom/ed9/parser/tbl.py); integers are unsigned but for b and i
+#   b   Byte: 1-byte signed integer, printed in decimal
 #   B   Byte: 1-byte integer, printed in decimal
 #   W   Word: 2-byte integer, printed in hex
+#   i   Int: 4-byte signed integer, printed in decimal
 #   I   Int: 4-byte integer, printed in decimal
 #   L   Long: 4-byte integer, printed in hex
 #   Q   Quad: 8-byte integer, printed in decimal
@@ -14,7 +16,7 @@ from falcom.ed9.games.sora1.tbl.tbl_records import *
 #   A1  Array of 1-byte integers: 8-byte pointer into the data block, 4-byte element count
 #   A2  Array of 2-byte integers: the same
 #   A4  Array of 4-byte integers: the same
-#   P2  Padding: 2 zero bytes, not a field of a row; P4, P6 and P7 the same
+#   P1  Padding: 1 zero byte, not a field of a row; P2, P4, P6 and P7 the same
 
 
 # t_mon_*.tbl: sora1's, up to its last four fields
@@ -124,59 +126,60 @@ class LipSyncData(TableDataEntry):
 # t_item.tbl
 class ItemTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
-        ('arr32_08',   'A4'),
-        ('uint32_14',  'I'),
-        ('str18',      'S'),
-        ('str20',      'S'),
-        ('uint32_28',  'I'),
-        ('uint32_2c',  'I'),
-        ('uint32_30',  'I'),
-        ('float32_34', 'f'),
-        ('float32_38', 'f'),
-        ('uint32_3c',  'I'),
-        ('uint32_40',  'I'),
-        ('uint32_44',  'I'),
-        ('uint32_48',  'I'),
-        ('uint32_4c',  'I'),
-        ('uint32_50',  'I'),
-        ('uint32_54',  'I'),
-        ('uint32_58',  'I'),
-        ('uint32_5c',  'I'),
-        ('uint64_60',  'Q'),
-        ('uint32_68',  'I'),
-        ('uint32_6c',  'I'),
-        ('uint32_70',  'I'),
-        ('uint32_74',  'I'),
-        ('uint32_78',  'I'),
-        ('uint32_7c',  'I'),
-        ('uint32_80',  'I'),
-        ('uint32_84',  'I'),
-        ('uint32_88',  'I'),
-        ('float32_8c', 'f'),
-        ('float32_90', 'f'),
-        ('uint32_94',  'I'),
-        ('uint32_98',  'I'),
-        ('uint32_9c',  'I'),
-        ('uint32_a0',  'I'),
-        ('uint32_a4',  'I'),
-        ('uint64_a8',  'Q'),
-        ('uint32_b0',  'I'),
-        ('uint32_b4',  'I'),
-        ('uint32_b8',  'I'),
-        ('uint32_bc',  'I'),
-        ('uint32_c0',  'I'),
-        ('uint32_c4',  'I'),
-        ('uint32_c8',  'I'),
-        ('uint32_cc',  'I'),
-        ('uint64_d0',  'Q'),
-        ('strd8',      'S'),
-        ('stre0',      'S'),
-        ('stre8',      'S'),
-        ('uint32_f0',  'I'),
-        ('uint32_f4',  'I'),
-        ('uint32_f8',  'I'),
-        ('uint32_fc',  'I'),
+        ('id',          'I'),
+        ('pad04',       'P4'),
+        ('arr32_08',    'A4'),
+        ('uint32_14',   'I'),
+        ('flags',       'S'),
+        ('str20',       'S'),
+        ('uint32_28',   'I'),
+        ('uint32_2c',   'I'),
+        ('uint32_30',   'I'),
+        ('float32_34',  'f'),
+        ('float32_38',  'f'),
+        ('uint32_3c',   'I'),
+        ('uint32_40',   'I'),
+        ('uint32_44',   'I'),
+        ('uint32_48',   'I'),
+        ('uint32_4c',   'I'),
+        ('uint32_50',   'I'),
+        ('uint32_54',   'I'),
+        ('uint32_58',   'I'),
+        ('uint32_5c',   'I'),
+        ('uint64_60',   'Q'),
+        ('uint32_68',   'I'),
+        ('uint32_6c',   'I'),
+        ('uint32_70',   'I'),
+        ('uint32_74',   'I'),
+        ('uint32_78',   'I'),
+        ('uint32_7c',   'I'),
+        ('uint32_80',   'I'),
+        ('uint32_84',   'I'),
+        ('uint32_88',   'I'),
+        ('float32_8c',  'f'),
+        ('float32_90',  'f'),
+        ('uint32_94',   'I'),
+        ('uint32_98',   'I'),
+        ('uint32_9c',   'I'),
+        ('uint32_a0',   'I'),
+        ('uint32_a4',   'I'),
+        ('uint64_a8',   'Q'),
+        ('uint32_b0',   'I'),
+        ('uint32_b4',   'I'),
+        ('uint32_b8',   'I'),
+        ('uint32_bc',   'I'),
+        ('uint32_c0',   'I'),
+        ('uint32_c4',   'I'),
+        ('uint32_c8',   'I'),
+        ('uint32_cc',   'I'),
+        ('uint64_d0',   'Q'),
+        ('strd8',       'S'),
+        ('name',        'S'),
+        ('description', 'S'),
+        ('uint32_f0',   'I'),
+        ('uint32_f4',   'I'),
+        ('uint32_f8',   'I'),
+        ('uint32_fc',   'I'),
     )
 
 

@@ -4,9 +4,11 @@ by offset have no known meaning yet"""
 from falcom.ed9.parser.tbl import TableDataEntry
 from falcom.ed9.parser.tbl import RawSection, RawTableEntry, create_tbl    # for generated scripts' star import
 
-# A DESCRIPTOR's kinds, defined in FIELD_KINDS (falcom/ed9/parser/tbl.py); integers are unsigned
+# A DESCRIPTOR's kinds, defined in FIELD_KINDS (falcom/ed9/parser/tbl.py); integers are unsigned but for b and i
+#   b   Byte: 1-byte signed integer, printed in decimal
 #   B   Byte: 1-byte integer, printed in decimal
 #   W   Word: 2-byte integer, printed in hex
+#   i   Int: 4-byte signed integer, printed in decimal
 #   I   Int: 4-byte integer, printed in decimal
 #   L   Long: 4-byte integer, printed in hex
 #   Q   Quad: 8-byte integer, printed in decimal
@@ -16,7 +18,7 @@ from falcom.ed9.parser.tbl import RawSection, RawTableEntry, create_tbl    # for
 #   A1  Array of 1-byte integers: 8-byte pointer into the data block, 4-byte element count
 #   A2  Array of 2-byte integers: the same
 #   A4  Array of 4-byte integers: the same
-#   P2  Padding: 2 zero bytes, not a field of a row; P4, P6 and P7 the same
+#   P1  Padding: 1 zero byte, not a field of a row; P2, P4, P6 and P7 the same
 
 
 # t_name.tbl
@@ -49,14 +51,14 @@ class NPCParam(TableDataEntry):
         ('altChrId',     'W'),
         ('uint32_04',    'I'),
         ('model',        'S'),
-        ('arr16_10',     'A2'),
+        ('flagsSet',     'A2'),
         ('uint32_1c',    'I'),
-        ('arr16_20',     'A2'),
+        ('flagsClear',   'A2'),
         ('x',            'f'),
         ('y',            'f'),
         ('z',            'f'),
         ('angle',        'f'),
-        ('float32_3c',   'f'),
+        ('talkRadius',   'f'),
         ('float32_40',   'f'),
         ('lookPoint',    'W'),
         ('pad46',        'P2'),
@@ -66,13 +68,14 @@ class NPCParam(TableDataEntry):
         ('uint32_54',    'I'),
         ('flags',        'S'),
         ('initFunction', 'S'),
-        ('aniFunction',  'S'),
-        ('uint32_70',    'I'),
+        ('execFunction', 'S'),
+        ('execArgument', 'i'),
         ('uint32_74',    'I'),
         ('talkFunction', 'S'),
-        ('str80',        'S'),
-        ('uint64_88',    'Q'),
-        ('arr16_90',     'A2'),
+        ('nearFunction', 'S'),
+        ('pad88',        'P4'),
+        ('talkFlag',     'I'),
+        ('shopIds',      'A2'),
         ('uint32_9c',    'I'),
     )
 
@@ -85,9 +88,9 @@ class NPCParam98(TableDataEntry):
         ('altChrId',    'W'),
         ('uint32_04',   'I'),
         ('model',       'S'),
-        ('arr16_10',    'A2'),
+        ('flagsSet',    'A2'),
         ('uint32_1c',   'I'),
-        ('arr16_20',    'A2'),
+        ('flagsClear',  'A2'),
         ('x',           'f'),
         ('y',           'f'),
         ('z',           'f'),
@@ -121,10 +124,11 @@ class MonsterSettingParam(TableDataEntry):
         ('flags',        'S'),
         ('uint16_28',    'W'),
         ('pad2a',        'P6'),
-        ('arr16_30',     'A2'),
+        ('flagsSet',     'A2'),
         ('uint32_3c',    'I'),
-        ('arr16_40',     'A2'),
-        ('uint32_4c',    'I'),
+        ('flagsClear',   'A2'),
+        ('flag',         'W'),
+        ('pad4e',        'P2'),
         ('battleArea',   'S'),
         ('uint8_58',     'B'),
         ('uint8_59',     'B'),
@@ -135,7 +139,9 @@ class MonsterSettingParam(TableDataEntry):
         ('z',            'f'),
         ('angle',        'f'),
         ('uint32_6c',    'I'),
-        ('uint32_70',    'L'),
+        ('int8_70',      'b'),
+        ('int8_71',      'b'),
+        ('pad72',        'P2'),
         ('uint32_74',    'I'),
         ('initFunction', 'S'),
         ('moveFunction', 'S'),
@@ -1696,9 +1702,11 @@ class SETableData(TableDataEntry):
 # t_shop.tbl
 class ShopInfo(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
+        ('id',         'W'),
+        ('pad02',      'P6'),
         ('str08',      'S'),
-        ('uint64_10',  'Q'),
+        ('shopType',   'B'),
+        ('pad11',      'P7'),
         ('str18',      'S'),
         ('uint32_20',  'I'),
         ('float32_24', 'f'),
@@ -1728,8 +1736,14 @@ class ShopTypeDesc(TableDataEntry):
     DESCRIPTOR = (
         ('uint64_00', 'Q'),
         ('str08',     'S'),
-        ('uint32_10', 'I'),
-        ('uint32_14', 'I'),
+        ('uint8_10',  'B'),
+        ('uint8_11',  'B'),
+        ('uint8_12',  'B'),
+        ('uint8_13',  'B'),
+        ('uint8_14',  'B'),
+        ('uint8_15',  'B'),
+        ('uint8_16',  'B'),
+        ('pad17',     'P1'),
     )
 
 
@@ -1794,8 +1808,10 @@ class CharaArrange(TableDataEntry):
 # t_skill.tbl
 class SkillParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint64_00',  'Q'),
-        ('str08',      'S'),
+        ('id',         'W'),
+        ('chrId',      'W'),
+        ('pad04',      'P4'),
+        ('flags',      'S'),
         ('uint64_10',  'Q'),
         ('str18',      'S'),
         ('uint32_20',  'I'),
@@ -1827,7 +1843,7 @@ class SkillParam(TableDataEntry):
         ('uint32_88',  'I'),
         ('uint32_8c',  'I'),
         ('str90',      'S'),
-        ('str98',      'S'),
+        ('name',       'S'),
         ('stra0',      'S'),
         ('stra8',      'S'),
     )

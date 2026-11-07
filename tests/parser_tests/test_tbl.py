@@ -56,10 +56,15 @@ class Padded(TableDataEntry):
     DESCRIPTOR = (('id', 'W'), ('pad02', 'P6'), ('small', 'B'), ('pad09', 'P7'))
 
 
+class Signed(TableDataEntry):
+    DESCRIPTOR = (('byte', 'b'), ('pad01', 'P1'), ('pad02', 'P2'), ('word', 'i'))
+
+
 CLASSES = {('Pair', Pair.record_size()): Pair}
 LIST_CLASSES = {('Lists', Lists.record_size()): Lists}
 LISTS_SIZE = Lists.record_size()
 PADDED_CLASSES = {('Padded', Padded.record_size()): Padded}
+SIGNED_CLASSES = {('Signed', Signed.record_size()): Signed}
 
 
 def array(pointer: int, count: int) -> bytes:
@@ -134,6 +139,11 @@ class TestFieldKinds(unittest.TestCase):
         self.assertEqual((entry.low, entry.high, entry.count, entry.code, entry.ratio, entry.wide, entry.big),
                          (0x1234, 0x5678, 7, 0xAABBCCDD, 1.5, 0x10, 20))
         self.assertEqual(parser.problems, [])
+
+    def test_signed_kinds_read_negative_numbers(self):
+        record = struct.pack('<b3xi', -15, -10)
+        entry = TblParser(build_tbl([('Signed', len(record), [[record]])]), SIGNED_CLASSES).entries[0]
+        self.assertEqual((entry.byte, entry.word), (-15, -10))
 
     def test_padding_is_read_past_and_is_no_field_of_the_row(self):
         record = struct.pack('<H6xB7x', 0x1234, 200)
@@ -285,6 +295,10 @@ class TestRebuilding(unittest.TestCase):
     def test_each_number_kind_writes_its_width(self):
         record = struct.pack('<HHIIfQQ', 0x1234, 0x5678, 7, 0xAABBCCDD, 1.5, 0x10, 20)
         self.assert_rebuilds(build_tbl([('Mixed', len(record), [[record]])]), {('Mixed', len(record)): Mixed})
+
+    def test_negative_numbers_come_back_byte_for_byte(self):
+        record = struct.pack('<b3xi', -15, -10)
+        self.assert_rebuilds(build_tbl([('Signed', len(record), [[record]])]), SIGNED_CLASSES)
 
     def test_padding_comes_back_as_zeros_at_its_place(self):
         record = struct.pack('<H6xB7x', 0x1234, 200)
