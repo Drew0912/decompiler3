@@ -65,7 +65,7 @@ reports it as the difference `unstructured_jump`; none occurs in the sora2 corpu
 **Expressions:** `HLILVar`/`HLILConst`, `HLILBinaryOp`/`HLILUnaryOp`, `HLILAddressOf`, `HLILDeref`
 (`*ptr`, from `MLILDeref` - a runtime-computed address, e.g. an out-parameter; not a subclass of
 `HLILUnaryOp`, same as `HLILAddressOf`), `HLILCall` (name + args), `HLILSyscall` (subsystem + cmd +
-args), `HLILExternCall` (`"module:func"` cross-script calls).
+args), `HLILExternCall` (`"module:func"`, a call by module and function name).
 
 **Register model:** there is no dedicated register IL node. `VariableKind` is
 `LOCAL`/`PARAM`/`GLOBAL`/`REG`; a `REG`/`GLOBAL` variable simply prints as `REGS[index]`/

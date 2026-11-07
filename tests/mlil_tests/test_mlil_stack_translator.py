@@ -18,7 +18,7 @@ from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from ir.llil.llil import LowLevelILAdd, LowLevelILStackStore, WORD_SIZE
 from ir.mlil.mlil import (
-    MLILAdd, MLILAnd, MLILCallScript, MLILConst, MLILDebug, MLILSetVar, UNASSIGNED_INST_INDEX, walk,
+    MLILAdd, MLILAnd, MLILConst, MLILDebug, MLILExternCall, MLILSetVar, UNASSIGNED_INST_INDEX, walk,
 )
 from ir.mlil.stack_translator import UnsupportedStackShape
 from tests.shared.llil_utils import lift_asm
@@ -202,7 +202,7 @@ class TestCalls(StackTranslatorTestCase):
         mlil = self.translate(asm)
 
         self.assertEqual(statements(mlil), ['REG[1] = 4', 't1 = this.g(REG[1], 3)', 'REG[0] = t1', 'return REG[0]'])
-        call_node = next(inst for inst in mlil.basic_blocks[0].instructions if isinstance(inst, MLILCallScript))
+        call_node = next(inst for inst in mlil.basic_blocks[0].instructions if isinstance(inst, MLILExternCall))
         self.assertTrue(call_node.tail_call)
 
     def test_a_script_call_then_a_return_is_no_tail_call(self):
@@ -212,7 +212,7 @@ class TestCalls(StackTranslatorTestCase):
         mlil = self.translate(asm)
 
         self.assertEqual(statements(mlil), ['t1 = this.g(3)', 'REG[0] = t1', 'REG[0] = REG[0]', 'return REG[0]'])
-        call_node = next(inst for inst in mlil.basic_blocks[0].instructions if isinstance(inst, MLILCallScript))
+        call_node = next(inst for inst in mlil.basic_blocks[0].instructions if isinstance(inst, MLILExternCall))
         self.assertFalse(call_node.tail_call)
 
     def test_a_continuation_joins_its_call_and_a_shared_return_target_is_a_goto(self):

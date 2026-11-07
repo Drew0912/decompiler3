@@ -878,7 +878,7 @@ class MLILToHLILConverter:
         elif isinstance(expr, MLILSyscall):
             args = [self._convert_expr(arg) for arg in expr.args]
             return HLILSyscall(expr.subsystem, expr.cmd, args)
-        elif isinstance(expr, MLILCallScript):
+        elif isinstance(expr, MLILExternCall):
             args = [self._convert_expr(arg) for arg in expr.args]
             return HLILExternCall(f'{expr.module}:{expr.func}', args)
         else:

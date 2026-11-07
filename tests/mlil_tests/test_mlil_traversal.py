@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from ir.mlil.mlil import (
     MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILCall, MLILVariable, MLILUndef, MLILVar,
     MLILSetVar, MLILBinaryOp, MLILUnaryOp, MLILAdd, MLILMul, MLILNeg, MLILAddressOf, MLILGoto, MLILIf, MLILRet,
-    MLILCall, MLILSyscall, MLILCallScript, MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILNop,
+    MLILCall, MLILSyscall, MLILExternCall, MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILNop,
     MLILDebug, MLILIntrinsic, MLILStoreDeref, walk, map_operands,
 )
 from tests.shared.ir_utils import (
@@ -34,7 +34,7 @@ def samples() -> list:
         MLILGoto(block), MLILIf(c(), block, other_block), MLILRet(c()), MLILRet(),
         MLILCall('f', [c(), c()], output, tail_call=True),
         MLILSyscall(1, 2, [c(), c()], output, tail_call=True),
-        MLILCallScript('m', 'f', [c(), c()], output, tail_call=True),
+        MLILExternCall('m', 'f', [c(), c()], output, tail_call=True),
         MLILLoadGlobal(0), MLILStoreGlobal(1, c()), MLILLoadReg(0), MLILStoreReg(2, c()),
         MLILNop(), MLILDebug('line', 5), MLILIntrinsic('POPN', [c(), c()]), MLILStoreDeref(c(), c()),
     ]
@@ -120,7 +120,7 @@ class TestWalkerRulesKept(unittest.TestCase):
 
     def test_call_types_are_exactly_the_three_call_classes(self):
         # passes rely on MediumLevelILCall covering exactly these three call classes
-        self.assertEqual(concrete_subclasses(MediumLevelILCall), {MLILCall, MLILSyscall, MLILCallScript})
+        self.assertEqual(concrete_subclasses(MediumLevelILCall), {MLILCall, MLILSyscall, MLILExternCall})
 
 
 if __name__ == '__main__':

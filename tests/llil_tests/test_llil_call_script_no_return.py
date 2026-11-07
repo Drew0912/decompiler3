@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILCall
-from ir.mlil.mlil import MLILCallScript, MLILRet, MLILVar
+from ir.mlil.mlil import MLILExternCall, MLILRet, MLILVar
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript, LowLevelILCallScriptNoReturn
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from falcom.ed9.disasm.ed9_optable import ED9Opcode
@@ -81,7 +81,7 @@ class TestCallScriptNoReturnMLIL(unittest.TestCase):
         self.assertGreaterEqual(len(block.instructions), 2)
 
         call_inst, ret_inst = block.instructions[-2:]
-        self.assertIsInstance(call_inst, MLILCallScript)
+        self.assertIsInstance(call_inst, MLILExternCall)
         self.assertEqual(call_inst.module, MODULE_NAME)
         self.assertEqual(call_inst.func, FUNC_NAME)
         self.assertEqual(len(call_inst.args), 1)

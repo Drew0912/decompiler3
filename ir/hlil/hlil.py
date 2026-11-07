@@ -420,7 +420,7 @@ class HLILSyscall(HLILExpression):
 
 
 class HLILExternCall(HLILExpression):
-    """External module call (e.g., script call)"""
+    """Call by module and function name, resolved at run time"""
 
     def __init__(self, target: str, args: list[HLILExpression]):
         super().__init__(HLILOperation.HLIL_CALL)

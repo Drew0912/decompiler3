@@ -119,6 +119,6 @@ class MLILBuilder:
                 output: MLILVariable | None = None):
         self.add_instruction(MLILSyscall(subsystem, cmd, args, output))
 
-    def call_script(self, module: str, func: str, args: list[MediumLevelILInstruction],
+    def extern_call(self, module: str, func: str, args: list[MediumLevelILInstruction],
                     output: MLILVariable | None = None):
-        self.add_instruction(MLILCallScript(module, func, args, output))
+        self.add_instruction(MLILExternCall(module, func, args, output))

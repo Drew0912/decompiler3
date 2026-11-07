@@ -50,8 +50,7 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
   path): the parameter-slot mapping in its generic translator (`ir/mlil_ssa/llil_to_mlil.py`,
   `_frame_offset_to_param_index`) and the generic `RegStore`/`RegLoad`/`Syscall` translation that only its Falcom
   translator has. The decompile path's stack translator meets the rules (`notes/rewrite/08_decision_and_checklist.md`,
-  Checklist, "Boundary rules"; `docs/ARCHITECTURE.md`, "Generic/Falcom Boundary"); `MLILCallScript` ->
-  `MLILExternCall` is deferred (IR rewrite part 2, D2).
+  Checklist, "Boundary rules"; `docs/ARCHITECTURE.md`, "Generic/Falcom Boundary").
 - **Small moves, done by the opcode-table plan** (Step 7 `89063e4`, no output change; Step 7b `f8f4682` changed only
   the `POP_TO_DEREF` lines of `.llil.asm`):
   - `LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` live only in `LowLevelILFalcomOperation`

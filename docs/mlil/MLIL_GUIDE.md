@@ -87,7 +87,8 @@ variants of each).
 
 **Control flow:** unconditional goto; conditional branch; return (with optional value).
 
-**Calls:** ordinary function call, syscall, Falcom script call (`CALL_SCRIPT`).
+**Calls:** ordinary function call, syscall, a call by module and function name (`MLILExternCall`, the VM's
+`CALL_SCRIPT`).
 
 **Globals/registers:** load/store global variable; load/store VM register.
 

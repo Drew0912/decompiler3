@@ -68,7 +68,7 @@ statement copies all three with `copy_metadata_from()`. Nodes are split into `Me
 | Memory / stack artifacts | Explicit address expressions, for the cases where a raw stack address is referenced directly rather than eliminated. |
 | Pointer dereference | `MLILDeref` (`*ptr`, a unary expression) / `MLILStoreDeref` (`*dest = value`, modelled on `MLILStoreGlobal` but with an expression target instead of a static index) — for `LOAD_STACK_DEREF`/`POP_TO_DEREF`, where the address is a runtime value (e.g. a caller-supplied out-parameter) rather than a statically known stack/frame slot. Unlike `MLILAddressOf`, a `MLILDeref`'s operand is an ordinary value and safe to copy-propagate through; a `MLILStoreDeref` is always kept (never DCE'd) since its target isn't a tracked SSA variable. |
 | Control flow | `MLIL_GOTO`, `MLIL_IF`, `MLIL_RET` |
-| Calls | `MLIL_CALL`, `MLIL_CALL_SCRIPT`, `MLIL_SYSCALL`; every call may change any register or global |
+| Calls | `MLIL_CALL`, `MLIL_SYSCALL`, `MLIL_EXTERN_CALL`; every call may change any register or global |
 | Intrinsics | `MLIL_INTRINSIC` (`MLILIntrinsic(name, args)`): a VM instruction with no MLIL form of its own, kept as a statement that changes nothing (ED9's `POPN`, `DEBUG_INT`). Not a nop: no pass steps over it, as none steps over a call. |
 | Falcom specific | Derived metadata on top of generic ops — stack-setup helpers like `PUSH_CALLER_FRAME`/`PUSH_CURRENT_FUNC_ID`/`PUSH_RET_ADDR` are fully lowered to regular variables/arguments, with no dedicated MLIL opcode. |
 

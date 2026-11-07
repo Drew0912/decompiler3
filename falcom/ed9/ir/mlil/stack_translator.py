@@ -5,7 +5,7 @@ data refused"""
 from falcom.ed9.disasm.stack_effects import RESULT_REGISTER
 from ir.llil.llil import LowLevelILBasicBlock, LowLevelILCall, LowLevelILInstruction, WORD_SIZE
 from ir.mlil.mlil import (
-    MediumLevelILCall, MediumLevelILInstruction, MLILCallScript, MLILConst, MLILLoadGlobal, MLILVariable,
+    MediumLevelILCall, MediumLevelILInstruction, MLILConst, MLILExternCall, MLILLoadGlobal, MLILVariable,
 )
 from ir.mlil.stack_translator import StackTranslator, StackTranslatorPass, UnsupportedStackShape, Write, WriteKind
 from ..llil.constants import (
@@ -29,7 +29,7 @@ class FalcomStackTranslator(StackTranslator):
     def make_call(self, inst: LowLevelILCall, args: list[MediumLevelILInstruction],
                   output: MLILVariable | None) -> MediumLevelILCall:
         if isinstance(inst, (LowLevelILCallScript, LowLevelILCallScriptNoReturn)):
-            return MLILCallScript(inst.module, inst.func, args, output, tail_call=not inst.returns)
+            return MLILExternCall(inst.module, inst.func, args, output, tail_call=not inst.returns)
 
         return super().make_call(inst, args, output)
 

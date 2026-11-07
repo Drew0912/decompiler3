@@ -66,9 +66,9 @@ class MLILFormatter(CFGDotFormatter):
 
     @classmethod
     def format_instruction(cls, inst: MediumLevelILInstruction) -> str:
-        """Format a single instruction: its own str(), except a script call and a debug record"""
-        if isinstance(inst, MLILCallScript):
-            return f'{inst}  ; MLILCallScript'
+        """Format a single instruction: its own str(), except an extern call and a debug record"""
+        if isinstance(inst, MLILExternCall):
+            return f'{inst}  ; MLILExternCall'
         elif isinstance(inst, MLILDebug):
             return f'; {inst}'
 

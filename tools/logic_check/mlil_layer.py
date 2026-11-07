@@ -8,8 +8,8 @@ import re
 
 from ir.core import reverse_post_order
 from ir.mlil.mlil import (
-    MediumLevelILCall, MediumLevelILFunction, MLILAddressOf, MLILBinaryOp, MLILCallScript, MLILConst, MLILDebug,
-    MLILDeref, MLILGoto, MLILIf, MLILIntrinsic, MLILLoadGlobal, MLILLoadReg, MLILNop, MLILRet, MLILSetVar,
+    MediumLevelILCall, MediumLevelILFunction, MLILAddressOf, MLILBinaryOp, MLILConst, MLILDebug, MLILDeref,
+    MLILExternCall, MLILGoto, MLILIf, MLILIntrinsic, MLILLoadGlobal, MLILLoadReg, MLILNop, MLILRet, MLILSetVar,
     MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILSyscall, MLILUnaryOp, MLILUndef, MLILVar, MLILVariable,
     UNASSIGNED_SLOT_INDEX, mlil_stack_var_name, walk,
 )
@@ -237,7 +237,7 @@ class MLILLayer(MLILStorage):
     def call(self, inst: MediumLevelILCall, state: State) -> Effect:
         if isinstance(inst, MLILSyscall):
             kind, target = 'syscall', (inst.subsystem, inst.cmd)
-        elif isinstance(inst, MLILCallScript):
+        elif isinstance(inst, MLILExternCall):
             kind, target = 'script call', f'{inst.module}.{inst.func}'
         else:
             kind, target = 'call', inst.target

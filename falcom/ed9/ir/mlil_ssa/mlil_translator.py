@@ -68,8 +68,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         # Translate arguments
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
-        # Generate MLIL CallScript
-        self.builder.call_script(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
+        self.builder.extern_call(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
 
         # Add goto to return target (always a LowLevelILBasicBlock in Falcom)
         return_block = self.block_map[llil_inst.return_target]
@@ -84,7 +83,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         """
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
-        self.builder.call_script(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
+        self.builder.extern_call(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
         self.builder.ret(MLILVar(self._result_reg_var()))
 
     def _translate_syscall(self, llil_inst: LowLevelILSyscall):

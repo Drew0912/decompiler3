@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from ir.llil.llil import WORD_SIZE
 from ir.mlil import CallResultPass
-from ir.mlil.mlil import MediumLevelILCall, MLILCallScript
+from ir.mlil.mlil import MediumLevelILCall, MLILExternCall
 from tests.shared.llil_utils import lift_asm
 from tests.shared.logic_check_functions import (
     GLOBAL_A, GLOBAL_B, MESSAGE, call, optional_call_result_function, return_nothing,
@@ -124,7 +124,7 @@ class TestForwarding(CallResultTestCase):
         mlil = self.convert(asm)
 
         self.assertEqual(statements(mlil), ['REG[1] = 4', 't1 = this.g(REG[1], 3)', 'return t1'])
-        call_node = next(inst for inst in mlil.iter_instructions() if isinstance(inst, MLILCallScript))
+        call_node = next(inst for inst in mlil.iter_instructions() if isinstance(inst, MLILExternCall))
         self.assertTrue(call_node.tail_call)
 
 

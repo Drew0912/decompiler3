@@ -103,7 +103,7 @@ __all__ = [
     'MediumLevelILCall',
     'MLILCall',
     'MLILSyscall',
-    'MLILCallScript',
+    'MLILExternCall',
 
     # Globals
     'MLILLoadGlobal',

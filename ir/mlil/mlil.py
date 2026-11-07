@@ -85,6 +85,7 @@ class MediumLevelILOperation(IntEnum2):
     # Function calls
     MLIL_CALL               = 80    # Function call
     MLIL_SYSCALL            = 81    # System call
+    MLIL_EXTERN_CALL        = 82    # Call by module and function name
 
     # Globals
     MLIL_LOAD_GLOBAL        = 90
@@ -105,9 +106,6 @@ class MediumLevelILOperation(IntEnum2):
 
     # A VM instruction with no MLIL form of its own
     MLIL_INTRINSIC          = 130
-
-    # Falcom VM specific
-    MLIL_CALL_SCRIPT        = 1000
 
     # SSA
     MLIL_PHI                = 2000
@@ -571,17 +569,17 @@ class MLILSyscall(MediumLevelILCall):
         return self.format_with_output(f'syscall({args_str})')
 
 
-class MLILCallScript(MediumLevelILCall):
-    """Falcom script call"""
+class MLILExternCall(MediumLevelILCall):
+    """Call by module and function name, resolved at run time"""
 
     def __init__(self, module: str, func: str, args: list[MediumLevelILInstruction], output: Any | None = None,
                  **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_CALL_SCRIPT, args, output, **kwargs)
+        super().__init__(MediumLevelILOperation.MLIL_EXTERN_CALL, args, output, **kwargs)
         self.module = module
         self.func = func
 
-    def rebuild(self, *args: MediumLevelILInstruction) -> MLILCallScript:
-        return MLILCallScript(self.module, self.func, list(args), self.output,
+    def rebuild(self, *args: MediumLevelILInstruction) -> MLILExternCall:
+        return MLILExternCall(self.module, self.func, list(args), self.output,
                               tail_call=self.tail_call).copy_metadata_from(self)
 
     def __str__(self) -> str:

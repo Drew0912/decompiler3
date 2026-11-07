@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.core.il_options import ILOptions
-from ir.mlil.mlil import MLILConst, MLILBinaryOp, MLILUnaryOp, MLILCall, MLILSyscall, MLILCallScript
+from ir.mlil.mlil import MLILConst, MLILBinaryOp, MLILUnaryOp, MLILCall, MLILSyscall, MLILExternCall
 from tests.shared.ir_utils import concrete_subclasses, with_metadata
 
 
@@ -82,7 +82,7 @@ class TestCallRebuildKeepsTailCall(unittest.TestCase):
         calls = [
             MLILCall('f', [MLILConst(1)], tail_call=True),
             MLILSyscall(1, 2, [MLILConst(1)], tail_call=True),
-            MLILCallScript('module', 'func', [MLILConst(1)], tail_call=True),
+            MLILExternCall('module', 'func', [MLILConst(1)], tail_call=True),
         ]
 
         for call in calls:
