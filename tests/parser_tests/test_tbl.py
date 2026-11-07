@@ -52,9 +52,14 @@ class Lists(TableDataEntry):
     DESCRIPTOR = (('shorts', 'A2'), ('pad', 'I'), ('text', 'S'), ('words', 'A4'), ('pad2', 'I'))
 
 
+class Padded(TableDataEntry):
+    DESCRIPTOR = (('id', 'W'), ('pad02', 'P6'), ('small', 'B'), ('pad09', 'P7'))
+
+
 CLASSES = {('Pair', Pair.record_size()): Pair}
 LIST_CLASSES = {('Lists', Lists.record_size()): Lists}
 LISTS_SIZE = Lists.record_size()
+PADDED_CLASSES = {('Padded', Padded.record_size()): Padded}
 
 
 def array(pointer: int, count: int) -> bytes:
@@ -129,6 +134,18 @@ class TestFieldKinds(unittest.TestCase):
         self.assertEqual((entry.low, entry.high, entry.count, entry.code, entry.ratio, entry.wide, entry.big),
                          (0x1234, 0x5678, 7, 0xAABBCCDD, 1.5, 0x10, 20))
         self.assertEqual(parser.problems, [])
+
+    def test_padding_is_read_past_and_is_no_field_of_the_row(self):
+        record = struct.pack('<H6xB7x', 0x1234, 200)
+        parser = TblParser(build_tbl([('Padded', len(record), [[record]])]), PADDED_CLASSES)
+        self.assertEqual(vars(parser.entries[0]), {'id': 0x1234, 'small': 200})
+        self.assertEqual(parser.problems, [])
+
+    def test_a_non_zero_padding_byte_keeps_the_section_raw(self):
+        record = struct.pack('<H5xBB7x', 0x1234, 1, 200)
+        parser = TblParser(build_tbl([('Padded', len(record), [[record]])]), PADDED_CLASSES)
+        self.assertEqual(parser.raw_sections, ['Padded'])
+        self.assertIn('padding pad02', parser.problems[0])
 
 
 class TestArrays(unittest.TestCase):
@@ -269,6 +286,10 @@ class TestRebuilding(unittest.TestCase):
         record = struct.pack('<HHIIfQQ', 0x1234, 0x5678, 7, 0xAABBCCDD, 1.5, 0x10, 20)
         self.assert_rebuilds(build_tbl([('Mixed', len(record), [[record]])]), {('Mixed', len(record)): Mixed})
 
+    def test_padding_comes_back_as_zeros_at_its_place(self):
+        record = struct.pack('<H6xB7x', 0x1234, 200)
+        self.assert_rebuilds(build_tbl([('Padded', len(record), [[record]])]), PADDED_CLASSES)
+
     def test_sections_keep_their_order(self):
         self.assert_rebuilds(build_tbl([('Pair', 2 * SLOT, [[7, 'a']]), ('Other', SLOT, [[1]])]), CLASSES)
 
@@ -355,7 +376,10 @@ class TestGeneratedScript(unittest.TestCase):
         text = "it's \"a\"\\\nエ"
         entry = self.generated_entries(build_tbl([('NameTableData', NAME_TABLE_SIZE, [name_row(0x10, text)])]))[0]
         self.assertIsInstance(entry, sora1_records.NameTableData)
-        self.assertEqual((entry.chrId, entry.chrName, entry.uint64_28), (0x10, text, 30))
+        self.assertEqual((entry.chrId, entry.chrName, entry.uint32_28), (0x10, text, 30))
+
+    def test_a_script_leaves_padding_out(self):
+        self.assertNotIn('pad02', self.script(build_tbl([('NameTableData', NAME_TABLE_SIZE, [name_row(1, 'a')])])))
 
     def test_a_raw_section_survives_in_the_script(self):
         entries = self.generated_entries(build_tbl([('Other', SLOT, [[1]])]))

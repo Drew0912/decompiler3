@@ -46,8 +46,12 @@ class FieldKind(NamedTuple):
     element : struct.Struct | None = None   # an array's element
 
 
+# Zero bytes after a narrow field, by size: never a row's field, a rebuild writes them again
+PADDING_KINDS = {f'P{size}': FieldKind(fileio.struct_layout(f'{size}s'), bytes.hex) for size in (2, 4, 6, 7)}
+
 # The letters a DESCRIPTOR's (field, kind) pairs use: how a field is stored and how it prints. Integers are unsigned
 FIELD_KINDS = {
+    'B'         : FieldKind(UINT8, str),                                            # 1-byte integer, in decimal
     'W'         : FieldKind(UINT16, lambda value: f'0x{value:04X}'),                # 2-byte integer, printed in hex
     'I'         : FieldKind(UINT32, str),                                           # 4-byte integer, in decimal
     'L'         : FieldKind(UINT32, lambda value: f'0x{value:08X}'),                # 4-byte integer, printed in hex
@@ -58,6 +62,7 @@ FIELD_KINDS = {
     'A1'        : FieldKind(ARRAY_FIELD, str, UINT8),                               # pointer, count: 1-byte integers
     'A2'        : FieldKind(ARRAY_FIELD, str, UINT16),                              # pointer, count: 2-byte integers
     'A4'        : FieldKind(ARRAY_FIELD, str, UINT32),                              # pointer, count: 4-byte integers
+    **PADDING_KINDS,
 }
 
 
@@ -74,11 +79,11 @@ class TableDataEntry:
 
     def _check_fields(self, fields: dict) -> None:
         """A row's mistakes, raised here so the error points at its line in a generated script"""
-        wrong_names = fields.keys() ^ {name for name, _ in self.DESCRIPTOR}
+        wrong_names = fields.keys() ^ {name for name, _ in self.row_fields()}
         if wrong_names:
             raise ValueError(f'{type(self).__name__}: unknown or missing fields: {', '.join(sorted(wrong_names))}')
 
-        for name, kind in self.DESCRIPTOR:
+        for name, kind in self.row_fields():
             field = FIELD_KINDS[kind]
             if kind == STRING_KIND:
                 continue
@@ -90,6 +95,10 @@ class TableDataEntry:
                 raise ValueError(f'{type(self).__name__}: {name} = {fields[name]} does not fit its field') from None
 
     @classmethod
+    def row_fields(cls) -> list[tuple[str, str]]:
+        return [(name, kind) for name, kind in cls.DESCRIPTOR if kind not in PADDING_KINDS]
+
+    @classmethod
     def section_name(cls) -> str:
         return cls.SECTION or cls.__name__
 
@@ -98,15 +107,19 @@ class TableDataEntry:
         return sum(FIELD_KINDS[kind].layout.size for _, kind in cls.DESCRIPTOR)
 
     def to_python(self) -> list[str]:
-        width = max(len(name) for name, _ in self.DESCRIPTOR)
+        width = max(len(name) for name, _ in self.row_fields())
         fields = [f'{default_indent()}{name.ljust(width)} = {FIELD_KINDS[kind].format(getattr(self, name))},'
-                  for name, kind in self.DESCRIPTOR]
+                  for name, kind in self.row_fields()]
         return [f'{type(self).__name__}(', *fields, ')']
 
     def to_bytes(self, block: TblDataBlock) -> bytes:
         record = bytearray()
         for name, kind in self.DESCRIPTOR:
             field = FIELD_KINDS[kind]
+            if kind in PADDING_KINDS:
+                record += bytes(field.layout.size)
+                continue
+
             value = getattr(self, name)
             if kind == STRING_KIND:
                 record += field.layout.pack(block.add_string(value))
@@ -242,7 +255,10 @@ class TblParser:
         for name, kind in record_class.DESCRIPTOR:
             field = FIELD_KINDS[kind]
             stored = field.layout.unpack_from(self.data, at)
-            if kind == STRING_KIND:
+            if kind in PADDING_KINDS:
+                if any(stored[0]):
+                    raise RecordMismatch(f'padding {name} at {at:#x} is not zero')
+            elif kind == STRING_KIND:
                 fields[name] = self._read_string(stored[0], at)
             elif field.element:
                 fields[name] = self._read_array(field.element, *stored, at)

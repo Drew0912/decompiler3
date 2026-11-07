@@ -3,6 +3,7 @@
 from falcom.ed9.games.sora1.tbl.tbl_records import *
 
 # A DESCRIPTOR's kinds, defined in FIELD_KINDS (falcom/ed9/parser/tbl.py); integers are unsigned
+#   B   Byte: 1-byte integer, printed in decimal
 #   W   Word: 2-byte integer, printed in hex
 #   I   Int: 4-byte integer, printed in decimal
 #   L   Long: 4-byte integer, printed in hex
@@ -13,16 +14,17 @@ from falcom.ed9.games.sora1.tbl.tbl_records import *
 #   A1  Array of 1-byte integers: 8-byte pointer into the data block, 4-byte element count
 #   A2  Array of 2-byte integers: the same
 #   A4  Array of 4-byte integers: the same
+#   P2  Padding: 2 zero bytes, not a field of a row; P4, P6 and P7 the same
 
 
 # t_mon_*.tbl: sora1's, up to its last four fields
 class MonsterSettingParam(TableDataEntry):
     DESCRIPTOR = MonsterSettingParam.DESCRIPTOR[:-4] + (
-        ('arr32_90',    'A4'),
-        ('uint32_9c',   'I'),
-        ('uint32_a0',   'I'),
-        ('uint32_a4',   'I'),
-        ('stra8',       'S'),
+        ('arr32_90',     'A4'),
+        ('uint32_9c',    'I'),
+        ('bgmSet',       'I'),
+        ('atBonus',      'I'),
+        ('battleScript', 'S'),
     )
 
 

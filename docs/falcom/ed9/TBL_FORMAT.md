@@ -37,6 +37,8 @@ A record has a fixed size, and its fields have no tags: only a schema says where
   type stored anywhere. An unused 4 bytes usually follows, making 16.
 - **Two fields may share 8 bytes:** `NPCParam` `+0x00` holds two 2-byte IDs. A value that reads as one large number may
   be two small ones.
+- **Padding:** a narrow field can be followed by zero bytes up to the next field. A class lists them with a `P` kind
+  (`NameTableData` `+0x02`). They are no field of a row: a non-zero byte is reported, and a rebuild writes zeros.
 
 The data block has no header. Its items follow the records in order, and each record's fields in order. Nothing is
 shared: two equal strings are two items. Every table of `sora1` and `sora2` is packed this way. The rules:
@@ -102,6 +104,21 @@ A raw section rebuilds from its hex, so any pointers in it stay as they were. Th
 block, which holds for every raw section in `sora1` and `sora2`; a later game's raw section in a file with a data block
 would rebuild wrong.
 
+## How the Game Reads a Table
+
+From a static read of the `sora2` exe (`sora_2nd.exe` 1.5.0.0), so only the code read so far; no other game's exe is
+read.
+
+- **Sections** are found by name in `NameTable` and `MonsterSettingTable`, and by position, as the first entry, in
+  `BGMTable`, `TitleTable`, `BtlVoiceTable`, `NPCTable`, `PlaceTable`, `SETable` and `TextTable`. A file read by
+  position has one section in `sora2`.
+- **Not checked:** the magic, the name hash and the record size. The size is only the step between rows; a field's
+  offset is fixed in the code, so a row of another size is misread, not rejected.
+- **Pointers** are fixed up once, at load: a non-zero value gets the file's address added, and 0 stays a null pointer.
+- **Letter fields:** a few strings hold letters that the load turns into flags, in place of the pointer: `flags` in
+  `NameTableData`, `NPCParam` and `MonsterSettingParam`. An unknown letter is ignored or logged. Such a field has no
+  null check.
+
 ## Record Classes
 
 A game's classes are in `falcom/ed9/games/<game>/tbl/tbl_records.py`. A class's `DESCRIPTOR` lists its fields in record
@@ -116,7 +133,8 @@ Adding a table:
 1. Find the section's name and record size in the file's header.
 2. Write the class in the earliest game of the group that has it. Name it for the section. A second size of one section
    gets its own class with `SECTION` set and its size as a suffix (`NPCParam98`), since the name alone cannot pick it.
-3. Name a field only where the data shows what it is; name the rest by size and offset (`str08`, `uint32_44`, `arr16_10`).
+3. Name a field only where the data or the exe shows what it is; name the rest by size and offset (`str08`, `uint32_44`,
+   `arr16_10`). The exe read is `sora2`'s, so a name in `sora1`'s class rests on the offsets agreeing.
 4. Run `tbl2py.py` on the table in every game of the group, and fix anything in `problems`.
 5. Where a later game's layout differs, define the class in that game's file. A size can match and the layout still
    differ: `MonsterSettingParam` `0xa8` is one layout in `sora1` and another in `sora2`.
@@ -140,13 +158,17 @@ byte-for-byte rebuild does not catch it either.
 the `sora2` exe, with the counts from `sora2`'s tables and all 1,082 scripts:
 
 - `chrId` is the ID `chr_create` looks up, read as 2 bytes. Other `chr_*` calls find the live character, not a row.
-- **Choosing a row:** `chr_create` tries its ID against `chrId`, then its third argument against `+0x40`, then its
+- **Choosing a row:** `chr_create` tries its ID against `chrId`, then its third argument against `statusKey`, then its
   second against `model`. The first row that matches wins; no match leaves the character with no row, which is allowed.
 - `0xFFFF` marks a row with no ID of its own, mostly costumes, reached by text.
 - An ID may repeat, and a name repeats often (`Estelle` has three IDs), so a name is not a key.
 - **IDs outside the table:** of 7,401 `chr_create` calls, 53% pass an ID in the table, 28% one that is not, and 20% a
   variable. An ID that is not in the table often serves several models (`21050` takes 56), so it names a slot, not a
   character.
+- **NPC rows:** an `NPCParam` row makes a character with its `chrId`. Its `model`, when set, works as in `chr_create`;
+  when empty, a non-zero `altChrId` replaces the ID for the row lookup. `altChrId` is set only on a `chrId` outside the
+  table, and such a `chrId` can have several, so the name belongs to the row, not the ID. A row with `X` in `flags` is
+  not created, but another row's `lookPoint` can name it.
 - **Pseudo IDs:** `65534` (the thread's owner) and others are resolved before any lookup, and no `chrId` but `0xFFFF`
   falls among them. 22000..22032 are an owner's local characters; no `chrId` is in that range either.
 

@@ -5,6 +5,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 from falcom.ed9.parser.tbl import RawSection, RawTableEntry, create_tbl    # for generated scripts' star import
 
 # A DESCRIPTOR's kinds, defined in FIELD_KINDS (falcom/ed9/parser/tbl.py); integers are unsigned
+#   B   Byte: 1-byte integer, printed in decimal
 #   W   Word: 2-byte integer, printed in hex
 #   I   Int: 4-byte integer, printed in decimal
 #   L   Long: 4-byte integer, printed in hex
@@ -15,24 +16,29 @@ from falcom.ed9.parser.tbl import RawSection, RawTableEntry, create_tbl    # for
 #   A1  Array of 1-byte integers: 8-byte pointer into the data block, 4-byte element count
 #   A2  Array of 2-byte integers: the same
 #   A4  Array of 4-byte integers: the same
+#   P2  Padding: 2 zero bytes, not a field of a row; P4, P6 and P7 the same
 
 
 # t_name.tbl
 class NameTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('chrId',     'X'),
-        ('chrName',   'S'),
-        ('model',     'S'),
-        ('face',      'S'),
-        ('ani',       'S'),
-        ('uint64_28', 'Q'),
-        ('str30',     'S'),
-        ('uint64_38', 'Q'),
-        ('str40',     'S'),
-        ('uint64_48', 'Q'),
-        ('str50',     'S'),
-        ('str58',     'S'),
-        ('str60',     'S'),
+        ('chrId',            'W'),
+        ('pad02',            'P6'),
+        ('chrName',          'S'),
+        ('model',            'S'),
+        ('face',             'S'),
+        ('ani',              'S'),
+        ('uint32_28',        'I'),
+        ('pad2c',            'P4'),
+        ('flags',            'S'),
+        ('saveIndex',        'B'),
+        ('pad39',            'P7'),
+        ('statusKey',        'S'),
+        ('scenarioFlag',     'W'),
+        ('pad4a',            'P6'),
+        ('flaggedStatusKey', 'S'),
+        ('str58',            'S'),
+        ('str60',            'S'),
     )
 
 
@@ -42,7 +48,7 @@ class NPCParam(TableDataEntry):
         ('chrId',        'W'),
         ('altChrId',     'W'),
         ('uint32_04',    'I'),
-        ('str08',        'S'),
+        ('model',        'S'),
         ('arr16_10',     'A2'),
         ('uint32_1c',    'I'),
         ('arr16_20',     'A2'),
@@ -52,13 +58,14 @@ class NPCParam(TableDataEntry):
         ('angle',        'f'),
         ('float32_3c',   'f'),
         ('float32_40',   'f'),
-        ('uint32_44',    'I'),
+        ('lookPoint',    'W'),
+        ('pad46',        'P2'),
         ('float32_48',   'f'),
         ('float32_4c',   'f'),
         ('float32_50',   'f'),
         ('uint32_54',    'I'),
-        ('str58',        'S'),
-        ('faceFunction', 'S'),
+        ('flags',        'S'),
+        ('initFunction', 'S'),
         ('aniFunction',  'S'),
         ('uint32_70',    'I'),
         ('uint32_74',    'I'),
@@ -77,7 +84,7 @@ class NPCParam98(TableDataEntry):
         ('chrId',       'W'),
         ('altChrId',    'W'),
         ('uint32_04',   'I'),
-        ('str08',       'S'),
+        ('model',       'S'),
         ('arr16_10',    'A2'),
         ('uint32_1c',   'I'),
         ('arr16_20',    'A2'),
@@ -87,7 +94,8 @@ class NPCParam98(TableDataEntry):
         ('angle',       'f'),
         ('float32_3c',  'f'),
         ('uint32_40',   'I'),
-        ('uint32_44',   'I'),
+        ('lookPoint',   'W'),
+        ('pad46',       'P2'),
         ('uint32_48',   'I'),
         ('uint32_4c',   'I'),
         ('str50',       'S'),
@@ -106,17 +114,22 @@ class NPCParam98(TableDataEntry):
 class MonsterSettingParam(TableDataEntry):
     DESCRIPTOR = (
         ('model',        'S'),
-        ('uint64_08',    'X'),
+        ('chrId',        'W'),
+        ('pad0a',        'P6'),
         ('arr32_10',     'A4'),
         ('uint32_1c',    'I'),
-        ('str20',        'S'),
-        ('uint64_28',    'Q'),
+        ('flags',        'S'),
+        ('uint16_28',    'W'),
+        ('pad2a',        'P6'),
         ('arr16_30',     'A2'),
         ('uint32_3c',    'I'),
         ('arr16_40',     'A2'),
         ('uint32_4c',    'I'),
         ('battleArea',   'S'),
-        ('uint32_58',    'L'),
+        ('uint8_58',     'B'),
+        ('uint8_59',     'B'),
+        ('uint8_5a',     'B'),
+        ('uint8_5b',     'B'),
         ('x',            'f'),
         ('y',            'f'),
         ('z',            'f'),
@@ -124,7 +137,7 @@ class MonsterSettingParam(TableDataEntry):
         ('uint32_6c',    'I'),
         ('uint32_70',    'L'),
         ('uint32_74',    'I'),
-        ('str78',        'S'),
+        ('initFunction', 'S'),
         ('moveFunction', 'S'),
         ('str88',        'S'),
         ('uint64_90',    'Q'),
