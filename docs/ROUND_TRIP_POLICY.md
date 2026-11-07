@@ -53,11 +53,16 @@ the function's order, and a new or replaced function gets them too. Which functi
 - **Unreachable code's records** go with the code. No live call needs them: `btl_craft01_00` is named only by records in
   dead bodies of four `chr` files, and nothing plays it on those characters; `btl_item` is still reached through the
   records that stay.
+- **A function with no code left:** `chr5110` has three stubs with no call at all but 45 records of `chr_check_asset_name`.
+  The calls were compiled away, so nothing can hold those records.
 - **A doubled list's second copy** names nothing new (`ED9_FORMAT.md`, rule 8).
 - **Common functions' records in `sora`'s older-built files:** they hold no Chr 47 and no clip name.
-- **A trailing argument equal to the callee's default** can leave a local record (`ED9_FORMAT.md`, rule 6).
+- **A trailing argument equal to the callee's default** can leave a local record (`ED9_FORMAT.md`, rule 6), but not a
+  String of `chr_play_animeclip` or `chr_attach_load_model`, which don't fall back on their defaults.
+- **Extra records:** a `btl_ai_skill` call the newer compiler left without one gets one in an everyday rebuild (rule 2).
 
-Not there yet: `--logic-round-trip` doesn't compare records, so only `--round-trip` would notice a loss.
+`--logic-round-trip` holds to this: each round's records against the source's, call by call (`check_records_kept`), a
+loss, a reorder or a changed constant failing it, and each of these classes counted in its summary.
 
 ## Every function stays
 

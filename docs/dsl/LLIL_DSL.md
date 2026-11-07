@@ -333,6 +333,9 @@ baseline samples (sora2's `script_en/scena/e0000.dat`, `e2000.dat`, `mp0000_ev.d
 and `script_en/ai/ai_chr0100_e00.dat`), and `--logic-round-trip` converges at round 2 on
 all 5 (2026-10-01). On a 300-file quota sample of `sora2` that includes them (list and results
 in the gitignored `notes/validator300/`), all but 2 files are byte-identical and all converge at round 2.
+Each logic round also holds its records against the source's, call by call (`check_records_kept`;
+`docs/ROUND_TRIP_POLICY.md`, Records the engine reads).
+
 The logic round trip is also measured corpus-wide (above), and so is the byte-exact one: all but 6 `sora2`
 files are byte-identical. The 6 left are known and out of the debug-records plan's scope: 4 `chr*` files from the older
 compiler (`chr0000`, `chr5001`, `chr5003`, `chr5007`: `docs/falcom/ed9/ED9_FORMAT.md`, Call-Site Debug Records),

@@ -42,6 +42,9 @@ fixed point within a few rounds are):
     string fidelity         every pooled string re-encodes to exactly its raw bytes
     round N logic preserved  source vs that round's decompile: per-function fingerprint + signature,
                             the global table, and header dword_14 - checked every round, not just once
+    round N records kept    source vs that round's call-site records, call by call: the right callee, its
+                            constants and its place; excused by reason (docs/ROUND_TRIP_POLICY.md, Records
+                            the engine reads) and counted in the summary
     logic round trip        PASS once compiled bytes and decompiled text both stop changing, within
                             MAX_CONVERGENCE_ROUNDS rounds; FAIL otherwise
 Name inputs <name>.dat: the generated header names its output after the whole file name, so a
@@ -67,7 +70,7 @@ import sys
 import tempfile
 from collections import Counter
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from enum import IntEnum
 from pathlib import Path
 
@@ -81,7 +84,8 @@ from assembler import Instruction, OperandType
 from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.games import game_names
 from falcom.ed9.structs.fingerprint import function_fingerprint
-from falcom.ed9.structs.call_debug_records import RecordView, pair_records, read_debug_records, record_view
+from falcom.ed9.structs.call_debug_records import (CallDebugInfoTracker, RecordPairing, RecordView, TrackedCall,
+                                                    canonical_argc, pair_records, read_debug_records, record_view)
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.structs.crc32 import hash_function_name
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
@@ -110,6 +114,18 @@ DETAIL_INDENT           = ' ' * 10
 # PUSH_CALLER_FRAME (checked separately, per function) - so a range after an unpaired one is unproven
 REACHABLE_TERMINATORS   = (ED9Opcode.RETURN, ED9Opcode.JMP, ED9Opcode.CALL_SCRIPT_NO_RETURN)
 PAIRED_CALL_OPS         = {ED9Opcode.CALL: ED9Opcode.PUSH_RET_ADDR, ED9Opcode.CALL_SCRIPT: ED9Opcode.PUSH_CALLER_FRAME}
+
+# Records kept (--logic-round-trip): the functions among the clip walk's nine that don't fall back on their defaults
+# (docs/falcom/ed9/ED9_VM.md, Who reads the call-site records), so a record that drops a String of theirs drops a name
+NO_DEFAULT_FALLBACK     = {'chr_play_animeclip', 'chr_attach_load_model'}
+
+# What a rebuild may leave out or add, with its reason: docs/ROUND_TRIP_POLICY.md, Records the engine reads
+EXCUSED_COMMON          = 'common'
+EXCUSED_DEAD            = 'dead'
+EXCUSED_EXTRA           = 'extra'
+EXCUSED_NO_CODE         = 'no code'
+EXCUSED_SECOND_COPY     = 'second copy'
+
 MAX_CONVERGENCE_ROUNDS  = 4  # --logic-round-trip: give up if compile/decompile hasn't hit a fixed point by then
 
 # Runs a generated script's main() under a fixed run_name, so its own __main__ guard stays off
@@ -753,6 +769,167 @@ def compare_logic(source: LogicSnapshot, other: LogicSnapshot) -> CheckResult:
     return CheckResult.build('logic preserved', summary, failures)
 
 
+@dataclass(frozen=True, slots=True)
+class RecordSlot:
+    """A call the rebuilt file keeps: the source's record for it (None: the compiler left it without one), the function
+    a local call calls and the arguments a local record can't drop"""
+
+    record  : RecordView | None
+    callee  : str | None
+    keep    : int
+
+
+@dataclass
+class SourceRecords:
+    """A function's records in the source, as each round's are held against them"""
+
+    record_count    : int
+    is_common       : bool
+    slots           : list[RecordSlot] | None       # one per call kept, in record order; None: the records don't pair
+    excused         : Counter[str]                  # source records no rebuild can keep, by reason
+
+
+def source_records(ctx: ScriptContext) -> dict[str, SourceRecords]:
+    """Each function's records by name. The source's bytes are the oracle: the tracker only says which calls are dead
+    or left without a record"""
+    views = file_record_views(ctx.data)
+    return {func.name: function_source_records(ctx, index, views[func.name])
+            for index, func in enumerate(ctx.parser.functions)}
+
+
+def function_source_records(ctx: ScriptContext, index: int, views: list[RecordView]) -> SourceRecords:
+    parser = ctx.parser
+    func = parser.functions[index]
+    records = ctx.records[index]
+    instructions = parser.code_instructions(func)
+    calls = CallDebugInfoTracker.replay(instructions, parser.get_func_argc)
+    source = SourceRecords(len(records), func.is_common_func, [], Counter())
+
+    def pairing_of(kept: list[ScpFunctionCallDebugInfo]) -> RecordPairing:
+        return pair_records(ctx.data, instructions, kept, parser.get_func_argc, parser.get_func_index,
+                            func.is_common_func)
+
+    # The calls were compiled away, so nothing can hold these records
+    if records and not calls:
+        source.excused[EXCUSED_NO_CODE] = len(records)
+        return source
+
+    pairing = pairing_of(records)
+    half = len(records) // 2
+    if not pairing.paired and views[:half] == views[half:]:
+        source.excused[EXCUSED_SECOND_COPY] = half
+        records, views = records[:half], views[:half]
+        pairing = pairing_of(records)
+
+    if not pairing.paired:
+        source.slots = None
+    elif records or not func.is_common_func:
+        source.slots = record_slots(ctx, func, calls, views, pairing, source.excused)
+
+    return source
+
+
+def record_slots(ctx: ScriptContext, func: Function, calls: list[tuple[TrackedCall, int]], views: list[RecordView],
+                 pairing: RecordPairing, excused: Counter[str]) -> list[RecordSlot]:
+    """One slot per call the everyday decompile keeps: dead calls go, and their records are excused"""
+    parser = ctx.parser
+    dead = {inst.offset for inst in parser.unreachable_instructions(func)}
+    record_at = {offset: index for index, offset in pairing.record_offsets.items()}
+    slots = []
+    for call, offset in calls:
+        if offset in dead:
+            excused[EXCUSED_DEAD] += offset in record_at
+            continue
+
+        callee, keep = None, 0
+        if call.call_type == ScpFunctionCallDebugInfo.CallType.Local:
+            callee = parser.functions[call.target].name
+            keep = canonical_argc(call.args, parser.func_defaults()[call.target])
+
+        slots.append(RecordSlot(views[record_at[offset]] if offset in record_at else None, callee, keep))
+
+    return slots
+
+
+def slot_problem(slot: RecordSlot, rebuilt: RecordView) -> str | None:
+    """How rebuilt falls short of its slot. A local record can differ in its trailing arguments, down to slot.keep"""
+    source = slot.record
+    if source is None:
+        is_local = rebuilt.call_type == ScpFunctionCallDebugInfo.CallType.Local
+        return None if is_local and rebuilt.callee == slot.callee else f'{view_text(rebuilt)}, call of {slot.callee}'
+
+    if source.call_type != ScpFunctionCallDebugInfo.CallType.Local:
+        return view_difference(source, rebuilt)
+
+    shared = min(len(source.args), len(rebuilt.args))
+    difference = view_difference(replace(source, args=source.args[:shared]),
+                                 replace(rebuilt, args=rebuilt.args[:shared]))
+    if difference is not None:
+        return difference
+
+    if shared < min(slot.keep, len(source.args)):
+        return f'{shared} args, the rule keeps {slot.keep}'
+
+    dropped = source.args[shared:]
+    if source.callee in NO_DEFAULT_FALLBACK and any(isinstance(word, str) for _, word in dropped):
+        return f'{source.callee} dropped a String: {', '.join(arg_text(arg) for arg in dropped)}'
+
+    return None
+
+
+def first_slot_problem(slots: list[RecordSlot], rebuilt: list[RecordView]) -> str | None:
+    for i, (slot, view) in enumerate(zip(slots, rebuilt)):
+        problem = slot_problem(slot, view)
+        if problem is not None:
+            return f'record {i}: {problem}'
+
+    if len(rebuilt) < len(slots):
+        slot = slots[len(rebuilt)]
+        return f'record {len(rebuilt)}: missing ({view_text(slot.record) if slot.record else slot.callee})'
+
+    if len(rebuilt) > len(slots):
+        return f'record {len(slots)}: extra ({view_text(rebuilt[len(slots)])})'
+
+    return None
+
+
+def check_records_kept(source: dict[str, SourceRecords], rebuilt: dict[str, list[RecordView]]) -> CheckResult:
+    """Every rebuilt record against the call it belongs to; the first problem of each function"""
+    failures = []
+    excused = Counter()
+    kept = trimmed = 0
+
+    for name, function in source.items():
+        views = rebuilt.get(name)
+        if views is None:   # compare_logic reports it
+            continue
+
+        # The suite tests that kuro's writer keeps these: only the sora writers' rule leaves them out
+        if function.is_common and function.record_count and not views:
+            excused[EXCUSED_COMMON] += function.record_count
+            continue
+
+        excused.update(function.excused)
+        if function.slots is None:
+            failures.append(f"{name}: the source's {function.record_count} records don't pair with its calls")
+            continue
+
+        problem = first_slot_problem(function.slots, views)
+        if problem is not None:
+            failures.append(f'{name} {problem}')
+            continue
+
+        for slot, view in zip(function.slots, views):
+            if slot.record is None:
+                excused[EXCUSED_EXTRA] += 1
+            else:
+                kept += 1
+                trimmed += len(view.args) < len(slot.record.args)
+
+    excuses = ''.join(f', {count} {reason}' for reason, count in sorted(excused.items()) if count)
+    return CheckResult.build('records kept', f'{kept} kept ({trimmed} trimmed){excuses}', failures)
+
+
 def compile_round(stem: str, round_dir: Path, py_text: str) -> tuple[list[str], Path | None]:
     """One round's compile: writes py_text into round_dir and compiles it. Returns (the compile output's tail, the
     round's .dat path, or None when the compile failed)"""
@@ -781,6 +958,7 @@ def check_logic_round_trip(path: Path, work_dir: Path, *, game: str | None = Non
         results.append(check_source_preconditions(ctx, pool_start))
         results.append(check_reachability(ctx, pool_start))
         results.append(check_string_fidelity(ctx, pool_start))
+        source_function_records = source_records(ctx)
     finally:
         ctx.fs.Close()
 
@@ -816,6 +994,10 @@ def check_logic_round_trip(path: Path, work_dir: Path, *, game: str | None = Non
         logic_result = compare_logic(source_snapshot, LogicSnapshot.of(round_parser, round_functions))
         logic_result.name = f'round {round_num} {logic_result.name}'
         results.append(logic_result)
+
+        records_result = check_records_kept(source_function_records, file_record_views(dat_bytes[-1]))
+        records_result.name = f'round {round_num} {records_result.name}'
+        results.append(records_result)
 
         if round_num >= 2 and dat_bytes[-2] == dat_bytes[-1] and py_texts[-2] == py_texts[-1]:
             results.append(CheckResult('logic round trip', Status.PASS, f'converged at round {round_num}'))

@@ -133,4 +133,4 @@ simulation of rule 8: each of the other 237 rebuilds fewer records than its orig
 neither of the two, since `sora`'s writer is the newer compiler's.
 
 Whether those engines read the records isn't known, since their exes are unread. The logic round trip passed on a
-30-file sample of each of `kuro1`, `kuro2` and `kai1` (2026-11-07), but it doesn't compare records yet.
+30-file sample of each of `kuro1`, `kuro2` and `kai1` (2026-11-07).
