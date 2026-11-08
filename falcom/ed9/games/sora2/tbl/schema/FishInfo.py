@@ -6,7 +6,7 @@ class FishInfo(TableDataEntry):
     DESCRIPTOR = (
         ('id',           'W'),
         ('saveIndex',    'W'),
-        ('sizeClass',    'W'),
+        ('sizeClass',    'W'),   # 0 small, 1 middle, 2 and 3 large
         ('pad06',        'P2'),
         ('str08',        'S'),
         ('rewardItem1',  'I'),
@@ -47,7 +47,7 @@ class FishInfo(TableDataEntry):
         ('float32_9c',   'f'),
         ('float32_a0',   'f'),
         ('float32_a4',   'f'),
-        ('angle',        'f'),
+        ('angle',        'f'),   # degrees
         ('float32_ac',   'f'),
         ('float32_b0',   'f'),
         ('float32_b4',   'f'),

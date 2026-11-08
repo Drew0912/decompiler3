@@ -20,6 +20,6 @@ class ChrDataParam(TableDataEntry):
         ('flag',       'W'),
         ('sortValue',  'W'),
         ('float32_30', 'f'),
-        ('flag2',      'W'),
+        ('flag2',      'W'),   # scenario flag; once set, id is added to a list
         ('pad36',      'P2'),
     )

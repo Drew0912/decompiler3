@@ -14,6 +14,6 @@ class NoteCookItem(TableDataEntry):
         ('pad1a',         'P2'),
         ('selectorValue', 'I'),
         ('text',          'S'),
-        ('chrRolls',      'A1'),
+        ('chrRolls',      'A1'),  # one per NoteCookChara row; 2: no random roll
         ('uint32_34',     'I'),
     )

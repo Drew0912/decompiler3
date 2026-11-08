@@ -13,7 +13,7 @@ class CharaArrange(TableDataEntry):
         ('x',           'f'),
         ('y',           'f'),
         ('z',           'f'),
-        ('angle',       'f'),
+        ('angle',       'f'),   # degrees, by its use
         ('flags',       'S'),
         ('float32_38',  'f'),
         ('float32_3c',  'f'),

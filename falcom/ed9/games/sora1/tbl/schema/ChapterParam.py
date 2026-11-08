@@ -5,8 +5,8 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class ChapterParam(TableDataEntry):
     DESCRIPTOR = (
         ('key',       'I'),
-        ('flagSet',   'I'),
-        ('flagClear', 'I'),
+        ('flagSet',   'I'),   # scenario flag that must be set; 0: the row never matches
+        ('flagClear', 'I'),   # scenario flag that must be clear; 0: none
         ('eventKey',  'W'),
         ('pad0e',     'P2'),
         ('flags',     'S'),

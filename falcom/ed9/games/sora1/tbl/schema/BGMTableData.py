@@ -4,7 +4,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_bgm.tbl
 class BGMTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('id',         'I'),
+        ('id',         'I'),   # 0: none
         ('pad04',      'P4'),
         ('name',       'S'),
         ('float32_10', 'f'),

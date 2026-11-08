@@ -4,9 +4,9 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_item.tbl
 class ItemTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('id',          'I'),
+        ('id',          'I'),   # rows sorted by it at load
         ('pad04',       'P4'),
-        ('chrIds',      'A4'),
+        ('chrIds',      'A4'),  # a first 0xFFFF: any character
         ('uint32_14',   'I'),
         ('flags',       'S'),
         ('flags2',      'S'),
@@ -20,7 +20,7 @@ class ItemTableData(TableDataEntry):
         ('pad32',       'P2'),
         ('float32_34',  'f'),
         ('float32_38',  'f'),
-        ('effect1Id',   'W'),
+        ('effect1Id',   'W'),   # effectNArg1..3 depend on effectNId (N = 1 to 5)
         ('pad3e',       'P2'),
         ('effect1Arg1', 'i'),
         ('effect1Arg2', 'i'),
@@ -69,6 +69,6 @@ class ItemTableData(TableDataEntry):
         ('description', 'S'),
         ('uint32_f0',   'I'),
         ('uint32_f4',   'I'),
-        ('icon',        'I'),
+        ('icon',        'I'),   # icon % 4 = column, icon / 4 = row of a sheet, by its use
         ('uint32_fc',   'I'),
     )

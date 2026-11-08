@@ -5,6 +5,6 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class NoteMainAffiliation(TableDataEntry):
     DESCRIPTOR = (
         ('text',  'S'),
-        ('flag',  'W'),
+        ('flag',  'W'),   # of the rows with it set, the last is taken; else row 0
         ('pad0a', 'P6'),
     )

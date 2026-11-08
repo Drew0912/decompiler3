@@ -17,7 +17,7 @@ class SkillParam(TableDataEntry):
         ('float32_24',    'f'),
         ('float32_28',    'f'),
         ('float32_2c',    'f'),
-        ('effect1Id',     'W'),
+        ('effect1Id',     'W'),   # effectNArg1..3 depend on effectNId (N = 1 to 5)
         ('pad32',         'P2'),
         ('effect1Arg1',   'i'),
         ('effect1Arg2',   'i'),

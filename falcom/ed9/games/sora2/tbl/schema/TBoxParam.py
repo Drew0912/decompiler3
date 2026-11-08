@@ -14,12 +14,12 @@ class TBoxParam(TableDataEntry):
         ('pad2c',      'P4'),
         ('items',      'A2'),
         ('uint32_3c',  'I'),
-        ('altFlag',    'W'),
+        ('altFlag',    'W'),   # scenario flag; once set, altItems and uint32_54 replace items and uint32_3c; 0: none
         ('pad42',      'P6'),
         ('altItems',   'A2'),
         ('uint32_54',  'I'),
-        ('flagsSet',   'A2'),
+        ('flagsSet',   'A2'),  # scenario flags that must all be set
         ('uint32_64',  'I'),
-        ('flagsClear', 'A2'),
+        ('flagsClear', 'A2'),  # scenario flags none of which may be set
         ('uint32_74',  'I'),
     )

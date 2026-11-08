@@ -9,13 +9,13 @@ class PlaceTableData(TableDataEntry):
         ('mapKey',     'S'),
         ('subMapKey',  'S'),
         ('str18',      'S'),
-        ('x',          'f'),
+        ('x',          'f'),   # x, y, z: a position, by its use
         ('y',          'f'),
         ('z',          'f'),
         ('uint32_2c',  'I'),
-        ('flagsSet',   'A2'),
+        ('flagsSet',   'A2'),  # scenario flags that must all be set
         ('uint32_3c',  'I'),
-        ('flagsClear', 'A2'),
+        ('flagsClear', 'A2'),  # scenario flags none of which may be set
         ('float32_4c', 'f'),
         ('uint32_50',  'I'),
         ('uint32_54',  'I'),

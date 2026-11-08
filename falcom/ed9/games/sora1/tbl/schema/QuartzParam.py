@@ -8,7 +8,7 @@ class QuartzParam(TableDataEntry):
         ('family',       'B'),
         ('pad03',        'P5'),
         ('flags',        'S'),
-        ('minSlotLevel', 'W'),
+        ('minSlotLevel', 'W'),   # the minimum slot level plus 1; 0: the check always fails
         ('uint16_12',    'W'),
         ('uint16_14',    'W'),
         ('uint16_16',    'W'),

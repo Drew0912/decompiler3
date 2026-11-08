@@ -5,7 +5,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class SupportAbilityParam(TableDataEntry):
     DESCRIPTOR = (
         ('id',          'B'),
-        ('linkId',      'B'),
+        ('linkId',      'B'),  # another ability's ID; 0: none
         ('uint16_02',   'W'),
         ('uint32_04',   'I'),
         ('uint64_08',   'Q'),

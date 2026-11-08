@@ -4,7 +4,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_voice.tbl
 class VoiceTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('id',         'I'),
+        ('id',         'I'),   # rows sorted by it at load
         ('pad04',      'P4'),
         ('name',       'S'),
         ('uint8_10',   'B'),

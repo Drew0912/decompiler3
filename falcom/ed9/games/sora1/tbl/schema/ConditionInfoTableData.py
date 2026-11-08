@@ -7,7 +7,7 @@ class ConditionInfoTableData(TableDataEntry):
         ('id',              'I'),
         ('pad04',           'P4'),
         ('name',            'S'),
-        ('maxLevel',        'I'),
+        ('maxLevel',        'I'),   # 1 or less: no stacking
         ('defaultFlags',    'I'),
         ('uint32_18',       'I'),
         ('uint32_1c',       'I'),

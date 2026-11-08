@@ -5,7 +5,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class OrbmentSlotParam(TableDataEntry):
     DESCRIPTOR = (
         ('chrId',     'I'),
-        ('line',      'b'),
+        ('line',      'b'),   # -1: every line
         ('uint8_05',  'B'),
         ('kind',      'B'),
         ('uint8_07',  'B'),

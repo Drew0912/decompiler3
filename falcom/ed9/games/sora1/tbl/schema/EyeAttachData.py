@@ -4,7 +4,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_face_anime.tbl
 class EyeAttachData(TableDataEntry):
     DESCRIPTOR = (
-        ('pattern',   'b'),
+        ('pattern',   'b'),   # -1: any
         ('selector',  'B'),
         ('int16_02',  'w'),
         ('pad04',     'P4'),

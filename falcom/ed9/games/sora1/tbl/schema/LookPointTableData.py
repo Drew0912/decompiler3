@@ -8,8 +8,8 @@ class LookPointTableData(TableDataEntry):
         ('name',       'S'),
         ('str10',      'S'),
         ('function',   'S'),
-        ('flagsSet',   'A2'),
+        ('flagsSet',   'A2'),  # scenario flags that must all be set
         ('uint32_2c',  'I'),
-        ('flagsClear', 'A2'),
+        ('flagsClear', 'A2'),  # scenario flags none of which may be set
         ('uint32_3c',  'I'),
     )

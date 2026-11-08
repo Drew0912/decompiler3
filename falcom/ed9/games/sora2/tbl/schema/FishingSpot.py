@@ -6,13 +6,13 @@ class FishingSpot(TableDataEntry):
     DESCRIPTOR = (
         ('mapKey',      'S'),
         ('name',        'S'),
-        ('smallCount',  'w'),
-        ('middleCount', 'w'),
-        ('largeCount',  'w'),
+        ('smallCount',  'w'),   # 0 or less becomes 1
+        ('middleCount', 'w'),   # 0 or less becomes 1
+        ('largeCount',  'w'),   # 0 or less becomes 1
         ('pad16',       'P2'),
-        ('flagsSet',    'A2'),
+        ('flagsSet',    'A2'),  # scenario flags that must all be set
         ('uint32_24',   'I'),
-        ('flagsClear',  'A2'),
+        ('flagsClear',  'A2'),  # scenario flags none of which may be set
         ('fish1',       'I'),
         ('uint32_38',   'I'),
         ('uint32_3c',   'I'),

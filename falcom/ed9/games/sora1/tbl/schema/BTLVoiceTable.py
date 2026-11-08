@@ -5,7 +5,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class BTLVoiceTable(TableDataEntry):
     DESCRIPTOR = (
         ('key',       'I'),
-        ('key2',      'I'),
+        ('key2',      'I'),   # 0xFFFF: matches any value
         ('uint32_08', 'I'),
         ('filterKey', 'I'),
         ('arr16_10',  'A2'),

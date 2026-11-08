@@ -19,7 +19,7 @@ class QuestTitle(TableDataEntry):
         ('uint32_2c',     'I'),
         ('startFlag',     'W'),
         ('uint16_32',     'W'),
-        ('listedFlag',    'W'),
+        ('listedFlag',    'W'),   # lists the quest once set; 0: none
         ('uint16_36',     'W'),
         ('uint16_38',     'W'),
         ('uint16_3a',     'W'),
@@ -34,6 +34,6 @@ class QuestTitle(TableDataEntry):
         ('pad4c',         'P4'),
         ('str50',         'S'),
         ('reportComment', 'S'),
-        ('linkedQuest',   'W'),
+        ('linkedQuest',   'W'),   # another quest's ID, whose state bit 4 this one copies; 0: none
         ('pad62',         'P6'),
     )

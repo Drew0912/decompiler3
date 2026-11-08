@@ -5,7 +5,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class ATBonusParam(TableDataEntry):
     DESCRIPTOR = (
         ('id',         'B'),
-        ('linkId',     'B'),
+        ('linkId',     'B'),   # another bonus's ID
         ('pad02',      'P6'),
         ('flags',      'S'),
         ('effectKind', 'B'),

@@ -5,5 +5,5 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class MedalItem(TableDataEntry):
     DESCRIPTOR = (
         ('itemId', 'I'),
-        ('price',  'I'),
+        ('price',  'I'),  # times ShopInfo priceRate / 100
     )

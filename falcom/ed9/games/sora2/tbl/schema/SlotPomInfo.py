@@ -6,7 +6,7 @@ class SlotPomInfo(TableDataEntry):
     DESCRIPTOR = (
         ('id',        'W'),
         ('pad02',     'P6'),
-        ('name',      'S'),
+        ('name',      'S'),   # empty: hidden, by its use
         ('uint32_10', 'I'),
         ('uint32_14', 'I'),
         ('bonusId',   'I'),

@@ -6,7 +6,7 @@ class ShopConv(TableDataEntry):
     DESCRIPTOR = (
         ('id',         'W'),
         ('pad02',      'P2'),
-        ('rate',       'f'),
+        ('rate',       'f'),   # truncated to an integer
         ('float32_08', 'f'),
         ('float32_0c', 'f'),
         ('float32_10', 'f'),

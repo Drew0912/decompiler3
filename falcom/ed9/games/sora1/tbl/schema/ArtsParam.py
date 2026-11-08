@@ -13,5 +13,5 @@ class ArtsParam(TableDataEntry):
         ('uint8_09', 'B'),
         ('uint8_0a', 'B'),
         ('pad0b',    'P1'),
-        ('flag',     'I'),
+        ('flag',     'I'),   # 0: none
     )

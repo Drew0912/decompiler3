@@ -4,7 +4,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_se.tbl
 class SETableData(TableDataEntry):
     DESCRIPTOR = (
-        ('id',         'I'),
+        ('id',         'I'),   # 0: none; rows sorted by it at load
         ('pad04',      'P4'),
         ('name',       'S'),
         ('uint8_10',   'B'),

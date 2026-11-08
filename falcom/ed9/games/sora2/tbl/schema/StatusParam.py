@@ -15,7 +15,7 @@ class StatusParam(TableDataEntry):
         ('str30',       'S'),
         ('aiScript',    'S'),
         ('str40',       'S'),
-        ('chrId',       'W'),
+        ('chrId',       'W'),   # 0xFFFF: the character's own ID
         ('pad4a',       'P2'),
         ('float32_4c',  'f'),
         ('float32_50',  'f'),

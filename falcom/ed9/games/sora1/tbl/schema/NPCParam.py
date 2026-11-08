@@ -5,17 +5,17 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class NPCParam(TableDataEntry):
     DESCRIPTOR = (
         ('chrId',         'W'),
-        ('overrideChrId', 'W'),
+        ('overrideChrId', 'W'),   # when model is empty, replaces the character's ID in setup; 0 or 0xFFFF: none
         ('uint32_04',     'I'),
         ('model',         'S'),
-        ('flagsSet',      'A2'),
+        ('flagsSet',      'A2'),  # scenario flags that must all be set
         ('uint32_1c',     'I'),
-        ('flagsClear',    'A2'),
-        ('x',             'f'),
+        ('flagsClear',    'A2'),  # scenario flags none of which may be set
+        ('x',             'f'),   # x, y, z: a position, by its use
         ('y',             'f'),
         ('z',             'f'),
-        ('angle',         'f'),
-        ('talkRadius',    'f'),
+        ('angle',         'f'),   # degrees
+        ('talkRadius',    'f'),   # 0 or less becomes 0.75
         ('float32_40',    'f'),
         ('lookPoint',     'W'),
         ('pad46',         'P2'),

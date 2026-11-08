@@ -13,10 +13,10 @@ class NameTableData(TableDataEntry):
         ('uint32_28',        'I'),
         ('pad2c',            'P4'),
         ('flags',            'S'),
-        ('saveIndex',        'B'),
+        ('saveIndex',        'B'),   # 1 to 0x63; 0: none
         ('pad39',            'P7'),
         ('statusKey',        'S'),
-        ('scenarioFlag',     'W'),
+        ('scenarioFlag',     'W'),   # 0: none
         ('pad4a',            'P6'),
         ('flaggedStatusKey', 'S'),
         ('str58',            'S'),

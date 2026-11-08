@@ -12,7 +12,7 @@ class ShopInfo(TableDataEntry):
         ('flags',      'S'),
         ('convId',     'B'),
         ('pad21',      'P1'),
-        ('priceRate',  'H'),
+        ('priceRate',  'H'),   # percent, by its use: item price * priceRate / 100, rounded up
         ('float32_24', 'f'),
         ('float32_28', 'f'),
         ('float32_2c', 'f'),
@@ -21,5 +21,5 @@ class ShopInfo(TableDataEntry):
         ('uint32_38',  'I'),
         ('float32_3c', 'f'),
         ('float32_40', 'f'),
-        ('voiceId',    'I'),
+        ('voiceId',    'I'),   # 0: none
     )
