@@ -7,8 +7,8 @@
 
 From the repo root. No `PYTHONPATH` is needed: every test file puts the repo root on `sys.path` itself.
 
-- Everything: `python -m unittest discover -s tests`. Always pass `-s tests`: a bare `python -m unittest` walks every
-  package and fails on the unused `falcom.ed9.signatures` package's `yaml` import.
+- Everything: `python -m unittest discover -s tests`. Always pass `-s tests`: a bare `python -m unittest` walks the
+  whole checkout, not only `tests/`.
 - One folder: `python -m unittest discover -s tests/hlil_tests`
 - One file: `python -m unittest tests.hlil_tests.test_hlil_traversal`, or
   `python tests/hlil_tests/test_hlil_traversal.py`

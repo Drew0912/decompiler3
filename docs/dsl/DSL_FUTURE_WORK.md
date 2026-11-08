@@ -316,23 +316,22 @@ phase: each function lowers in place during the one `ScpWriter` run.
 ### 3. Knowledge-Driven Typing for Common Functions
 
 The common-function library (`docs/dsl/LLIL_DSL.md` §3) currently derives everything purely from raw
-bytecode — params are always `arg1: Value32`, `arg2: Value32`, etc. There's a real precedent in
-this codebase for annotating that kind of gap externally instead of by hand-editing generated
-output: `falcom/ed9/signatures/format_signatures.py` + a YAML file, which does exactly this for
-TypeScript codegen (`FormatSignatureDB` supplies per-function param names/types/enum formats,
-consulted by `codegen/typescript.py`).
+bytecode — params are always `arg1: Value32`, `arg2: Value32`, etc. That gap is meant to be annotated
+externally, not by hand-editing generated output. (The unused YAML signature database once meant for
+the TypeScript output was removed on 2026-11-08: nothing read it, and it needed a package outside the
+standard library.)
 
 **The idea:** once a common function's arguments and their real meaning are identified (by hand,
-or by future analysis), that knowledge can be patched into the generated library the same way — a
-YAML-backed `CommonFunctionKnowledgeDB`, consulted by `gen_common_library.py` between
+or by future analysis), that knowledge can be patched into the generated library — a
+`CommonFunctionKnowledgeDB` in Python (standard library only, no YAML), consulted by `gen_common_library.py` between
 extraction and rendering. Every generator run does a full rewrite of the output directory, so this
 has to be a hook inside the generator, not a post-process edit of generated files (which would
 just be overwritten on the next regeneration).
 
 Groundwork this would need, not yet done:
 - Knowledge entries keyed by the function's fingerprint digest (`docs/dsl/LLIL_DSL.md` §1), not just
-  its name — the digest *is* the function's identity in this system, so a name-only key (unlike
-  `FormatSignatureDB`'s today) could silently apply stale knowledge after a corpus change.
+  its name — the digest *is* the function's identity in this system, so a name-only key could
+  silently apply stale knowledge after a corpus change.
   Generation should fail loudly if a knowledge entry's expected digest no longer matches.
 - The renderer's intermediate operand representation would need to preserve raw values alongside
   formatted text (it currently flattens straight to source text), if the knowledge layer should
