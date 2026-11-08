@@ -156,10 +156,11 @@ it gives opcode kinds and stack effects, and the LLIL lifter maps them to nodes.
 translator keeps the game's conventions in `falcom/ed9/ir/mlil/stack_translator.py` (`FalcomStackTranslator`: the
 parameter-to-slot mapping, the result register, globals, script calls, `POPN`, `DEBUG_INT`); the generic
 `StackTranslator` translates the generic LLIL nodes (`RegStore`, `RegLoad`, `Syscall`) itself. The SSA path's known
-leftovers stay with it in `ir/mlil_ssa/` (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary"). The IR folds int constants
-(at Python's width) and decides int truth; floats - their arithmetic, comparisons and truth - and integer division and
-remainder are not evaluated (an identity like `x / 1` aside), since a VM's rules for them need not be Python's. ED9's
-rules: `docs/falcom/ed9/ED9_VM.md` (Arithmetic, Truth, Comparisons).
+leftovers stay with it in `ir/mlil_ssa/` (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary"). The IR folds plain int
+constants (at Python's width, `is_plain_int`) and decides their truth; floats - their arithmetic, comparisons and
+truth - strings, a frontend's own ints, and integer division and remainder are not evaluated (an identity like `x / 1`
+aside), since a VM's rules for them need not be Python's. ED9's rules: `docs/falcom/ed9/ED9_VM.md` (Arithmetic, Truth,
+Comparisons).
 
 ## Key Design Principles
 

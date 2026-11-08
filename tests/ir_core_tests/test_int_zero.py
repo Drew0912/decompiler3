@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""is_int_zero: only the int constant 0 turns a comparison into a plain truth test. Every place that simplifies a
+"""is_int_zero: only the plain int constant 0 turns a comparison into a plain truth test. Every place that simplifies a
 comparison with zero leaves a float zero as written: a jump truncates a Float, so 0.5 tests false while 0.5 != 0.0
 holds (docs/falcom/ed9/ED9_VM.md, Truth)"""
 
@@ -13,6 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from codegen.typescript import TypeScriptGenerator
 from ir.core import SourceFloat, is_int_zero
 from ir.hlil import BinaryOp, HLILBinaryOp, HLILConst, HLILUnaryOp, HLILVar, HLILVariable, UnaryOp
+from tests.shared.ir_utils import FrontendInt
 
 INT_ZERO = 0
 FLOAT_ZERO = 0.0
@@ -21,7 +22,7 @@ FLOAT_ZERO = 0.0
 class TestIsIntZero(unittest.TestCase):
     def test_only_the_int_zero(self):
         self.assertTrue(is_int_zero(INT_ZERO))
-        for value in (FLOAT_ZERO, -0.0, SourceFloat(FLOAT_ZERO, '0.0'), 1, '0'):
+        for value in (FLOAT_ZERO, -0.0, SourceFloat(FLOAT_ZERO, '0.0'), FrontendInt(INT_ZERO), 1, '0'):
             with self.subTest(value=repr(value)):
                 self.assertFalse(is_int_zero(value))
 

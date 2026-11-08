@@ -30,6 +30,7 @@ from ir.hlil import (
     HLILWhile,
     LoopRecoveryPass,
 )
+from tests.shared.ir_utils import FrontendInt
 
 
 EXIT_THRESHOLD = 0
@@ -38,6 +39,7 @@ GUARD_LINE = 'line(782)'
 BODY_CALL = 'btl_chr_list_next'
 SWITCH_CASE_VALUE = 3
 LOOP_LABEL = 'loop_1'
+STRING_VALUE = 'abc'
 OUTER_LABEL = 'outer'
 
 
@@ -173,6 +175,23 @@ class TestLoopRecoveryFloatConditions(unittest.TestCase):
 
         self.assertEqual(recovered.condition.op, BinaryOp.GT)
         self.assertEqual(len(recovered.body.statements), 1)
+
+
+class TestLoopRecoveryNonIntConditions(unittest.TestCase):
+    """A string or a frontend's own int is never folded or taken as always true: its truth and comparisons are the
+    VM's (ED9 tests both false, and makes a Raw word and "abc" equal to 0)"""
+
+    def test_non_int_condition_is_left_alone(self):
+        for condition in (HLILConst(STRING_VALUE), HLILConst(FrontendInt(1)),
+                          HLILBinaryOp(BinaryOp.EQ, HLILConst(STRING_VALUE), HLILConst(0)),
+                          HLILBinaryOp(BinaryOp.EQ, HLILConst(FrontendInt(5)), HLILConst(0))):
+            with self.subTest(condition=str(condition)):
+                loop = HLILWhile(condition, HLILBlock([make_guard(HLILBreak()), make_body_statement()]))
+
+                recovered = run_pass(loop).body.statements[0]
+
+                self.assertIs(recovered.condition, condition)
+                self.assertEqual(len(recovered.body.statements), 2)
 
 
 class TestLoopRecoveryDoWhileRotation(unittest.TestCase):

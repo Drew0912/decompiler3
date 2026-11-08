@@ -11,6 +11,7 @@ Also folds constant loop conditions and drops a trailing continue, which says
 nothing at the end of a loop body
 """
 
+from ir.core import is_plain_int
 from ir.pipeline import Pass
 from ..hlil import (
     HighLevelILFunction,
@@ -266,15 +267,16 @@ class LoopRecoveryPass(Pass):
         if not isinstance(condition.lhs, HLILConst) or not isinstance(condition.rhs, HLILConst):
             return condition
 
-        # Float comparisons stay as written: how the VM compares floats (precision, NaN) need not be Python's
-        if isinstance(condition.lhs.value, float) or isinstance(condition.rhs.value, float):
+        # Only plain ints compare as Python does: how the VM compares a float (precision, NaN), a string or a frontend's
+        # own int need not be Python's
+        if not (is_plain_int(condition.lhs.value) and is_plain_int(condition.rhs.value)):
             return condition
 
         return HLILConst(int(COMPARISON_FUNCTIONS[condition.op](condition.lhs.value, condition.rhs.value)))
 
     def _is_always_true(self, condition: HLILExpression) -> bool:
-        # A float constant's truth depends on what tests it, which the VM decides
-        if not isinstance(condition, HLILConst) or isinstance(condition.value, float):
+        # Only a plain int's truth is Python's: a float's, a string's or a frontend's own int's is the VM's
+        if not isinstance(condition, HLILConst) or not is_plain_int(condition.value):
             return False
 
         return condition.value not in (0, False)

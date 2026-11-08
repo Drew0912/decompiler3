@@ -4,7 +4,7 @@ import operator
 from collections import deque
 from typing import Any
 
-from ir.core import constant_values_equal
+from ir.core import constant_values_equal, is_plain_int
 from ir.mlil.mlil import (
     map_operands,
     MediumLevelILFunction,
@@ -307,8 +307,8 @@ class SCCP:
 
         cond_value = self._evaluate_expr(inst.condition)
 
-        # A float decides nothing: its truth depends on what tests it, which the VM decides
-        if cond_value.is_constant() and not isinstance(cond_value.value, float):
+        # Only a plain int decides: a float's, a string's or a frontend's own int's truth is the VM's
+        if cond_value.is_constant() and is_plain_int(cond_value.value):
             # Condition is constant, only one branch is reachable
             if cond_value.value:
                 self._mark_edge_reachable(block, inst.true_target)
@@ -369,9 +369,10 @@ class SCCP:
 
     def _eval_binary_op(self, op_type, lhs, rhs) -> LatticeValue:
         """Evaluate binary operation on constants"""
-        # Floats never fold: a VM's float arithmetic (precision, rounding) need not be Python's
+        # Only plain ints fold: a VM's arithmetic on a float (precision, rounding), a string or a frontend's own int
+        # need not be Python's
         fold = FOLDED_BINARY_OPS.get(op_type)
-        if fold is None or isinstance(lhs, float) or isinstance(rhs, float):
+        if fold is None or not (is_plain_int(lhs) and is_plain_int(rhs)):
             return LatticeValue.bottom()
 
         try:
@@ -381,9 +382,9 @@ class SCCP:
 
     def _eval_unary_op(self, op_type, operand) -> LatticeValue:
         """Evaluate unary operation on constant"""
-        # A float never folds, see _eval_binary_op
+        # Only a plain int folds, see _eval_binary_op
         fold = FOLDED_UNARY_OPS.get(op_type)
-        if fold is None or isinstance(operand, float):
+        if fold is None or not is_plain_int(operand):
             return LatticeValue.bottom()
 
         try:

@@ -49,7 +49,7 @@ from tests.shared.hlil_cfg_utils import (
     EARLY_EXIT, SHARED_LOOP, SHARED_LOOP_COPY_STATEMENTS, build_function, to_hlil, structure, classify, hlil_run,
     parameters, unstructured_nodes, calls_emitted, with_markers,
 )
-from tests.shared.ir_utils import connect
+from tests.shared.ir_utils import FrontendInt, connect
 
 TARGET = 'loc_1'
 REASON = 'region not repeatable'
@@ -586,6 +586,11 @@ class TestConstantTruth(unittest.TestCase):
         self.assertIsNone(constant_truth(HLILConst(0.5)))
         self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.LT, HLILConst(0.5), HLILConst(1))))
         self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.LT, HLILConst(1), HLILConst(0.5))))
+
+    def test_a_frontend_int_decides_nothing(self):
+        # Its truth and comparisons are the VM's: ED9 tests a Raw word false and makes it equal to 0
+        self.assertIsNone(constant_truth(HLILConst(FrontendInt(1))))
+        self.assertIsNone(constant_truth(HLILBinaryOp(BinaryOp.EQ, HLILConst(FrontendInt(5)), HLILConst(0))))
 
 
 class TestReachableStatements(unittest.TestCase):

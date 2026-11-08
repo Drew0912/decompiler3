@@ -1,4 +1,5 @@
-"""IL constant values: how they print, when two are the same constant, and which is a plain zero"""
+"""IL constant values: how they print, when two are the same constant, which the IR may evaluate, and which is a plain
+zero"""
 
 
 class SourceFloat(float):
@@ -33,8 +34,13 @@ def constant_values_equal(a, b) -> bool:
     return a == b
 
 
+def is_plain_int(value) -> bool:
+    """An int the IR may evaluate as Python does (bool included): not a float, a string or an int subclass a frontend
+    gives a meaning of its own, whose truth, comparisons and arithmetic are the VM's"""
+    return type(value) in (int, bool)
+
+
 def is_int_zero(value) -> bool:
-    """A zero int constant (False included: bool is an int): a comparison with it is a plain truth test. A
-    float zero is not one: what a float tests as is the VM's (a jump may truncate it, so 0.5 can test false while
-    0.5 != 0.0 holds)"""
-    return isinstance(value, int) and value == 0
+    """A zero plain int constant (is_plain_int): a comparison with it is a plain truth test. A float zero is not one:
+    what a float tests as is the VM's (a jump may truncate it, so 0.5 can test false while 0.5 != 0.0 holds)"""
+    return is_plain_int(value) and value == 0

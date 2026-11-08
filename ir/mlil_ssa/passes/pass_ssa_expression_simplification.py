@@ -10,9 +10,10 @@ Apply algebraic simplifications:
 - x | -1 → -1
 etc.
 
-Identities fire only on int constants
+Identities fire only on plain int constants (is_plain_int)
 """
 
+from ir.core import is_plain_int
 from ir.pipeline import Pass
 from ir.mlil.mlil import (
     MediumLevelILFunction,
@@ -101,9 +102,9 @@ class ExpressionSimplificationPass(Pass):
 
     def _apply_algebraic_identity(self, op_type, lhs, rhs) -> MediumLevelILInstruction | None:
         """Apply algebraic identity rules"""
-        # Int constants only: x * 0.0 is a Float, not int 0, and can be -0.0 or NaN
-        # (SCCP doesn't fold floats either)
-        if any(isinstance(operand, MLILConst) and isinstance(operand.value, float) for operand in (lhs, rhs)):
+        # Plain int constants only: x * 0.0 is a Float, not int 0, and can be -0.0 or NaN; a string or a frontend's own
+        # int takes the VM's arithmetic (SCCP doesn't fold them either)
+        if any(isinstance(operand, MLILConst) and not is_plain_int(operand.value) for operand in (lhs, rhs)):
             return None
 
         if op_type == MLILAdd:

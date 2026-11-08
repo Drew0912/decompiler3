@@ -12,6 +12,7 @@ __all__ = [
     'IRParameter',
     'constant_values_equal',
     'is_int_zero',
+    'is_plain_int',
     'SourceFloat',
     'UNASSIGNED_INST_INDEX',
     'ILOptions',

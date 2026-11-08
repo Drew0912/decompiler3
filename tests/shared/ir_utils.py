@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""IR helpers for hand-built test functions, node-type coverage and source metadata"""
+"""IR helpers for hand-built test functions, node-type coverage, source metadata and a frontend's own int"""
 
 import itertools
 import unittest
@@ -16,6 +16,10 @@ SOURCE_INST_INDEX = 7
 SOURCE_LLIL_INDEX = 9
 
 _const_values = itertools.count()
+
+
+class FrontendInt(int):
+    """An int subclass a frontend gives a meaning of its own, as ED9's RawInt: the IR evaluates none of it"""
 
 
 def connect(func: MediumLevelILFunction) -> MediumLevelILFunction:

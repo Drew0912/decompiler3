@@ -5,7 +5,7 @@ from enum import auto
 import operator
 import re
 from dc3 import format_uint32_hex, IntEnum2, quote_string
-from ir.core import UNASSIGNED_INST_INDEX, constant_values_equal, is_int_zero
+from ir.core import UNASSIGNED_INST_INDEX, constant_values_equal, is_int_zero, is_plain_int
 
 
 class HLILTypeKind(IntEnum2):
@@ -721,11 +721,11 @@ def strip_truth_test(cond: HLILExpression) -> tuple[HLILExpression, bool]:
 
 
 def constant_truth(cond: HLILExpression) -> bool | None:
-    """The value a condition always has - an int constant, a comparison of two int constants, or !, &&
+    """The value a condition always has - a plain int constant (is_plain_int), a comparison of two, or !, &&
     and || over such conditions - or None otherwise. A float decides nothing: its truth and its comparisons are the
     VM's (a jump may truncate it, a logical operator may compare it with 0.0)"""
     if isinstance(cond, HLILConst):
-        return bool(cond.value) if isinstance(cond.value, int) else None
+        return bool(cond.value) if is_plain_int(cond.value) else None
 
     if isinstance(cond, HLILUnaryOp) and cond.op == UnaryOp.NOT:
         inner = constant_truth(cond.operand)
@@ -736,7 +736,7 @@ def constant_truth(cond: HLILExpression) -> bool | None:
 
     if cond.op in COMPARISON_FUNCTIONS:
         operands = (cond.lhs, cond.rhs)
-        if all(isinstance(o, HLILConst) and isinstance(o.value, int) for o in operands):
+        if all(isinstance(o, HLILConst) and is_plain_int(o.value) for o in operands):
             return COMPARISON_FUNCTIONS[cond.op](cond.lhs.value, cond.rhs.value)
 
         return None

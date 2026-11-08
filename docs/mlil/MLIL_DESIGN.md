@@ -253,11 +253,12 @@ width), and the real semantics (float32 rounding, int/float mixing, a float's tr
 overflow, MOD's sign) are known only statically, from the game exe, not traced (`docs/falcom/ed9/ED9_VM.md`).
 Folding with an untraced formula risks silently replacing one wrong constant with another: `0.4 * 0.8` used to
 print as `0.32`. The
-same holds downstream: HLIL's `constant_truth` and loop recovery decide nothing from a float, the
-TypeScript printer folds a comparison of two constants only for ints, and the rewrites that turn a
+same holds downstream: HLIL's `constant_truth` and loop recovery decide nothing from a float, a string or a
+frontend's own int (`is_plain_int`: ED9's `RawInt` is an int subclass), the TypeScript printer folds a comparison of
+two constants only for plain ints, and the rewrites that turn a
 comparison with zero into a truth test (condition simplification, boolean-temp inlining, the TypeScript
-printer) accept only the int `0` (`is_int_zero`, `ir/core/il_literals.py`). `ExpressionSimplificationPass`'s
-identities likewise fire only on int constants (`0.0 * x` used to become the int `0`), but they still
+printer) accept only the plain int `0` (`is_int_zero`, `ir/core/il_literals.py`). `ExpressionSimplificationPass`'s
+identities likewise fire only on plain int constants (`0.0 * x` used to become the int `0`), but they still
 simplify an int DIV by 1, even a constant one (`10 / 1 → 10`), since that identity holds regardless of
 numeric semantics. See `docs/mlil/MLIL_FUTURE_WORK.md` for what a verified SCCP fix would need.
 
