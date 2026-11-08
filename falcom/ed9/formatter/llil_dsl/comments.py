@@ -13,7 +13,7 @@ from ...structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
     from assembler.instruction import Instruction
-    from ...parser.parser_types import Function, StackLayout
+    from ...assembler.function import Function, StackLayout
 
 __all__ = (
     'CommentOptions',

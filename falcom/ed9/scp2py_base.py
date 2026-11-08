@@ -19,7 +19,7 @@ from falcom.ed9.formatter.llil_dsl.comments import CommentOptions
 from falcom.ed9.games import GAMES_DIR
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.formatter.listing import write_listing
-from falcom.ed9.parser.parser_types import Function
+from falcom.ed9.assembler.function import Function
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack

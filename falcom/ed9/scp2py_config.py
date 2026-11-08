@@ -5,7 +5,7 @@ from typing import Callable
 
 from dc3 import StrictBase
 from .formatter.listing import ListingSections
-from .parser.parser_types import Function
+from .assembler.function import Function
 
 
 class ScpDecompileConfig(StrictBase):

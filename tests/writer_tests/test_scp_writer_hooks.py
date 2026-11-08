@@ -70,7 +70,7 @@ class HookTestCase(WriterTestCase):
         return {func.name: func for func in functions}
 
     def mnemonics(self, func) -> list[str]:
-        return [inst.mnemonic for inst in self.parser.get_instructions(func)]
+        return [inst.mnemonic for inst in func.reachable_instructions()]
 
     def signature(self, func) -> str:
         return str(func).splitlines()[0]
@@ -96,7 +96,7 @@ class HookTestCase(WriterTestCase):
 
     def called(self, func) -> int:
         """The function index of func's one CALL"""
-        [call] = [inst for inst in self.parser.get_instructions(func) if inst.mnemonic == 'CALL']
+        [call] = [inst for inst in func.reachable_instructions() if inst.mnemonic == 'CALL']
         return call.operands[0].value
 
     def define_caller_and_target(self):
@@ -1220,7 +1220,8 @@ class TestOpcodeCallbacks(HookTestCase):
         return Target
 
     def scripts_called(self, func) -> list[str]:
-        return [inst.operands[1].value.value for inst in self.parser.get_instructions(func) if inst.mnemonic == 'CALL_SCRIPT']
+        return [inst.operands[1].value.value for inst in func.reachable_instructions()
+                if inst.mnemonic == 'CALL_SCRIPT']
 
     def test_return_values(self):
         """True drops the opcode - no bytes, no debug record - and the later callbacks don't see it; None and False keep

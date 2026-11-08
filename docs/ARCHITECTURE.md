@@ -37,9 +37,10 @@ table script writes its `.tbl` again through `create_tbl` in `parser/tbl.py`. Th
 `docs/falcom/ed9/TBL_FORMAT.md`.
 
 Reads the SCP file: the header, the function table with parameters and defaults, call-site debug records, global
-variables and the string pool (`ScpParser`). While the disassembler decodes a function, the parser simulates the VM
-stack to find each call's setup, and rejects code it cannot trust: overlapping instructions, a branch target inside an
-instruction, code running into the string pool, a join whose edges disagree on stack height. The layout the writer
+variables and the string pool (`ScpParser`). While the disassembler decodes a function, its hooks
+(`falcom/ed9/assembler/disassembler.py`) simulate the VM stack to find each call's setup, and the parser rejects code it
+cannot trust: overlapping instructions, a branch target inside an instruction, code running into the string pool, a
+join whose edges disagree on stack height. The layout the writer
 reproduces (table order, string pool, debug records) is checked by `tools/scp_roundtrip_validator.py`. Detail:
 `docs/falcom/ed9/ED9_FORMAT.md`.
 

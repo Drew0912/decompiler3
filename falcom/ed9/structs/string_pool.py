@@ -98,7 +98,7 @@ def collect_string_refs(data: bytes, parser: 'ScpParser', records: list[list[Scp
     # Each operand once: functions that share code (one starting where another does, a jump into another) decode it
     # twice
     positions = {position for func in parser.functions
-                 for position in parser.string_operand_positions(parser.code_instructions(func))}
+                 for position in parser.string_operand_positions(func.code_instructions())}
     code = string_offsets(data, sorted(positions))
 
     entries = parser.function_entries

@@ -15,7 +15,7 @@ from dc3.utils import display_width
 from falcom.ed9.formatter.llil_dsl.comments import COMMENT_COLUMN, MIN_COMMENT_GAP, CommentOptions, append_comment
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.parser_types import SlotRef
+from falcom.ed9.assembler.function import SlotRef
 from falcom.ed9.structs.scp_types import FloatWord, ScpValue
 from falcom.ed9.scp2py_base import process_file
 from falcom.ed9.scp2py_config import ScpDecompileConfig

@@ -100,7 +100,7 @@ class TestRealCallPairing(unittest.TestCase):
 
         self.assertTrue(functions)
         for func in functions:
-            counts = Counter(inst.opcode for inst in parser.get_instructions(func))
+            counts = Counter(inst.opcode for inst in func.reachable_instructions())
             for call_op, ret_op in PAIRED_CALL_OPS.items():
                 self.assertEqual(counts[call_op], counts[ret_op], f'{func.name}: {call_op} vs {ret_op}')
 

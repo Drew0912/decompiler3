@@ -23,7 +23,7 @@ from falcom.ed9.structs.common_library import COMMON_LIBRARY_FOLDER, game_metada
 from falcom.ed9.tools import gen_common_library as gen
 from falcom.ed9.structs.fingerprint import function_fingerprint, fingerprint_digest
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.parser_types import Function
+from falcom.ed9.assembler.function import Function
 from ir.llil.llil import WORD_SIZE
 from tests.shared.scp_asm import (
     Asm, Func, Program, CALLEE_ID, CALLEE_NAME, CALLER_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE,

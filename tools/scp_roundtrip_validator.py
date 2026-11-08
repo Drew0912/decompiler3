@@ -90,7 +90,7 @@ from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_e
 from falcom.ed9.structs.crc32 import hash_function_name
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
 from falcom.ed9.structs.string_pool import NUL, StringRefs, collect_string_refs, pool_strings, read_text, read_u32
-from falcom.ed9.parser.parser_types import Function
+from falcom.ed9.assembler.function import Function
 from falcom.ed9.structs.scp_types import (
     ScpFunctionCallDebugInfo,
     ScpFunctionCallDebugInfoArg,
@@ -210,7 +210,7 @@ def load_script(path: Path) -> ScriptContext:
             parser=parser,
             entries=entries,
             records=read_debug_records(parser, data),
-            instructions=[parser.get_instructions(func) for func in parser.functions],
+            instructions=[func.reachable_instructions() for func in parser.functions],
             code_order=code_order(entries),
         )
     except BaseException:
@@ -382,7 +382,7 @@ def check_debug_records(ctx: ScriptContext) -> CheckResult:
 
     for index, func in enumerate(ctx.parser.functions):
         # Dead calls have records too: pair over the code the .py prints, reachable and dead
-        pairing = pair_records(ctx.data, ctx.parser.code_instructions(func), ctx.records[index],
+        pairing = pair_records(ctx.data, func.code_instructions(), ctx.records[index],
                                ctx.parser.get_func_argc, ctx.parser.get_func_index, func.is_common_func)
         if pairing.call_count != pairing.record_count and not pairing.paired:
             failures.append(f'{func.name}: {pairing.call_count} call sites, {pairing.record_count} debug records')
@@ -801,7 +801,7 @@ def function_source_records(ctx: ScriptContext, index: int, views: list[RecordVi
     parser = ctx.parser
     func = parser.functions[index]
     records = ctx.records[index]
-    instructions = parser.code_instructions(func)
+    instructions = func.code_instructions()
     calls = CallDebugInfoTracker.replay(instructions, parser.get_func_argc)
     source = SourceRecords(len(records), func.is_common_func, [], Counter())
 
@@ -833,7 +833,7 @@ def record_slots(ctx: ScriptContext, func: Function, calls: list[tuple[TrackedCa
                  pairing: RecordPairing, excused: Counter[str]) -> list[RecordSlot]:
     """One slot per call the everyday decompile keeps: dead calls go, and their records are excused"""
     parser = ctx.parser
-    dead = {inst.offset for inst in parser.unreachable_instructions(func)}
+    dead = {inst.offset for inst in func.unreachable_instructions()}
     record_at = {offset: index for index, offset in pairing.record_offsets.items()}
     slots = []
     for call, offset in calls:

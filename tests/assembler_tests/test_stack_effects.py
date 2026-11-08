@@ -23,8 +23,11 @@ from falcom.ed9.assembler.ed9_optable import ED9_OPCODE_TABLE
 from falcom.ed9.assembler.stack_effects import STACK_EFFECTS, InstructionKind, PopCarry, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.structs.call_debug_records import CallDebugInfoTracker
-from falcom.ed9.parser.scp import ScpDisassemblyError, ScpParser
-from falcom.ed9.parser.parser_types import Function
+from falcom.ed9.assembler import disassembler
+from falcom.ed9.assembler.disassembler import ScpDisassemblyError
+from falcom.ed9.parser import scp
+from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.assembler.function import Function
 from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
 from tests.shared.scp_asm import (
     CALLER_ID, CALLEE_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, MODULE_NAME, REG_INDEX, RIGHT_VALUE,
@@ -189,19 +192,19 @@ def operand_values(inst) -> tuple:
 
 @contextmanager
 def tracing_the_parser(steps: list[Step]):
-    """Records each decoded instruction's simulated stack depth and, for a call, its argument count. A wrapper, not a
-    subclass: ScpParser is a StrictBase, which lets a subclass set only the attributes it annotates itself."""
-    decoded = ScpParser.on_instruction_decoded
+    """Records each decoded instruction's simulated stack depth and, for a call, its argument count: the
+    disassembler's decode hook, wrapped where the parser passes it to the context"""
+    decoded = disassembler.on_instruction_decoded
 
-    def on_instruction_decoded(parser, context, inst, block):
+    def on_instruction_decoded(context, inst, block):
         opcode, values, entries = ED9Opcode(inst.opcode), operand_values(inst), tuple(context.stack_simulation)
         argc = context.call_argc(inst) if is_call(opcode) else None
-        targets = decoded(parser, context, inst, block)
+        targets = decoded(context, inst, block)
         after = tuple(context.stack_simulation)
         steps.append(Step(opcode, values, inst.offset, len(entries), len(after), argc, entries, after))
         return targets
 
-    with mock.patch.object(ScpParser, 'on_instruction_decoded', on_instruction_decoded):
+    with mock.patch.object(scp, 'on_instruction_decoded', on_instruction_decoded):
         yield
 
 
@@ -271,7 +274,7 @@ def track(parser: ScpParser, decoded: list[Function]) -> list[Step]:
     steps = []
     for func in decoded:
         tracker = TracingTracker(parser.get_func_argc)
-        for inst in parser.get_instructions(func):
+        for inst in func.reachable_instructions():
             tracker.on_opcode(inst.opcode, list(operand_values(inst)))
 
         steps += tracker.steps

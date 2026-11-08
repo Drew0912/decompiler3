@@ -57,7 +57,7 @@ from falcom.ed9.structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_M
 from falcom.ed9.structs.fingerprint import function_fingerprint, fingerprint_digest
 from falcom.ed9.structs.generated_script import SCP_WRITER_HELPER_IMPORT
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.parser_types import Function
+from falcom.ed9.assembler.function import Function
 from falcom.ed9.writer import scp_writer_helper
 
 MODULE_PREFIX = 'scp_writer_common_'
@@ -100,7 +100,7 @@ class Occurrence(NamedTuple):
 
 
 def function_facts(parser: ScpParser, func: Function) -> FunctionFacts:
-    instructions = parser.get_instructions(func)
+    instructions = func.reachable_instructions()
     return FunctionFacts(
         touches_global=any(inst.opcode in (ED9Opcode.LOAD_GLOBAL, ED9Opcode.SET_GLOBAL) for inst in instructions),
         call_targets={parser.get_func_name_from_func_id(op.value) for inst in instructions for op in inst.operands
@@ -156,7 +156,7 @@ def verified_render_inputs(parser: ScpParser, func: Function, path: Path,
     if digest != expected_digest:
         raise RuntimeError(f'{func.name}: fingerprint changed between pass 1 and pass 2 ({path})')
 
-    instructions = parser.get_instructions(func)
+    instructions = func.reachable_instructions()
     referenced_offsets = Formatter.find_referenced_offsets(func.entry_block)
     return instructions, referenced_offsets
 

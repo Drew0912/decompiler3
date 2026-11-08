@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from dc3 import default_indent, IntEnum2
+from .instruction import SYNTHETIC_INSTRUCTION_SIZE
 
 if TYPE_CHECKING:
     from .instruction import Instruction
@@ -53,6 +54,36 @@ class BasicBlock:
             self.succs.insert(0, target)
 
         return target
+
+    def reachable_blocks(self) -> list[BasicBlock]:
+        """This block and every block reachable from it"""
+        blocks = []
+        visited = set()
+        todo = [self]
+
+        while todo:
+            block = todo.pop()
+            if block.offset in visited:
+                continue
+
+            visited.add(block.offset)
+            blocks.append(block)
+            todo.extend(block.succs)
+
+        return blocks
+
+    def branch_targets(self, real_only: bool = False) -> list[int]:
+        """Offset operands of the block's instructions (real_only skips synthetic fall-through jumps)"""
+        # Imported here: instruction_table imports this module (BranchKind), a circular import
+        from .instruction_table import OperandType
+
+        return [
+            operand.value
+            for inst in self.instructions
+            if not real_only or inst.size != SYNTHETIC_INSTRUCTION_SIZE
+            for operand in inst.operands
+            if operand.descriptor.type == OperandType.Offset
+        ]
 
     def __str__(self) -> str:
         indent = default_indent()

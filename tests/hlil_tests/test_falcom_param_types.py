@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from codegen.typescript import generate_typescript
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.hlil.hlil_passes import FalcomTypeInferencePass
-from falcom.ed9.parser.parser_types import Function, FunctionParam
+from falcom.ed9.assembler.function import Function, FunctionParam
 from falcom.ed9.structs.scp_types import Nullable32, NullableStr, Pointer, ScpParamFlags, ScpValue, Value32
 from ir.core.il_base import IRParameter
 from ir.hlil import HighLevelILFunction, HLILTypeKind, HLILVariable, VariableKind

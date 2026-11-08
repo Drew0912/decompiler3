@@ -377,7 +377,7 @@ class TestHookTemplateCompiles(unittest.TestCase):
                                                  keep_unreachable_code=False, quiet=True)
         by_name = {func.name: func for func in functions}
         self.assertEqual(max(functions, key=lambda func: func.offset).name, 'HookExtra')
-        [call] = [inst for inst in parser.get_instructions(by_name['HookExtra']) if inst.mnemonic == 'CALL']
+        [call] = [inst for inst in by_name['HookExtra'].reachable_instructions() if inst.mnemonic == 'CALL']
         self.assertEqual(call.operands[0].value, by_name['Init'].index)
 
 

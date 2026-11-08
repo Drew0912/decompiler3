@@ -2,7 +2,7 @@
 
 from ir.pipeline import Pass
 from ir.hlil import HighLevelILFunction, HLILTypeKind
-from ...parser.parser_types import Function
+from ...assembler.function import Function
 
 
 # Declared parameter type (ScpParamFlags.get_python_type()) -> HLIL type

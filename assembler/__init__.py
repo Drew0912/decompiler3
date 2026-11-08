@@ -1,8 +1,9 @@
-"""VM-independent disassembler: instructions, operand descriptors, instruction tables, basic blocks, recursive
-descent"""
+"""VM-independent disassembler: instructions, operand descriptors, instruction tables, basic blocks, functions,
+recursive descent"""
 
 from .instruction import SYNTHETIC_INSTRUCTION_SIZE, Instruction, Operand
 from .basic_block import BasicBlock, BranchKind
+from .function import Function
 from .instruction_table import (BranchTarget, InstructionDescriptor, InstructionFlags, InstructionTable,
                                 OperandDescriptor, OperandFormat, OperandType)
 from .disassembler import Disassembler, DisassemblerContext
@@ -16,6 +17,7 @@ __all__ = (
     'OperandDescriptor',
     'BasicBlock',
     'BranchKind',
+    'Function',
     'InstructionTable',
     'InstructionDescriptor',
     'InstructionFlags',

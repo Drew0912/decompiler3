@@ -1047,7 +1047,7 @@ class TestWhichFunctionsGetRecords(unittest.TestCase):
 
     def pairing(self, is_common: bool):
         parser = self.ctx.parser
-        return pair_records(self.ctx.data, parser.code_instructions(parser.function_map['Common']), [],
+        return pair_records(self.ctx.data, parser.function_map['Common'].code_instructions(), [],
                             parser.get_func_argc, parser.get_func_index, is_common)
 
     def test_a_function_with_no_line_marker_gets_its_records(self):
@@ -1223,7 +1223,7 @@ class TestRealDeadBody(unittest.TestCase):
         py_path = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'chr0110.py'
         parser, functions = decompile_to_python(path, py_path)
         func = next(func for func in functions if func.name == DEAD_BODY_FUNCTION)
-        offsets = [inst.offset for inst in parser.code_instructions(func) if inst.opcode == ED9Opcode.CALL]
+        offsets = [inst.offset for inst in func.code_instructions() if inst.opcode == ED9Opcode.CALL]
 
         lines = py_path.read_text(encoding='utf-8').splitlines()
         start = lines.index(f'def {DEAD_BODY_FUNCTION}():')

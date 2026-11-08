@@ -11,7 +11,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from codegen.typescript import TypeScriptGenerator, generate_typescript
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.parser.parser_types import Function, FunctionParam
+from falcom.ed9.assembler.function import Function, FunctionParam
 from falcom.ed9.structs.scp_types import Pointer, RawInt, ScpParamFlags
 from ir.core import SourceFloat
 from ir.core.il_base import IRParameter

@@ -9,10 +9,9 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from assembler import Disassembler, DisassemblerContext, Instruction
+from assembler import Disassembler, DisassemblerContext, Function, Instruction
 from falcom.ed9.assembler import *
 from falcom.ed9.assembler.ed9_optable import ed9_create_fallthrough_jump
-from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter
 from falcom.ed9.structs.fingerprint import (
     GLOBAL_INDEX_TAG, GLOBAL_TAG, UNRESOLVED_BRANCH_TAG, body_fingerprint, function_fingerprint,
 )
@@ -33,12 +32,12 @@ def load_function(relative_path: str, name: str):
 
 
 def reachable_instructions(bytecode: bytes, offset: int = 0) -> list[Instruction]:
-    """Disassemble hand-coded bytecode from offset; reachable instructions in offset order, like
-    ScpParser.get_instructions"""
+    """Disassemble hand-coded bytecode from offset; reachable instructions in offset order
+    (Function.reachable_instructions)"""
     context = DisassemblerContext(create_fallthrough_jump=ed9_create_fallthrough_jump)
     entry_block = Disassembler(ED9_INSTRUCTION_TABLE, context).disasm_function(bytecode, offset=offset, name='test')
 
-    return Formatter.reachable_instructions(entry_block)
+    return Function(entry_block=entry_block).reachable_instructions()
 
 
 def no_calls(func_id: int) -> None:

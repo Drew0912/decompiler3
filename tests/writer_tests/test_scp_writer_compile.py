@@ -187,7 +187,7 @@ class TestLabels(WriterTestCase):
         self.writer.run({})
         parser, functions = ScpParser.load(self.dat, round_trip=True, keep_unreachable_code=True)
         caller = next(f for f in functions if f.name == 'Caller')
-        instructions = parser.get_instructions(caller)
+        instructions = caller.reachable_instructions()
         frame = next(i for i, inst in enumerate(instructions) if inst.opcode == ED9Opcode.PUSH_CALLER_FRAME)
 
         self.assertEqual(instructions[frame + 1].opcode, ED9Opcode.CALL_SCRIPT)
@@ -541,7 +541,7 @@ class TestGlobalVarOpcodes(WriterTestCase):
             RETURN()
 
         parser, functions = parse(self.writer.build({}))
-        globals_used = [(inst.mnemonic, inst.operands[0].value) for inst in parser.get_instructions(functions['Body'])
+        globals_used = [(inst.mnemonic, inst.operands[0].value) for inst in functions['Body'].reachable_instructions()
                         if inst.opcode in (ED9Opcode.SET_GLOBAL, ED9Opcode.LOAD_GLOBAL)]
 
         self.assertEqual(globals_used, [('SET_GLOBAL', 1), ('SET_GLOBAL', 0), ('LOAD_GLOBAL', 0), ('LOAD_GLOBAL', 1)])
@@ -560,7 +560,7 @@ class TestDebugInt(WriterTestCase):
             RETURN()
 
         parser, functions = parse(self.writer.build({}))
-        decoded = [inst.operands[0].value for inst in parser.get_instructions(functions['Main'])
+        decoded = [inst.operands[0].value for inst in functions['Main'].reachable_instructions()
                    if inst.opcode == ED9Opcode.DEBUG_INT]
         script = parser.gen_python_script(list(functions.values()))
 
@@ -582,7 +582,7 @@ class TestSplitPop(WriterTestCase):
             RETURN()
 
         parser, functions = parse(self.writer.build({}))
-        decoded = [inst.operands[0].value for inst in parser.get_instructions(functions['Main'])
+        decoded = [inst.operands[0].value for inst in functions['Main'].reachable_instructions()
                    if inst.opcode == ED9Opcode.POP]
         script = parser.gen_python_script(list(functions.values()))
 
@@ -620,7 +620,7 @@ class TestNonFiniteFloats(WriterTestCase):
     def test_compile_decode_print_compile_again(self):
         compiled = self.build([FloatWord(word) for word in self.WORDS], FloatWord(self.DEFAULT_WORD))
         parser, functions = parse(compiled)
-        texts = [ScpValue.float_literal(inst.operands[0].value) for inst in parser.get_instructions(functions['Main'])
+        texts = [ScpValue.float_literal(inst.operands[0].value) for inst in functions['Main'].reachable_instructions()
                  if inst.opcode == ED9Opcode.PUSH_FLOAT]
         script = parser.gen_python_script(list(functions.values()))
 
@@ -656,7 +656,7 @@ class TestOperandRanges(WriterTestCase):
 
                 if index == 0:
                     parser, functions = parse(self.writer.build({}))
-                    [load] = [inst for inst in parser.get_instructions(functions['Main'])
+                    [load] = [inst for inst in functions['Main'].reachable_instructions()
                               if inst.opcode == ED9Opcode.LOAD_GLOBAL]
                     self.assertEqual(load.operands[0].value, index)
                     continue
@@ -909,7 +909,7 @@ class TestWriterWithoutRoundTrip(WriterTestCase):
 
     def pushed_strings(self, data: bytes) -> list:
         parser, functions = parse(data)
-        return [inst.operands[0].value for inst in parser.get_instructions(functions['Foo'])
+        return [inst.operands[0].value for inst in functions['Foo'].reachable_instructions()
                 if inst.opcode == ED9Opcode.PUSH_STR]
 
     def test_equal_strings_share_one_pool_entry(self):

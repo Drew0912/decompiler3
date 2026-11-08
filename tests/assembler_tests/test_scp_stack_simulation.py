@@ -19,8 +19,9 @@ from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.assembler.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
-from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblyError, ScpParser
-from falcom.ed9.parser.parser_types import Function, SlotRef, StackLayout
+from falcom.ed9.assembler.disassembler import ScpDisassemblyError
+from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
+from falcom.ed9.assembler.function import Function, SlotRef, StackLayout
 from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
 from falcom.ed9.ir.llil import ED9VMLifter
 from ir.llil.llil import WORD_SIZE
@@ -66,7 +67,7 @@ def assert_warns_backward_return(test: unittest.TestCase, program: Program, call
 
 
 def blocks_by_offset_of(entry_block) -> dict:
-    return {block.offset: block for block in Formatter.collect_blocks(entry_block)}
+    return {block.offset: block for block in entry_block.reachable_blocks()}
 
 
 def blocks_by_offset(func: Function) -> dict:
@@ -570,7 +571,7 @@ class TestLocalCalls(unittest.TestCase):
         parser, functions = Program(main_function(caller), returning_callee()).disassemble()
 
         rewritten = [
-            inst.mnemonic for inst in parser.get_instructions(functions[0])
+            inst.mnemonic for inst in functions[0].reachable_instructions()
             if inst.opcode in (ED9Opcode.PUSH_CURRENT_FUNC_ID, ED9Opcode.PUSH_RET_ADDR)
         ]
         self.assertEqual(rewritten, ['PUSH_CURRENT_FUNC_ID', 'PUSH_RET_ADDR'] * 2)
@@ -762,7 +763,7 @@ class TestErrorWrapping(unittest.TestCase):
 
 def call_offsets(parser: ScpParser, func: Function) -> list[int]:
     """Its CALLs' offsets, reachable and decoded dead code, in address order"""
-    return [inst.offset for inst in parser.code_instructions(func) if inst.opcode == ED9Opcode.CALL]
+    return [inst.offset for inst in func.code_instructions() if inst.opcode == ED9Opcode.CALL]
 
 
 def constants(*values) -> list:
@@ -835,7 +836,7 @@ class TestDeadCodeRecords(unittest.TestCase):
         parser, functions = self.load()
         main = functions[0]
         live, dead = call_offsets(parser, main)
-        self.assertEqual([inst.offset for inst in parser.unreachable_instructions(main) if inst.opcode == ED9Opcode.CALL],
+        self.assertEqual([inst.offset for inst in main.unreachable_instructions() if inst.opcode == ED9Opcode.CALL],
                          [dead])
 
         self.assertEqual(main.call_written_argc, {live: 1, dead: 2})

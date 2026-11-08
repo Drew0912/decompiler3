@@ -41,9 +41,10 @@ after it (a split pop). The parser's simulation and the debug-record tracker (`C
 binary and a local `CALL`'s argument count from the table (`docs/ARCHITECTURE.md`, Layer 3).
 `tests/assembler_tests/test_stack_effects.py` checks all three walkers of the VM stack against the table.
 
-While the disassembler decodes a function, `ScpParser` simulates the VM stack to find each call's
-setup: the two pushes a `CALL` consumes (rewritten to `PUSH_CURRENT_FUNC_ID` / `PUSH_RET_ADDR`) and
-the caller frame a `CALL_SCRIPT` consumes. Each call's return edge comes from the address it
+While the disassembler decodes a function, its hooks (`falcom/ed9/assembler/disassembler.py`, given by
+`ScpParser.disasm_context`) simulate the VM stack to find each call's setup: the two pushes a `CALL`
+consumes (rewritten to `PUSH_CURRENT_FUNC_ID` / `PUSH_RET_ADDR`) and the caller frame a `CALL_SCRIPT`
+consumes. Each call's return edge comes from the address it
 encodes. The simulation records the stack on every CFG edge - branch, fall-through and block split
 - and every edge into a block must carry the same stack height. Pushes that meet at one stack
 position on a join form one group, and a call checks and rewrites every push in its setup groups.
@@ -51,7 +52,7 @@ A push that an ordinary consumer reads, discards or overwrites cannot also be a 
 parser also rejects overlapping instructions, targets inside an instruction, and code that runs
 into the string pool. The pool's start is known only from references (function names, and the
 strings the decoded code references), so a string referenced only by undecoded dead code does not
-bound it. See `tests/parser_tests/test_scp_stack_simulation.py`.
+bound it. See `tests/assembler_tests/test_scp_stack_simulation.py`.
 
 Each disassembled function keeps the simulated stack as `Function.stack_layout` (`StackLayout`, for
 the `.py` comments): the depth before every reachable real instruction (not the synthetic

@@ -8,8 +8,9 @@ from ir.core import IRParameter, reverse_post_order, SourceFloat
 from assembler import BasicBlock, Instruction
 from ...assembler import *
 from .llil_builder import *
-from ...parser.parser_types import Function, FunctionParam
-from ...parser.scp import ScpFunctionError, ScpParser
+from ...assembler.function import Function, FunctionParam
+from ...assembler.disassembler import ScpFunctionError
+from ...parser.scp import ScpParser
 from ...structs.scp_types import ScpValue
 
 

@@ -19,7 +19,7 @@ from ..parser.code_layout import code_order, code_start, dropped_ranges, functio
 from ..parser.scp import OPCODE_SIZE, PUSH_ENCODED_OPS, ScpParser
 from ..structs.string_pool import (StringPoolSection, collect_string_refs, pool_strings, read_text, read_u32,
                                    string_offset)
-from ..parser.parser_types import Function
+from ..assembler.function import Function
 from ..structs.scp_types import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpGlobalVar, ScpValue
 
 BYTES_PER_LINE      = 10                    # the longest instruction (CALL_SCRIPT: opcode, module, func, argc)
@@ -83,8 +83,8 @@ class ScpListing:
         self.unreachable = set()
         for index in code_order(self.parser.function_entries):
             func = self.parser.functions[index]
-            self.unreachable.update(ScpParser.unreachable_instructions(func))
-            for inst in self.parser.code_instructions(func):
+            self.unreachable.update(func.unreachable_instructions())
+            for inst in func.code_instructions():
                 self.decoded.setdefault(inst.offset, []).append((inst, func))
 
         self.offsets = sorted(self.decoded)
@@ -282,7 +282,7 @@ class ScpListing:
     def pairing(self, func: Function) -> tuple[dict[int, int], list[int], str | None]:
         """Each record's call offset and the calls left without a record when every record holds what its call gets
         (content only), else why not"""
-        pairing = pair_records(self.data, self.parser.code_instructions(func), self.records[func.index],
+        pairing = pair_records(self.data, func.code_instructions(), self.records[func.index],
                                self.parser.get_func_argc, self.parser.get_func_index, func.is_common_func)
         if not pairing.paired:
             return {}, [], f'records not paired: {pairing.reason}'

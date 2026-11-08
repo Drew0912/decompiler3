@@ -17,8 +17,9 @@ from ..assembler import InstructionKind
 from ..assembler.stack_effects import POP_SIZE_OPERAND
 from ..ir.llil import ED9LiftError, ED9VMLifter
 from ..parser.code_layout import dropped_ranges
-from ..parser.scp import ScpFunctionError, ScpParser
-from ..parser.parser_types import Function
+from ..assembler.disassembler import ScpFunctionError
+from ..parser.scp import ScpParser
+from ..assembler.function import Function
 
 # A stack entry in a parser message (format_stack_entry): MNEMONIC@0x.. or frame_N@0x.., the offset of its opcode
 STACK_ENTRY = re.compile(r'@0x([0-9A-F]+)\b')
@@ -85,7 +86,7 @@ class CompileCheck:
 
         reachable = []
         for parsed_function in parsed_functions:
-            instructions = parser.get_instructions(parsed_function)
+            instructions = parsed_function.reachable_instructions()
             reachable += instructions
             for inst in instructions:
                 ref = parsed_function.stack_layout.slot_refs.get(inst.offset)

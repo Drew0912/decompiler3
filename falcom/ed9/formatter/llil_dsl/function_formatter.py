@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from dc3 import default_indent
 from ir.llil.llil import default_label_for_addr
 from assembler.instruction import SYNTHETIC_INSTRUCTION_SIZE
-from assembler.instruction_table import OperandType
 from .comments import (
     UNREACHABLE_TARGET_COMMENT, CommentOptions, append_comment, function_comments, instruction_comments, label_comments,
 )
@@ -14,8 +13,7 @@ from ...structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
     from assembler.basic_block import BasicBlock
-    from assembler.instruction import Instruction
-    from ...parser.parser_types import Function, FunctionParam, StackLayout
+    from ...assembler.function import Function, FunctionParam, StackLayout
 
 __all__ = (
     'Formatter',
@@ -57,7 +55,7 @@ class Formatter:
         call_unrecorded those that write debug_record=False"""
         self.formatted_offsets.clear()
         self.formatted_labels.clear()
-        self.unreachable_targets = {target for block in unreachable_blocks for target in self.branch_targets(block)}
+        self.unreachable_targets = {target for block in unreachable_blocks for target in block.branch_targets()}
         self.layout = layout
         self.call_debug_argc = call_debug_argc or {}
         self.call_unrecorded = call_unrecorded or set()
@@ -66,7 +64,7 @@ class Formatter:
         # only those offsets earn a label, so a JMP/POP_JMP_*/PUSH_RET_ADDR/PUSH_CALLER_FRAME target
         # always resolves, and the synthetic fall-through block after a conditional branch (referenced by
         # nothing) does not
-        reachable_blocks = self.collect_blocks(entry_block)
+        reachable_blocks = entry_block.reachable_blocks()
         self.referenced_offsets = self.find_referenced_offsets(entry_block, reachable_blocks=reachable_blocks)
 
         blocks = reachable_blocks + list(unreachable_blocks)
@@ -155,59 +153,14 @@ class Formatter:
         return text
 
     @classmethod
-    def reachable_instructions(cls, entry_block: 'BasicBlock') -> 'list[Instruction]':
-        """Reachable instructions in offset order, deduplicated and with synthetic fall-through
-        JMPs removed - the flat view of collect_blocks() that ScpParser.get_instructions and the
-        common-function generator both need instead of walking blocks themselves"""
-        instructions = {}
-        for block in cls.collect_blocks(entry_block):
-            for inst in block.instructions:
-                # Synthetic fall-through JMPs have no bytes and can share an offset with a real instruction
-                if inst.size == SYNTHETIC_INSTRUCTION_SIZE:
-                    continue
-
-                instructions.setdefault(inst.offset, inst)
-
-        return [instructions[offset] for offset in sorted(instructions)]
-
-    @classmethod
     def find_referenced_offsets(cls, entry_block: 'BasicBlock', *,
                                 reachable_blocks: 'list[BasicBlock] | None' = None) -> set[int]:
         """Offsets a real (non-synthetic) Offset operand points at, among reachable blocks - each
         one needs a label. Each starts a reachable block, as every branch target and return address does"""
         if reachable_blocks is None:
-            reachable_blocks = cls.collect_blocks(entry_block)
+            reachable_blocks = entry_block.reachable_blocks()
 
-        return {target for block in reachable_blocks for target in cls.branch_targets(block, real_only=True)}
-
-    @classmethod
-    def collect_blocks(cls, entry: 'BasicBlock') -> 'list[BasicBlock]':
-        """Collect all blocks reachable from entry"""
-        blocks = []
-        visited = set()
-        todo = [entry]
-
-        while todo:
-            block = todo.pop()
-            if block.offset in visited:
-                continue
-
-            visited.add(block.offset)
-            blocks.append(block)
-            todo.extend(block.succs)
-
-        return blocks
-
-    @classmethod
-    def branch_targets(cls, block: 'BasicBlock', real_only: bool = False) -> list[int]:
-        """Offset operands of a block's instructions (real_only skips synthetic fall-through jumps)"""
-        return [
-            operand.value
-            for inst in block.instructions
-            if not real_only or inst.size != SYNTHETIC_INSTRUCTION_SIZE
-            for operand in inst.operands
-            if operand.descriptor.type == OperandType.Offset
-        ]
+        return {target for block in reachable_blocks for target in block.branch_targets(real_only=True)}
 
     def _format_label_once(self, offset: int, notes: tuple[str, ...] = ()) -> list[str]:
         """A label with the depth there, notes and a blank line, added to formatted_labels; [] if already there"""

@@ -10,7 +10,7 @@ from assembler import Disassembler, DisassemblerContext
 from falcom.ed9.assembler import *
 from falcom.ed9.assembler.ed9_optable import ed9_create_fallthrough_jump
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
-from falcom.ed9.parser.parser_types import Function
+from falcom.ed9.assembler.function import Function
 
 HEX_DUMP_WIDTH = 16
 

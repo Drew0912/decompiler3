@@ -13,7 +13,7 @@ from ir.hlil.passes import (
     LineMarkerRemovalPass,
 )
 from .hlil_passes import FalcomTypeInferencePass
-from ...parser.parser_types import Function
+from ...assembler.function import Function
 
 
 def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Function | None = None,

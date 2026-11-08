@@ -15,7 +15,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.ir.llil import ED9LiftError, ED9VMLifter
-from falcom.ed9.parser.scp import ScpDisassemblyError, ScpParser
+from falcom.ed9.assembler.disassembler import ScpDisassemblyError
+from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.scp2py_base import main
 from falcom.ed9.scp2py_config import ScpDecompileConfig
 from falcom.ed9.writer.scp_compile_check import CompileCheckError, definition_line
@@ -1134,7 +1135,7 @@ class TestLoadBytes(CheckTestCase):
 
         def listing(loaded) -> list:
             parser, functions = loaded
-            return [(func.name, [(inst.offset, inst.mnemonic) for inst in parser.get_instructions(func)])
+            return [(func.name, [(inst.offset, inst.mnemonic) for inst in func.reachable_instructions()])
                     for func in functions]
 
         from_path = ScpParser.load(self.dat, round_trip=True, keep_unreachable_code=True)

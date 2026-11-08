@@ -10,7 +10,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.ir.llil.vm_lifter import ED9VMLifter
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
-from falcom.ed9.parser.parser_types import FunctionParam
+from falcom.ed9.assembler.function import FunctionParam
 from falcom.ed9.structs.scp_types import Nullable32, NullableStr, Pointer, ScpParamFlags, Value32
 from ir.mlil.mlil import MediumLevelILFunction, MLILAddressOf, MLILCall, MLILConst, MLILRet, MLILSetVar, MLILVar
 from ir.mlil_ssa.mlil_ssa import SSAConstructor

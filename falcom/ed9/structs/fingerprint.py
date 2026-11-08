@@ -15,7 +15,7 @@ from ..assembler.ed9_optable import ED9OperandType
 
 if TYPE_CHECKING:
     from ..parser.scp import ScpParser
-    from ..parser.parser_types import Function
+    from ..assembler.function import Function
 
 BRANCH_TAG              = 'L'   # branch target, as the destination's ordinal among the reachable instructions
 UNRESOLVED_BRANCH_TAG   = 'L?'  # branch target that isn't a reachable instruction start, relative to the function
@@ -50,7 +50,7 @@ def operand_key(op: Operand, func_offset: int, ordinals: dict[int, int], get_fun
 
 def body_fingerprint(instructions: list[Instruction], func_offset: int, get_func_name: Callable[[int], str],
                      get_global_name: Callable[[int], str | None]) -> tuple:
-    """instructions: the function's reachable instructions in offset order (ScpParser.get_instructions)"""
+    """instructions: the function's reachable instructions in offset order (Function.reachable_instructions)"""
     ordinals = {inst.offset: ordinal for ordinal, inst in enumerate(instructions)}
 
     return tuple(
@@ -66,7 +66,7 @@ def signature_fingerprint(func: 'Function') -> tuple:
 
 
 def function_fingerprint(parser: 'ScpParser', func: 'Function') -> tuple:
-    body = body_fingerprint(parser.get_instructions(func), func.offset, parser.get_func_name_from_func_id,
+    body = body_fingerprint(func.reachable_instructions(), func.offset, parser.get_func_name_from_func_id,
                             parser.get_global_name_from_index)
     return (body, signature_fingerprint(func))
 

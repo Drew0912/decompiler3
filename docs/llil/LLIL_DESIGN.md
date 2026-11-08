@@ -207,7 +207,7 @@ the listing's block header and lines.
 `tests/llil_tests/test_llil_frame_addr.py` / `tests/llil_tests/test_llil_frame_store.py` /
 `tests/llil_tests/test_llil_slot_lifetime.py` (parameter slots), `tests/llil_tests/test_llil_lift_order.py` (lifting
 order, per-edge state, numbering), `tests/llil_tests/test_llil_stack_sync.py` (`POP`/`POP_N` and the virtual stack),
-`tests/parser_tests/test_scp_stack_simulation.py` (the parser's simulation), and
+`tests/assembler_tests/test_scp_stack_simulation.py` (the parser's simulation), and
 `tests/assembler_tests/test_stack_effects.py` (the lifter, the parser and the debug-record tracker against the opcode
 table's stack effects), `tests/llil_tests/test_llil_traversal.py` (`operands()` against every node type of both
 packages, `walk()`).
