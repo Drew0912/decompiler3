@@ -7,7 +7,7 @@ class ShopInfo(TableDataEntry):
         ('id',         'W'),
         ('pad02',      'P6'),
         ('name',       'S'),
-        ('shopType',   'B'),
+        ('shopType',   'B'),   # a ShopTypeDesc id
         ('pad11',      'P7'),
         ('flags',      'S'),
         ('convId',     'B'),

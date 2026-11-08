@@ -12,7 +12,7 @@ class BTLVoiceTable(TableDataEntry):
         ('uint32_1c',  'I'),
         ('flagsClear', 'A2'),  # scenario flags none of which may be set; a 0 is skipped
         ('uint32_2c',  'I'),
-        ('voiceIds',   'A4'),  # one is picked at random
+        ('voiceIds',   'A4'),  # one is picked at random, skipping one equal to the caller's value (0, or its last pick)
         ('uint32_3c',  'I'),
         ('function',   'S'),   # a script function; a non-zero result replaces the pick
         ('weights',    'A1'),  # the exe reads one per voiceIds entry; this count only switches them on

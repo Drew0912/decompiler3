@@ -84,7 +84,7 @@ class StatusParam(TableDataEntry):
         ('avoid',       'I'),
         ('uint32_150',  'I'),
         ('uint32_154',  'I'),
-        ('uint8_158',   'B'),
+        ('uint8_158',   'B'),   # and the next 12: byte * N / 100 against a draw, N the caller's value; 0 skips the draw
         ('uint8_159',   'B'),
         ('uint8_15a',   'B'),
         ('uint8_15b',   'B'),
@@ -113,7 +113,7 @@ class StatusParam(TableDataEntry):
         ('uint8_179',   'B'),
         ('uint8_17a',   'B'),
         ('uint8_17b',   'B'),
-        ('uint8_17c',   'B'),   # chrClass 1 only: byte k times the stats' +0x04 value, plus uint8_174's byte k
+        ('uint8_17c',   'B'),   # chrClass 1 only: byte k * the stats' +0x04, plus uint8_174's byte k; 0 on those rows
         ('uint8_17d',   'B'),
         ('uint8_17e',   'B'),
         ('uint8_17f',   'B'),
