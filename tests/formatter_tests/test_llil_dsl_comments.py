@@ -15,6 +15,7 @@ from dc3.utils import display_width
 from falcom.ed9.formatter.llil_dsl.comments import COMMENT_COLUMN, MIN_COMMENT_GAP, CommentOptions, append_comment
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
 from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
 from falcom.ed9.assembler.function import SlotRef
 from falcom.ed9.structs.scp_types import FloatWord, ScpValue
 from falcom.ed9.scp2py_base import process_file
@@ -39,13 +40,13 @@ ALL_COMMENTS = CommentOptions(float_bits=True, function_ids=True, call_args=True
 def function_lines(asm: Asm, argc: int = 0, comments: CommentOptions = CommentOptions()) -> list[str]:
     """The .py body of the one function asm assembles, without its indent"""
     parser, functions = Program(Func(FUNC_NAME, argc, asm)).disassemble()
-    return [line.strip() for line in parser.format_function(functions[0], comments)[2:]]
+    return [line.strip() for line in LLILScriptFormatter(parser).format_function(functions[0], comments)[2:]]
 
 
 def commented_lines(program: Program, comments: CommentOptions) -> list[str]:
     """The lines of the program's first function that carry a comment, without their indent"""
     parser, functions = program.disassemble()
-    return [line.strip() for line in parser.format_function(functions[0], comments) if '#' in line]
+    return [line.strip() for line in LLILScriptFormatter(parser).format_function(functions[0], comments) if '#' in line]
 
 
 class TestAppendComment(unittest.TestCase):
@@ -144,7 +145,8 @@ class TestFunctionComments(unittest.TestCase):
         program = Program(Func(FUNC_NAME, 1, asm))
         parser, functions = program.disassemble()
         label = f"label('loc_{program.label('next'):X}')"
-        self.assertIn(f'    {append_comment(label, ["sp = 1"])}', parser.format_function(functions[0]))
+        lines = LLILScriptFormatter(parser).format_function(functions[0])
+        self.assertIn(f'    {append_comment(label, ["sp = 1"])}', lines)
 
     def test_global_var_comment_comes_first_and_stays_when_turned_off(self):
         asm = Asm()
@@ -175,7 +177,7 @@ class TestFunctionComments(unittest.TestCase):
         program = Program(Func(FUNC_NAME, 0, asm), pool=())       # the code runs up to the function names
         parser, functions = program.disassemble(keep_unreachable_code=True)
         target, dead = (f"loc_{program.label(name):X}" for name in ('target', 'dead'))
-        lines = [line.strip() for line in parser.format_function(functions[0])[2:]]
+        lines = [line.strip() for line in LLILScriptFormatter(parser).format_function(functions[0])[2:]]
         self.assertEqual(lines, [
             f'PUSH_INT({LEFT_VALUE})',
             f'def _{target}(): pass',
@@ -283,7 +285,7 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
         program.entries[0].params[0].default_value = ScpValue(FLOAT_VALUE)
         parser, functions = program.disassemble()
         comments = CommentOptions(stack_slots=False, float_bits=True, call_args=True)
-        lines = parser.format_function(functions[0], comments)
+        lines = LLILScriptFormatter(parser).format_function(functions[0], comments)
         self.assertNotIn('#', lines[1])
         self.assertEqual(lines[2].strip(), append_comment(f'PUSH_FLOAT({FLOAT_VALUE})', ['arg1', FLOAT_BITS]))
 
@@ -295,7 +297,7 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
         parser, functions = Program(main_function(asm), pool=()).disassemble(keep_unreachable_code=True)
         for comments in (CommentOptions(), CommentOptions(stack_slots=False), ALL_COMMENTS):
             with self.subTest(comments=comments):
-                lines = [line.strip() for line in parser.format_function(functions[0], comments)]
+                lines = [line.strip() for line in LLILScriptFormatter(parser).format_function(functions[0], comments)]
                 bits = [FLOAT_BITS] if comments.float_bits else []
                 self.assertIn(append_comment(f'PUSH_FLOAT({FLOAT_VALUE})', bits), lines)
                 self.assertIn(append_comment(f'SET_GLOBAL({GLOBAL_INDEX})', [f'global var {GLOBAL_INDEX}']), lines)
@@ -305,9 +307,9 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
         asm.ret()
         parser, functions = Program(main_function(asm), returning_callee()).disassemble()
         callee = functions[1]
-        self.assertEqual(parser.format_function(callee, CommentOptions(function_ids=True))[:2],
+        self.assertEqual(LLILScriptFormatter(parser).format_function(callee, CommentOptions(function_ids=True))[:2],
                          [f'# id: 0x0001 offset: 0x{callee.offset:X}', '@scena.LLILCode()'])
-        self.assertEqual(parser.format_function(callee)[0], '@scena.LLILCode()')
+        self.assertEqual(LLILScriptFormatter(parser).format_function(callee)[0], '@scena.LLILCode()')
 
     def test_index_is_the_table_position_not_the_code_order(self):
         """The writer sorts the table by name and lays code out in source order, so Second comes first in the code"""
@@ -327,8 +329,8 @@ class TestFloatBitsAndFunctionIds(unittest.TestCase):
             parser, functions = ScpParser.load(dat, round_trip=False, keep_unreachable_code=False)
 
         self.assertEqual([(func.name, func.index) for func in functions], [('Second', 1), ('First', 0)])
-        self.assertEqual(parser.format_function(functions[0], CommentOptions(function_ids=True))[0],
-                         f'# id: 0x0001 offset: 0x{functions[0].offset:X}')
+        lines = LLILScriptFormatter(parser).format_function(functions[0], CommentOptions(function_ids=True))
+        self.assertEqual(lines[0], f'# id: 0x0001 offset: 0x{functions[0].offset:X}')
 
 
 class TestRealScript(unittest.TestCase):
@@ -338,7 +340,7 @@ class TestRealScript(unittest.TestCase):
     def test_check_algo_use(self):
         """The listing docs/dsl/DSL_FUTURE_WORK.md item 8 shows"""
         parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip=False, keep_unreachable_code=False)
-        lines = parser.gen_python_script(functions).split('\n')
+        lines = LLILScriptFormatter(parser).gen_python_script(functions).split('\n')
         start = lines.index('def CheckAlgoUse(arg1: Value32, arg2: Value32, arg3: Value32):')
         expected = [
             '    DEBUG_SET_LINENO(161)',
@@ -383,7 +385,7 @@ class TestRealScript(unittest.TestCase):
         """First in the table, which is sorted by name, but not in the code; its local call passes two parameters"""
         parser, functions = ScpParser.load(CHECK_ALGO_USE_FILE, round_trip=False, keep_unreachable_code=False)
         self.assertEqual([func.index for func in parser.functions], list(range(len(parser.functions))))
-        lines = parser.format_function(parser.function_map['CheckAlgoUse'], ALL_COMMENTS)
+        lines = LLILScriptFormatter(parser).format_function(parser.function_map['CheckAlgoUse'], ALL_COMMENTS)
         self.assertEqual(lines[:3], [
             '# id: 0x0000 offset: 0x33FF',
             '@scena.LLILCode()',

@@ -17,7 +17,8 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.structs.common_library import COMMON_ALL_MODULE, COMMON_INDEX_MODULE, game_metadata_module
 from falcom.ed9.structs.fingerprint import function_fingerprint, fingerprint_digest
-from falcom.ed9.parser.scp import ScpParser, common_library_index
+from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter, common_library_index
+from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.corpus import SORA2_SCRIPTS, require, require_library
 from tests.shared.scp_writer_test_utils import WriterTestCase
@@ -38,13 +39,13 @@ def load(game: str | None = GAME) -> tuple[ScpParser, list]:
 class TestLibraryMatching(unittest.TestCase):
     def test_canonical_common_function_is_matched(self):
         parser, functions = load()
-        matched = parser.match_library_functions(functions)
+        matched = LLILScriptFormatter(parser).match_library_functions(functions)
 
         self.assertIn(MATCHED_COMMON_FUNC, matched)
 
     def test_source_function_is_never_matched(self):
         parser, functions = load()
-        matched = parser.match_library_functions(functions)
+        matched = LLILScriptFormatter(parser).match_library_functions(functions)
 
         self.assertNotIn(SOURCE_FUNC, matched)
 
@@ -52,7 +53,7 @@ class TestLibraryMatching(unittest.TestCase):
         parser, functions = load()
         parser.round_trip = True
 
-        self.assertEqual(parser.match_library_functions(functions), {})
+        self.assertEqual(LLILScriptFormatter(parser).match_library_functions(functions), {})
 
     def test_keep_unreachable_code_also_disables_matching(self):
         """The library was generated with unreachable code dropped - importing it under
@@ -61,14 +62,14 @@ class TestLibraryMatching(unittest.TestCase):
         parser, functions = load()
         parser.keep_unreachable_code = True
 
-        self.assertEqual(parser.match_library_functions(functions), {})
+        self.assertEqual(LLILScriptFormatter(parser).match_library_functions(functions), {})
 
     def test_no_game_matches_nothing_and_imports_no_library(self):
         """game=None (the validator without --game, most tests): every common function inline, no library import"""
         parser, functions = load(game=None)
-        script = parser.gen_python_script(functions)
+        script = LLILScriptFormatter(parser).gen_python_script(functions)
 
-        self.assertEqual(parser.match_library_functions(functions), {})
+        self.assertEqual(LLILScriptFormatter(parser).match_library_functions(functions), {})
         self.assertNotIn('common_all', script)
         self.assertIn(f'def {MATCHED_COMMON_FUNC}(', script)
 
@@ -76,17 +77,17 @@ class TestLibraryMatching(unittest.TestCase):
 class TestEmissionContract(unittest.TestCase):
     def test_matched_functions_are_excluded_from_inline_output(self):
         parser, functions = load()
-        inline_names = {func.name for func in parser.get_inline_functions(functions)}
+        inline_names = {func.name for func in LLILScriptFormatter(parser).get_inline_functions(functions)}
 
         self.assertNotIn(MATCHED_COMMON_FUNC, inline_names)
         self.assertIn(SOURCE_FUNC, inline_names)
 
     def test_manifest_lists_matched_functions_in_code_order(self):
         parser, functions = load()
-        matched = parser.match_library_functions(functions)
+        matched = LLILScriptFormatter(parser).match_library_functions(functions)
         self.assertTrue(matched, 'expected at least one matched function for this fixture')
 
-        manifest_lines = parser.gen_common_imports(functions, matched=matched)
+        manifest_lines = LLILScriptFormatter(parser).gen_common_imports(functions, matched=matched)
         return_block_start = manifest_lines.index('    return [')
         return_block_end = manifest_lines.index('    ]', return_block_start)
         listed = [line.strip().rstrip(',') for line in manifest_lines[return_block_start + 1:return_block_end]]
@@ -100,7 +101,7 @@ class TestEmissionContract(unittest.TestCase):
         which functions got imported, unlike calling gen_python_header/get_inline_functions
         separately (each would recompute the match independently)."""
         parser, functions = load()
-        script = parser.gen_python_script(functions)
+        script = LLILScriptFormatter(parser).gen_python_script(functions)
         header = script.split('\n@scena.CommonImports()')[0]
 
         self.assertIn(f'    {LIBRARY_IMPORT}', header)
@@ -111,7 +112,7 @@ class TestEmissionContract(unittest.TestCase):
     def test_strict_round_trip_mode_inlines_everything(self):
         parser, functions = load()
         parser.round_trip = True
-        script = parser.gen_python_script(functions)
+        script = LLILScriptFormatter(parser).gen_python_script(functions)
 
         self.assertNotIn('CommonImports', script)
         self.assertIn(f'def {MATCHED_COMMON_FUNC}(', script)
@@ -147,9 +148,9 @@ class TestEachGameMatchesItsOwnLibrary(WriterTestCase):
         for game, expected in (('stand_in_a', {'Shared': 'module_a'}), ('stand_in_b', {})):
             with self.subTest(game=game):
                 parser.game = game
-                self.assertEqual(parser.match_library_functions(functions), expected)
+                self.assertEqual(LLILScriptFormatter(parser).match_library_functions(functions), expected)
                 self.assertIn(f'    from {game_metadata_module(game, COMMON_ALL_MODULE)} import *',
-                              parser.gen_python_script(functions))
+                              LLILScriptFormatter(parser).gen_python_script(functions))
 
 
 if __name__ == '__main__':

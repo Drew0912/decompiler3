@@ -12,6 +12,7 @@ from dc3 import fileio
 from dc3.utils import write_text_lf
 from falcom.ed9.assembler import *
 from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
 
 
 def disasm_file(input_path: Path, output_path: Path):
@@ -31,7 +32,7 @@ def disasm_file(input_path: Path, output_path: Path):
         all_lines.append('')
 
         for func in disassembled_functions:
-            lines = parser.format_function(func)
+            lines = LLILScriptFormatter(parser).format_function(func)
             all_lines.extend(lines)
             all_lines.append('')
 

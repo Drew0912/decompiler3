@@ -4,7 +4,7 @@
 from pathlib import Path
 import unittest
 
-from falcom.ed9.parser.scp import common_library_index
+from falcom.ed9.formatter.llil_dsl.script_formatter import common_library_index
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]     # tests/shared/corpus.py -> the repo

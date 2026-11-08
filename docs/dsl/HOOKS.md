@@ -178,7 +178,8 @@ imported `CheckAlgoUse` as clashing with the hook's own `def`. A hook that assig
 helper's. Importing the script for real from its hook would run it a second time ("duplicate function name").
 
 **Hook template.** `ScpDecompileConfig.write_hook_template` (off by default; only with `write_py`) writes a
-starting `<stem>_hook.py` next to `<stem>.py` (`ScpParser.gen_hook_template`), never over an existing file (a log
+starting `<stem>_hook.py` next to `<stem>.py` (`LLILScriptFormatter.gen_hook_template`), never over an existing file (a
+log
 line instead). It holds the Pylance lines above, then three hooks with their `register*` lines commented out: a
 `run_hook(g)` that adds each function in its list (decompiler2's way of adding functions) and no-op `func_hook` and
 `opcode_hook` callbacks. With the list empty, the template compiles to the same bytes as no hook, registered or not.

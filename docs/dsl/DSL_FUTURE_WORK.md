@@ -97,7 +97,8 @@ byte.
 - **The hook import re-raises real errors** (item 6; Step 2a, done). The generated
   `except ModuleNotFoundError: pass` also swallowed a failed import inside the hook: the registrations
   before the failing line ran, the rest were skipped, and the script exited 0. The block
-  (`gen_hook_import`, `falcom/ed9/parser/scp.py`) now re-raises unless the missing module is the hook
+  (`LLILScriptFormatter.gen_hook_import`, `falcom/ed9/formatter/llil_dsl/script_formatter.py`) now re-raises unless the
+  missing module is the hook
   itself, in both the `import` and the `__import__` form; for a dotted stem a missing parent package is
   ignored too (`if e.name not in ('X', 'X.original_hook')`):
   ```python

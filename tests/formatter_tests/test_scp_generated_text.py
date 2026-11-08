@@ -22,10 +22,11 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT, RECURSION_LIMIT, write_text_lf
 from falcom.ed9.structs.common_library import COMMON_ALL_MODULE, COMMON_LIBRARY_FOLDER, game_metadata_module
-from falcom.ed9.structs.generated_script import (SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES,
+from falcom.ed9.formatter.generated_script import (SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES,
                                                   game_writer_helper_import)
 from falcom.ed9.tools import gen_common_library as gen
 from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
 from falcom.ed9.parser.parser_types import GlobalVar
 from falcom.ed9.structs.scp_types import ScpGlobalVar
 from falcom.ed9.scp2py_base import main, process_file
@@ -112,7 +113,7 @@ def named_parser(name: str, game: str | None = None) -> ScpParser:
 
 def hook_block(name: str) -> list[str]:
     """The hook try/except lines exactly as the generated header emits them"""
-    header = named_parser(name).gen_python_header()
+    header = LLILScriptFormatter(named_parser(name)).gen_python_header()
     start = header.index('try:')
     return header[start:header.index('', start)]
 
@@ -120,13 +121,13 @@ def hook_block(name: str) -> list[str]:
 class TestHeader(unittest.TestCase):
     def test_header_starts_with_the_sys_path_setup_then_the_helper_import(self):
         """Guard: no provenance comment above the imports (decided against, 2026-10-02)"""
-        header = named_parser('ai_chr5122_e00.dat').gen_python_header()
+        header = LLILScriptFormatter(named_parser('ai_chr5122_e00.dat')).gen_python_header()
         self.assertEqual(header[:len(SYS_PATH_SETUP_LINES) + 2], [*SYS_PATH_SETUP_LINES, SCP_WRITER_HELPER_IMPORT, 'try:'])
 
     def test_a_game_script_imports_its_game_helper_first(self):
         parser = named_parser('ai_chr5122_e00.dat')
         parser.game = 'kuro1'
-        self.assertEqual(parser.gen_python_header()[len(SYS_PATH_SETUP_LINES)], game_writer_helper_import('kuro1'))
+        self.assertEqual(LLILScriptFormatter(parser).gen_python_header()[len(SYS_PATH_SETUP_LINES)], game_writer_helper_import('kuro1'))
 
     def test_project_root_is_the_repo_root(self):
         """The baked-in path is what lets a generated script run without PYTHONPATH"""
@@ -136,7 +137,7 @@ class TestHeader(unittest.TestCase):
         parser = named_parser('ai_chr5122_e00.dat')
         integer = int(ScpGlobalVar.Type.Integer)                       # the parser keeps the raw type
         parser.global_vars = [GlobalVar(0, 'x', integer), GlobalVar(1, 'reaches_the_comment_column', integer)]
-        header = parser.gen_python_header()
+        header = LLILScriptFormatter(parser).gen_python_header()
         self.assertEqual(header[header.index('def globalvars():') + 1:][:2], [
             '    GLOBAL_VAR("x", 0)              # global var 0',
             '    GLOBAL_VAR("reaches_the_comment_column", 0)  # global var 1',
@@ -170,7 +171,7 @@ class TestHeader(unittest.TestCase):
         ])
 
     def test_library_import_after_the_hook_reraises_unless_common_all_is_missing(self):
-        header = named_parser('e0000.dat', 'sora2').gen_python_header()
+        header = LLILScriptFormatter(named_parser('e0000.dat', 'sora2')).gen_python_header()
         library_start = header.index('try:', header.index('try:') + 1)     # the second block, after the hook's
         self.assertEqual(header[library_start - 1:], [
             '',
@@ -186,7 +187,7 @@ class TestHeader(unittest.TestCase):
         ])
 
     def test_no_library_import_without_a_game(self):
-        header = named_parser('e0000.dat').gen_python_header()
+        header = LLILScriptFormatter(named_parser('e0000.dat')).gen_python_header()
         hook_end = header.index('', header.index('try:'))
         self.assertEqual(header[hook_end:], ['', "scena = create_scp_writer('e0000.dat')", '', ''])
 
@@ -243,14 +244,14 @@ class TestHookTemplate(unittest.TestCase):
     """The starting <stem>_hook.py written with ScpDecompileConfig.write_hook_template"""
 
     def test_text(self):
-        self.assertEqual(named_parser('ai_chr5122_e00.dat').gen_hook_template(), HOOK_TEMPLATE)
+        self.assertEqual(LLILScriptFormatter(named_parser('ai_chr5122_e00.dat')).gen_hook_template(), HOOK_TEMPLATE)
 
     def test_rename_hint_when_the_stem_is_not_a_module_name(self):
-        self.assertEqual(named_parser('mon5078+.dat').gen_hook_template(),
+        self.assertEqual(LLILScriptFormatter(named_parser('mon5078+.dat')).gen_hook_template(),
                          HOOK_TEMPLATE.replace(HOOK_TEMPLATE_IMPORTS, MON5078_RENAME_HINT))
 
     def test_rename_hint_when_another_module_has_the_name(self):
-        self.assertEqual(named_parser('dc3.dat').gen_hook_template(),
+        self.assertEqual(LLILScriptFormatter(named_parser('dc3.dat')).gen_hook_template(),
                          HOOK_TEMPLATE.replace(HOOK_TEMPLATE_IMPORTS, DC3_RENAME_HINT))
 
     def test_rename_hint_decided_on_the_raw_stem(self):
@@ -259,13 +260,13 @@ class TestHookTemplate(unittest.TestCase):
         for name, suggested in (('class.dat', 'class_'), ('0abc.dat', '_0abc'), (' ai.dat', 'ai'), ('types.dat', 'types_')):
             with self.subTest(name=name):
                 self.assertIn(f'    # from {suggested} import *  # pyright: ignore[reportAssignmentType]\n'
-                              f'    # import {suggested} as original\n', named_parser(name).gen_hook_template())
+                              f'    # import {suggested} as original\n', LLILScriptFormatter(named_parser(name)).gen_hook_template())
 
     def test_hint_imports_parse_uncommented(self):
         """An import under TYPE_CHECKING still has to parse: `from class import *` would break the whole hook"""
         for name in ('mon5078+.dat', 'dc3.dat', 'class.dat', '0abc.dat', ' ai.dat', 'types.dat'):
             with self.subTest(name=name):
-                text = named_parser(name).gen_hook_template()
+                text = LLILScriptFormatter(named_parser(name)).gen_hook_template()
                 compile(text.replace('    # from ', '    from ').replace('    # import ', '    import '), f'{name}_hook.py', 'exec')
 
 
@@ -360,7 +361,7 @@ class TestHookTemplateCompiles(unittest.TestCase):
         return g['scena'].build(g)
 
     def test_written_text(self):
-        self.assertEqual(self.template, named_parser('e0000.dat').gen_hook_template())
+        self.assertEqual(self.template, LLILScriptFormatter(named_parser('e0000.dat')).gen_hook_template())
 
     def test_same_bytes_as_no_hook(self):
         no_hook = self.compiled(None)
@@ -408,7 +409,7 @@ class TestFidelityScriptCompiles(unittest.TestCase):
 
 class TestFooter(unittest.TestCase):
     def test_footer_calls_main_directly(self):
-        self.assertEqual(named_parser('e0000.dat').gen_python_footer(), [
+        self.assertEqual(LLILScriptFormatter(named_parser('e0000.dat')).gen_python_footer(), [
             'def main():',
             '    scena.run(globals())',
             '',
@@ -423,7 +424,7 @@ class TestGeneratedScript(unittest.TestCase):
         require(TEST_FILE)
         parser, functions = ScpParser.load(TEST_FILE, round_trip=round_trip, keep_unreachable_code=round_trip,
                                            game='sora2')
-        lines = parser.gen_python_script(functions).split('\n')
+        lines = LLILScriptFormatter(parser).gen_python_script(functions).split('\n')
         self.assertEqual([line for line in lines if line != line.rstrip()], [])
 
         after_labels = [lines[index + 1] for index, line in enumerate(lines) if LABEL_LINE.match(line)]

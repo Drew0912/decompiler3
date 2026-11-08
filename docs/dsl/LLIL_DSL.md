@@ -175,7 +175,8 @@ round-trip `.py` with `@scena.LLILCode(debug_argc={...})` stops at Python's `Typ
 the `.dat` again.
 
 **Each game's writer.** A `.py` decompiled with a game starts with that game's helper, `from
-falcom.ed9.games.<game>.writer.scp_writer_helper import *` (`ScpParser.gen_python_header`): the shared helper's
+falcom.ed9.games.<game>.writer.scp_writer_helper import *` (`LLILScriptFormatter.gen_python_header`): the shared
+helper's
 names, with the game's `ScpWriter` subclass installed as the writer (`install_scp_writer`) before any hook file
 registers. The classes are in `falcom/ed9/games/<game>/writer/scp_writer.py`, chained `kai1` <- `kuro2` <-
 `kuro1` and `sora2` <- `sora1`; what a game writes differently goes in its class. `Kuro1ScpWriter` writes the
@@ -278,13 +279,15 @@ at round 2, and the same worst-status split (721 PASS, 127 WARN, 234 FAIL on the
 checks only).
 
 **Generation** (bytecode → `.py`): `Formatter.format_function`/`format_block`
-(`falcom/ed9/formatter/llil_dsl/function_formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
-`scp2py_base.process_file` (`falcom/ed9/scp2py_base.py`). `ScpParser.gen_python_script(functions,
-comments = CommentOptions(...))` picks the optional comments (`falcom/ed9/formatter/llil_dsl/comments.py`;
+(`falcom/ed9/formatter/llil_dsl/function_formatter.py`) → `LLILScriptFormatter.format_function`
+(`falcom/ed9/formatter/llil_dsl/script_formatter.py`) → `scp2py_base.process_file` (`falcom/ed9/scp2py_base.py`).
+`LLILScriptFormatter.gen_python_script(functions, comments = CommentOptions(...))` picks the optional comments
+(`falcom/ed9/formatter/llil_dsl/comments.py`;
 `scp2py` builds them from its config); the validator keeps the defaults, so the logic round trip
 checks that the stack comments reach the fixed point too. A generated script first puts the repo root on `sys.path` (`import sys` and
 `sys.path.insert(0, '<root>')`, the root of the checkout that generated it - `SYS_PATH_SETUP_LINES` in
-`falcom/ed9/parser/scp.py`, from `dc3.utils.PROJECT_ROOT`), so it runs from any folder without `PYTHONPATH`; moving the
+`falcom/ed9/formatter/generated_script.py`, from `dc3.utils.PROJECT_ROOT`), so it runs from any folder without
+`PYTHONPATH`; moving the
 checkout means regenerating the script or editing that line. It then imports the helper, an
 optional `<stem>_hook` module for patches kept outside the generated file (only a missing hook is
 ignored; an import error inside the hook stops the compile; `docs/dsl/HOOKS.md`, which also covers the opt-in hook template), and the
@@ -358,7 +361,8 @@ files in it gitignored; later the game's chr table too): `common/scp_writer_comm
 `__all__`, so `common_all` exports library functions and nothing else: re-exporting the helper's
 names a second time made type checkers treat aliases like `Value32` as variables. A parser knows its
 game (`ScpParser.load(..., game=...)`; each game's `scp2py.py` passes its own, `None` means no
-library). At decompile time, `ScpParser` (`scp.py`) matches each of a script's own common functions
+library). At decompile time, `LLILScriptFormatter` (`formatter/llil_dsl/script_formatter.py`) matches each of a script's
+own common functions
 against its game's index by name *and* fingerprint (`match_library_functions`) — a name whose body
 diverges from the canonical library variant is left inline, unchanged. **Every script decompiled for
 a game imports that game's whole library** (`gen_library_import`, after the hook import) — every
@@ -392,7 +396,7 @@ i.e. what actually gets matched and baked into bytecode — is gated in `match_l
 a game, on `not (self.round_trip or self.keep_unreachable_code)` (the everyday `scp2py_config.py`
 default; the library was generated with unreachable code already stripped, so either fidelity flag
 falls back to inlining everything, exactly as before this existed), and on the game's index
-(`common_library_index` in `parser/scp.py`, loaded once per game per process). It **imports the
+(`common_library_index` in `formatter/llil_dsl/script_formatter.py`, loaded once per game per process). It **imports the
 index, not `common_all`**: that would load the whole library and the writer, none of which a
 decompile uses. The generator writes the index with the modules, so a missing index means no
 library: the parser logs a hint to run the generator (once per game), matching returns `{}` and

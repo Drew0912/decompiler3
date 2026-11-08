@@ -20,6 +20,7 @@ from dc3.logging import log
 from ir.llil import WORD_SIZE
 from falcom.ed9.assembler import ED9Opcode
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
+from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
 from falcom.ed9.structs.scp_types import ScpGlobalVar, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_asm import SPLIT_POP_BYTES
@@ -562,7 +563,7 @@ class TestDebugInt(WriterTestCase):
         parser, functions = parse(self.writer.build({}))
         decoded = [inst.operands[0].value for inst in functions['Main'].reachable_instructions()
                    if inst.opcode == ED9Opcode.DEBUG_INT]
-        script = parser.gen_python_script(list(functions.values()))
+        script = LLILScriptFormatter(parser).gen_python_script(list(functions.values()))
 
         self.assertEqual(decoded, list(values))
         for value in values:
@@ -584,7 +585,7 @@ class TestSplitPop(WriterTestCase):
         parser, functions = parse(self.writer.build({}))
         decoded = [inst.operands[0].value for inst in functions['Main'].reachable_instructions()
                    if inst.opcode == ED9Opcode.POP]
-        script = parser.gen_python_script(list(functions.values()))
+        script = LLILScriptFormatter(parser).gen_python_script(list(functions.values()))
 
         self.assertEqual(decoded, list(SPLIT_POP_BYTES))
         for byte_count in SPLIT_POP_BYTES:
@@ -622,7 +623,7 @@ class TestNonFiniteFloats(WriterTestCase):
         parser, functions = parse(compiled)
         texts = [ScpValue.float_literal(inst.operands[0].value) for inst in functions['Main'].reachable_instructions()
                  if inst.opcode == ED9Opcode.PUSH_FLOAT]
-        script = parser.gen_python_script(list(functions.values()))
+        script = LLILScriptFormatter(parser).gen_python_script(list(functions.values()))
 
         nan_texts = [f'FloatWord(0x{word:08X})' for word in self.WORDS[2:]]
         self.assertEqual(texts, ["float('inf')", "-float('inf')", *nan_texts])

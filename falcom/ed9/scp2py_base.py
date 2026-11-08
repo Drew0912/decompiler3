@@ -18,6 +18,7 @@ from dc3.utils import collect_paths, raise_recursion_limit, write_text_lf
 from falcom.ed9.formatter.llil_dsl.comments import CommentOptions
 from falcom.ed9.games import GAMES_DIR
 from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
 from falcom.ed9.formatter.listing import write_listing
 from falcom.ed9.assembler.function import Function
 from falcom.ed9.ir.llil import ED9VMLifter
@@ -35,7 +36,7 @@ GAME_OUTPUT_FOLDER = 'out'      # a game's default output folder, beside its lau
 
 def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
     """A starting <stem>_hook.py next to the .py, never over an existing file"""
-    module = parser.hook_module_name()
+    module = LLILScriptFormatter(parser).hook_module_name()
     if '.' in module:
         log.warning(f"{parser.name}: hook template not written - a stem with a dot ({Path(parser.name).stem!r}) isn't supported")
         return
@@ -43,7 +44,7 @@ def write_hook_template(parser: ScpParser, output_dir: Path) -> None:
     path = output_dir / f'{module}.py'
     try:
         with open(path, 'x', encoding='utf-8', newline='\n') as f:
-            f.write(parser.gen_hook_template())
+            f.write(LLILScriptFormatter(parser).gen_hook_template())
     except FileExistsError:
         log.info(f'{path} exists - not overwritten')
 
@@ -77,7 +78,8 @@ def process_file(path: Path, config: ScpDecompileConfig, *, game: str) -> None:
             function_ids=config.function_id_comments,
             call_args=config.call_arg_comments,
         )
-        write_text_lf(out.with_suffix('.py'), parser.gen_python_script(functions, comments=comments))
+        script = LLILScriptFormatter(parser).gen_python_script(functions, comments=comments)
+        write_text_lf(out.with_suffix('.py'), script)
         if config.write_hook_template:
             write_hook_template(parser, output_dir)
 

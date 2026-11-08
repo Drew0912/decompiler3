@@ -15,7 +15,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.games import GAMES_PACKAGE, game_names
 from falcom.ed9.games.kuro1.writer.scp_writer import Kuro1ScpWriter
-from falcom.ed9.structs.generated_script import SYS_PATH_SETUP_LINES, game_writer_helper_import
+from falcom.ed9.formatter.generated_script import SYS_PATH_SETUP_LINES, game_writer_helper_import
 from falcom.ed9.structs.string_pool import StringPoolSection
 from falcom.ed9.writer import scp_writer, scp_writer_helper
 from falcom.ed9.writer.scp_writer_helper import *

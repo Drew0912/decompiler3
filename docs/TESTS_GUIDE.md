@@ -24,9 +24,9 @@ A test sits in the folder of the code it tests. Each folder is named after that 
 | `mlil_tests/` | the decompile path's MLIL: the stack translator and its passes, the nodes, builder and formatter (`ir/mlil/`, `falcom/ed9/ir/mlil/`) |
 | `mlil_ssa_tests/` | the SSA path, kept and never called: its LLIL->MLIL translator, MLIL SSA and the optimizer passes (`ir/mlil_ssa/`, `falcom/ed9/ir/mlil_ssa/`); no test outside this folder reads them |
 | `hlil_tests/` | MLIL->HLIL structuring and the HLIL passes (`ir/hlil/`, `falcom/ed9/ir/hlil/`) |
-| `parser_tests/` | reading a `.dat` (`falcom/ed9/parser/`, `falcom/ed9/structs/`): string pool, call records, and the `.py` text scp2py writes; reading and rebuilding a `.tbl` (`falcom/ed9/parser/tbl.py`) |
+| `parser_tests/` | reading a `.dat` (`falcom/ed9/parser/`, `falcom/ed9/structs/`): string pool, call records; reading and rebuilding a `.tbl` (`falcom/ed9/parser/tbl.py`) |
 | `assembler_tests/` | the ED9 instruction set and disassembler (`falcom/ed9/assembler/`, `assembler/`): the stack simulation, the opcode table's stack effects against every walker of the VM stack |
-| `formatter_tests/` | what is printed from a parsed script (`falcom/ed9/formatter/`): the LLIL DSL's labels and comments, the `.debug.txt` listing |
+| `formatter_tests/` | what is printed from a parsed script (`falcom/ed9/formatter/`): the `.py` text scp2py writes, the LLIL DSL's labels and comments, the `.debug.txt` listing |
 | `writer_tests/` | `ScpWriter` (`falcom/ed9/writer/`): compiling the LLIL DSL, hooks, the compile check |
 | `common_functions_tests/` | the shared common-function library (`falcom/ed9/tools/`, `falcom/ed9/structs/`): fingerprints, matching, what a script imports, and its generator (the facts, rendering, the closure and input checks) |
 | `tools_tests/` | the scripts in `tools/`: the validators, the logic check, the line-order report |

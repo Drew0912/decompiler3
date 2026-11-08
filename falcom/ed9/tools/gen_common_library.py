@@ -55,7 +55,7 @@ from falcom.ed9.games import GAMES_DIR, game_names
 from falcom.ed9.structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_FOLDER,
                                                GAME_METADATA_FOLDER, game_metadata_module)
 from falcom.ed9.structs.fingerprint import function_fingerprint, fingerprint_digest
-from falcom.ed9.structs.generated_script import SCP_WRITER_HELPER_IMPORT
+from falcom.ed9.formatter.generated_script import SCP_WRITER_HELPER_IMPORT
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.assembler.function import Function
 from falcom.ed9.writer import scp_writer_helper
@@ -353,7 +353,7 @@ def render_all(package: str, module_keys: list[str]) -> str:
     lines = [
         '"""Every module of this game\'s common-function library, re-exported in one place',
         '',
-        "Every script decompiled for the game star-imports it (falcom/ed9/parser/scp.py's gen_library_import), so the",
+        "Every script decompiled for the game star-imports it (LLILScriptFormatter.gen_library_import), so the",
         "whole library is in scope - not only the functions the script's own source used - for a common function call",
         'added by hand"""',
         '',

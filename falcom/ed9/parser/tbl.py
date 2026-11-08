@@ -20,7 +20,7 @@ from dc3.logging import log
 from dc3.utils import float32_literal, write_text_lf
 from falcom.ed9.games import GAMES_DIR
 from ..structs.crc32 import hash_function_name
-from ..structs.generated_script import DEFINITION_SPACING, SYS_PATH_SETUP_LINES
+from ..formatter.generated_script import DEFINITION_SPACING, SYS_PATH_SETUP_LINES
 
 TBL_MAGIC        = b'#TBL'
 TBL_PATTERN      = '*.tbl'

@@ -89,6 +89,7 @@ from falcom.ed9.structs.call_debug_records import (CallDebugInfoTracker, RecordP
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.structs.crc32 import hash_function_name
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
+from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
 from falcom.ed9.structs.string_pool import NUL, StringRefs, collect_string_refs, pool_strings, read_text, read_u32
 from falcom.ed9.assembler.function import Function
 from falcom.ed9.structs.scp_types import (
@@ -543,7 +544,7 @@ def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = Tru
         parser, functions = ScpParser.load(dat_path, round_trip=round_trip, keep_unreachable_code=keep_unreachable_code,
                                            game=game)
 
-    write_text_lf(py_path, parser.gen_python_script(functions))
+    write_text_lf(py_path, LLILScriptFormatter(parser).gen_python_script(functions))
     return parser, functions
 
 
