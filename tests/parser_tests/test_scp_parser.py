@@ -108,7 +108,7 @@ class TestScpValue(unittest.TestCase):
 
 
 class TestQuoteString(unittest.TestCase):
-    """Test quote_string escaping (falcom/ed9/disasm/ed9_optable.py PUSH_STR formatting)"""
+    """Test quote_string escaping (falcom/ed9/assembler/ed9_optable.py PUSH_STR formatting)"""
 
     def test_round_trip(self):
         """quote_string output must parse back to the original text via ast.literal_eval"""

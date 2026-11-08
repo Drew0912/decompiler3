@@ -48,9 +48,9 @@ from dc3.config import default_indent
 from dc3.utils import collect_paths, write_text_lf
 from assembler.instruction import Instruction
 from assembler.instruction_table import OperandType
-from falcom.ed9.disasm.ed9_optable import ED9Opcode, ED9OperandType
-from falcom.ed9.disasm.formatter import Formatter, FormatterContext
-from falcom.ed9.disasm.llil_dsl_comments import CommentOptions, append_comment, instruction_comments, label_comments
+from falcom.ed9.assembler.ed9_optable import ED9Opcode, ED9OperandType
+from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
+from falcom.ed9.formatter.llil_dsl.comments import CommentOptions, append_comment, instruction_comments, label_comments
 from falcom.ed9.games import GAMES_DIR, game_names
 from falcom.ed9.structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_FOLDER,
                                                GAME_METADATA_FOLDER, game_metadata_module)
@@ -228,7 +228,7 @@ def validate_names(included: set[str], name_to_module: dict[str, str]):
 def render_function(parser: ScpParser, func: Function, path: Path, expected_digest: str,
                     name_to_module: dict[str, str]) -> list[str]:
     """The function's final lines: branch targets become genLabel() locals, CALL targets a bare name or common_N.name,
-    every other operand its formatted text; the stack comments the scripts get (llil_dsl_comments), always on"""
+    every other operand its formatted text; the stack comments the scripts get (llil_dsl.comments), always on"""
     instructions, referenced_offsets = verified_render_inputs(parser, func, path, expected_digest)
     formatter_context = FormatterContext(
         get_func_name_from_func_id=parser.get_func_name_from_func_id,

@@ -10,15 +10,16 @@ from dc3.logging import log
 from dc3.utils import quote_string, write_text_lf
 from ir.llil.llil import default_label_for_addr
 from assembler import Instruction, OperandType
-from ..disasm import CommentOptions, ED9Opcode, Formatter, FormatterContext
-from ..disasm.ed9_optable import ED9OperandType
-from ..disasm.llil_dsl_comments import instruction_comments, label_comments
+from ..assembler import ED9Opcode
+from ..assembler.ed9_optable import ED9OperandType
+from .llil_dsl.comments import CommentOptions, instruction_comments, label_comments
+from .llil_dsl.function_formatter import Formatter, FormatterContext
 from ..structs.call_debug_records import pair_records, read_debug_records, record_args
-from .code_layout import code_order, code_start, dropped_ranges, function_extents
-from .scp import OPCODE_SIZE, PUSH_ENCODED_OPS, ScpParser
+from ..parser.code_layout import code_order, code_start, dropped_ranges, function_extents
+from ..parser.scp import OPCODE_SIZE, PUSH_ENCODED_OPS, ScpParser
 from ..structs.string_pool import (StringPoolSection, collect_string_refs, pool_strings, read_text, read_u32,
                                    string_offset)
-from .parser_types import Function
+from ..parser.parser_types import Function
 from ..structs.scp_types import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpGlobalVar, ScpValue
 
 BYTES_PER_LINE      = 10                    # the longest instruction (CALL_SCRIPT: opcode, module, func, argc)

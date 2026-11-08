@@ -96,7 +96,7 @@ path's passes merge and propagate the values).
 `pop()` emits `SpAdd(-1)` and returns the virtual stack's top entry. `POP` / `POP_N` emit one
 `SpAdd(-n)` and drop the entries at or above the new `sp`. `POP` counts bytes: its `n` is the whole slots they
 complete, and the bytes past the last one carry into the `POP` right after it (a split pop, `POP 255` then the rest;
-`PopCarry`, `falcom/ed9/disasm/stack_effects.py`).
+`PopCarry`, `falcom/ed9/assembler/stack_effects.py`).
 
 **Stack-pointer changes.** Inside a block every `sp` change is an explicit `SpAdd`
 (`emit_sp_add`). Two changes emit none, on purpose:
@@ -152,7 +152,7 @@ arguments, which leaves `sp` at 0 with no setup pending (the parser checks both)
 **Return.** A function pops its own parameters before it returns, so every real exit leaves its
 stack empty with no setup pending; the parser checks it at every exit.
 `LowLevelILRet` carries no value - a function's result travels in register 0, which calls write and
-`RETURN` reads (`RESULT_REGISTER`, `falcom/ed9/disasm/stack_effects.py`).
+`RETURN` reads (`RESULT_REGISTER`, `falcom/ed9/assembler/stack_effects.py`).
 
 **Not terminals:** `SYSCALL` reads its `argc` arguments from the top of the stack without popping
 them and leaves `sp` unchanged; `POPN count` pops `count` slots, which the lifter keeps as its
@@ -208,7 +208,7 @@ the listing's block header and lines.
 `tests/llil_tests/test_llil_slot_lifetime.py` (parameter slots), `tests/llil_tests/test_llil_lift_order.py` (lifting
 order, per-edge state, numbering), `tests/llil_tests/test_llil_stack_sync.py` (`POP`/`POP_N` and the virtual stack),
 `tests/parser_tests/test_scp_stack_simulation.py` (the parser's simulation), and
-`tests/parser_tests/test_stack_effects.py` (the lifter, the parser and the debug-record tracker against the opcode
+`tests/assembler_tests/test_stack_effects.py` (the lifter, the parser and the debug-record tracker against the opcode
 table's stack effects), `tests/llil_tests/test_llil_traversal.py` (`operands()` against every node type of both
 packages, `walk()`).
 `demos/llil_demo.py` builds small functions by hand.

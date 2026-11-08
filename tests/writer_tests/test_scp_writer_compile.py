@@ -18,7 +18,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dc3.logging import log
 from ir.llil import WORD_SIZE
-from falcom.ed9.disasm import ED9Opcode
+from falcom.ed9.assembler import ED9Opcode
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
 from falcom.ed9.structs.scp_types import ScpGlobalVar, ScpValue
 from falcom.ed9.writer.scp_writer_helper import *

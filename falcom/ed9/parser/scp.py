@@ -14,10 +14,11 @@ from .parser_types import *
 from dc3 import default_indent, fileio, quote_string, StrictBase
 from assembler import (SYNTHETIC_INSTRUCTION_SIZE, BasicBlock, BranchKind, BranchTarget, Disassembler,
                        DisassemblerContext, Instruction, Operand)
-from ..disasm import *
-from ..disasm.ed9_optable import *
-from ..disasm.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, PopCarry
-from ..disasm.llil_dsl_comments import GLOBAL_VAR_INDEX_COMMENT, append_comment
+from ..assembler import *
+from ..assembler.ed9_optable import *
+from ..assembler.stack_effects import CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, PopCarry
+from ..formatter.llil_dsl.comments import GLOBAL_VAR_INDEX_COMMENT, CommentOptions, append_comment
+from ..formatter.llil_dsl.function_formatter import Formatter, FormatterContext
 from ..structs.call_debug_records import PUSH_CONSTANT_OPS, canonical_argc, pair_records
 from ..structs.string_pool import string_offset
 from ..structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_MISSING_HINT,

@@ -7,13 +7,13 @@ import math
 from typing import TYPE_CHECKING
 
 from dc3.utils import display_width
-from .ed9_optable import ED9Opcode, ED9OperandType
-from .stack_effects import PopCarry
-from ..structs.scp_types import ScpValue
+from ...assembler.ed9_optable import ED9Opcode, ED9OperandType
+from ...assembler.stack_effects import PopCarry
+from ...structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
     from assembler.instruction import Instruction
-    from ..parser.parser_types import Function, StackLayout
+    from ...parser.parser_types import Function, StackLayout
 
 __all__ = (
     'CommentOptions',

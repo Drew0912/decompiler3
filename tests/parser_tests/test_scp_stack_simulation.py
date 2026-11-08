@@ -15,9 +15,10 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dc3.logging import log
 from assembler import Disassembler, DisassemblerContext
-from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode, Formatter, FormatterContext
-from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
-from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
+from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
+from falcom.ed9.assembler.ed9_optable import ed9_create_fallthrough_jump
+from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
+from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpDisassemblyError, ScpParser
 from falcom.ed9.parser.parser_types import Function, SlotRef, StackLayout
 from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue

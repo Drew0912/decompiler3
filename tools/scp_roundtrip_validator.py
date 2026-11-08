@@ -81,7 +81,7 @@ from dc3.config import default_encoding
 from dc3.utils import collect_paths, write_text_lf
 from ir.llil import WORD_SIZE
 from assembler import Instruction, OperandType
-from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
+from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.games import game_names
 from falcom.ed9.structs.fingerprint import function_fingerprint
 from falcom.ed9.structs.call_debug_records import (CallDebugInfoTracker, RecordPairing, RecordView, TrackedCall,

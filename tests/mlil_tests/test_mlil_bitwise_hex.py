@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from codegen import generate_typescript
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.disasm.stack_effects import RESULT_REGISTER
+from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.mlil.mlil_formatter import MLILFormatter

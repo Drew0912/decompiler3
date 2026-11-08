@@ -20,12 +20,12 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from dc3.config import default_endian
 from dc3.logging import log
 from ir.llil import WORD_SIZE
-from falcom.ed9.disasm import ED9Opcode
-from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, RESULT_REGISTER
+from falcom.ed9.assembler import ED9Opcode
+from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS, RESULT_REGISTER
 from falcom.ed9.structs.call_debug_records import (CallDebugInfoTracker, TrackedValue, canonical_argc, pair_records,
                                                    record_args, record_mismatch, script_call_identity)
 from falcom.ed9.parser.code_layout import function_extents
-from falcom.ed9.parser.scp_listing import ScpListing
+from falcom.ed9.formatter.listing import ScpListing
 from falcom.ed9.structs.string_pool import NUL, read_text, string_offset
 from falcom.ed9.structs.scp_types import (RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg,
                                           ScpFunctionEntry, ScpValue)

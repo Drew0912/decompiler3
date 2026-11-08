@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Callable
 
 from dc3 import StrictBase
-from .parser.scp_listing import ListingSections
+from .formatter.listing import ListingSections
 from .parser.parser_types import Function
 
 

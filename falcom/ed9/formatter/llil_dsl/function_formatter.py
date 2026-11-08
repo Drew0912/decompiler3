@@ -1,4 +1,4 @@
-"""Formatter for ED9 VM disassembly output"""
+"""The LLIL DSL (.py) of one disassembled function: one call per instruction, labels and comments"""
 
 from typing import TYPE_CHECKING, Callable
 from dataclasses import dataclass
@@ -7,15 +7,15 @@ from dc3 import default_indent
 from ir.llil.llil import default_label_for_addr
 from assembler.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from assembler.instruction_table import OperandType
-from .llil_dsl_comments import (
+from .comments import (
     UNREACHABLE_TARGET_COMMENT, CommentOptions, append_comment, function_comments, instruction_comments, label_comments,
 )
-from ..structs.scp_types import ScpValue
+from ...structs.scp_types import ScpValue
 
 if TYPE_CHECKING:
     from assembler.basic_block import BasicBlock
     from assembler.instruction import Instruction
-    from ..parser.parser_types import Function, FunctionParam, StackLayout
+    from ...parser.parser_types import Function, FunctionParam, StackLayout
 
 __all__ = (
     'Formatter',

@@ -13,7 +13,7 @@ from ir.llil.llil import LowLevelILCall
 from ir.mlil.mlil import MLILExternCall, MLILRet, MLILVar
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript, LowLevelILCallScriptNoReturn
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
-from falcom.ed9.disasm.ed9_optable import ED9Opcode
+from falcom.ed9.assembler.ed9_optable import ED9Opcode
 from falcom.ed9.structs.call_debug_records import CallDebugInfoTracker
 from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo
 from tests.shared import scp_asm

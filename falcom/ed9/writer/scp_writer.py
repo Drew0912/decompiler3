@@ -14,8 +14,8 @@ from dc3.fileio import str_to_bytes
 from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
 from assembler import OperandDescriptor, OperandFormat, OperandType
-from ..disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
-from ..disasm.ed9_optable import ED9OperandType
+from ..assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
+from ..assembler.ed9_optable import ED9OperandType
 from ..structs.common_library import COMMON_LIBRARY_MISSING_HINT
 from ..structs.crc32 import hash_function_name
 from ..structs.call_debug_records import (PUSH_CONSTANT_OPS, CallDebugInfoTracker, TrackedCall, TrackedValue,

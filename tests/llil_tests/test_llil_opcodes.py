@@ -16,9 +16,9 @@ from ir.llil.llil import (
     LowLevelILNeg, LowLevelILOperation, LowLevelILOr, LowLevelILSub, LowLevelILTestZero,
 )
 from codegen import generate_typescript
-from falcom.ed9.disasm.formatter import Formatter
-from falcom.ed9.disasm.stack_effects import RESULT_REGISTER
-from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
+from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter
+from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
+from falcom.ed9.assembler.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugInt, LowLevelILFalcomOperation, LowLevelILPopN

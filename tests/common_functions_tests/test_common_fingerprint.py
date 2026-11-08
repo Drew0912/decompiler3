@@ -10,8 +10,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from assembler import Disassembler, DisassemblerContext, Instruction
-from falcom.ed9.disasm import *
-from falcom.ed9.disasm.ed9_optable import ed9_create_fallthrough_jump
+from falcom.ed9.assembler import *
+from falcom.ed9.assembler.ed9_optable import ed9_create_fallthrough_jump
+from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter
 from falcom.ed9.structs.fingerprint import (
     GLOBAL_INDEX_TAG, GLOBAL_TAG, UNRESOLVED_BRANCH_TAG, body_fingerprint, function_fingerprint,
 )

@@ -4,7 +4,7 @@ layer's rule picks its IR's operands and a call's kind and target, and calls the
 
 from typing import Callable
 
-from falcom.ed9.disasm.stack_effects import REGISTER_COUNT, RESULT_REGISTER
+from falcom.ed9.assembler.stack_effects import REGISTER_COUNT, RESULT_REGISTER
 from .facts import Effect
 from .state import ESCAPED, GLOBAL_EPOCH, MEMORY_EPOCH, REGISTER_EPOCH, State
 from .trees import equal_trees, tagged_leaves

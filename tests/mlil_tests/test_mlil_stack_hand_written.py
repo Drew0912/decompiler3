@@ -20,7 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from dc3.logging import log
-from falcom.ed9.disasm.stack_effects import RESULT_REGISTER
+from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer.scp_writer_helper import *

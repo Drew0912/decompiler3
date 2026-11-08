@@ -1,6 +1,6 @@
 # ED9 Format: Parser and Disassembler
 
-> Status: current. How `falcom/ed9/parser/`, `falcom/ed9/structs/` and `falcom/ed9/disasm/` (on the generic
+> Status: current. How `falcom/ed9/parser/`, `falcom/ed9/structs/` and `falcom/ed9/assembler/` (on the generic
 > `assembler/`) read an ED9 script (`.dat`), what its call-site debug records hold, and how the games on this format
 > differ. What the VM does with a script:
 > `docs/falcom/ed9/ED9_VM.md`. Game tables (`.tbl`): `docs/falcom/ed9/TBL_FORMAT.md`.
@@ -27,18 +27,19 @@ validator's code, debug-record, source-precondition and reachability checks use 
 ## Layer 2: Disassembler — Done
 
 **Location:** `assembler/` (the generic instructions, operand descriptors, basic blocks and recursive descent
-disassembler) + `falcom/ed9/disasm/` (the ED9 opcode table, stack effects and formatter)
+disassembler) + `falcom/ed9/assembler/` (the ED9 opcode table and stack effects); the `.py` and the `.debug.txt` are printed
+by `falcom/ed9/formatter/`
 
 Converts bytecode into a readable instruction sequence, identifies basic block boundaries, and parses operands.
 Instruction encoding/decoding is table-driven (an opcode table maps each opcode to its mnemonic and operand format), so
 adding a new instruction is a table entry rather than new parsing code. Each row also has a kind, and each kind a stack
-effect (`falcom/ed9/disasm/stack_effects.py`: the values it pops, a call's setup slots, the values it reads in place,
+effect (`falcom/ed9/assembler/stack_effects.py`: the values it pops, a call's setup slots, the values it reads in place,
 the values it pushes, whether it addresses a slot, whether the stack must be empty after it). A `POP` counts bytes: each
 walker counts them through its own `PopCarry`, which carries the bytes past the last whole slot into the `POP` right
 after it (a split pop). The parser's simulation and the debug-record tracker (`CallDebugInfoTracker`,
 `structs/call_debug_records.py`) dispatch on the kind and read the effects; the LLIL lifter takes only which opcodes are
 binary and a local `CALL`'s argument count from the table (`docs/ARCHITECTURE.md`, Layer 3).
-`tests/parser_tests/test_stack_effects.py` checks all three walkers of the VM stack against the table.
+`tests/assembler_tests/test_stack_effects.py` checks all three walkers of the VM stack against the table.
 
 While the disassembler decodes a function, `ScpParser` simulates the VM stack to find each call's
 setup: the two pushes a `CALL` consumes (rewritten to `PUSH_CURRENT_FUNC_ID` / `PUSH_RET_ADDR`) and
@@ -62,7 +63,7 @@ not from the join groups, which span the whole function: a value that reaches a 
 later join doesn't count for an earlier read. A `POP_TO` stands for the value it overwrote, so a
 reassigned parameter is still the parameter. `addressed_slot` holds the one slot rule the
 simulation and the layout share: the byte offset counts from sp after the opcode's pops (its stack
-effect's `pops` in the opcode table, `falcom/ed9/disasm/stack_effects.py`). A slot that
+effect's `pops` in the opcode table, `falcom/ed9/assembler/stack_effects.py`). A slot that
 holds anything but one parameter or a local (`SlotRef.unusual`) is logged as a warning. The layout also
 numbers each call's arguments (`arg_numbers`, the opt-in call-argument comments): the pushes that may
 stand in the call's top `argc` slots, solved the same way, `arg1` being the last push; the simulation

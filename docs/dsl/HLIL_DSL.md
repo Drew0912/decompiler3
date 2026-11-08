@@ -34,7 +34,7 @@
   Loop rotation, switch recovery,
   return hoisting and region cloning are not worth inverting; the logic check covers those functions.
 - **Shared stack model.** The lowering reads the opcode table's stack effects
-  (`falcom/ed9/disasm/stack_effects.py`), which the parser and the debug-record tracker already share and
+  (`falcom/ed9/assembler/stack_effects.py`), which the parser and the debug-record tracker already share and
   the lifter is tested against, and is designed as a pair with the rewrite's translator.
 - **Two layers.** Structured statements lower to labels and jumps; the bottom layer lowers expressions,
   assignments, calls, labels and jumps. The bottom layer can compile the rewrite's MLIL directly: a

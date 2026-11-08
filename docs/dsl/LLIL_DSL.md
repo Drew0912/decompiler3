@@ -13,7 +13,7 @@ The decompilation pipeline goes forward (bytecode → readable code). This docum
 reverse: turning a Python source file back into game bytecode.
 
 **Naming note:** "LLIL DSL" in this document refers to this `.py` output — generated from the
-disassembly IR (`assembler/`, `falcom/ed9/disasm/`), not from `ir/llil`'s `LowLevelILFunction`. The real LLIL
+disassembly IR (`assembler/`, `falcom/ed9/assembler/`), not from `ir/llil`'s `LowLevelILFunction`. The real LLIL
 pipeline (`ED9VMLifter`, `FalcomLLILFormatter`) is a separate, disjoint path that only feeds
 `.llil.asm`/`.llil.dot` debug dumps and MLIL→HLIL→TypeScript. The two are close enough in shape
 (one opcode, one function call, stack-machine semantics), and the disassembly-sourced version is
@@ -278,9 +278,9 @@ at round 2, and the same worst-status split (721 PASS, 127 WARN, 234 FAIL on the
 checks only).
 
 **Generation** (bytecode → `.py`): `Formatter.format_function`/`format_block`
-(`falcom/ed9/disasm/formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
+(`falcom/ed9/formatter/llil_dsl/function_formatter.py`) → `ScpParser.format_function` (`falcom/ed9/parser/scp.py`) →
 `scp2py_base.process_file` (`falcom/ed9/scp2py_base.py`). `ScpParser.gen_python_script(functions,
-comments = CommentOptions(...))` picks the optional comments (`falcom/ed9/disasm/llil_dsl_comments.py`;
+comments = CommentOptions(...))` picks the optional comments (`falcom/ed9/formatter/llil_dsl/comments.py`;
 `scp2py` builds them from its config); the validator keeps the defaults, so the logic round trip
 checks that the stack comments reach the fixed point too. A generated script first puts the repo root on `sys.path` (`import sys` and
 `sys.path.insert(0, '<root>')`, the root of the checkout that generated it - `SYS_PATH_SETUP_LINES` in
@@ -293,7 +293,7 @@ with `\n` line endings.
 
 **The `.dat` listing** (`.debug.txt`, `ScpDecompileConfig.write_debug_info`, off by default): the
 byte-level companion of the `.py`, read-only and never compiled - the whole file as the VM sees it
-(`falcom/ed9/parser/scp_listing.py`). Sections, each switched in `debug_sections = ListingSections(...)`:
+(`falcom/ed9/formatter/listing.py`). Sections, each switched in `debug_sections = ListingSections(...)`:
 the header, the global vars, each function's table entry (parameters as the `.py` declares them), its
 code and its call-site debug records, and the string pool with each string's section. A code line has
 the offset, the raw bytes, the real opcode with its operands as encoded (every push pseudo-op is the real

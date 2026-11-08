@@ -11,8 +11,8 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from assembler import Instruction, Operand, OperandDescriptor
-from falcom.ed9.disasm import *
-from falcom.ed9.disasm.ed9_optable import ED9_FORMAT_TABLE
+from falcom.ed9.assembler import *
+from falcom.ed9.assembler.ed9_optable import ED9_FORMAT_TABLE
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.code_layout import dropped_ranges
 from scp_roundtrip_validator import (

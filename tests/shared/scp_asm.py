@@ -6,7 +6,7 @@ from typing import NamedTuple
 import struct
 
 from dc3 import fileio
-from falcom.ed9.disasm import ED9Opcode
+from falcom.ed9.assembler import ED9Opcode
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.parser_types import Function, FunctionParam
 from falcom.ed9.structs.scp_types import (ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry,

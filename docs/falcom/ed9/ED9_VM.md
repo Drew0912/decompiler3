@@ -56,7 +56,7 @@ Every value is a 32-bit word; its top 2 bits are the tag [exe]:
 ## Opcodes and operands
 
 - 41 opcodes, 0x00-0x28. Their operand formats and stack effects are decompiler3's opcode table
-  (`falcom/ed9/disasm/ed9_optable.py`, `falcom/ed9/disasm/stack_effects.py`), but for the lines below [scripts].
+  (`falcom/ed9/assembler/ed9_optable.py`, `falcom/ed9/assembler/stack_effects.py`), but for the lines below [scripts].
 - 0x27 `POPN`: a u8 count; it pops that many slots and does nothing else (nothing is logged) [exe].
 - 0x28 `DEBUG_INT`: a u32 operand, 5 bytes in all; it calls the logger at level 0, which drops everything below level
   2, so it does nothing at runtime [exe].

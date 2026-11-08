@@ -13,7 +13,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
+from falcom.ed9.assembler.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.scp2py_base import process_file
 from falcom.ed9.scp2py_config import ScpDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import *

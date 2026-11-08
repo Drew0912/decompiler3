@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import NamedTuple
 from ir.llil import *
-from falcom.ed9.disasm.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, PopCarry
+from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, PopCarry
 from .constants import *
 from .llil_ext import *
 

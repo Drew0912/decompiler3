@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 
 from dc3 import fileio
 from dc3.utils import write_text_lf
-from falcom.ed9.disasm import *
+from falcom.ed9.assembler import *
 from falcom.ed9.parser.scp import ScpParser
 
 

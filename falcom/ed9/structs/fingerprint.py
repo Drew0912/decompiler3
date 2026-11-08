@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Callable
 
 from assembler.instruction import Instruction, Operand
 from assembler.instruction_table import OperandType
-from ..disasm.ed9_optable import ED9OperandType
+from ..assembler.ed9_optable import ED9OperandType
 
 if TYPE_CHECKING:
     from ..parser.scp import ScpParser

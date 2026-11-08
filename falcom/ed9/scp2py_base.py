@@ -15,10 +15,10 @@ from pathlib import Path
 from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
 from dc3.utils import collect_paths, raise_recursion_limit, write_text_lf
-from falcom.ed9.disasm import CommentOptions
+from falcom.ed9.formatter.llil_dsl.comments import CommentOptions
 from falcom.ed9.games import GAMES_DIR
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.parser.scp_listing import write_listing
+from falcom.ed9.formatter.listing import write_listing
 from falcom.ed9.parser.parser_types import Function
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter

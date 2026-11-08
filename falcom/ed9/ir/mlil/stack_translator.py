@@ -2,7 +2,7 @@
 script calls (the tail call among them), POPN and DEBUG_INT on the generic translator; a call frame value read as
 data refused"""
 
-from falcom.ed9.disasm.stack_effects import RESULT_REGISTER
+from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
 from ir.llil.llil import LowLevelILBasicBlock, LowLevelILCall, LowLevelILInstruction, WORD_SIZE
 from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILInstruction, MLILConst, MLILExternCall, MLILLoadGlobal, MLILVariable,

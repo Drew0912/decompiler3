@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the readable .dat listing (.debug.txt, falcom/ed9/parser/scp_listing.py): the sections, every code byte
+"""Unit tests for the readable .dat listing (.debug.txt, falcom/ed9/formatter/listing.py): the sections, every code byte
 listed once, record tags at their calls, escaped text, and scp2py's write_debug_info / debug_sections."""
 
 from dataclasses import fields
@@ -15,9 +15,9 @@ from dc3.config import default_endian
 from dc3.logging import log
 from dc3.utils import quote_string
 from ir.llil import WORD_SIZE
-from falcom.ed9.disasm import ED9Opcode
+from falcom.ed9.assembler import ED9Opcode
 from falcom.ed9.parser.code_layout import code_start
-from falcom.ed9.parser.scp_listing import BYTES_WIDTH, COLUMN_GAP, ListingSections, ScpListing
+from falcom.ed9.formatter.listing import BYTES_WIDTH, COLUMN_GAP, ListingSections, ScpListing
 from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo
 from falcom.ed9.scp2py_base import process_file
 from falcom.ed9.scp2py_config import ScpDecompileConfig

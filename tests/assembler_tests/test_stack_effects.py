@@ -18,9 +18,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from assembler.instruction import SYNTHETIC_INSTRUCTION_SIZE
-from falcom.ed9.disasm import ED9_INSTRUCTION_TABLE, ED9Opcode
-from falcom.ed9.disasm.ed9_optable import ED9_OPCODE_TABLE
-from falcom.ed9.disasm.stack_effects import STACK_EFFECTS, InstructionKind, PopCarry, StackEffect
+from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
+from falcom.ed9.assembler.ed9_optable import ED9_OPCODE_TABLE
+from falcom.ed9.assembler.stack_effects import STACK_EFFECTS, InstructionKind, PopCarry, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.structs.call_debug_records import CallDebugInfoTracker
 from falcom.ed9.parser.scp import ScpDisassemblyError, ScpParser

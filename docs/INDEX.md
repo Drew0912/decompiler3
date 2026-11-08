@@ -17,11 +17,11 @@ languages, touches the generic / Falcom boundary, or the pipeline is not known y
 | `TESTS_GUIDE.md` | running the tests, layout, shared helpers, the corpus skip, moving tests | test work |
 | `VALIDATOR_GUIDE.md` | `tools/ir_semantic_validator.py` (the logic check): its categories, the known findings, the regression workflow | judging validator output |
 | `FUTURE_WORK.md` | the index of future work, and the ideas that span folders | proposing or planning new work |
-| `falcom/ed9/` | the ED9 script format: parser, disassembler, opcode table, per-game differences (`ED9_FORMAT.md`); the VM's rules, from the game exe (`ED9_VM.md`); the `.tbl` game tables and how to add one (`TBL_FORMAT.md`) | `falcom/ed9/parser/`, `falcom/ed9/structs/`, `falcom/ed9/disasm/`, `assembler/`; what the VM does with a script; `parser/tbl.py`, `games/<game>/tbl/` |
+| `falcom/ed9/` | the ED9 script format: parser, disassembler, opcode table, per-game differences (`ED9_FORMAT.md`); the VM's rules, from the game exe (`ED9_VM.md`); the `.tbl` game tables and how to add one (`TBL_FORMAT.md`) | `falcom/ed9/parser/`, `falcom/ed9/structs/`, `falcom/ed9/assembler/`, `assembler/`; what the VM does with a script; `parser/tbl.py`, `games/<game>/tbl/` |
 | `llil/` | LLIL design | `ir/llil/`, `falcom/ed9/ir/llil/` |
 | `mlil/` | MLIL design, guide, future work | `ir/mlil/`, `falcom/ed9/ir/mlil/` |
 | `hlil/` | HLIL design, guide (with the TypeScript codegen), future work | `ir/hlil/`, `falcom/ed9/ir/hlil/`, `codegen/` |
-| `dsl/` | the editing interface: the LLIL DSL and its writer, hooks, the planned HLIL DSL | `falcom/ed9/writer/`, `falcom/ed9/games/<game>/writer/`, `falcom/ed9/tools/`, generated `.py` scripts, hook files |
+| `dsl/` | the editing interface: the LLIL DSL and its writer, hooks, the planned HLIL DSL | `falcom/ed9/writer/`, `falcom/ed9/games/<game>/writer/`, `falcom/ed9/formatter/`, `falcom/ed9/tools/`, generated `.py` scripts, hook files |
 
 ## Running the decompiler
 

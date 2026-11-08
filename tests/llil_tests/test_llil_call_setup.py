@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILCall, WORD_SIZE
-from falcom.ed9.disasm.stack_effects import LOCAL_SETUP_SLOTS
+from falcom.ed9.assembler.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript
 from tests.shared.llil_utils import BLOCK_STRIDE, FUNC_START, instructions_of, lift_asm, make_builder

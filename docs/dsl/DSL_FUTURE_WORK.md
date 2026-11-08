@@ -253,7 +253,7 @@ HLIL → HLIL DSL (.py) → exec() → lower → LLIL DSL (.py, exists today) �
 - **No renderer shared with the TypeScript generator.** Different syntax, and a different contract:
   `codegen/typescript.py` is readable pseudocode (it folds constant comparisons and rewrites boolean
   comparisons); this output must be exact. Its natural sibling is the LLIL `.py` formatter
-  (`falcom/ed9/disasm/`): exact float literals (`ScpValue.float_literal`),
+  (`falcom/ed9/assembler/`): exact float literals (`ScpValue.float_literal`),
   `Formatter.format_param` signatures, decorators, common-function library conventions. With TS it
   shares only HLIL-level structure helpers and language-neutral operator tables. Whether `.hlil.ts`
   stays beside it, as the reading view, is decided once it exists.

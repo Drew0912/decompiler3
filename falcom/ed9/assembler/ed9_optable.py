@@ -11,7 +11,7 @@ from .stack_effects import REGISTER_COUNT, STACK_EFFECTS, InstructionKind
 from ..structs.scp_types import *
 
 if TYPE_CHECKING:
-    from .formatter import FormatterContext
+    from ..formatter.llil_dsl.function_formatter import FormatterContext
 
 
 class ED9OperandType(IntEnum2):

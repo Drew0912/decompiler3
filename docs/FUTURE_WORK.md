@@ -75,7 +75,7 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
 - **Floats:** generic code prints floats without knowing their width - the Falcom lifter attaches the display text
   as a `SourceFloat` (`ir/core/il_literals.py`; LLIL DSL neatening plan, Step 4, done).
 
-## ED8 Support (`dc3/fileio.py`, `falcom/ed9/disasm/ed9_optable.py`)
+## ED8 Support (`dc3/fileio.py`, `falcom/ed9/assembler/ed9_optable.py`)
 
 **Planned, not started** (user, 2026-10-12); unscheduled, much later (user, 2026-10-15). Notes for when it starts,
 from decompiler2's ED8.x support:
@@ -116,7 +116,7 @@ from decompiler2's ED8.x support:
     LLIL layer.
   - **Logic check** (`tools/logic_check/`, `docs/VALIDATOR_GUIDE.md`): ED85 support brings the logic check with it.
     Its MLIL -> HLIL half runs on the generic IR and carries over, given ED85's own register facts (ED9's 16
-    registers and result register 0 are `falcom/ed9/disasm/stack_effects.py`'s, which the check's `VMEffects` in
+    registers and result register 0 are `falcom/ed9/assembler/stack_effects.py`'s, which the check's `VMEffects` in
     `vm_effects.py` takes; an ED85 layer names its own in `VM_EFFECTS`). With no LLIL, the passes' reference is the
     MLIL as lifted, before `optimize_mlil`, compared with the optimized MLIL as LLIL is with MLIL today; ED9's LLIL
     side (`llil_layer.py`) and driver (`scripts.py`) get ED85 counterparts. The lifter stays outside the check, as
