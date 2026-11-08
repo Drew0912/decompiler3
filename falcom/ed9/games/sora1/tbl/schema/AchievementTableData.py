@@ -4,7 +4,8 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_achievement.tbl
 class AchievementTableData(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00',   'I'),
+        ('categoryId',  'B'),   # an AchievementCategoryData id; the list starts a new group where it changes
+        ('pad01',       'P3'),
         ('saveIndex',   'I'),
         ('workIndex',   'I'),   # a global work index; a lookup key, not unique
         ('target',      'i'),

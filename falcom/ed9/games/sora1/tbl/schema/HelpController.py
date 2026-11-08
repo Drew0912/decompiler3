@@ -8,5 +8,5 @@ class HelpController(TableDataEntry):
         ('page',        'B'),
         ('holderIndex', 'B'),
         ('pad04',       'P4'),
-        ('str08',       'S'),
+        ('text',        'S'),
     )

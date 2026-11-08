@@ -7,7 +7,7 @@ class HelpIconList(TableDataEntry):
         ('titleId',    'W'),
         ('page',       'B'),
         ('pad03',      'P1'),
-        ('uint32_04',  'I'),
+        ('cellIndex',  'I'),
         ('text1',      'S'),
         ('float32_10', 'f'),
         ('uint32_14',  'I'),

@@ -8,7 +8,7 @@ class HelpPage(TableDataEntry):
         ('layout',  'B'),
         ('page',    'B'),
         ('pad04',   'P4'),
-        ('str08',   'S'),
+        ('texture', 'S'),
         ('text',    'S'),
         ('subText', 'S'),
     )

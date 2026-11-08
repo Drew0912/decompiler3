@@ -8,7 +8,7 @@ class CharaArrange(TableDataEntry):
         ('pad02',       'P2'),
         ('uint32_04',   'I'),
         ('aniFunction', 'S'),
-        ('str10',       'S'),
+        ('commands',    'S'),   # #-codes such as #E_0#M_0#B_0, read up to the first that does not parse
         ('str18',       'S'),
         ('x',           'f'),
         ('y',           'f'),

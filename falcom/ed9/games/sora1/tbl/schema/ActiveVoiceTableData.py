@@ -19,7 +19,7 @@ class ActiveVoiceTableData(TableDataEntry):
         ('uint32_4c',   'I'),
         ('flagsOnPlay', 'A2'),  # won't play if all are already set; then set at the start, or at the end if flags has D
         ('uint32_5c',   'I'),
-        ('arr32_60',    'A4'),
+        ('voiceIds',    'A4'),  # paired with chrIds by position when both have the same count
         ('uint32_6c',   'I'),
         ('text',        'S'),
         ('float32_78',  'f'),

@@ -6,9 +6,9 @@ class EyeAttachData(TableDataEntry):
     DESCRIPTOR = (
         ('pattern',   'b'),   # -1: any
         ('selector',  'B'),
-        ('int16_02',  'w'),
+        ('objectId',  'w'),   # -1: none; created if the owner has no object with this ID
         ('pad04',     'P4'),
         ('arr16_08',  'A2'),
         ('uint32_14', 'I'),
-        ('str18',     'S'),
+        ('function',  'S'),   # a script function, called with objectId
     )

@@ -45,7 +45,7 @@ class SkillParam(TableDataEntry):
         ('float32_80',    'f'),
         ('chantTime',     'w'),
         ('stiffnessTime', 'w'),
-        ('int16_88',      'w'),
+        ('cost',          'w'),
         ('learnLevel',    'w'),
         ('sortKey',       'W'),
         ('uint16_8e',     'W'),

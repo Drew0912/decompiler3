@@ -12,7 +12,7 @@ class SlotMonsterInfo(TableDataEntry):
         ('uint32_18', 'I'),
         ('uint32_1c', 'I'),
         ('uint32_20', 'I'),
-        ('uint32_24', 'I'),
-        ('uint32_28', 'I'),
-        ('uint32_2c', 'I'),
+        ('weight1',   'I'),   # weightN goes with uint32_18, uint32_1c, uint32_20 in order; a draw from 0 to 99
+        ('weight2',   'I'),
+        ('weight3',   'I'),
     )

@@ -6,7 +6,7 @@ class AttrData(TableDataEntry):
     DESCRIPTOR = (
         ('id',        'B'),
         ('pad01',     'P3'),
-        ('uint32_04', 'I'),
+        ('cellIndex', 'I'),
         ('uint8_08',  'B'),
         ('uint8_09',  'B'),
         ('uint8_0a',  'B'),
