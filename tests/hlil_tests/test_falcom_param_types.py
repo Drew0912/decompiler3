@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Unit tests for FalcomTypeInferencePass: parameter types come from the script's declared flags."""
+"""Unit tests for FalcomTypeInferencePass: parameter types come from the script's declared flags; with the syscall
+rows, a function that is one syscall marks each parameter it passes unchanged at an ID slot, and an int constant at an
+ID slot of a syscall or of a call to a marked parameter is tagged."""
 
 from pathlib import Path
 import sys
@@ -10,12 +12,18 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from codegen.typescript import generate_typescript
+from falcom.ed9.assembler.ed9_syscalls import ANY_ARGC, Subsystem, SyscallArgs, SyscallEntry
+from falcom.ed9.consts import CHR_ID_KIND
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.hlil.hlil_passes import FalcomTypeInferencePass
+from falcom.ed9.ir.hlil.hlil_passes import FalcomTypeInferencePass, excluded_parameters
 from falcom.ed9.assembler.function import Function, FunctionParam
-from falcom.ed9.structs.scp_types import Nullable32, NullableStr, Pointer, ScpParamFlags, ScpValue, Value32
+from falcom.ed9.structs.scp_types import (Nullable32, NullableStr, Pointer, RawInt, ScpParamFlags, ScpValue,
+                                          Value32)
+from ir.core import SourceFloat
 from ir.core.il_base import IRParameter
-from ir.hlil import HighLevelILFunction, HLILTypeKind, HLILVariable, VariableKind
+from ir.hlil import (BinaryOp, HighLevelILFunction, HLILAddressOf, HLILAssign, HLILBinaryOp, HLILBlock, HLILCall,
+                     HLILComment, HLILConst, HLILDeref, HLILExprStmt, HLILExternCall, HLILIf, HLILReturn,
+                     HLILSyscall, HLILTypeKind, HLILVar, HLILVariable, VariableKind)
 from ir.mlil.mlil import MediumLevelILFunction, MLILRet
 from ir.mlil.mlil_types import MLILType, MLILVariantType
 
@@ -30,6 +38,13 @@ def make_scp_function(*params: FunctionParam) -> Function:
     func.name = TEST_FUNCTION_NAME
     func.params = list(params)
     return func
+
+
+def typed_hlil(mlil: MediumLevelILFunction, scp_func: Function) -> HighLevelILFunction:
+    """mlil's HLIL with its declared types, as the file-level stage gives them"""
+    hlil = convert_falcom_mlil_to_hlil(mlil)
+    FalcomTypeInferencePass([scp_func]).run([hlil])
+    return hlil
 
 
 def make_mlil_function(type_name: str, default_value) -> MediumLevelILFunction:
@@ -58,7 +73,7 @@ class TestDeclaredParameterTypes(unittest.TestCase):
         hlil = HighLevelILFunction(TEST_FUNCTION_NAME)
         hlil.parameters = [HLILVariable(f'arg{i + 1}', kind=VariableKind.PARAM) for i in range(len(scp_func.params))]
 
-        FalcomTypeInferencePass(scp_func).run(hlil)
+        FalcomTypeInferencePass([scp_func]).run([hlil])
 
         self.assertEqual(
             [param.type_hint for param in hlil.parameters],
@@ -72,7 +87,7 @@ class TestDeclaredParameterTypes(unittest.TestCase):
         mlil.var_types = {'arg1': INT_FLOAT_VARIANT}
         scp_func = make_scp_function(FunctionParam(ScpParamFlags(Value32), ScpValue(FLOAT_DEFAULT)))
 
-        ts = generate_typescript(convert_falcom_mlil_to_hlil(mlil, scp_func))
+        ts = generate_typescript(typed_hlil(mlil, scp_func))
 
         self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: number = {FLOAT_DEFAULT})', ts)
 
@@ -81,18 +96,196 @@ class TestDeclaredParameterTypes(unittest.TestCase):
         mlil = make_mlil_function('str', STRING_DEFAULT)
         scp_func = make_scp_function(FunctionParam(ScpParamFlags(NullableStr), ScpValue(STRING_DEFAULT)))
 
-        ts = generate_typescript(convert_falcom_mlil_to_hlil(mlil, scp_func))
+        ts = generate_typescript(typed_hlil(mlil, scp_func))
 
         self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: string = "{STRING_DEFAULT}")', ts)
 
-    def test_without_the_script_function_the_inferred_type_stays(self):
-        # Guard: callers that pass no script function (the semantic validator) keep the converter's mapping
+    def test_without_the_stage_the_inferred_type_stays(self):
+        # Guard: callers that convert without the file-level stage (the semantic validator) keep the converter's
+        # mapping
         mlil = make_mlil_function('int', FLOAT_DEFAULT)
         mlil.var_types = {'arg1': INT_FLOAT_VARIANT}
 
         ts = generate_typescript(convert_falcom_mlil_to_hlil(mlil))
 
         self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: any = {FLOAT_DEFAULT})', ts)
+
+
+WAIT = 0x19         # Chr: an ID first, with 3 arguments or the older 2
+EMOTION = 0x89      # Chr: the emotion first, the ID second
+ATTACH = 0x8C       # Chr: two IDs, a slot between
+SPEAK = 0x13        # Mes: the speaker first, whatever the count
+FLAG_MASK = 4
+WRAPPER = 'chr_wait_animeclip'
+
+SYSCALL_ARGS = SyscallArgs([
+    SyscallEntry(Subsystem.Chr, WAIT,    3,        'N'),
+    SyscallEntry(Subsystem.Chr, WAIT,    2,        'N'),
+    SyscallEntry(Subsystem.Chr, EMOTION, 3,        '.N'),
+    SyscallEntry(Subsystem.Chr, ATTACH,  3,        'N.N'),
+    SyscallEntry(Subsystem.Mes, SPEAK,   ANY_ARGC, 'N'),
+])
+
+
+def ref(name: str) -> HLILVar:
+    """A reference to a parameter in a body: LOCAL, as the converter makes them"""
+    return HLILVar(HLILVariable(name))
+
+
+def wait(*args: HLILVar | HLILConst) -> HLILSyscall:
+    return HLILSyscall(Subsystem.Chr, WAIT, list(args))
+
+
+def hlil_function(name: str, argc: int, *statements) -> HighLevelILFunction:
+    func = HighLevelILFunction(name)
+    func.parameters = [HLILVariable(f'arg{index + 1}', kind=VariableKind.PARAM) for index in range(argc)]
+    for stmt in statements:
+        func.body.add_statement(stmt)
+
+    return func
+
+
+def scp_function(func: HighLevelILFunction) -> Function:
+    scp_func = Function()
+    scp_func.name = func.name
+    scp_func.params = [FunctionParam(ScpParamFlags(Value32)) for _ in func.parameters]
+    return scp_func
+
+
+def run_stage(*funcs: HighLevelILFunction, syscall_args: SyscallArgs | None = SYSCALL_ARGS, warn=None):
+    FalcomTypeInferencePass([scp_function(func) for func in funcs], syscall_args, warn).run(list(funcs))
+
+
+def marked(func: HighLevelILFunction) -> set[str]:
+    return {param.name for param in func.parameters if param.id_kind == CHR_ID_KIND}
+
+
+def a1() -> HLILVar:
+    return ref('arg1')
+
+
+def a2() -> HLILVar:
+    return ref('arg2')
+
+
+def a3() -> HLILVar:
+    return ref('arg3')
+
+
+class TestIdParameterMarks(unittest.TestCase):
+    """A function that is one syscall marks each parameter passed as exactly the argument at an ID slot"""
+
+    def test_what_is_marked(self):
+        flagged = HLILBinaryOp(BinaryOp.BIT_OR, a1(), HLILConst(FLAG_MASK))
+        emotion = HLILSyscall(Subsystem.Chr, EMOTION, [a1(), a2(), a3()])
+        speak = HLILSyscall(Subsystem.Mes, SPEAK, [a1(), a2(), a3()])
+        cases = [
+            # label, the marks, argc, the body
+            ('return syscall',          {'arg1'}, 3, [HLILReturn(wait(a1(), a2(), a3()))]),
+            ('syscall, return 0',       {'arg1'}, 3, [HLILExprStmt(wait(a1(), a2(), a3())), HLILReturn(HLILConst(0))]),
+            ('syscall, return',         {'arg1'}, 3, [HLILExprStmt(wait(a1(), a2(), a3())), HLILReturn()]),
+            ('a comment first',         {'arg1'}, 3, [HLILComment('line(3)'), HLILReturn(wait(a1(), a2(), a3()))]),
+            ('a dot slot',              {'arg2'}, 3, [HLILReturn(emotion)]),
+            ('reordered',               {'arg3'}, 3, [HLILReturn(wait(a3(), a1(), a2()))]),
+            ('the older count',         {'arg1'}, 2, [HLILReturn(wait(a1(), a2()))]),
+            ('passed twice, one an ID', {'arg1', 'arg2'}, 3,
+             [HLILReturn(HLILSyscall(Subsystem.Chr, ATTACH, [a2(), a1(), a1()]))]),
+            ('any count',               {'arg1'}, 4, [HLILReturn(speak)]),
+            ('in an expression',        set(), 3, [HLILReturn(wait(flagged, a2(), a3()))]),
+            ('its address taken beside', set(), 3, [HLILReturn(wait(a1(), HLILAddressOf(a1()), a3()))]),
+            ('no row for the count',    set(), 4, [HLILReturn(wait(a1(), a2(), a3(), ref('arg4')))]),
+            ('two syscalls',            set(), 3, [HLILExprStmt(wait(a1(), a2(), a3())),
+                                                   HLILExprStmt(wait(a1(), a2(), a3())), HLILReturn()]),
+            ('a call, not a syscall',   set(), 3, [HLILReturn(HLILCall(WRAPPER, [a1(), a2(), a3()]))]),
+        ]
+        for label, expected, argc, statements in cases:
+            with self.subTest(label):
+                func = hlil_function(WRAPPER, argc, *statements)
+                run_stage(func)
+                self.assertEqual(marked(func), expected)
+
+    def test_without_rows_nothing_is_marked_and_the_types_are_still_set(self):
+        func = hlil_function(WRAPPER, 3, HLILReturn(wait(a1(), a2(), a3())))
+
+        run_stage(func, syscall_args=None)
+
+        self.assertEqual(marked(func), set())
+        self.assertEqual({param.type_hint for param in func.parameters}, {HLILTypeKind.NUMBER})
+
+    def test_a_function_that_raises_is_reported_and_the_next_still_done(self):
+        broken = hlil_function('broken', 3, HLILReturn(wait(a1(), a2(), a3())))
+        func = hlil_function(WRAPPER, 3, HLILReturn(wait(a1(), a2(), a3())))
+        warnings = []
+
+        # No declared types for broken: its types part raises
+        FalcomTypeInferencePass([scp_function(func)], SYSCALL_ARGS, lambda name, error: warnings.append((name, error))
+                                ).run([broken, func])
+
+        self.assertEqual([(name, type(error)) for name, error in warnings], [('broken', KeyError)])
+        self.assertEqual([param.type_hint for param in broken.parameters], [None] * 3)
+        self.assertEqual(func.parameters[0].type_hint, HLILTypeKind.NUMBER)
+        self.assertEqual(marked(func), {'arg1'})
+
+
+class TestExcludedParameters(unittest.TestCase):
+    """The names a body may change, wherever in the body: a write, or an address taken"""
+
+    def test_writes_and_addresses_anywhere(self):
+        body = HLILBlock([
+            HLILIf(ref('arg4'), HLILBlock([HLILAssign(a1(), HLILConst(0))])),
+            HLILAssign(HLILDeref(HLILAddressOf(a2())), HLILConst(0)),
+            HLILExprStmt(HLILCall(WRAPPER, [HLILAddressOf(a3())])),
+            HLILReturn(ref('arg5')),
+        ])
+
+        self.assertEqual(excluded_parameters(body), {'arg1', 'arg2', 'arg3'})
+
+
+class TestIdConstantTags(unittest.TestCase):
+    """An int constant written in decimal that is exactly the argument at an ID slot: of a syscall by the rows, of a
+    call by its callee's marks"""
+
+    @classmethod
+    def tags(cls, *args) -> list[str | None]:
+        return [arg.id_kind for arg in args]
+
+    def test_a_syscalls_id_constant_is_tagged(self):
+        args = [HLILConst(0), HLILConst(1), HLILConst(2)]
+        run_stage(hlil_function('Main', 0, HLILExprStmt(wait(*args)), HLILReturn()))
+
+        self.assertEqual(self.tags(*args), [CHR_ID_KIND, None, None])
+
+    def test_a_calls_constant_at_a_marked_parameter_is_tagged_whichever_comes_first(self):
+        for caller_first in (True, False):
+            with self.subTest(caller_first=caller_first):
+                args = [HLILConst(0), HLILConst(1), HLILConst(2)]
+                caller = hlil_function('Main', 0, HLILExprStmt(HLILCall(WRAPPER, args)), HLILReturn())
+                wrapper = hlil_function(WRAPPER, 3, HLILReturn(wait(a1(), a2(), a3())))
+                run_stage(*([caller, wrapper] if caller_first else [wrapper, caller]))
+                self.assertEqual(self.tags(*args), [CHR_ID_KIND, None, None])
+
+    def test_only_a_decimal_exact_int_is_an_id(self):
+        cases = [(0, False, CHR_ID_KIND), (-1, False, CHR_ID_KIND), (True, False, None), (False, False, None),
+                 (RawInt(0), False, None), (0.0, False, None), (SourceFloat(0.0, '0.0'), False, None),
+                 (STRING_DEFAULT, False, None), (0, True, None)]
+        for value, is_hex, expected in cases:
+            with self.subTest(value=repr(value), is_hex=is_hex):
+                const = HLILConst(value, is_hex)
+                run_stage(hlil_function('Main', 0, HLILExprStmt(wait(const, HLILConst(1), HLILConst(2)))))
+                self.assertEqual(const.id_kind, expected)
+
+    def test_untagged_places(self):
+        in_expression, in_extern_call, at_unconverted_callee = HLILConst(0), HLILConst(0), HLILConst(0)
+        caller = hlil_function('Main', 0,
+                               HLILExprStmt(wait(HLILBinaryOp(BinaryOp.ADD, in_expression, HLILConst(1)), HLILConst(1),
+                                                 HLILConst(2))),
+                               HLILExprStmt(HLILExternCall(f'module:{WRAPPER}', [in_extern_call, HLILConst(1),
+                                                                                  HLILConst(2)])),
+                               HLILExprStmt(HLILCall(WRAPPER, [at_unconverted_callee, HLILConst(1), HLILConst(2)])))
+
+        run_stage(caller)
+
+        self.assertEqual(self.tags(in_expression, in_extern_call, at_unconverted_callee), [None, None, None])
 
 
 if __name__ == '__main__':

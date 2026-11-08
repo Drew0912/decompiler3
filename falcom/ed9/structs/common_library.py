@@ -2,9 +2,12 @@
 
 from ..games import GAMES_PACKAGE
 
-# A game's generated data (its common-function library; later its chr table): falcom/ed9/games/<game>/metadata/, a
-# tracked package whose generated files are gitignored
+# A game's generated data (its common-function library, its ID tables): falcom/ed9/games/<game>/metadata/, a tracked
+# package whose generated files are gitignored
 GAME_METADATA_FOLDER = 'metadata'
+
+# Its character table (falcom/ed9/tools/gen_tables.py): ChrIdTable, each name to its ID and each ID to its name
+CHR_TABLE_MODULE     = 'chr_table'
 
 # The library in it: the modules, one per syscall subsystem, in COMMON_LIBRARY_FOLDER; the index (name -> module,
 # fingerprint digest); the module re-exporting them all

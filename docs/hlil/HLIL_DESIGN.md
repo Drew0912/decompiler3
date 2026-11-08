@@ -47,8 +47,10 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `tests/hlil_tests/test_hlil_loop_recovery.py` | Unit tests for guarded-loop recovery and its safety checks. |
 
 The generic/project-specific split is deliberate. The core converter understands MLIL nodes and
-structured control flow; the Falcom entry point chooses the production pass sequence and runs
-`FalcomTypeInferencePass`, which types parameters from the flags the script declares.
+structured control flow; the Falcom entry point chooses the production pass sequence. `FalcomTypeInferencePass`
+(`falcom/ed9/ir/hlil/hlil_passes.py`) runs after it, once over the file's converted functions (the file-level stage,
+`write_ts` in `falcom/ed9/scp2py_base.py`): it types parameters from the flags the script declares and, with the game's
+syscall rows, tags character IDs.
 
 ## Operations & Node Types
 
@@ -66,7 +68,7 @@ The concrete model is small and source-oriented:
 | Structured control flow | `HLILIf`, `HLILWhile`, `HLILDoWhile`, `HLILSwitch`, `HLILBreak`, `HLILContinue`, `HLILReturn`. |
 | Unexpressible jump | `HLILUnstructured` - a jump the tree cannot express; the path ends there (see Basic Blocks & Functions). |
 | Ordinary statements | `HLILAssign`, `HLILExprStmt`, `HLILComment`, `HLILIntrinsic` (a VM instruction with no HLIL form of its own, its name and args: `POPN`, `DEBUG_INT`; never skipped by a pass that skips comments). |
-| Leaf expressions | `HLILVar`, `HLILConst`. Constants retain an `is_hex` display hint. |
+| Leaf expressions | `HLILVar`, `HLILConst`. Constants retain an `is_hex` display hint, and an `id_kind` tag a project's stage sets (`.ts` prints the value by name). |
 | Operators | `HLILBinaryOp`, `HLILUnaryOp`, `HLILAddressOf`, using `BinaryOp` and `UnaryOp`. |
 | Pointer dereference | `HLILDeref` (`*ptr`, from `MLILDeref`) - like `HLILAddressOf`, not a subclass of `HLILUnaryOp`. A store through one (`MLILStoreDeref`) lowers to an ordinary `HLILAssign` whose `dest` is an `HLILDeref` - no dedicated store node. |
 | Calls | `HLILCall`, `HLILSyscall`, and `HLILExternCall`. |
@@ -136,6 +138,8 @@ HLIL has one non-SSA variable object, `HLILVariable`. It carries:
 
 - `name` for locals and parameters;
 - `type_hint` and `default_value` metadata;
+- `id_kind`, a parameter's ID kind (e.g. `'ChrId'`): a tag a project's stage sets, read by `.ts` only (not in equality
+  or hashing);
 - a `VariableKind` of `LOCAL`, `PARAM`, `GLOBAL`, or `REG`;
 - `index` for global and register slots.
 
@@ -157,8 +161,8 @@ Type information is deliberately lightweight. `HLILTypeKind` contains `INT`, `FL
 `BOOL`, `VOID`, `POINTER` and `NUMBER` (int or float), but types are hints on variables rather than
 types attached to every expression. During conversion, MLIL booleans map to `INT`, MLIL pointers
 (`Pointer` out-parameters) to `POINTER`, and unknown and variant MLIL types to no hint. Parameter default
-values are copied from MLIL source-parameter metadata when available. When the script's function is
-given, `FalcomTypeInferencePass` then sets each parameter's type from its declared flag -
+values are copied from MLIL source-parameter metadata when available. The file-level stage's
+`FalcomTypeInferencePass` then sets each parameter's type from its declared flag -
 `Value32`/`Nullable32` -> `NUMBER`, `str`/`NullableStr` -> `STRING`, `Pointer` -> `POINTER` - so a
 signature never depends on MLIL inference. Locals have no type on the decompile path (its stack translator runs no
 type pass: `any` until the HLIL type plan); on the SSA path they take the MLIL SSA types.
@@ -265,11 +269,14 @@ The production entry point is `convert_falcom_mlil_to_hlil()` in
 `falcom/ed9/ir/hlil/hlil_converter.py`. Its configured pipeline is:
 
 ```
-MLILToHLILPass → FalcomTypeInferencePass (when the script function is given) →
-SwitchRecoveryPass → LoopRecoveryPass → CommonReturnExtractionPass →
+MLILToHLILPass → SwitchRecoveryPass → LoopRecoveryPass → CommonReturnExtractionPass →
 DeadCodeEliminationPass → BranchOrderNormalizationPass (enabled by default) →
 LineMarkerRemovalPass (only with line_markers off)
 ```
+
+For `.ts`, the file-level stage follows, once every function is converted and `.llil.asm`, `.mlil.asm` and `.hlil.ts`
+are written: `FalcomTypeInferencePass` over the converted functions (a function the output leaves out, or whose
+conversion failed, gives it nothing), then each function's TypeScript.
 
 The post-conversion passes operate on the tree, not on the original CFG. In architectural terms,
 they divide into shape recovery (`SwitchRecoveryPass`, `LoopRecoveryPass`), cleanup
@@ -282,9 +289,13 @@ condition, swapped or nested arms); the code statements and their order are unch
 
 HLIL has no copy-propagation pass (the disabled HLIL `CopyPropagationPass` was removed on 2026-09-27): the decompile
 path's stack translator folds each push into its consumer, and the SSA path propagates copies in its optimizer.
-`FalcomTypeInferencePass` only sets parameter types (see Variable Model); it is also the planned home of Falcom
-semantic types such as character IDs. See `docs/hlil/HLIL_GUIDE.md` for the detailed transformations
-performed by each active pass and why the copy-propagation pass was removed.
+`FalcomTypeInferencePass` is the home of Falcom semantic types: the parameter types (see Variable Model), and the
+character IDs. With the game's syscall rows (`falcom/ed9/games/<game>/metadata/syscall_args.py`), a function that is
+one syscall and nothing else marks each parameter passed as exactly the argument at an ID slot and never written or
+address-taken (`HLILVariable.id_kind`); then each int constant written in decimal that is exactly the argument at an ID
+slot, of a syscall by its row or of a call to a marked parameter, is tagged (`HLILConst.id_kind`). Each function's part
+runs on its own: one that raises sets nothing and is logged. See `docs/hlil/HLIL_GUIDE.md` for the detailed
+transformations performed by each active pass and why the copy-propagation pass was removed.
 
 ## Testing
 
@@ -331,7 +342,8 @@ Several dedicated HLIL unit-test files exist today:
   (`TestHLILStructures`).
 - `tests/hlil_tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared
   parameter flag gives, the declared flag winning over an inferred int/float variant, and default
-  values still printed once.
+  values still printed once; which parameters a one-syscall body marks, the names a body may change, which
+  constants are tagged, and a function that raises.
 - `tests/hlil_tests/test_hlil_line_marker_removal.py` covers `line_marker_number`, `LineMarkerRemovalPass` (markers
   go from every block, other comments stay, the arms left empty are tidied) and the `line_markers` flag (on by
   default; off, it runs after branch-order normalization).

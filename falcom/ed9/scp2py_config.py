@@ -32,6 +32,11 @@ class ScpDecompileConfig(StrictBase):
     # .hlil.ts and .ts: a // line(N) comment where each source line starts (the .py keeps its DEBUG_SET_LINENO)
     line_markers: bool = True
 
+    # .ts: an ID at a reviewed syscall slot by name, from the game's metadata/syscall_args.py and its tables - so far
+    # character IDs, ChrIdTable['Estelle'] or PseudoChrId.Self (chr_table.py); off, or for a game without
+    # syscall_args.py, every ID a number
+    id_names: bool = True
+
     # .debug.txt: a listing of the whole .dat as the VM sees it (header, global vars, each function's table entry, code
     # and call-site debug records, the string pool), loaded on its own with the unreachable code decoded. Written last;
     # filter_func picks the functions listed

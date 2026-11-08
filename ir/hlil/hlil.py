@@ -140,6 +140,7 @@ class HLILVariable:
         self.default_value = default_value
         self.kind = kind
         self.index = index  # For GLOBAL/REG: the slot index
+        self.id_kind: str | None = None     # A parameter's ID kind, a tag a project's stage sets; read by .ts only
 
     def __str__(self) -> str:
         if self.kind == VariableKind.GLOBAL:
@@ -188,6 +189,7 @@ class HLILConst(HLILExpression):
         super().__init__(HLILOperation.HLIL_CONST)
         self.value = value
         self.is_hex = is_hex
+        self.id_kind: str | None = None     # Its ID kind as an argument, a tag a project's stage sets; read by .ts only
 
     def __str__(self) -> str:
         if isinstance(self.value, str):

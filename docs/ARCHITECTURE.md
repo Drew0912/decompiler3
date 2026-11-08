@@ -142,16 +142,20 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
    ↓
 7. MLIL (convert_falcom_llil_to_mlil_stack)
    ↓
-8. HLIL (convert_falcom_mlil_to_hlil)
+8. HLIL (convert_falcom_mlil_to_hlil), per function
    ↓
-9. TypeScript (generate_typescript)
+9. The file-level stage (FalcomTypeInferencePass over the converted functions: types, character IDs)
+   ↓
+10. TypeScript (generate_typescript)
 ```
 
 ## Generic/Falcom Boundary
 
 `ir/`, `assembler/` and `dc3/` are meant to be generic, with game code under `falcom/`, and nothing generic imports
 `falcom/`. `codegen/` is game output (user, 2026-10-02): it reads only HLIL and nothing in `ir/` depends on it, so
-game knowledge there can't spread back into the IR. The opcode table (`falcom/ed9/assembler/`) holds no IR node classes:
+game knowledge there can't spread back into the IR. It imports nothing from `falcom/` either: a game's values reach it
+as tags on HLIL nodes (`HLILConst.id_kind`, `HLILVariable.id_kind`) and plain data (`IdFormatHint`), from the file-level
+stage. The opcode table (`falcom/ed9/assembler/`) holds no IR node classes:
 it gives opcode kinds and stack effects, and the LLIL lifter maps them to nodes. The decompile path's LLIL -> MLIL
 translator keeps the game's conventions in `falcom/ed9/ir/mlil/stack_translator.py` (`FalcomStackTranslator`: the
 parameter-to-slot mapping, the result register, globals, script calls, `POPN`, `DEBUG_INT`); the generic

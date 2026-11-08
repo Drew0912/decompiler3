@@ -40,8 +40,9 @@ The output was correct in every function traced; what it costs is readability.
   newline codes into the dialogue strings.
 - **Locals:** machine names, mostly typed `any`, one stack slot reused for unrelated values, and copy
   chains such as `reg0 = f(); var_s1 = reg0; var_s0 = reg0;`.
-- **Constants:** named pseudo-IDs for `65534` and the like, hex for bit flags, and float32 constants as
-  the shortest decimal that encodes to the same value.
+- **Constants:** named pseudo IDs beyond `PseudoChrId.Self` and `PseudoChrId.Nothing` (those two, and the table's
+  character names, print at reviewed syscall slots: `HLIL_GUIDE.md`, Codegen), hex for bit flags, and float32
+  constants as the shortest decimal that encodes to the same value.
 - **Calls:** print script calls as `module.f()`, as the MLIL does, not `extern_call('module:f')`
   (trailing default arguments are left out since 2026-10-14: Trailing Default Arguments, below).
 - **Structure:** don't split an `else if` chain into `switch` fragments when it has conditional arms

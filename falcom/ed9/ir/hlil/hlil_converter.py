@@ -12,14 +12,11 @@ from ir.hlil.passes import (
     BranchOrderNormalizationPass,
     LineMarkerRemovalPass,
 )
-from .hlil_passes import FalcomTypeInferencePass
-from ...assembler.function import Function
 
 
-def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Function | None = None,
-                                 normalize_branch_order: bool = True,
+def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, normalize_branch_order: bool = True,
                                  line_markers: bool = True) -> HighLevelILFunction:
-    """Convert MLIL function to HLIL with Falcom-specific type information
+    """Convert MLIL function to HLIL. The Falcom types come after, over the whole file (FalcomTypeInferencePass)
 
     normalize_branch_order restores source order for if/else arms that structuring
     left reversed. It is the only step that departs from the order the bytecode was
@@ -31,11 +28,6 @@ def convert_falcom_mlil_to_hlil(mlil_func: MediumLevelILFunction, scp_func: Func
     """
     pipeline = Pipeline()
     pipeline.add_pass(MLILToHLILPass())
-
-    # Parameter types come from the script's declared flags, not from MLIL inference
-    if scp_func:
-        pipeline.add_pass(FalcomTypeInferencePass(scp_func))
-
     pipeline.add_pass(SwitchRecoveryPass())
     pipeline.add_pass(LoopRecoveryPass())
     pipeline.add_pass(CommonReturnExtractionPass())

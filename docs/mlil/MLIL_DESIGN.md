@@ -361,7 +361,7 @@ whole entry point.
   not known yet. This only loses folding - SCCP never removes blocks - and tighter
   reachability would fold more constants, moving output further from the bytecode.
 - Rendered parameter types no longer come from this pass: since 2026-09-29 HLIL's
-  `FalcomTypeInferencePass` takes them from the declared flags, so `Value32`/`Nullable32` - which this
+  `FalcomTypeInferencePass` (the file-level stage) takes them from the declared flags, so `Value32`/`Nullable32` - which this
   pass still calls `int` - reach a signature as `number` (int or float). Locals used this pass's types until
   the decompile path moved to the stack translator, which runs no type pass (IR rewrite part 2): they print
   `any` until the HLIL type plan. This pass's known gaps, on the SSA path: call results are never typed (a

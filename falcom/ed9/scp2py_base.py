@@ -20,13 +20,16 @@ from falcom.ed9.games import GAMES_DIR
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
 from falcom.ed9.formatter.listing import write_listing
+from falcom.ed9.formatter.format_hints import game_format_hints
+from falcom.ed9.assembler.ed9_syscalls import game_syscall_args
 from falcom.ed9.assembler.function import Function
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_passes import FalcomTypeInferencePass
 from ir.mlil.mlil_formatter import MLILFormatter
-from ir.hlil.hlil import HLILUnstructured, reachable_statements
+from ir.hlil.hlil import HighLevelILFunction, HLILUnstructured, reachable_statements
 from ir.hlil.hlil_formatter import HLILFormatter
 from codegen import generate_typescript, generate_typescript_header
 from falcom.ed9.scp2py_config import ScpDecompileConfig
@@ -112,11 +115,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
     llil_asm_lines: list[str] = []
     mlil_asm_lines: list[str] = []
     hlil_ts_lines: list[str] = []
-    ts_chunks: list[str] = []
-
-    # From the whole function table (callees the output omits included): .ts leaves out a call's trailing arguments
-    # equal to these defaults - in a round trip, never those the call's debug record keeps (call_written_argc)
-    callee_defaults = callee_default_values(parser) if config.write_ts else None
+    converted: list[tuple[Function, HighLevelILFunction]] = []  # for .ts: each function whose HLIL came out
 
     for func in functions:
         try:
@@ -142,7 +141,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if not need_hlil:
                 continue
 
-            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func, line_markers=config.line_markers)
+            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, line_markers=config.line_markers)
 
             unstructured_targets = [stmt.target for stmt in reachable_statements(hlil_func.body)
                                     if isinstance(stmt, HLILUnstructured)]
@@ -154,7 +153,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
                 hlil_ts_lines.extend(HLILFormatter.format_function(hlil_func))
 
             if config.write_ts:
-                ts_chunks.append(generate_typescript(hlil_func, callee_defaults, func.call_written_argc))
+                converted.append((func, hlil_func))
         except Exception as e:
             # One bad function shouldn't lose the rest of the file's output
             log.warning(f'{path} [{func.name}]: {type(e).__name__}: {e}')
@@ -168,8 +167,35 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
     if config.write_hlil_ts:
         write_text_lf(out.with_suffix('.hlil.ts'), '\n'.join(hlil_ts_lines))
 
+    # Last, so a failure in the file-level stage can't cost the outputs above
     if config.write_ts:
-        write_text_lf(out.with_suffix('.ts'), generate_typescript_header() + '\n'.join(ts_chunks))
+        write_ts(path, parser, converted, config, out)
+
+
+def write_ts(path: Path, parser: ScpParser, converted: list[tuple[Function, HighLevelILFunction]],
+             config: ScpDecompileConfig, out: Path) -> None:
+    """The .ts: the file-level HLIL stage over every converted function (the types; with the game's syscall rows,
+    the ID names), then each function's TypeScript"""
+    def warn(name: str, error: Exception):
+        log.warning(f'{path} [{name}]: {type(error).__name__}: {error}')
+
+    syscall_args = game_syscall_args(parser.game) if config.id_names else None
+    FalcomTypeInferencePass(parser.functions, syscall_args, warn).run([hlil_func for _, hlil_func in converted])
+    id_hints = game_format_hints(parser.game) if syscall_args is not None else None
+
+    # From the whole function table (callees the output omits included): .ts leaves out a call's trailing arguments
+    # equal to these defaults - in a round trip, never those the call's debug record keeps (call_written_argc)
+    callee_defaults = callee_default_values(parser)
+
+    # Each function on its own, as in write_ir_outputs: one that fails to print can't cost the rest
+    ts_chunks = []
+    for func, hlil_func in converted:
+        try:
+            ts_chunks.append(generate_typescript(hlil_func, callee_defaults, func.call_written_argc, id_hints))
+        except Exception as e:
+            warn(func.name, e)
+
+    write_text_lf(out.with_suffix('.ts'), generate_typescript_header(id_hints) + '\n'.join(ts_chunks))
 
 
 def main(game: str) -> int:

@@ -77,7 +77,7 @@ def check_function(lifter: ED9VMLifter, func) -> FunctionResult:
         return FunctionResult.check_failed(func.name, 'MLIL gated', e, differences)
 
     try:
-        hlil = convert_falcom_mlil_to_hlil(mlil, func)
+        hlil = convert_falcom_mlil_to_hlil(mlil)
     except Exception as e:
         return FunctionResult.decompile_failed(func.name, 'HLIL', e, differences)
 

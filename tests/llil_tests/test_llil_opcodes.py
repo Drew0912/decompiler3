@@ -20,6 +20,7 @@ from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter
 from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
 from falcom.ed9.assembler.stack_effects import LOCAL_SETUP_SLOTS
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_passes import FalcomTypeInferencePass
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugInt, LowLevelILFalcomOperation, LowLevelILPopN
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
@@ -241,7 +242,8 @@ class TestRawPushKeepsItsType(unittest.TestCase):
         callee.params[0].default_value = ScpValue(RawInt(RAW_VALUE))
 
         llil_func = ED9VMLifter(parser=parser).lift_function(callee)
-        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil_stack(llil_func), callee)
+        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil_stack(llil_func))
+        FalcomTypeInferencePass(functions).run([hlil_func])
 
         self.assertIn(f'(arg1: number = {RAW_VALUE})', generate_typescript(hlil_func))
         self.assertIn(f'= {RawInt(RAW_VALUE)!r}', Formatter.format_param(0, callee.params[0]))

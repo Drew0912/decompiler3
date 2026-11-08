@@ -190,7 +190,9 @@ the `sora2` exe, with the counts from `sora2`'s tables and all 1,082 scripts:
 from `t_skill.tbl`, in the game's `metadata/` as `chr_table.py`, `item_table.py` and `craft_table.py` (gitignored,
 `sora2` only so far): each one dict that maps each name to its ID and each ID to its name. The first row of an ID wins,
 as in the game; `0xFFFF` rows, pseudo IDs and crafts with no name stay out. The first ID of a repeated name, in file
-order, keeps it plain; a later one adds its ID in hex (`Estelle`, `Estelle_00A5`). Nothing prints these names yet.
+order, keeps it plain; a later one adds its ID in hex (`Estelle`, `Estelle_00A5`). `.ts` prints `ChrIdTable`'s names at
+reviewed syscall slots (`docs/hlil/HLIL_GUIDE.md`, Codegen); they come from `table_en`, so they are English whatever
+the script's language.
 
 ## Games on This Format
 

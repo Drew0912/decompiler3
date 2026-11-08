@@ -1,5 +1,6 @@
 """TypeScript Code Generator - HLIL to production TypeScript"""
 
+from dataclasses import dataclass
 import math
 from typing import Iterator
 
@@ -25,12 +26,26 @@ EAGER_LOGIC_HELPERS = {BinaryOp.AND: 'and_', BinaryOp.OR: 'or_'}
 CALLS = (HLILCall, HLILSyscall, HLILExternCall)
 
 
+@dataclass(frozen=True)
+class IdFormatHint:
+    """How one ID kind's tagged values print (HLILConst.id_kind, HLILVariable.id_kind): a value in names as
+    table['name'], one in pseudo_names as pseudo_enum.Name, any other as its number; comment heads their declarations
+    in the header"""
+
+    table           : str
+    names           : dict[int, str]
+    pseudo_enum     : str
+    pseudo_names    : dict[int, str]
+    comment         : str
+
+
 class TypeScriptGenerator(HLILStatementPrinter):
     CASE_BLOCKS = True
 
     _current_func: HighLevelILFunction = None
     _callee_defaults: dict[str, tuple] = {}  # local callee name -> each parameter's default (None: none)
     _written_argc: dict[int, int] = {}       # local CALL offset -> args its debug record keeps (round trip)
+    _id_hints: dict[str, IdFormatHint] = {}      # ID kind -> how its tagged values print
 
     @classmethod
     def _format_type(cls, type_hint) -> str:
@@ -60,6 +75,24 @@ class TypeScriptGenerator(HLILStatementPrinter):
             return 'null'
         else:
             raise TypeError(f'Unknown default value type: {type(value).__name__}')
+
+    @classmethod
+    def _format_id(cls, kind: str, value) -> str | None:
+        """value's name as its kind's IdFormatHint spells it, or None: it prints as a number. Exact ints only: a bool,
+        or an int subclass a frontend gives a meaning of its own, is not an ID"""
+        hint = cls._id_hints.get(kind)
+        if hint is None or type(value) is not int:
+            return None
+
+        name = hint.names.get(value)
+        if name is not None:
+            return f'{hint.table}[{quote_string(name, "'")}]'
+
+        pseudo = hint.pseudo_names.get(value)
+        if pseudo is not None:
+            return f'{hint.pseudo_enum}.{pseudo}'
+
+        return None
 
     @classmethod
     def _format_call_args(cls, func_name: str, args: list, address: int) -> str:
@@ -233,6 +266,10 @@ class TypeScriptGenerator(HLILStatementPrinter):
         if isinstance(expr, HLILVar):
             return str(expr.var)
         elif isinstance(expr, HLILConst):
+            name = cls._format_id(expr.id_kind, expr.value) if expr.id_kind is not None else None
+            if name is not None:
+                return name
+
             # The constant's own text, but a float as a TypeScript number
             return cls._format_float(expr.value) if isinstance(expr.value, float) else str(expr)
         elif isinstance(expr, HLILBinaryOp):
@@ -305,7 +342,8 @@ class TypeScriptGenerator(HLILStatementPrinter):
     def _format_parameter(cls, param: HLILVariable) -> str:
         text = f'{param.name}: {cls._format_type(param.type_hint)}'
         if param.default_value is not None:
-            text += f' = {cls._format_default_value(param.default_value)}'
+            name = cls._format_id(param.id_kind, param.default_value) if param.id_kind is not None else None
+            text += f' = {name or cls._format_default_value(param.default_value)}'
 
         return text
 
@@ -364,8 +402,21 @@ class TypeScriptGenerator(HLILStatementPrinter):
         return f'deref_set({ptr_str}, {src_str});'
 
 
-def generate_typescript_header() -> str:
-    return """// VM state
+def generate_typescript_header(id_hints: dict[str, IdFormatHint] | None = None) -> str:
+    """The declarations every .ts starts with; with id_hints, each hint's table and pseudo enum too"""
+    return TYPESCRIPT_HEADER + ''.join(id_hint_declarations(hint) for hint in (id_hints or {}).values())
+
+
+def id_hint_declarations(hint: IdFormatHint) -> str:
+    """The hint's table, empty (a name's value is the game's), and its pseudo enum"""
+    members = ', '.join(f'{name} = {value}' for value, name in hint.pseudo_names.items())
+    return (f'// {hint.comment}\n'
+            f'const {hint.table}: Record<string, number> = {{}};\n'
+            f'enum {hint.pseudo_enum} {{ {members} }}\n'
+            '\n')
+
+
+TYPESCRIPT_HEADER = """// VM state
 const GLOBALS: any[] = [];
 const REGS: any[] = new Array(16);
 
@@ -401,17 +452,20 @@ function DEBUG_INT(value: number): void { }
 
 
 def generate_typescript(func: HighLevelILFunction, callee_defaults: dict[str, tuple] | None = None,
-                        written_argc: dict[int, int] | None = None) -> str:
+                        written_argc: dict[int, int] | None = None,
+                        id_hints: dict[str, IdFormatHint] | None = None) -> str:
     """func's TypeScript; with callee_defaults (local callee name -> each parameter's default as the lifter converts
     it, None where there is none) a call leaves out its trailing arguments equal to them, but with written_argc
     (local CALL offset -> args its debug record keeps: Function.call_written_argc, round trip only) never the ones its
-    author wrote"""
+    author wrote; with id_hints (ID kind -> IdFormatHint) a tagged value prints by name"""
     TypeScriptGenerator._callee_defaults = callee_defaults or {}
     TypeScriptGenerator._written_argc = written_argc or {}
+    TypeScriptGenerator._id_hints = id_hints or {}
     try:
         lines = TypeScriptGenerator.generate_function(func)
     finally:
         TypeScriptGenerator._callee_defaults = {}
         TypeScriptGenerator._written_argc = {}
+        TypeScriptGenerator._id_hints = {}
 
     return '\n'.join(lines)

@@ -130,7 +130,7 @@ def analyse_file(path: Path) -> list[FunctionReport]:
         with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
             llil_func = lifter.lift_function(func)
             mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
-            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, func)
+            hlil_func = convert_falcom_mlil_to_hlil(mlil_func)
 
             sequences = {
                 'py'  : collect_dsl_lines(func),

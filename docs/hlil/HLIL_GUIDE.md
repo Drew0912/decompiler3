@@ -88,17 +88,24 @@ The real production entry point is `convert_falcom_mlil_to_hlil()`
 (`falcom/ed9/ir/hlil/hlil_converter.py`), which builds a `Pipeline` and runs, in order:
 
 ```
-MLILToHLILPass → FalcomTypeInferencePass (when the script function is given) →
-SwitchRecoveryPass → LoopRecoveryPass → CommonReturnExtractionPass →
+MLILToHLILPass → SwitchRecoveryPass → LoopRecoveryPass → CommonReturnExtractionPass →
 DeadCodeEliminationPass → BranchOrderNormalizationPass (default on) →
 LineMarkerRemovalPass (only with line_markers off)
 ```
 
-`FalcomTypeInferencePass` sets each parameter's type from the flag the script declares for it
-(`Value32`/`Nullable32` -> `number`, `str`/`NullableStr` -> `string`, `Pointer` -> `Pointer`), so
+For `.ts`, the file-level stage (`write_ts`, `falcom/ed9/scp2py_base.py`) runs after every function is converted
+and the other outputs are written: `FalcomTypeInferencePass` (`falcom/ed9/ir/hlil/hlil_passes.py`) over the
+converted functions, then each function's TypeScript. The pass sets each parameter's type from the flag the script
+declares for it (`Value32`/`Nullable32` -> `number`, `str`/`NullableStr` -> `string`, `Pointer` -> `Pointer`), so
 signatures don't depend on MLIL inference. Local variables have no type on the decompile path (`any` until the HLIL
-type plan: its stack translator runs no type pass); on the SSA path they take the MLIL SSA types. It is also
-the planned home of Falcom semantic types such as character IDs.
+type plan: its stack translator runs no type pass); on the SSA path they take the MLIL SSA types. With the game's
+syscall rows (`falcom/ed9/games/<game>/metadata/syscall_args.py`, `SyscallArgs` in
+`falcom/ed9/assembler/ed9_syscalls.py`), the pass also marks the character-ID parameters of the functions that are
+one syscall and nothing else (`return syscall(...)`, or `syscall(...)` then a return of a constant or nothing): each
+parameter passed as exactly the argument at an ID slot, never written or address-taken anywhere in the body
+(`HLILVariable.id_kind`). Then it tags each int constant written in decimal that is exactly the argument at an ID
+slot, of a syscall by its row or of a call to a marked parameter (`HLILConst.id_kind`); not inside an expression,
+not an `extern_call`'s, not a bool, a Raw word, a float, a string or a hex constant.
 
 HLIL has no copy-propagation pass: the decompile path's stack translator folds each push into its consumer, and the
 SSA path propagates copies earlier, at the MLIL-SSA layer. An HLIL
@@ -168,6 +175,15 @@ copy of it - the shared `unwrap_address_taken_var`/its own `_format_var_assignme
 (`ir/hlil/hlil.py`).
 Real output therefore reads naturally - `chr_set_pos(65533, var_s5, var_s6, var_s7, var_s8)` - with
 no visible trace of the underlying memory-form representation.
+
+**Character IDs by name.** A tagged constant, and a marked parameter's default when it is an exact `int`, print
+by name from plain data `generate_typescript` takes (`id_hints`: ID kind -> `IdFormatHint`, from
+`falcom/ed9/formatter/format_hints.py`; `codegen/` imports nothing from `falcom/`): the table's name
+(`ChrIdTable['Estelle']`, from the game's generated `chr_table.py`), else the pseudo enum's (`PseudoChrId.Self`,
+`PseudoChrId.Nothing`, the VM's), else the number. The header then declares `ChrIdTable` and `enum PseudoChrId`.
+Only `.ts` reads the tags: `.hlil.ts` and the logic check print and compare the values.
+`ScpDecompileConfig.id_names` (on by default) turns it off, as does a game without `syscall_args.py`; a game
+without `chr_table.py` names only the pseudo IDs.
 
 Two outputs exist side by side, printed from the same tree. A fact about the bytecode goes in HLIL and
 shows in both; a TypeScript concern goes in `.ts` only.
