@@ -3,7 +3,7 @@
 Simplify conditionals:
 - (expr == 0) → !expr
 - (expr != 0) → expr
-  (int 0 only: a jump truncates a Float, so 0.5 tests false while 0.5 != 0.0 holds)
+  (int 0 only: a float's truth need not match its comparison with 0.0)
 - !(x == y) → x != y; an ordering keeps its NOT (negate_comparison)
 """
 

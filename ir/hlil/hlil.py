@@ -98,7 +98,7 @@ class HLILInstruction:
 
     def __init__(self, operation: HLILOperation):
         self.operation = operation
-        self.address: int = 0  # Source SCP bytecode offset (inherited from MLIL)
+        self.address: int = 0  # Source bytecode offset (inherited from MLIL)
         self.mlil_index: int = UNASSIGNED_INST_INDEX  # Source MLIL instruction index (for debugging/mapping)
 
     def __str__(self) -> str:
@@ -722,9 +722,8 @@ def strip_truth_test(cond: HLILExpression) -> tuple[HLILExpression, bool]:
 
 def constant_truth(cond: HLILExpression) -> bool | None:
     """The value a condition always has - an int constant, a comparison of two int constants, or !, &&
-    and || over such conditions - or None otherwise. A float decides nothing: its truth depends on what tests it (a
-    jump truncates it, && and || test != 0.0: docs/falcom/ed9/ED9_VM.md, Truth), and its comparisons are known
-    statically, not traced"""
+    and || over such conditions - or None otherwise. A float decides nothing: its truth and its comparisons are the
+    VM's (a jump may truncate it, a logical operator may compare it with 0.0)"""
     if isinstance(cond, HLILConst):
         return bool(cond.value) if isinstance(cond.value, int) else None
 

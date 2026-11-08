@@ -266,15 +266,14 @@ class LoopRecoveryPass(Pass):
         if not isinstance(condition.lhs, HLILConst) or not isinstance(condition.rhs, HLILConst):
             return condition
 
-        # Float comparisons stay as written: the VM's float32 compare is known statically, not traced
-        # (docs/falcom/ed9/ED9_VM.md, Comparisons)
+        # Float comparisons stay as written: how the VM compares floats (precision, NaN) need not be Python's
         if isinstance(condition.lhs.value, float) or isinstance(condition.rhs.value, float):
             return condition
 
         return HLILConst(int(COMPARISON_FUNCTIONS[condition.op](condition.lhs.value, condition.rhs.value)))
 
     def _is_always_true(self, condition: HLILExpression) -> bool:
-        # A float constant's truth depends on what tests it (docs/falcom/ed9/ED9_VM.md, Truth)
+        # A float constant's truth depends on what tests it, which the VM decides
         if not isinstance(condition, HLILConst) or isinstance(condition.value, float):
             return False
 

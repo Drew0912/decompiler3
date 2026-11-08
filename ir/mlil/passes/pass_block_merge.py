@@ -10,7 +10,7 @@ class BlockMergePass(Pass):
     A LowLevelILCall is a block terminator, so the LLIL->MLIL translator ends every call block
     with `goto <return block>` - nearly every call site cuts straight-line code in two. This
     undoes that split (and any other single-predecessor goto chain, including a real bytecode
-    JMP) by splicing the target block's instructions into the block that jumps to it.
+    jump) by splicing the target block's instructions into the block that jumps to it.
 
     Must run on pre-SSA MLIL: Phi nodes name predecessor blocks by identity, and absorbing one
     of those blocks would leave a Phi's sources dangling.

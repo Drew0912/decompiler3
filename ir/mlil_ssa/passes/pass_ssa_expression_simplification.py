@@ -37,7 +37,7 @@ from ir.mlil.mlil import (
 )
 from ..mlil_ssa import MLILSetVarSSA, MLILIf
 
-ALL_BITS_SET = -1   # every bit set at any int width: script ints are signed, and SCCP folds ~0 to -1
+ALL_BITS_SET = -1   # every bit set at any int width (Python's -1), what SCCP folds ~0 to
 
 
 class ExpressionSimplificationPass(Pass):
@@ -101,8 +101,7 @@ class ExpressionSimplificationPass(Pass):
 
     def _apply_algebraic_identity(self, op_type, lhs, rhs) -> MediumLevelILInstruction | None:
         """Apply algebraic identity rules"""
-        # Int constants only: x * 0.0 is a Float, not int 0, and can be -0.0 or NaN (docs/falcom/ed9/ED9_VM.md,
-        # Arithmetic)
+        # Int constants only: x * 0.0 is a Float, not int 0, and can be -0.0 or NaN
         # (SCCP doesn't fold floats either)
         if any(isinstance(operand, MLILConst) and isinstance(operand.value, float) for operand in (lhs, rhs)):
             return None

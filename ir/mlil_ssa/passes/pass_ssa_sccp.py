@@ -48,9 +48,9 @@ from ..mlil_ssa import (
     MLILUndef,
 )
 
-# How each binary operation folds two constants: DIV and MOD never fold - in the VM they truncate toward zero
-# where Python's // and % floor, and wrap at 30 bits (docs/falcom/ed9/ED9_VM.md, Arithmetic: known statically,
-# not traced). The ops here fold without that 30-bit wrap. Folding wrong is worse than not folding.
+# How each binary operation folds two constants, at Python's unbounded width, without a VM's integer wrap; DIV and
+# MOD never fold: a VM's division and remainder may truncate toward zero where Python's // and % floor, and folding
+# wrong is worse than not folding
 FOLDED_BINARY_OPS = {
     MLILAdd         : operator.add,
     MLILSub         : operator.sub,
@@ -307,8 +307,7 @@ class SCCP:
 
         cond_value = self._evaluate_expr(inst.condition)
 
-        # A float decides nothing: its truth depends on what tests it (a jump truncates it: docs/falcom/ed9/ED9_VM.md,
-        # Truth)
+        # A float decides nothing: its truth depends on what tests it, which the VM decides
         if cond_value.is_constant() and not isinstance(cond_value.value, float):
             # Condition is constant, only one branch is reachable
             if cond_value.value:
@@ -370,8 +369,7 @@ class SCCP:
 
     def _eval_binary_op(self, op_type, lhs, rhs) -> LatticeValue:
         """Evaluate binary operation on constants"""
-        # Floats never fold: the VM computes in float32 and cuts each result's 2 lowest bits
-        # (docs/falcom/ed9/ED9_VM.md, Arithmetic)
+        # Floats never fold: a VM's float arithmetic (precision, rounding) need not be Python's
         fold = FOLDED_BINARY_OPS.get(op_type)
         if fold is None or isinstance(lhs, float) or isinstance(rhs, float):
             return LatticeValue.bottom()

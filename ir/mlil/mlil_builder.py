@@ -14,7 +14,7 @@ class MLILBuilder:
     def __init__(self):
         self.function: MediumLevelILFunction | None = None
         self.current_block: MediumLevelILBasicBlock | None = None
-        self._current_address = 0  # Source SCP address for current instruction
+        self._current_address = 0  # Source bytecode address of the current instruction
         self._current_llil_index = UNASSIGNED_INST_INDEX
 
     def set_current_source(self, address: int, llil_index: int):

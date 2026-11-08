@@ -15,8 +15,8 @@ After structuring, this is the only place arm order is decided, so `.hlil.ts` an
 decides.
 
 This is the one pass that deliberately diverges from the order the bytecode was
-emitted in, so it is optional - see `normalize_branch_order` in
-falcom/ed9/ir/hlil/hlil_converter.py.
+emitted in, so it is optional: the frontend's HLIL converter decides whether it
+runs
 """
 
 from ir.pipeline import Pass
