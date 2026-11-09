@@ -7,6 +7,9 @@ class GraphicsPresetTableData(TableDataEntry):
         ('id',       'I'),
         ('pad04',    'P4'),
         ('textKey',  'S'),   # a TextTableData key
+        # flags, a bit per letter:
+        #   P 0x1, D 0x2: the default preset is the first row with P; or the first row with D, when a call to the
+        #     Steam interface returns true (what it asks: not known); if no row has the letter, the first row
         ('flags',    'S'),
         ('uint8_18', 'B'),
         ('uint8_19', 'B'),

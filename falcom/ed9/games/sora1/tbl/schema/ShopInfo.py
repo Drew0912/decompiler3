@@ -9,6 +9,9 @@ class ShopInfo(TableDataEntry):
         ('name',       'S'),
         ('shopType',   'B'),   # a ShopTypeDesc id
         ('pad11',      'P7'),
+        # flags, 1 when it holds C, else 0 (not a mask):
+        #   C: the script functions OnTalkBeginCam and OnTalkEndCam (script system) treat the shop as an ordinary
+        #     conversation, not a shop (no shop camera, menu or closing step)
         ('flags',      'S'),
         ('convId',     'B'),
         ('pad21',      'P1'),

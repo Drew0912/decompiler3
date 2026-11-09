@@ -5,6 +5,21 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class StatusParam(TableDataEntry):
     DESCRIPTOR = (
         ('key',         'S'),
+        # flags, a bit per letter:
+        #   F 0x40, M 0x80: female, male (by the item help texts' names); the equip check for an item's flags2 F
+        #     or M tests them
+        #   C 0x100: the character gets a cylinder-shaped collider against the map, sized by float32_4c to
+        #     float32_60, when float32_50 is above a limit set in code; at or below it, a log asks for a radius per map
+        #   7 0x800: without 7, int16_16e, int16_170 and int16_172 are set to 100 at load
+        #   R 0x4000: never a skill's target
+        #   U 0x80000: sets bit 0x4 in the character's flag word (the word chr_check_flag tests; no script tests 0x4)
+        #   r 0x100000: a skill without r in SkillParam flags2 fails an unknown check on a unit with r; skills 0x44
+        #     to 0x47 can't target a unit with r on the other side
+        #   E 0x1, Z 0x40000: scripts test them with btl_chr_check_status_param_flag, Z in AniBtlDead,
+        #     AniMonsDeadEffect and AniBigMonsDeadEffect, E in mon5040's AniBtlDead; what they mean: not known
+        #   B 0x2, S 0x4, H 0x8, P 0x10, A 0x20, O 0x200, a 0x400, L 0x1000, K 0x2000, N 0x8000, D 0x10000,
+        #     X 0x20000, z 0x800000: read by code, purpose not known
+        #   s 0x200000, i 0x400000: nothing found reading it
         ('flags',       'S'),
         ('chrClass',    'B'),
         ('uint8_11',    'B'),
@@ -36,6 +51,10 @@ class StatusParam(TableDataEntry):
         ('float32_8c',  'f'),
         ('float32_90',  'f'),
         ('float32_94',  'f'),
+        # flags2, a bit per letter:
+        #   T 0x1, P 0x2, C 0x4, s 0x8, R 0x10: tested in that order; the first one set picks which of six variants
+        #     of the character's object is built (none set: a sixth)
+        #   S 0x1000, D 0x2000, B 0x4000: read by code, purpose not known
         ('flags2',      'S'),
         ('uint32_a0',   'I'),
         ('uint32_a4',   'I'),

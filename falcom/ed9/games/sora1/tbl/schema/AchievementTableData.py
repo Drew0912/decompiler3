@@ -23,6 +23,12 @@ class AchievementTableData(TableDataEntry):
         ('pad36',       'P2'),
         ('amount2',     'I'),
         ('pad3c',       'P4'),
+        # flags, a bit per letter:
+        #   C 0x1: a locked row with C doesn't stop the "all achievements unlocked" test; when that test holds, the game
+        #     apparently unlocks achievement 2
+        #   2 0x4: only its own flag unlocks it; while scenario flag 405 is set, rows without 2 count as unlocked anyway
+        #     (405: apparently a carried-over New Game+ save)
+        #   H 0x2: nothing found reading it
         ('flags',       'S'),
         ('name',        'S'),
         ('description', 'S'),

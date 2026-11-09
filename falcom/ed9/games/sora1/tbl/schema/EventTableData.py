@@ -24,6 +24,10 @@ class EventTableData(TableDataEntry):
         ('uint32_5c',     'I'),
         ('flagsClear',    'A2'),  # scenario flags none of which may be set
         ('uint32_6c',     'I'),
+        # flags, a bit per letter:
+        #   N 0x2: NPCs are placed during the event; without N, none are
+        #   E 0x4: read by code, purpose not known
+        #   P 0x1: nothing found reading it
         ('flags',         'S'),
         ('mapEnv',        'B'),
         ('pad79',         'P7'),

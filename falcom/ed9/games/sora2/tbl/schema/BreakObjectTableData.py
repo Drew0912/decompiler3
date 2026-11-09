@@ -13,6 +13,8 @@ class BreakObjectTableData(TableDataEntry):
         ('countA',    'W'),
         ('countB',    'W'),
         ('str28',     'S'),
+        # flags, a bit per letter:
+        #   E 0x1, e 0x2, S 0x4, D 0x8: read by code, purpose not known
         ('flags',     'S'),
         ('uint64_38', 'Q'),
     )

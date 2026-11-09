@@ -9,6 +9,12 @@ class MonsterSettingParam(TableDataEntry):
         ('pad0a',        'P6'),
         ('arr32_10',     'A4'),
         ('uint32_1c',    'I'),
+        # flags, a bit per letter:
+        #   D 0x1: sets bit 0x1 in the character's flag word, which scripts test with chr_check_flag (btlcom and
+        #     btlitem do, at battle start and end and on item use)
+        #   W 0x2: x, y, z give the position; angle, multiplied by a fixed game value, gives the angle
+        #   L 0x4: only when W is not set: x, y, z and angle are run through a transform and added to another position
+        #   A 0x8, E 0x10: read by code, purpose not known
         ('flags',        'S'),
         ('uint16_28',    'W'),
         ('pad2a',        'P6'),

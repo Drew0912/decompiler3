@@ -8,7 +8,22 @@ class ItemTableData(TableDataEntry):
         ('pad04',       'P4'),
         ('chrIds',      'A4'),  # a first 0xFFFF: any character
         ('uint32_14',   'I'),
+        # flags, a bit per letter:
+        #   (SkillParam flags uses the same letters and bits)
+        #   B 0x40000, M 0x80000: at load, the item gets a skill row built for it, with its own skill ID (from 0x578)
+        #   T 0x100000: left out of item lists, the shop's list among them
+        #   H 0x10000000: description alone is used as the help text, except when category is 0x12
+        #   F 0x1000, E 0x2000, S 0x4000, R 0x8000: read by code, purpose not known
+        #   C 0x10000, I 0x20000, A 0x200000, O 0x400000, G 0x800000, D 0x1000000, P 0x2000000, N 0x4000000,
+        #     L 0x8000000, Q 0x20000000, X 0x40000000, b 0x80000000: nothing found reading them for items
         ('flags',       'S'),
+        # flags2, a bit per letter:
+        #   M 0x4, F 0x8: equip check: an item with M needs a character whose StatusParam flags have M; an item with F
+        #     and no M needs F
+        #   H 0x40: while scenario flag 107 is set, one list of items (which: not known) drops the items without H
+        #   other letters, including the digit 0, set no bit
+        #   L 0x2, 1 0x100000, 2 0x200000: read by code, purpose not known
+        #   D 0x1, G 0x10, R 0x20: nothing found reading it
         ('flags2',      'S'),
         ('category',    'B'),
         ('subcategory', 'B'),

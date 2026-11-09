@@ -23,6 +23,9 @@ class MapJumpSpotData(TableDataEntry):
         ('targetZ',      'f'),
         ('targetAngle',  'f'),   # degrees, by its use
         ('uint32_54',    'I'),
+        # flags, a bit per letter:
+        #   A 0x1: without A, scenario flag 6000 + this row's id is set while the current place's id equals uint32_18
+        #   N 0x2, F 0x4, E 0x8, T 0x10, L 0x20, P 0x40, R 0x80: read by code, purpose not known
         ('flags',        'S'),
         ('variant',      'B'),
         ('pad61',        'P7'),

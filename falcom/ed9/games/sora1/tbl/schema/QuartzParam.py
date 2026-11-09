@@ -7,6 +7,10 @@ class QuartzParam(TableDataEntry):
         ('itemId',       'W'),
         ('family',       'B'),
         ('pad03',        'P5'),
+        # flags, a bit per letter:
+        #   S 0x1: a check on this quartz in a slot returns 1 when another slot holds a quartz of the same family
+        #     (what the check and its result mean: not known)
+        #   L 0x2: read by the same check, purpose not known
         ('flags',        'S'),
         ('minSlotLevel', 'W'),   # the minimum slot level plus 1; 0: the check always fails
         ('uint16_12',    'W'),

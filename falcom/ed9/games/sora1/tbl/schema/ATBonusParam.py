@@ -7,6 +7,8 @@ class ATBonusParam(TableDataEntry):
         ('id',         'B'),
         ('linkId',     'B'),   # another bonus's ID
         ('pad02',      'P6'),
+        # flags, a bit per letter:
+        #   A 0x1, S 0x4: read by code, purpose not known
         ('flags',      'S'),
         ('effectKind', 'B'),
         ('pad11',      'P3'),

@@ -14,6 +14,9 @@ class CharaArrange(TableDataEntry):
         ('y',           'f'),
         ('z',           'f'),
         ('angle',       'f'),   # degrees, by its use
+        # flags, a bit per letter:
+        #   C 0x1, D 0x2, P 0x4: tested in that order; the first one set picks one of three ways to set the character
+        #     up (what each does: not known); D reads float32_38 and float32_3c, P float32_38 to float32_40
         ('flags',       'S'),
         ('float32_38',  'f'),
         ('float32_3c',  'f'),

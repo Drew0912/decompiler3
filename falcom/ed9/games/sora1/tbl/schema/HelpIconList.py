@@ -15,5 +15,8 @@ class HelpIconList(TableDataEntry):
         ('float32_20', 'f'),
         ('uint32_24',  'I'),
         ('text3',      'S'),
+        # flags, 1 when it holds A, else 0 (not a mask):
+        #   A: the at_icon widget, filled from the t_btlsys row whose first byte equals cellIndex, is used in place
+        #     of the icon widget
         ('flags',      'S'),
     )

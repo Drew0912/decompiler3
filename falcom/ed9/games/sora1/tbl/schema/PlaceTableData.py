@@ -19,6 +19,14 @@ class PlaceTableData(TableDataEntry):
         ('float32_4c', 'f'),
         ('uint32_50',  'I'),
         ('uint32_54',  'I'),
+        # flags, a bit per letter:
+        #   A 0x1: sets scenario flag 4 while it is the current place; a place without A clears it
+        #   M 0x4: when str18 equals the map's name, the place gets a "map object" (what it is for: not known)
+        #   T 0x8, K 0x80: the script function OnChangePlace (script system) plays general voice 25 when the place
+        #     left has T and the place entered has K
+        #   R 0x20: a lookup of a place by secondId returns mapKey only for a row with R (else an empty string)
+        #   D 0x2, Z 0x10, C 0x40, N 0x100, W 0x200, L 0x400, P 0x800: read by code, purpose not known
+        #   H 0x1000, E 0x2000: nothing found reading it
         ('flags',      'S'),
         ('name',       'S'),
         ('str68',      'S'),

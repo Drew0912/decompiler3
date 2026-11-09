@@ -9,6 +9,9 @@ class ChapterParam(TableDataEntry):
         ('flagClear', 'I'),   # scenario flag that must be clear; 0: none
         ('eventKey',  'W'),
         ('pad0e',     'P2'),
+        # flags, a bit per letter:
+        #   G 0x2: read by code, purpose not known
+        #   P 0x1: nothing found reading it
         ('flags',     'S'),
         ('str18',     'S'),
         ('str20',     'S'),
