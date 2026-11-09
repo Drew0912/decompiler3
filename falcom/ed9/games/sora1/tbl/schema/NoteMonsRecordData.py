@@ -4,7 +4,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_notemenu.tbl
 class NoteMonsRecordData(TableDataEntry):
     DESCRIPTOR = (
-        ('str00',     'S'),
+        ('statusKey', 'S'),
         ('uint32_08', 'I'),
         ('uint32_0c', 'I'),
         ('uint64_10', 'Q'),

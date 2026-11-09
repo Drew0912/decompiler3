@@ -4,7 +4,8 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_chrdata.tbl
 class ChrDataParam(TableDataEntry):
     DESCRIPTOR = (
-        ('uint32_00',  'I'),
+        ('id',         'W'),
+        ('pad02',      'P2'),
         ('float32_04', 'f'),
         ('float32_08', 'f'),
         ('float32_0c', 'f'),

@@ -4,10 +4,10 @@ from falcom.ed9.parser.tbl import TableDataEntry
 # t_tbox.tbl
 class TBoxParam(TableDataEntry):
     DESCRIPTOR = (
-        ('str00',     'S'),
-        ('str08',     'S'),
+        ('mapKey',    'S'),
+        ('name',      'S'),
         ('uint64_10', 'Q'),
-        ('str18',     'S'),
+        ('flags',     'S'),
         ('str20',     'S'),
         ('uint64_28', 'Q'),
         ('arr16_30',  'A2'),

@@ -139,7 +139,9 @@ Adding a table:
    one section gets its own class in the same file, imported the same way, with `SECTION` set and its size as a suffix
    (`NPCParam98`), since the name alone cannot pick it.
 3. Name a field only where the data or the exe shows what it is; name the rest by size and offset (`str08`, `uint32_44`,
-   `arr16_10`). The exe read is `sora2`'s, so a name in `sora1`'s class rests on the offsets agreeing.
+   `arr16_10`). The exe read is `sora2`'s, so a name in `sora1`'s class rests on the offsets agreeing; in a class only
+   `sora1` has, on the values agreeing: rows paired with `sora2`'s by a key, a field holds what a `sora2` field holds
+   at its width, at the same offset or a shifted one.
 4. Run `tbl2py.py` on the table in every game of the group, and fix anything in `problems`.
 5. Where a later game's layout differs, define the class in that game's `schema/` folder. A size can match and the
    layout still differ: `MonsterSettingParam` `0xa8` is one layout in `sora1` and another in `sora2`.
