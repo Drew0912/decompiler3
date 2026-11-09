@@ -13,9 +13,9 @@ class SkillParam(TableDataEntry):
         #     (two units are on opposite sides when exactly one has type 3; what type 3 is: not known)
         #   T 0x100000: left out of some lists built from the skill table (which: not known)
         #   H 0x10000000: description alone is used as the help text
-        #   R 0x8000, C 0x10000, I 0x20000, B 0x40000, A 0x200000, O 0x400000, G 0x800000, D 0x1000000,
-        #     N 0x4000000, Q 0x20000000, X 0x40000000: read by code, purpose not known
-        #   M 0x80000, P 0x2000000, L 0x8000000, b 0x80000000: nothing found reading them for skills
+        #   R 0x8000, C 0x10000, I 0x20000, B 0x40000, M 0x80000, A 0x200000, O 0x400000, G 0x800000,
+        #     D 0x1000000, N 0x4000000, Q 0x20000000, X 0x40000000: read by code, purpose not known
+        #   P 0x2000000, L 0x8000000, b 0x80000000: nothing found reading them for skills
         ('flags',         'S'),
         ('kind',          'B'),
         ('uint8_11',      'B'),
@@ -23,8 +23,7 @@ class SkillParam(TableDataEntry):
         # flags2, a bit per letter:
         #   r 0x20: a skill without r fails an unknown check on a unit whose StatusParam flags have r
         #   K 0x40: a same-side target doesn't need F in flags; it must pass a different, unexplained test instead
-        #   M 0x1, C 0x2, H 0x4, S 0x100, Z 0x200: read by code, purpose not known
-        #   T 0x8, O 0x10, o 0x80: nothing found reading it
+        #   M 0x1, C 0x2, H 0x4, T 0x8, O 0x10, o 0x80, S 0x100, Z 0x200: read by code, purpose not known
         ('flags2',        'S'),
         ('typeCode',      'W'),
         ('pad22',         'P2'),

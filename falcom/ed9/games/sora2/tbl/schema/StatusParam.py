@@ -18,8 +18,7 @@ class StatusParam(TableDataEntry):
         #   E 0x1, Z 0x40000: scripts test them with btl_chr_check_status_param_flag, Z in AniBtlDead,
         #     AniMonsDeadEffect and AniBigMonsDeadEffect, E in mon5040's AniBtlDead; what they mean: not known
         #   B 0x2, S 0x4, H 0x8, P 0x10, A 0x20, O 0x200, a 0x400, L 0x1000, K 0x2000, N 0x8000, D 0x10000,
-        #     X 0x20000, z 0x800000: read by code, purpose not known
-        #   s 0x200000, i 0x400000: nothing found reading it
+        #     X 0x20000, s 0x200000, i 0x400000, z 0x800000: read by code, purpose not known
         ('flags',       'S'),
         ('chrClass',    'B'),
         ('uint8_11',    'B'),

@@ -6,19 +6,19 @@ class BlackJackRollRate(TableDataEntry):
     DESCRIPTOR = (
         ('key',            'I'),   # also the tier: rows are tried from 9 down to 1
         ('pad04',          'P4'),
-        ('str08',          'S'),
+        ('name',           'S'),
         ('str10',          'S'),
-        ('str18',          'S'),
-        ('uint32_20',      'I'),
-        ('uint32_24',      'I'),
-        ('uint32_28',      'I'),
-        ('uint32_2c',      'I'),
-        ('uint32_30',      'I'),
-        ('uint32_34',      'I'),
-        ('uint32_38',      'I'),
-        ('uint32_3c',      'I'),
+        ('description',    'S'),
+        ('card1',          'i'),   # cardN: v % 13 and v / 13, read as rank and suit; -1: no card
+        ('card2',          'i'),
+        ('card3',          'i'),
+        ('card4',          'i'),
+        ('card5',          'i'),
+        ('card6',          'i'),
+        ('card7',          'i'),
+        ('rate',           'I'),   # shown as the roll's rate; not 0: the point-up effect plays
         ('rollsEnabled',   'B'),
-        ('uint8_41',       'B'),
+        ('cardsShown',     'B'),   # 0: the card widgets are cleared, as for a card of -1
         ('pad42',          'P2'),
         ('roll1Threshold', 'I'),   # rollN: tried when the tier's counter is above this; else, at 0, the rolls end
         ('roll1Chance',    'I'),   # percent: a roll hits when a draw from 0 to 100 is below it

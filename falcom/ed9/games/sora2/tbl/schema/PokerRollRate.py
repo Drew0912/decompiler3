@@ -6,16 +6,16 @@ class PokerRollRate(TableDataEntry):
     DESCRIPTOR = (
         ('key',            'I'),   # also the tier: rows are tried from 9 down to 1
         ('pad04',          'P4'),
-        ('str08',          'S'),
+        ('name',           'S'),
         ('str10',          'S'),
-        ('str18',          'S'),
-        ('uint32_20',      'I'),
-        ('uint32_24',      'I'),
-        ('uint32_28',      'I'),
-        ('uint32_2c',      'I'),
-        ('uint32_30',      'I'),
-        ('uint32_34',      'I'),
-        ('uint32_38',      'I'),
+        ('description',    'S'),
+        ('card1',          'I'),   # cardN: v % 13 and v / 13, read as rank and suit
+        ('card2',          'I'),
+        ('card3',          'I'),
+        ('card4',          'I'),
+        ('card5',          'I'),
+        ('handCards',      'I'),   # the cards from this index on are dimmed; the rows' hands are their first cards
+        ('rate',           'I'),   # shown as the roll's rate; not 0: the point-up effect plays
         ('rollsEnabled',   'B'),
         ('pad3d',          'P3'),
         ('roll1Threshold', 'I'),   # rollN: tried when the tier's counter is above this; else, at 0, the rolls end

@@ -27,16 +27,17 @@ class NPCParam(TableDataEntry):
         #   mask 1 (+0x58), copied into the character's flag word, usually with 0x8 and 0x8000 also set;
         #   scripts test that word with chr_check_flag(character, mask):
         #     H 0x2, G 0x8: scripts test them (H in script btlcom, G in function AniBtlDead); purpose not known
-        #     A 0x4, C 0x10, P 0x100, L 0x200, T 0x400, S 0x1000, F 0x2000, U 0x4000: read by code, purpose not known
-        #     N 0x1000000: nothing found reading it
+        #     A 0x4, C 0x10, P 0x100, L 0x200, T 0x400, S 0x1000, F 0x2000, U 0x4000, N 0x1000000: read by code,
+        #       purpose not known (N only on the character's copy)
         #   mask 2 (+0x5C), not copied:
         #     X 0x4, V 0x8000: NPCs are placed by one of two paths, chosen by a condition whose meaning is not
         #       known: one places only V rows without X, the other skips every row with V or X
         #     D 0x200: sets 4 in another character field
         #     R 0x400: the script function named in talkFunction is looked up and apparently run, and the talk
         #       guide text says "report" in place of "talk"
+        #     Y 0x2000: no trigger while a certain object (which: not known) is within 10.0
         #     K 0x2, W 0x8, E 0x10, Q 0x20, x 0x40, M 0x1000, d 0x4000: read by code, purpose not known
-        #     4 0x800, Y 0x2000: nothing found reading it
+        #     4 0x800: nothing found reading it
         ('flags',         'S'),
         ('initFunction',  'S'),
         ('execFunction',  'S'),

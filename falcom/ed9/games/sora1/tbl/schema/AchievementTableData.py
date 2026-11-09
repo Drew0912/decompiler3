@@ -28,7 +28,7 @@ class AchievementTableData(TableDataEntry):
         #     apparently unlocks achievement 2
         #   2 0x4: only its own flag unlocks it; while scenario flag 405 is set, rows without 2 count as unlocked anyway
         #     (405: apparently a carried-over New Game+ save)
-        #   H 0x2: nothing found reading it
+        #   H 0x2: the row is neither counted nor listed, nor is a later row with the same workIndex
         ('flags',       'S'),
         ('name',        'S'),
         ('description', 'S'),

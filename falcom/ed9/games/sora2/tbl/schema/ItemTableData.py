@@ -22,8 +22,9 @@ class ItemTableData(TableDataEntry):
         #     and no M needs F
         #   H 0x40: while scenario flag 107 is set, one list of items (which: not known) drops the items without H
         #   other letters, including the digit 0, set no bit
+        #   R 0x20: two places pick the colour (255, 236, 150) for the item in place of white
         #   L 0x2, 1 0x100000, 2 0x200000: read by code, purpose not known
-        #   D 0x1, G 0x10, R 0x20: nothing found reading it
+        #   D 0x1, G 0x10: nothing found reading it
         ('flags2',      'S'),
         ('category',    'B'),
         ('subcategory', 'B'),

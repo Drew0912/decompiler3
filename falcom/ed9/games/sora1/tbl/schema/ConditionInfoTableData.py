@@ -24,7 +24,7 @@ class ConditionInfoTableData(TableDataEntry):
         ('linkedCondition', 'I'),
         ('pad4c',           'P4'),
         # flags, a bit per letter:
-        #   1 0x2, P 0x8: read by code, purpose not known
-        #   Z 0x1, N 0x4, C 0x20: nothing found reading it
+        #   1 0x2, P 0x8, C 0x20: read by code, purpose not known (C on the character's copy)
+        #   Z 0x1, N 0x4: nothing found reading it
         ('flags',           'S'),
     )

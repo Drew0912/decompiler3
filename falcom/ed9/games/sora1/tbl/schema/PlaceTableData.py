@@ -16,7 +16,7 @@ class PlaceTableData(TableDataEntry):
         ('flagsSet',   'A2'),  # scenario flags that must all be set
         ('uint32_3c',  'I'),
         ('flagsClear', 'A2'),  # scenario flags none of which may be set
-        ('float32_4c', 'f'),
+        ('float32_4c', 'f'),   # 0 or less: the default row's; kept within 0 to 1.0 when the place becomes current
         ('uint32_50',  'I'),
         ('uint32_54',  'I'),
         # flags, a bit per letter:
@@ -25,8 +25,8 @@ class PlaceTableData(TableDataEntry):
         #   T 0x8, K 0x80: the script function OnChangePlace (script system) plays general voice 25 when the place
         #     left has T and the place entered has K
         #   R 0x20: a lookup of a place by secondId returns mapKey only for a row with R (else an empty string)
-        #   D 0x2, Z 0x10, C 0x40, N 0x100, W 0x200, L 0x400, P 0x800: read by code, purpose not known
-        #   H 0x1000, E 0x2000: nothing found reading it
+        #   D 0x2, Z 0x10, C 0x40, N 0x100, W 0x200, L 0x400, P 0x800, H 0x1000,
+        #     E 0x2000: read by code, purpose not known
         ('flags',      'S'),
         ('name',       'S'),
         ('str68',      'S'),
