@@ -94,6 +94,7 @@ __all__ = [
     'expr_children',
     'node_children',
     'iter_tree',
+    'statement_expressions',
 
     # Function
     'HighLevelILFunction',

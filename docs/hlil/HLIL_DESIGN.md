@@ -98,7 +98,8 @@ LLIL's jump test, so a link arrives as `(x == k) == 0`, or `(x == k) != 0` once 
 
 Tree walking is shared the same way. `sub_blocks` gives the blocks a structured statement owns;
 `node_children` gives every child of a node in source order (a switch contributes each case's
-labels, then its body), and `iter_tree` walks a whole subtree without recursion.
+labels, then its body), and `iter_tree` walks a whole subtree without recursion. `statement_expressions` gives a
+statement's own expressions, not those of the blocks it owns, so a walk of each reachable statement visits each once.
 `contains_escaping_exit` says whether a `break`/`continue` leaves a block (a loop owns both, a switch
 only a `break`), and `sole_statement`
 finds a block's one non-comment statement. The passes, the converter's variable declaration and
@@ -290,12 +291,16 @@ condition, swapped or nested arms); the code statements and their order are unch
 HLIL has no copy-propagation pass (the disabled HLIL `CopyPropagationPass` was removed on 2026-09-27): the decompile
 path's stack translator folds each push into its consumer, and the SSA path propagates copies in its optimizer.
 `FalcomTypeInferencePass` is the home of Falcom semantic types: the parameter types (see Variable Model), and the
-character IDs. With the game's syscall rows (`falcom/ed9/games/<game>/metadata/syscall_args.py`), a function that is
-one syscall and nothing else marks each parameter passed as exactly the argument at an ID slot and never written or
-address-taken (`HLILVariable.id_kind`); then each int constant written in decimal that is exactly the argument at an ID
-slot, of a syscall by its row or of a call to a marked parameter, is tagged (`HLILConst.id_kind`). Each function's part
-runs on its own: one that raises sets nothing and is logged. See `docs/hlil/HLIL_GUIDE.md` for the detailed
-transformations performed by each active pass and why the copy-propagation pass was removed.
+character IDs. With the game's syscall rows (`falcom/ed9/games/<game>/metadata/syscall_args.py`), a parameter is marked
+as an ID (`HLILVariable.id_kind`) when every read of it is a pass to an ID slot: a syscall's ID slot, or a marked
+parameter of a call to a function of the same file, which chains (least fixpoint, a worklist from the syscall passes).
+A read anywhere else blocks the mark (a comparison, arithmetic, a non-ID slot, a row-less syscall, an `extern_call`,
+an unmarked callee), as does a write or an address taken anywhere in the body, and a read in unreachable code counts
+for nothing. Passes of two kinds leave it unmarked. Then each int constant written in decimal that is exactly the
+argument at an ID slot, of a syscall by its row or of a call to a marked parameter, is tagged (`HLILConst.id_kind`).
+Each function's part runs on its own: one whose facts or whose rows lookup raises is logged and gets no marks or tags.
+See `docs/hlil/HLIL_GUIDE.md` for the detailed transformations performed by each active pass and why the
+copy-propagation pass was removed.
 
 ## Testing
 
@@ -342,8 +347,9 @@ Several dedicated HLIL unit-test files exist today:
   (`TestHLILStructures`).
 - `tests/hlil_tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared
   parameter flag gives, the declared flag winning over an inferred int/float variant, and default
-  values still printed once; which parameters a one-syscall body marks, the names a body may change, which
-  constants are tagged, and a function that raises.
+  values still printed once; which parameters a syscall or a forwarding chain marks, each read that blocks,
+  reachability, recursion, the names a body may change, which constants are tagged, a function that raises,
+  and the propagation's kinds.
 - `tests/hlil_tests/test_hlil_line_marker_removal.py` covers `line_marker_number`, `LineMarkerRemovalPass` (markers
   go from every block, other comments stay, the arms left empty are tidied) and the `line_markers` flag (on by
   default; off, it runs after branch-order normalization).

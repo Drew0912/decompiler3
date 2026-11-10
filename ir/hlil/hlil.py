@@ -914,6 +914,12 @@ def iter_tree(node: HLILInstruction | None) -> Iterator[HLILInstruction]:
         pending.extend(reversed(node_children(current)))
 
 
+def statement_expressions(stmt: HLILStatement) -> list[HLILExpression]:
+    """The expressions a statement evaluates itself - a condition, an assignment's two sides, a return's value - not
+    those of the blocks it owns: a walk of each statement's own expressions visits every expression once"""
+    return [child for child in node_children(stmt) if isinstance(child, HLILExpression)]
+
+
 def contains_escaping_exit(block: HLILBlock | None, exit_type: type, include_labeled: bool = False) -> bool:
     """Whether block holds an exit_type statement (HLILBreak or HLILContinue) that leaves it: a
     bare one that no construct inside block owns - a loop owns both kinds, a switch only a

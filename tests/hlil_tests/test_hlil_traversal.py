@@ -25,6 +25,7 @@ from ir.hlil import (
     HLILContinue,
     HLILDeref,
     HLILDoWhile,
+    HLILExpression,
     HLILExprStmt,
     HLILExternCall,
     HLILIf,
@@ -37,6 +38,7 @@ from ir.hlil import (
     HLILUnaryOp,
     HLILUnstructured,
     HLILVar,
+    HLILStatement,
     HLILVariable,
     HLILWhile,
     contains_escaping_exit,
@@ -44,6 +46,7 @@ from ir.hlil import (
     sole_statement,
     split_else_if_arm,
     node_children,
+    statement_expressions,
     SwitchRecoveryPass,
 )
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
@@ -120,6 +123,13 @@ class TestChildrenCoverEveryNode(unittest.TestCase):
         for node in samples():
             with self.subTest(node=type(node).__name__):
                 self.assertCountEqual(ids(node_children(node)), ids(held_nodes(node)))
+
+    def test_statement_expressions_are_the_held_expressions(self):
+        for stmt in samples():
+            if isinstance(stmt, HLILStatement):
+                with self.subTest(stmt=type(stmt).__name__):
+                    held = [node for node in held_nodes(stmt) if isinstance(node, HLILExpression)]
+                    self.assertCountEqual(ids(statement_expressions(stmt)), ids(held))
 
 
 class TestSourceOrder(unittest.TestCase):

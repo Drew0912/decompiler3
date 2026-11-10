@@ -100,9 +100,10 @@ declares for it (`Value32`/`Nullable32` -> `number`, `str`/`NullableStr` -> `str
 signatures don't depend on MLIL inference. Local variables have no type on the decompile path (`any` until the HLIL
 type plan: its stack translator runs no type pass); on the SSA path they take the MLIL SSA types. With the game's
 syscall rows (`falcom/ed9/games/<game>/metadata/syscall_args.py`, `SyscallArgs` in
-`falcom/ed9/assembler/ed9_syscalls.py`), the pass also marks the character-ID parameters of the functions that are
-one syscall and nothing else (`return syscall(...)`, or `syscall(...)` then a return of a constant or nothing): each
-parameter passed as exactly the argument at an ID slot, never written or address-taken anywhere in the body
+`falcom/ed9/assembler/ed9_syscalls.py`), the pass also marks the character-ID parameters: a parameter whose every
+read is a pass to an ID slot (a syscall's ID slot, or a marked parameter of a call to a function of the same file,
+so a forwarder marks too), with no other read anywhere in the reachable body, and no write or address taken
+anywhere in the body, dead code included
 (`HLILVariable.id_kind`). Then it tags each int constant written in decimal that is exactly the argument at an ID
 slot, of a syscall by its row or of a call to a marked parameter (`HLILConst.id_kind`); not inside an expression,
 not an `extern_call`'s, not a bool, a Raw word, a float, a string or a hex constant.
