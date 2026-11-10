@@ -16,8 +16,8 @@ from codegen.typescript import generate_typescript
 from falcom.ed9.assembler.ed9_syscalls import ANY_ARGC, Subsystem, SyscallArgs, SyscallEntry
 from falcom.ed9.consts import CHR_ID_KIND
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.hlil.hlil_passes import (FalcomTypeInferencePass, ParameterUses, excluded_parameters,
-                                           propagate_id_marks)
+from falcom.ed9.ir.hlil.id_marks import ParameterUses, excluded_parameters, propagate_id_marks
+from falcom.ed9.ir.hlil.pass_type_inference import FalcomTypeInferencePass
 from falcom.ed9.assembler.function import Function, FunctionParam
 from falcom.ed9.structs.scp_types import (Nullable32, NullableStr, Pointer, RawInt, ScpParamFlags, ScpValue,
                                           Value32)

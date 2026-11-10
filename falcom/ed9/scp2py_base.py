@@ -27,7 +27,7 @@ from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
 from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
 from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.hlil.hlil_passes import FalcomTypeInferencePass
+from falcom.ed9.ir.hlil.pass_type_inference import FalcomTypeInferencePass
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.hlil.hlil import HighLevelILFunction, HLILUnstructured, reachable_statements
 from ir.hlil.hlil_formatter import HLILFormatter

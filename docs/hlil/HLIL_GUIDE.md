@@ -31,6 +31,7 @@ deals with VM-level calls, branches, and CFG shape.
 | `ir/hlil/structural_analysis.py` | Dominator / natural-loop / region-reduction CFG analysis (`StructuralAnalyzer`), used by the converter. |
 | `tools/logic_check/` | Checks the final HLIL against its MLIL: the effects, the conditions each runs under, the values they pass, their order, every reachable unstructured jump (`docs/VALIDATOR_GUIDE.md`); not part of the pipeline. |
 | `ir/hlil/passes/*.py` | Seven pass modules (below) — one is the conversion wrapper itself, six are post-conversion transformations (line-marker removal only with `line_markers` off). |
+| `falcom/ed9/ir/hlil/pass_type_inference.py`, `id_marks.py` | The file-level stage, `FalcomTypeInferencePass` (below), and its ID rule. |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Falcom's concrete pipeline wiring — this, not anything in `ir/hlil/` directly, is what the real driver calls. Mirrors the same generic/project-specific split MLIL uses (`ir/mlil/*` + `falcom/ed9/ir/mlil/`). |
 | `codegen/typescript.py` | HLIL → TypeScript pseudocode emitter (`TypeScriptGenerator`) — the actual human-readable output. |
 
@@ -94,7 +95,7 @@ LineMarkerRemovalPass (only with line_markers off)
 ```
 
 For `.ts`, the file-level stage (`write_ts`, `falcom/ed9/scp2py_base.py`) runs after every function is converted
-and the other outputs are written: `FalcomTypeInferencePass` (`falcom/ed9/ir/hlil/hlil_passes.py`) over the
+and the other outputs are written: `FalcomTypeInferencePass` (`falcom/ed9/ir/hlil/pass_type_inference.py`) over the
 converted functions, then each function's TypeScript. The pass sets each parameter's type from the flag the script
 declares for it (`Value32`/`Nullable32` -> `number`, `str`/`NullableStr` -> `string`, `Pointer` -> `Pointer`), so
 signatures don't depend on MLIL inference. Local variables have no type on the decompile path (`any` until the HLIL

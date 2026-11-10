@@ -42,15 +42,17 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: switch recovery, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, the statement printer, the formatter and the passes (the conversion pass `MLILToHLILPass` among them). |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry point, `convert_falcom_mlil_to_hlil()`, and its pass ordering/configuration. |
+| `falcom/ed9/ir/hlil/pass_type_inference.py` | `FalcomTypeInferencePass`, the file-level stage: the declared parameter types, then the ID rule's marks and tags. |
+| `falcom/ed9/ir/hlil/id_marks.py` | The ID rule: each function's parameter uses, the marks' worklist (`propagate_id_marks`), the constant tags. |
 | `tests/hlil_tests/test_hlil_branch_order_normalization.py` | Unit tests for source-order arm normalization and its pipeline flag. |
 | `tests/hlil_tests/test_hlil_switch_recovery.py` | Unit tests for equality-chain and grouped-label switch recovery. |
 | `tests/hlil_tests/test_hlil_loop_recovery.py` | Unit tests for guarded-loop recovery and its safety checks. |
 
 The generic/project-specific split is deliberate. The core converter understands MLIL nodes and
 structured control flow; the Falcom entry point chooses the production pass sequence. `FalcomTypeInferencePass`
-(`falcom/ed9/ir/hlil/hlil_passes.py`) runs after it, once over the file's converted functions (the file-level stage,
-`write_ts` in `falcom/ed9/scp2py_base.py`): it types parameters from the flags the script declares and, with the game's
-syscall rows, tags character IDs.
+(`falcom/ed9/ir/hlil/pass_type_inference.py`) runs after it, once over the file's converted functions (the
+file-level stage, `write_ts` in `falcom/ed9/scp2py_base.py`): it types parameters from the flags the script declares
+and, with the game's syscall rows, marks and tags character IDs (the rule: `falcom/ed9/ir/hlil/id_marks.py`).
 
 ## Operations & Node Types
 
