@@ -41,7 +41,7 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `ir/hlil/hlil_formatter.py` | The `.hlil.ts` formatter, on the shared statement printer: the bytecode's high-level form, not TypeScript. It is separate from the TypeScript code generator. |
 | `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: switch recovery, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, the statement printer, the formatter and the passes (the conversion pass `MLILToHLILPass` among them). |
-| `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry point, `convert_falcom_mlil_to_hlil()`, and its pass ordering/configuration. |
+| `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry points: per function, `convert_falcom_mlil_to_hlil()` and its pass ordering/configuration; per file, `run_falcom_file_passes()`. |
 | `falcom/ed9/ir/hlil/pass_type_inference.py` | `FalcomTypeInferencePass`, the file-level stage: the declared parameter types, then the ID rule's marks and tags. |
 | `falcom/ed9/ir/hlil/id_marks.py` | The ID rule: each function's parameter uses, the marks' worklist (`propagate_id_marks`), the constant tags. |
 | `tests/hlil_tests/test_hlil_branch_order_normalization.py` | Unit tests for source-order arm normalization and its pipeline flag. |
@@ -51,8 +51,9 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 The generic/project-specific split is deliberate. The core converter understands MLIL nodes and
 structured control flow; the Falcom entry point chooses the production pass sequence. `FalcomTypeInferencePass`
 (`falcom/ed9/ir/hlil/pass_type_inference.py`) runs after it, once over the file's converted functions (the
-file-level stage, `write_ts` in `falcom/ed9/scp2py_base.py`): it types parameters from the flags the script declares
-and, with the game's syscall rows, marks and tags character IDs (the rule: `falcom/ed9/ir/hlil/id_marks.py`).
+file-level passes: `run_falcom_file_passes` in `hlil_converter.py`, a `Pipeline` like the per-function one, run by
+`write_ir_outputs` in `falcom/ed9/scp2py_base.py`): it types parameters from the flags the script declares and, with
+the game's syscall rows, marks and tags character IDs (the rule: `falcom/ed9/ir/hlil/id_marks.py`).
 
 ## Operations & Node Types
 
@@ -277,9 +278,10 @@ DeadCodeEliminationPass â†’ BranchOrderNormalizationPass (enabled by default) â†
 LineMarkerRemovalPass (only with line_markers off)
 ```
 
-For `.ts`, the file-level stage follows, once every function is converted and `.llil.asm`, `.mlil.asm` and `.hlil.ts`
-are written: `FalcomTypeInferencePass` over the converted functions (a function the output leaves out, or whose
-conversion failed, gives it nothing), then each function's TypeScript.
+The file-level passes follow (`run_falcom_file_passes`), once every function is converted and whichever of
+`.llil.asm`, `.mlil.asm` and `.hlil.ts` the config asks for are written, for the outputs that read their facts
+(today `.ts`): `FalcomTypeInferencePass` over the converted functions (a function the output leaves out, or whose
+conversion failed, gives it nothing); then each function's TypeScript.
 
 The post-conversion passes operate on the tree, not on the original CFG. In architectural terms,
 they divide into shape recovery (`SwitchRecoveryPass`, `LoopRecoveryPass`), cleanup

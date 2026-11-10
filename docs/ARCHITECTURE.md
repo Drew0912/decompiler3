@@ -144,7 +144,8 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
    ↓
 8. HLIL (convert_falcom_mlil_to_hlil), per function
    ↓
-9. The file-level stage (FalcomTypeInferencePass over the converted functions: types, character IDs)
+9. The file-level passes (run_falcom_file_passes: FalcomTypeInferencePass over the converted functions: types,
+   character IDs)
    ↓
 10. TypeScript (generate_typescript)
 ```

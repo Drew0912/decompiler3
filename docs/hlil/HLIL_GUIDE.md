@@ -85,7 +85,7 @@ reader instead of materializing as a `REG` assignment — turning `reg0 = f(); u
 4. Recursively reconstruct control flow starting from block 0.
 5. Declare used variables.
 
-The real production entry point is `convert_falcom_mlil_to_hlil()`
+The per-function production entry point is `convert_falcom_mlil_to_hlil()`
 (`falcom/ed9/ir/hlil/hlil_converter.py`), which builds a `Pipeline` and runs, in order:
 
 ```
@@ -94,11 +94,13 @@ DeadCodeEliminationPass → BranchOrderNormalizationPass (default on) →
 LineMarkerRemovalPass (only with line_markers off)
 ```
 
-For `.ts`, the file-level stage (`write_ts`, `falcom/ed9/scp2py_base.py`) runs after every function is converted
-and the other outputs are written: `FalcomTypeInferencePass` (`falcom/ed9/ir/hlil/pass_type_inference.py`) over the
-converted functions, then each function's TypeScript. The pass sets each parameter's type from the flag the script
-declares for it (`Value32`/`Nullable32` -> `number`, `str`/`NullableStr` -> `string`, `Pointer` -> `Pointer`), so
-signatures don't depend on MLIL inference. Local variables have no type on the decompile path (`any` until the HLIL
+The file-level passes (`run_falcom_file_passes`, `falcom/ed9/ir/hlil/hlil_converter.py`, run by `write_ir_outputs` in
+`falcom/ed9/scp2py_base.py`) run after every function is converted and whichever of `.llil.asm`, `.mlil.asm` and
+`.hlil.ts` the config asks for are written, for the outputs that read their facts (today `.ts`; the HLIL DSL will
+too): `FalcomTypeInferencePass` (`falcom/ed9/ir/hlil/pass_type_inference.py`) over the converted functions, then each
+function's TypeScript. The pass sets each parameter's type from the flag the script declares for it
+(`Value32`/`Nullable32` -> `number`, `str`/`NullableStr` -> `string`, `Pointer` -> `Pointer`), so signatures don't
+depend on MLIL inference. Local variables have no type on the decompile path (`any` until the HLIL
 type plan: its stack translator runs no type pass); on the SSA path they take the MLIL SSA types. With the game's
 syscall rows (`falcom/ed9/games/<game>/metadata/syscall_args.py`, `SyscallArgs` in
 `falcom/ed9/assembler/ed9_syscalls.py`), the pass also marks the character-ID parameters: a parameter whose every
