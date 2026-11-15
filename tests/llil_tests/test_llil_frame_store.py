@@ -10,8 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILFrameStore, LowLevelILStackStore, LowLevelILConst, WORD_SIZE
-from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from ir.mlil.mlil import MLILSetVar
 from tests.shared.llil_utils import make_builder
 
@@ -62,7 +62,7 @@ class TestPopToParameterSlotMLIL(unittest.TestCase):
         builder.pop_bytes(WORD_SIZE)  # a real function cleans up its own param slot before RETURN
         builder.ret()
 
-        mlil_func = convert_falcom_llil_to_mlil_stack(builder.function)
+        mlil_func = convert_ed9_llil_to_mlil_stack(builder.function)
         block = mlil_func.basic_blocks[0]
 
         set_var_inst = block.instructions[-2]  # last instruction is the translated ret
@@ -71,12 +71,12 @@ class TestPopToParameterSlotMLIL(unittest.TestCase):
 
 
 class TestFrameStoreFormatting(unittest.TestCase):
-    """FalcomLLILFormatter renders LowLevelILFrameStore (POP_TO into a parameter) like its StackStore sibling"""
+    """ED9LLILFormatter renders LowLevelILFrameStore (POP_TO into a parameter) like its StackStore sibling"""
 
     def test_simplified_format_shows_popped_value(self):
         inst = LowLevelILFrameStore(LowLevelILConst(42), offset=0)
 
-        lines = FalcomLLILFormatter.format_instruction_sequence([inst], indent='')
+        lines = ED9LLILFormatter.format_instruction_sequence([inst], indent='')
 
         self.assertEqual(lines, ['STACK[fp + 0] = STACK[--sp] ; 42'])
 

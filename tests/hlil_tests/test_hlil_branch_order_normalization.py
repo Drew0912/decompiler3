@@ -9,7 +9,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from ir.hlil import (
     BinaryOp,
     BranchOrderNormalizationPass,
@@ -210,15 +210,15 @@ class TestBranchOrderNormalization(unittest.TestCase):
 
 
 class TestNormalizeBranchOrderFlag(unittest.TestCase):
-    """convert_falcom_mlil_to_hlil's normalize_branch_order: on by default, off keeps the bytecode's arm order"""
+    """convert_ed9_mlil_to_hlil's normalize_branch_order: on by default, off keeps the bytecode's arm order"""
 
     def test_on_by_default_puts_the_earlier_line_first(self):
-        [result, _] = convert_falcom_mlil_to_hlil(make_reversed_arms_mlil()).body.statements
+        [result, _] = convert_ed9_mlil_to_hlil(make_reversed_arms_mlil()).body.statements
 
         self.assertEqual(first_comment(result.true_block), f'line({EARLY_LINE})')
 
     def test_off_keeps_the_bytecode_order(self):
-        hlil = convert_falcom_mlil_to_hlil(make_reversed_arms_mlil(), normalize_branch_order=False)
+        hlil = convert_ed9_mlil_to_hlil(make_reversed_arms_mlil(), normalize_branch_order=False)
         [result, _] = hlil.body.statements
 
         self.assertEqual(first_comment(result.true_block), f'line({LATE_LINE})')

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """CallResultPass (ir/mlil/passes/pass_call_result.py) on assembled functions through the decompile path whole
-(convert_falcom_llil_to_mlil_stack) and the shared checks (tests/shared/stack_translator_checks.py): reads of the
+(convert_ed9_llil_to_mlil_stack) and the shared checks (tests/shared/stack_translator_checks.py): reads of the
 result register forwarded to the call's temporary, dead result stores dropped and unread outputs cleared, the
 translator's copies becoming the call's output; and where it must leave a store: live into another block, an author's
 own"""
@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from ir.llil.llil import WORD_SIZE
 from ir.mlil import CallResultPass
 from ir.mlil.mlil import MediumLevelILCall, MLILExternCall
@@ -33,7 +33,7 @@ class CallResultTestCase(StackTranslationTestCase):
     def convert(self, asm: Asm, callee_argc: int = 0):
         """asm's MLIL through the decompile path, after the shared checks"""
         _, llil = lift_asm(asm, others=(returning_callee(callee_argc),))
-        return self.checked_translation(llil, convert_falcom_llil_to_mlil_stack)
+        return self.checked_translation(llil, convert_ed9_llil_to_mlil_stack)
 
     def calls(self, mlil) -> list[MediumLevelILCall]:
         return [inst for inst in mlil.iter_instructions() if isinstance(inst, MediumLevelILCall)]

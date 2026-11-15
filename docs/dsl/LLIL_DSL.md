@@ -14,7 +14,7 @@ reverse: turning a Python source file back into game bytecode.
 
 **Naming note:** "LLIL DSL" in this document refers to this `.py` output — generated from the
 disassembly IR (`assembler/`, `falcom/ed9/assembler/`), not from `ir/llil`'s `LowLevelILFunction`. The real LLIL
-pipeline (`ED9VMLifter`, `FalcomLLILFormatter`) is a separate, disjoint path that only feeds
+pipeline (`ED9VMLifter`, `ED9LLILFormatter`) is a separate, disjoint path that only feeds
 `.llil.asm`/`.llil.dot` debug dumps and MLIL→HLIL→TypeScript. The two are close enough in shape
 (one opcode, one function call, stack-machine semantics), and the disassembly-sourced version is
 already correct and round-trip-capable, that there's no plan to switch its source — treat "LLIL

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for line_marker_number, LineMarkerRemovalPass and convert_falcom_mlil_to_hlil's line_markers flag: off,
+"""Unit tests for line_marker_number, LineMarkerRemovalPass and convert_ed9_mlil_to_hlil's line_markers flag: off,
 the line(N) comments go once every pass that reads them has run, so the code statements and their order stay, and
 the if arms they leave empty are tidied. Any other comment stays."""
 
@@ -11,7 +11,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from ir.hlil import (
     BinaryOp,
     HighLevelILFunction,
@@ -130,12 +130,12 @@ class TestLineMarkerRemoval(unittest.TestCase):
 
 
 class TestLineMarkersFlag(unittest.TestCase):
-    """convert_falcom_mlil_to_hlil's line_markers: on by default; off, a function with no arm left empty loses only its
+    """convert_ed9_mlil_to_hlil's line_markers: on by default; off, a function with no arm left empty loses only its
     comments, also where the markers decide the arm order (so the pass must run after branch-order normalization)"""
 
     def text(self, **flags) -> list:
         func = build_function('f', with_markers(SOURCE_ORDER))
-        return HLILFormatter.format_function(convert_falcom_mlil_to_hlil(func, **flags))
+        return HLILFormatter.format_function(convert_ed9_mlil_to_hlil(func, **flags))
 
     def test_on_by_default(self):
         self.assertTrue(any(MARKER_LINE.match(line) for line in self.text()))

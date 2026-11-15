@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import WORD_SIZE
-from falcom.ed9.ir.mlil_ssa.mlil_translator import FalcomLLILToMLILTranslator
+from falcom.ed9.ir.mlil_ssa.mlil_translator import ED9LLILToMLILTranslator
 from ir.mlil.mlil import (
     MediumLevelILFunction, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILVariable,
     MLILConst, MLILCall, MLILStoreReg, MLILLoadReg, MLILRet, MLILAddressOf, MLILIf, MLILGoto,
@@ -32,7 +32,7 @@ class TestDerefMLILTranslation(unittest.TestCase):
         llil_func, _ = build_function_with_deref(num_params=1, offset=-WORD_SIZE,
                                                    deref_write=True, with_ret=True)
 
-        mlil_func = FalcomLLILToMLILTranslator().translate(llil_func)
+        mlil_func = ED9LLILToMLILTranslator().translate(llil_func)
         inst = mlil_func.basic_blocks[0].instructions[-2]  # last is the translated ret
 
         self.assertIsInstance(inst, MLILStoreDeref)
@@ -42,7 +42,7 @@ class TestDerefMLILTranslation(unittest.TestCase):
         llil_func, _ = build_function_with_deref(num_params=1, offset=-WORD_SIZE,
                                                    deref_write=False, with_ret=True)
 
-        mlil_func = FalcomLLILToMLILTranslator().translate(llil_func)
+        mlil_func = ED9LLILToMLILTranslator().translate(llil_func)
         # load_stack_deref's StackStore -> MLIL SetVar(local, MLILDeref(arg1))
         set_var_inst = mlil_func.basic_blocks[0].instructions[-2]  # last is the translated ret
 

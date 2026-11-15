@@ -10,8 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from codegen.typescript import TypeScriptGenerator, generate_typescript
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.hlil.pass_type_inference import FalcomTypeInferencePass
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
+from falcom.ed9.ir.hlil.pass_type_inference import ED9TypeInferencePass
 from falcom.ed9.assembler.function import Function, FunctionParam
 from falcom.ed9.structs.scp_types import Pointer, RawInt, ScpParamFlags
 from ir.core import SourceFloat
@@ -262,8 +262,8 @@ class TestPointerCodegen(unittest.TestCase):
         scp_func.name = TEST_FUNCTION_NAME
         scp_func.params = [FunctionParam(ScpParamFlags(Pointer))]
 
-        hlil = convert_falcom_mlil_to_hlil(func)
-        FalcomTypeInferencePass([scp_func]).run([hlil])
+        hlil = convert_ed9_mlil_to_hlil(func)
+        ED9TypeInferencePass([scp_func]).run([hlil])
 
         self.assertEqual(hlil.parameters[0].type_hint, HLILTypeKind.POINTER)
         self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: Pointer)', generate_typescript(hlil))

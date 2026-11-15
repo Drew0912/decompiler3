@@ -25,9 +25,9 @@ from falcom.ed9.formatter.format_hints import game_format_hints
 from falcom.ed9.assembler.ed9_syscalls import game_syscall_args
 from falcom.ed9.assembler.function import Function
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil, run_falcom_file_passes
+from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil, run_ed9_file_passes
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.hlil.hlil import HighLevelILFunction, HLILUnstructured, reachable_statements
 from ir.hlil.hlil_formatter import HLILFormatter
@@ -123,15 +123,15 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             llil_func = ED9VMLifter(parser=parser).lift_function(func)
 
             if config.write_llil_asm:
-                llil_asm_lines.extend(FalcomLLILFormatter.format_llil_function(llil_func))
+                llil_asm_lines.extend(ED9LLILFormatter.format_llil_function(llil_func))
 
             if config.write_llil_dot:
-                write_text_lf(output_dir / f'{out.stem}.{func.name}.llil.dot', FalcomLLILFormatter.to_dot(llil_func))
+                write_text_lf(output_dir / f'{out.stem}.{func.name}.llil.dot', ED9LLILFormatter.to_dot(llil_func))
 
             if not need_mlil:
                 continue
 
-            mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
+            mlil_func = convert_ed9_llil_to_mlil_stack(llil_func)
 
             if config.write_mlil_asm:
                 mlil_asm_lines.extend(MLILFormatter.format_function(mlil_func))
@@ -142,7 +142,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
             if not need_hlil:
                 continue
 
-            hlil_func = convert_falcom_mlil_to_hlil(mlil_func, line_markers=config.line_markers)
+            hlil_func = convert_ed9_mlil_to_hlil(mlil_func, line_markers=config.line_markers)
 
             unstructured_targets = [stmt.target for stmt in reachable_statements(hlil_func.body)
                                     if isinstance(stmt, HLILUnstructured)]
@@ -175,7 +175,7 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
     # facts (the types; with the game's syscall rows, the ID marks and tags)
     warn = function_warning(path)
     syscall_args = game_syscall_args(parser.game) if config.id_names else None
-    run_falcom_file_passes([hlil_func for _, hlil_func in converted], parser.functions, syscall_args, warn)
+    run_ed9_file_passes([hlil_func for _, hlil_func in converted], parser.functions, syscall_args, warn)
 
     if config.write_ts:
         id_hints = game_format_hints(parser.game) if syscall_args is not None else None

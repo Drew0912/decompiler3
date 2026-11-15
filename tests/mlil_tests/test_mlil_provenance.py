@@ -9,7 +9,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from tests.shared.llil_utils import ProvenanceTestCase, build_call_function
 
 
@@ -18,7 +18,7 @@ class TestTranslatedProvenance(ProvenanceTestCase):
 
     def test_every_statement_names_its_llil_instruction(self):
         llil = build_call_function()
-        mlil = convert_falcom_llil_to_mlil_stack(llil)
+        mlil = convert_ed9_llil_to_mlil_stack(llil)
         self.assertIs(mlil.llil_function, llil)
         self.check_contract(mlil, llil)
 

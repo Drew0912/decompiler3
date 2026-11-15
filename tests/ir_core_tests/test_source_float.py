@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from codegen.typescript import TypeScriptGenerator
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
+from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
 from falcom.ed9.structs.scp_types import ScpValue
 from falcom.ed9.scp2py_base import process_file
 from falcom.ed9.scp2py_config import ScpDecompileConfig
@@ -115,9 +115,9 @@ class TestLLILBitsComment(unittest.TestCase):
         source = LowLevelILStackStore(LowLevelILConst(SourceFloat(27.199996948242188, '27.2')), slot_index=5)
         plain = LowLevelILStackStore(LowLevelILConst(27.199996948242188), slot_index=5)
 
-        self.assertEqual(FalcomLLILFormatter._format_simplified(source),
+        self.assertEqual(ED9LLILFormatter._format_simplified(source),
                          ['STACK[sp] = 27.2 ; [5] f32 0x41D99998, raw 0x90766666'])
-        self.assertEqual(FalcomLLILFormatter._format_simplified(plain), ['STACK[sp] = 27.199996948242188 ; [5]'])
+        self.assertEqual(ED9LLILFormatter._format_simplified(plain), ['STACK[sp] = 27.199996948242188 ; [5]'])
 
 
 class TestDecompiledFloats(unittest.TestCase):

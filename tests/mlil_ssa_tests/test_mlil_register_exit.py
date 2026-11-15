@@ -14,8 +14,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from codegen import generate_typescript
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
+from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from falcom.ed9.ir.mlil_ssa.mlil_translator import RESULT_REG_INDEX
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
@@ -37,8 +37,8 @@ def return_nothing(asm: Asm):
 
 def typescript_of(asm: Asm, *, infer_types: bool = False) -> str:
     _, llil = lift_asm(asm, others=(returning_callee(),))
-    mlil = convert_falcom_llil_to_mlil_ssa(llil, optimize=True, infer_types=infer_types)
-    return generate_typescript(convert_falcom_mlil_to_hlil(mlil))
+    mlil = convert_ed9_llil_to_mlil_ssa(llil, optimize=True, infer_types=infer_types)
+    return generate_typescript(convert_ed9_mlil_to_hlil(mlil))
 
 
 def read_after_its_write(ts: str, register: str) -> bool:

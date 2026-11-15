@@ -35,9 +35,9 @@ operand stack has little use for LLIL and can lift straight to MLIL.
 | `ir/llil/llil.py` | Node model: the generic `LowLevelILOperation`, the `LowLevelILExpr`/`LowLevelILStatement` split, every generic node, `LowLevelILBasicBlock`, `LowLevelILFunction` (instruction numbering, `build_cfg()`), `WORD_SIZE`. |
 | `ir/llil/llil_builder.py` | `LowLevelILBuilder`: stack pointer and virtual stack, push/pop, slot storage (`_holds_parameter`), per-edge stack state (`StackSnapshot`, `_record_edge_state`). |
 | `ir/llil/llil_formatter.py` | `LLILFormatter`: the `.llil.asm` text and `.llil.dot` graphs (each instruction's own text, the binary/unary expansion). |
-| `falcom/ed9/ir/llil/llil_builder.py` | `FalcomVMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `finalize()`. |
-| `falcom/ed9/ir/llil/llil_formatter.py` | `FalcomLLILFormatter`: the pops the builder hides (see Formatting). |
-| `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILPopN`, `LowLevelILDebugInt`; their operations in `LowLevelILFalcomOperation`. |
+| `falcom/ed9/ir/llil/llil_builder.py` | `ED9VMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `finalize()`. |
+| `falcom/ed9/ir/llil/llil_formatter.py` | `ED9LLILFormatter`: the pops the builder hides (see Formatting). |
+| `falcom/ed9/ir/llil/llil_ext.py` | ED9 nodes: `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn`, `LowLevelILGlobalLoad`/`Store`, `LowLevelILPopN`, `LowLevelILDebugInt`; their operations in `LowLevelILED9Operation`. |
 | `falcom/ed9/ir/llil/constants.py` | ED9 constants the call setups push: function ID, return-address block, script pointer, the caller frame's marker (`LowLevelILConstFrameMarker`). |
 | `falcom/ed9/ir/llil/vm_lifter.py` | `ED9VMLifter.lift_function()`: the production entry point, a `match` arm per opcode - the binary opcodes share one, picked by the opcode table's kind (`BINARY_BUILDER_METHODS` names each one's builder operation), and a local `CALL`'s argument count comes from its stack effect. |
 
@@ -170,30 +170,30 @@ Every terminal records the state its edge carries into the target (`_record_edge
 branches when they are emitted, calls after their cleanup (the return edge). The first record for a
 block becomes its state; every later one must have the same **shape** - the same `sp`, the same
 tracked slots and, for ED9, the same pending setups (kind, `sp` before the call, return block;
-`FalcomStackSnapshot.shape()`). Values may differ between edges: the pushes meeting there share one local, MLIL's
+`ED9StackSnapshot.shape()`). Values may differ between edges: the pushes meeting there share one local, MLIL's
 stack translator's carried local (the SSA path's phis merge them). The entry
 state is seeded, not recorded from an edge, so a back edge into the entry must match it too. The
 parser's disassembly-time stack simulation checks the same stack heights earlier
 (`docs/falcom/ed9/ED9_FORMAT.md`, Layer 2).
 
-`FalcomVMBuilder.finalize()` then rebuilds every edge from the terminals (`build_cfg()`; an
+`ED9VMBuilder.finalize()` then rebuilds every edge from the terminals (`build_cfg()`; an
 unsupported terminal raises before an edge changes) and renumbers the instructions in block order.
 
 Each block also keeps `sp_in`, the `sp` at its start.
 
 ## Formatting
 
-`falcom/ed9/scp2py_base.py` writes `FalcomLLILFormatter.format_llil_function()` to `<script>.llil.asm`:
+`falcom/ed9/scp2py_base.py` writes `ED9LLILFormatter.format_llil_function()` to `<script>.llil.asm`:
 one header per block (`block_N(0xADDR), label, [sp = N]`, plus `fp` on the entry) and each
 instruction in an expanded pseudo-code form (`STACK[sp] = ...`, `STACK[--sp]`). String constants
 print single-quoted with Python escapes (`quote_string`), so a quote or line break stays inside
 its token. A float prints through `str()`: a `SourceFloat` (`ir/core/il_literals.py`; the Falcom lifter
 keeps the exact decoded value and attaches the `.py`'s spelling, `ScpValue.float_literal`) prints that
 text, a plain float its exact `repr`. A pushed `SourceFloat` also gets its bits from
-`FalcomLLILFormatter`: `STACK[sp] = 27.2 ; [5] f32 0x41D99998, raw 0x90766666` (`f32` is what the VM
+`ED9LLILFormatter`: `STACK[sp] = 27.2 ; [5] f32 0x41D99998, raw 0x90766666` (`f32` is what the VM
 computes with, `raw` the stored word). `hidden_for_formatter` drops an `SpAdd` line when the
 instruction's own line already spells out the stack action. `SET_REG`, `SET_GLOBAL`, `POP_JMP_*`,
-`POP_TO` and `POP_TO_DEREF` pop with their `SpAdd` hidden, so `FalcomLLILFormatter` shows the pop on
+`POP_TO` and `POP_TO_DEREF` pop with their `SpAdd` hidden, so `ED9LLILFormatter` shows the pop on
 their own line (`REG[0] = STACK[--sp]  ; ...`, `GLOBAL[0] = STACK[--sp] ; ...`,
 `if (STACK[--sp] EQ 0) goto ...`, `STACK[1] = STACK[--sp] ; ...`, `*STACK[fp + 3] = STACK[--sp] ; ...`);
 the generic `LLILFormatter` prints those instructions' own text. `to_dot()` draws a function's CFG

@@ -9,7 +9,7 @@ import re
 import unittest
 from typing import Callable
 
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.mlil.stack_translator import ED9StackTranslatorPass
 from ir.core import reverse_post_order
 from ir.llil.llil import LowLevelILFunction
@@ -121,7 +121,7 @@ def statements(mlil) -> list[str]:
 
 
 def translated(llil: LowLevelILFunction) -> MediumLevelILFunction:
-    """The translator's own MLIL, its canonical form: convert_falcom_llil_to_mlil_stack's passes without the shaping
+    """The translator's own MLIL, its canonical form: convert_ed9_llil_to_mlil_stack's passes without the shaping
     ones (CallResultPass), which take it as their input"""
     mlil = Pipeline([ED9StackTranslatorPass(), BlockMergePass(), BitwiseHexPass()]).run(llil)
     mlil.renumber_instructions()
@@ -139,6 +139,6 @@ class StackTranslationTestCase(unittest.TestCase):
         self.assertEqual(reads_before_definition(mlil), [])
         llil_mlil = logic_check.compare_facts(reference, logic_check.analyze(logic_check.MLILLayer(mlil)))
         self.assertEqual({difference.category for difference in llil_mlil}, set(), 'LLIL -> MLIL')
-        mlil_hlil = logic_check.compare_mlil_hlil(mlil, convert_falcom_mlil_to_hlil(mlil))
+        mlil_hlil = logic_check.compare_mlil_hlil(mlil, convert_ed9_mlil_to_hlil(mlil))
         self.assertEqual({difference.category for difference in mlil_hlil}, set(), 'MLIL -> HLIL')
         return mlil

@@ -6,9 +6,9 @@ from typing import NamedTuple
 
 from dc3.gc_policy import infrequent_gc
 from dc3.utils import raise_recursion_limit
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from falcom.ed9.parser.scp import ScpParser
 from .compare import Difference, compare_facts
 from .evaluation import analyze
@@ -62,7 +62,7 @@ def check_function(lifter: ED9VMLifter, func) -> FunctionResult:
         return FunctionResult.check_failed(func.name, 'LLIL', e)
 
     try:
-        mlil = convert_falcom_llil_to_mlil_stack(llil)
+        mlil = convert_ed9_llil_to_mlil_stack(llil)
     except Exception as e:
         return FunctionResult.decompile_failed(func.name, 'MLIL', e)
 
@@ -77,7 +77,7 @@ def check_function(lifter: ED9VMLifter, func) -> FunctionResult:
         return FunctionResult.check_failed(func.name, 'MLIL gated', e, differences)
 
     try:
-        hlil = convert_falcom_mlil_to_hlil(mlil)
+        hlil = convert_ed9_mlil_to_hlil(mlil)
     except Exception as e:
         return FunctionResult.decompile_failed(func.name, 'HLIL', e, differences)
 

@@ -34,8 +34,8 @@ var_s1 = 5
 var_s0 = var_s0 + var_s1
 ```
 
-That is the SSA path's translation (`convert_falcom_llil_to_mlil_ssa()`), kept beside the decompile path and never
-called by it. The decompile path's symbolic-stack translator (`convert_falcom_llil_to_mlil_stack()`;
+That is the SSA path's translation (`convert_ed9_llil_to_mlil_ssa()`), kept beside the decompile path and never
+called by it. The decompile path's symbolic-stack translator (`convert_ed9_llil_to_mlil_stack()`;
 `docs/mlil/MLIL_DESIGN.md`, "The stack translator") keeps a pushed value pending until something consumes it, so the
 two pushes and the add fold into one expression, `10 + 5`, in the statement that consumes the sum; a push becomes a
 local only when it is read by offset, written in place, address-taken, read twice, never read (a declared slot), or
@@ -49,11 +49,11 @@ instead of tracking a stack pointer — easier to read and to run further analys
 See `docs/mlil/MLIL_DESIGN.md`'s Module Layout table for the full file-by-file breakdown. In short:
 `ir/mlil/` holds the generic engine (the node types, the stack translator, the builder/formatter) and
 `ir/mlil/passes/` the 4 passes the decompile path runs after its translator; `falcom/ed9/ir/mlil/` holds the
-Falcom-specific wiring — `mlil_converter.py` is the decompile path's entry point
-(`convert_falcom_llil_to_mlil_stack()`), mirroring how `falcom/ed9/ir/hlil/hlil_converter.py` wires HLIL. The SSA
+ED9-specific wiring — `mlil_converter.py` is the decompile path's entry point
+(`convert_ed9_llil_to_mlil_stack()`), mirroring how `falcom/ed9/ir/hlil/hlil_converter.py` wires HLIL. The SSA
 path, kept and never called by the decompile path, has its own packages: `ir/mlil_ssa/` (its translator, the SSA
 layer, the optimizer; 13 pass modules in `ir/mlil_ssa/passes/`) and `falcom/ed9/ir/mlil_ssa/` (its entry point,
-`convert_falcom_llil_to_mlil_ssa()`); it imports from `ir/mlil/`, never the other way.
+`convert_ed9_llil_to_mlil_ssa()`); it imports from `ir/mlil/`, never the other way.
 
 ## Variable Model
 
@@ -109,10 +109,10 @@ convention.
 
 ## The Pipeline
 
-`convert_falcom_llil_to_mlil_stack()` (`falcom/ed9/ir/mlil/mlil_converter.py`) is what the decompile path, the
+`convert_ed9_llil_to_mlil_stack()` (`falcom/ed9/ir/mlil/mlil_converter.py`) is what the decompile path, the
 logic check and the tools call: `ED9StackTranslatorPass → BlockMergePass → CallResultPass → ReturnValuePass →
 BitwiseHexPass` (`docs/mlil/MLIL_DESIGN.md`, "The stack translator"). The SSA path,
-`convert_falcom_llil_to_mlil_ssa()`, kept beside it and never called by it (IR rewrite part 2), builds a `Pipeline`
+`convert_ed9_llil_to_mlil_ssa()`, kept beside it and never called by it (IR rewrite part 2), builds a `Pipeline`
 and runs:
 
 ```

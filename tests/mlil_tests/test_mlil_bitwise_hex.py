@@ -11,9 +11,9 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from codegen import generate_typescript
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.mlil.mlil_formatter import MLILFormatter
 from tests.shared.llil_utils import lift_asm
@@ -33,8 +33,8 @@ def outputs(push_value) -> dict[str, str]:
     push_value(asm)
     asm.set_reg(RESULT_REGISTER); asm.ret()
     _, llil_func = lift_asm(asm)
-    mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
-    hlil_func = convert_falcom_mlil_to_hlil(mlil_func)
+    mlil_func = convert_ed9_llil_to_mlil_stack(llil_func)
+    hlil_func = convert_ed9_mlil_to_hlil(mlil_func)
     return {'.mlil.asm': '\n'.join(MLILFormatter.format_function(mlil_func)),
             '.hlil.ts': '\n'.join(HLILFormatter.format_function(hlil_func)),
             '.ts': generate_typescript(hlil_func)}

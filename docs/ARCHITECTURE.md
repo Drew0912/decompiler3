@@ -71,10 +71,10 @@ per-edge stack state are in `docs/llil/LLIL_DESIGN.md`.
 `falcom/ed9/ir/mlil_ssa/`
 
 Erases the explicit operand stack, while retaining Falcom-specific semantics (syscall IDs, `CALL_SCRIPT` metadata).
-The decompile path's MLIL comes from the symbolic-stack translator (`convert_falcom_llil_to_mlil_stack`): non-SSA MLIL
+The decompile path's MLIL comes from the symbolic-stack translator (`convert_ed9_llil_to_mlil_stack`): non-SSA MLIL
 straight from the LLIL's stack layout, registers as storage, then the passes that merge blocks, forward call results,
 return the value stored before each return and mark bitwise constants hex (IR rewrite part 2). Beside it, kept and
-never called by the decompile path, the SSA path (`convert_falcom_llil_to_mlil_ssa`, in its own packages, which
+never called by the decompile path, the SSA path (`convert_ed9_llil_to_mlil_ssa`, in its own packages, which
 import from `ir/mlil/` and never the other way): every temporary a named variable, and a full SSA optimizer pipeline —
 construction/deconstruction, critical-edge splitting, type inference, and further optimization passes (constant/copy
 propagation, dead-code elimination; none computes a value the bytecode does not hold). See `docs/mlil/MLIL_DESIGN.md`
@@ -140,11 +140,11 @@ just LLIL DSL is still future work, loosely sketched rather than fully designed.
    ↓
 6. Lifter (ED9VMLifter.lift_function) → LowLevelILFunction
    ↓
-7. MLIL (convert_falcom_llil_to_mlil_stack)
+7. MLIL (convert_ed9_llil_to_mlil_stack)
    ↓
-8. HLIL (convert_falcom_mlil_to_hlil), per function
+8. HLIL (convert_ed9_mlil_to_hlil), per function
    ↓
-9. The file-level passes (run_falcom_file_passes: FalcomTypeInferencePass over the converted functions: types,
+9. The file-level passes (run_ed9_file_passes: ED9TypeInferencePass over the converted functions: types,
    character IDs)
    ↓
 10. TypeScript (generate_typescript)
@@ -158,7 +158,7 @@ game knowledge there can't spread back into the IR. It imports nothing from `fal
 as tags on HLIL nodes (`HLILConst.id_kind`, `HLILVariable.id_kind`) and plain data (`IdFormatHint`), from the file-level
 stage. The opcode table (`falcom/ed9/assembler/`) holds no IR node classes:
 it gives opcode kinds and stack effects, and the LLIL lifter maps them to nodes. The decompile path's LLIL -> MLIL
-translator keeps the game's conventions in `falcom/ed9/ir/mlil/stack_translator.py` (`FalcomStackTranslator`: the
+translator keeps the game's conventions in `falcom/ed9/ir/mlil/stack_translator.py` (`ED9StackTranslator`: the
 parameter-to-slot mapping, the result register, globals, script calls, `POPN`, `DEBUG_INT`); the generic
 `StackTranslator` translates the generic LLIL nodes (`RegStore`, `RegLoad`, `Syscall`) itself. The SSA path's known
 leftovers stay with it in `ir/mlil_ssa/` (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary"). The IR folds plain int

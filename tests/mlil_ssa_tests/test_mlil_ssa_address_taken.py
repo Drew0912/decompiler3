@@ -12,8 +12,8 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
+from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
+from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
     MediumLevelILFunction, MediumLevelILCall, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILConst, MLILCall,
@@ -313,7 +313,7 @@ class TestAddressTakenFromRealLLIL(unittest.TestCase):
     load_stack re-reads it for the syscall so the call sees the temp, not a literal &x."""
 
     def test_syscall_through_stack_temp_pointer_does_not_fold(self):
-        builder = FalcomVMBuilder()
+        builder = ED9VMBuilder()
         builder.create_function('addr_taken_repro', FUNC_START)
         entry = builder.create_basic_block(FUNC_START, 'addr_taken_repro')
         builder.set_current_block(entry)
@@ -329,7 +329,7 @@ class TestAddressTakenFromRealLLIL(unittest.TestCase):
         builder.pop_bytes(3 * WORD_SIZE)        # sp 3->0 (discard the three remaining temps)
         builder.ret()
 
-        mlil_func = convert_falcom_llil_to_mlil_ssa(builder.function, optimize=True, infer_types=False)
+        mlil_func = convert_ed9_llil_to_mlil_ssa(builder.function, optimize=True, infer_types=False)
 
         ret_inst = next(inst for b in mlil_func.basic_blocks for inst in b.instructions
                          if isinstance(inst, MLILRet))

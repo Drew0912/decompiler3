@@ -2,7 +2,7 @@
 """Dispatch chains as the compiler writes them, assembled, and the checks both LLIL -> MLIL paths' switch tests share;
 it imports logic_check from tools/, which the importing test puts on sys.path"""
 
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from ir.hlil import HLILSwitch, iter_tree
 from ir.llil.llil import WORD_SIZE
 from tests.shared.llil_utils import lift_asm
@@ -127,7 +127,7 @@ def hlil_and_differences(build, argc: int, convert) -> tuple:
     """build()'s HLIL through convert, and the logic check's MLIL -> HLIL categories on it"""
     _, llil = lift_asm(build(), argc=argc, others=(returning_callee(),))
     mlil = convert(llil)
-    hlil = convert_falcom_mlil_to_hlil(mlil)
+    hlil = convert_ed9_mlil_to_hlil(mlil)
     return hlil, hlil_categories(mlil, hlil)
 
 

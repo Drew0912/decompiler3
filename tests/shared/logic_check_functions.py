@@ -3,8 +3,8 @@
 (tests/tools_tests/test_logic_check_*.py): the bytecode, its LLIL facts and MLIL, its MLIL and HLIL, each pair's
 categories; it imports logic_check from tools/, which the importing test puts on sys.path"""
 
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from ir.llil.llil import WORD_SIZE
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
@@ -94,7 +94,7 @@ def reference_and_mlil(build, argc: int = 0) -> tuple:
     asm, callee_argc = build()
     _, llil = lift_asm(asm, argc=argc, others=(returning_callee(callee_argc),))
     reference = logic_check.analyze(logic_check.LLILLayer(llil))
-    return reference, convert_falcom_llil_to_mlil_stack(llil)
+    return reference, convert_ed9_llil_to_mlil_stack(llil)
 
 
 def categories(reference, mlil) -> set[str]:
@@ -121,7 +121,7 @@ def first(mlil, predicate) -> tuple:
 def mlil_and_hlil(build, argc: int = 0) -> tuple:
     """The function's MLIL as the decompiler makes it and the HLIL made from it"""
     _, mlil = reference_and_mlil(build, argc)
-    return mlil, convert_falcom_mlil_to_hlil(mlil)
+    return mlil, convert_ed9_mlil_to_hlil(mlil)
 
 
 def hlil_categories(mlil, hlil) -> set[str]:

@@ -5,7 +5,7 @@ functions and checks two test files share"""
 import unittest
 
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
+from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from ir.core import IRParameter
 from ir.llil.llil import WORD_SIZE, LowLevelILFunction
 from ir.mlil.mlil import MediumLevelILFunction
@@ -22,9 +22,9 @@ ARG_VALUE = 7
 ONE_ARG = 1
 
 
-def make_builder(num_params: int = 0) -> FalcomVMBuilder:
+def make_builder(num_params: int = 0) -> ED9VMBuilder:
     """A builder with one function and its entry block current"""
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function(FUNC_NAME, FUNC_START, [IRParameter(f'arg{i + 1}') for i in range(num_params)])
     builder.set_current_block(builder.create_basic_block(FUNC_START, FUNC_NAME))
     return builder
@@ -67,7 +67,7 @@ def build_function_with_deref(num_params: int, offset: int, *, deref_write: bool
 def build_call_function() -> LowLevelILFunction:
     """A call, then a return, one address per LLIL instruction - the call ends its LLIL block, so translation
     leaves a goto to the return block that block merge removes"""
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function('provenance_test', FUNC_START)
     builder.set_current_block(builder.create_basic_block(FUNC_START, 'entry'))
     ret_block = builder.create_basic_block(FUNC_START + BLOCK_STRIDE, 'ret')

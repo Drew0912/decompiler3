@@ -1,4 +1,4 @@
-"""Falcom HLIL type inference: the file-level stage over a file's converted functions"""
+"""ED9 HLIL type inference: the file-level stage over a file's converted functions"""
 
 from typing import TYPE_CHECKING, Callable
 
@@ -22,8 +22,8 @@ PARAM_TYPE_KINDS = {
 }
 
 
-class FalcomTypeInferencePass(Pass):
-    """Falcom-specific types over a file's HLIL functions, once every function is converted: each parameter's type from
+class ED9TypeInferencePass(Pass):
+    """ED9-specific types over a file's HLIL functions, once every function is converted: each parameter's type from
     the flag the script declares for it; with the game's syscall rows, each ID parameter marked (HLILVariable.id_kind)
     and each ID constant tagged (HLILConst.id_kind) for .ts to print by name (the rule: id_marks.py). Each function's
     part on its own: one that raises sets nothing and is reported through warn (without warn, re-raised)"""

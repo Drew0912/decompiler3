@@ -12,8 +12,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from ir.hlil.hlil_formatter import HLILFormatter
 from tests.shared.llil_utils import lift_asm
 from tests.shared.logic_check_functions import GLOBAL_A, GLOBAL_B, MESSAGE, call, return_nothing
@@ -25,7 +25,7 @@ STORED = 5
 def hlil_lines(asm: Asm) -> list[str]:
     """asm's HLIL text, beside a callee of no parameters"""
     _, llil = lift_asm(asm, others=(returning_callee(0),))
-    hlil = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil_stack(llil))
+    hlil = convert_ed9_mlil_to_hlil(convert_ed9_llil_to_mlil_stack(llil))
     return [line.strip() for line in HLILFormatter.format_function(hlil) if line.strip()]
 
 

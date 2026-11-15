@@ -1,11 +1,11 @@
-"""Falcom-specific LLIL Extensions"""
+"""ED9-specific LLIL Extensions"""
 
 from enum import IntEnum
 from ir.llil import *
 
 
-class LowLevelILFalcomOperation(IntEnum):
-    """Falcom-specific LLIL operations"""
+class LowLevelILED9Operation(IntEnum):
+    """ED9-specific LLIL operations"""
 
     LLIL_GLOBAL_LOAD           = LowLevelILOperation.LLIL_USER_DEFINED      # Load from global variable array
     LLIL_GLOBAL_STORE          = LowLevelILOperation.LLIL_USER_DEFINED + 1  # Store to global variable array
@@ -27,7 +27,7 @@ class LowLevelILCallScript(LowLevelILCall):
     ):
         target = f'{module}.{func}'
         super().__init__(target, return_target, args)
-        self.operation    = LowLevelILFalcomOperation.LLIL_CALL_SCRIPT
+        self.operation    = LowLevelILED9Operation.LLIL_CALL_SCRIPT
         self.module       = module          # Script module name (e.g., 'system')
         self.func         = func            # Function name (e.g., 'OnTalkBegin')
 
@@ -51,7 +51,7 @@ class LowLevelILCallScriptNoReturn(LowLevelILCall):
     ):
         target = f'{module}.{func}'
         super().__init__(target, return_target=None, args=args, returns=False)
-        self.operation    = LowLevelILFalcomOperation.LLIL_CALL_SCRIPT_NO_RETURN
+        self.operation    = LowLevelILED9Operation.LLIL_CALL_SCRIPT_NO_RETURN
         self.module       = module          # Script module name (e.g., 'system')
         self.func         = func            # Function name (e.g., 'OnTalkBegin')
 
@@ -64,7 +64,7 @@ class LowLevelILGlobalLoad(LowLevelILExpr):
     """LOAD_GLOBAL - Load from global variable array (expression)"""
 
     def __init__(self, index: int):
-        super().__init__(LowLevelILFalcomOperation.LLIL_GLOBAL_LOAD)
+        super().__init__(LowLevelILED9Operation.LLIL_GLOBAL_LOAD)
         self.index = index
 
     def __str__(self) -> str:
@@ -75,7 +75,7 @@ class LowLevelILGlobalStore(LowLevelILStatement):
     """SET_GLOBAL - Store to global variable array (statement)"""
 
     def __init__(self, index: int, value: LowLevelILExpr):
-        super().__init__(LowLevelILFalcomOperation.LLIL_GLOBAL_STORE)
+        super().__init__(LowLevelILED9Operation.LLIL_GLOBAL_STORE)
         self.index = index
         self.value = value  # Expression popped from stack
 
@@ -90,7 +90,7 @@ class LowLevelILPopN(LowLevelILStatement):
     """POPN - the top count stack values, message first, which it pops (statement); the VM prints nothing"""
 
     def __init__(self, values: list[LowLevelILExpr]):
-        super().__init__(LowLevelILFalcomOperation.LLIL_POPN)
+        super().__init__(LowLevelILED9Operation.LLIL_POPN)
         self.values = values    # Top of stack first (from vstack)
 
     def operands(self) -> tuple[LowLevelILInstruction, ...]:
@@ -105,7 +105,7 @@ class LowLevelILDebugInt(LowLevelILStatement):
     """DEBUG_INT - log an immediate at level 0, which the VM's logger drops (statement)"""
 
     def __init__(self, value: int):
-        super().__init__(LowLevelILFalcomOperation.LLIL_DEBUG_INT)
+        super().__init__(LowLevelILED9Operation.LLIL_DEBUG_INT)
         self.value = value
 
     def __str__(self) -> str:

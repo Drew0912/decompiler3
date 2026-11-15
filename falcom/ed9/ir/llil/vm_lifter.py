@@ -23,21 +23,21 @@ class ED9VMLifter:
 
     # Which builder operation each binary opcode lifts to (the opcode table says which opcodes are binary)
     BINARY_BUILDER_METHODS = {
-        ED9Opcode.ADD           : FalcomVMBuilder.add,
-        ED9Opcode.SUB           : FalcomVMBuilder.sub,
-        ED9Opcode.MUL           : FalcomVMBuilder.mul,
-        ED9Opcode.DIV           : FalcomVMBuilder.div,
-        ED9Opcode.MOD           : FalcomVMBuilder.mod,
-        ED9Opcode.EQ            : FalcomVMBuilder.eq,
-        ED9Opcode.NE            : FalcomVMBuilder.ne,
-        ED9Opcode.GT            : FalcomVMBuilder.gt,
-        ED9Opcode.GE            : FalcomVMBuilder.ge,
-        ED9Opcode.LT            : FalcomVMBuilder.lt,
-        ED9Opcode.LE            : FalcomVMBuilder.le,
-        ED9Opcode.BITWISE_AND   : FalcomVMBuilder.bitwise_and,
-        ED9Opcode.BITWISE_OR    : FalcomVMBuilder.bitwise_or,
-        ED9Opcode.LOGICAL_AND   : FalcomVMBuilder.logical_and,
-        ED9Opcode.LOGICAL_OR    : FalcomVMBuilder.logical_or,
+        ED9Opcode.ADD           : ED9VMBuilder.add,
+        ED9Opcode.SUB           : ED9VMBuilder.sub,
+        ED9Opcode.MUL           : ED9VMBuilder.mul,
+        ED9Opcode.DIV           : ED9VMBuilder.div,
+        ED9Opcode.MOD           : ED9VMBuilder.mod,
+        ED9Opcode.EQ            : ED9VMBuilder.eq,
+        ED9Opcode.NE            : ED9VMBuilder.ne,
+        ED9Opcode.GT            : ED9VMBuilder.gt,
+        ED9Opcode.GE            : ED9VMBuilder.ge,
+        ED9Opcode.LT            : ED9VMBuilder.lt,
+        ED9Opcode.LE            : ED9VMBuilder.le,
+        ED9Opcode.BITWISE_AND   : ED9VMBuilder.bitwise_and,
+        ED9Opcode.BITWISE_OR    : ED9VMBuilder.bitwise_or,
+        ED9Opcode.LOGICAL_AND   : ED9VMBuilder.logical_and,
+        ED9Opcode.LOGICAL_OR    : ED9VMBuilder.logical_or,
     }
 
     # Declared parameter type (ScpParamFlags.get_python_type()) -> IRParameter's generic type name
@@ -69,7 +69,7 @@ class ED9VMLifter:
 
     def _lift(self, func: Function) -> LowLevelILFunction:
         """lift_function's body; a failing instruction raises an ED9LiftError naming it"""
-        builder = FalcomVMBuilder()
+        builder = ED9VMBuilder()
         ir_params = self._convert_params(func.params)
         builder.create_function(func.name, func.offset, ir_params)
 
@@ -111,7 +111,7 @@ class ED9VMLifter:
 
     def _translate_instruction(
         self,
-        builder: FalcomVMBuilder,
+        builder: ED9VMBuilder,
         inst: Instruction,
         block: BasicBlock,
         llil_blocks: dict[int, LowLevelILBasicBlock],

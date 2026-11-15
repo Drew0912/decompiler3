@@ -10,8 +10,8 @@ from ..llil.constants import *
 RESULT_REG_INDEX = 0
 
 
-class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
-    """Falcom-specific LLIL to MLIL translator"""
+class ED9LLILToMLILTranslator(LLILToMLILTranslator):
+    """ED9-specific LLIL to MLIL translator"""
 
     RESULT_REGISTER = RESULT_REG_INDEX
 
@@ -24,12 +24,12 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         return self._result_reg_var()
 
     def _translate_instruction(self, llil_inst: LowLevelILInstruction):
-        """Translate LLIL instruction, handling Falcom-specific operations"""
+        """Translate LLIL instruction, handling ED9-specific operations"""
         # A stack store of a caller frame value prepares the call: MLIL omits it
         if isinstance(llil_inst, LowLevelILStackStore) and self._is_caller_frame_value(llil_inst.value):
             return
 
-        # Falcom-specific instructions
+        # ED9-specific instructions
         if isinstance(llil_inst, LowLevelILGlobalStore):
             value = self._translate_expr(llil_inst.value)
             self.builder.store_global(llil_inst.index, value)
@@ -64,13 +64,13 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         ))
 
     def _translate_call_script(self, llil_inst: LowLevelILCallScript):
-        """Translate Falcom script call"""
+        """Translate ED9 script call"""
         # Translate arguments
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
         self.builder.extern_call(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
 
-        # Add goto to return target (always a LowLevelILBasicBlock in Falcom)
+        # Add goto to return target (always a LowLevelILBasicBlock in ED9)
         return_block = self.block_map[llil_inst.return_target]
         self.builder.goto(return_block)
 
@@ -87,7 +87,7 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         self.builder.ret(MLILVar(self._result_reg_var()))
 
     def _translate_syscall(self, llil_inst: LowLevelILSyscall):
-        """Translate Falcom syscall"""
+        """Translate ED9 syscall"""
         # Translate arguments from LLIL
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
@@ -95,14 +95,14 @@ class FalcomLLILToMLILTranslator(LLILToMLILTranslator):
         self.builder.syscall(llil_inst.subsystem, llil_inst.cmd, mlil_args, self._result_reg_var())
 
     def _translate_expr(self, llil_expr: LowLevelILInstruction) -> MediumLevelILInstruction:
-        """Translate LLIL expression, handling Falcom-specific types"""
-        # Falcom-specific expressions
+        """Translate LLIL expression, handling ED9-specific types"""
+        # ED9-specific expressions
         if isinstance(llil_expr, LowLevelILGlobalLoad):
             return MLILLoadGlobal(llil_expr.index)
         elif isinstance(llil_expr, LowLevelILRegLoad):
             return MLILVar(self.builder.get_or_create_register_var(llil_expr.reg_index))
 
-        # Falcom-specific constants
+        # ED9-specific constants
         elif isinstance(llil_expr, LowLevelILConstFuncId):
             return MLILConst('<current_func_id>', is_hex=False)
         elif isinstance(llil_expr, LowLevelILConstRetAddrBlock):

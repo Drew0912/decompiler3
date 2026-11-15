@@ -10,8 +10,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILFrameAddr, LowLevelILStackAddr, WORD_SIZE
-from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from ir.mlil.mlil import MLILSetVar, MLILAddressOf, MLILVar
 from tests.shared.llil_utils import make_builder
 
@@ -69,7 +69,7 @@ class TestPushStackAddrParameterSlotMLIL(unittest.TestCase):
         builder.pop_bytes(2 * WORD_SIZE)      # sp 2->0 (the pushed temp, then the param itself)
         builder.ret()
 
-        mlil_func = convert_falcom_llil_to_mlil_stack(builder.function)
+        mlil_func = convert_ed9_llil_to_mlil_stack(builder.function)
         block = mlil_func.basic_blocks[0]
 
         set_var_inst = block.instructions[0]
@@ -85,7 +85,7 @@ class TestFrameAddrFormatting(unittest.TestCase):
     def test_simplified_format_shows_pushed_address(self):
         entry = build_function_with_push_stack_addr(num_params=1, offset=-WORD_SIZE)
 
-        lines = FalcomLLILFormatter.format_instruction_sequence([entry.instructions[0]], indent='')
+        lines = ED9LLILFormatter.format_instruction_sequence([entry.instructions[0]], indent='')
 
         # ; [1] is the slot the resulting address value itself is pushed to (sp was 1 at the
         # time of the push), not the slot 0 the address points at (fp + 0, shown in the value)

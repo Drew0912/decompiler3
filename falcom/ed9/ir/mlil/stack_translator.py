@@ -17,7 +17,7 @@ from ..llil.llil_ext import (
 )
 
 
-class FalcomStackTranslator(StackTranslator):
+class ED9StackTranslator(StackTranslator):
     RESULT_REGISTER    = RESULT_REGISTER
     IN_PLACE_ARGUMENTS = (*StackTranslator.IN_PLACE_ARGUMENTS, LowLevelILPopN)
 
@@ -62,4 +62,4 @@ class FalcomStackTranslator(StackTranslator):
 
 class ED9StackTranslatorPass(StackTranslatorPass):
     def __init__(self):
-        super().__init__(FalcomStackTranslator)
+        super().__init__(ED9StackTranslator)

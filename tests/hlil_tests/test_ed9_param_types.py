@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for FalcomTypeInferencePass: parameter types come from the script's declared flags; with the syscall
+"""Unit tests for ED9TypeInferencePass: parameter types come from the script's declared flags; with the syscall
 rows, a parameter whose every read is a pass to an ID slot (a syscall's, or a marked parameter of a call, through any
 chain) is marked, and an int constant at an ID slot of a syscall or of a call to a marked parameter is tagged."""
 
@@ -15,9 +15,9 @@ sys.path.insert(0, str(REPO_ROOT))
 from codegen.typescript import generate_typescript
 from falcom.ed9.assembler.ed9_syscalls import ANY_ARGC, Subsystem, SyscallArgs, SyscallEntry
 from falcom.ed9.consts import CHR_ID_KIND
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.hlil.id_marks import ParameterUses, excluded_parameters, propagate_id_marks
-from falcom.ed9.ir.hlil.pass_type_inference import FalcomTypeInferencePass
+from falcom.ed9.ir.hlil.pass_type_inference import ED9TypeInferencePass
 from falcom.ed9.assembler.function import Function, FunctionParam
 from falcom.ed9.structs.scp_types import (Nullable32, NullableStr, Pointer, RawInt, ScpParamFlags, ScpValue,
                                           Value32)
@@ -44,8 +44,8 @@ def make_scp_function(*params: FunctionParam) -> Function:
 
 def typed_hlil(mlil: MediumLevelILFunction, scp_func: Function) -> HighLevelILFunction:
     """mlil's HLIL with its declared types, as the file-level stage gives them"""
-    hlil = convert_falcom_mlil_to_hlil(mlil)
-    FalcomTypeInferencePass([scp_func]).run([hlil])
+    hlil = convert_ed9_mlil_to_hlil(mlil)
+    ED9TypeInferencePass([scp_func]).run([hlil])
     return hlil
 
 
@@ -75,7 +75,7 @@ class TestDeclaredParameterTypes(unittest.TestCase):
         hlil = HighLevelILFunction(TEST_FUNCTION_NAME)
         hlil.parameters = [HLILVariable(f'arg{i + 1}', kind=VariableKind.PARAM) for i in range(len(scp_func.params))]
 
-        FalcomTypeInferencePass([scp_func]).run([hlil])
+        ED9TypeInferencePass([scp_func]).run([hlil])
 
         self.assertEqual(
             [param.type_hint for param in hlil.parameters],
@@ -108,7 +108,7 @@ class TestDeclaredParameterTypes(unittest.TestCase):
         mlil = make_mlil_function('int', FLOAT_DEFAULT)
         mlil.var_types = {'arg1': INT_FLOAT_VARIANT}
 
-        ts = generate_typescript(convert_falcom_mlil_to_hlil(mlil))
+        ts = generate_typescript(convert_ed9_mlil_to_hlil(mlil))
 
         self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: any = {FLOAT_DEFAULT})', ts)
 
@@ -157,7 +157,7 @@ def scp_function(func: HighLevelILFunction) -> Function:
 
 
 def run_stage(*funcs: HighLevelILFunction, syscall_args: SyscallArgs | None = SYSCALL_ARGS, warn=None):
-    FalcomTypeInferencePass([scp_function(func) for func in funcs], syscall_args, warn).run(list(funcs))
+    ED9TypeInferencePass([scp_function(func) for func in funcs], syscall_args, warn).run(list(funcs))
 
 
 def marked(func: HighLevelILFunction) -> set[str]:
@@ -222,8 +222,8 @@ class TestIdParameterMarks(unittest.TestCase):
         warnings = []
 
         # No declared types for broken: its types part raises
-        FalcomTypeInferencePass([scp_function(func)], SYSCALL_ARGS, lambda name, error: warnings.append((name, error))
-                                ).run([broken, func])
+        ED9TypeInferencePass([scp_function(func)], SYSCALL_ARGS, lambda name, error: warnings.append((name, error))
+                             ).run([broken, func])
 
         self.assertEqual([(name, type(error)) for name, error in warnings], [('broken', KeyError)])
         self.assertEqual([param.type_hint for param in broken.parameters], [None] * 3)
@@ -376,8 +376,8 @@ class TestForwarding(unittest.TestCase):
                              HLILReturn(const()))
         warnings = []
 
-        FalcomTypeInferencePass([scp_function(broken), scp_function(test)], FailingSyscallArgs(SYSCALL_ENTRIES),
-                                lambda name, error: warnings.append((name, error))).run([broken, test])
+        ED9TypeInferencePass([scp_function(broken), scp_function(test)], FailingSyscallArgs(SYSCALL_ENTRIES),
+                             lambda name, error: warnings.append((name, error))).run([broken, test])
 
         self.assertEqual([name for name, _ in warnings], ['broken'])
         self.assertEqual(marked(broken), set())

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """ReturnValuePass (ir/mlil/passes/pass_return_value.py) on assembled functions through the decompile path whole
-(convert_falcom_llil_to_mlil_stack) and the shared checks (tests/shared/stack_translator_checks.py): a return of the
+(convert_ed9_llil_to_mlil_stack) and the shared checks (tests/shared/stack_translator_checks.py): a return of the
 result register right after its store returns the stored value; and where it must leave the store: a statement
 between (T1), another register, the stores in another block"""
 
@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from ir.llil.llil import WORD_SIZE
 from ir.mlil import ReturnValuePass
 from tests.shared.llil_utils import lift_asm
@@ -38,7 +38,7 @@ class ReturnValueTestCase(StackTranslationTestCase):
     def convert(self, asm: Asm, argc: int = 0, callee_argc: int = 0):
         """asm's MLIL through the decompile path, after the shared checks"""
         _, llil = lift_asm(asm, argc=argc, others=(returning_callee(callee_argc),))
-        return self.checked_translation(llil, convert_falcom_llil_to_mlil_stack)
+        return self.checked_translation(llil, convert_ed9_llil_to_mlil_stack)
 
 
 class TestReturnedValues(ReturnValueTestCase):

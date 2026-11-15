@@ -19,7 +19,7 @@ from ir.mlil.mlil import (
 from ir.hlil.hlil import HLILIf, HLILWhile, sub_blocks
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from tests.shared.ir_utils import connect
 from tests.shared.hlil_cfg_utils import calls_emitted, unstructured_nodes
 
@@ -286,7 +286,7 @@ class TestLoopTestStaysFolded(unittest.TestCase):
         exit_block.instructions = [MLILRet(MLILConst(0))]
 
         connect(func)
-        hlil_func = convert_falcom_mlil_to_hlil(func)
+        hlil_func = convert_ed9_mlil_to_hlil(func)
         found = find_statement(hlil_func.body, lambda stmt: isinstance(stmt, HLILWhile))
 
         self.assertIsNotNone(found)

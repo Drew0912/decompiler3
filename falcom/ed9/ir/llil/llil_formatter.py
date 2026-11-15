@@ -1,4 +1,4 @@
-"""Falcom LLIL Formatter - shows the pops the VM builder hides and a bytecode float's bits"""
+"""ED9 LLIL Formatter - shows the pops the VM builder hides and a bytecode float's bits"""
 
 from ir.core import Constant, SourceFloat
 from ir.llil import *
@@ -6,7 +6,7 @@ from falcom.ed9.structs.scp_types import ScpValue
 from .llil_ext import *
 
 
-class FalcomLLILFormatter(LLILFormatter):
+class ED9LLILFormatter(LLILFormatter):
     @classmethod
     def _format_global_store_expanded(cls, global_store: LowLevelILGlobalStore) -> list[str]:
         """Format global store with expanded pseudo-code"""

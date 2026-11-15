@@ -7,8 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 
 from ir.core import IRParameter
 from ir.llil import *
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
+from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
+from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
 
 # Next to this file: the graphs are of the demo's hand-built functions, not a real script
 DOT_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cfg.dot')
@@ -38,7 +38,7 @@ DECLARED_PARAMS = {
 def create_AV_04_0017():
     """AV_04_0017 - Strict 1:1 translation from real game bytecode"""
     # Create builder and function
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function('AV_04_0017', 0x243C5)
 
     # Create all blocks upfront with labels (automatically added to function)
@@ -98,7 +98,7 @@ def create_AV_04_0017():
 def create_DOF_ON():
     """DOF_ON - Strict 1:1 translation from real game bytecode"""
     # Create builder and function
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function('DOF_ON', 0x1FFDB6, [IRParameter(f'arg{i + 1}') for i in range(2)])
 
     # Create all blocks upfront with labels (automatically added to function)
@@ -217,7 +217,7 @@ def create_DOF_ON():
 def create_sound_play_se():
     """sound_play_se - Strict 1:1 translation from real game bytecode"""
     # Create builder and function
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function('sound_play_se', 0x149B2, [IRParameter(f'arg{i + 1}') for i in range(8)])
 
     # Create single block with label (automatically added to function)
@@ -260,7 +260,7 @@ def create_sound_play_se():
 def create_Dummy_m3010_talk0():
     """Dummy_m3010_talk0 - Complex menu system with nested conditionals"""
     # Create builder and function
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function('Dummy_m3010_talk0', 0x8ACC7)
 
     # Create all blocks upfront
@@ -562,9 +562,9 @@ def test_AV_04_0017():
     print('3 blocks, no branching, 2 function calls')
 
     func1 = create_AV_04_0017()
-    print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func1)))
+    print('\n' + '\n'.join(ED9LLILFormatter.format_llil_function(func1)))
     with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
-        f.write(FalcomLLILFormatter.to_dot(func1))
+        f.write(ED9LLILFormatter.to_dot(func1))
 
 
 def test_DOF_ON():
@@ -575,10 +575,10 @@ def test_DOF_ON():
     print('7 blocks, conditional branching, merge points')
 
     func2 = create_DOF_ON()
-    print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func2)))
+    print('\n' + '\n'.join(ED9LLILFormatter.format_llil_function(func2)))
 
     # Generate CFG visualization
-    dot = FalcomLLILFormatter.to_dot(func2)
+    dot = ED9LLILFormatter.to_dot(func2)
     with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
     print(f'\n📊 CFG saved to {DOT_FILE_PATH}')
@@ -594,7 +594,7 @@ def test_sound_play_se():
     print('8 parameters, 1 block, demonstrates SYSCALL and parameter loading')
 
     func3 = create_sound_play_se()
-    print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func3)))
+    print('\n' + '\n'.join(ED9LLILFormatter.format_llil_function(func3)))
 
 
 def test_Dummy_m3010_talk0():
@@ -605,10 +605,10 @@ def test_Dummy_m3010_talk0():
     print('Multiple conditional branches, menu system, nested if-else')
 
     func4 = create_Dummy_m3010_talk0()
-    print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func4)))
+    print('\n' + '\n'.join(ED9LLILFormatter.format_llil_function(func4)))
 
     # Generate CFG visualization
-    dot = FalcomLLILFormatter.to_dot(func4)
+    dot = ED9LLILFormatter.to_dot(func4)
     with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
     print(f'\n📊 CFG saved to {DOT_FILE_PATH}')
@@ -617,7 +617,7 @@ def test_Dummy_m3010_talk0():
 
 
 def create_EV_06_37_00():
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function('EV_06_37_00', 0x16AC50)
 
     # Create all blocks
@@ -643,7 +643,7 @@ def create_EV_06_37_00():
 
 def create_test_conditional():
     """Test function - Conditional branches with POP_JMP_NOT_ZERO and POP_JMP_ZERO"""
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function('test_conditional', 0x5BDA0)
 
     # Create blocks
@@ -682,7 +682,7 @@ def create_test_conditional():
 
 def create_TALK_BEGIN():
     """TALK_BEGIN - Function call with caller context and module call"""
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function('TALK_BEGIN', 0x54F50, [IRParameter(f'arg{i + 1}') for i in range(2)])
 
     # Create blocks
@@ -732,9 +732,9 @@ def test_TALK_BEGIN():
     print()
 
     func5 = create_TALK_BEGIN()
-    print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func5)))
+    print('\n' + '\n'.join(ED9LLILFormatter.format_llil_function(func5)))
 
-    dot = FalcomLLILFormatter.to_dot(func5)
+    dot = ED9LLILFormatter.to_dot(func5)
     with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
 
@@ -750,9 +750,9 @@ def test_conditional():
     print()
 
     func5 = create_test_conditional()
-    print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func5)))
+    print('\n' + '\n'.join(ED9LLILFormatter.format_llil_function(func5)))
 
-    dot = FalcomLLILFormatter.to_dot(func5)
+    dot = ED9LLILFormatter.to_dot(func5)
     with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
 
@@ -768,9 +768,9 @@ def test_EV_06_37_00():
     print()
 
     func6 = create_EV_06_37_00()
-    print('\n' + '\n'.join(FalcomLLILFormatter.format_llil_function(func6)))
+    print('\n' + '\n'.join(ED9LLILFormatter.format_llil_function(func6)))
 
-    dot = FalcomLLILFormatter.to_dot(func6)
+    dot = ED9LLILFormatter.to_dot(func6)
     with open(DOT_FILE_PATH, 'w', encoding='utf-8') as f:
         f.write(dot)
 

@@ -1,4 +1,4 @@
-"""Falcom VM Builder - High-level builder with Falcom VM patterns"""
+"""ED9 VM Builder - High-level builder with ED9 VM patterns"""
 
 from dataclasses import dataclass, replace
 from enum import Enum, auto
@@ -37,24 +37,24 @@ class PendingCallSetup:
         return SetupShape(self.kind.name, self.sp_before_call, return_name)
 
 
-class FalcomStackShape(NamedTuple):
+class ED9StackShape(NamedTuple):
     sp: int
     slots: tuple[int, ...]
     setups: tuple[SetupShape, ...]
 
 
 @dataclass
-class FalcomStackSnapshot(StackSnapshot):
+class ED9StackSnapshot(StackSnapshot):
     """Pending call setups are stack state too: a branch's arms each see the setups pushed before it"""
 
     pending_setups: tuple[PendingCallSetup, ...]
 
-    def shape(self) -> FalcomStackShape:
-        return FalcomStackShape(*super().shape(), tuple(setup.shape() for setup in self.pending_setups))
+    def shape(self) -> ED9StackShape:
+        return ED9StackShape(*super().shape(), tuple(setup.shape() for setup in self.pending_setups))
 
 
-class FalcomVMBuilder(LowLevelILBuilder):
-    """High-level builder with Falcom VM patterns"""
+class ED9VMBuilder(LowLevelILBuilder):
+    """High-level builder with ED9 VM patterns"""
 
     PARAMETER_COPY_HINT = 'work on a LOAD_STACK copy instead'
 
@@ -79,12 +79,12 @@ class FalcomVMBuilder(LowLevelILBuilder):
 
         return super().push(value, hidden_for_formatter=hidden_for_formatter)
 
-    def save_stack_state(self) -> FalcomStackSnapshot:
+    def save_stack_state(self) -> ED9StackSnapshot:
         """Snapshot sp, the virtual stack and the pending call setups together"""
         snapshot = super().save_stack_state()
-        return FalcomStackSnapshot(snapshot.sp, snapshot.values, tuple(self._pending_setups))
+        return ED9StackSnapshot(snapshot.sp, snapshot.values, tuple(self._pending_setups))
 
-    def restore_stack_state(self, snapshot: FalcomStackSnapshot):
+    def restore_stack_state(self, snapshot: ED9StackSnapshot):
         """Restore sp, the virtual stack and the pending call setups"""
         super().restore_stack_state(snapshot)
         self._pending_setups = list(snapshot.pending_setups)
@@ -98,7 +98,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
         self._pending_setups.pop()
         self._record_edge_state(setup.return_block)
 
-    # === Falcom Specific Constants ===
+    # === ED9 Specific Constants ===
 
     def push_func_id(self):
         """Push current function ID - opens a local call setup, completed by push_ret_addr"""
@@ -244,7 +244,7 @@ class FalcomVMBuilder(LowLevelILBuilder):
         self.add_instruction(LowLevelILGlobalStore(index, val))
 
     def syscall(self, subsystem: int, cmd: int, argc: int):
-        """SYSCALL operation - Falcom VM system call"""
+        """SYSCALL operation - ED9 VM system call"""
         args = self.vstack_peek_many(argc)   # read in place, last pushed first
         self.add_instruction(LowLevelILSyscall(subsystem, cmd, argc, args))
 

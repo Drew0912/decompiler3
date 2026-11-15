@@ -31,17 +31,17 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/llil_ops.py` | The LLIL operations that map one to one onto MLIL ones (`BINARY_OP_TYPES`, `UNARY_OP_TYPES`), for both translators. |
 | `ir/mlil/stack_translator.py` | The generic symbolic-stack translator, `StackTranslator`, and `StackTranslatorPass` (see "The stack translator"). |
 | `ir/mlil/passes/` | The decompile path's passes after its translator (4 files): `pass_block_merge.py` and `pass_bitwise_hex.py` (the SSA path runs them too), `pass_call_result.py` and `pass_return_value.py`. |
-| `falcom/ed9/ir/mlil/mlil_converter.py` | Falcom's concrete pipeline wiring — the decompile path's entry point, the stack translator's `convert_falcom_llil_to_mlil_stack()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
-| `falcom/ed9/ir/mlil/stack_translator.py` | `FalcomStackTranslator`: ED9's result register, calling convention, globals, script calls, `POPN` and `DEBUG_INT` on the stack translator. |
+| `falcom/ed9/ir/mlil/mlil_converter.py` | ED9's concrete pipeline wiring — the decompile path's entry point, the stack translator's `convert_ed9_llil_to_mlil_stack()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
+| `falcom/ed9/ir/mlil/stack_translator.py` | `ED9StackTranslator`: ED9's result register, calling convention, globals, script calls, `POPN` and `DEBUG_INT` on the stack translator. |
 | **The SSA path** | Kept beside the decompile path and never called by it (IR rewrite part 2, Step 10); it imports from `ir/mlil/`, never the other way. |
 | `ir/mlil_ssa/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific), the SSA path's translator. |
 | `ir/mlil_ssa/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
 | `ir/mlil_ssa/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
 | `ir/mlil_ssa/mlil_optimizer.py` | `mlil_optimization_passes()`, the SSA path's one list of passes that runs after its LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
 | `ir/mlil_ssa/passes/` | The SSA path's passes (13 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`; SCCP, expression simplification and register/global propagation are out of its pipeline (see "LLIL → MLIL Pipeline"). |
-| `falcom/ed9/ir/mlil_ssa/mlil_converter.py` | The SSA path's entry point, `convert_falcom_llil_to_mlil_ssa()`. |
-| `falcom/ed9/ir/mlil_ssa/mlil_passes.py` | `ED9LLILToMLILPass`, the SSA path's first pass: the generic `LLILToMLILPass` run with the Falcom translator. |
-| `falcom/ed9/ir/mlil_ssa/mlil_translator.py` | The SSA path's Falcom-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
+| `falcom/ed9/ir/mlil_ssa/mlil_converter.py` | The SSA path's entry point, `convert_ed9_llil_to_mlil_ssa()`. |
+| `falcom/ed9/ir/mlil_ssa/mlil_passes.py` | `ED9LLILToMLILPass`, the SSA path's first pass: the generic `LLILToMLILPass` run with the ED9 translator. |
+| `falcom/ed9/ir/mlil_ssa/mlil_translator.py` | The SSA path's ED9-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
 | `tests/mlil_tests/`, `tests/mlil_ssa_tests/` | The MLIL tests, the SSA path's in their own folder — see Testing below. |
 
 Note: `falcom/ed9/lifters/mlil_lifter.py`, previously listed here, does not exist anywhere in the
@@ -187,9 +187,9 @@ separate LLIL-to-MLIL map.
 
 ## LLIL → MLIL Pipeline
 
-The decompile path's entry point is `convert_falcom_llil_to_mlil_stack()` (`falcom/ed9/ir/mlil/mlil_converter.py`):
+The decompile path's entry point is `convert_ed9_llil_to_mlil_stack()` (`falcom/ed9/ir/mlil/mlil_converter.py`):
 the stack translator and its passes ("The stack translator", below). Beside it, kept and never called by the decompile
-path (IR rewrite part 2), the SSA path's entry point, `convert_falcom_llil_to_mlil_ssa()`
+path (IR rewrite part 2), the SSA path's entry point, `convert_ed9_llil_to_mlil_ssa()`
 (`falcom/ed9/ir/mlil_ssa/mlil_converter.py`; its generic code in `ir/mlil_ssa/`, which imports from `ir/mlil/` and
 never the other way; its tests in `tests/mlil_ssa_tests/`, run by the suite), builds a `Pipeline` and runs, in order:
 
@@ -279,12 +279,12 @@ member that arrives after the variable is already a variant is still recorded.
 
 ## The stack translator (the decompile path)
 
-`convert_falcom_llil_to_mlil_stack()` runs `ED9StackTranslatorPass`, `BlockMergePass`, `CallResultPass`,
+`convert_ed9_llil_to_mlil_stack()` runs `ED9StackTranslatorPass`, `BlockMergePass`, `CallResultPass`,
 `ReturnValuePass` and `BitwiseHexPass`. It replaced the SSA path on the decompile path at parity (IR rewrite part 2,
 2026-11-01). It runs no type pass: locals print untyped (`any`), without the SSA path's `int(...)` wrappers, until the
 HLIL type plan.
 
-The translator (`StackTranslator`, `ir/mlil/stack_translator.py`; `FalcomStackTranslator` for ED9) reads only the
+The translator (`StackTranslator`, `ir/mlil/stack_translator.py`; `ED9StackTranslator` for ED9) reads only the
 LLIL and its stack layout: each block's `sp_in`, each stack access's `slot_index`, the `SpAdd`s. A function-wide
 pre-pass finds which push each slot holds and how each push is read. Translation then works on that:
 - **Pending values:** a pushed value stays a pending expression and folds into the statement or expression that
@@ -361,7 +361,7 @@ whole entry point.
   not known yet. This only loses folding - SCCP never removes blocks - and tighter
   reachability would fold more constants, moving output further from the bytecode.
 - Rendered parameter types no longer come from this pass: since 2026-09-29 HLIL's
-  `FalcomTypeInferencePass` (the file-level stage) takes them from the declared flags, so `Value32`/`Nullable32` - which this
+  `ED9TypeInferencePass` (the file-level stage) takes them from the declared flags, so `Value32`/`Nullable32` - which this
   pass still calls `int` - reach a signature as `number` (int or float). Locals used this pass's types until
   the decompile path moved to the stack translator, which runs no type pass (IR rewrite part 2): they print
   `any` until the HLIL type plan. This pass's known gaps, on the SSA path: call results are never typed (a

@@ -12,8 +12,8 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILFrameLoad, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore, WORD_SIZE
 from ir.llil.llil_builder import LowLevelILBuilder
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from tests.shared.llil_utils import FOURTH_BLOCK_START, SECOND_BLOCK_START, THIRD_BLOCK_START, make_builder
 
 
@@ -39,9 +39,9 @@ def last_pushed_value(builder: LowLevelILBuilder):
     return builder.current_block.instructions[-2].value
 
 
-def production_statements(builder: FalcomVMBuilder) -> list[str]:
+def production_statements(builder: ED9VMBuilder) -> list[str]:
     """Every statement of the production MLIL, in order"""
-    mlil = convert_falcom_llil_to_mlil_stack(builder.finalize())
+    mlil = convert_ed9_llil_to_mlil_stack(builder.finalize())
     return [str(inst) for block in mlil.basic_blocks for inst in block.instructions]
 
 
@@ -166,7 +166,7 @@ class TestAccessBelowTheStack(unittest.TestCase):
 
     BELOW_ONE_PARAMETER = -3 * WORD_SIZE    # with 1 parameter and 1 push (sp 2): slot -1
 
-    def builder(self) -> FalcomVMBuilder:
+    def builder(self) -> ED9VMBuilder:
         builder = make_builder(num_params=1)
         builder.push_int(PUSHED_VALUE)
         return builder

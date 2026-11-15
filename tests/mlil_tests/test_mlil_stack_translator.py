@@ -14,8 +14,8 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from codegen import generate_typescript
 from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from ir.llil.llil import LowLevelILAdd, LowLevelILStackStore, WORD_SIZE
 from ir.mlil.mlil import (
     MLILAdd, MLILAnd, MLILConst, MLILDebug, MLILExternCall, MLILSetVar, UNASSIGNED_INST_INDEX, walk,
@@ -286,7 +286,7 @@ class TestAddressTaken(StackTranslatorTestCase):
             '*&var_s0 = 1', 't1 = *&var_s0', 't2 = callee(&var_s0)', 'REG[0] = t2',
             f'GLOBAL[{GLOBAL_A}] = (t1 + REG[0])',
         ])
-        ts = [line.strip() for line in generate_typescript(convert_falcom_mlil_to_hlil(mlil)).splitlines()]
+        ts = [line.strip() for line in generate_typescript(convert_ed9_mlil_to_hlil(mlil)).splitlines()]
         self.assertLess(ts.index('t1 = var_s0;'), ts.index('REGS[0] = callee(addr_of(var_s0));'))
 
     def test_a_store_to_it_with_its_read_pending(self):
@@ -621,7 +621,7 @@ class TestRefusals(unittest.TestCase):
     def assertRefused(self, asm: Asm, reason: str, argc: int = 0, callee_argc: int = 0):
         _, llil = lift_asm(asm, argc=argc, others=(returning_callee(callee_argc),))
         with self.assertRaisesRegex(UnsupportedStackShape, reason):
-            convert_falcom_llil_to_mlil_stack(llil)
+            convert_ed9_llil_to_mlil_stack(llil)
 
     def test_a_call_frame_value_read_as_data(self):
         for slot in range(CALLER_FRAME_SLOTS):

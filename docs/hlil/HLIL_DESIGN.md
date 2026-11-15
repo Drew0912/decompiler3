@@ -41,17 +41,17 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `ir/hlil/hlil_formatter.py` | The `.hlil.ts` formatter, on the shared statement printer: the bytecode's high-level form, not TypeScript. It is separate from the TypeScript code generator. |
 | `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: switch recovery, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, the statement printer, the formatter and the passes (the conversion pass `MLILToHLILPass` among them). |
-| `falcom/ed9/ir/hlil/hlil_converter.py` | Production Falcom pipeline entry points: per function, `convert_falcom_mlil_to_hlil()` and its pass ordering/configuration; per file, `run_falcom_file_passes()`. |
-| `falcom/ed9/ir/hlil/pass_type_inference.py` | `FalcomTypeInferencePass`, the file-level stage: the declared parameter types, then the ID rule's marks and tags. |
+| `falcom/ed9/ir/hlil/hlil_converter.py` | Production ED9 pipeline entry points: per function, `convert_ed9_mlil_to_hlil()` and its pass ordering/configuration; per file, `run_ed9_file_passes()`. |
+| `falcom/ed9/ir/hlil/pass_type_inference.py` | `ED9TypeInferencePass`, the file-level stage: the declared parameter types, then the ID rule's marks and tags. |
 | `falcom/ed9/ir/hlil/id_marks.py` | The ID rule: each function's parameter uses, the marks' worklist (`propagate_id_marks`), the constant tags. |
 | `tests/hlil_tests/test_hlil_branch_order_normalization.py` | Unit tests for source-order arm normalization and its pipeline flag. |
 | `tests/hlil_tests/test_hlil_switch_recovery.py` | Unit tests for equality-chain and grouped-label switch recovery. |
 | `tests/hlil_tests/test_hlil_loop_recovery.py` | Unit tests for guarded-loop recovery and its safety checks. |
 
 The generic/project-specific split is deliberate. The core converter understands MLIL nodes and
-structured control flow; the Falcom entry point chooses the production pass sequence. `FalcomTypeInferencePass`
+structured control flow; the ED9 entry point chooses the production pass sequence. `ED9TypeInferencePass`
 (`falcom/ed9/ir/hlil/pass_type_inference.py`) runs after it, once over the file's converted functions (the
-file-level passes: `run_falcom_file_passes` in `hlil_converter.py`, a `Pipeline` like the per-function one, run by
+file-level passes: `run_ed9_file_passes` in `hlil_converter.py`, a `Pipeline` like the per-function one, run by
 `write_ir_outputs` in `falcom/ed9/scp2py_base.py`): it types parameters from the flags the script declares and, with
 the game's syscall rows, marks and tags character IDs (the rule: `falcom/ed9/ir/hlil/id_marks.py`).
 
@@ -166,7 +166,7 @@ Type information is deliberately lightweight. `HLILTypeKind` contains `INT`, `FL
 types attached to every expression. During conversion, MLIL booleans map to `INT`, MLIL pointers
 (`Pointer` out-parameters) to `POINTER`, and unknown and variant MLIL types to no hint. Parameter default
 values are copied from MLIL source-parameter metadata when available. The file-level stage's
-`FalcomTypeInferencePass` then sets each parameter's type from its declared flag -
+`ED9TypeInferencePass` then sets each parameter's type from its declared flag -
 `Value32`/`Nullable32` -> `NUMBER`, `str`/`NullableStr` -> `STRING`, `Pointer` -> `POINTER` - so a
 signature never depends on MLIL inference. Locals have no type on the decompile path (its stack translator runs no
 type pass: `any` until the HLIL type plan); on the SSA path they take the MLIL SSA types.
@@ -269,7 +269,7 @@ holding only its test and the calls folded into it - are collapsed inside the co
 logical-OR condition so the shared body need not be emitted for every test; a later test with a line
 marker of its own (a nested `if` in the source) is left out.
 
-The production entry point is `convert_falcom_mlil_to_hlil()` in
+The production entry point is `convert_ed9_mlil_to_hlil()` in
 `falcom/ed9/ir/hlil/hlil_converter.py`. Its configured pipeline is:
 
 ```
@@ -278,9 +278,9 @@ DeadCodeEliminationPass â†’ BranchOrderNormalizationPass (enabled by default) â†
 LineMarkerRemovalPass (only with line_markers off)
 ```
 
-The file-level passes follow (`run_falcom_file_passes`), once every function is converted and whichever of
+The file-level passes follow (`run_ed9_file_passes`), once every function is converted and whichever of
 `.llil.asm`, `.mlil.asm` and `.hlil.ts` the config asks for are written, for the outputs that read their facts
-(today `.ts`): `FalcomTypeInferencePass` over the converted functions (a function the output leaves out, or whose
+(today `.ts`): `ED9TypeInferencePass` over the converted functions (a function the output leaves out, or whose
 conversion failed, gives it nothing); then each function's TypeScript.
 
 The post-conversion passes operate on the tree, not on the original CFG. In architectural terms,
@@ -294,7 +294,7 @@ condition, swapped or nested arms); the code statements and their order are unch
 
 HLIL has no copy-propagation pass (the disabled HLIL `CopyPropagationPass` was removed on 2026-09-27): the decompile
 path's stack translator folds each push into its consumer, and the SSA path propagates copies in its optimizer.
-`FalcomTypeInferencePass` is the home of Falcom semantic types: the parameter types (see Variable Model), and the
+`ED9TypeInferencePass` is the home of ED9 semantic types: the parameter types (see Variable Model), and the
 character IDs. With the game's syscall rows (`falcom/ed9/games/<game>/metadata/syscall_args.py`), a parameter is marked
 as an ID (`HLILVariable.id_kind`) when every read of it is a pass to an ID slot: a syscall's ID slot, or a marked
 parameter of a call to a function of the same file, which chains (least fixpoint, a worklist from the syscall passes).
@@ -349,7 +349,7 @@ Several dedicated HLIL unit-test files exist today:
   (`tools/logic_check/`): each way of losing or inventing a path, deleting an effect, or changing what a repeated
   region does is reported (`TestPlantedHLILBugs`), and the structures HLIL builds otherwise than MLIL compare clean
   (`TestHLILStructures`).
-- `tests/hlil_tests/test_falcom_param_types.py` covers `FalcomTypeInferencePass`: the type each declared
+- `tests/hlil_tests/test_ed9_param_types.py` covers `ED9TypeInferencePass`: the type each declared
   parameter flag gives, the declared flag winning over an inferred int/float variant, and default
   values still printed once; which parameters a syscall or a forwarding chain marks, each read that blocks,
   reachability, recursion, the names a body may change, which constants are tagged, a function that raises,
@@ -365,7 +365,7 @@ still have no dedicated test file of their own.
 
 ## Open Items
 
-- Parameter types come from the declared flags (`FalcomTypeInferencePass`, since 2026-09-29). Locals are
+- Parameter types come from the declared flags (`ED9TypeInferencePass`, since 2026-09-29). Locals are
   `any` since the decompile path moved to the stack translator (IR rewrite part 2, 2026-11-01), which runs
   no type pass, until the HLIL type plan for locals; the SSA path's type pass never typed call results
   either (`any` in TypeScript), which were most of its untyped locals.

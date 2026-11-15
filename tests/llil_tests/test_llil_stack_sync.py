@@ -102,7 +102,7 @@ class TestPopKeepsVstackInSync(unittest.TestCase):
         self.assertEqual(builder.vstack_size(), 0)
 
     def test_pop_no_longer_has_a_script_pointer_override(self):
-        """FalcomVMBuilder.pop() is deleted (its isinstance(expr, LowLevelILConstScript) check
+        """ED9VMBuilder.pop() is deleted (its isinstance(expr, LowLevelILConstScript) check
         was unreachable - the vstack only ever holds LowLevelILStackLoad), so pop() now resolves
         straight to the base class and behaves like an ordinary single pop."""
         builder = make_builder()

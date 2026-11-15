@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILCall, WORD_SIZE
 from falcom.ed9.assembler.stack_effects import LOCAL_SETUP_SLOTS
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
+from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript
 from tests.shared.llil_utils import BLOCK_STRIDE, FUNC_START, instructions_of, lift_asm, make_builder
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, REG_INDEX, Asm, returning_callee
@@ -29,12 +29,12 @@ ONE_ARG = 1
 MODULE_NAME = 'module'
 
 
-def add_block(builder: FalcomVMBuilder, name: str):
+def add_block(builder: ED9VMBuilder, name: str):
     start = FUNC_START + BLOCK_STRIDE * len(builder.function.basic_blocks)
     return builder.create_basic_block(start, name)
 
 
-def last_instruction(builder: FalcomVMBuilder):
+def last_instruction(builder: ED9VMBuilder):
     return builder.current_block.instructions[-1]
 
 
@@ -171,7 +171,7 @@ class TestStoresBelowAPendingSetup(unittest.TestCase):
 class TestCallSetupsAtJoins(unittest.TestCase):
     """Arms that bring the same pending setups to a join are accepted, whatever values they push above them."""
 
-    def make_branch(self, builder: FalcomVMBuilder):
+    def make_branch(self, builder: ED9VMBuilder):
         left = add_block(builder, 'left')
         right = add_block(builder, 'right')
         join = add_block(builder, 'join')
@@ -179,7 +179,7 @@ class TestCallSetupsAtJoins(unittest.TestCase):
         builder.pop_jmp_zero(left, right)
         return left, right, join
 
-    def make_branch_after_local_setup(self, builder: FalcomVMBuilder):
+    def make_branch_after_local_setup(self, builder: ED9VMBuilder):
         ret_block = add_block(builder, 'ret')
         builder.push_func_id()                    # slots 0, 1
         builder.push_ret_addr(ret_block)

@@ -21,7 +21,7 @@ from ir.mlil_ssa.passes import CopyPropagationPass, ExpressionInliningPass, SSAD
 from ir.mlil_ssa.passes.pass_ssa_copy_propagation import reaches_without_redefinition
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
+from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from falcom.ed9.ir.mlil_ssa.mlil_translator import RESULT_REG_INDEX
 from tests.shared.corpus import SORA2_SCRIPTS, require
 
@@ -684,7 +684,7 @@ def optimized_corpus_mlil(dat_name: str, func_name: str) -> MediumLevelILFunctio
     parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
     func = next(f for f in functions if f.name == func_name)
     llil = ED9VMLifter(parser=parser).lift_function(func)
-    return convert_falcom_llil_to_mlil_ssa(llil, optimize=True, infer_types=True)
+    return convert_ed9_llil_to_mlil_ssa(llil, optimize=True, infer_types=True)
 
 
 class TestCorpusRegisterReadAfterClobberingCall(unittest.TestCase):

@@ -14,8 +14,8 @@ from ir.llil.llil import (
     LowLevelILCall, LowLevelILConst, LowLevelILFrameStore, LowLevelILIf, LowLevelILOperation, LowLevelILStackLoad,
     LowLevelILStackStore, LowLevelILStore, UNASSIGNED_INST_INDEX, WORD_SIZE, walk,
 )
-from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
-from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn, LowLevelILFalcomOperation
+from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
+from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn, LowLevelILED9Operation
 from tests.shared.llil_utils import instructions_of, lift_asm, make_builder
 from tests.shared.scp_asm import (
     CALLEE_ID, CALLER_ID, GLOBAL_INDEX, MODULE_NAME, REG_INDEX, SCRIPT_FUNC_NAME, SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm,
@@ -156,13 +156,13 @@ class TestLiftedDebugText(unittest.TestCase):
         cls.llil_func = lifted_text_function()
 
     def test_llil_asm_listing(self):
-        lines = FalcomLLILFormatter.format_llil_function(self.llil_func)
+        lines = ED9LLILFormatter.format_llil_function(self.llil_func)
 
         self.assertEqual([line for line in lines if line != ''], [line for line in EXPECTED_ASM if line != ''])
         self.assertEqual(lines.count(''), len(self.llil_func.basic_blocks))      # one blank line after each block
 
     def test_dot_graph(self):
-        dot = FalcomLLILFormatter.to_dot(self.llil_func).splitlines()
+        dot = ED9LLILFormatter.to_dot(self.llil_func).splitlines()
 
         self.assertEqual([line for line in dot if re.match(r'    block_\d+ -> ', line)], EXPECTED_DOT_EDGES)
         self.assertIn('fillcolor=lightgreen', next(line for line in dot if line.startswith('    block_0 [')))
@@ -234,7 +234,7 @@ class TestMoreDebugText(unittest.TestCase):
     """.llil.asm lines of pointer accesses, tail calls and a call without arguments"""
 
     def test_pointer_function_listing(self):
-        lines = FalcomLLILFormatter.format_llil_function(lifted_pointer_function())
+        lines = ED9LLILFormatter.format_llil_function(lifted_pointer_function())
 
         self.assertEqual([line.strip() for line in lines if '*' in line or '&' in line], [
             'STACK[sp] = *STACK[fp + 0] ; [1]',
@@ -244,9 +244,9 @@ class TestMoreDebugText(unittest.TestCase):
         ])
 
     def test_tail_call_listing(self):
-        self.assertEqual(FalcomLLILFormatter.format_llil_function(tail_call_function(1))[-2],
+        self.assertEqual(ED9LLILFormatter.format_llil_function(tail_call_function(1))[-2],
                          f'  {TAIL_CALL_TEXT}[STACK[sp<0>]])')
-        self.assertEqual(FalcomLLILFormatter.format_llil_function(tail_call_function(0))[-2],
+        self.assertEqual(ED9LLILFormatter.format_llil_function(tail_call_function(0))[-2],
                          f'  {TAIL_CALL_TEXT}[])')
 
     def test_node_text_of_instructions_the_listing_does_not_format_itself(self):
@@ -297,16 +297,16 @@ class TestNodeKinds(unittest.TestCase):
         'LowLevelILJmp': LowLevelILOperation.LLIL_JMP,
         'LowLevelILRet': LowLevelILOperation.LLIL_RET,
         'LowLevelILCall': LowLevelILOperation.LLIL_CALL,
-        'LowLevelILGlobalLoad': LowLevelILFalcomOperation.LLIL_GLOBAL_LOAD,
-        'LowLevelILGlobalStore': LowLevelILFalcomOperation.LLIL_GLOBAL_STORE,
-        'LowLevelILPopN': LowLevelILFalcomOperation.LLIL_POPN,
-        'LowLevelILDebugInt': LowLevelILFalcomOperation.LLIL_DEBUG_INT,
-        'LowLevelILCallScript': LowLevelILFalcomOperation.LLIL_CALL_SCRIPT,
-        'LowLevelILCallScriptNoReturn': LowLevelILFalcomOperation.LLIL_CALL_SCRIPT_NO_RETURN,
+        'LowLevelILGlobalLoad': LowLevelILED9Operation.LLIL_GLOBAL_LOAD,
+        'LowLevelILGlobalStore': LowLevelILED9Operation.LLIL_GLOBAL_STORE,
+        'LowLevelILPopN': LowLevelILED9Operation.LLIL_POPN,
+        'LowLevelILDebugInt': LowLevelILED9Operation.LLIL_DEBUG_INT,
+        'LowLevelILCallScript': LowLevelILED9Operation.LLIL_CALL_SCRIPT,
+        'LowLevelILCallScriptNoReturn': LowLevelILED9Operation.LLIL_CALL_SCRIPT_NO_RETURN,
     }
 
     def test_operation_codes_are_distinct(self):
-        for enum in (LowLevelILOperation, LowLevelILFalcomOperation):
+        for enum in (LowLevelILOperation, LowLevelILED9Operation):
             self.assertEqual(len(enum.__members__), len(set(enum)), enum.__name__)
 
     def test_lifted_nodes_carry_their_operation_and_index(self):

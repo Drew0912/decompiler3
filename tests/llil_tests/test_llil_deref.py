@@ -9,7 +9,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILLoad, LowLevelILFrameLoad, WORD_SIZE
-from falcom.ed9.ir.llil.llil_formatter import FalcomLLILFormatter
+from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
 from tests.shared.llil_utils import build_function_with_deref
 
 NOT_A_PARAMETER_SLOT_1 = '^dereferences slot 1, which holds no caller parameter: '
@@ -43,12 +43,12 @@ class TestDerefLift(unittest.TestCase):
 
 
 class TestDerefFormatting(unittest.TestCase):
-    """FalcomLLILFormatter shows the pop POP_TO_DEREF hides, like POP_TO's"""
+    """ED9LLILFormatter shows the pop POP_TO_DEREF hides, like POP_TO's"""
 
     def test_simplified_format_shows_popped_value(self):
         _, entry = build_function_with_deref(num_params=1, offset=-WORD_SIZE, deref_write=True)
 
-        lines = FalcomLLILFormatter.format_instruction_sequence([entry.instructions[-1]], indent='')
+        lines = ED9LLILFormatter.format_instruction_sequence([entry.instructions[-1]], indent='')
 
         self.assertEqual(lines, ['*STACK[fp + 0] = STACK[--sp] ; STACK[sp<1>]'])
 

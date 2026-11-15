@@ -8,8 +8,8 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.ir.llil.llil_builder import FalcomVMBuilder
-from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_falcom_llil_to_mlil_ssa
+from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
+from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from ir.llil.llil import LowLevelILFunction
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.mlil.passes import BitwiseHexPass, BlockMergePass
@@ -30,7 +30,7 @@ EXPECTED_PASS_TYPES = [
 
 def build_call_function() -> LowLevelILFunction:
     # A call, then a return - the call ends its LLIL block, so translation leaves a goto to the return block
-    builder = FalcomVMBuilder()
+    builder = ED9VMBuilder()
     builder.create_function('pipeline_test', FUNC_START)
     builder.set_current_block(builder.create_basic_block(FUNC_START, 'entry'))
     ret_block = builder.create_basic_block(FUNC_START + BLOCK_STRIDE, 'ret')
@@ -56,9 +56,9 @@ class TestOptimizeMLILMatchesTheConverter(unittest.TestCase):
     def test_same_mlil_as_the_ssa_converter(self):
         for infer_types in (True, False):
             with self.subTest(infer_types=infer_types):
-                converted = convert_falcom_llil_to_mlil_ssa(build_call_function(), optimize=True,
-                                                            infer_types=infer_types)
-                translated = convert_falcom_llil_to_mlil_ssa(build_call_function(), optimize=False)
+                converted = convert_ed9_llil_to_mlil_ssa(build_call_function(), optimize=True,
+                                                         infer_types=infer_types)
+                translated = convert_ed9_llil_to_mlil_ssa(build_call_function(), optimize=False)
                 optimized = optimize_mlil(translated, infer_types=infer_types)
 
                 self.assertEqual(MLILFormatter.format_function(optimized), MLILFormatter.format_function(converted))

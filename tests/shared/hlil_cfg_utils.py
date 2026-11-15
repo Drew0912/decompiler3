@@ -19,7 +19,7 @@ from ir.hlil.hlil import (HighLevelILFunction, HLILBlock, HLILIf, HLILWhile, HLI
                           HLILUnaryOp, HLILBinaryOp, UnaryOp, BinaryOp, COMPARISON_FUNCTIONS, HLILStatement,
                           iter_tree, reachable_statements)
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from tests.shared.ir_utils import connect
 
 FUEL = 400
@@ -86,8 +86,8 @@ def build_function(name: str, blocks: dict[str, BlockSpec]) -> MediumLevelILFunc
 
 
 def to_hlil(func: MediumLevelILFunction, **flags) -> HighLevelILFunction:
-    """The final HLIL, every pass included (flags as convert_falcom_mlil_to_hlil's)"""
-    return convert_falcom_mlil_to_hlil(func, **flags)
+    """The final HLIL, every pass included (flags as convert_ed9_mlil_to_hlil's)"""
+    return convert_ed9_mlil_to_hlil(func, **flags)
 
 
 def structure(blocks: dict[str, BlockSpec], **limits) -> tuple[MediumLevelILFunction, HighLevelILFunction]:

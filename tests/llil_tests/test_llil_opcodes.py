@@ -19,11 +19,11 @@ from codegen import generate_typescript
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter
 from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
 from falcom.ed9.assembler.stack_effects import LOCAL_SETUP_SLOTS
-from falcom.ed9.ir.hlil.hlil_converter import convert_falcom_mlil_to_hlil
-from falcom.ed9.ir.hlil.pass_type_inference import FalcomTypeInferencePass
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
+from falcom.ed9.ir.hlil.pass_type_inference import ED9TypeInferencePass
 from falcom.ed9.ir.llil import ED9VMLifter
-from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugInt, LowLevelILFalcomOperation, LowLevelILPopN
-from falcom.ed9.ir.mlil.mlil_converter import convert_falcom_llil_to_mlil_stack
+from falcom.ed9.ir.llil.llil_ext import LowLevelILDebugInt, LowLevelILED9Operation, LowLevelILPopN
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from falcom.ed9.structs.scp_types import RawInt, ScpValue
 from ir.hlil.hlil import HighLevelILFunction, HLILAssign, HLILCall, HLILConst, HLILVar, iter_tree
 from ir.llil import WORD_SIZE
@@ -65,22 +65,22 @@ class TestIntrinsicsAreLifted(unittest.TestCase):
         [debug_int] = instructions_of(llil_func, LowLevelILDebugInt)
 
         self.assertEqual(len(popn.values), 4)
-        self.assertEqual(popn.operation, LowLevelILFalcomOperation.LLIL_POPN)
+        self.assertEqual(popn.operation, LowLevelILED9Operation.LLIL_POPN)
         self.assertEqual(debug_int.value, DEBUG_VALUE)
-        self.assertEqual(debug_int.operation, LowLevelILFalcomOperation.LLIL_DEBUG_INT)
+        self.assertEqual(debug_int.operation, LowLevelILED9Operation.LLIL_DEBUG_INT)
 
     def test_reach_mlil_as_intrinsics(self):
         _, llil_func = self.make_function()
 
-        mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
+        mlil_func = convert_ed9_llil_to_mlil_stack(llil_func)
 
         intrinsics = [inst for inst in mlil_func.iter_instructions() if isinstance(inst, MLILIntrinsic)]
         self.assertEqual([(inst.name, len(inst.args)) for inst in intrinsics], [('POPN', 4), ('DEBUG_INT', 1)])
 
     def test_print_as_statements_in_every_output(self):
         _, llil_func = self.make_function()
-        mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
-        hlil_func = convert_falcom_mlil_to_hlil(mlil_func)
+        mlil_func = convert_ed9_llil_to_mlil_stack(llil_func)
+        hlil_func = convert_ed9_mlil_to_hlil(mlil_func)
 
         for output, text, expected in (
                 ('.mlil.asm', '\n'.join(MLILFormatter.format_function(mlil_func)),
@@ -138,7 +138,7 @@ class TestOperatorsKeepTheirOperands(unittest.TestCase):
         getattr(asm, mnemonic)()
         asm.set_reg(REG_INDEX); asm.ret()
         _, llil_func = lift_asm(asm)
-        return llil_func, convert_falcom_llil_to_mlil_stack(llil_func)
+        return llil_func, convert_ed9_llil_to_mlil_stack(llil_func)
 
     def test_binary_operators(self):
         for mnemonic, llil_class, mlil_class, operation in BINARY_OPERATORS:
@@ -173,8 +173,8 @@ class TestRawPushKeepsItsType(unittest.TestCase):
         asm = Asm()
         asm.push_raw(RAW_VALUE); asm.set_reg(RESULT_REGISTER); asm.ret()
         _, llil_func = lift_asm(asm)
-        mlil_func = convert_falcom_llil_to_mlil_stack(llil_func)
-        hlil_func = convert_falcom_mlil_to_hlil(mlil_func)
+        mlil_func = convert_ed9_llil_to_mlil_stack(llil_func)
+        hlil_func = convert_ed9_mlil_to_hlil(mlil_func)
 
         [value] = [node.value for node in iter_tree(hlil_func.body) if isinstance(node, HLILConst)]
         self.assertIs(type(value), RawInt)
@@ -189,7 +189,7 @@ class TestRawPushKeepsItsType(unittest.TestCase):
     def hlil_function(self, asm: Asm, callee_argc: int) -> HighLevelILFunction:
         """asm's function lifted to HLIL beside a callee taking callee_argc arguments"""
         _, llil_func = lift_asm(asm, others=(returning_callee(callee_argc),))
-        return convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil_stack(llil_func))
+        return convert_ed9_mlil_to_hlil(convert_ed9_llil_to_mlil_stack(llil_func))
 
     def test_call_argument_stays_raw(self):
         """Pushed as the argument, or stored in the local the argument reads"""
@@ -242,8 +242,8 @@ class TestRawPushKeepsItsType(unittest.TestCase):
         callee.params[0].default_value = ScpValue(RawInt(RAW_VALUE))
 
         llil_func = ED9VMLifter(parser=parser).lift_function(callee)
-        hlil_func = convert_falcom_mlil_to_hlil(convert_falcom_llil_to_mlil_stack(llil_func))
-        FalcomTypeInferencePass(functions).run([hlil_func])
+        hlil_func = convert_ed9_mlil_to_hlil(convert_ed9_llil_to_mlil_stack(llil_func))
+        ED9TypeInferencePass(functions).run([hlil_func])
 
         self.assertIn(f'(arg1: number = {RAW_VALUE})', generate_typescript(hlil_func))
         self.assertIn(f'= {RawInt(RAW_VALUE)!r}', Formatter.format_param(0, callee.params[0]))
