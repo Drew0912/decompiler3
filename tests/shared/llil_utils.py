@@ -4,10 +4,11 @@ functions and checks two test files share"""
 
 import unittest
 
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from ir.core import IRParameter
-from ir.llil.llil import WORD_SIZE, LowLevelILFunction
+from ir.llil.llil import LowLevelILFunction
 from ir.mlil.mlil import MediumLevelILFunction
 from tests.shared import scp_asm
 
@@ -42,18 +43,18 @@ def instructions_of(func, kind: type) -> list:
     return [inst for block in func.basic_blocks for inst in block.instructions if isinstance(inst, kind)]
 
 
-def build_function_with_deref(num_params: int, offset: int, *, deref_write: bool, with_ret: bool = False):
-    """1-param function: load_stack_deref(offset) if not deref_write, else push a marker then
-    pop_to_deref(offset). with_ret also pops the stack and returns, which MLIL translation needs (every block
+def build_function_with_deref(num_params: int, slot_offset: int, *, deref_write: bool, with_ret: bool = False):
+    """1-param function: load_stack_deref(slot_offset) if not deref_write, else push a marker then
+    pop_to_deref(slot_offset). with_ret also pops the stack and returns, which MLIL translation needs (every block
     ends in a terminal); without it only the LLIL shape is checked."""
     builder = make_builder(num_params)
     entry = builder.current_block
 
     if deref_write:
         builder.push_int(99)
-        builder.pop_to_deref(offset)
+        builder.pop_to_deref(slot_offset)
     else:
-        builder.load_stack_deref(offset)
+        builder.load_stack_deref(slot_offset)
 
     if with_ret:
         if not deref_write:

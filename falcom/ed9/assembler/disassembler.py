@@ -8,11 +8,10 @@ from typing import NamedTuple
 from assembler import (SYNTHETIC_INSTRUCTION_SIZE, BasicBlock, BranchKind, BranchTarget, DisassemblerContext,
                        Instruction, Operand)
 from dc3.logging import log
-from ir.llil import WORD_SIZE
 from .ed9_optable import ED9Opcode
 from .function import Function, SlotRef, StackLayout
-from .stack_effects import (CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, InstructionKind,
-                            PopCarry)
+from .stack_effects import (CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, WORD_SIZE,
+                            InstructionKind, PopCarry)
 
 
 # The kinds the simulation handles alike: what they pop is a plain use, and what they push is the instruction itself

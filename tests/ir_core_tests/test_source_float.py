@@ -24,7 +24,8 @@ from falcom.ed9.writer.scp_writer_helper import *
 from ir.core import SourceFloat, constant_values_equal
 from ir.hlil import HLILConst
 from ir.hlil.hlil_formatter import HLILFormatter
-from ir.llil.llil import WORD_SIZE, LowLevelILConst, LowLevelILStackStore
+from ir.llil.llil import LowLevelILConst, LowLevelILStackStore
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from ir.mlil.mlil import MLILConst
 from tests.shared.scp_writer_test_utils import fresh_writer
 

@@ -132,7 +132,7 @@ def create_DOF_ON():
     builder.set_current_block(loc_1FFDCB)
 
     # LOAD_STACK(-8)
-    builder.load_stack(-8)
+    builder.load_stack(-2)
     # PUSH_INT(0)
     builder.push_int(0)
     # EQ()
@@ -149,9 +149,9 @@ def create_DOF_ON():
     # PUSH_RET_ADDR('loc_1FFE02')
     builder.push_ret_addr(loc_1FFE02)
     # LOAD_STACK(-12)
-    builder.load_stack(-12)
+    builder.load_stack(-3)
     # LOAD_STACK(-16)
-    builder.load_stack(-16)
+    builder.load_stack(-4)
     # PUSH_FLOAT(0.1)
     builder.push(builder.const_float(0.1))
     # MUL()
@@ -159,7 +159,7 @@ def create_DOF_ON():
     # ADD()
     builder.add()
     # LOAD_STACK(-16)
-    builder.load_stack(-16)
+    builder.load_stack(-4)
     # CALL(screen_dof_set_focus_range)
     builder.call_local('screen_dof_set_focus_range', DECLARED_PARAMS['screen_dof_set_focus_range'])
     # Falls through to BLOCK 3
@@ -178,9 +178,9 @@ def create_DOF_ON():
     # PUSH_RET_ADDR('loc_1FFE20')
     builder.push_ret_addr(loc_1FFE20)
     # LOAD_STACK(-12)
-    builder.load_stack(-12)
+    builder.load_stack(-3)
     # LOAD_STACK(-20)
-    builder.load_stack(-20)
+    builder.load_stack(-5)
     # CALL(screen_dof_set_focus_range)
     builder.call_local('screen_dof_set_focus_range', DECLARED_PARAMS['screen_dof_set_focus_range'])
     # Falls through to BLOCK 5
@@ -234,7 +234,7 @@ def create_sound_play_se():
     # LOAD_STACK(-32) x 8 - Load all 8 parameters
     # Will auto-detect and use fp-relative: STACK[fp + 0..7]
     for i in range(8):
-        builder.load_frame(i * WORD_SIZE)  # Load STACK[fp + i] = STACK[i]
+        builder.load_frame(i)  # Load STACK[fp + i] = STACK[i]
 
     # SYSCALL(6, 0x10, 0x08)
     builder.syscall(6, 0x10, 0x08)
@@ -366,7 +366,7 @@ def create_Dummy_m3010_talk0():
     builder.get_reg(0)
     # POP_TO(-4) means: stack[sp + opr] = pop()
     # After pop, sp is already decremented, so stack[sp + (-4)] = popped_value
-    builder.pop_to(-4)
+    builder.pop_to(-1)
     builder.debug_line(10803)
     builder.push_func_id()
     builder.push_ret_addr(loc_8ADE2)
@@ -376,7 +376,7 @@ def create_Dummy_m3010_talk0():
     # === BLOCK 8: loc_8ADE2 - Check if selection >= 0 ===
     builder.set_current_block(loc_8ADE2)
     builder.debug_line(10805)
-    builder.load_stack(-4)
+    builder.load_stack(-1)
     builder.push_int(0)
     builder.ge()  # GE() operation
     # POP_JMP_ZERO: if result is zero, jump to loc_8AFC2, else continue to fade_out_block
@@ -404,7 +404,7 @@ def create_Dummy_m3010_talk0():
     # === BLOCK 11: loc_8AE38 - Check if selection == 0 ===
     builder.set_current_block(loc_8AE38)
     builder.debug_line(10810)
-    builder.load_stack(-4)
+    builder.load_stack(-1)
     builder.push_int(0)
     builder.eq()
     # POP_JMP_ZERO: if not equal, jump to loc_8AEBD, else continue to case_0_chr_set_pos
@@ -443,7 +443,7 @@ def create_Dummy_m3010_talk0():
     # === BLOCK 15: loc_8AEBD - Check if selection == 1 ===
     builder.set_current_block(loc_8AEBD)
     builder.debug_line(10814)
-    builder.load_stack(-4)
+    builder.load_stack(-1)
     builder.push_int(1)
     builder.eq()
     # POP_JMP_ZERO: if not equal, jump to loc_8AF42, else continue to case_1_chr_set_pos
@@ -482,7 +482,7 @@ def create_Dummy_m3010_talk0():
     # === BLOCK 18: loc_8AF42 - Check if selection == 2, then chr_set_pos ===
     builder.set_current_block(loc_8AF42)
     builder.debug_line(10818)
-    builder.load_stack(-4)
+    builder.load_stack(-1)
     builder.push_int(2)
     builder.eq()
     # POP_JMP_ZERO: if not equal, jump to loc_8AFC2, else continue with chr_set_pos
@@ -524,7 +524,7 @@ def create_Dummy_m3010_talk0():
     # === BLOCK 21: loc_8AFD4 - Check if selection >= 0 for fade_in ===
     builder.set_current_block(loc_8AFD4)
     builder.debug_line(10826)
-    builder.load_stack(-4)
+    builder.load_stack(-1)
     builder.push_int(0)
     builder.ge()
     # POP_JMP_ZERO: if result is zero, jump to loc_8B012, else continue to check_fade_in
@@ -632,7 +632,7 @@ def create_EV_06_37_00():
     builder.push_int(1)
     builder.push_int(1)
     builder.add()
-    builder.pop_to(-4)
+    builder.pop_to(-1)
     builder.set_reg(0)
 
     # RETURN()
@@ -696,11 +696,11 @@ def create_TALK_BEGIN():
     builder.push_caller_frame(loc_54F6B)
 
     # LOAD_STACK(-28)
-    builder.load_stack(-28)
+    builder.load_stack(-7)
     # PUSH_INT(0)
     builder.push_int(0)
     # LOAD_STACK(-32)
-    builder.load_stack(-32)
+    builder.load_stack(-8)
 
     # CALL_SCRIPT('system', 'OnTalkBegin', 3)
     builder.call_script('system', 'OnTalkBegin', 3)

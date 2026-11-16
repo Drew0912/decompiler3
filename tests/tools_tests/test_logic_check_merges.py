@@ -11,7 +11,7 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from dc3.utils import raise_recursion_limit
-from ir.llil.llil import WORD_SIZE
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from tests.shared.logic_check_functions import (
     GLOBAL_A, GLOBAL_B, GLOBAL_C, LOOP_LIMIT, REG_INDEX, categories, hlil_categories, mlil_and_hlil, reference_and_mlil,
     return_nothing,

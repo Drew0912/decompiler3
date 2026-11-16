@@ -13,7 +13,7 @@ from ir.llil.llil import (
     LowLevelILBinaryOp, LowLevelILCall, LowLevelILConst, LowLevelILDebug, LowLevelILFrameAddr, LowLevelILFrameLoad,
     LowLevelILFrameStore, LowLevelILFunction, LowLevelILIf, LowLevelILJmp, LowLevelILLoad, LowLevelILRegLoad,
     LowLevelILRegStore, LowLevelILRet, LowLevelILSpAdd, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore,
-    LowLevelILStore, LowLevelILSyscall, LowLevelILUnaryOp, WORD_SIZE,
+    LowLevelILStore, LowLevelILSyscall, LowLevelILUnaryOp,
 )
 from .facts import Branch, Effect, Facts
 from .state import MEMORY_EPOCH, State
@@ -63,9 +63,9 @@ class LLILLayer:
     def neutral_key(cls, key: tuple) -> tuple:
         return key
 
-    def param_position(self, offset: int) -> int:
-        """The 1-based parameter in the frame slot at offset"""
-        return parameter_position(self.func.num_params, offset // WORD_SIZE)
+    def param_position(self, frame_slot: int) -> int:
+        """The 1-based parameter in frame slot frame_slot"""
+        return parameter_position(self.func.num_params, frame_slot)
 
     def evaluate(self, expr, state: State) -> tuple:
         if isinstance(expr, FRAME_CONSTANTS):
@@ -76,14 +76,14 @@ class LLILLayer:
             key = ('stack', expr.slot_index)
             return state.get(key, ('undef', key))
         if isinstance(expr, LowLevelILFrameLoad):
-            key = ('param', self.param_position(expr.offset))
+            key = ('param', self.param_position(expr.slot_offset))
             return state.get(key, key)
         if isinstance(expr, LowLevelILLoad):
             return ('deref', self.evaluate(expr.src, state), state.get(MEMORY_EPOCH, ENTRY))
         if isinstance(expr, LowLevelILStackAddr):
             return self.vm.address_of(('stack', expr.slot_index))
         if isinstance(expr, LowLevelILFrameAddr):
-            return self.vm.address_of(('param', self.param_position(expr.offset)))
+            return self.vm.address_of(('param', self.param_position(expr.slot_offset)))
         if isinstance(expr, LowLevelILRegLoad):
             return state.register(expr.reg_index)
         if isinstance(expr, LowLevelILGlobalLoad):
@@ -102,7 +102,7 @@ class LLILLayer:
         elif isinstance(inst, LowLevelILStackStore):
             state.set(('stack', inst.slot_index), self.evaluate(inst.value, state))
         elif isinstance(inst, LowLevelILFrameStore):
-            state.set(('param', self.param_position(inst.offset)), self.evaluate(inst.value, state))
+            state.set(('param', self.param_position(inst.slot_offset)), self.evaluate(inst.value, state))
         elif isinstance(inst, LowLevelILRegStore):
             self.vm.write(state, ('reg', inst.reg_index), self.evaluate(inst.value, state))
         elif isinstance(inst, LowLevelILGlobalStore):

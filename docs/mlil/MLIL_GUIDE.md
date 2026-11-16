@@ -14,9 +14,9 @@ operations into ordinary variable reads and writes. Conceptually:
 
 **LLIL (stack semantics):**
 ```
-STACK[0] = 10                 ; StackStore(Const(10), offset=0, slot_index=0)
+STACK[0] = 10                 ; StackStore(Const(10), slot_offset=0, slot_index=0)
 sp = sp + 1
-STACK[1] = 5                  ; StackStore(Const(5), offset=0, slot_index=1)
+STACK[1] = 5                  ; StackStore(Const(5), slot_offset=0, slot_index=1)
 sp = sp + 1
 sp = sp - 1
 rhs = STACK[1]

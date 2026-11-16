@@ -5,7 +5,7 @@ bodies) and log (scripts and hook files: a public name, docs/dsl/HOOKS.md)"""
 import uuid
 
 from dc3.logging import log
-from ir.llil import WORD_SIZE
+from ..assembler.stack_effects import WORD_SIZE
 from .scp_writer import create_scp_writer, require_type as _require_type
 from .scp_writer_opcode_handler import *
 from .scp_writer_hooks import *

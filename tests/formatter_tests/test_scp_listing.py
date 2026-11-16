@@ -14,7 +14,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from dc3.config import default_endian
 from dc3.logging import log
 from dc3.utils import quote_string
-from ir.llil import WORD_SIZE
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from falcom.ed9.assembler import ED9Opcode
 from falcom.ed9.parser.code_layout import code_start
 from falcom.ed9.formatter.listing import BYTES_WIDTH, COLUMN_GAP, ListingSections, ScpListing

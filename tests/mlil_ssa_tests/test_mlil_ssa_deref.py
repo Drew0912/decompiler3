@@ -9,7 +9,6 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ir.llil.llil import WORD_SIZE
 from falcom.ed9.ir.mlil_ssa.mlil_translator import ED9LLILToMLILTranslator
 from ir.mlil.mlil import (
     MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILVariable,
@@ -30,8 +29,7 @@ class TestDerefMLILTranslation(unittest.TestCase):
     """LLIL Load/Store translate to MLILDeref/MLILStoreDeref, not plain variable access."""
 
     def test_store_translates_to_store_deref(self):
-        llil_func, _ = build_function_with_deref(num_params=1, offset=-WORD_SIZE,
-                                                   deref_write=True, with_ret=True)
+        llil_func, _ = build_function_with_deref(num_params=1, slot_offset=-1, deref_write=True, with_ret=True)
 
         mlil_func = ED9LLILToMLILTranslator().translate(llil_func)
         inst = mlil_func.basic_blocks[0].instructions[-2]  # last is the translated ret
@@ -40,8 +38,7 @@ class TestDerefMLILTranslation(unittest.TestCase):
         self.assertEqual(inst.dest.var.name, 'arg1')
 
     def test_load_translates_to_deref(self):
-        llil_func, _ = build_function_with_deref(num_params=1, offset=-WORD_SIZE,
-                                                   deref_write=False, with_ret=True)
+        llil_func, _ = build_function_with_deref(num_params=1, slot_offset=-1, deref_write=False, with_ret=True)
 
         mlil_func = ED9LLILToMLILTranslator().translate(llil_func)
         # load_stack_deref's StackStore -> MLIL SetVar(local, MLILDeref(arg1))

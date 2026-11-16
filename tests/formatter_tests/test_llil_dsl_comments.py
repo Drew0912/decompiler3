@@ -21,7 +21,7 @@ from falcom.ed9.structs.scp_types import FloatWord, ScpValue
 from falcom.ed9.scp2py_base import process_file
 from falcom.ed9.scp2py_config import ScpDecompileConfig
 from falcom.ed9.writer.scp_writer_helper import RETURN
-from ir.llil.llil import WORD_SIZE
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_asm import (
     Asm, Func, Program, CALLEE_ID, CALLER_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, PARAM_COUNT,

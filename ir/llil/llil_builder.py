@@ -243,11 +243,11 @@ class LowLevelILBuilder:
         """Push value onto stack: StackStore + SpAdd (see docs/llil/LLIL_DESIGN.md)"""
         expr = self._to_expr(value)
         slot_index = self.sp_get()
-        self.add_instruction(LowLevelILStackStore(expr, offset=0, slot_index=slot_index))
+        self.add_instruction(LowLevelILStackStore(expr, slot_offset=0, slot_index=slot_index))
         self.emit_sp_add(1, hidden_for_formatter=hidden_for_formatter)
         # Track on vstack: always use StackLoad reference
         # MLIL's constant propagation substitutes a constant where needed
-        self.__vstack.push(LowLevelILStackLoad(offset=0, slot_index=slot_index))
+        self.__vstack.push(LowLevelILStackLoad(slot_offset=0, slot_index=slot_index))
 
         return expr
 
@@ -257,31 +257,31 @@ class LowLevelILBuilder:
         self.emit_sp_add(-1, hidden_for_formatter=hidden_for_formatter)
         return self.__vstack.pop()
 
-    # === Stack and Frame Operations ===
+    # === Stack and Frame Operations (offsets count slots) ===
 
-    def frame_load(self, offset: int) -> LowLevelILFrameLoad:
-        """STACK[frame + offset] - Frame-relative load (for function parameters)"""
-        return LowLevelILFrameLoad(offset)
+    def frame_load(self, slot_offset: int) -> LowLevelILFrameLoad:
+        """STACK[frame + slot_offset] - Frame-relative load (for function parameters)"""
+        return LowLevelILFrameLoad(slot_offset)
 
-    def frame_store(self, value: LowLevelILExpr | int | str, offset: int):
-        """STACK[frame + offset] = value - Frame-relative store (for function parameters)"""
+    def frame_store(self, value: LowLevelILExpr | int | str, slot_offset: int):
+        """STACK[frame + slot_offset] = value - Frame-relative store (for function parameters)"""
         expr = self._to_expr(value)
-        self.add_instruction(LowLevelILFrameStore(expr, offset))
+        self.add_instruction(LowLevelILFrameStore(expr, slot_offset))
 
-    def load_frame(self, offset: int):
-        """Load from frame + offset and push to stack"""
-        frame_val = self.frame_load(offset)
+    def load_frame(self, slot_offset: int):
+        """Load from frame + slot_offset and push to stack"""
+        frame_val = self.frame_load(slot_offset)
         self.push(frame_val)
 
-    def frame_addr(self, offset: int) -> LowLevelILFrameAddr:
-        """&STACK[frame + offset] - Frame-relative address (for function parameters)"""
-        return LowLevelILFrameAddr(offset)
+    def frame_addr(self, slot_offset: int) -> LowLevelILFrameAddr:
+        """&STACK[frame + slot_offset] - Frame-relative address (for function parameters)"""
+        return LowLevelILFrameAddr(slot_offset)
 
     # === Slot Storage (one rule for every access by slot) ===
 
-    def _slot_index(self, offset: int) -> int:
-        """Absolute slot of the byte offset from sp"""
-        return self.sp_get() + offset // WORD_SIZE
+    def _slot_index(self, slot_offset: int) -> int:
+        """Absolute slot of the slot offset from sp"""
+        return self.sp_get() + slot_offset
 
     def _is_param_slot(self, slot_index: int) -> bool:
         """The caller pushed the arguments into the slots starting at the frame base"""
@@ -326,9 +326,9 @@ class LowLevelILBuilder:
             and self.vstack_entry_at_slot(slot_index) is None
         )
 
-    def _frame_offset(self, slot_index: int) -> int:
-        """Byte offset of slot_index from the frame base"""
-        return (slot_index - self.frame_base_sp) * WORD_SIZE
+    def _frame_slot(self, slot_index: int) -> int:
+        """Slot offset of slot_index from the frame base"""
+        return slot_index - self.frame_base_sp
 
     def _require_slot_in_frame(self, slot_index: int, access: str):
         """A slot below the frame base is the caller's, so no access to it is modelled"""
@@ -348,37 +348,37 @@ class LowLevelILBuilder:
                 f'the slot holds no live value'
             )
 
-    def _load_slot(self, slot_index: int, offset: int) -> LowLevelILExpr:
-        """Read of a live slot (offset: its byte offset from sp)"""
+    def _load_slot(self, slot_index: int, slot_offset: int) -> LowLevelILExpr:
+        """Read of a live slot (slot_offset: its offset from sp)"""
         self._require_live_slot(slot_index, 'Read')
         if self._holds_parameter(slot_index):
-            return self.frame_load(self._frame_offset(slot_index))
+            return self.frame_load(self._frame_slot(slot_index))
 
-        return LowLevelILStackLoad(offset=offset, slot_index=slot_index)
+        return LowLevelILStackLoad(slot_offset=slot_offset, slot_index=slot_index)
 
     def _slot_address(self, slot_index: int) -> LowLevelILExpr:
         """Address of a live slot"""
         self._require_live_slot(slot_index, 'Address')
         if self._holds_parameter(slot_index):
-            return self.frame_addr(self._frame_offset(slot_index))
+            return self.frame_addr(self._frame_slot(slot_index))
 
         return LowLevelILStackAddr(slot_index)
 
-    def _store_slot(self, value: LowLevelILExpr, slot_index: int, offset: int):
-        """In-place store (offset: the slot's byte offset from sp); a slot at or above sp is a dead stack slot"""
+    def _store_slot(self, value: LowLevelILExpr, slot_index: int, slot_offset: int):
+        """In-place store (slot_offset: the slot's offset from sp); a slot at or above sp is a dead stack slot"""
         self._require_slot_in_frame(slot_index, 'Store')
         if self._holds_parameter(slot_index):
-            self.frame_store(value, self._frame_offset(slot_index))
+            self.frame_store(value, self._frame_slot(slot_index))
         else:
-            self.add_instruction(LowLevelILStackStore(value, offset=offset, slot_index=slot_index))
+            self.add_instruction(LowLevelILStackStore(value, slot_offset=slot_offset, slot_index=slot_index))
 
-    def load_stack(self, offset: int):
-        """Load from sp + offset and push to stack"""
-        self.push(self._load_slot(self._slot_index(offset), offset))
+    def load_stack(self, slot_offset: int):
+        """Load from sp + slot_offset and push to stack"""
+        self.push(self._load_slot(self._slot_index(slot_offset), slot_offset))
 
-    def push_stack_addr(self, offset: int):
-        """Push the address of stack location (sp + offset)"""
-        self.push(self._slot_address(self._slot_index(offset)))
+    def push_stack_addr(self, slot_offset: int):
+        """Push the address of stack location (sp + slot_offset)"""
+        self.push(self._slot_address(self._slot_index(slot_offset)))
 
     # === Register Operations ===
 

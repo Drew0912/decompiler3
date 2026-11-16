@@ -95,9 +95,9 @@ class LLILToMLILTranslator:
         """The local variable of a stack slot"""
         return self.builder.get_or_create_local(mlil_stack_var_name(slot_index), slot_index)
 
-    def _param_var(self, frame_offset: int) -> MLILVariable:
+    def _param_var(self, frame_slot: int) -> MLILVariable:
         """The parameter variable of a frame slot"""
-        param_index = self.parameter_position(frame_offset)
+        param_index = self.parameter_position(frame_slot)
         return self.builder.get_or_create_parameter(param_index, mlil_arg_var_name(param_index))
 
     def _translate_stack_store(self, llil_inst: LowLevelILStackStore):
@@ -106,13 +106,13 @@ class LLILToMLILTranslator:
         value = self._translate_expr(llil_inst.value)
         self.builder.set_var(var, value)
 
-    def parameter_position(self, frame_offset: int) -> int:
-        """The 1-based parameter in the frame slot at frame_offset: the VM's calling convention"""
+    def parameter_position(self, frame_slot: int) -> int:
+        """The 1-based parameter in frame slot frame_slot: the VM's calling convention"""
         raise NotImplementedError(f'{type(self).__name__} gives no calling convention')
 
     def _translate_frame_store(self, llil_inst: LowLevelILFrameStore):
         """Translate FrameStore to SetVar (parameter)"""
-        var = self._param_var(llil_inst.offset)
+        var = self._param_var(llil_inst.slot_offset)
         value = self._translate_expr(llil_inst.value)
         self.builder.set_var(var, value)
 
@@ -157,11 +157,11 @@ class LLILToMLILTranslator:
         elif isinstance(llil_expr, LowLevelILStackLoad):
             return MLILVar(self._stack_var(llil_expr.slot_index))
         elif isinstance(llil_expr, LowLevelILFrameLoad):
-            return MLILVar(self._param_var(llil_expr.offset))
+            return MLILVar(self._param_var(llil_expr.slot_offset))
         elif isinstance(llil_expr, LowLevelILStackAddr):
             return MLILAddressOf(MLILVar(self._stack_var(llil_expr.slot_index)))
         elif isinstance(llil_expr, LowLevelILFrameAddr):
-            return MLILAddressOf(MLILVar(self._param_var(llil_expr.offset)))
+            return MLILAddressOf(MLILVar(self._param_var(llil_expr.slot_offset)))
         elif isinstance(llil_expr, LowLevelILLoad):
             return MLILDeref(self._translate_expr(llil_expr.src))
         elif isinstance(llil_expr, LowLevelILRegLoad):

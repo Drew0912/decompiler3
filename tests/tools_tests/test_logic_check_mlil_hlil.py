@@ -20,7 +20,7 @@ from ir.hlil.hlil import (
     HLILDoWhile, HLILExprStmt, HLILIf, HLILReturn, HLILSwitch, HLILUnaryOp, HLILUnstructured, HLILVar, HLILVariable,
     HLILWhile, UnaryOp, VariableKind, iter_tree,
 )
-from ir.llil.llil import WORD_SIZE
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from ir.mlil.mlil import MediumLevelILFunction, MLILCall, MLILConst, MLILEq, MLILGoto, MLILIf, MLILRet, MLILVar
 from tests.shared.hlil_cfg_utils import EARLY_EXIT, SHARED_LOOP, build_function, structure, to_hlil
 from tests.shared.ir_utils import connect

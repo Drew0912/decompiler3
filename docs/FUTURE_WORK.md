@@ -49,7 +49,9 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
 - **Moved by the SSA function class plan** (2026-11, work order row 31): ED9's calling convention, call rule and
   return rule left generic code as hooks ED9's subclasses answer (`docs/ARCHITECTURE.md`, "Generic/Falcom
   Boundary"), the SSA path's among them; its generic translator now translates `RegStore` / `RegLoad` / `Syscall`
-  itself, as the stack translator does.
+  itself, as the stack translator does. ED9's 4-byte slot too: `WORD_SIZE` is in
+  `falcom/ed9/assembler/stack_effects.py`, the ED9 lifter turns each opcode's byte offset into slots, and the generic
+  LLIL counts slots (`slot_offset`).
 - **Small moves, done by the opcode-table plan** (Step 7 `89063e4`, no output change; Step 7b `f8f4682` changed only
   the `POP_TO_DEREF` lines of `.llil.asm`):
   - `LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` live only in `LowLevelILED9Operation`
@@ -69,8 +71,7 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
   planned. If a second game ever needs different output, that is the time to move or split it.
 - **Noted as game-specific, no fix scheduled:** the `(subsystem, cmd)` syscall pair that runs through LLIL, MLIL
   and HLIL (`LowLevelILSyscall`, `MLILSyscall`, `HLILSyscall`).
-- **Left as is:** `is_raw` on constants, 4-byte slots (`WORD_SIZE`), 32-bit ints, and comments that say "ED9"/"SCP"
-  (reword when touched).
+- **Left as is:** `is_raw` on constants, 32-bit ints, and comments that say "ED9"/"SCP" (reword when touched).
 - **Floats:** generic code prints floats without knowing their width - the Falcom lifter attaches the display text
   as a `SourceFloat` (`ir/core/il_literals.py`; LLIL DSL neatening plan, Step 4, done).
 

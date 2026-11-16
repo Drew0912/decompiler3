@@ -10,7 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from ir.llil.llil import WORD_SIZE
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from tests.shared.logic_check_functions import (
     GLOBAL_A, GLOBAL_B, MESSAGE, OUT_INITIAL, REG_INDEX, STORED, UNRELATED_ARG, call, categories, hlil_categories,
     initialised_out_parameter_function, mlil_and_hlil, reference_and_mlil, return_nothing,

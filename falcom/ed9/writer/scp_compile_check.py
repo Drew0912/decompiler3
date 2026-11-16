@@ -11,10 +11,9 @@ from types import CodeType
 from typing import Callable, NamedTuple
 
 from dc3.logging import log
-from ir.llil import WORD_SIZE
 from assembler import Instruction
 from ..assembler import InstructionKind
-from ..assembler.stack_effects import POP_SIZE_OPERAND
+from ..assembler.stack_effects import POP_SIZE_OPERAND, WORD_SIZE
 from ..ir.llil import ED9LiftError, ED9VMLifter
 from ..parser.code_layout import dropped_ranges
 from ..assembler.disassembler import ScpFunctionError

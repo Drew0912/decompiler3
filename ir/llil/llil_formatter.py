@@ -67,7 +67,7 @@ class LLILFormatter(CFGDotFormatter):
     def format_instruction_expanded(cls, inst: LowLevelILInstruction) -> list[str] | None:
         """A binary or unary operation, pushed or bare, as its pops, its computation and its push; None for any other
         instruction"""
-        operation = inst.value if isinstance(inst, LowLevelILStackStore) and inst.offset == 0 else inst
+        operation = inst.value if isinstance(inst, LowLevelILStackStore) and inst.slot_offset == 0 else inst
         if isinstance(operation, LowLevelILBinaryOp):
             return cls._format_binary_op_expanded(operation)
 

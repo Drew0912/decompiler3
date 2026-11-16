@@ -5,7 +5,7 @@ categories; it imports logic_check from tools/, which the importing test puts on
 
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
-from ir.llil.llil import WORD_SIZE
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 import logic_check

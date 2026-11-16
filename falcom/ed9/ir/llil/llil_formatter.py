@@ -37,12 +37,12 @@ class ED9LLILFormatter(LLILFormatter):
             lines = [f'if ({lhs} {cond.operation_name} {cond.rhs}) goto {true_name} else {false_name}']
 
         # POP_TO into a local
-        elif isinstance(inst, LowLevelILStackStore) and inst.offset != 0:
+        elif isinstance(inst, LowLevelILStackStore) and inst.slot_offset != 0:
             lines = [f'STACK[{inst.slot_index}] = STACK[--sp] ; {inst.value}']
 
         # POP_TO into a parameter
         elif isinstance(inst, LowLevelILFrameStore):
-            lines = [f'STACK[{frame_offset_text(inst.offset)}] = STACK[--sp] ; {inst.value}']
+            lines = [f'STACK[{frame_offset_text(inst.slot_offset)}] = STACK[--sp] ; {inst.value}']
 
         # POP_TO_DEREF
         elif isinstance(inst, LowLevelILStore):

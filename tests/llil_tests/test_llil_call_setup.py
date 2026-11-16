@@ -11,8 +11,8 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ir.llil.llil import LowLevelILCall, WORD_SIZE
-from falcom.ed9.assembler.stack_effects import LOCAL_SETUP_SLOTS
+from ir.llil.llil import LowLevelILCall
+from falcom.ed9.assembler.stack_effects import LOCAL_SETUP_SLOTS, WORD_SIZE
 from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScript
 from tests.shared.llil_utils import BLOCK_STRIDE, FUNC_START, instructions_of, lift_asm, make_builder
@@ -163,7 +163,7 @@ class TestStoresBelowAPendingSetup(unittest.TestCase):
         builder.push_func_id()                    # slots 2, 3
         builder.push_ret_addr(add_block(builder, 'ret'))
         builder.push_int(STORED_VALUE)            # slot 4
-        builder.pop_to(-4 * WORD_SIZE)            # sp 5 -> 4, stores into parameter slot 0
+        builder.pop_to(-4)                        # sp 5 -> 4, stores into parameter slot 0
 
         builder.call_local('f', NO_ARGS)
 

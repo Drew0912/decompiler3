@@ -4,21 +4,18 @@ from typing import Any, Iterator
 from dc3 import format_signed_hex, IntEnum2, quote_string
 from ir.core import *
 
-# Constants
-WORD_SIZE = 4  # bytes per stack word
-
 
 class LowLevelILOperation(IntEnum2):
     """Atomic LLIL operations"""
 
-    # Stack operations (atomic)
-    LLIL_STACK_STORE        = 0     # STACK[sp + offset] = value
-    LLIL_STACK_LOAD         = 1     # load STACK[sp + offset]
+    # Stack operations (atomic); offsets count slots
+    LLIL_STACK_STORE        = 0     # STACK[sp + slot_offset] = value
+    LLIL_STACK_LOAD         = 1     # load STACK[sp + slot_offset]
     LLIL_SP_ADD             = 2     # sp = sp + delta
 
     # Frame operations (relative to frame base, for function parameters/locals)
-    LLIL_FRAME_LOAD         = 5     # load STACK[frame + offset]
-    LLIL_FRAME_STORE        = 6     # STACK[frame + offset] = value
+    LLIL_FRAME_LOAD         = 5     # load STACK[frame + slot_offset]
+    LLIL_FRAME_STORE        = 6     # STACK[frame + slot_offset] = value
 
     # Register operations
     LLIL_REG_STORE          = 10    # R[index] = value
@@ -58,12 +55,12 @@ class LowLevelILOperation(IntEnum2):
     # VM specific
     LLIL_SYSCALL            = 60    # system call
     LLIL_DEBUG              = 61    # debug info
-    LLIL_STACK_ADDR         = 62    # address of stack location (sp + offset)
+    LLIL_STACK_ADDR         = 62    # address of a stack slot (absolute)
 
     # Generic pointer dereference (address computed at runtime, not a known stack/frame slot)
     LLIL_LOAD               = 63    # load *ptr
     LLIL_STORE              = 64    # *ptr = value
-    LLIL_FRAME_ADDR         = 65    # address of frame-relative location (fp + offset)
+    LLIL_FRAME_ADDR         = 65    # address of frame-relative location (fp + slot_offset)
 
     # User-defined extensions (reserved range: 1003+)
     LLIL_USER_DEFINED       = 1003  # Start of user-defined operations
@@ -107,75 +104,73 @@ class LowLevelILStatement(LowLevelILInstruction):
 
 # === Offset Text ===
 
-def sp_offset_text(offset: int) -> str:
-    """A byte offset from sp in words, as the listing shows it: 'sp', 'sp + 1', 'sp - 1'"""
-    words = offset // WORD_SIZE
-    if words == 0:
+def sp_offset_text(slot_offset: int) -> str:
+    """A slot offset from sp as the listing shows it: 'sp', 'sp + 1', 'sp - 1'"""
+    if slot_offset == 0:
         return 'sp'
 
-    return f'sp + {words}' if words > 0 else f'sp - {-words}'
+    return f'sp + {slot_offset}' if slot_offset > 0 else f'sp - {-slot_offset}'
 
 
-def frame_offset_text(offset: int) -> str:
-    """A byte offset from the frame base in words, as the listing shows it: 'fp + 0', 'fp + 1', 'fp - 1'"""
-    words = offset // WORD_SIZE
-    return f'fp + {words}' if words >= 0 else f'fp - {-words}'
+def frame_offset_text(slot_offset: int) -> str:
+    """A slot offset from the frame base as the listing shows it: 'fp + 0', 'fp + 1', 'fp - 1'"""
+    return f'fp + {slot_offset}' if slot_offset >= 0 else f'fp - {-slot_offset}'
 
 
 # === Atomic Stack Operations ===
 
 class LowLevelILStackStore(LowLevelILStatement):
-    """STACK[sp + offset] = value"""
+    """STACK[sp + slot_offset] = value"""
 
-    def __init__(self, value: LowLevelILInstruction | int | str, offset: int = 0, slot_index: int = None):
+    def __init__(self, value: LowLevelILInstruction | int | str, slot_offset: int = 0, slot_index: int = None):
         super().__init__(LowLevelILOperation.LLIL_STACK_STORE)
         self.value = value
-        self.offset = offset  # Byte offset
+        self.slot_offset = slot_offset  # Slots from sp
         self.slot_index = slot_index  # Absolute stack slot index
 
     def operands(self) -> tuple[LowLevelILInstruction, ...]:
         return (self.value,)
 
     def __str__(self) -> str:
-        return f'STACK[{sp_offset_text(self.offset)}] = {self.value}'
+        return f'STACK[{sp_offset_text(self.slot_offset)}] = {self.value}'
 
 
 class LowLevelILStackLoad(LowLevelILExpr):
-    """Load STACK[sp + offset]"""
+    """Load STACK[sp + slot_offset]"""
 
-    def __init__(self, offset: int, slot_index: int):
+    def __init__(self, slot_offset: int, slot_index: int):
         super().__init__(LowLevelILOperation.LLIL_STACK_LOAD)
-        self.offset = offset  # Byte offset
+        self.slot_offset = slot_offset  # Slots from sp
         self.slot_index = slot_index  # Absolute stack slot index
 
     def __str__(self) -> str:
-        return f'STACK[{sp_offset_text(self.offset)}<{self.slot_index}>]'
+        return f'STACK[{sp_offset_text(self.slot_offset)}<{self.slot_index}>]'
 
 
 class LowLevelILFrameLoad(LowLevelILExpr):
-    """Load STACK[frame + offset]"""
+    """Load STACK[frame + slot_offset]"""
 
-    def __init__(self, offset: int = 0):
+    def __init__(self, slot_offset: int = 0):
         super().__init__(LowLevelILOperation.LLIL_FRAME_LOAD)
-        self.offset = offset  # Byte offset relative to frame
+        self.slot_offset = slot_offset  # Slots from the frame base
 
     def __str__(self) -> str:
-        return f'STACK[{frame_offset_text(self.offset)}]'
+        return f'STACK[{frame_offset_text(self.slot_offset)}]'
 
 
 class LowLevelILFrameStore(LowLevelILStatement):
-    """STACK[frame + offset] = value"""
+    """STACK[frame + slot_offset] = value"""
 
-    def __init__(self, value: LowLevelILInstruction | int | str, offset: int = 0):
+    def __init__(self, value: LowLevelILInstruction | int | str, slot_offset: int = 0):
         super().__init__(LowLevelILOperation.LLIL_FRAME_STORE)
         self.value = value
-        self.offset = offset  # Byte offset relative to frame
+        self.slot_offset = slot_offset  # Slots from the frame base
 
     def operands(self) -> tuple[LowLevelILInstruction, ...]:
         return (self.value,)
 
     def __str__(self) -> str:
-        return f'STACK[{frame_offset_text(self.offset)}] = {self.value}'
+        return f'STACK[{frame_offset_text(self.slot_offset)}] = {self.value}'
 
 
 class LowLevelILLoad(LowLevelILExpr):
@@ -238,15 +233,15 @@ class LowLevelILStackAddr(LowLevelILExpr):
 
 
 class LowLevelILFrameAddr(LowLevelILExpr):
-    """Address of STACK[frame + offset] - the frame-relative sibling of StackAddr, for taking
+    """Address of STACK[frame + slot_offset] - the frame-relative sibling of StackAddr, for taking
     the address of a parameter rather than a local (mirrors FrameLoad/FrameStore)"""
 
-    def __init__(self, offset: int = 0):
+    def __init__(self, slot_offset: int = 0):
         super().__init__(LowLevelILOperation.LLIL_FRAME_ADDR)
-        self.offset = offset  # Byte offset relative to frame
+        self.slot_offset = slot_offset  # Slots from the frame base
 
     def __str__(self) -> str:
-        return f'&STACK[{frame_offset_text(self.offset)}]'
+        return f'&STACK[{frame_offset_text(self.slot_offset)}]'
 
 
 # === Register Operations ===

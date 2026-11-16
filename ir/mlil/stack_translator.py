@@ -102,7 +102,7 @@ class StackTranslator:
         self.entry_pushes: dict[LowLevelILBasicBlock, dict[int, set[Push]]] = {}
         self.continuations: set[LowLevelILBasicBlock] = set()
         self.carried: dict[Push, set[Push]] = {}            # each carried push -> the pushes sharing its local
-        self.address_taken_parameters: set[int] = set()     # the frame offsets whose address is taken
+        self.address_taken_parameters: set[int] = set()     # the frame slots whose address is taken
         self.memory_vars: set[MLILVariable] = set()         # the address-taken locals and parameters, read as *(&v)
         self.block_map: dict[LowLevelILBasicBlock, MediumLevelILBasicBlock] = {}
         self.pile: dict[int, PileEntry] = {}
@@ -203,7 +203,7 @@ class StackTranslator:
                         for push in holding.get(node.slot_index, ()):
                             push.address_taken = True
                     elif isinstance(node, LowLevelILFrameAddr):
-                        self.address_taken_parameters.add(node.offset)
+                        self.address_taken_parameters.add(node.slot_offset)
 
             if isinstance(inst, LowLevelILStackStore):
                 if inst.slot_index >= sp:
@@ -269,7 +269,7 @@ class StackTranslator:
         """The variables read and written in memory form: each address-taken push's local, and each address-taken
         parameter (a parameter lives the whole function)"""
         self.memory_vars = {push.variable for push in self.pushes.values() if push.address_taken}
-        self.memory_vars |= {self.parameter_var(offset) for offset in self.address_taken_parameters}
+        self.memory_vars |= {self.parameter_var(frame_slot) for frame_slot in self.address_taken_parameters}
 
     # === Translation ===
 
@@ -293,7 +293,7 @@ class StackTranslator:
         elif isinstance(inst, LowLevelILStackStore):
             self.translate_stack_store(inst)
         elif isinstance(inst, LowLevelILFrameStore):
-            self.write_var(self.parameter_var(inst.offset), self.translate_expr(inst.value))
+            self.write_var(self.parameter_var(inst.slot_offset), self.translate_expr(inst.value))
         elif isinstance(inst, LowLevelILStore):
             dest, value = self.translate_expr(inst.dest), self.translate_expr(inst.value)
             self.copy_out(Write(WriteKind.MEMORY))
@@ -364,11 +364,11 @@ class StackTranslator:
         if isinstance(node, LowLevelILStackLoad):
             return self.take(node.slot_index)
         if isinstance(node, LowLevelILFrameLoad):
-            return self.read_var(self.parameter_var(node.offset))
+            return self.read_var(self.parameter_var(node.slot_offset))
         if isinstance(node, LowLevelILStackAddr):
             return self.address_of(self.pile[node.slot_index].var)
         if isinstance(node, LowLevelILFrameAddr):
-            return self.address_of(self.parameter_var(node.offset))
+            return self.address_of(self.parameter_var(node.slot_offset))
         if isinstance(node, LowLevelILLoad):
             return stamp(MLILDeref(self.translate_expr(node.src)))
         if isinstance(node, LowLevelILRegLoad):
@@ -479,12 +479,12 @@ class StackTranslator:
 
     # === The VM's ===
 
-    def parameter_var(self, frame_offset: int) -> MLILVariable:
-        position = self.parameter_position(frame_offset)
+    def parameter_var(self, frame_slot: int) -> MLILVariable:
+        position = self.parameter_position(frame_slot)
         return self.builder.get_or_create_parameter(position, mlil_arg_var_name(position))
 
-    def parameter_position(self, frame_offset: int) -> int:
-        """The 1-based parameter in the frame slot at frame_offset: the VM's calling convention"""
+    def parameter_position(self, frame_slot: int) -> int:
+        """The 1-based parameter in frame slot frame_slot: the VM's calling convention"""
         raise NotImplementedError(f'{type(self).__name__} gives no calling convention')
 
     @classmethod

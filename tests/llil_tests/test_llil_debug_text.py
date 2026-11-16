@@ -12,8 +12,9 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import (
     LowLevelILCall, LowLevelILConst, LowLevelILFrameStore, LowLevelILIf, LowLevelILOperation, LowLevelILStackLoad,
-    LowLevelILStackStore, LowLevelILStore, UNASSIGNED_INST_INDEX, WORD_SIZE, walk,
+    LowLevelILStackStore, LowLevelILStore, UNASSIGNED_INST_INDEX, walk,
 )
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn, LowLevelILED9Operation
 from tests.shared.llil_utils import instructions_of, lift_asm, make_builder
@@ -184,19 +185,19 @@ class TestLiftedDebugText(unittest.TestCase):
                 self.assertEqual(repr(inst), f'<{type(inst).__name__}: {text}>')
 
     def test_stack_load_and_store_text(self):
-        self.assertEqual(str(LowLevelILStackLoad(offset=0, slot_index=3)), 'STACK[sp<3>]')
-        self.assertEqual(str(LowLevelILStackLoad(offset=WORD_SIZE, slot_index=4)), 'STACK[sp + 1<4>]')
-        self.assertEqual(str(LowLevelILStackLoad(offset=-WORD_SIZE, slot_index=2)), 'STACK[sp - 1<2>]')
-        self.assertEqual(str(LowLevelILStackStore(5, offset=WORD_SIZE, slot_index=4)), 'STACK[sp + 1] = 5')
-        self.assertEqual(str(LowLevelILStackStore(5, offset=-WORD_SIZE, slot_index=2)), 'STACK[sp - 1] = 5')
-        self.assertEqual(str(LowLevelILStackStore(5, offset=0, slot_index=3)), 'STACK[sp] = 5')
+        self.assertEqual(str(LowLevelILStackLoad(slot_offset=0, slot_index=3)), 'STACK[sp<3>]')
+        self.assertEqual(str(LowLevelILStackLoad(slot_offset=1, slot_index=4)), 'STACK[sp + 1<4>]')
+        self.assertEqual(str(LowLevelILStackLoad(slot_offset=-1, slot_index=2)), 'STACK[sp - 1<2>]')
+        self.assertEqual(str(LowLevelILStackStore(5, slot_offset=1, slot_index=4)), 'STACK[sp + 1] = 5')
+        self.assertEqual(str(LowLevelILStackStore(5, slot_offset=-1, slot_index=2)), 'STACK[sp - 1] = 5')
+        self.assertEqual(str(LowLevelILStackStore(5, slot_offset=0, slot_index=3)), 'STACK[sp] = 5')
 
     def test_frame_and_sp_text(self):
         builder = make_builder(2)
-        self.assertEqual(str(builder.frame_load(WORD_SIZE)), 'STACK[fp + 1]')
-        self.assertEqual(str(builder.frame_load(-WORD_SIZE)), 'STACK[fp - 1]')
-        self.assertEqual(str(builder.frame_addr(WORD_SIZE)), '&STACK[fp + 1]')
-        self.assertEqual(str(builder.frame_addr(-WORD_SIZE)), '&STACK[fp - 1]')
+        self.assertEqual(str(builder.frame_load(1)), 'STACK[fp + 1]')
+        self.assertEqual(str(builder.frame_load(-1)), 'STACK[fp - 1]')
+        self.assertEqual(str(builder.frame_addr(1)), '&STACK[fp + 1]')
+        self.assertEqual(str(builder.frame_addr(-1)), '&STACK[fp - 1]')
         for delta, text in ((1, 'sp++'), (-1, 'sp--'), (3, 'sp += 3'), (-3, 'sp -= 3')):
             self.assertEqual(str(builder.emit_sp_add(delta)), text)
 
@@ -250,9 +251,9 @@ class TestMoreDebugText(unittest.TestCase):
                          f'  {TAIL_CALL_TEXT}[])')
 
     def test_node_text_of_instructions_the_listing_does_not_format_itself(self):
-        self.assertEqual(str(LowLevelILFrameStore(5, offset=0)), 'STACK[fp + 0] = 5')
-        self.assertEqual(str(LowLevelILFrameStore(5, offset=WORD_SIZE)), 'STACK[fp + 1] = 5')
-        self.assertEqual(str(LowLevelILFrameStore(5, offset=-WORD_SIZE)), 'STACK[fp - 1] = 5')
+        self.assertEqual(str(LowLevelILFrameStore(5, slot_offset=0)), 'STACK[fp + 0] = 5')
+        self.assertEqual(str(LowLevelILFrameStore(5, slot_offset=1)), 'STACK[fp + 1] = 5')
+        self.assertEqual(str(LowLevelILFrameStore(5, slot_offset=-1)), 'STACK[fp - 1] = 5')
 
         llil_func = lifted_text_function()
         branch, = instructions_of(llil_func, LowLevelILIf)

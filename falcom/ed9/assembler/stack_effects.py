@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Callable, Sequence
-from ir.llil import WORD_SIZE
 
 __all__ = (
     'InstructionKind',
@@ -13,6 +12,7 @@ __all__ = (
     'PopCarry',
     'StackEffect',
     'STACK_EFFECTS',
+    'WORD_SIZE',
     'LOCAL_SETUP_SLOTS',
     'CALLER_FRAME_SLOTS',
     'POP_SIZE_OPERAND',
@@ -26,6 +26,7 @@ __all__ = (
     'parameter_position',
 )
 
+WORD_SIZE               = 4     # bytes per stack slot: every VM value is one 32-bit word
 LOCAL_SETUP_SLOTS       = 2     # CALL: func_id, ret_addr
 CALLER_FRAME_SLOTS      = 5     # PUSH_CALLER_FRAME: func_id, ret_addr, script pointer (2 slots), frame marker
 POP_SIZE_OPERAND        = 0     # POP's byte count

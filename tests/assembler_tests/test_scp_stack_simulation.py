@@ -17,14 +17,13 @@ from dc3.logging import log
 from assembler import Disassembler, DisassemblerContext
 from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.assembler.ed9_optable import ed9_create_fallthrough_jump
-from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS
+from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, WORD_SIZE
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
 from falcom.ed9.assembler.disassembler import ScpDisassemblyError
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
 from falcom.ed9.assembler.function import Function, SlotRef, StackLayout
 from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpValue
 from falcom.ed9.ir.llil import ED9VMLifter
-from ir.llil.llil import WORD_SIZE
 from tests.shared.scp_asm import (
     CALLEE_ID, CALLEE_NAME, CALLER_ID, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, PARAM_COUNT, REG_INDEX, RIGHT_VALUE,
     STRINGS, SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm, Func, Program, debug_records, main_function, returning_callee,

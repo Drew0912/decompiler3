@@ -20,7 +20,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from assembler.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.assembler.ed9_optable import ED9_OPCODE_TABLE
-from falcom.ed9.assembler.stack_effects import STACK_EFFECTS, InstructionKind, PopCarry, StackEffect
+from falcom.ed9.assembler.stack_effects import STACK_EFFECTS, WORD_SIZE, InstructionKind, PopCarry, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.structs.call_debug_records import CallDebugInfoTracker
 from falcom.ed9.assembler import disassembler
@@ -28,7 +28,7 @@ from falcom.ed9.assembler.disassembler import ScpDisassemblyError
 from falcom.ed9.parser import scp
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.assembler.function import Function
-from ir.llil.llil import LowLevelILCall, LowLevelILSyscall, WORD_SIZE
+from ir.llil.llil import LowLevelILCall, LowLevelILSyscall
 from tests.shared.scp_asm import (
     CALLER_ID, CALLEE_ID, FLOAT_VALUE, FUNC_NAME, GLOBAL_INDEX, LEFT_VALUE, MODULE_NAME, REG_INDEX, RIGHT_VALUE,
     SPLIT_POP_BYTES, SYSCALL_FUNC, SYSCALL_SUBSYSTEM, Asm, Func, Program, main_function, returning_callee,

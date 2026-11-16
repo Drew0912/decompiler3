@@ -32,7 +32,7 @@ operand stack has little use for LLIL and can lift straight to MLIL.
 
 | Path | Responsibility |
 | --- | --- |
-| `ir/llil/llil.py` | Node model: the generic `LowLevelILOperation`, the `LowLevelILExpr`/`LowLevelILStatement` split, every generic node, `LowLevelILBasicBlock`, `LowLevelILFunction` (instruction numbering, `build_cfg()`), `WORD_SIZE`. |
+| `ir/llil/llil.py` | Node model: the generic `LowLevelILOperation`, the `LowLevelILExpr`/`LowLevelILStatement` split, every generic node, `LowLevelILBasicBlock`, `LowLevelILFunction` (instruction numbering, `build_cfg()`). |
 | `ir/llil/llil_builder.py` | `LowLevelILBuilder`: stack pointer and virtual stack, push/pop, slot storage (`_holds_parameter`), per-edge stack state (`StackSnapshot`, `_record_edge_state`). |
 | `ir/llil/llil_formatter.py` | `LLILFormatter`: the `.llil.asm` text and `.llil.dot` graphs (each instruction's own text, the binary/unary expansion). |
 | `falcom/ed9/ir/llil/llil_builder.py` | `ED9VMBuilder`: one method per VM operation, call setups (`PendingCallSetup`), `finalize()`. |
@@ -51,8 +51,8 @@ came from, `inst_index`, `options.hidden_for_formatter`). Nodes are either a
 
 | Category | Nodes |
 | --- | --- |
-| Stack | `LowLevelILStackStore(value, offset, slot_index)`, `LowLevelILStackLoad(offset, slot_index)`, `LowLevelILSpAdd(delta)`, `LowLevelILStackAddr(slot_index)` |
-| Frame (parameters) | `LowLevelILFrameStore(value, offset)`, `LowLevelILFrameLoad(offset)`, `LowLevelILFrameAddr(offset)` |
+| Stack | `LowLevelILStackStore(value, slot_offset, slot_index)`, `LowLevelILStackLoad(slot_offset, slot_index)`, `LowLevelILSpAdd(delta)`, `LowLevelILStackAddr(slot_index)` |
+| Frame (parameters) | `LowLevelILFrameStore(value, slot_offset)`, `LowLevelILFrameLoad(slot_offset)`, `LowLevelILFrameAddr(slot_offset)` |
 | Pointer (runtime address) | `LowLevelILLoad(src)` (`*src`), `LowLevelILStore(dest, value)` (`*dest = value`) |
 | Registers | `LowLevelILRegStore(reg_index, value)`, `LowLevelILRegLoad(reg_index)` |
 | Globals (ED9) | `LowLevelILGlobalStore(index, value)`, `LowLevelILGlobalLoad(index)` |
@@ -60,8 +60,9 @@ came from, `inst_index`, `options.hidden_for_formatter`). Nodes are either a
 | Terminals | `LowLevelILJmp(target)`, `LowLevelILIf(condition, true_target, false_target)`, `LowLevelILCall(target, return_target, args, returns)`, `LowLevelILRet()`; ED9 `LowLevelILCallScript`, `LowLevelILCallScriptNoReturn` (both subclass `LowLevelILCall`) |
 | Other | `LowLevelILConst(value, is_raw)`, `LowLevelILSyscall(subsystem, cmd, argc, args)`, `LowLevelILDebug('line', n)` (from `DEBUG_SET_LINENO`), `LowLevelILPopN(values)`, `LowLevelILDebugInt(value)` |
 
-Offsets are **bytes** (`slot * WORD_SIZE`); `slot_index` is an absolute slot number. Stack offsets
-count from the current `sp`, frame offsets from the frame base.
+Offsets count **slots** (`slot_offset`); `slot_index` is an absolute slot number. Stack offsets
+count from the current `sp`, frame offsets from the frame base. The VM's opcodes give byte offsets: the ED9 lifter
+turns each into slots (`WORD_SIZE`, `falcom/ed9/assembler/stack_effects.py`), so no generic code knows a slot's size.
 
 **Reading is shared**, as in MLIL. Every node's `operands()` returns the expressions it holds, in
 evaluation order (a binary operation its `lhs` and `rhs`, a store its `value`, a pointer store its
@@ -89,7 +90,7 @@ then increments `sp`. A function starts with `sp = num_params` and the frame bas
 (`_seed_entry_state`). MLIL names the parameters `arg1 .. argN` (`docs/mlil/MLIL_GUIDE.md`, Variable
 Model).
 
-**Push and pop.** `push(value)` emits `StackStore(value, offset 0, slot sp)` then `SpAdd(+1)`, and
+**Push and pop.** `push(value)` emits `StackStore(value, slot offset 0, slot sp)` then `SpAdd(+1)`, and
 puts a `StackLoad` of that slot on the virtual stack - not the value itself. A consumer therefore
 reads "the value in slot k", as the VM does; MLIL's stack translator folds each push into its consumer (the SSA
 path's passes merge and propagate the values).
@@ -106,7 +107,8 @@ complete, and the bytes past the last one carry into the `POP` right after it (a
 - at a block start, `begin_block` restores the state recorded for that block (see Control Flow).
 
 **Reads, stores and addresses by slot.** `LOAD_STACK`, `POP_TO` and `PUSH_STACK_OFFSET` name a slot
-by its byte offset from `sp`. Reading a slot at or above `sp`, or taking its address, raises
+by its byte offset from `sp`, which the lifter turns into a slot offset (the disassembler has already refused one that
+is not a whole slot). Reading a slot at or above `sp`, or taking its address, raises
 `NotImplementedError` (it holds no live value); a store there is an ordinary `StackStore`.
 
 **Parameter slots and their lifetime.** A slot is frame storage only while it still holds the

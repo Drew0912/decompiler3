@@ -13,10 +13,10 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from codegen import generate_typescript
-from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS
+from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS, WORD_SIZE
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
-from ir.llil.llil import LowLevelILAdd, LowLevelILStackStore, WORD_SIZE
+from ir.llil.llil import LowLevelILAdd, LowLevelILStackStore
 from ir.mlil.mlil import (
     MLILAdd, MLILAnd, MLILConst, MLILDebug, MLILExternCall, MLILSetVar, UNASSIGNED_INST_INDEX, walk,
 )

@@ -185,11 +185,11 @@ class ED9VMBuilder(LowLevelILBuilder):
         reg_val = self.reg_load(reg_index)
         self.push(reg_val)
 
-    def pop_to(self, offset: int):
-        """POP_TO operation - pop and store to STACK[sp + offset]"""
+    def pop_to(self, slot_offset: int):
+        """POP_TO operation - pop and store to STACK[sp + slot_offset]"""
         val = self.pop(hidden_for_formatter=True)
-        # offset is relative to sp after the pop
-        self._store_slot(val, self._slot_index(offset), offset)
+        # slot_offset is relative to sp after the pop
+        self._store_slot(val, self._slot_index(slot_offset), slot_offset)
 
     def _resolve_deref_param_ptr(self, slot_index: int):
         """The pointer a dereference goes through - only a caller-supplied one, in a parameter the function still
@@ -201,19 +201,19 @@ class ED9VMBuilder(LowLevelILBuilder):
                 "decompiler can't - dereference a pointer parameter, or address the slot directly (LOAD_STACK, POP_TO)"
             )
 
-        return self.frame_load(self._frame_offset(slot_index))
+        return self.frame_load(self._frame_slot(slot_index))
 
-    def load_stack_deref(self, offset: int):
-        """LOAD_STACK_DEREF operation - dereference the pointer at STACK[sp + offset], push *ptr"""
-        ptr = self._resolve_deref_param_ptr(self._slot_index(offset))
+    def load_stack_deref(self, slot_offset: int):
+        """LOAD_STACK_DEREF operation - dereference the pointer at STACK[sp + slot_offset], push *ptr"""
+        ptr = self._resolve_deref_param_ptr(self._slot_index(slot_offset))
         self.push(LowLevelILLoad(ptr))
 
-    def pop_to_deref(self, offset: int):
-        """POP_TO_DEREF operation - pop and store through the pointer at STACK[sp + offset]
+    def pop_to_deref(self, slot_offset: int):
+        """POP_TO_DEREF operation - pop and store through the pointer at STACK[sp + slot_offset]
         (*ptr = value)"""
         val = self.pop(hidden_for_formatter=True)
-        # offset is relative to sp after the pop (mirrors pop_to)
-        ptr = self._resolve_deref_param_ptr(self._slot_index(offset))
+        # slot_offset is relative to sp after the pop (mirrors pop_to)
+        ptr = self._resolve_deref_param_ptr(self._slot_index(slot_offset))
         self.add_instruction(LowLevelILStore(ptr, val))
 
     def pop_jmp_zero(self, true_target, false_target):

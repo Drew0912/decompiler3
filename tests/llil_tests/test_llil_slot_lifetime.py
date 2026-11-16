@@ -10,7 +10,8 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ir.llil.llil import LowLevelILFrameLoad, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore, WORD_SIZE
+from ir.llil.llil import LowLevelILFrameLoad, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from ir.llil.llil_builder import LowLevelILBuilder
 from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
@@ -54,7 +55,7 @@ class TestRepushedParameterSlot(unittest.TestCase):
         builder.pop_bytes(WORD_SIZE)            # the parameter is popped; sp 1->0
         builder.push_int(PUSHED_VALUE)          # slot 0 re-pushed; sp 0->1
         builder.push_int(STORED_VALUE)          # sp 1->2
-        builder.pop_to(-WORD_SIZE)              # slot 0 = STORED_VALUE; sp 2->1
+        builder.pop_to(-1)                      # slot 0 = STORED_VALUE; sp 2->1
 
         store = builder.current_block.instructions[-1]
         self.assertIsInstance(store, LowLevelILStackStore)
@@ -69,7 +70,7 @@ class TestRepushedParameterSlot(unittest.TestCase):
         builder = make_builder(num_params=1)
         builder.pop_bytes(WORD_SIZE)
         builder.push_int(PUSHED_VALUE)
-        builder.load_stack(-WORD_SIZE)          # slot 0
+        builder.load_stack(-1)                  # slot 0
 
         loaded = last_pushed_value(builder)
         self.assertIsInstance(loaded, LowLevelILStackLoad)
@@ -85,7 +86,7 @@ class TestRepushedParameterSlot(unittest.TestCase):
         builder = make_builder(num_params=1)
         builder.pop_bytes(WORD_SIZE)
         builder.push_int(PUSHED_VALUE)
-        builder.push_stack_addr(-WORD_SIZE)     # slot 0
+        builder.push_stack_addr(-1)             # slot 0
 
         address = last_pushed_value(builder)
         self.assertIsInstance(address, LowLevelILStackAddr)
@@ -95,9 +96,9 @@ class TestRepushedParameterSlot(unittest.TestCase):
         builder = make_builder(num_params=2)
         builder.pop_bytes(WORD_SIZE)            # slot 1 (arg1) popped; sp 2->1
         builder.push_int(PUSHED_VALUE)          # slot 1 re-pushed; sp 1->2
-        builder.load_stack(-2 * WORD_SIZE)      # slot 0: still the caller's arg2; sp 2->3
+        builder.load_stack(-2)                  # slot 0: still the caller's arg2; sp 2->3
         self.assertIsInstance(last_pushed_value(builder), LowLevelILFrameLoad)
-        builder.load_stack(-2 * WORD_SIZE)      # slot 1: the pushed value; sp 3->4
+        builder.load_stack(-2)                  # slot 1: the pushed value; sp 3->4
         self.assertIsInstance(last_pushed_value(builder), LowLevelILStackLoad)
 
         builder.set_global(SECOND_GLOBAL_INDEX)
@@ -115,11 +116,11 @@ class TestRepushedParameterSlot(unittest.TestCase):
         builder.push_int(PUSHED_VALUE)          # slot 0 re-pushed
 
         with self.assertRaises(NotImplementedError):
-            builder.load_stack_deref(-WORD_SIZE)
+            builder.load_stack_deref(-1)
 
         builder.push_int(STORED_VALUE)
         with self.assertRaises(NotImplementedError):
-            builder.pop_to_deref(-WORD_SIZE)    # after its pop, sp 1 - offset targets slot 0
+            builder.pop_to_deref(-1)            # after its pop, slot offset -1 from sp 1: slot 0
 
 
 class TestAccessAtOrAboveSp(unittest.TestCase):
@@ -164,7 +165,7 @@ class TestAccessBelowTheStack(unittest.TestCase):
     """A slot below the frame base is the caller's: reads and addresses raise (a store there fails in the parser
     first)"""
 
-    BELOW_ONE_PARAMETER = -3 * WORD_SIZE    # with 1 parameter and 1 push (sp 2): slot -1
+    BELOW_ONE_PARAMETER = -3                # with 1 parameter and 1 push (sp 2): slot -1
 
     def builder(self) -> ED9VMBuilder:
         builder = make_builder(num_params=1)
@@ -229,7 +230,7 @@ class TestParameterUsedInPlace(unittest.TestCase):
     def test_overwritten_parameter_slot_is_still_its_slot(self):
         def emit(builder):
             builder.push_int(STORED_VALUE)
-            builder.pop_to(-WORD_SIZE)              # into the parameter's slot
+            builder.pop_to(-1)                      # into the parameter's slot
             builder.set_reg(REG_INDEX)
 
         self.assert_in_place(emit, r'the slot of parameter 1 \(arg1\)')

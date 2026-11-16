@@ -5,9 +5,6 @@ from .llil_builder import *
 from .llil_formatter import *
 
 __all__ = [
-    # Constants
-    'WORD_SIZE',
-
     # Operations
     'LowLevelILOperation',
 

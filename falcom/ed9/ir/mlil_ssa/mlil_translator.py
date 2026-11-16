@@ -15,8 +15,8 @@ class ED9LLILToMLILTranslator(LLILToMLILTranslator):
     RESULT_REGISTER = RESULT_REGISTER
     FUNCTION_CLASS  = ED9MediumLevelILFunctionSSA
 
-    def parameter_position(self, frame_offset: int) -> int:
-        return parameter_position(self.llil_func.num_params, frame_offset // WORD_SIZE)
+    def parameter_position(self, frame_slot: int) -> int:
+        return parameter_position(self.llil_func.num_params, frame_slot)
 
     def _translate_instruction(self, llil_inst: LowLevelILInstruction):
         """Translate LLIL instruction, handling ED9-specific operations"""

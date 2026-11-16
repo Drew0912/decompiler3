@@ -172,7 +172,8 @@ ED9's answers are in `falcom/ed9/ir/`, the argument order and result register on
 `falcom/ed9/assembler/stack_effects.py` (`parameter_position`, `RESULT_REGISTER`), the call rule's nodes once in ED9's
 stack translator (`CALL_MAY_CHANGE`); its pipelines build its subclasses (`ED9CallResultPass`, `ED9CallResultFolder`
 through `MLILToHLILPass`'s `folder_class`, `ED9MediumLevelILFunctionSSA` through the SSA translator's
-`FUNCTION_CLASS`). The IR folds plain int
+`FUNCTION_CLASS`). The slot size is ED9's too: the generic LLIL counts stack and frame offsets in slots, the ED9
+lifter turning each opcode's byte offset into slots (`WORD_SIZE`, `stack_effects.py`). The IR folds plain int
 constants (at Python's width, `is_plain_int`) and decides their truth; floats - their arithmetic, comparisons and
 truth - strings, a frontend's own ints, and integer division and remainder are not evaluated (an identity like `x / 1`
 aside), since a VM's rules for them need not be Python's. ED9's rules: `docs/falcom/ed9/ED9_VM.md` (Arithmetic, Truth,

@@ -18,7 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from dc3.logging import log
-from ir.llil import WORD_SIZE
+from falcom.ed9.assembler.stack_effects import WORD_SIZE
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.structs.scp_types import ScpParamFlags
 from falcom.ed9.writer import scp_writer, scp_writer_helper, scp_writer_hook_registry, scp_writer_hooks

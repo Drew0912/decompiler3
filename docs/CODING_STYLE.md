@@ -26,7 +26,7 @@ open, plus the project's own rules. `CLAUDE.md` imports this file; `AGENTS.md` t
 
 - **No magic numbers.** A number that means something in the format or the VM (a size, an offset, an opcode, a
   flag mask) gets a named constant, so a reader sees its meaning and a change is one edit: `offset // WORD_SIZE`,
-  not `offset // 4` (`WORD_SIZE = 4` in `ir/llil/llil.py`: byte / word conversions, stack offsets, sizes). Plain
+  not `offset // 4` (`WORD_SIZE = 4` in `falcom/ed9/assembler/stack_effects.py`: byte / slot conversions, sizes). Plain
   `0`, `1`, `-1` and index arithmetic need no name.
 - **Comments name the constant, not its value:** `(offset // WORD_SIZE)`, not `(offset // 4)`.
 - **Imports at module top level.** Two exceptions: a proven circular import inside a function, with a comment

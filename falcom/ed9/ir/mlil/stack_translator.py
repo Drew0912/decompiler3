@@ -3,7 +3,7 @@ globals, script calls (the tail call among them), POPN and DEBUG_INT on the gene
 read as data refused"""
 
 from falcom.ed9.assembler.stack_effects import RESULT_REGISTER, parameter_position
-from ir.llil.llil import LowLevelILBasicBlock, LowLevelILCall, LowLevelILInstruction, WORD_SIZE
+from ir.llil.llil import LowLevelILBasicBlock, LowLevelILCall, LowLevelILInstruction
 from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILInstruction, MLILConst, MLILDeref, MLILExternCall, MLILLoadGlobal, MLILLoadReg,
     MLILVariable,
@@ -26,8 +26,8 @@ class ED9StackTranslator(StackTranslator):
     RESULT_REGISTER    = RESULT_REGISTER
     IN_PLACE_ARGUMENTS = (*StackTranslator.IN_PLACE_ARGUMENTS, LowLevelILPopN)
 
-    def parameter_position(self, frame_offset: int) -> int:
-        return parameter_position(self.llil_func.num_params, frame_offset // WORD_SIZE)
+    def parameter_position(self, frame_slot: int) -> int:
+        return parameter_position(self.llil_func.num_params, frame_slot)
 
     @classmethod
     def call_may_change(cls, call: LowLevelILInstruction, node: MediumLevelILInstruction) -> bool:

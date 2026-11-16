@@ -10,6 +10,7 @@ from ...assembler import *
 from .llil_builder import *
 from ...assembler.function import Function, FunctionParam
 from ...assembler.disassembler import ScpFunctionError
+from ...assembler.stack_effects import WORD_SIZE
 from ...parser.scp import ScpParser
 from ...structs.scp_types import ScpValue
 
@@ -173,19 +174,19 @@ class ED9VMLifter:
                 builder.syscall(subsystem, cmd, argc)
 
             case ED9Opcode.LOAD_STACK:
-                builder.load_stack(int(inst.operands[0].value))
+                builder.load_stack(int(inst.operands[0].value) // WORD_SIZE)
 
             case ED9Opcode.LOAD_STACK_DEREF:
-                builder.load_stack_deref(int(inst.operands[0].value))
+                builder.load_stack_deref(int(inst.operands[0].value) // WORD_SIZE)
 
             case ED9Opcode.PUSH_STACK_OFFSET:
-                builder.push_stack_addr(int(inst.operands[0].value))
+                builder.push_stack_addr(int(inst.operands[0].value) // WORD_SIZE)
 
             case ED9Opcode.POP_TO:
-                builder.pop_to(int(inst.operands[0].value))
+                builder.pop_to(int(inst.operands[0].value) // WORD_SIZE)
 
             case ED9Opcode.POP_TO_DEREF:
-                builder.pop_to_deref(int(inst.operands[0].value))
+                builder.pop_to_deref(int(inst.operands[0].value) // WORD_SIZE)
 
             case ED9Opcode.POP:
                 pop_size = int(inst.operands[0].value) if inst.operands else 0
