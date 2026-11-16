@@ -1,9 +1,10 @@
 """ED9 (Kuro no Kiseki) Instruction Table"""
 
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import TYPE_CHECKING, Any
 
-from dc3 import fileio, IntEnum2, quote_string
+from dc3 import fileio, quote_string
 from assembler.instruction_table import *
 from assembler.instruction import *
 from assembler.basic_block import *
@@ -15,7 +16,7 @@ if TYPE_CHECKING:
     from ..formatter.llil_dsl.function_formatter import FormatterContext
 
 
-class ED9OperandType(IntEnum2):
+class ED9OperandType(IntEnum):
     """ED9-specific operand types extending base OperandType"""
 
     Func      = OperandType.UserDefined + 1  # Function ID
@@ -206,7 +207,7 @@ def _opcode(mnemonic: str) -> int:
             return entry.opcode
 
 
-class ED9Opcode(IntEnum2):
+class ED9Opcode(IntEnum):
     """ED9 VM Opcodes"""
 
     # Stack operations

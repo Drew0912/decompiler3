@@ -1,15 +1,16 @@
+from enum import IntEnum
 import math
 from typing import TypeAlias
 
-from dc3 import fileio, format_uint32_hex, IntEnum2, StrictBase, UINT32_MASK
+from dc3 import fileio, format_uint32_hex, StrictBase, UINT32_MASK
 from dc3.utils import (FLOAT32_MAX_SIGNIFICANT_DIGITS, float32_bits as _float32_bits,
                        float32_from_bits as _float32_from_bits)
 
 UINT32_SIZE = fileio.struct_layout('L').size  # one u32 field of the .dat format
 
 
-class ScpParamType(IntEnum2):
-    class Flags(IntEnum2):
+class ScpParamType(IntEnum):
+    class Flags(IntEnum):
         Pointer     = 0x04
         Nullable    = 0x08
 
@@ -125,7 +126,7 @@ class ScpValue:
     # float_literal's candidate formats, fewest significant digits first
     FLOAT_LITERAL_FORMATS           = tuple(f'.{digits}g' for digits in range(1, FLOAT32_MAX_SIGNIFICANT_DIGITS + 1))
 
-    class Type(IntEnum2):
+    class Type(IntEnum):
         Raw             = 0
         Integer         = 1
         Float           = 2
@@ -403,7 +404,7 @@ class ScpFunctionCallDebugInfoArg(StrictBase):
     SIZE                = LAYOUT.size
     NON_CONSTANT_VALUE  = RawInt(0)     # value of every arg but a Constant (wrap in ScpValue)
 
-    class Type(IntEnum2):
+    class Type(IntEnum):
         Constant    = 0     # value is the pushed constant
         CallResult  = 1     # GET_REG after a nested call, value is Raw 0
         Variable    = 2     # LOAD_STACK / PUSH_STACK_OFFSET, value is Raw 0
@@ -415,7 +416,7 @@ class ScpFunctionCallDebugInfo(StrictBase):
     SIZE        = LAYOUT.size
     NO_FUNC_ID  = 0xFFFFFFFF    # func_id of script calls and syscalls
 
-    class CallType(IntEnum2):
+    class CallType(IntEnum):
         Local           = 0
         Script          = 1
         ScriptNoReturn  = 2     # CALL_SCRIPT_NO_RETURN - tail call, no PUSH_CALLER_FRAME precedes it
@@ -449,7 +450,7 @@ class ScpFunctionCallDebugInfo(StrictBase):
     def __str__(self) -> str:
         return '\n'.join([
             f'func_id       : 0x{self.func_id:08X}',
-            f'call_type     : {self.call_type}',
+            f'call_type     : {self.call_type.name}',
             f'arg_count     : {self.arg_count}',
             f'info_offset   : 0x{self.info_offset:08X}',
         ])
@@ -464,7 +465,7 @@ class ScpGlobalVar(StrictBase):
     name : str
     type : int
 
-    class Type(IntEnum2):
+    class Type(IntEnum):
         Integer = 0
         String  = 1
 

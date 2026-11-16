@@ -785,7 +785,8 @@ class TestRecordMismatch(CompiledScript):
         result_arg = record.arg_offsets()[2]
         for name, position, word, problem in (
             ('value', result_arg, 1, 'arg 2: value 0x00000001 != None'),
-            ('type', result_arg + WORD_SIZE, ArgType.Constant, f'arg 2: type {int(ArgType.Constant)} != {ArgType.CallResult}'),
+            ('type', result_arg + WORD_SIZE, ArgType.Constant,
+             f'arg 2: type {int(ArgType.Constant)} != {ArgType.CallResult.name}'),
         ):
             with self.subTest(changed=name):
                 data = bytearray(self.data)

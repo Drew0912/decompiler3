@@ -102,7 +102,7 @@ class TestRealCallPairing(unittest.TestCase):
         for func in functions:
             counts = Counter(inst.opcode for inst in func.reachable_instructions())
             for call_op, ret_op in PAIRED_CALL_OPS.items():
-                self.assertEqual(counts[call_op], counts[ret_op], f'{func.name}: {call_op} vs {ret_op}')
+                self.assertEqual(counts[call_op], counts[ret_op], f'{func.name}: {call_op.name} vs {ret_op.name}')
 
 
 if __name__ == '__main__':

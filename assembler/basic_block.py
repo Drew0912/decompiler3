@@ -1,16 +1,17 @@
 """Basic Block representation"""
 
 from dataclasses import dataclass, field
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
-from dc3 import default_indent, IntEnum2
+from dc3 import default_indent
 from .instruction import SYNTHETIC_INSTRUCTION_SIZE
 
 if TYPE_CHECKING:
     from .instruction import Instruction
 
 
-class BranchKind(IntEnum2):
+class BranchKind(IntEnum):
     """Type of control flow edge"""
 
     UNCONDITIONAL   = 0     # JMP, CALL return

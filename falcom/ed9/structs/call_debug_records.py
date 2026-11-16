@@ -480,7 +480,7 @@ def record_mismatch(data: bytes, call: TrackedCall, record: ScpFunctionCallDebug
 
     for i, ((arg_type, payload), (raw_type, raw_value)) in enumerate(zip(expected, record_args(data, record))):
         if raw_type != arg_type:
-            return f'arg {i}: type {raw_type} != {arg_type}'
+            return f'arg {i}: type {raw_type} != {arg_type.name}'
 
         if arg_type != ArgType.Constant:
             matches = raw_value == ScpValue(ScpFunctionCallDebugInfoArg.NON_CONSTANT_VALUE).to_word()

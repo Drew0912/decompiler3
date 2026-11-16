@@ -3,10 +3,10 @@ the global var names reference, in the order the original compiler pooled them (
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import TYPE_CHECKING
 
 from dc3.config import default_encoding, default_endian
-from dc3.enum import IntEnum2
 from .scp_types import UINT32_SIZE, ScpFunctionCallDebugInfo, ScpGlobalVar, ScpValue
 
 # An annotation only: scp.py imports this module (through call_debug_records too)
@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 NUL = b'\0'     # ends every pool string
 
 
-class StringPoolSection(IntEnum2):
+class StringPoolSection(IntEnum):
     """Order of the original compiler's string pool"""
 
     Code    = 0

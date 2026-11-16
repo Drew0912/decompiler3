@@ -1,14 +1,14 @@
 """HLIL - Structured control flow (if/while/do-while) from unstructured MLIL (goto/label)"""
 
 from typing import Iterator, Sequence
-from enum import auto
+from enum import auto, IntEnum
 import operator
 import re
-from dc3 import format_uint32_hex, IntEnum2, quote_string
+from dc3 import format_uint32_hex, quote_string
 from ir.core import UNASSIGNED_INST_INDEX, constant_values_equal, is_int_zero, is_plain_int
 
 
-class HLILTypeKind(IntEnum2):
+class HLILTypeKind(IntEnum):
     """HLIL type kinds"""
 
     INT     = auto()
@@ -20,7 +20,7 @@ class HLILTypeKind(IntEnum2):
     NUMBER  = auto()    # Int or float
 
 
-class BinaryOp(IntEnum2):
+class BinaryOp(IntEnum):
     """Binary operators"""
 
     # Arithmetic
@@ -54,7 +54,7 @@ class BinaryOp(IntEnum2):
     SHR     = auto()
 
 
-class UnaryOp(IntEnum2):
+class UnaryOp(IntEnum):
     """Unary operators"""
 
     NEG     = auto()
@@ -62,7 +62,7 @@ class UnaryOp(IntEnum2):
     BIT_NOT = auto()
 
 
-class HLILOperation(IntEnum2):
+class HLILOperation(IntEnum):
     """HLIL operation types"""
 
     # Control flow statements
@@ -120,7 +120,7 @@ class HLILExpression(HLILInstruction):
 # Variables and Types
 # ============================================================================
 
-class VariableKind(IntEnum2):
+class VariableKind(IntEnum):
     """Variable storage kind"""
 
     LOCAL   = auto()
@@ -152,7 +152,7 @@ class HLILVariable:
 
     def __repr__(self) -> str:
         if self.type_hint:
-            return f'HLILVariable({self.name}: {self.type_hint})'
+            return f'HLILVariable({self.name}: {self.type_hint.name})'
         return f'HLILVariable({self.name})'
 
     def __eq__(self, other) -> bool:

@@ -2,10 +2,10 @@
 (hand-written, tracked), one per command and argument count"""
 
 from dataclasses import dataclass
+from enum import IntEnum
 import functools
 import importlib
 
-from dc3 import IntEnum2
 from ..consts import CHR_ID_KIND
 from ..structs.common_library import game_metadata_module
 
@@ -20,7 +20,7 @@ ARG_LETTER_KINDS = {
 }
 
 
-class Subsystem(IntEnum2):
+class Subsystem(IntEnum):
     """A SYSCALL's first operand: the index of the VM's command object (ED9_VM.md, Syscalls)"""
 
     Sys         = 0

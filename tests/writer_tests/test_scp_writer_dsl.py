@@ -3,7 +3,7 @@
 what handle_opcode tracks, every opcode function handing the writer its own opcode, PUSH, and an int enum pushed as
 its value."""
 
-from enum import IntEnum, StrEnum
+from enum import IntEnum, IntFlag, StrEnum
 import inspect
 from pathlib import Path
 import re
@@ -16,7 +16,6 @@ from unittest import mock
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from dc3.enum import IntEnum2, IntFlag2
 from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.assembler.vm import REGISTER_COUNT, WORD_SIZE
 from falcom.ed9.structs.scp_types import RawInt, ScpValue
@@ -246,11 +245,11 @@ class Mode(IntEnum):
     A = 3
 
 
-class ChrId(IntEnum2):
+class ChrId(IntEnum):
     Self = 0xFFFE
 
 
-class MoveFlags(IntFlag2):
+class MoveFlags(IntFlag):
     A = 0x4000000
     B = 0x8000000
     TOO_BIG = 0x40000000
@@ -266,10 +265,10 @@ class TestPushEnum(unittest.TestCase):
     def test_pushes_like_its_value(self):
         cases = {
             'IntEnum': (lambda: PUSH_INT(Mode.A), lambda: PUSH_INT(3)),
-            'IntEnum2 through PUSH': (lambda: PUSH(ChrId.Self), lambda: PUSH_INT(0xFFFE)),
-            'IntFlag2 mask': (lambda: PUSH_INT(MoveFlags.A | MoveFlags.B), lambda: PUSH_INT(0xC000000)),
+            'IntEnum through PUSH': (lambda: PUSH(ChrId.Self), lambda: PUSH_INT(0xFFFE)),
+            'IntFlag mask': (lambda: PUSH_INT(MoveFlags.A | MoveFlags.B), lambda: PUSH_INT(0xC000000)),
             # No member is 0, so the value has no name
-            'IntFlag2 without a name': (lambda: PUSH_INT(MoveFlags(0)), lambda: PUSH_INT(0)),
+            'IntFlag without a name': (lambda: PUSH_INT(MoveFlags(0)), lambda: PUSH_INT(0)),
             'PUSH_FLOAT': (lambda: PUSH_FLOAT(Mode.A), lambda: PUSH_FLOAT(3.0)),
         }
         for case, (push, twin) in cases.items():

@@ -2,14 +2,15 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import IntEnum, IntFlag
 from typing import Any
 
-from dc3 import fileio, format_signed_hex, IntEnum2, IntFlag2
+from dc3 import fileio, format_signed_hex
 from .basic_block import BranchKind
 from .instruction import Instruction, Operand
 
 
-class OperandType(IntEnum2):
+class OperandType(IntEnum):
     """Operand types"""
 
     Empty       = 0
@@ -198,7 +199,7 @@ class BranchTarget:
         return cls(BranchKind.FALSE, offset)
 
 
-class InstructionFlags(IntFlag2):
+class InstructionFlags(IntFlag):
     """Instruction flags (can be combined with bitwise OR)"""
 
     NONE        = 0
