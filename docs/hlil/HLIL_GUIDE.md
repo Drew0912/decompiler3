@@ -106,7 +106,7 @@ function's TypeScript. The pass sets each parameter's type from the flag the scr
 depend on MLIL inference. Local variables have no type on the decompile path (`any` until the HLIL
 type plan: its stack translator runs no type pass); on the SSA path they take its inferred types. With the game's
 syscall rows (`falcom/ed9/games/<game>/metadata/syscall_args.py`, `SyscallArgs` in
-`falcom/ed9/assembler/ed9_syscalls.py`), the pass also marks the character-ID parameters: a parameter whose every
+`falcom/ed9/assembler/syscalls.py`), the pass also marks the character-ID parameters: a parameter whose every
 read is a pass to an ID slot (a syscall's ID slot, or a marked parameter of a call to a function of the same file,
 so a forwarder marks too), with no other read anywhere in the reachable body, and no write or address taken
 anywhere in the body, dead code included

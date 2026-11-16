@@ -7,7 +7,7 @@ import math
 from typing import TYPE_CHECKING
 
 from dc3.utils import display_width
-from ...assembler.ed9_optable import ED9Opcode, ED9OperandType
+from ...assembler.opcode_table import ED9Opcode, ED9OperandType
 from ...assembler.stack_effects import PopCarry
 from ...structs.scp_types import ScpValue
 

@@ -13,7 +13,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from codegen.typescript import generate_typescript
-from falcom.ed9.assembler.ed9_syscalls import ANY_ARGC, Subsystem, SyscallArgs, SyscallEntry
+from falcom.ed9.assembler.syscalls import ANY_ARGC, Subsystem, SyscallArgs, SyscallEntry
 from falcom.ed9.consts import CHR_ID_KIND
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.hlil.id_marks import ParameterUses, excluded_parameters, propagate_id_marks

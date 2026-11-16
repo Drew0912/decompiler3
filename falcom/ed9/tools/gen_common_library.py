@@ -48,7 +48,7 @@ from dc3.config import default_indent
 from dc3.utils import collect_paths, write_text_lf
 from assembler.instruction import Instruction
 from assembler.instruction_table import OperandType
-from falcom.ed9.assembler.ed9_optable import ED9Opcode, ED9OperandType
+from falcom.ed9.assembler.opcode_table import ED9Opcode, ED9OperandType
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
 from falcom.ed9.formatter.llil_dsl.comments import CommentOptions, append_comment, instruction_comments, label_comments
 from falcom.ed9.games import GAMES_DIR, game_names

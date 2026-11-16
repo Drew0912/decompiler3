@@ -1,6 +1,6 @@
 """Which syscall arguments hold a character ID in sora2: reviewed by hand against the corpus, not generated"""
 
-from falcom.ed9.assembler.ed9_syscalls import ANY_ARGC, Subsystem, SyscallEntry
+from falcom.ed9.assembler.syscalls import ANY_ARGC, Subsystem, SyscallEntry
 
 
 # One letter per argument: N a character ID, . anything else; arguments past the end are anything else

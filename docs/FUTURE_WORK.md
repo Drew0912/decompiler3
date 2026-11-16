@@ -74,7 +74,7 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
 - **Floats:** generic code prints floats without knowing their width - the Falcom lifter attaches the display text
   as a `SourceFloat` (`ir/core/il_literals.py`; LLIL DSL neatening plan, Step 4, done).
 
-## ED8 Support (`dc3/fileio.py`, `falcom/ed9/assembler/ed9_optable.py`)
+## ED8 Support (`dc3/fileio.py`, `falcom/ed9/assembler/opcode_table.py`)
 
 **Planned, not started** (user, 2026-10-12); unscheduled, much later (user, 2026-10-15). Notes for when it starts,
 from decompiler2's ED8.x support:

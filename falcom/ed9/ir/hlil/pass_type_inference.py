@@ -8,7 +8,7 @@ from ir.hlil import *
 from .id_marks import collect_parameter_uses, propagate_id_marks, tag_id_constants
 
 if TYPE_CHECKING:
-    from ...assembler.ed9_syscalls import SyscallArgs
+    from ...assembler.syscalls import SyscallArgs
     from ...assembler.function import Function
 
 

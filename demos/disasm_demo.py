@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 import difflib
 from assembler import Disassembler, DisassemblerContext
 from falcom.ed9.assembler import *
-from falcom.ed9.assembler.ed9_optable import ed9_create_fallthrough_jump
+from falcom.ed9.assembler.opcode_table import ed9_create_fallthrough_jump
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
 from falcom.ed9.assembler.function import Function
 

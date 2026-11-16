@@ -13,7 +13,7 @@ from dc3 import fileio
 from dc3.logging import log
 from assembler import Instruction
 from ..assembler import ED9_INSTRUCTION_TABLE, InstructionKind
-from ..assembler.ed9_optable import opcodes_of
+from ..assembler.opcode_table import opcodes_of
 from ..assembler.vm import RESULT_REGISTER
 from ..assembler.stack_effects import CALLEE_OPERAND, REGISTER_OPERAND, PopCarry
 from .string_pool import read_text, read_u32, string_offset

@@ -8,7 +8,7 @@ from typing import NamedTuple
 from assembler import (SYNTHETIC_INSTRUCTION_SIZE, BasicBlock, BranchKind, BranchTarget, DisassemblerContext,
                        Instruction, Operand)
 from dc3.logging import log
-from .ed9_optable import ED9Opcode
+from .opcode_table import ED9Opcode
 from .function import Function, SlotRef, StackLayout
 from .vm import LOCAL_SETUP_SLOTS, WORD_SIZE
 from .stack_effects import CALLEE_OPERAND, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, InstructionKind, PopCarry

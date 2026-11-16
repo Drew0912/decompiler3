@@ -22,7 +22,7 @@ from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
 from falcom.ed9.formatter.listing import write_listing
 from falcom.ed9.formatter.format_hints import game_format_hints
-from falcom.ed9.assembler.ed9_syscalls import game_syscall_args
+from falcom.ed9.assembler.syscalls import game_syscall_args
 from falcom.ed9.assembler.function import Function
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter

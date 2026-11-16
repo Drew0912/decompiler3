@@ -11,7 +11,7 @@ from dc3.utils import quote_string, write_text_lf
 from ir.llil.llil import default_label_for_addr
 from assembler import Instruction, OperandType
 from ..assembler import ED9Opcode
-from ..assembler.ed9_optable import ED9OperandType
+from ..assembler.opcode_table import ED9OperandType
 from .llil_dsl.comments import CommentOptions, instruction_comments, label_comments
 from .llil_dsl.function_formatter import Formatter, FormatterContext
 from ..structs.call_debug_records import pair_records, read_debug_records, record_args

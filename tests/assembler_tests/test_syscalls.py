@@ -9,7 +9,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from falcom.ed9.assembler.ed9_syscalls import ANY_ARGC, Subsystem, SyscallArgs, SyscallEntry, game_syscall_args
+from falcom.ed9.assembler.syscalls import ANY_ARGC, Subsystem, SyscallArgs, SyscallEntry, game_syscall_args
 from falcom.ed9.consts import CHR_ID_KIND
 from tests.shared.stand_in_game import FAILING_IMPORT_SOURCE, plant_game
 
@@ -17,7 +17,7 @@ CMD = 0x19
 ARGC = 3
 OTHER_ARGC = 5
 
-ROWS_SOURCE = f"""from falcom.ed9.assembler.ed9_syscalls import Subsystem, SyscallEntry
+ROWS_SOURCE = f"""from falcom.ed9.assembler.syscalls import Subsystem, SyscallEntry
 
 SYSCALL_TABLE = [SyscallEntry(Subsystem.Chr, {CMD}, {ARGC}, 'N')]
 """

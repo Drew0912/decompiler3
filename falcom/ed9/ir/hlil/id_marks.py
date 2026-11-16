@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from ir.hlil import *
 
 if TYPE_CHECKING:
-    from ...assembler.ed9_syscalls import SyscallArgs
+    from ...assembler.syscalls import SyscallArgs
 
 
 class ParameterUses:

@@ -8,7 +8,7 @@ from .parser_types import GlobalVar
 from dc3 import fileio, StrictBase
 from assembler import BasicBlock, Disassembler, Instruction
 from ..assembler import *
-from ..assembler.ed9_optable import *
+from ..assembler.opcode_table import *
 from ..assembler.disassembler import (ScpDisassemblerContext, ScpDisassemblyError, on_block_split, on_block_start,
                                       on_disasm_function, on_instruction_decoded, on_pre_add_branch)
 from ..assembler.function import Function, FunctionParam

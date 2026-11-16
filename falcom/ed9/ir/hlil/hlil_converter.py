@@ -19,7 +19,7 @@ from .call_result_folder import ED9CallResultFolder
 from .pass_type_inference import ED9TypeInferencePass
 
 if TYPE_CHECKING:
-    from ...assembler.ed9_syscalls import SyscallArgs
+    from ...assembler.syscalls import SyscallArgs
     from ...assembler.function import Function
 
 
