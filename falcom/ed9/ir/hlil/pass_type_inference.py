@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, Callable
 from ir.pipeline import Pass
 from ir.hlil import *
 
-from .id_marks import collect_parameter_uses, propagate_id_marks, tag_id_constants
+from .id_marks import collect_parameter_uses, propagate_id_marks, tag_compared_id_constants, tag_id_constants
 
 if TYPE_CHECKING:
     from ...assembler.syscalls import SyscallArgs
@@ -25,8 +25,9 @@ PARAM_TYPE_KINDS = {
 class ED9TypeInferencePass(Pass):
     """ED9-specific types over a file's HLIL functions, once every function is converted: each parameter's type from
     the flag the script declares for it; with the game's syscall rows, each ID parameter marked (HLILVariable.id_kind)
-    and each ID constant tagged (HLILConst.id_kind) for .ts to print by name (the rule: id_marks.py). Each function's
-    part on its own: one that raises sets nothing and is reported through warn (without warn, re-raised)"""
+    and each ID constant tagged (HLILConst.id_kind), at an ID slot and compared with, a switch label over or assigned
+    to a variable that holds an ID, for .ts to print by name (the rule: id_marks.py). Each function's part on its
+    own: one that raises sets nothing and is reported through warn (without warn, re-raised)"""
 
     def __init__(self, scp_funcs: 'list[Function]', syscall_args: 'SyscallArgs | None' = None,
                  warn: Callable[[str, Exception], None] | None = None):
@@ -55,8 +56,12 @@ class ED9TypeInferencePass(Pass):
         marked = {func.name: {index: param.id_kind for index, param in enumerate(func.parameters)
                               if param.id_kind is not None}
                   for func in hlil_funcs}
+        failed |= self._each([func for func in hlil_funcs if func.name not in failed],
+                             lambda func: tag_id_constants(func, marked, self.syscall_args))
+        # Then the constants compared with, labelling or assigned to a variable that holds an ID, by the same marks
+        # and rows: only where both parts above ran
         self._each([func for func in hlil_funcs if func.name not in failed],
-                   lambda func: tag_id_constants(func, marked, self.syscall_args))
+                   lambda func: tag_compared_id_constants(func, marked, self.syscall_args))
         return hlil_funcs
 
     def _each(self, hlil_funcs: list[HighLevelILFunction], part: Callable[[HighLevelILFunction], None]) -> set[str]:

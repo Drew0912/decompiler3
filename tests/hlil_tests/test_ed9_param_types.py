@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Unit tests for ED9TypeInferencePass: parameter types come from the script's declared flags; with the syscall
 rows, a parameter whose every read is a pass to an ID slot (a syscall's, or a marked parameter of a call, through any
-chain) is marked, and an int constant at an ID slot of a syscall or of a call to a marked parameter is tagged."""
+chain) is marked, an int constant at an ID slot of a syscall or of a call to a marked parameter is tagged, and so is
+one compared with, labelling a switch over or assigned to a variable that holds an ID."""
 
 from pathlib import Path
 import itertools
@@ -12,9 +13,9 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from codegen.typescript import generate_typescript
+from codegen.typescript import generate_typescript, IdFormatHint
 from falcom.ed9.assembler.syscalls import ANY_ARGC, Subsystem, SyscallArgs, SyscallEntry
-from falcom.ed9.consts import CHR_ID_KIND
+from falcom.ed9.consts import CHR_ID_KIND, PseudoChrId
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.hlil.id_marks import ParameterUses, excluded_parameters, propagate_id_marks
 from falcom.ed9.ir.hlil.pass_type_inference import ED9TypeInferencePass
@@ -25,7 +26,8 @@ from ir.core import SourceFloat
 from ir.core.il_base import IRParameter
 from ir.hlil import (BinaryOp, HighLevelILFunction, HLILAddressOf, HLILAssign, HLILBinaryOp, HLILBlock, HLILCall,
                      HLILComment, HLILConst, HLILDeref, HLILExprStmt, HLILExpression, HLILExternCall, HLILIf,
-                     HLILReturn, HLILSyscall, HLILTypeKind, HLILVar, HLILVariable, HLILWhile, VariableKind)
+                     HLILReturn, HLILStatement, HLILSwitch, HLILSwitchCase, HLILSyscall, HLILTypeKind, HLILVar,
+                     HLILVariable, HLILWhile, VariableKind)
 from ir.mlil.mlil import MediumLevelILFunction, MLILRet
 
 
@@ -445,6 +447,205 @@ class TestIdConstantTags(unittest.TestCase):
         run_stage(caller)
 
         self.assertEqual(self.tags(in_expression, in_extern_call, at_unconverted_callee), [None, None, None])
+
+
+TITA = 6                    # A character ID with a name in TABLE_HINT
+SECOND_KIND = 'ItemId'
+SECOND_KIND_CMD = 0x78      # Chr: a made-up command whose first argument is a second kind of ID
+TABLE_HINT = IdFormatHint('ChrIdTable', {TITA: 'Tita'}, 'PseudoChrId', {PseudoChrId.Nothing.value: 'Nothing'},
+                          'character IDs')
+
+
+class SecondKindSyscallArgs(SyscallArgs):
+    """The rows, and one command whose first argument is a second kind of ID"""
+
+    def id_kinds(self, subsystem: int, cmd: int, argc: int) -> dict[int, str]:
+        if cmd == SECOND_KIND_CMD:
+            return {0: SECOND_KIND}
+
+        return super().id_kinds(subsystem, cmd, argc)
+
+
+def x() -> HLILVar:
+    """A local, named as the converter names them"""
+    return ref('var_s0')
+
+
+def y() -> HLILVar:
+    return ref('var_s1')
+
+
+def other_value() -> HLILCall:
+    """A call to a function the run leaves out: neither an ID pass nor a constant"""
+    return call('get_value')
+
+
+def passed(var: HLILVar) -> HLILExprStmt:
+    """var passed at a syscall's ID slot"""
+    return HLILExprStmt(wait(var, const(1), const(2)))
+
+
+def eq(lhs: HLILExpression, rhs: HLILExpression) -> HLILBinaryOp:
+    return HLILBinaryOp(BinaryOp.EQ, lhs, rhs)
+
+
+def ne(lhs: HLILExpression, rhs: HLILExpression) -> HLILBinaryOp:
+    return HLILBinaryOp(BinaryOp.NE, lhs, rhs)
+
+
+def if_then(condition: HLILExpression, *statements: HLILStatement) -> HLILIf:
+    return HLILIf(condition, HLILBlock(list(statements)))
+
+
+def switch(scrutinee: HLILVar, *labels: HLILConst) -> HLILSwitch:
+    """A switch with one case for labels and a default"""
+    return HLILSwitch(scrutinee, [HLILSwitchCase(list(labels), HLILBlock()), HLILSwitchCase(None, HLILBlock())])
+
+
+def main(*statements: HLILStatement, argc: int = 0) -> HighLevelILFunction:
+    return hlil_function('Main', argc, *statements)
+
+
+def tagged_cases() -> dict[str, tuple[list[HighLevelILFunction], list[HLILConst]]]:
+    """label -> (the functions, the constants the rule tags)"""
+    cases = {}
+    c = const(TITA)
+    cases['a local compared'] = [main(HLILAssign(x(), other_value()), passed(x()), if_then(eq(x(), c)))], [c]
+    c = const(TITA)
+    cases['!='] = [main(HLILAssign(x(), other_value()), passed(x()), if_then(ne(x(), c)))], [c]
+    c = const(TITA)
+    cases['the constant on the left'] = [main(HLILAssign(x(), other_value()), passed(x()), if_then(eq(c, x())))], [c]
+    c = const(PseudoChrId.Nothing.value)
+    cases['a parameter'] = [main(if_then(ne(a1(), c), passed(a1())), argc=1)], [c]
+    c1, c2 = const(TITA), const(PseudoChrId.Nothing.value)
+    cases["a switch's labels"] = [main(HLILAssign(x(), other_value()), passed(x()), switch(x(), c1, c2))], [c1, c2]
+    c1, c2, c3 = const(TITA), const(PseudoChrId.Nothing.value), const(TITA)
+    nested = HLILBinaryOp(BinaryOp.OR, HLILBinaryOp(BinaryOp.AND, eq(x(), c1), ne(x(), c2)), eq(x(), c3))
+    cases['in nested and_ / or_'] = [main(HLILAssign(x(), other_value()), passed(x()), if_then(nested))], [c1, c2, c3]
+    c = const(TITA)
+    cases['a loop condition'] = [main(HLILAssign(x(), other_value()),
+                                      HLILWhile(ne(x(), c), HLILBlock([passed(x())])))], [c]
+    c = const(TITA)
+    cases['a return value'] = [main(HLILAssign(x(), other_value()), passed(x()), HLILReturn(eq(x(), c)))], [c]
+    c = const(TITA)
+    cases["a nested call's argument"] = [main(HLILAssign(x(), other_value()), passed(x()),
+                                              HLILExprStmt(call('show', eq(x(), c))))], [c]
+    c = const(TITA)
+    cases['an ID pass to a marked parameter'] = [main(HLILAssign(x(), other_value()),
+                                                      HLILExprStmt(call(WRAPPER, x(), const(1), const(2))),
+                                                      if_then(eq(x(), c))), wrapper()], [c]
+    c = const(TITA)
+    cases['a parameter written before every read'] = [main(HLILAssign(a1(), other_value()), passed(a1()),
+                                                           if_then(eq(a1(), c)), argc=1)], [c]
+    return cases
+
+
+def number_cases() -> dict[str, tuple[list[HighLevelILFunction], list[HLILConst], list[HLILConst]]]:
+    """label -> (the functions, the constants the rule tags, those it leaves a number)"""
+    cases = {}
+    raw, c = HLILConst(RawInt(0)), const(TITA)
+    cases['an assigned constant after the Raw set-up'] = [main(HLILAssign(x(), raw), HLILAssign(x(), c),
+                                                               passed(x()))], [c], [raw]
+    c = const(TITA)
+    cases['an other read'] = [main(HLILAssign(x(), other_value()), passed(x()),
+                                   HLILExprStmt(call('show', HLILBinaryOp(BinaryOp.ADD, x(), const(1)))),
+                                   if_then(eq(x(), c)))], [], [c]
+    c = const(TITA)
+    cases['a pass at a slot that is no ID'] = [main(HLILAssign(x(), other_value()), passed(x()),
+                                                    HLILExprStmt(wait(const(0), x(), const(2))),
+                                                    if_then(eq(x(), c)))], [], [c]
+    c = const(TITA)
+    cases['its address taken'] = [main(HLILAssign(x(), other_value()), passed(x()),
+                                       HLILExprStmt(call('show', HLILAddressOf(x()))), if_then(eq(x(), c)))], [], [c]
+    c, c2 = const(TITA), const(TITA)
+    cases['a dereference destination'] = [main(HLILAssign(x(), other_value()), passed(x()),
+                                               HLILAssign(HLILDeref(HLILAddressOf(x())), c2),
+                                               if_then(eq(x(), c)))], [], [c, c2]
+    c = const(TITA)
+    cases['a write after its first read'] = [main(HLILAssign(x(), other_value()), if_then(eq(x(), c)),
+                                                  HLILAssign(x(), other_value()), passed(x()))], [], [c]
+    c = const(TITA)
+    cases['a write in the statement of its first read'] = [main(HLILAssign(x(), eq(x(), c)), passed(x()))], [], [c]
+    c = const(TITA)
+    cases['a parameter written after a read'] = [main(if_then(eq(a1(), c)), HLILAssign(a1(), other_value()),
+                                                      passed(a1()), argc=1)], [], [c]
+    c = const(TITA)
+    loop = HLILWhile(ne(y(), const(0)), HLILBlock([if_then(eq(x(), c)), HLILAssign(x(), other_value())]))
+    cases['rewritten in a loop'] = [main(HLILAssign(x(), other_value()), loop, passed(x()))], [], [c]
+    for between in ([], [HLILComment('line(3)')]):
+        dead, live = const(TITA), const(PseudoChrId.Nothing.value)
+        cases[f'a dead assigned constant, {len(between)} comments between'] = [
+            main(HLILAssign(x(), dead), *between, HLILAssign(x(), other_value()), passed(x()),
+                 if_then(eq(x(), live)))], [live], [dead]
+    for value, is_hex in ((TITA, True), (RawInt(TITA), False), (float(TITA), False), (True, False)):
+        odd, c = HLILConst(value, is_hex), const(TITA)
+        func = main(HLILAssign(x(), other_value()), passed(x()), if_then(eq(x(), odd)), if_then(eq(x(), c)))
+        cases[f'compared with {value!r}, hex {is_hex}'] = [func], [], [odd, c]
+    c = const(TITA)
+    cases['a switch with a hex label'] = [main(HLILAssign(x(), other_value()), passed(x()),
+                                               switch(x(), c, HLILConst(TITA, True)))], [], [c]
+    c = const(TITA)
+    cases['no ID pass'] = [main(HLILAssign(x(), other_value()), if_then(eq(x(), c)))], [], [c]
+    live, dead = const(TITA), const(TITA)
+    cases['a read and a comparison in if (0)'] = [
+        main(HLILAssign(x(), other_value()), passed(x()), if_then(eq(x(), live)),
+             if_then(const(), HLILExprStmt(call('show', HLILBinaryOp(BinaryOp.ADD, x(), const(1)))),
+                     if_then(eq(x(), dead))))], [live], [dead]
+    return cases
+
+
+class TestComparedIdConstants(unittest.TestCase):
+    """A decimal int constant compared (==, !=) with, labelling a switch over or assigned to a local or parameter that
+    holds an ID: passed at an ID slot, of one kind, every other read such a comparison or a switch, never
+    address-taken, no write at or after its first read; an assigned constant overwritten unread stays a number"""
+
+    def assert_tags(self, tagged: list[HLILConst], untagged: list[HLILConst], kind: str = CHR_ID_KIND):
+        self.assertEqual([const.id_kind for const in tagged], [kind] * len(tagged))
+        self.assertEqual([const.id_kind for const in untagged], [None] * len(untagged))
+
+    def test_what_is_tagged(self):
+        for label, (funcs, tagged) in tagged_cases().items():
+            with self.subTest(label):
+                run_stage(*funcs)
+                self.assert_tags(tagged, [])
+
+    def test_what_stays_a_number(self):
+        for label, (funcs, tagged, untagged) in number_cases().items():
+            with self.subTest(label):
+                run_stage(*funcs)
+                self.assert_tags(tagged, untagged)
+
+    def test_a_second_kind_leaves_it_a_number(self):
+        c = const(TITA)
+        func = main(HLILAssign(x(), other_value()), passed(x()),
+                    HLILExprStmt(HLILSyscall(Subsystem.Chr, SECOND_KIND_CMD, [x()])), if_then(eq(x(), c)))
+
+        run_stage(func, syscall_args=SecondKindSyscallArgs(SYSCALL_ENTRIES))
+
+        self.assert_tags([], [c])
+
+    def test_a_function_whose_collection_raises_gets_no_tags(self):
+        c = const(TITA)
+        broken = hlil_function('broken', 0, HLILAssign(x(), other_value()), passed(x()),
+                               HLILExprStmt(HLILSyscall(Subsystem.Chr, BROKEN_CMD, [x()])), if_then(eq(x(), c)))
+        warnings = []
+
+        ED9TypeInferencePass([scp_function(broken)], FailingSyscallArgs(SYSCALL_ENTRIES),
+                             lambda name, error: warnings.append(name)).run([broken])
+
+        self.assertEqual(warnings, ['broken'])
+        self.assert_tags([], [c])
+
+    def test_each_site_prints_by_name(self):
+        func = main(HLILAssign(y(), const(TITA)), passed(y()), HLILAssign(x(), other_value()), passed(x()),
+                    if_then(ne(x(), const(PseudoChrId.Nothing.value))), switch(x(), const(TITA)))
+
+        run_stage(func)
+        ts = generate_typescript(func, id_hints={CHR_ID_KIND: TABLE_HINT})
+
+        self.assertIn("var_s1 = ChrIdTable['Tita'];", ts)
+        self.assertIn('var_s0 != PseudoChrId.Nothing', ts)
+        self.assertIn("case ChrIdTable['Tita']:", ts)
 
 
 if __name__ == '__main__':

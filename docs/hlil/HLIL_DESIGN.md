@@ -45,7 +45,7 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production ED9 pipeline entry points: per function, `convert_ed9_mlil_to_hlil()` and its pass ordering/configuration; per file, `run_ed9_file_passes()`. |
 | `falcom/ed9/ir/hlil/hlil_converter_ssa.py` | The SSA path's HLIL entry point, `convert_ed9_mlil_ssa_to_hlil()`: `convert_ed9_mlil_to_hlil()`, then the SSA path's inferred types (`apply_inferred_types`). Only the SSA path imports it. |
 | `falcom/ed9/ir/hlil/pass_type_inference.py` | `ED9TypeInferencePass`, the file-level stage: the declared parameter types, then the ID rule's marks and tags. |
-| `falcom/ed9/ir/hlil/id_marks.py` | The ID rule: each function's parameter uses, the marks' worklist (`propagate_id_marks`), the constant tags. |
+| `falcom/ed9/ir/hlil/id_marks.py` | The ID rule: each function's parameter uses, the marks' worklist (`propagate_id_marks`), the constant tags (at an ID slot; compared with, labelling or assigned to a variable that holds an ID). |
 | `falcom/ed9/ir/hlil/call_result_folder.py` | `ED9CallResultFolder`: `CallResultFolder` with ED9's call rule (no read of a register, global or dereference moves across a call). |
 | `tests/hlil_tests/test_hlil_branch_order_normalization.py` | Unit tests for source-order arm normalization and its pipeline flag. |
 | `tests/hlil_tests/test_hlil_switch_recovery.py` | Unit tests for equality-chain and grouped-label switch recovery. |

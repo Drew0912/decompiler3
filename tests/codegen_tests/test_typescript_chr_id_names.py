@@ -101,6 +101,33 @@ def decompile_forwarder(first_arg: int) -> str:
     return compile_and_decompile(build)
 
 
+def decompile_guard(first_arg: int) -> str:
+    """The .ts of a script whose Main calls Guard(first_arg), and Guard(arg1) calls Wait(arg1, NOT_THE_DEFAULT) when
+    arg1 is not PseudoChrId.Nothing: a parameter compared with an ID as well as passed to one"""
+    def build(writer):
+        Wait = define_wait(writer)
+
+        @writer.LLILCode()
+        def Guard(arg1: Value32):
+            LOAD_STACK(-WORD_SIZE)
+            PUSH_INT(PseudoChrId.Nothing.value)
+            NE()
+            POP_JMP_ZERO('done')
+            local_call(Wait, 'wait', [(PUSH_INT, NOT_THE_DEFAULT), (LOAD_STACK, -4 * WORD_SIZE)])
+            label('done')
+            POP(WORD_SIZE)
+            RETURN()
+
+        @writer.LLILCode()
+        def Main():
+            local_call(Guard, 'guard', [(PUSH_INT, first_arg)])
+            RETURN()
+
+        return {'Wait': Wait, 'Guard': Guard, 'Main': Main}
+
+    return compile_and_decompile(build)
+
+
 class TestChrIdNamesEndToEnd(unittest.TestCase):
 
     def test_a_wrappers_id_argument_and_a_raw_syscalls_are_named(self):
@@ -121,6 +148,12 @@ class TestChrIdNamesEndToEnd(unittest.TestCase):
 
         self.assertIn('return Show(PseudoChrId.Self);', ts)
         self.assertIn('Wait(arg1, 3);', ts)
+
+    def test_a_compared_parameter_names_its_constant_and_stays_unmarked(self):
+        ts = decompile_guard(PseudoChrId.Self.value)
+
+        self.assertIn('if (arg1 != PseudoChrId.Nothing) {', ts)
+        self.assertIn(f'Guard({PseudoChrId.Self.value});', ts)
 
     def test_off_every_id_is_a_number(self):
         ts = decompile(PseudoChrId.Self.value, id_names=False)

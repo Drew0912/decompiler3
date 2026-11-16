@@ -134,7 +134,12 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   depend on a line marker.
   Line-Anchored Patches (`docs/dsl/HOOKS.md`) then need an anchor that doesn't use line numbers.
 - **Printer:** one statement per line, a trailing comma on every list item, comments allowed inside
-  brackets; named pseudo-IDs, hex bit flags, the shortest float that encodes identically.
+  brackets; named pseudo-IDs, hex bit flags, the shortest float that encodes identically. Which constants name an
+  ID is decided in HLIL (`HLILConst.id_kind`, set by `ED9TypeInferencePass`: at an ID slot, and compared with,
+  labelling or assigned to a variable that holds an ID), so this printer reads the same tags `.ts` does. Still to
+  do for it: reading `id_kind` with the game's table (`game_format_hints`), `ChrIdTable` / `PseudoChrId` in the
+  script namespace so a name lowers to its number, and the file-level pass run when the DSL is written (today only
+  for `.ts`: `need_file_passes` in `scp2py_base.py`).
 - **Python limits:** nesting stops at 99 levels (200 nested brackets; `with`/`if` hit the same limit
   through indentation), and very long method chains overflow the compiler (an `.Elif` chain of 3,000
   arms compiles on Python 3.14, 10,000 does not). Past about 90 levels the printer falls back to

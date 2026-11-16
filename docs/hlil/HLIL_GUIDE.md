@@ -112,7 +112,14 @@ so a forwarder marks too), with no other read anywhere in the reachable body, an
 anywhere in the body, dead code included
 (`HLILVariable.id_kind`). Then it tags each int constant written in decimal that is exactly the argument at an ID
 slot, of a syscall by its row or of a call to a marked parameter (`HLILConst.id_kind`); not inside an expression,
-not an `extern_call`'s, not a bool, a Raw word, a float, a string or a hex constant.
+not an `extern_call`'s, not a bool, a Raw word, a float, a string or a hex constant. Last, it tags such a constant
+compared (`==`, `!=`) with, labelling a switch over, or assigned to a local or parameter that holds an ID
+(`tag_compared_id_constants`): one passed at least once at an ID slot, of one kind; every other read one side of
+such a comparison, or a switch whose labels all are decimal constants; never address-taken; and no write at or
+after its first read, in `reachable_statements` order, so a variable reused for another value keeps its numbers. An
+assigned constant that the next statement of its block overwrites unread (the compiler's `int x = 0;`) stays a
+number. The marks don't change: a parameter only this rule takes keeps a numeric default, and its callers'
+constants stay numbers.
 
 HLIL has no copy-propagation pass: the decompile path's stack translator folds each push into its consumer, and the
 SSA path propagates copies earlier, at the MLIL-SSA layer. An HLIL
