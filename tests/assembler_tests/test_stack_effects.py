@@ -20,7 +20,8 @@ sys.path.insert(0, str(REPO_ROOT))
 from assembler.instruction import SYNTHETIC_INSTRUCTION_SIZE
 from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.assembler.ed9_optable import ED9_OPCODE_TABLE
-from falcom.ed9.assembler.stack_effects import STACK_EFFECTS, WORD_SIZE, InstructionKind, PopCarry, StackEffect
+from falcom.ed9.assembler.vm import WORD_SIZE
+from falcom.ed9.assembler.stack_effects import STACK_EFFECTS, InstructionKind, PopCarry, StackEffect
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.structs.call_debug_records import CallDebugInfoTracker
 from falcom.ed9.assembler import disassembler

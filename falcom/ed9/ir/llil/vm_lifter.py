@@ -10,7 +10,7 @@ from ...assembler import *
 from .llil_builder import *
 from ...assembler.function import Function, FunctionParam
 from ...assembler.disassembler import ScpFunctionError
-from ...assembler.stack_effects import WORD_SIZE
+from ...assembler.vm import WORD_SIZE
 from ...parser.scp import ScpParser
 from ...structs.scp_types import ScpValue
 

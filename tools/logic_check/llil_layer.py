@@ -1,7 +1,7 @@
 """The LLIL side of the evaluation, the trust root: storage is the stack slot, the parameter, the register and the
 global; every push, pop and store is followed as written"""
 
-from falcom.ed9.assembler.stack_effects import parameter_position
+from falcom.ed9.assembler.vm import parameter_position
 from falcom.ed9.ir.llil.constants import (
     LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstFrameMarker,
 )

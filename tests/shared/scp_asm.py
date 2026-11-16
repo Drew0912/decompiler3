@@ -11,7 +11,7 @@ from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.assembler.function import Function, FunctionParam
 from falcom.ed9.structs.scp_types import (ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry,
                                           ScpParamFlags, ScpValue, Value32)
-from falcom.ed9.assembler.stack_effects import WORD_SIZE
+from falcom.ed9.assembler.vm import WORD_SIZE
 
 
 CALLER_ID = 0

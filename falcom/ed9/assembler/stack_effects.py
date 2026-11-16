@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import Any, Callable, Sequence
+from .vm import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, WORD_SIZE
 
 __all__ = (
     'InstructionKind',
@@ -12,37 +13,20 @@ __all__ = (
     'PopCarry',
     'StackEffect',
     'STACK_EFFECTS',
-    'WORD_SIZE',
-    'LOCAL_SETUP_SLOTS',
-    'CALLER_FRAME_SLOTS',
     'POP_SIZE_OPERAND',
     'POPN_COUNT_OPERAND',
     'ARGC_OPERAND',
     'SLOT_OFFSET_OPERAND',
     'CALLEE_OPERAND',
     'REGISTER_OPERAND',
-    'RESULT_REGISTER',
-    'REGISTER_COUNT',
-    'parameter_position',
 )
 
-WORD_SIZE               = 4     # bytes per stack slot: every VM value is one 32-bit word
-LOCAL_SETUP_SLOTS       = 2     # CALL: func_id, ret_addr
-CALLER_FRAME_SLOTS      = 5     # PUSH_CALLER_FRAME: func_id, ret_addr, script pointer (2 slots), frame marker
 POP_SIZE_OPERAND        = 0     # POP's byte count
 POPN_COUNT_OPERAND      = 0     # POPN's slot count
 ARGC_OPERAND            = 2     # the argument count of every argument call but CALL, whose count is its callee's parameters
 SLOT_OFFSET_OPERAND     = 0     # the byte offset of a slot-addressing opcode
 CALLEE_OPERAND          = 0     # CALL's callee, whose parameters are its argument count
 REGISTER_OPERAND        = 0     # GET_REG / SET_REG's register
-RESULT_REGISTER         = 0     # where a returning call leaves its result
-REGISTER_COUNT          = 16    # the VM's registers (GET_REG / SET_REG)
-
-
-def parameter_position(num_params: int, frame_slot: int) -> int:
-    """The 1-based parameter in frame slot frame_slot (0 at the frame base): a call pushes its arguments right to left,
-    so the first parameter is in the highest slot and slot 0 holds the last"""
-    return num_params - frame_slot
 
 
 class InstructionKind(Enum):

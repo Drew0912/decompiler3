@@ -49,9 +49,8 @@ knowledge in generic code anyway. None of it is a bug, and with one VM it costs 
 - **Moved by the SSA function class plan** (2026-11, work order row 31): ED9's calling convention, call rule and
   return rule left generic code as hooks ED9's subclasses answer (`docs/ARCHITECTURE.md`, "Generic/Falcom
   Boundary"), the SSA path's among them; its generic translator now translates `RegStore` / `RegLoad` / `Syscall`
-  itself, as the stack translator does. ED9's 4-byte slot too: `WORD_SIZE` is in
-  `falcom/ed9/assembler/stack_effects.py`, the ED9 lifter turns each opcode's byte offset into slots, and the generic
-  LLIL counts slots (`slot_offset`).
+  itself, as the stack translator does. ED9's 4-byte slot too: `WORD_SIZE` is in `falcom/ed9/assembler/vm.py`, the
+  ED9 lifter turns each opcode's byte offset into slots, and the generic LLIL counts slots (`slot_offset`).
 - **Small moves, done by the opcode-table plan** (Step 7 `89063e4`, no output change; Step 7b `f8f4682` changed only
   the `POP_TO_DEREF` lines of `.llil.asm`):
   - `LLIL_CALL_SCRIPT`/`LLIL_CALL_SCRIPT_NO_RETURN` live only in `LowLevelILED9Operation`
@@ -118,7 +117,7 @@ from decompiler2's ED8.x support:
     LLIL layer.
   - **Logic check** (`tools/logic_check/`, `docs/VALIDATOR_GUIDE.md`): ED85 support brings the logic check with it.
     Its MLIL -> HLIL half runs on the generic IR and carries over, given ED85's own register facts (ED9's 16
-    registers and result register 0 are `falcom/ed9/assembler/stack_effects.py`'s, which the check's `VMEffects` in
+    registers and result register 0 are `falcom/ed9/assembler/vm.py`'s, which the check's `VMEffects` in
     `vm_effects.py` takes; an ED85 layer names its own in `VM_EFFECTS`). With no LLIL, the passes' reference is the
     MLIL as lifted, before `optimize_mlil`, compared with the optimized MLIL as LLIL is with MLIL today; ED9's LLIL
     side (`llil_layer.py`) and driver (`scripts.py`) get ED85 counterparts. The lifter stays outside the check, as

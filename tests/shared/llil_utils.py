@@ -4,7 +4,7 @@ functions and checks two test files share"""
 
 import unittest
 
-from falcom.ed9.assembler.stack_effects import WORD_SIZE
+from falcom.ed9.assembler.vm import WORD_SIZE
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from ir.core import IRParameter

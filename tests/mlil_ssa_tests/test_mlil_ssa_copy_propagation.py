@@ -22,7 +22,7 @@ from ir.mlil_ssa.passes.pass_ssa_copy_propagation import reaches_without_redefin
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
-from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
+from falcom.ed9.assembler.vm import RESULT_REGISTER
 from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.corpus import SORA2_SCRIPTS, require
 

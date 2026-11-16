@@ -7,7 +7,8 @@ from dc3 import fileio, IntEnum2, quote_string
 from assembler.instruction_table import *
 from assembler.instruction import *
 from assembler.basic_block import *
-from .stack_effects import REGISTER_COUNT, STACK_EFFECTS, InstructionKind
+from .vm import REGISTER_COUNT
+from .stack_effects import STACK_EFFECTS, InstructionKind
 from ..structs.scp_types import *
 
 if TYPE_CHECKING:

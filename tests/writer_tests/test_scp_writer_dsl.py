@@ -18,7 +18,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dc3.enum import IntEnum2, IntFlag2
 from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
-from falcom.ed9.assembler.stack_effects import REGISTER_COUNT, WORD_SIZE
+from falcom.ed9.assembler.vm import REGISTER_COUNT, WORD_SIZE
 from falcom.ed9.structs.scp_types import RawInt, ScpValue
 from falcom.ed9.writer import scp_writer_opcode_handler
 from falcom.ed9.writer.scp_writer_helper import *

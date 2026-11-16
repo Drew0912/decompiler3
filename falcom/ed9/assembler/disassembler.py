@@ -10,8 +10,8 @@ from assembler import (SYNTHETIC_INSTRUCTION_SIZE, BasicBlock, BranchKind, Branc
 from dc3.logging import log
 from .ed9_optable import ED9Opcode
 from .function import Function, SlotRef, StackLayout
-from .stack_effects import (CALLEE_OPERAND, LOCAL_SETUP_SLOTS, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, WORD_SIZE,
-                            InstructionKind, PopCarry)
+from .vm import LOCAL_SETUP_SLOTS, WORD_SIZE
+from .stack_effects import CALLEE_OPERAND, POP_SIZE_OPERAND, SLOT_OFFSET_OPERAND, InstructionKind, PopCarry
 
 
 # The kinds the simulation handles alike: what they pop is a plain use, and what they push is the instruction itself

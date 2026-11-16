@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
-from falcom.ed9.assembler.stack_effects import WORD_SIZE
+from falcom.ed9.assembler.vm import WORD_SIZE
 from falcom.ed9.structs.call_debug_records import read_debug_records
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.structs.string_pool import StringPoolSection, StringRefs, collect_string_refs, pool_strings, read_text

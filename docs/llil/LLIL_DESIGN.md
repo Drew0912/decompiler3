@@ -62,7 +62,7 @@ came from, `inst_index`, `options.hidden_for_formatter`). Nodes are either a
 
 Offsets count **slots** (`slot_offset`); `slot_index` is an absolute slot number. Stack offsets
 count from the current `sp`, frame offsets from the frame base. The VM's opcodes give byte offsets: the ED9 lifter
-turns each into slots (`WORD_SIZE`, `falcom/ed9/assembler/stack_effects.py`), so no generic code knows a slot's size.
+turns each into slots (`WORD_SIZE`, `falcom/ed9/assembler/vm.py`), so no generic code knows a slot's size.
 
 **Reading is shared**, as in MLIL. Every node's `operands()` returns the expressions it holds, in
 evaluation order (a binary operation its `lhs` and `rhs`, a store its `value`, a pointer store its
@@ -154,7 +154,7 @@ arguments, which leaves `sp` at 0 with no setup pending (the parser checks both)
 **Return.** A function pops its own parameters before it returns, so every real exit leaves its
 stack empty with no setup pending; the parser checks it at every exit.
 `LowLevelILRet` carries no value - a function's result travels in register 0, which calls write and
-`RETURN` reads (`RESULT_REGISTER`, `falcom/ed9/assembler/stack_effects.py`).
+`RETURN` reads (`RESULT_REGISTER`, `falcom/ed9/assembler/vm.py`).
 
 **Not terminals:** `SYSCALL` reads its `argc` arguments from the top of the stack without popping
 them and leaves `sp` unchanged; `POPN count` pops `count` slots, which the lifter keeps as its

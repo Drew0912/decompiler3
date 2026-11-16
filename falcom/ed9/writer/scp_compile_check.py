@@ -13,7 +13,8 @@ from typing import Callable, NamedTuple
 from dc3.logging import log
 from assembler import Instruction
 from ..assembler import InstructionKind
-from ..assembler.stack_effects import POP_SIZE_OPERAND, WORD_SIZE
+from ..assembler.vm import WORD_SIZE
+from ..assembler.stack_effects import POP_SIZE_OPERAND
 from ..ir.llil import ED9LiftError, ED9VMLifter
 from ..parser.code_layout import dropped_ranges
 from ..assembler.disassembler import ScpFunctionError

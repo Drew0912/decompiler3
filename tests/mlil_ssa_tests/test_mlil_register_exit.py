@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from codegen import generate_typescript
 from falcom.ed9.ir.hlil.hlil_converter_ssa import convert_ed9_mlil_ssa_to_hlil
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
-from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
+from falcom.ed9.assembler.vm import RESULT_REGISTER
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 

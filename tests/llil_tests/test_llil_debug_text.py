@@ -14,7 +14,7 @@ from ir.llil.llil import (
     LowLevelILCall, LowLevelILConst, LowLevelILFrameStore, LowLevelILIf, LowLevelILOperation, LowLevelILStackLoad,
     LowLevelILStackStore, LowLevelILStore, UNASSIGNED_INST_INDEX, walk,
 )
-from falcom.ed9.assembler.stack_effects import WORD_SIZE
+from falcom.ed9.assembler.vm import WORD_SIZE
 from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
 from falcom.ed9.ir.llil.llil_ext import LowLevelILCallScriptNoReturn, LowLevelILED9Operation
 from tests.shared.llil_utils import instructions_of, lift_asm, make_builder

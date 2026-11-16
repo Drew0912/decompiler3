@@ -14,7 +14,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
-from falcom.ed9.assembler.stack_effects import WORD_SIZE
+from falcom.ed9.assembler.vm import WORD_SIZE
 from ir.mlil.mlil import (
     MediumLevelILCall, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILConst, MLILCall,
     MLILAddressOf, MLILIf, MLILGoto, MLILAdd, MLILSub, MLILEq, MLILGe, MLILRet, MLILStoreGlobal, MLILLoadGlobal,

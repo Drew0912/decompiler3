@@ -4,7 +4,7 @@ it imports logic_check from tools/, which the importing test puts on sys.path"""
 
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from ir.hlil import HLILSwitch, iter_tree
-from falcom.ed9.assembler.stack_effects import WORD_SIZE
+from falcom.ed9.assembler.vm import WORD_SIZE
 from tests.shared.llil_utils import lift_asm
 from tests.shared.logic_check_functions import GLOBAL_A, hlil_categories, return_nothing
 from tests.shared.scp_asm import Asm, returning_callee

@@ -17,7 +17,7 @@ from ir.llil.llil import (
 )
 from codegen import generate_typescript
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter
-from falcom.ed9.assembler.stack_effects import LOCAL_SETUP_SLOTS, RESULT_REGISTER, WORD_SIZE
+from falcom.ed9.assembler.vm import LOCAL_SETUP_SLOTS, RESULT_REGISTER, WORD_SIZE
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.hlil.pass_type_inference import ED9TypeInferencePass
 from falcom.ed9.ir.llil import ED9VMLifter

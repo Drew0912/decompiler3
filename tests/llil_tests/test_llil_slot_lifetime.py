@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.llil.llil import LowLevelILFrameLoad, LowLevelILStackAddr, LowLevelILStackLoad, LowLevelILStackStore
-from falcom.ed9.assembler.stack_effects import WORD_SIZE
+from falcom.ed9.assembler.vm import WORD_SIZE
 from ir.llil.llil_builder import LowLevelILBuilder
 from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack

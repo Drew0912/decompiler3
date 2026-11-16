@@ -1,6 +1,6 @@
 """Falcom ED9 VM LLIL to MLIL Translator"""
 
-from falcom.ed9.assembler.stack_effects import RESULT_REGISTER, parameter_position
+from falcom.ed9.assembler.vm import RESULT_REGISTER, parameter_position
 from ir.llil import *
 from ir.mlil import *
 from ir.mlil_ssa import *
