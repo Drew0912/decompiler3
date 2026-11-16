@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the MLIL type lattice (ir/mlil/mlil_types.py)."""
+"""Unit tests for the SSA path's MLIL type lattice (ir/mlil_ssa/mlil_types.py)."""
 
 from pathlib import Path
 import sys
@@ -8,7 +8,7 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ir.mlil.mlil_types import MLILType, MLILVariantType, unify_types
+from ir.mlil_ssa.mlil_types import MLILType, MLILVariantType, unify_types
 
 
 def int_float() -> MLILVariantType:

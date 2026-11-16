@@ -27,7 +27,6 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil.py` | Core non-SSA data structures: `MediumLevelILInstruction` base, the `MediumLevelILExpr`/`MediumLevelILStatement` split, `MLILVariable`, `MediumLevelILBasicBlock`, `MediumLevelILFunction`. |
 | `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function (of the class it is given, the base by default) and its blocks, variables and statements; expressions are built with the node classes. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging) and the `.mlil.dot` graphs, with the DOT writer LLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`). |
-| `ir/mlil/mlil_types.py` | Type-kind/unification support (the SSA path's type pass fills it; its hand-off to HLIL, `ir/hlil/mlil_ssa_types.py`, maps it). |
 | `ir/mlil/llil_ops.py` | The LLIL operations that map one to one onto MLIL ones (`BINARY_OP_TYPES`, `UNARY_OP_TYPES`), for both translators. |
 | `ir/mlil/stack_translator.py` | The generic symbolic-stack translator, `StackTranslator`, and `StackTranslatorPass` (see "The stack translator"). |
 | `ir/mlil/passes/` | The decompile path's passes after its translator (4 files): `pass_block_merge.py` and `pass_bitwise_hex.py` (the SSA path runs them too), `pass_call_result.py` and `pass_return_value.py`. |
@@ -38,7 +37,8 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil_ssa/mlil_ssa_function.py` | `MediumLevelILFunctionSSA`, the SSA path's function: VM registers and globals modelled as variables (`register_vars`, `global_vars`), and the VM's call and return rules as hooks a VM's subclass answers (`call_may_change_register`, `call_may_change_global`, `return_leaves_register`; `call_may_clobber` asks them for a variable), and the types its type pass infers (`var_types`); `MLILBuilderSSA`, its builder. |
 | `ir/mlil_ssa/mlil_ssa_formatter.py` | `MLILFormatterSSA`: the SSA path's MLIL listing, the header adding the inferred types ("Inferred Types"). |
 | `ir/mlil_ssa/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific), the SSA path's translator; its `FUNCTION_CLASS` is the VM's function class. |
-| `ir/mlil_ssa/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
+| `ir/mlil_ssa/mlil_types.py` | Type-kind/unification support (the SSA path's type pass fills it; its hand-off to HLIL, `ir/hlil/mlil_ssa_types.py`, maps it). |
+| `ir/mlil_ssa/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`/`MLILUndef` and their operations (`MediumLevelILOperationSSA`), `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
 | `ir/mlil_ssa/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
 | `ir/mlil_ssa/mlil_optimizer.py` | `mlil_optimization_passes()`, the SSA path's one list of passes that runs after its LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
 | `ir/mlil_ssa/passes/` | The SSA path's passes (13 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`; SCCP, expression simplification and register/global propagation are out of its pipeline (see "LLIL → MLIL Pipeline"). |
@@ -53,22 +53,25 @@ tree. This table now reflects the real path.
 
 ## Operations & Node Types
 
-All MLIL nodes derive from a common `MediumLevelILInstruction` base carrying an
-`operation` enum value and source tracking: `address` (the SCP offset), `llil_index` (the LLIL
-instruction the statement comes from - every statement one LLIL instruction produces shares it, and a
-statement de-SSA places on a CFG edge, a phi copy or a split-edge goto, takes the branch that leaves
-along that edge) and `inst_index` (the statement's own number: both entry points and `optimize_mlil()` end by
-numbering every statement 0..N-1 in block order, and HLIL copies it as
-`mlil_index`). On the SSA path only statements carry them, expressions keeping the defaults; the stack translator
-stamps every expression node too, with the LLIL statement it comes from (`MLILBuilder.stamp`). A pass that replaces a
-statement copies all three with `copy_metadata_from()`. Nodes are split into `MediumLevelILExpr` (produces a value) and
-`MediumLevelILStatement` (side effects only); the concrete instruction classes in both cover:
+All MLIL nodes derive from a common `MediumLevelILInstruction` base carrying an `operation` enum value
+(`MediumLevelILOperation`; the SSA nodes' own `MediumLevelILOperationSSA`, numbered apart in `ir/mlil_ssa/mlil_ssa.py`,
+as the LLIL's ED9 operations are in `LowLevelILED9Operation`) and source tracking: `address` (the SCP offset),
+`llil_index` (the LLIL instruction the statement comes from - every statement one LLIL instruction produces shares it,
+and a statement de-SSA places on a CFG edge, a phi copy or a split-edge goto, takes the branch that leaves along that
+edge) and `inst_index` (the statement's own number: both entry points and `optimize_mlil()` end by numbering every
+statement 0..N-1 in block order, and HLIL copies it as `mlil_index`). On the SSA path only statements carry them,
+expressions keeping the defaults; the stack translator stamps every expression node too, with the LLIL statement it
+comes from (`MLILBuilder.stamp`). A pass that replaces a statement copies all three with `copy_metadata_from()`. Nodes
+are split into `MediumLevelILExpr` (produces a value) and `MediumLevelILStatement` (side effects only); the concrete
+instruction classes in both cover:
 
 | Category | Examples |
 | --- | --- |
-| Constants | `MLIL_CONST_INT`, `MLIL_CONST_FLOAT`, `MLIL_CONST_STR` |
-| Variable read/write | `MLIL_VAR`, `MLIL_SET_VAR`, `MLIL_PHI` (SSA form) |
-| Arithmetic / logical | `MLIL_ADD`, `MLIL_SUB`, `MLIL_MUL`, `MLIL_DIV`, `MLIL_MOD`, `MLIL_AND`, `MLIL_OR`, `MLIL_NOT`, `MLIL_CMP_*` |
+| Constants | `MLIL_CONST` (an int, float or string value) |
+| Variable read/write | `MLIL_VAR`, `MLIL_SET_VAR` |
+| SSA form (`MediumLevelILOperationSSA`) | `MLIL_VAR_SSA`, `MLIL_SET_VAR_SSA`, `MLIL_PHI`; `MLIL_UNDEF` (`MLILUndef`, the value SSA construction gives what a call may change; deconstruction drops it) |
+| Arithmetic / bitwise / logical | `MLIL_ADD`, `MLIL_SUB`, `MLIL_MUL`, `MLIL_DIV`, `MLIL_MOD`, `MLIL_NEG`; `MLIL_AND`, `MLIL_OR`, `MLIL_XOR`, `MLIL_SHL`, `MLIL_SHR`, `MLIL_BITWISE_NOT`; `MLIL_LOGICAL_AND`, `MLIL_LOGICAL_OR`, `MLIL_LOGICAL_NOT`, `MLIL_TEST_ZERO` |
+| Comparisons | `MLIL_EQ`, `MLIL_NE`, `MLIL_LT`, `MLIL_LE`, `MLIL_GT`, `MLIL_GE` |
 | Memory / stack artifacts | Explicit address expressions, for the cases where a raw stack address is referenced directly rather than eliminated. |
 | Pointer dereference | `MLILDeref` (`*ptr`, a unary expression) / `MLILStoreDeref` (`*dest = value`, modelled on `MLILStoreGlobal` but with an expression target instead of a static index) — for `LOAD_STACK_DEREF`/`POP_TO_DEREF`, where the address is a runtime value (e.g. a caller-supplied out-parameter) rather than a statically known stack/frame slot. Unlike `MLILAddressOf`, a `MLILDeref`'s operand is an ordinary value and safe to copy-propagate through; a `MLILStoreDeref` is always kept (never DCE'd) since its target isn't a tracked SSA variable. |
 | Control flow | `MLIL_GOTO`, `MLIL_IF`, `MLIL_RET` |
@@ -105,7 +108,8 @@ Two coexisting representations, not a single evolving one:
 - **Non-SSA** (`ir/mlil/mlil.py`): `MLILVariable`, read via `MLILVar` and written via
   `MLILSetVar`. This is the "on the wire" default form — a `MediumLevelILFunction` starts and ends
   in this form both before and after the optimizer runs.
-- **SSA** (`ir/mlil_ssa/mlil_ssa.py`): `MLILVariableSSA`, `MLILVarSSA`, `MLILSetVarSSA`, and `MLILPhi`.
+- **SSA** (`ir/mlil_ssa/mlil_ssa.py`): `MLILVariableSSA`, `MLILVarSSA`, `MLILSetVarSSA`, `MLILPhi`, and `MLILUndef`
+  (the value of a call's pseudo-definitions).
   SSA construction is dominance-based (`SSAConstructor`) and includes critical-edge splitting;
   deconstruction (`SSADeconstructor`) converts back to non-SSA form afterward. An entry block a back
   edge enters (a loop at the function's very start) first gets an empty block in front of it
@@ -289,11 +293,11 @@ The SSA path's `SSATypeInferencePass` (the decompile path runs none) types param
 level of each `if` condition (a comparison with a constant, arithmetic, a bare truth test), then unifies every SSA
 version into one type per variable name (`MediumLevelILFunctionSSA.var_types`, listed by `MLILFormatterSSA` under
 "Inferred Types"). Conflicting kinds unify to an `MLILVariantType`, which is identified by its members
-(`mlil_types.py`), so a member that arrives after the variable is already a variant is still recorded. The types reach
-HLIL after its conversion: `convert_ed9_mlil_ssa_to_hlil` runs `convert_ed9_mlil_to_hlil`, then `apply_inferred_types`
-(`ir/hlil/mlil_ssa_types.py`) gives each HLIL parameter and local its variable's type (`MLIL_TYPE_HINTS`: a boolean
-`INT`, an unknown or variant type none). The HLIL converter knows no MLIL type: only that hand-off module does, and
-only the SSA path loads it.
+(`ir/mlil_ssa/mlil_types.py`), so a member that arrives after the variable is already a variant is still recorded. The
+types reach HLIL after its conversion: `convert_ed9_mlil_ssa_to_hlil` runs `convert_ed9_mlil_to_hlil`, then
+`apply_inferred_types` (`ir/hlil/mlil_ssa_types.py`) gives each HLIL parameter and local its variable's type
+(`MLIL_TYPE_HINTS`: a boolean `INT`, an unknown or variant type none). The HLIL converter knows no MLIL type: only that
+hand-off module does, and only the SSA path loads it.
 
 ## The stack translator (the decompile path)
 

@@ -2,6 +2,7 @@
 
 from typing import Iterator
 from collections import deque, defaultdict
+from enum import IntEnum
 from ir.core import reverse_post_order
 from ir.mlil.mlil import *
 from .mlil_ssa_function import MediumLevelILFunctionSSA
@@ -10,6 +11,15 @@ from .mlil_ssa_function import MediumLevelILFunctionSSA
 # ============================================================================
 # SSA Types
 # ============================================================================
+
+class MediumLevelILOperationSSA(IntEnum):
+    """The SSA nodes' operations, numbered apart from MediumLevelILOperation's (IntEnum members compare as ints)"""
+
+    MLIL_PHI                = 2000
+    MLIL_VAR_SSA            = 2001
+    MLIL_SET_VAR_SSA        = 2002
+    MLIL_UNDEF              = 2003
+
 
 class MLILVariableSSA:
     """SSA-versioned variable (e.g., var_s0#1, var_s0#2)"""
@@ -41,18 +51,29 @@ class MLILVarSSA(MediumLevelILExpr):
     """Load SSA variable value"""
 
     def __init__(self, var: MLILVariableSSA, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_VAR_SSA, **kwargs)
+        super().__init__(MediumLevelILOperationSSA.MLIL_VAR_SSA, **kwargs)
         self.var = var
 
     def __str__(self) -> str:
         return str(self.var)
 
 
+class MLILUndef(MediumLevelILExpr):
+    """The unknown value SSA construction gives what a call may change (a pseudo-definition's value); deconstruction
+    drops those definitions, so finished MLIL holds none"""
+
+    def __init__(self, **kwargs):
+        super().__init__(MediumLevelILOperationSSA.MLIL_UNDEF, **kwargs)
+
+    def __str__(self) -> str:
+        return '<undef>'
+
+
 class MLILSetVarSSA(MediumLevelILStatement):
     """Assign to SSA variable"""
 
     def __init__(self, var: MLILVariableSSA, value: MediumLevelILInstruction, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_SET_VAR_SSA, **kwargs)
+        super().__init__(MediumLevelILOperationSSA.MLIL_SET_VAR_SSA, **kwargs)
         self.var = var
         self.value = value
 
@@ -70,7 +91,7 @@ class MLILPhi(MediumLevelILStatement):
     """Phi node: merge values from predecessors"""
 
     def __init__(self, dest: MLILVariableSSA, sources: list[tuple[MLILVariableSSA, MediumLevelILBasicBlock]], **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_PHI, **kwargs)
+        super().__init__(MediumLevelILOperationSSA.MLIL_PHI, **kwargs)
         self.dest = dest
         self.sources = sources  # [(ssa_var, predecessor_block), ...]
 

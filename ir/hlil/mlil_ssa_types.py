@@ -1,8 +1,7 @@
 """The SSA path's type hand-off: the types its type pass inferred, given to the converted HLIL function. It loads the
 SSA package, so ir/hlil/__init__.py does not import it: only the SSA path's HLIL entry point does"""
 
-from ir.mlil.mlil_types import MLILTypeKind
-from ir.mlil_ssa import MediumLevelILFunctionSSA
+from ir.mlil_ssa import MediumLevelILFunctionSSA, MLILTypeKind
 from .hlil import HighLevelILFunction, HLILTypeKind
 
 MLIL_TYPE_HINTS = {

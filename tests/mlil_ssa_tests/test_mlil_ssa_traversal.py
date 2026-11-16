@@ -13,7 +13,7 @@ from ir.mlil.mlil import (
     MediumLevelILInstruction, MediumLevelILBasicBlock, MLILVariable, MLILAdd, MLILAddressOf,
     MLILRet, MLILCall, map_operands,
 )
-from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILPhi, iter_ssa_reads
+from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILUndef, MLILSetVarSSA, MLILPhi, iter_ssa_reads
 from ir.mlil_ssa.passes.pass_ssa_copy_propagation import CopyPropagationPass
 from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.ir_utils import (
@@ -25,7 +25,7 @@ def samples() -> list:
     """One instance of every SSA node type, with distinct expression operands"""
     var = MLILVariable('x')
     ssa_var = MLILVariableSSA(var, 1)
-    return [MLILVarSSA(ssa_var), MLILSetVarSSA(ssa_var, c()),
+    return [MLILVarSSA(ssa_var), MLILUndef(), MLILSetVarSSA(ssa_var, c()),
             MLILPhi(ssa_var, [(MLILVariableSSA(var, 0), MediumLevelILBasicBlock(0))])]
 
 

@@ -1,4 +1,4 @@
-"""MLIL Type System - Type definitions for type inference"""
+"""The SSA path's MLIL types: the kinds and the lattice its type inference unifies (SSATypeInferencePass)"""
 
 from typing import AbstractSet
 from enum import Enum, auto

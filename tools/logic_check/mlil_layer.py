@@ -10,7 +10,7 @@ from ir.core import reverse_post_order
 from ir.mlil.mlil import (
     MediumLevelILCall, MediumLevelILFunction, MLILAddressOf, MLILBinaryOp, MLILConst, MLILDebug, MLILDeref,
     MLILExternCall, MLILGoto, MLILIf, MLILIntrinsic, MLILLoadGlobal, MLILLoadReg, MLILNop, MLILRet, MLILSetVar,
-    MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILSyscall, MLILUnaryOp, MLILUndef, MLILVar, MLILVariable,
+    MLILStoreDeref, MLILStoreGlobal, MLILStoreReg, MLILSyscall, MLILUnaryOp, MLILVar, MLILVariable,
     UNASSIGNED_SLOT_INDEX, mlil_stack_var_name, walk,
 )
 from .facts import Branch, Effect, Facts
@@ -199,8 +199,6 @@ class MLILLayer(MLILStorage):
             if isinstance(expr.operand, MLILVar):
                 return self.vm.address_of(self.key(expr.operand.var))
             return ('address', self.evaluate(expr.operand, state))
-        if isinstance(expr, MLILUndef):
-            return ('undef', None)
         if isinstance(expr, MLILBinaryOp):
             return op(expr.operation_name, [self.evaluate(expr.lhs, state), self.evaluate(expr.rhs, state)])
         if isinstance(expr, MLILUnaryOp):

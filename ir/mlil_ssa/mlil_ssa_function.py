@@ -4,7 +4,7 @@ them (a VM's subclass gives them), and the types its type pass infers"""
 from ir.core import IRParameter
 from ir.mlil.mlil import MediumLevelILCall, MediumLevelILFunction, MLILVariable
 from ir.mlil.mlil_builder import MLILBuilder
-from ir.mlil.mlil_types import MLILType
+from .mlil_types import MLILType
 
 
 # === Naming Utilities ===

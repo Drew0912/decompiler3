@@ -5,7 +5,6 @@ from .mlil_builder import *
 from .llil_ops import *
 from .stack_translator import *
 from .mlil_formatter import *
-from .mlil_types import *
 from .passes import *
 from .mlil import *
 
@@ -29,12 +28,6 @@ __all__ = [
     'ReturnValuePass',
     'BitwiseHexPass',
 
-    # Type System
-    'MLILType',
-    'MLILTypeKind',
-    'MLILVariantType',
-    'unify_types',
-
     # Core
     'MediumLevelILOperation',
     'MediumLevelILInstruction',
@@ -49,7 +42,6 @@ __all__ = [
 
     # Constants
     'MLILConst',
-    'MLILUndef',
 
     # Variable operations
     'MLILVar',

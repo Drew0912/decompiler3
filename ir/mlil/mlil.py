@@ -97,12 +97,6 @@ class MediumLevelILOperation(IntEnum2):
     # A VM instruction with no MLIL form of its own
     MLIL_INTRINSIC          = 130
 
-    # SSA
-    MLIL_PHI                = 2000
-    MLIL_VAR_SSA            = 2001
-    MLIL_SET_VAR_SSA        = 2002
-    MLIL_UNDEF              = 2003
-
 
 class MediumLevelILInstruction(ILInstruction):
     """Base class for MLIL instructions"""
@@ -190,16 +184,6 @@ class MLILConst(MediumLevelILExpr, Constant):
             return quote_string(self.value)
 
         return str(self.value)
-
-
-class MLILUndef(MediumLevelILExpr):
-    """Undefined value (result of call via AddressOf, etc.)"""
-
-    def __init__(self, **kwargs):
-        super().__init__(MediumLevelILOperation.MLIL_UNDEF, **kwargs)
-
-    def __str__(self) -> str:
-        return '<undef>'
 
 
 # === Variable Operations ===

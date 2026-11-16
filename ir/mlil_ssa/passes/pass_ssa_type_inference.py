@@ -8,7 +8,7 @@ Infer types for SSA variables using:
 
 from ir.pipeline import Pass
 from ir.mlil.mlil import *
-from ir.mlil.mlil_types import *
+from ..mlil_types import *
 from ..mlil_ssa import *
 from ..mlil_ssa_function import MediumLevelILFunctionSSA
 

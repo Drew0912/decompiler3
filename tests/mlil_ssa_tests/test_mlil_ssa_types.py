@@ -20,7 +20,7 @@ from ir.core import IRParameter
 from ir.hlil import HLILTypeKind
 from ir.mlil.mlil import MLILAddressOf, MLILCall, MLILConst, MLILRet, MLILSetVar, MLILVar
 from ir.mlil_ssa.mlil_ssa import SSAConstructor
-from ir.mlil.mlil_types import MLILType, MLILVariantType
+from ir.mlil_ssa.mlil_types import MLILType, MLILVariantType
 from ir.mlil_ssa.passes import SSATypeInferencePass
 from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.scp_asm import Asm, Program, main_function

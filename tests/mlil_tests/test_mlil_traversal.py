@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILCall, MLILVariable, MLILUndef, MLILVar,
+    MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILCall, MLILVariable, MLILVar,
     MLILSetVar, MLILBinaryOp, MLILUnaryOp, MLILAdd, MLILMul, MLILNeg, MLILAddressOf, MLILGoto, MLILIf, MLILRet,
     MLILCall, MLILSyscall, MLILExternCall, MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILNop,
     MLILDebug, MLILIntrinsic, MLILStoreDeref, walk, map_operands,
@@ -30,7 +30,7 @@ def samples() -> list:
     var = MLILVariable('x')
     output = MLILVariable('result')
     nodes = [
-        c(), MLILUndef(), MLILVar(var), MLILSetVar(var, c()),
+        c(), MLILVar(var), MLILSetVar(var, c()),
         MLILGoto(block), MLILIf(c(), block, other_block), MLILRet(c()), MLILRet(),
         MLILCall('f', [c(), c()], output, tail_call=True),
         MLILSyscall(1, 2, [c(), c()], output, tail_call=True),
