@@ -1,11 +1,12 @@
 """LLIL - Stack-based low-level IR"""
 
+from enum import IntEnum
 from typing import Any, Iterator
-from dc3 import format_signed_hex, IntEnum2, quote_string
+from dc3 import format_signed_hex, quote_string
 from ir.core import *
 
 
-class LowLevelILOperation(IntEnum2):
+class LowLevelILOperation(IntEnum):
     """Atomic LLIL operations"""
 
     # Stack operations (atomic); offsets count slots

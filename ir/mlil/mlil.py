@@ -1,8 +1,9 @@
 """MLIL - Stack-free IR (variables instead of stack operations)"""
 
+from enum import IntEnum
 from typing import Any, Callable, Iterator, TYPE_CHECKING
 
-from dc3 import format_uint32_hex, IntEnum2, quote_string
+from dc3 import format_uint32_hex, quote_string
 from ir.core import *
 
 
@@ -24,7 +25,7 @@ def mlil_arg_var_name(arg_index: int) -> str:
     return f'arg{arg_index}'
 
 
-class MediumLevelILOperation(IntEnum2):
+class MediumLevelILOperation(IntEnum):
     """MLIL operations - stack-free version of LLIL"""
 
     # Constants

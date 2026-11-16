@@ -830,7 +830,7 @@ class MLILToHLILConverter:
         elif isinstance(expr, MLILBinaryOp):
             op = _BINARY_OP_MAP.get(expr.operation)
             if op is None:
-                raise ValueError(f'Unknown binary op: {expr.operation}')
+                raise ValueError(f'Unknown binary op: {expr.operation.name}')
             return HLILBinaryOp(op, self._convert_expr(expr.lhs), self._convert_expr(expr.rhs))
         elif isinstance(expr, MLILAddressOf):
             operand = self._convert_expr(expr.operand)
@@ -844,7 +844,7 @@ class MLILToHLILConverter:
                 return HLILBinaryOp(BinaryOp.EQ, operand, HLILConst(0))
             op = _UNARY_OP_MAP.get(expr.operation)
             if op is None:
-                raise ValueError(f'Unknown unary op: {expr.operation}')
+                raise ValueError(f'Unknown unary op: {expr.operation.name}')
             return HLILUnaryOp(op, self._convert_expr(expr.operand))
         elif isinstance(expr, MLILLoadReg):
             # A register outside the variable model holds a value from elsewhere
