@@ -11,9 +11,9 @@ sys.path.insert(0, str(REPO_ROOT))
 from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from ir.llil.llil import LowLevelILFunction
-from ir.mlil.mlil_formatter import MLILFormatter
 from ir.mlil.passes import BitwiseHexPass, BlockMergePass
 from ir.mlil_ssa.mlil_optimizer import mlil_optimization_passes, optimize_mlil
+from ir.mlil_ssa.mlil_ssa_formatter import MLILFormatterSSA
 from ir.mlil_ssa.passes import SSAConversionPass, SSAOptimizationPass, SSATypeInferencePass, SSADeconstructionPass
 
 
@@ -61,7 +61,8 @@ class TestOptimizeMLILMatchesTheConverter(unittest.TestCase):
                 translated = convert_ed9_llil_to_mlil_ssa(build_call_function(), optimize=False)
                 optimized = optimize_mlil(translated, infer_types=infer_types)
 
-                self.assertEqual(MLILFormatter.format_function(optimized), MLILFormatter.format_function(converted))
+                self.assertEqual(MLILFormatterSSA.format_function(optimized),
+                                 MLILFormatterSSA.format_function(converted))
                 self.assertEqual(len(optimized.basic_blocks), 1, 'the call-return goto was not merged away')
 
 

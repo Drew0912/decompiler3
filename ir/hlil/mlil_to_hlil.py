@@ -5,7 +5,6 @@ from dataclasses import dataclass
 
 from dc3.logging import log
 from ir.mlil.mlil import *
-from ir.mlil.mlil_types import MLILTypeKind
 from .call_result_folder import CallResultFolder
 from .hlil import *
 from .structural_analysis import StructuralAnalyzer
@@ -36,17 +35,6 @@ _BINARY_OP_MAP = {
 _UNARY_OP_MAP = {
     MediumLevelILOperation.MLIL_NEG         : UnaryOp.NEG,
     MediumLevelILOperation.MLIL_BITWISE_NOT : UnaryOp.BIT_NOT,
-}
-
-_MLIL_TYPE_MAP = {
-    MLILTypeKind.UNKNOWN  : None,
-    MLILTypeKind.INT      : HLILTypeKind.INT,
-    MLILTypeKind.FLOAT    : HLILTypeKind.FLOAT,
-    MLILTypeKind.STRING   : HLILTypeKind.STRING,
-    MLILTypeKind.BOOL     : HLILTypeKind.INT,
-    MLILTypeKind.POINTER  : HLILTypeKind.POINTER,
-    MLILTypeKind.VARIANT  : None,
-    MLILTypeKind.VOID     : HLILTypeKind.VOID,
 }
 
 # Re-emitting a block reached from several conditions is the only faithful option
@@ -146,15 +134,12 @@ class MLILToHLILConverter:
             if mlil_var is None:
                 continue
 
-            type_hint = self._get_type_hint(mlil_var.name)
-
             # Get default value from source_params
             default_value = None
             if i < len(self.mlil_func.source_params):
                 default_value = self.mlil_func.source_params[i].default_value
 
-            hlil_var = HLILVariable(mlil_var.name, type_hint=type_hint,
-                                    default_value=default_value, kind=VariableKind.PARAM)
+            hlil_var = HLILVariable(mlil_var.name, default_value=default_value, kind=VariableKind.PARAM)
             self.hlil_func.parameters.append(hlil_var)
 
     def _declare_used_variables(self):
@@ -163,17 +148,13 @@ class MLILToHLILConverter:
 
         for name in dict.fromkeys(self._collect_used_var_names(self.hlil_func.body)):
             if name not in param_names:
-                self.hlil_func.variables.append(HLILVariable(name, type_hint=self._get_type_hint(name)))
+                self.hlil_func.variables.append(HLILVariable(name))
 
     @classmethod
     def _collect_used_var_names(cls, node) -> list[str]:
         """Local variable names appearing in an HLIL subtree, in source order - an assignment
         target included"""
         return [n.var.name for n in iter_tree(node) if isinstance(n, HLILVar) and n.var.kind == VariableKind.LOCAL]
-
-    def _get_type_hint(self, var_name: str) -> HLILTypeKind | None:
-        mlil_type = self.mlil_func.var_types.get(var_name)
-        return None if mlil_type is None else _MLIL_TYPE_MAP[mlil_type.kind]
 
     def _build_cfg(self):
         num_blocks = len(self.mlil_func.basic_blocks)

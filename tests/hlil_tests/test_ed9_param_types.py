@@ -27,7 +27,6 @@ from ir.hlil import (BinaryOp, HighLevelILFunction, HLILAddressOf, HLILAssign, H
                      HLILComment, HLILConst, HLILDeref, HLILExprStmt, HLILExpression, HLILExternCall, HLILIf,
                      HLILReturn, HLILSyscall, HLILTypeKind, HLILVar, HLILVariable, HLILWhile, VariableKind)
 from ir.mlil.mlil import MediumLevelILFunction, MLILRet
-from ir.mlil.mlil_types import MLILType, MLILVariantType
 
 
 TEST_FUNCTION_NAME = 'test_func'
@@ -57,10 +56,6 @@ def make_mlil_function(type_name: str, default_value) -> MediumLevelILFunction:
     return func
 
 
-# What the SSA pass infers for a Value32 parameter that also receives a float: its int seed joined with the float
-INT_FLOAT_VARIANT = MLILVariantType({MLILType.int_type(), MLILType.float_type()})
-
-
 class TestDeclaredParameterTypes(unittest.TestCase):
     """Each declared flag gives its parameter's HLIL type."""
 
@@ -82,17 +77,6 @@ class TestDeclaredParameterTypes(unittest.TestCase):
             [HLILTypeKind.NUMBER, HLILTypeKind.STRING, HLILTypeKind.POINTER, HLILTypeKind.NUMBER, HLILTypeKind.STRING],
         )
 
-    def test_declared_flag_wins_over_the_inferred_variant(self):
-        # AniFieldAttack(arg1 = 0.1) stores floats into its Value32 parameter: the SSA pass gives
-        # variant<int, float>, which rendered `arg1: any` while the pass was disabled
-        mlil = make_mlil_function('int', FLOAT_DEFAULT)
-        mlil.var_types = {'arg1': INT_FLOAT_VARIANT}
-        scp_func = make_scp_function(FunctionParam(ScpParamFlags(Value32), ScpValue(FLOAT_DEFAULT)))
-
-        ts = generate_typescript(typed_hlil(mlil, scp_func))
-
-        self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: number = {FLOAT_DEFAULT})', ts)
-
     def test_string_default_is_quoted_once(self):
         # Guard: the default value still comes from the converter, formatted by codegen
         mlil = make_mlil_function('str', STRING_DEFAULT)
@@ -101,16 +85,6 @@ class TestDeclaredParameterTypes(unittest.TestCase):
         ts = generate_typescript(typed_hlil(mlil, scp_func))
 
         self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: string = "{STRING_DEFAULT}")', ts)
-
-    def test_without_the_stage_the_inferred_type_stays(self):
-        # Guard: callers that convert without the file-level stage (the semantic validator) keep the converter's
-        # mapping
-        mlil = make_mlil_function('int', FLOAT_DEFAULT)
-        mlil.var_types = {'arg1': INT_FLOAT_VARIANT}
-
-        ts = generate_typescript(convert_ed9_mlil_to_hlil(mlil))
-
-        self.assertIn(f'function {TEST_FUNCTION_NAME}(arg1: any = {FLOAT_DEFAULT})', ts)
 
 
 WAIT = 0x19         # Chr: an ID first, with 3 arguments or the older 2

@@ -28,12 +28,14 @@ deals with VM-level calls, branches, and CFG shape.
 | `ir/hlil/hlil_formatter.py` | Debug text pretty-printer (`HLILFormatter`) — tree dump, not codegen. |
 | `ir/hlil/mlil_to_hlil.py` | The MLIL → HLIL converter: CFG build, structural reconstruction. |
 | `ir/hlil/call_result_folder.py` | `CallResultFolder`: which call results fold into the instruction reading them. |
+| `ir/hlil/mlil_ssa_types.py` | The SSA path's type hand-off (`apply_inferred_types`); only the SSA path imports it. |
 | `ir/hlil/structural_analysis.py` | Dominator / natural-loop / region-reduction CFG analysis (`StructuralAnalyzer`), used by the converter. |
 | `tools/logic_check/` | Checks the final HLIL against its MLIL: the effects, the conditions each runs under, the values they pass, their order, every reachable unstructured jump (`docs/VALIDATOR_GUIDE.md`); not part of the pipeline. |
 | `ir/hlil/passes/*.py` | Seven pass modules (below) — one is the conversion wrapper itself, six are post-conversion transformations (line-marker removal only with `line_markers` off). |
 | `falcom/ed9/ir/hlil/pass_type_inference.py`, `id_marks.py` | The file-level stage, `ED9TypeInferencePass` (below), and its ID rule. |
 | `falcom/ed9/ir/hlil/call_result_folder.py` | `ED9CallResultFolder`: `CallResultFolder` with ED9's call rule. |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | ED9's concrete pipeline wiring — this, not anything in `ir/hlil/` directly, is what the real driver calls. Mirrors the same generic/project-specific split MLIL uses (`ir/mlil/*` + `falcom/ed9/ir/mlil/`). |
+| `falcom/ed9/ir/hlil/hlil_converter_ssa.py` | The SSA path's entry point, `convert_ed9_mlil_ssa_to_hlil()`: the same wiring, then the SSA path's inferred types. Only the SSA path imports it. |
 | `codegen/typescript.py` | HLIL → TypeScript pseudocode emitter (`TypeScriptGenerator`) — the actual human-readable output. |
 
 ## Node / Instruction Model
@@ -102,7 +104,7 @@ too): `ED9TypeInferencePass` (`falcom/ed9/ir/hlil/pass_type_inference.py`) over 
 function's TypeScript. The pass sets each parameter's type from the flag the script declares for it
 (`Value32`/`Nullable32` -> `number`, `str`/`NullableStr` -> `string`, `Pointer` -> `Pointer`), so signatures don't
 depend on MLIL inference. Local variables have no type on the decompile path (`any` until the HLIL
-type plan: its stack translator runs no type pass); on the SSA path they take the MLIL SSA types. With the game's
+type plan: its stack translator runs no type pass); on the SSA path they take its inferred types. With the game's
 syscall rows (`falcom/ed9/games/<game>/metadata/syscall_args.py`, `SyscallArgs` in
 `falcom/ed9/assembler/ed9_syscalls.py`), the pass also marks the character-ID parameters: a parameter whose every
 read is a pass to an ID slot (a syscall's ID slot, or a marked parameter of a call to a function of the same file,

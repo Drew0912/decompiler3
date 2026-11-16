@@ -811,7 +811,6 @@ class MediumLevelILFunction:
         self.locals: dict[str, MLILVariable] = {}  # Local variables
         self.result_register: int | None = None  # The register a return's value travels in, passed as that value
         self.llil_function: 'LowLevelILFunction | None' = None
-        self.var_types: dict[str, MLILType] = {}  # Variable name -> inferred type
 
     def add_basic_block(self, block: MediumLevelILBasicBlock):
         self.basic_blocks.append(block)

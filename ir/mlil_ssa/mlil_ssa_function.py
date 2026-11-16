@@ -1,9 +1,10 @@
-"""The SSA path's MLIL function and its builder: VM registers and globals modelled as variables, and the VM's rules
-for them (a VM's subclass gives them)"""
+"""The SSA path's MLIL function and its builder: VM registers and globals modelled as variables, the VM's rules for
+them (a VM's subclass gives them), and the types its type pass infers"""
 
 from ir.core import IRParameter
 from ir.mlil.mlil import MediumLevelILCall, MediumLevelILFunction, MLILVariable
 from ir.mlil.mlil_builder import MLILBuilder
+from ir.mlil.mlil_types import MLILType
 
 
 # === Naming Utilities ===
@@ -22,12 +23,14 @@ def mlil_global_var_name(global_index: int) -> str:
 
 class MediumLevelILFunctionSSA(MediumLevelILFunction):
     """The SSA path's MLIL function: VM registers and globals modelled as variables, which its passes track like any
-    other value. A VM's subclass gives the rules for them: what a call may change, what a return leaves"""
+    other value, and the types its type pass infers, by variable name. A VM's subclass gives the rules for the
+    registers and globals: what a call may change, what a return leaves"""
 
     def __init__(self, name: str, start_addr: int = 0, params: list[IRParameter] | None = None):
         super().__init__(name, start_addr, params)
         self.register_vars: dict[int, MLILVariable] = {}  # VM register index -> variable
         self.global_vars: dict[int, MLILVariable] = {}  # Global var table index -> variable
+        self.var_types: dict[str, MLILType] = {}  # Variable name -> inferred type (SSATypeInferencePass)
 
     def get_or_create_register_var(self, reg_index: int) -> MLILVariable:
         """Get existing register variable or create new one

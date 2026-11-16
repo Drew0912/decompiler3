@@ -123,11 +123,12 @@ IF_SHAPES = {
 }
 
 
-def hlil_and_differences(build, argc: int, convert) -> tuple:
-    """build()'s HLIL through convert, and the logic check's MLIL -> HLIL categories on it"""
+def hlil_and_differences(build, argc: int, convert, to_hlil=convert_ed9_mlil_to_hlil) -> tuple:
+    """build()'s HLIL through convert (LLIL -> MLIL) and to_hlil (the path's MLIL -> HLIL), and the logic check's
+    MLIL -> HLIL categories on it"""
     _, llil = lift_asm(build(), argc=argc, others=(returning_callee(),))
     mlil = convert(llil)
-    hlil = convert_ed9_mlil_to_hlil(mlil)
+    hlil = to_hlil(mlil)
     return hlil, hlil_categories(mlil, hlil)
 
 

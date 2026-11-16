@@ -51,10 +51,13 @@ See `docs/mlil/MLIL_DESIGN.md`'s Module Layout table for the full file-by-file b
 `ir/mlil/passes/` the 4 passes the decompile path runs after its translator; `falcom/ed9/ir/mlil/` holds the
 ED9-specific wiring — `mlil_converter.py` is the decompile path's entry point
 (`convert_ed9_llil_to_mlil_stack()`), mirroring how `falcom/ed9/ir/hlil/hlil_converter.py` wires HLIL. The SSA
-path, kept and never called by the decompile path, has its own packages: `ir/mlil_ssa/` (its function class
-`MediumLevelILFunctionSSA`, its translator, the SSA layer, the optimizer; 13 pass modules in `ir/mlil_ssa/passes/`)
-and `falcom/ed9/ir/mlil_ssa/` (its entry point, `convert_ed9_llil_to_mlil_ssa()`, and ED9's call and return rules,
-`ED9MediumLevelILFunctionSSA`); it imports from `ir/mlil/`, never the other way.
+path, kept and never called by the decompile path, has its core in its own packages: `ir/mlil_ssa/` (its function
+class `MediumLevelILFunctionSSA`, its translator, the SSA layer, the optimizer; 13 pass modules in
+`ir/mlil_ssa/passes/`) and `falcom/ed9/ir/mlil_ssa/` (its entry point, `convert_ed9_llil_to_mlil_ssa()`, and ED9's call
+and return rules, `ED9MediumLevelILFunctionSSA`); they import from `ir/mlil/`, never the other way, and nothing of
+HLIL. Its HLIL step is in the HLIL folders, loaded only by the SSA path: `convert_ed9_mlil_ssa_to_hlil()`
+(`falcom/ed9/ir/hlil/hlil_converter_ssa.py`) and the type hand-off (`ir/hlil/mlil_ssa_types.py`)
+(`docs/ARCHITECTURE.md`, "Key Design Principles", 5).
 
 ## Variable Model
 
@@ -150,7 +153,8 @@ local assignment (500-file sample, 2026-09-26).
 ## Formatting
 
 `ir/mlil/mlil_formatter.py` pretty-prints MLIL functions as text, used for test snapshots and
-debug dumps — analogous to `HLILFormatter` on the HLIL side.
+debug dumps — analogous to `HLILFormatter` on the HLIL side. The SSA path's `MLILFormatterSSA`
+(`ir/mlil_ssa/mlil_ssa_formatter.py`) adds the inferred types to the header.
 
 ## Known Gaps
 

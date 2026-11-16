@@ -27,7 +27,7 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/mlil.py` | Core non-SSA data structures: `MediumLevelILInstruction` base, the `MediumLevelILExpr`/`MediumLevelILStatement` split, `MLILVariable`, `MediumLevelILBasicBlock`, `MediumLevelILFunction`. |
 | `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function (of the class it is given, the base by default) and its blocks, variables and statements; expressions are built with the node classes. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging) and the `.mlil.dot` graphs, with the DOT writer LLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`). |
-| `ir/mlil/mlil_types.py` | Type-kind/unification support (HLIL's converter reads it; the SSA path's type pass fills it). |
+| `ir/mlil/mlil_types.py` | Type-kind/unification support (the SSA path's type pass fills it; its hand-off to HLIL, `ir/hlil/mlil_ssa_types.py`, maps it). |
 | `ir/mlil/llil_ops.py` | The LLIL operations that map one to one onto MLIL ones (`BINARY_OP_TYPES`, `UNARY_OP_TYPES`), for both translators. |
 | `ir/mlil/stack_translator.py` | The generic symbolic-stack translator, `StackTranslator`, and `StackTranslatorPass` (see "The stack translator"). |
 | `ir/mlil/passes/` | The decompile path's passes after its translator (4 files): `pass_block_merge.py` and `pass_bitwise_hex.py` (the SSA path runs them too), `pass_call_result.py` and `pass_return_value.py`. |
@@ -35,7 +35,8 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `falcom/ed9/ir/mlil/stack_translator.py` | `ED9StackTranslator`: ED9's result register, calling convention and call rule (`CALL_MAY_CHANGE`), globals, script calls, `POPN` and `DEBUG_INT` on the stack translator. |
 | `falcom/ed9/ir/mlil/pass_call_result.py` | `ED9CallResultPass`: `CallResultPass` with ED9's call rule (any call may write the result register). |
 | **The SSA path** | Kept beside the decompile path and never called by it (IR rewrite part 2, Step 10); it imports from `ir/mlil/`, never the other way. |
-| `ir/mlil_ssa/mlil_ssa_function.py` | `MediumLevelILFunctionSSA`, the SSA path's function: VM registers and globals modelled as variables (`register_vars`, `global_vars`), and the VM's call and return rules as hooks a VM's subclass answers (`call_may_change_register`, `call_may_change_global`, `return_leaves_register`; `call_may_clobber` asks them for a variable); `MLILBuilderSSA`, its builder. |
+| `ir/mlil_ssa/mlil_ssa_function.py` | `MediumLevelILFunctionSSA`, the SSA path's function: VM registers and globals modelled as variables (`register_vars`, `global_vars`), and the VM's call and return rules as hooks a VM's subclass answers (`call_may_change_register`, `call_may_change_global`, `return_leaves_register`; `call_may_clobber` asks them for a variable), and the types its type pass infers (`var_types`); `MLILBuilderSSA`, its builder. |
+| `ir/mlil_ssa/mlil_ssa_formatter.py` | `MLILFormatterSSA`: the SSA path's MLIL listing, the header adding the inferred types ("Inferred Types"). |
 | `ir/mlil_ssa/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific), the SSA path's translator; its `FUNCTION_CLASS` is the VM's function class. |
 | `ir/mlil_ssa/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
 | `ir/mlil_ssa/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
@@ -284,13 +285,15 @@ and same printed text (`0.0` and `-0.0` differ, NaN equals NaN).
 ### Type Inference
 
 The SSA path's `SSATypeInferencePass` (the decompile path runs none) types parameters from their declared kinds,
-`SetVar`/`Phi` targets, and
-address-taken locals through their `*(&x) = v` stores, takes backward hints from the top level of
-each `if` condition (a comparison with a constant, arithmetic, a bare truth test), then unifies every
-SSA version into one type
-per variable name (`func.var_types`, printed as the `.mlil.asm` "Inferred Types" list). Conflicting
-kinds unify to an `MLILVariantType`, which is identified by its members (`mlil_types.py`), so a
-member that arrives after the variable is already a variant is still recorded.
+`SetVar`/`Phi` targets, and address-taken locals through their `*(&x) = v` stores, takes backward hints from the top
+level of each `if` condition (a comparison with a constant, arithmetic, a bare truth test), then unifies every SSA
+version into one type per variable name (`MediumLevelILFunctionSSA.var_types`, listed by `MLILFormatterSSA` under
+"Inferred Types"). Conflicting kinds unify to an `MLILVariantType`, which is identified by its members
+(`mlil_types.py`), so a member that arrives after the variable is already a variant is still recorded. The types reach
+HLIL after its conversion: `convert_ed9_mlil_ssa_to_hlil` runs `convert_ed9_mlil_to_hlil`, then `apply_inferred_types`
+(`ir/hlil/mlil_ssa_types.py`) gives each HLIL parameter and local its variable's type (`MLIL_TYPE_HINTS`: a boolean
+`INT`, an unknown or variant type none). The HLIL converter knows no MLIL type: only that hand-off module does, and
+only the SSA path loads it.
 
 ## The stack translator (the decompile path)
 

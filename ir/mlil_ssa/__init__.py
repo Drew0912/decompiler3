@@ -2,6 +2,7 @@
 decompile path (the stack translator, ir/mlil/) and never called by it. It imports from ir.mlil, never the other way"""
 
 from .mlil_ssa_function import *
+from .mlil_ssa_formatter import *
 from .llil_to_mlil import *
 from .mlil_optimizer import *
 from .mlil_ssa_optimizer import *
@@ -9,9 +10,10 @@ from .mlil_ssa import *
 from .passes import *
 
 __all__ = [
-    # Function, builder and naming utilities
+    # Function, builder, listing and naming utilities
     'MediumLevelILFunctionSSA',
     'MLILBuilderSSA',
+    'MLILFormatterSSA',
     'mlil_reg_var_name',
     'mlil_global_var_name',
 

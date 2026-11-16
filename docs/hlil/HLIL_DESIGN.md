@@ -36,12 +36,14 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `ir/hlil/hlil.py` | Core enums and tree nodes: expressions, statements, variables, switch cases, and `HighLevelILFunction`. |
 | `ir/hlil/mlil_to_hlil.py` | Generic MLIL → HLIL conversion, including CFG construction, loop/branch reconstruction, shared-region cloning, and variable declaration. |
 | `ir/hlil/call_result_folder.py` | `CallResultFolder`: which call results fold into the instruction reading them, decided on the MLIL before the converter emits anything. |
+| `ir/hlil/mlil_ssa_types.py` | The SSA path's type hand-off: `MLIL_TYPE_HINTS` and `apply_inferred_types`, which gives each HLIL parameter and local the type the SSA path inferred for its name. It loads the SSA package, so `ir/hlil/__init__.py` does not import it; only the SSA path's HLIL entry point does. |
 | `ir/hlil/structural_analysis.py` | Dominator calculation, natural-loop discovery, iterative region reduction, and merge-point queries used by the converter. |
 | `ir/hlil/statement_printer.py` | `HLILStatementPrinter`, the statement printer the `.hlil.ts` formatter and the TypeScript code generator share: each prints expressions its own way and overrides the hooks where its statements differ (assignments, unstructured jumps, an if's arms, switch case blocks). |
 | `ir/hlil/hlil_formatter.py` | The `.hlil.ts` formatter, on the shared statement printer: the bytecode's high-level form, not TypeScript. It is separate from the TypeScript code generator. |
 | `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: switch recovery, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, the statement printer, the formatter and the passes (the conversion pass `MLILToHLILPass` among them). |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production ED9 pipeline entry points: per function, `convert_ed9_mlil_to_hlil()` and its pass ordering/configuration; per file, `run_ed9_file_passes()`. |
+| `falcom/ed9/ir/hlil/hlil_converter_ssa.py` | The SSA path's HLIL entry point, `convert_ed9_mlil_ssa_to_hlil()`: `convert_ed9_mlil_to_hlil()`, then the SSA path's inferred types (`apply_inferred_types`). Only the SSA path imports it. |
 | `falcom/ed9/ir/hlil/pass_type_inference.py` | `ED9TypeInferencePass`, the file-level stage: the declared parameter types, then the ID rule's marks and tags. |
 | `falcom/ed9/ir/hlil/id_marks.py` | The ID rule: each function's parameter uses, the marks' worklist (`propagate_id_marks`), the constant tags. |
 | `falcom/ed9/ir/hlil/call_result_folder.py` | `ED9CallResultFolder`: `CallResultFolder` with ED9's call rule (no read of a register, global or dereference moves across a call). |
@@ -164,13 +166,15 @@ close to a source-language variable model and avoids exposing optimizer machiner
 
 Type information is deliberately lightweight. `HLILTypeKind` contains `INT`, `FLOAT`, `STRING`,
 `BOOL`, `VOID`, `POINTER` and `NUMBER` (int or float), but types are hints on variables rather than
-types attached to every expression. During conversion, MLIL booleans map to `INT`, MLIL pointers
-(`Pointer` out-parameters) to `POINTER`, and unknown and variant MLIL types to no hint. Parameter default
+types attached to every expression. The converter gives no type. On the SSA path,
+`convert_ed9_mlil_ssa_to_hlil` types the finished HLIL function from the MLIL's inferred types
+(`apply_inferred_types`, `ir/hlil/mlil_ssa_types.py`: booleans to `INT`, pointers (`Pointer` out-parameters) to
+`POINTER`, unknown and variant types to no hint) after every HLIL pass, so no pass sees a type. Parameter default
 values are copied from MLIL source-parameter metadata when available. The file-level stage's
 `ED9TypeInferencePass` then sets each parameter's type from its declared flag -
 `Value32`/`Nullable32` -> `NUMBER`, `str`/`NullableStr` -> `STRING`, `Pointer` -> `POINTER` - so a
 signature never depends on MLIL inference. Locals have no type on the decompile path (its stack translator runs no
-type pass: `any` until the HLIL type plan); on the SSA path they take the MLIL SSA types.
+type pass: `any` until the HLIL type plan); on the SSA path they take its inferred types.
 
 ### Call Results as Expressions
 
@@ -353,11 +357,13 @@ Several dedicated HLIL unit-test files exist today:
   (`tools/logic_check/`): each way of losing or inventing a path, deleting an effect, or changing what a repeated
   region does is reported (`TestPlantedHLILBugs`), and the structures HLIL builds otherwise than MLIL compare clean
   (`TestHLILStructures`).
-- `tests/hlil_tests/test_ed9_param_types.py` covers `ED9TypeInferencePass`: the type each declared
-  parameter flag gives, the declared flag winning over an inferred int/float variant, and default
-  values still printed once; which parameters a syscall or a forwarding chain marks, each read that blocks,
-  reachability, recursion, the names a body may change, which constants are tagged, a function that raises,
+- `tests/hlil_tests/test_ed9_param_types.py` covers `ED9TypeInferencePass`: the type each declared parameter flag
+  gives and default values still printed once; which parameters a syscall or a forwarding chain marks, each read that
+  blocks, reachability, recursion, the names a body may change, which constants are tagged, a function that raises,
   and the propagation's kinds.
+- `tests/mlil_ssa_tests/test_mlil_ssa_types.py` covers the SSA path's type pass and its hand-off to HLIL
+  (`TestInferredTypesReachHLIL`): each inferred parameter type reaching the HLIL through
+  `convert_ed9_mlil_ssa_to_hlil`, and the declared flag winning over an inferred int/float variant.
 - `tests/hlil_tests/test_hlil_line_marker_removal.py` covers `line_marker_number`, `LineMarkerRemovalPass` (markers
   go from every block, other comments stay, the arms left empty are tidied) and the `line_markers` flag (on by
   default; off, it runs after branch-order normalization).

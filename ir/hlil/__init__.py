@@ -1,4 +1,5 @@
-"""High Level Intermediate Language (HLIL)"""
+"""High Level Intermediate Language (HLIL). Its one module for the SSA path, mlil_ssa_types (the type hand-off), loads
+the SSA package, so this package does not import it"""
 
 from .hlil import *
 from .statement_printer import *

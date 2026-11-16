@@ -10,6 +10,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
+from falcom.ed9.ir.hlil.hlil_converter_ssa import convert_ed9_mlil_ssa_to_hlil
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from tests.shared.switch_chains import IF_SHAPES, SWITCH_SHAPES, case_labels, hlil_and_differences, switches
 
@@ -22,7 +23,7 @@ class TestSwitchOnSSAPath(unittest.TestCase):
     def test_each_chain_is_one_switch(self):
         for name, (build, selector, labels) in SWITCH_SHAPES.items():
             with self.subTest(chain=name):
-                hlil, differences = hlil_and_differences(build, selector.argc, convert)
+                hlil, differences = hlil_and_differences(build, selector.argc, convert, convert_ed9_mlil_ssa_to_hlil)
 
                 [switch] = switches(hlil)
                 self.assertEqual(case_labels(switch), labels)
@@ -31,7 +32,7 @@ class TestSwitchOnSSAPath(unittest.TestCase):
     def test_a_short_chain_and_an_ordering_chain_stay_ifs(self):
         for name, build in IF_SHAPES.items():
             with self.subTest(chain=name):
-                hlil, differences = hlil_and_differences(build, 0, convert)
+                hlil, differences = hlil_and_differences(build, 0, convert, convert_ed9_mlil_ssa_to_hlil)
 
                 self.assertEqual(switches(hlil), [])
                 self.assertEqual(differences, set())

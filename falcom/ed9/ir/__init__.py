@@ -1,5 +1,2 @@
-"""Falcom ED9 IR conversion pipeline (LLIL -> MLIL -> HLIL)"""
-
-from .llil import *
-from .mlil import *
-from .hlil import *
+"""Falcom ED9 IR conversion pipeline (LLIL -> MLIL -> HLIL). Its packages are imported by name, so each import loads
+only what it uses (docs/ARCHITECTURE.md, "Key Design Principles", 5)"""

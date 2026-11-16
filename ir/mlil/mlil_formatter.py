@@ -13,6 +13,18 @@ class MLILFormatter(CFGDotFormatter):
 
     @classmethod
     def format_function(cls, func: MediumLevelILFunction) -> list[str]:
+        result = [*cls.format_header(func), '']
+
+        # Format each block
+        for block in func.basic_blocks:
+            result.extend(cls.format_block(block))
+            result.append('')
+
+        return result
+
+    @classmethod
+    def format_header(cls, func: MediumLevelILFunction) -> list[str]:
+        """The function's name line, its parameters and its locals"""
         result = [
             f'; ===== MLIL Function {func.name} @ 0x{func.start_addr:X} =====',
             f'; Parameters: {len([p for p in func.parameters if p])}, Locals: {len(func.locals)}',
@@ -36,21 +48,6 @@ class MLILFormatter(CFGDotFormatter):
                     result.append(f';   {var.name} (slot {var.slot_index})')
                 else:
                     result.append(f';   {var.name}')
-
-        # List inferred types (if available)
-        if func.var_types:
-            result.append(';')
-            result.append('; Inferred Types:')
-            for var_name in sorted(func.var_types.keys()):
-                typ = func.var_types[var_name]
-                result.append(f';   {var_name}: {typ}')
-
-        result.append('')
-
-        # Format each block
-        for block in func.basic_blocks:
-            result.extend(cls.format_block(block))
-            result.append('')
 
         return result
 

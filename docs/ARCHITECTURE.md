@@ -74,10 +74,10 @@ Erases the explicit operand stack, while retaining Falcom-specific semantics (sy
 The decompile path's MLIL comes from the symbolic-stack translator (`convert_ed9_llil_to_mlil_stack`): non-SSA MLIL
 straight from the LLIL's stack layout, registers as storage, then the passes that merge blocks, forward call results,
 return the value stored before each return and mark bitwise constants hex (IR rewrite part 2). Beside it, kept and
-never called by the decompile path, the SSA path (`convert_ed9_llil_to_mlil_ssa`, in its own packages, which
-import from `ir/mlil/` and never the other way): every temporary a named variable, registers and globals too (its
-function class, `MediumLevelILFunctionSSA`, whose call and return rules ED9's subclass gives), and a full SSA optimizer
-pipeline —
+never called by the decompile path, the SSA path (`convert_ed9_llil_to_mlil_ssa`, its core in its own packages,
+which import from `ir/mlil/` and never the other way: "Key Design Principles", 5): every temporary a named variable,
+registers and globals too (its function class, `MediumLevelILFunctionSSA`, whose call and return rules ED9's subclass
+gives), and a full SSA optimizer pipeline —
 construction/deconstruction, critical-edge splitting, type inference, and further optimization passes (constant/copy
 propagation, dead-code elimination; none computes a value the bytecode does not hold). See `docs/mlil/MLIL_DESIGN.md`
 for the node model and pipeline shape, `docs/mlil/MLIL_GUIDE.md` for a practical usage guide.
@@ -187,6 +187,12 @@ Comparisons).
    grouped the same way under `tests/` (`docs/TESTS_GUIDE.md`).
 3. **Extensibility:** opcode-table-driven design — new instructions only need a table entry.
 4. **Type safety:** dataclasses, type annotations, explicit enum types throughout.
+5. **Each IL package loads only what a running path needs:** a package imports the layers below it that it reads,
+   never a layer above it or another path's package. A path's core has packages of its own (the SSA path's:
+   `ir/mlil_ssa/`, `falcom/ed9/ir/mlil_ssa/`). The code joining it to another layer lives in the target layer's folder,
+   as every converter does (LLIL → SSA MLIL in `mlil_ssa/`, SSA MLIL → HLIL in `hlil/`), in a module of its own that
+   the folder's `__init__.py` does not import. So the decompile path never loads the SSA packages, and the SSA path
+   loads HLIL only when it goes on to HLIL.
 
 ## Implementation Status
 
