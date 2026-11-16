@@ -368,7 +368,9 @@ in one slot at a block entry (the disassembler) and an address of a slot no push
 
 The SSA path's tests are in `tests/mlil_ssa_tests/` (`test_mlil_ssa_optimizer.py`, `test_mlil_sccp_folding.py`,
 `test_mlil_reg_global_propagation.py`, and others), covering SSA construction/deconstruction, the SSA
-optimizer's passes, and register/global propagation. `test_mlil_stack_translator.py` covers
+optimizer's passes, and register/global propagation; `test_mlil_ssa_real_functions.py` takes four small real `sora2`
+functions, embedded as the LLIL DSL the decompiler prints for them (no game script needed), through the whole path,
+the logic check finding no difference on either pair. `test_mlil_stack_translator.py` covers
 the stack translator on assembled functions, each case also compared clean by the logic check on both pairs;
 `test_mlil_stack_hand_written.py` on the shapes only a hand edit makes, written in the LLIL DSL and compiled by the
 writer, through the same checks
