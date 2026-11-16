@@ -54,6 +54,11 @@ class LLILToMLILTranslator:
         elif isinstance(llil_inst, LowLevelILStore):
             self._translate_store(llil_inst)
 
+        # Registers: each a variable
+        elif isinstance(llil_inst, LowLevelILRegStore):
+            value = self._translate_expr(llil_inst.value)
+            self.builder.set_var(self.builder.get_or_create_register_var(llil_inst.reg_index), value)
+
         # Control flow
         elif isinstance(llil_inst, LowLevelILJmp):
             target = self.block_map[llil_inst.target]
@@ -64,9 +69,12 @@ class LLILToMLILTranslator:
             false_target = self.block_map[llil_inst.false_target]
             self.builder.branch_if(condition, true_target, false_target)
         elif isinstance(llil_inst, LowLevelILRet):
-            self.builder.ret()
+            self.builder.ret(self._result_read())
         elif isinstance(llil_inst, LowLevelILCall):
             self._translate_call(llil_inst)
+        elif isinstance(llil_inst, LowLevelILSyscall):
+            args = [self._translate_expr(arg) for arg in llil_inst.args]
+            self.builder.syscall(llil_inst.subsystem, llil_inst.cmd, args, self._result_var())
 
         # SpAdd - eliminated in MLIL (stack pointer management removed)
         elif isinstance(llil_inst, LowLevelILSpAdd):
@@ -89,7 +97,7 @@ class LLILToMLILTranslator:
 
     def _param_var(self, frame_offset: int) -> MLILVariable:
         """The parameter variable of a frame slot"""
-        param_index = self._frame_offset_to_param_index(frame_offset)
+        param_index = self.parameter_position(frame_offset)
         return self.builder.get_or_create_parameter(param_index, mlil_arg_var_name(param_index))
 
     def _translate_stack_store(self, llil_inst: LowLevelILStackStore):
@@ -98,13 +106,9 @@ class LLILToMLILTranslator:
         value = self._translate_expr(llil_inst.value)
         self.builder.set_var(var, value)
 
-    def _frame_offset_to_param_index(self, offset: int) -> int:
-        """Frame slot to 1-based parameter index
-
-        Arguments are pushed right-to-left, so the first declared parameter sits in
-        the highest frame slot and STACK[fp + 0] holds the last one
-        """
-        return self.llil_func.num_params - offset // WORD_SIZE
+    def parameter_position(self, frame_offset: int) -> int:
+        """The 1-based parameter in the frame slot at frame_offset: the VM's calling convention"""
+        raise NotImplementedError(f'{type(self).__name__} gives no calling convention')
 
     def _translate_frame_store(self, llil_inst: LowLevelILFrameStore):
         """Translate FrameStore to SetVar (parameter)"""
@@ -118,9 +122,17 @@ class LLILToMLILTranslator:
         value = self._translate_expr(llil_inst.value)
         self.builder.store_deref(dest, value)
 
-    def _call_output(self) -> MLILVariable | None:
-        """Variable a call result is written to (architecture specific, none by default)"""
-        return None
+    def _result_var(self) -> MLILVariable | None:
+        """The result register's variable, where a call leaves its result: None on a VM without one"""
+        if self.RESULT_REGISTER is None:
+            return None
+
+        return self.builder.get_or_create_register_var(self.RESULT_REGISTER)
+
+    def _result_read(self) -> MediumLevelILInstruction | None:
+        """What a return passes on: the result register, or nothing on a VM without one"""
+        result = self._result_var()
+        return None if result is None else MLILVar(result)
 
     def _translate_call(self, llil_inst: LowLevelILCall):
         """Translate function call"""
@@ -128,7 +140,7 @@ class LLILToMLILTranslator:
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
         # Generate call (target is always a string)
-        self.builder.call(llil_inst.target, mlil_args, self._call_output())
+        self.builder.call(llil_inst.target, mlil_args, self._result_var())
 
         # Add goto to return target (makes this block terminal)
         # return_target is always a LowLevelILBasicBlock
@@ -152,6 +164,8 @@ class LLILToMLILTranslator:
             return MLILAddressOf(MLILVar(self._param_var(llil_expr.offset)))
         elif isinstance(llil_expr, LowLevelILLoad):
             return MLILDeref(self._translate_expr(llil_expr.src))
+        elif isinstance(llil_expr, LowLevelILRegLoad):
+            return MLILVar(self.builder.get_or_create_register_var(llil_expr.reg_index))
 
         # Binary and unary operations
         elif type(llil_expr) in BINARY_OP_TYPES:

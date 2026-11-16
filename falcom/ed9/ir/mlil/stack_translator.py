@@ -1,11 +1,12 @@
-"""Falcom ED9 symbolic-stack LLIL -> MLIL translator: the VM's result register, its calling convention, globals,
-script calls (the tail call among them), POPN and DEBUG_INT on the generic translator; a call frame value read as
-data refused"""
+"""Falcom ED9 symbolic-stack LLIL -> MLIL translator: the VM's result register, calling convention and call rule,
+globals, script calls (the tail call among them), POPN and DEBUG_INT on the generic translator; a call frame value
+read as data refused"""
 
-from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
+from falcom.ed9.assembler.stack_effects import RESULT_REGISTER, parameter_position
 from ir.llil.llil import LowLevelILBasicBlock, LowLevelILCall, LowLevelILInstruction, WORD_SIZE
 from ir.mlil.mlil import (
-    MediumLevelILCall, MediumLevelILInstruction, MLILConst, MLILExternCall, MLILLoadGlobal, MLILVariable,
+    MediumLevelILCall, MediumLevelILInstruction, MLILConst, MLILDeref, MLILExternCall, MLILLoadGlobal, MLILLoadReg,
+    MLILVariable,
 )
 from ir.mlil.stack_translator import StackTranslator, StackTranslatorPass, UnsupportedStackShape, Write, WriteKind
 from ..llil.constants import (
@@ -16,15 +17,21 @@ from ..llil.llil_ext import (
     LowLevelILPopN,
 )
 
+# Nothing saves a register, a callee shares the script's globals, and it may write through a pointer: what a call may
+# change, as the nodes reading it (docs/falcom/ed9/ED9_VM.md, Registers)
+CALL_MAY_CHANGE = (MLILLoadReg, MLILLoadGlobal, MLILDeref)
+
 
 class ED9StackTranslator(StackTranslator):
     RESULT_REGISTER    = RESULT_REGISTER
     IN_PLACE_ARGUMENTS = (*StackTranslator.IN_PLACE_ARGUMENTS, LowLevelILPopN)
 
     def parameter_position(self, frame_offset: int) -> int:
-        """Arguments are pushed right to left, so the first parameter is in the highest frame slot and STACK[fp + 0]
-        holds the last one"""
-        return self.llil_func.num_params - frame_offset // WORD_SIZE
+        return parameter_position(self.llil_func.num_params, frame_offset // WORD_SIZE)
+
+    @classmethod
+    def call_may_change(cls, call: LowLevelILInstruction, node: MediumLevelILInstruction) -> bool:
+        return isinstance(node, CALL_MAY_CHANGE)
 
     def make_call(self, inst: LowLevelILCall, args: list[MediumLevelILInstruction],
                   output: MLILVariable | None) -> MediumLevelILCall:

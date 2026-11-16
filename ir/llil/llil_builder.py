@@ -288,9 +288,8 @@ class LowLevelILBuilder:
         return self.frame_base_sp <= slot_index < self.frame_base_sp + self.function.num_params
 
     def _param_position(self, slot_index: int) -> int:
-        """1-based position of the parameter in slot_index: arguments are pushed right to left, so the first parameter
-        is in the highest slot"""
-        return self.function.num_params - (slot_index - self.frame_base_sp)
+        """1-based position of the parameter in slot_index: the VM's calling convention"""
+        raise NotImplementedError(f'{type(self).__name__} gives no calling convention')
 
     def _describe_untracked_parameters(self, count: int) -> str | None:
         """The parameter slots among the top count slots, described ('the slot of parameter 1 (arg1)'), when the vstack

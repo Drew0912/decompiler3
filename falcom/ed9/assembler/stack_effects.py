@@ -23,6 +23,7 @@ __all__ = (
     'REGISTER_OPERAND',
     'RESULT_REGISTER',
     'REGISTER_COUNT',
+    'parameter_position',
 )
 
 LOCAL_SETUP_SLOTS       = 2     # CALL: func_id, ret_addr
@@ -35,6 +36,12 @@ CALLEE_OPERAND          = 0     # CALL's callee, whose parameters are its argume
 REGISTER_OPERAND        = 0     # GET_REG / SET_REG's register
 RESULT_REGISTER         = 0     # where a returning call leaves its result
 REGISTER_COUNT          = 16    # the VM's registers (GET_REG / SET_REG)
+
+
+def parameter_position(num_params: int, frame_slot: int) -> int:
+    """The 1-based parameter in frame slot frame_slot (0 at the frame base): a call pushes its arguments right to left,
+    so the first parameter is in the highest slot and slot 0 holds the last"""
+    return num_params - frame_slot
 
 
 class InstructionKind(Enum):

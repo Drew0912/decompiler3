@@ -131,7 +131,7 @@ class CallResultFolder:
                     continue
 
                 # The read's position must run the call exactly when and where the statement did
-                if self._read_unsafe_to_fold(reader_instr, var_name):
+                if self._read_unsafe_to_fold(reader_instr, var_name, instr):
                     continue
 
                 self.folded_call[(block_idx, instr_idx)] = reader
@@ -260,38 +260,38 @@ class CallResultFolder:
         """How often an instruction reads a variable"""
         return self._read_order(node).count(var_name)
 
-    def _contains_impure_read(self, node: MediumLevelILInstruction) -> bool:
-        """Whether node reads through a pointer, or reads REG[]/GLOBAL[], anywhere in its tree.
+    def _may_read_what_call_changes(self, node: MediumLevelILInstruction, call: MediumLevelILCall) -> bool:
+        """Whether node reads, anywhere in its tree, something call may change"""
+        return any(self.call_may_change(call, sub) for sub in walk(node))
 
-        Both are impure the same way: not SSA-tracked variables, and a call is conservatively
-        assumed able to write either (see e.g. ir/mlil_ssa/passes/pass_reg_global_propagation.py's MLILCall
-        handling, which drops every cached REG/GLOBAL value on a call).
-        """
-        return any(isinstance(sub, (MLILDeref, MLILLoadReg, MLILLoadGlobal)) for sub in walk(node))
+    def call_may_change(self, call: MediumLevelILCall, node: MediumLevelILInstruction) -> bool:
+        """Whether call may change what node reads: the VM's call rule"""
+        raise NotImplementedError(f'{type(self).__name__} gives no call rule')
 
-    def _read_unsafe_to_fold(self, node: MediumLevelILInstruction, var_name: str) -> bool:
+    def _read_unsafe_to_fold(self, node: MediumLevelILInstruction, var_name: str, call: MediumLevelILCall) -> bool:
         """Whether replacing var_name's read inside node with its call changes what the call does.
 
         Folding moves the call to the read's position, and that position differs from the
         statement's when:
-        - an impure read (pointer dereference or REG[]/GLOBAL[] load) sits earlier in node's
-          evaluation order (e.g. MLILStoreDeref evaluates dest before value) - the call would now
-          run after it instead of before, so the read could miss what the call changes
+        - a read the call may change (the VM's call rule) sits earlier in node's evaluation order
+          (e.g. MLILStoreDeref evaluates dest before value) - the call would now run after it
+          instead of before, so the read could miss what the call changes
         - it is under MLILAddressOf - &var names the variable's storage, which a call has not got
         """
         if isinstance(node, MLILAddressOf):
             return self._count_reads(node.operand, var_name) > 0
 
-        # Each operand in evaluation order: unsafe inside it, or reading var_name after an earlier impure operand
-        seen_impure = False
+        # Each operand in evaluation order: unsafe inside it, or reading var_name after an earlier operand reading
+        # something the call may change
+        seen_changeable = False
 
         for operand in node.operands():
-            if seen_impure and self._count_reads(operand, var_name) > 0:
+            if seen_changeable and self._count_reads(operand, var_name) > 0:
                 return True
 
-            if self._read_unsafe_to_fold(operand, var_name):
+            if self._read_unsafe_to_fold(operand, var_name, call):
                 return True
 
-            seen_impure = seen_impure or self._contains_impure_read(operand)
+            seen_changeable = seen_changeable or self._may_read_what_call_changes(operand, call)
 
         return False

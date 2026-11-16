@@ -111,7 +111,7 @@ convention.
 ## The Pipeline
 
 `convert_ed9_llil_to_mlil_stack()` (`falcom/ed9/ir/mlil/mlil_converter.py`) is what the decompile path, the
-logic check and the tools call: `ED9StackTranslatorPass → BlockMergePass → CallResultPass → ReturnValuePass →
+logic check and the tools call: `ED9StackTranslatorPass → BlockMergePass → ED9CallResultPass → ReturnValuePass →
 BitwiseHexPass` (`docs/mlil/MLIL_DESIGN.md`, "The stack translator"). The SSA path,
 `convert_ed9_llil_to_mlil_ssa()`, kept beside it and never called by it (IR rewrite part 2), builds a `Pipeline`
 and runs:

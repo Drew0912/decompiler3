@@ -1,6 +1,7 @@
 """The LLIL side of the evaluation, the trust root: storage is the stack slot, the parameter, the register and the
 global; every push, pop and store is followed as written"""
 
+from falcom.ed9.assembler.stack_effects import parameter_position
 from falcom.ed9.ir.llil.constants import (
     LowLevelILConstFuncId, LowLevelILConstRetAddrBlock, LowLevelILConstScript, LowLevelILConstFrameMarker,
 )
@@ -63,8 +64,8 @@ class LLILLayer:
         return key
 
     def param_position(self, offset: int) -> int:
-        """The 1-based parameter in the frame slot at offset: the first parameter is in the highest slot"""
-        return self.func.num_params - offset // WORD_SIZE
+        """The 1-based parameter in the frame slot at offset"""
+        return parameter_position(self.func.num_params, offset // WORD_SIZE)
 
     def evaluate(self, expr, state: State) -> tuple:
         if isinstance(expr, FRAME_CONSTANTS):

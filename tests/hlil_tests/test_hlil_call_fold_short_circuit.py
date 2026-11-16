@@ -19,6 +19,7 @@ from ir.mlil.mlil import (
 from ir.hlil.hlil import HLILIf, HLILWhile, sub_blocks
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
+from falcom.ed9.ir.hlil.call_result_folder import ED9CallResultFolder
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from tests.shared.ir_utils import connect
 from tests.shared.hlil_cfg_utils import calls_emitted, unstructured_nodes
@@ -41,7 +42,7 @@ def make_func(name: str, block_count: int):
 
 def convert(func: MediumLevelILFunction):
     connect(func)
-    return MLILToHLILConverter(func).convert()
+    return MLILToHLILConverter(func, folder_class=ED9CallResultFolder).convert()
 
 
 def find_statement(block, predicate):
@@ -240,7 +241,8 @@ class TestFunnelLaterTestCallFolds(unittest.TestCase):
         self.assertEqual(calls_emitted(hlil_func, 'do_x'), 1)
 
     def test_body_over_the_region_cap_is_no_goto(self):
-        hlil_func = MLILToHLILConverter(connect(self.funnel(self.calls('g'))), max_region_blocks=0).convert()
+        hlil_func = MLILToHLILConverter(connect(self.funnel(self.calls('g'))), max_region_blocks=0,
+                                        folder_class=ED9CallResultFolder).convert()
 
         self.assertEqual(unstructured_nodes(hlil_func), [])
 

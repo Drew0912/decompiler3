@@ -497,9 +497,11 @@ class MediumLevelILCall(MediumLevelILStatement):
     unused: on the decompile path a temporary the stack translator stores in the
     result register, on the SSA path the result register's variable (an
     MLILVariableSSA while the function is in SSA form). What else the callee may
-    change is the VM's call rule; on the SSA path MediumLevelILFunctionSSA asks it,
-    and SSA construction gives every register and global the call may change a
-    fresh, unknown-valued pseudo-definition here.
+    change is the VM's call rule: on the decompile path the stack translator,
+    CallResultPass and HLIL's CallResultFolder ask it (call_may_change,
+    call_may_change_register); on the SSA path MediumLevelILFunctionSSA, and SSA
+    construction gives every register and global the call may change a fresh,
+    unknown-valued pseudo-definition here.
 
     tail_call marks a call that never gives control back (the LLIL's returns=False): the
     stack translator follows it with the return that passes its result on, and only the

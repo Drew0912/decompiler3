@@ -22,7 +22,7 @@ from ir.mlil_ssa.passes.pass_ssa_copy_propagation import reaches_without_redefin
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
-from falcom.ed9.ir.mlil_ssa.mlil_translator import RESULT_REG_INDEX
+from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
 from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.corpus import SORA2_SCRIPTS, require
 
@@ -596,8 +596,8 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         """A function whose reg0 is the result register, as Falcom's translator makes it"""
         func = make_func(name)
         reg0 = MLILVariable('reg0')
-        func.register_vars[RESULT_REG_INDEX] = reg0
-        func.result_register = RESULT_REG_INDEX
+        func.register_vars[RESULT_REGISTER] = reg0
+        func.result_register = RESULT_REGISTER
         func.locals['t'] = MLILVariable('t')
         return func, reg0, MLILVariableSSA(func.locals['t'], 1)
 

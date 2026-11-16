@@ -2,8 +2,9 @@
 
 from dc3.logging import log
 from ir.llil import LowLevelILFunction
-from ir.mlil import BitwiseHexPass, BlockMergePass, CallResultPass, MediumLevelILFunction, ReturnValuePass
+from ir.mlil import BitwiseHexPass, BlockMergePass, MediumLevelILFunction, ReturnValuePass
 from ir.pipeline import Pipeline
+from .pass_call_result import ED9CallResultPass
 from .stack_translator import ED9StackTranslatorPass
 
 
@@ -13,7 +14,7 @@ def convert_ed9_llil_to_mlil_stack(llil_func: LowLevelILFunction) -> MediumLevel
     right before it and bitwise constants marked hex. A shape it does not translate yet raises UnsupportedStackShape"""
     log.info(f'Translating {llil_func.name} @ 0x{llil_func.start_addr:08X} (stack translator)')
 
-    passes = [ED9StackTranslatorPass(), BlockMergePass(), CallResultPass(), ReturnValuePass(), BitwiseHexPass()]
+    passes = [ED9StackTranslatorPass(), BlockMergePass(), ED9CallResultPass(), ReturnValuePass(), BitwiseHexPass()]
     mlil_func = Pipeline(passes).run(llil_func)
     mlil_func.renumber_instructions()
     return mlil_func

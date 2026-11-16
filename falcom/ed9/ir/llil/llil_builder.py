@@ -4,7 +4,7 @@ from dataclasses import dataclass, replace
 from enum import Enum, auto
 from typing import NamedTuple
 from ir.llil import *
-from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, PopCarry
+from falcom.ed9.assembler.stack_effects import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, PopCarry, parameter_position
 from .constants import *
 from .llil_ext import *
 
@@ -69,6 +69,9 @@ class ED9VMBuilder(LowLevelILBuilder):
         self.function.build_cfg()
         self.function.reindex_in_block_order()
         return self.function
+
+    def _param_position(self, slot_index: int) -> int:
+        return parameter_position(self.function.num_params, slot_index - self.frame_base_sp)
 
     # === Virtual Stack Management ===
 

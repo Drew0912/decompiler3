@@ -20,6 +20,7 @@ from ir.hlil.hlil import (
 )
 from ir.hlil.hlil_formatter import HLILFormatter
 from codegen.typescript import TypeScriptGenerator
+from falcom.ed9.ir.hlil.call_result_folder import ED9CallResultFolder
 
 
 class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
@@ -45,7 +46,7 @@ class TestCallResultFolderRespectsAddressTakenDeref(unittest.TestCase):
         ]
         func.basic_blocks = [block]
 
-        hlil_func = MLILToHLILConverter(func).convert()
+        hlil_func = MLILToHLILConverter(func, folder_class=ED9CallResultFolder).convert()
 
         # f() must remain reachable as a statement in its own right somewhere in the
         # function - never re-inlined so that only y's assignment calls it

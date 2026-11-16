@@ -32,7 +32,8 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `ir/mlil/stack_translator.py` | The generic symbolic-stack translator, `StackTranslator`, and `StackTranslatorPass` (see "The stack translator"). |
 | `ir/mlil/passes/` | The decompile path's passes after its translator (4 files): `pass_block_merge.py` and `pass_bitwise_hex.py` (the SSA path runs them too), `pass_call_result.py` and `pass_return_value.py`. |
 | `falcom/ed9/ir/mlil/mlil_converter.py` | ED9's concrete pipeline wiring — the decompile path's entry point, the stack translator's `convert_ed9_llil_to_mlil_stack()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
-| `falcom/ed9/ir/mlil/stack_translator.py` | `ED9StackTranslator`: ED9's result register, calling convention, globals, script calls, `POPN` and `DEBUG_INT` on the stack translator. |
+| `falcom/ed9/ir/mlil/stack_translator.py` | `ED9StackTranslator`: ED9's result register, calling convention and call rule (`CALL_MAY_CHANGE`), globals, script calls, `POPN` and `DEBUG_INT` on the stack translator. |
+| `falcom/ed9/ir/mlil/pass_call_result.py` | `ED9CallResultPass`: `CallResultPass` with ED9's call rule (any call may write the result register). |
 | **The SSA path** | Kept beside the decompile path and never called by it (IR rewrite part 2, Step 10); it imports from `ir/mlil/`, never the other way. |
 | `ir/mlil_ssa/mlil_ssa_function.py` | `MediumLevelILFunctionSSA`, the SSA path's function: VM registers and globals modelled as variables (`register_vars`, `global_vars`), and the VM's call and return rules as hooks a VM's subclass answers (`call_may_change_register`, `call_may_change_global`, `return_leaves_register`; `call_may_clobber` asks them for a variable); `MLILBuilderSSA`, its builder. |
 | `ir/mlil_ssa/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific), the SSA path's translator; its `FUNCTION_CLASS` is the VM's function class. |
@@ -70,7 +71,7 @@ statement copies all three with `copy_metadata_from()`. Nodes are split into `Me
 | Memory / stack artifacts | Explicit address expressions, for the cases where a raw stack address is referenced directly rather than eliminated. |
 | Pointer dereference | `MLILDeref` (`*ptr`, a unary expression) / `MLILStoreDeref` (`*dest = value`, modelled on `MLILStoreGlobal` but with an expression target instead of a static index) — for `LOAD_STACK_DEREF`/`POP_TO_DEREF`, where the address is a runtime value (e.g. a caller-supplied out-parameter) rather than a statically known stack/frame slot. Unlike `MLILAddressOf`, a `MLILDeref`'s operand is an ordinary value and safe to copy-propagate through; a `MLILStoreDeref` is always kept (never DCE'd) since its target isn't a tracked SSA variable. |
 | Control flow | `MLIL_GOTO`, `MLIL_IF`, `MLIL_RET` |
-| Calls | `MLIL_CALL`, `MLIL_SYSCALL`, `MLIL_EXTERN_CALL`; every call may change any register or global |
+| Calls | `MLIL_CALL`, `MLIL_SYSCALL`, `MLIL_EXTERN_CALL`; what a call may change is the VM's call rule (ED9's: every register, global and dereference) |
 | Intrinsics | `MLIL_INTRINSIC` (`MLILIntrinsic(name, args)`): a VM instruction with no MLIL form of its own, kept as a statement that changes nothing (ED9's `POPN`, `DEBUG_INT`). Not a nop: no pass steps over it, as none steps over a call. |
 | Falcom specific | Derived metadata on top of generic ops — stack-setup helpers like `PUSH_CALLER_FRAME`/`PUSH_CURRENT_FUNC_ID`/`PUSH_RET_ADDR` are fully lowered to regular variables/arguments, with no dedicated MLIL opcode. |
 
@@ -293,7 +294,7 @@ member that arrives after the variable is already a variant is still recorded.
 
 ## The stack translator (the decompile path)
 
-`convert_ed9_llil_to_mlil_stack()` runs `ED9StackTranslatorPass`, `BlockMergePass`, `CallResultPass`,
+`convert_ed9_llil_to_mlil_stack()` runs `ED9StackTranslatorPass`, `BlockMergePass`, `ED9CallResultPass`,
 `ReturnValuePass` and `BitwiseHexPass`. It replaced the SSA path on the decompile path at parity (IR rewrite part 2,
 2026-11-01). It runs no type pass: locals print untyped (`any`), without the SSA path's `int(...)` wrappers, until the
 HLIL type plan.
@@ -317,8 +318,9 @@ pre-pass finds which push each slot holds and how each push is read. Translation
   address: `*(&v)` and `*(&v) = value`, the SSA path's shapes, which the printers fold back to `v`. A call's result
   goes to a fresh temporary, so no call output is one.
 - **Copies before a write:** before a statement that writes storage, every pending leaf the write may change is
-  copied into a fresh temporary `t<n>` (one conservative rule, `may_change`). A call may change every register,
-  global and dereference, `*(&v)` included; a store to `v` changes `v` and `*(&v)`; a store through a pointer changes
+  copied into a fresh temporary `t<n>` (one conservative rule, `may_change`). What a call may change is the VM's
+  call rule (`StackTranslator.call_may_change`, told the call; ED9's, `ED9StackTranslator`: every register, global
+  and dereference, `*(&v)` included); a store to `v` changes `v` and `*(&v)`; a store through a pointer changes
   every dereference, `*(&v)` included (the function may have stored `&v` in the pointer parameter).
 - **Calls:** a call's continuation (its return target, reached from the call alone) is translated into the call's
   own block, the pending values carried over.
@@ -333,8 +335,10 @@ pre-pass finds which push each slot holds and how each push is read. Translation
   (`strip_truth_test`, `docs/hlil/HLIL_DESIGN.md`).
 
 Shaping passes come after the translator, each exact and removable, the canonical form their input:
-- **`CallResultPass`** (`pass_call_result.py`), on the result register: after a call's result store, a read of
-  the register in the call's block, up to the first statement that may write it, reads the call's temporary; a
+- **`CallResultPass`** (`pass_call_result.py`; ED9's call rule in `ED9CallResultPass`,
+  `falcom/ed9/ir/mlil/pass_call_result.py`: any call may write the register), on the result register: after a
+  call's result store, a read of the register in the call's block, up to the first statement that may write it
+  (a store to it, or a call the VM's call rule says may: `call_may_change_register`), reads the call's temporary; a
   result store the register is dead after is dropped (a liveness of its own over the blocks), and a call whose
   temporary nothing then reads gives no output; the translator's copy of a call's temporary right after the call
   (line markers allowed between) becomes the call's output. So `t1 = f(); REG[0] = t1; x = REG[0]` is

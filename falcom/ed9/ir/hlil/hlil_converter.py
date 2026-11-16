@@ -15,6 +15,7 @@ from ir.hlil.passes import (
     LineMarkerRemovalPass,
 )
 
+from .call_result_folder import ED9CallResultFolder
 from .pass_type_inference import ED9TypeInferencePass
 
 if TYPE_CHECKING:
@@ -35,7 +36,7 @@ def convert_ed9_mlil_to_hlil(mlil_func: MediumLevelILFunction, normalize_branch_
     without changing what runs (a negated condition, swapped or nested arms).
     """
     pipeline = Pipeline()
-    pipeline.add_pass(MLILToHLILPass())
+    pipeline.add_pass(MLILToHLILPass(ED9CallResultFolder))
     pipeline.add_pass(SwitchRecoveryPass())
     pipeline.add_pass(LoopRecoveryPass())
     pipeline.add_pass(CommonReturnExtractionPass())

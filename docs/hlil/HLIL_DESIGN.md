@@ -44,6 +44,7 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production ED9 pipeline entry points: per function, `convert_ed9_mlil_to_hlil()` and its pass ordering/configuration; per file, `run_ed9_file_passes()`. |
 | `falcom/ed9/ir/hlil/pass_type_inference.py` | `ED9TypeInferencePass`, the file-level stage: the declared parameter types, then the ID rule's marks and tags. |
 | `falcom/ed9/ir/hlil/id_marks.py` | The ID rule: each function's parameter uses, the marks' worklist (`propagate_id_marks`), the constant tags. |
+| `falcom/ed9/ir/hlil/call_result_folder.py` | `ED9CallResultFolder`: `CallResultFolder` with ED9's call rule (no read of a register, global or dereference moves across a call). |
 | `tests/hlil_tests/test_hlil_branch_order_normalization.py` | Unit tests for source-order arm normalization and its pipeline flag. |
 | `tests/hlil_tests/test_hlil_switch_recovery.py` | Unit tests for equality-chain and grouped-label switch recovery. |
 | `tests/hlil_tests/test_hlil_loop_recovery.py` | Unit tests for guarded-loop recovery and its safety checks. |
@@ -184,13 +185,16 @@ only when that block has one predecessor. Calls without outputs remain expressio
 their side effects are preserved; calls with non-foldable outputs remain assignments.
 
 The fold moves the call to the read's position, so that position must run exactly when the
-statement did (`CallResultFolder._read_unsafe_to_fold`). A fold is refused when an impure read (a
-deref or a `REG[]`/`GLOBAL[]` load) comes earlier in the reader's evaluation order, and when the read
-sits under `&x`. A read under the VM's eager `AND`/`OR` folds on either side: both operands always
-run, in order. `.ts` keeps that true where TypeScript's `&&`/`||` would not, with `and_`/`or_`. The
-converter's `OR_ELSE` chains (funnel collapse) take in a later test, calls folded into it included,
-only when that test is entered from the previous one alone, so its calls run only when the earlier
-tests failed: a call on the right of `AND_THEN`/`OR_ELSE` really is conditional.
+statement did (`CallResultFolder._read_unsafe_to_fold`). A fold is refused when a read the call may
+change comes earlier in the reader's evaluation order, and when the read sits under `&x`. What a call
+may change is the VM's call rule (`CallResultFolder.call_may_change`, told the call; ED9's,
+`ED9CallResultFolder`: a deref or a `REG[]`/`GLOBAL[]` load), the folder class the converter is given
+(`MLILToHLILConverter`'s and `MLILToHLILPass`'s `folder_class`). A read under the VM's eager
+`AND`/`OR` folds on either side: both operands always run, in order. `.ts` keeps that true where
+TypeScript's `&&`/`||` would not, with `and_`/`or_`. The converter's `OR_ELSE` chains (funnel
+collapse) take in a later test, calls folded into it included, only when that test is entered from
+the previous one alone, so its calls run only when the earlier tests failed: a call on the right of
+`AND_THEN`/`OR_ELSE` really is conditional.
 
 This specialized folding belongs in conversion rather than a post-conversion tree pass: it
 uses MLIL instruction positions, CFG predecessor information, and call evaluation order before the

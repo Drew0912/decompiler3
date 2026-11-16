@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from codegen import generate_typescript
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
-from falcom.ed9.ir.mlil_ssa.mlil_translator import RESULT_REG_INDEX
+from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import CALLEE_ID, CALLER_ID, Asm, returning_callee
 
@@ -32,7 +32,7 @@ LOCAL = f'reg{REG_INDEX}'
 
 
 def return_nothing(asm: Asm):
-    asm.push_raw(0); asm.set_reg(RESULT_REG_INDEX); asm.ret()
+    asm.push_raw(0); asm.set_reg(RESULT_REGISTER); asm.ret()
 
 
 def typescript_of(asm: Asm, *, infer_types: bool = False) -> str:
@@ -134,8 +134,8 @@ class TestRegisterLeftForTheCaller(unittest.TestCase):
         return_nothing(asm)
         ts = typescript_of(asm)
         self.assertIn('return 0;', ts)
-        self.assertNotIn(f'REGS[{RESULT_REG_INDEX}]', ts)
-        self.assertNotIn(f'reg{RESULT_REG_INDEX}', ts)
+        self.assertNotIn(f'REGS[{RESULT_REGISTER}]', ts)
+        self.assertNotIn(f'reg{RESULT_REGISTER}', ts)
 
     def test_call_between_write_and_return_leaves_the_callee_value(self):
         asm = Asm()

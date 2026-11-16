@@ -14,8 +14,8 @@ sys.path.insert(0, str(REPO_ROOT))
 sys.path.insert(0, str(REPO_ROOT / 'tools'))
 
 from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
+from falcom.ed9.ir.mlil.pass_call_result import ED9CallResultPass
 from ir.llil.llil import WORD_SIZE
-from ir.mlil import CallResultPass
 from ir.mlil.mlil import MediumLevelILCall, MLILExternCall
 from tests.shared.llil_utils import lift_asm
 from tests.shared.logic_check_functions import (
@@ -239,7 +239,7 @@ class TestNoResultRegister(unittest.TestCase):
         mlil.result_register = None
         before = statements(mlil)
 
-        CallResultPass().run(mlil)
+        ED9CallResultPass().run(mlil)
 
         self.assertEqual(statements(mlil), before)
 

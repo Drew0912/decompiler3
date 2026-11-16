@@ -18,6 +18,7 @@ from ir.mlil.mlil import (
 )
 from ir.hlil.hlil_formatter import HLILFormatter
 from ir.hlil.mlil_to_hlil import MLILToHLILConverter
+from falcom.ed9.ir.hlil.call_result_folder import ED9CallResultFolder
 from tests.shared.ir_utils import connect
 
 GLOBAL_SLOT = 3
@@ -36,7 +37,7 @@ def make_func(name: str, block_count: int):
 
 def lines_of(func: MediumLevelILFunction) -> list:
     connect(func)
-    hlil = MLILToHLILConverter(func).convert()
+    hlil = MLILToHLILConverter(func, folder_class=ED9CallResultFolder).convert()
     return [line.strip() for line in HLILFormatter.format_function(hlil)]
 
 

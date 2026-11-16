@@ -86,7 +86,8 @@ class PendingMerge:
 class MLILToHLILConverter:
 
     def __init__(self, mlil_func: MediumLevelILFunction, clone_budget: int = CLONE_STATEMENT_BUDGET,
-                 max_region_blocks: int = CLONE_MAX_REGION_BLOCKS):
+                 max_region_blocks: int = CLONE_MAX_REGION_BLOCKS,
+                 folder_class: type[CallResultFolder] = CallResultFolder):
         self.mlil_func = mlil_func
         self.hlil_func = HighLevelILFunction(mlil_func.name, mlil_func.start_addr)
 
@@ -111,8 +112,8 @@ class MLILToHLILConverter:
         # Structural analyzer for accurate merge point detection (set by _build_cfg)
         self.structural_analyzer: StructuralAnalyzer | None = None
 
-        # Call results that become part of the instruction reading them
-        self.folder = CallResultFolder(mlil_func, self.block_successors)
+        # Call results that become part of the instruction reading them (the folder class gives the VM's call rule)
+        self.folder = folder_class(mlil_func, self.block_successors)
 
         # Converted call expressions, keyed by call position
         self.expr_cache: dict[tuple[int, int], HLILExpression] = {}

@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from codegen import generate_typescript
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
-from falcom.ed9.ir.mlil_ssa.mlil_translator import RESULT_REG_INDEX
+from falcom.ed9.assembler.stack_effects import RESULT_REGISTER
 from ir.llil.llil import WORD_SIZE
 from tests.shared.llil_utils import lift_asm
 from tests.shared.scp_asm import Asm
@@ -24,7 +24,7 @@ GLOBAL_WRITTEN = 0
 
 
 def return_nothing(asm: Asm):
-    asm.pop(PARAMETERS * WORD_SIZE); asm.push_raw(0); asm.set_reg(RESULT_REG_INDEX); asm.ret()
+    asm.pop(PARAMETERS * WORD_SIZE); asm.push_raw(0); asm.set_reg(RESULT_REGISTER); asm.ret()
 
 
 def typescript_of(asm: Asm) -> str:

@@ -161,9 +161,18 @@ as tags on HLIL nodes (`HLILConst.id_kind`, `HLILVariable.id_kind`) and plain da
 stage. The opcode table (`falcom/ed9/assembler/`) holds no IR node classes:
 it gives opcode kinds and stack effects, and the LLIL lifter maps them to nodes. The decompile path's LLIL -> MLIL
 translator keeps the game's conventions in `falcom/ed9/ir/mlil/stack_translator.py` (`ED9StackTranslator`: the
-parameter-to-slot mapping, the result register, globals, script calls, `POPN`, `DEBUG_INT`); the generic
-`StackTranslator` translates the generic LLIL nodes (`RegStore`, `RegLoad`, `Syscall`) itself. The SSA path's known
-leftovers stay with it in `ir/mlil_ssa/` (`docs/FUTURE_WORK.md`, "Generic/Falcom Boundary"). The IR folds plain int
+parameter-to-slot mapping, the result register, the call rule, globals, script calls, `POPN`, `DEBUG_INT`); the
+generic translators (`StackTranslator`, the SSA path's `LLILToMLILTranslator`) translate the generic LLIL nodes
+(`RegStore`, `RegLoad`, `Syscall`) themselves. A VM's rules reach generic code as hooks it declares, each raising
+`NotImplementedError` naming its class until a VM's subclass answers it: the calling convention (the LLIL builder's
+`_param_position`, both translators' `parameter_position`), the call rule (`StackTranslator.call_may_change`,
+`CallResultPass.call_may_change_register`, `CallResultFolder.call_may_change`, the SSA function's
+`call_may_change_register` / `call_may_change_global`) and the SSA function's return rule (`return_leaves_register`).
+ED9's answers are in `falcom/ed9/ir/`, the argument order and result register once in
+`falcom/ed9/assembler/stack_effects.py` (`parameter_position`, `RESULT_REGISTER`), the call rule's nodes once in ED9's
+stack translator (`CALL_MAY_CHANGE`); its pipelines build its subclasses (`ED9CallResultPass`, `ED9CallResultFolder`
+through `MLILToHLILPass`'s `folder_class`, `ED9MediumLevelILFunctionSSA` through the SSA translator's
+`FUNCTION_CLASS`). The IR folds plain int
 constants (at Python's width, `is_plain_int`) and decides their truth; floats - their arithmetic, comparisons and
 truth - strings, a frontend's own ints, and integer division and remainder are not evaluated (an identity like `x / 1`
 aside), since a VM's rules for them need not be Python's. ED9's rules: `docs/falcom/ed9/ED9_VM.md` (Arithmetic, Truth,

@@ -69,7 +69,11 @@ class CallResultPass(Pass):
         if isinstance(inst, MLILStoreReg):
             return inst.index == self.register
 
-        return isinstance(inst, MediumLevelILCall)
+        return isinstance(inst, MediumLevelILCall) and self.call_may_change_register(inst, self.register)
+
+    def call_may_change_register(self, call: MediumLevelILCall, reg_index: int) -> bool:
+        """Whether call may change VM register reg_index: the VM's call rule"""
+        raise NotImplementedError(f'{type(self).__name__} gives no call rule')
 
     # === Reads forwarded ===
 

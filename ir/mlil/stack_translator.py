@@ -74,7 +74,7 @@ class PileEntry:
 class WriteKind(Enum):
     """What a statement may change, so the pending leaves it may change are copied before it"""
 
-    CALL     = auto()   # a clobbering call: every register, global and dereference, address-taken variables too
+    CALL     = auto()   # a call: what it may change is the VM's call rule (call_may_change)
     REGISTER = auto()   # one register
     GLOBAL   = auto()   # one global
     VARIABLE = auto()   # one local or parameter
@@ -83,7 +83,7 @@ class WriteKind(Enum):
 
 class Write(NamedTuple):
     kind: WriteKind
-    target: int | MLILVariable | None = None    # the register or global index, or the variable
+    target: int | MLILVariable | LowLevelILInstruction | None = None   # a register or global index, a variable, a call
 
 
 class StackTranslator:
@@ -304,7 +304,7 @@ class StackTranslator:
             builder.store_reg(inst.reg_index, value)
         elif isinstance(inst, LowLevelILSyscall):
             args = [self.translate_expr(arg) for arg in inst.args]
-            self.copy_out(Write(WriteKind.CALL))
+            self.copy_out(Write(WriteKind.CALL, inst))
             output = self.result_temp()
             builder.syscall(inst.subsystem, inst.cmd, args, output)
             self.store_result(output)
@@ -341,7 +341,7 @@ class StackTranslator:
         """t = call(args); REG[r] = t; then the continuation, a goto to the return target, or (a tail call) the return
         that passes the callee's result on"""
         args = [self.translate_expr(arg) for arg in inst.args]
-        self.copy_out(Write(WriteKind.CALL))
+        self.copy_out(Write(WriteKind.CALL, inst))
         output = self.result_temp()
         self.builder.add_instruction(self.make_call(inst, args, output))
         self.store_result(output)
@@ -444,10 +444,10 @@ class StackTranslator:
 
     @classmethod
     def may_change(cls, write: Write, node: MediumLevelILInstruction) -> bool:
-        """The write model, one conservative rule for every write"""
+        """The write model, one conservative rule for every write; a call's, the VM's"""
         match write.kind:
             case WriteKind.CALL:
-                return isinstance(node, (MLILLoadReg, MLILLoadGlobal, MLILDeref))
+                return cls.call_may_change(write.target, node)
             case WriteKind.REGISTER:
                 return isinstance(node, MLILLoadReg) and node.index == write.target
             case WriteKind.GLOBAL:
@@ -486,6 +486,11 @@ class StackTranslator:
     def parameter_position(self, frame_offset: int) -> int:
         """The 1-based parameter in the frame slot at frame_offset: the VM's calling convention"""
         raise NotImplementedError(f'{type(self).__name__} gives no calling convention')
+
+    @classmethod
+    def call_may_change(cls, call: LowLevelILInstruction, node: MediumLevelILInstruction) -> bool:
+        """Whether call (a local or script call, or a syscall) may change what node reads: the VM's call rule"""
+        raise NotImplementedError(f'{cls.__name__} gives no call rule')
 
     def make_call(self, inst: LowLevelILCall, args: list[MediumLevelILInstruction],
                   output: MLILVariable | None) -> MediumLevelILCall:

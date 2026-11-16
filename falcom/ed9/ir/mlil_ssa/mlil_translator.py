@@ -1,5 +1,6 @@
 """Falcom ED9 VM LLIL to MLIL Translator"""
 
+from falcom.ed9.assembler.stack_effects import RESULT_REGISTER, parameter_position
 from ir.llil import *
 from ir.mlil import *
 from ir.mlil_ssa import *
@@ -7,23 +8,15 @@ from ..llil.llil_ext import *
 from ..llil.constants import *
 from .mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
-# REG[0] is the VM result register: calls write it and RETURN reads it
-RESULT_REG_INDEX = 0
-
 
 class ED9LLILToMLILTranslator(LLILToMLILTranslator):
     """ED9-specific LLIL to MLIL translator"""
 
-    RESULT_REGISTER = RESULT_REG_INDEX
+    RESULT_REGISTER = RESULT_REGISTER
     FUNCTION_CLASS  = ED9MediumLevelILFunctionSSA
 
-    def _result_reg_var(self) -> MLILVariable:
-        """Variable modelling the VM result register"""
-        return self.builder.get_or_create_register_var(RESULT_REG_INDEX)
-
-    def _call_output(self) -> MLILVariable:
-        """Local calls write their result to the VM result register"""
-        return self._result_reg_var()
+    def parameter_position(self, frame_offset: int) -> int:
+        return parameter_position(self.llil_func.num_params, frame_offset // WORD_SIZE)
 
     def _translate_instruction(self, llil_inst: LowLevelILInstruction):
         """Translate LLIL instruction, handling ED9-specific operations"""
@@ -35,19 +28,10 @@ class ED9LLILToMLILTranslator(LLILToMLILTranslator):
         if isinstance(llil_inst, LowLevelILGlobalStore):
             value = self._translate_expr(llil_inst.value)
             self.builder.store_global(llil_inst.index, value)
-        elif isinstance(llil_inst, LowLevelILRegStore):
-            value = self._translate_expr(llil_inst.value)
-            reg_var = self.builder.get_or_create_register_var(llil_inst.reg_index)
-            self.builder.set_var(reg_var, value)
-        elif isinstance(llil_inst, LowLevelILRet):
-            # The VM returns whatever the result register holds
-            self.builder.ret(MLILVar(self._result_reg_var()))
         elif isinstance(llil_inst, LowLevelILCallScriptNoReturn):
             self._translate_call_script_no_return(llil_inst)
         elif isinstance(llil_inst, LowLevelILCallScript):
             self._translate_call_script(llil_inst)
-        elif isinstance(llil_inst, LowLevelILSyscall):
-            self._translate_syscall(llil_inst)
         elif isinstance(llil_inst, LowLevelILPopN):
             self.builder.intrinsic('POPN', [self._translate_expr(value) for value in llil_inst.values])
         elif isinstance(llil_inst, LowLevelILDebugInt):
@@ -70,7 +54,7 @@ class ED9LLILToMLILTranslator(LLILToMLILTranslator):
         # Translate arguments
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
-        self.builder.extern_call(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
+        self.builder.extern_call(llil_inst.module, llil_inst.func, mlil_args, self._result_var())
 
         # Add goto to return target (always a LowLevelILBasicBlock in ED9)
         return_block = self.block_map[llil_inst.return_target]
@@ -85,24 +69,14 @@ class ED9LLILToMLILTranslator(LLILToMLILTranslator):
         """
         mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
 
-        self.builder.extern_call(llil_inst.module, llil_inst.func, mlil_args, self._result_reg_var())
-        self.builder.ret(MLILVar(self._result_reg_var()))
-
-    def _translate_syscall(self, llil_inst: LowLevelILSyscall):
-        """Translate ED9 syscall"""
-        # Translate arguments from LLIL
-        mlil_args = [self._translate_expr(arg) for arg in llil_inst.args]
-
-        # Generate MLIL Syscall
-        self.builder.syscall(llil_inst.subsystem, llil_inst.cmd, mlil_args, self._result_reg_var())
+        self.builder.extern_call(llil_inst.module, llil_inst.func, mlil_args, self._result_var())
+        self.builder.ret(self._result_read())
 
     def _translate_expr(self, llil_expr: LowLevelILInstruction) -> MediumLevelILInstruction:
         """Translate LLIL expression, handling ED9-specific types"""
         # ED9-specific expressions
         if isinstance(llil_expr, LowLevelILGlobalLoad):
             return MLILLoadGlobal(llil_expr.index)
-        elif isinstance(llil_expr, LowLevelILRegLoad):
-            return MLILVar(self.builder.get_or_create_register_var(llil_expr.reg_index))
 
         # ED9-specific constants
         elif isinstance(llil_expr, LowLevelILConstFuncId):
