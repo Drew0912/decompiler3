@@ -89,7 +89,8 @@ from decompiler2's ED8.x support:
   decompiler2's ED9 table has these descriptors too, with the letters commented out: no ED9 instruction uses them.
 - **Feasibility study** (2026-10-15, user asked; report and scripts in `notes/ed85_mlil_feasibility/`; the only sample
   is `decompiler2/Decompiler2/Falcom/ED85/btlcom.dat`): lifting ED85 straight into the generic MLIL, with no LLIL,
-  needs no `ir/` change. A hand-built ED85-shaped MLIL function went through `optimize_mlil`, the HLIL passes and the
+  needs no `ir/` change (its functions a `MediumLevelILFunctionSSA` subclass giving ED85's call and return rules, as
+  `ED9MediumLevelILFunctionSSA` gives ED9's). A hand-built ED85-shaped MLIL function went through `optimize_mlil`, the HLIL passes and the
   TypeScript output with its loop and switch recovered. A whole-file prototype then lifted all 133 code functions of
   `btlcom.dat` with no failures and no `goto` left (`btlcom_proto.py`). Its front end reads decompiler2's decoded
   `btlcom.py` with `ast`, so a real ED85 decoder is still to be written.
@@ -104,8 +105,9 @@ from decompiler2's ED8.x support:
   - **Registers:** built-in commands touch registers only through explicit register-index operands
     (`BattleTargetsIterReset(regIndex, ..)` writes it), so they can be lifted as calls that write no register. A
     script `Call` can change registers: `AniCheckDeadTarget` sets reg 7, and four callers branch on reg 7 right after
-    calling it. Calls between script functions keep the clobbering default, or get a per-callee summary of the
-    registers they write (41 of the 133 functions write one, directly or through a call). Registers must be MLIL
+    calling it. ED85's call rule (its `MediumLevelILFunctionSSA` subclass, which `optimize_mlil` asks:
+    `call_may_change_register`) lets a script call change every register, or only those a per-callee summary says it
+    writes (41 of the 133 functions write one, directly or through a call). Registers must be MLIL
     globals, whose writes outlive the function: as register variables, the SSA dead-code pass deletes a write the
     function never reads again, which lost `AniCheckDeadTarget`'s `reg7` in the prototype's first run.
   - **SSA optimizer:** no stack slots to turn into variables, but across the whole file it propagates copies and

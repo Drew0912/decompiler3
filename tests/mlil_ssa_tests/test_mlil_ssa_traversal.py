@@ -10,11 +10,12 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILInstruction, MediumLevelILBasicBlock, MediumLevelILFunction, MLILVariable, MLILAdd, MLILAddressOf,
+    MediumLevelILInstruction, MediumLevelILBasicBlock, MLILVariable, MLILAdd, MLILAddressOf,
     MLILRet, MLILCall, map_operands,
 )
 from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILPhi, iter_ssa_reads
 from ir.mlil_ssa.passes.pass_ssa_copy_propagation import CopyPropagationPass
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.ir_utils import (
     SOURCE_ADDRESS, SOURCE_INST_INDEX, SOURCE_LLIL_INDEX, c, concrete_subclasses, expression_fields, replaced,
 )
@@ -104,7 +105,7 @@ class TestWalkerRulesKept(unittest.TestCase):
     def test_copy_propagation_does_not_count_a_read_under_address_of(self):
         # it never rewrites the operand of &, so that read is not one of its uses
         x1 = MLILVariableSSA(MLILVariable('x'), 1)
-        func = MediumLevelILFunction('f')
+        func = ED9MediumLevelILFunctionSSA('f')
         func.create_block().add_instruction(MLILCall('f', [MLILVarSSA(x1), MLILAddressOf(MLILVarSSA(x1))]))
         copy_propagation = CopyPropagationPass()
         copy_propagation._count_uses(func)

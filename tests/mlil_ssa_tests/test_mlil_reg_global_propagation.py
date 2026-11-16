@@ -12,7 +12,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MLILConst, MLILGoto, MLILIf, MLILCall, MLILLoadGlobal, MLILLoadReg,
+    MLILConst, MLILGoto, MLILIf, MLILCall, MLILLoadGlobal, MLILLoadReg,
     MLILStoreGlobal, MLILStoreReg, MLILStoreDeref, MLILRet, MLILSetVar, MLILVar, MLILAdd,
     MLILAddressOf,
 )
@@ -20,6 +20,7 @@ from ir.mlil_ssa.passes.pass_reg_global_propagation import (
     RegGlobalValuePropagator, RegGlobalState,
 )
 from ir.mlil_ssa.passes import RegGlobalValuePropagationPass
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
 
 FUNC_START = 0x1000
@@ -31,7 +32,7 @@ class TestWorklistFixpointRecordsInStateOnEveryVisit(unittest.TestCase):
     flows in) must not keep an over-optimistic first-visit in_state."""
 
     def test_loop_global_is_not_folded_past_a_clobbering_call_on_the_back_edge(self):
-        func = MediumLevelILFunction('worklist_test')
+        func = ED9MediumLevelILFunctionSSA('worklist_test')
         entry = func.create_block(start=FUNC_START, label='entry')
         loop = func.create_block(start=FUNC_START + 4, label='loop')
         exit_block = func.create_block(start=FUNC_START + 8, label='exit')
@@ -62,7 +63,7 @@ class TestConstantEqualityIsRepresentationSafe(unittest.TestCase):
     from binary data, so NaN is reachable)."""
 
     def setUp(self):
-        self.propagator = RegGlobalValuePropagator(MediumLevelILFunction('equality_test'))
+        self.propagator = RegGlobalValuePropagator(ED9MediumLevelILFunctionSSA('equality_test'))
 
     def test_merge_states_widens_to_unknown_when_predecessors_disagree_on_representation(self):
         merged = self.propagator._merge_states([
@@ -87,7 +88,7 @@ class TestClosedFormCachingNeverGoesStale(unittest.TestCase):
     never cached, so none of these can go stale."""
 
     def test_copy_of_an_unresolved_slot_is_not_cached_as_a_live_reference(self):
-        func = MediumLevelILFunction('unresolved_slot_copy')
+        func = ED9MediumLevelILFunctionSSA('unresolved_slot_copy')
         block = func.create_block()
         block.add_instruction(MLILStoreReg(0, MLILLoadReg(1)))
         block.add_instruction(MLILStoreReg(1, MLILConst(7)))
@@ -101,7 +102,7 @@ class TestClosedFormCachingNeverGoesStale(unittest.TestCase):
         self.assertEqual(final_ret.value.index, 0)
 
     def test_reassigning_a_local_does_not_leak_into_an_earlier_global_read(self):
-        func = MediumLevelILFunction('local_reassignment')
+        func = ED9MediumLevelILFunctionSSA('local_reassignment')
         block = func.create_block()
         x = func.get_or_create_local('var_s0', 0)
         block.add_instruction(MLILStoreGlobal(5, MLILVar(x)))
@@ -115,7 +116,7 @@ class TestClosedFormCachingNeverGoesStale(unittest.TestCase):
         self.assertIsInstance(call_inst.args[0], MLILLoadGlobal)
 
     def test_a_self_referential_store_does_not_double_apply(self):
-        func = MediumLevelILFunction('self_referential_store')
+        func = ED9MediumLevelILFunctionSSA('self_referential_store')
         block = func.create_block()
         block.add_instruction(MLILStoreReg(0, MLILAdd(MLILLoadReg(0), MLILConst(1))))
         block.add_instruction(MLILRet(MLILLoadReg(0)))
@@ -128,7 +129,7 @@ class TestClosedFormCachingNeverGoesStale(unittest.TestCase):
         self.assertIsInstance(final_ret.value, MLILLoadReg)
 
     def test_a_pointer_write_does_not_retroactively_change_an_earlier_global_snapshot(self):
-        func = MediumLevelILFunction('pointer_write')
+        func = ED9MediumLevelILFunctionSSA('pointer_write')
         block = func.create_block()
         x = func.get_or_create_local('x', 0)
         block.add_instruction(MLILSetVar(x, MLILConst(1)))
@@ -145,7 +146,7 @@ class TestClosedFormCachingNeverGoesStale(unittest.TestCase):
     def test_positive_control_constant_propagation_still_works(self):
         """The main case this pass exists for must still fold - closed-form caching should not
         regress plain constant propagation."""
-        func = MediumLevelILFunction('positive_control')
+        func = ED9MediumLevelILFunctionSSA('positive_control')
         block = func.create_block()
         block.add_instruction(MLILStoreReg(0, MLILConst(5)))
         block.add_instruction(MLILRet(MLILLoadReg(0)))

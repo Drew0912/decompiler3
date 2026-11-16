@@ -6,7 +6,6 @@ Replace SSA variable copies (x#1 = x#0 -> use x#0)
 from ir.pipeline import Pass
 from ir.mlil.mlil import (
     map_operands,
-    MediumLevelILFunction,
     MediumLevelILBasicBlock,
     MediumLevelILInstruction,
     MediumLevelILCall,
@@ -20,9 +19,10 @@ from ..mlil_ssa import (
     MLILVarSSA,
     MLILSetVarSSA,
 )
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 
 
-def reaches_without_redefinition(func: MediumLevelILFunction, base_var, def_block: MediumLevelILBasicBlock,
+def reaches_without_redefinition(func: MediumLevelILFunctionSSA, base_var, def_block: MediumLevelILBasicBlock,
                                  def_idx: int, use_block: MediumLevelILBasicBlock, use_idx: int) -> bool:
     """True if nothing between (def_block, def_idx) and (use_block, use_idx) redefines base_var:
     an explicit definition, a store to its register (the stores SSA construction puts before a
@@ -44,7 +44,7 @@ def reaches_without_redefinition(func: MediumLevelILFunction, base_var, def_bloc
 
         if isinstance(inst, MediumLevelILCall):
             return ((inst.output is not None and inst.output.base_var == base_var)
-                    or func.call_may_clobber(base_var))
+                    or func.call_may_clobber(inst, base_var))
 
         return False
 
@@ -85,7 +85,7 @@ class CopyPropagationPass(Pass):
         self.def_positions: dict[MLILVariableSSA, tuple[MediumLevelILBasicBlock, int]] = {}
         self.use_counts: dict[MLILVariableSSA, int] = {}
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Propagate copies through the function"""
         changed = True
 
@@ -96,7 +96,7 @@ class CopyPropagationPass(Pass):
 
         return func
 
-    def _build_def_chains(self, func: MediumLevelILFunction):
+    def _build_def_chains(self, func: MediumLevelILFunctionSSA):
         """Build SSA definition chains and their (block, index) positions"""
         self.ssa_defs = {}
         self.def_positions = {}
@@ -105,7 +105,7 @@ class CopyPropagationPass(Pass):
             self.ssa_defs[var] = definition
             self.def_positions[var] = (block, index)
 
-    def _count_uses(self, func: MediumLevelILFunction):
+    def _count_uses(self, func: MediumLevelILFunctionSSA):
         """Count reads of every SSA variable. A read under & is not counted: this pass never
         rewrites the operand of &"""
         self.use_counts = {}
@@ -114,7 +114,7 @@ class CopyPropagationPass(Pass):
             for var, _ in iter_ssa_reads(inst, skip=(MLILAddressOf,)):
                 self.use_counts[var] = self.use_counts.get(var, 0) + 1
 
-    def _propagate_once(self, func: MediumLevelILFunction) -> bool:
+    def _propagate_once(self, func: MediumLevelILFunctionSSA) -> bool:
         """Single copy propagation pass - resolves each read to its effective root"""
         changed = False
 
@@ -132,7 +132,7 @@ class CopyPropagationPass(Pass):
 
         return changed
 
-    def _resolve_effective_root(self, var: MLILVariableSSA, func: MediumLevelILFunction,
+    def _resolve_effective_root(self, var: MLILVariableSSA, func: MediumLevelILFunctionSSA,
                                 use_block: MediumLevelILBasicBlock, use_idx: int,
                                 visiting: set[MLILVariableSSA] | None = None) -> MLILVariableSSA:
         """Follow a chain of pure copies (x#n = y#m) back to its furthest safe ancestor.
@@ -195,7 +195,7 @@ class CopyPropagationPass(Pass):
 
         return root
 
-    def _replace_in_expr(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction,
+    def _replace_in_expr(self, expr: MediumLevelILInstruction, func: MediumLevelILFunctionSSA,
                          block: MediumLevelILBasicBlock, idx: int) -> MediumLevelILInstruction:
         """Replace copy variables in expression"""
         if isinstance(expr, MLILVarSSA):

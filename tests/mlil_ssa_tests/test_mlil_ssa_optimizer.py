@@ -14,15 +14,16 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from dc3.logging import log
 from ir.core import SourceFloat
-from ir.mlil.mlil import MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILLogicalNot, MLILNe
+from ir.mlil.mlil import MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILLogicalNot, MLILNe
 from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILIf, MLILRet
 from ir.mlil_ssa.mlil_ssa_optimizer import SSA_OPTIMIZER_MAX_ITERATIONS, SSAOptimizer
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
 STORED_0_3 = 0.2999999523162842     # what 0.3 decodes to
 
 
-def make_func(name: str) -> MediumLevelILFunction:
-    return MediumLevelILFunction(name, 0)
+def make_func(name: str) -> ED9MediumLevelILFunctionSSA:
+    return ED9MediumLevelILFunctionSSA(name, 0)
 
 
 def make_double_negation_func(name: str) -> tuple:

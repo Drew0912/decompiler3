@@ -1,8 +1,8 @@
 """MLIL Optimizer - the SSA path's one pass list, which runs after its LLIL->MLIL translation"""
 
-from ir.mlil.mlil import MediumLevelILFunction
 from ir.mlil.passes import BitwiseHexPass, BlockMergePass
 from ir.pipeline import Pass, Pipeline
+from .mlil_ssa_function import MediumLevelILFunctionSSA
 from .passes import (
     SSAConversionPass,
     SSAOptimizationPass,
@@ -27,7 +27,7 @@ def mlil_optimization_passes(infer_types: bool = True) -> list[Pass]:
     return passes
 
 
-def optimize_mlil(function: MediumLevelILFunction, infer_types: bool = True) -> MediumLevelILFunction:
+def optimize_mlil(function: MediumLevelILFunctionSSA, infer_types: bool = True) -> MediumLevelILFunctionSSA:
     """Run the production MLIL passes on an already translated function"""
     function = Pipeline(mlil_optimization_passes(infer_types)).run(function)
     function.renumber_instructions()

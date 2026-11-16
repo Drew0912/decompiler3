@@ -6,7 +6,6 @@ Replace SSA variables with constant values (no folding)
 from ir.pipeline import Pass
 from ir.mlil.mlil import (
     map_operands,
-    MediumLevelILFunction,
     MediumLevelILInstruction,
     MLILConst,
     MLILAddressOf,
@@ -17,6 +16,7 @@ from ..mlil_ssa import (
     MLILVarSSA,
     MLILSetVarSSA,
 )
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 
 
 class ConstantPropagationPass(Pass):
@@ -28,7 +28,7 @@ class ConstantPropagationPass(Pass):
         # of it needs no debug comment (string_debug_comment)
         self.replaced_vars: set[MLILVariableSSA] = set()
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Propagate constants through the function"""
         self._build_constants(func)
         changed = True
@@ -38,7 +38,7 @@ class ConstantPropagationPass(Pass):
 
         return func
 
-    def _build_constants(self, func: MediumLevelILFunction):
+    def _build_constants(self, func: MediumLevelILFunctionSSA):
         """Build constant map from SSA definitions"""
         self.constants = {}
 
@@ -47,7 +47,7 @@ class ConstantPropagationPass(Pass):
                 if isinstance(inst.value, MLILConst):
                     self.constants[inst.var] = inst.value.value
 
-    def _propagate_once(self, func: MediumLevelILFunction) -> bool:
+    def _propagate_once(self, func: MediumLevelILFunctionSSA) -> bool:
         """Single propagation pass"""
         changed = False
 

@@ -11,9 +11,10 @@ import unittest
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
-from ir.mlil.mlil import MediumLevelILFunction, MLILCall, MLILConst, MLILGoto, MLILVariable
+from ir.mlil.mlil import MLILCall, MLILConst, MLILGoto, MLILVariable
 from ir.mlil_ssa.mlil_ssa import MLILIf, MLILPhi, MLILRet, MLILSetVarSSA, MLILVariableSSA, MLILVarSSA
 from ir.mlil_ssa.passes import ConstantPropagationPass, SSADeadCodeEliminationPass
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
 
 FUNC_START = 0x1000
@@ -22,7 +23,7 @@ VALUE = 7
 TEXT = 'text'
 
 
-def ssa_var(func: MediumLevelILFunction, name: str, version: int) -> MLILVariableSSA:
+def ssa_var(func: ED9MediumLevelILFunctionSSA, name: str, version: int) -> MLILVariableSSA:
     """SSA version of local `name`, registering the local on first use"""
     return MLILVariableSSA(func.locals.setdefault(name, MLILVariable(name)), version)
 
@@ -35,7 +36,7 @@ class TestDeadChainRemovedInOneRun(unittest.TestCase):
 
     def test_copy_chain(self):
         # a#1 -> b#1 -> c#1, and nothing reads c#1
-        func = MediumLevelILFunction('copy_chain', FUNC_START)
+        func = ED9MediumLevelILFunctionSSA('copy_chain', FUNC_START)
         a1, b1, c1 = (ssa_var(func, name, 1) for name in ('a', 'b', 'c'))
         block = func.create_block(FUNC_START, 'entry')
         block.instructions = [
@@ -51,7 +52,7 @@ class TestDeadChainRemovedInOneRun(unittest.TestCase):
 
     def test_chain_through_a_phi(self):
         # v#1 and v#2 only feed v#3 = phi(v#1, v#2), which only feeds w#1, which nothing reads
-        func = MediumLevelILFunction('phi_chain', FUNC_START)
+        func = ED9MediumLevelILFunctionSSA('phi_chain', FUNC_START)
         v1, v2, v3 = (ssa_var(func, 'v', version) for version in (1, 2, 3))
         w1 = ssa_var(func, 'w', 1)
         cond = MLILVarSSA(ssa_var(func, 'p', 0))
@@ -69,7 +70,7 @@ class TestDeadChainRemovedInOneRun(unittest.TestCase):
 
     def test_call_output_read_only_by_the_chain(self):
         # x#1 = Foo(); y#1 = x#1, and nothing reads y#1 - the call stays, its output goes
-        func = MediumLevelILFunction('call_output', FUNC_START)
+        func = ED9MediumLevelILFunctionSSA('call_output', FUNC_START)
         x1, y1 = ssa_var(func, 'x', 1), ssa_var(func, 'y', 1)
         call = MLILCall('Foo', [], output=x1)
         block = func.create_block(FUNC_START, 'entry')
@@ -85,7 +86,7 @@ class TestSubstitutedStringLeavesNoComment(unittest.TestCase):
 
     def test_set_empty_when_the_passes_are_built(self):
         # s#1 = 'text'; Foo(s#1): the optimizer builds the passes before constant propagation records s#1
-        func = MediumLevelILFunction('substituted_string', FUNC_START)
+        func = ED9MediumLevelILFunctionSSA('substituted_string', FUNC_START)
         s1 = ssa_var(func, 's', 1)
         block = func.create_block(FUNC_START, 'entry')
         block.instructions = [MLILSetVarSSA(s1, MLILConst(TEXT)), MLILCall('Foo', [MLILVarSSA(s1)]), MLILRet()]

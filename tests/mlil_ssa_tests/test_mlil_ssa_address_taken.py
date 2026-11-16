@@ -16,12 +16,13 @@ from falcom.ed9.ir.llil.llil_builder import ED9VMBuilder
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from ir.llil.llil import WORD_SIZE
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MediumLevelILCall, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILConst, MLILCall,
+    MediumLevelILCall, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILConst, MLILCall,
     MLILAddressOf, MLILIf, MLILGoto, MLILAdd, MLILSub, MLILEq, MLILGe, MLILRet, MLILStoreGlobal, MLILLoadGlobal,
 )
 from ir.mlil_ssa.mlil_ssa import SSAConstructor, SSADeconstructor
 from ir.mlil_ssa.mlil_optimizer import optimize_mlil
 from ir.mlil_ssa.passes import SSAConversionPass, SSATypeInferencePass, RegGlobalValuePropagationPass
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
 
 FUNC_START = 0x1000
@@ -33,9 +34,9 @@ class TestStackTempOutParamNoStaleConstant(unittest.TestCase):
     _extract_addr_vars only ever recognized a literal AddressOf(Var) call argument, so this
     shape's call was never recorded as touching the local at all."""
 
-    def _build(self) -> MediumLevelILFunction:
+    def _build(self) -> ED9MediumLevelILFunctionSSA:
         # var_s5 = 0; var_s14 = &var_s5; btl_get_area_pos(var_s14); return var_s5
-        func = MediumLevelILFunction('event_end_btl_shape')
+        func = ED9MediumLevelILFunctionSSA('event_end_btl_shape')
         block = func.create_block(start=FUNC_START)
         var_s5 = func.get_or_create_local('var_s5')
         var_s14 = func.get_or_create_local('var_s14')
@@ -60,8 +61,8 @@ class TestSequentialOutParamCallsWithMidCopy(unittest.TestCase):
     """x = 5; ptr = &x; f(ptr); old = x; f(ptr); return x - old - two distinct post-call
     values of x must never be conflated into `return 0`."""
 
-    def _build(self) -> MediumLevelILFunction:
-        func = MediumLevelILFunction('sequential_out_param_test')
+    def _build(self) -> ED9MediumLevelILFunctionSSA:
+        func = ED9MediumLevelILFunctionSSA('sequential_out_param_test')
         block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
         ptr = func.get_or_create_local('ptr')
@@ -100,7 +101,7 @@ class TestAddressTakenControlFlowShapes(unittest.TestCase):
 
     def test_both_arm_diamond_write_needs_no_phi(self):
         # if (arg1 == 0) { f(&x) } else { g(&x) }; return x
-        func = MediumLevelILFunction('diamond_addr_taken')
+        func = ED9MediumLevelILFunctionSSA('diamond_addr_taken')
         entry = func.create_block(start=FUNC_START)
         true_block = func.create_block(start=FUNC_START + 0x10)
         false_block = func.create_block(start=FUNC_START + 0x20)
@@ -132,7 +133,7 @@ class TestAddressTakenControlFlowShapes(unittest.TestCase):
 
     def test_loop_carried_write_with_prev_copy_needs_no_phi(self):
         # x = 0; while (arg1 != 0) { prev = x; f(&x); arg1 = arg1 - 1 }; return x - prev
-        func = MediumLevelILFunction('loop_addr_taken')
+        func = ED9MediumLevelILFunctionSSA('loop_addr_taken')
         entry = func.create_block(start=FUNC_START)
         loop_block = func.create_block(start=FUNC_START + 0x10)
         exit_block = func.create_block(start=FUNC_START + 0x20)
@@ -165,7 +166,7 @@ class TestAddressTakenControlFlowShapes(unittest.TestCase):
 
 class TestMultipleAddressTakenArgsAndParameter(unittest.TestCase):
     def test_address_taken_parameter_stays_one_stable_identity(self):
-        func = MediumLevelILFunction('addr_taken_param_test')
+        func = ED9MediumLevelILFunctionSSA('addr_taken_param_test')
         block = func.create_block(start=FUNC_START)
         arg1 = func.get_or_create_parameter(1, 'arg1')
 
@@ -188,7 +189,7 @@ class TestRegGlobalPropagationAddressTaken(unittest.TestCase):
     exactly the same StoreDeref shape."""
 
     def test_stale_global_copy_not_substituted_after_address_taken_reassignment(self):
-        func = MediumLevelILFunction('reg_global_addr_taken_test')
+        func = ED9MediumLevelILFunctionSSA('reg_global_addr_taken_test')
         block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
 
@@ -212,7 +213,7 @@ class TestAddressTakenBackwardTypeInference(unittest.TestCase):
 
     def test_comparison_only_usage_still_types_the_address_taken_local(self):
         # f(&x); if (x >= 2) { return 1 } else { return 0 } - x has no separate store
-        func = MediumLevelILFunction('backward_infer_test')
+        func = ED9MediumLevelILFunctionSSA('backward_infer_test')
         block = func.create_block(start=FUNC_START)
         true_block = func.create_block(start=FUNC_START + 0x10)
         false_block = func.create_block(start=FUNC_START + 0x20)
@@ -239,7 +240,7 @@ class TestRebuildOpsPreserveMetadata(unittest.TestCase):
 
     def test_rebuilt_binary_op_keeps_source_address(self):
         # y = x + 1, where x is address-taken and the add carries its own source address
-        func = MediumLevelILFunction('metadata_test')
+        func = ED9MediumLevelILFunctionSSA('metadata_test')
         block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
         y = func.get_or_create_local('y')
@@ -263,7 +264,7 @@ class TestCallOutputDecomposition(unittest.TestCase):
 
     def test_call_output_aliasing_address_taken_local_is_decomposed(self):
         # x = f(); g(&x); return x - x is both a call's own output AND address-taken
-        func = MediumLevelILFunction('call_output_decompose_test')
+        func = ED9MediumLevelILFunctionSSA('call_output_decompose_test')
         block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
 
@@ -286,7 +287,7 @@ class TestAddressTakenStructuralInvariants(unittest.TestCase):
     directly rather than only inferred from behavior."""
 
     def test_lowered_local_never_appears_as_a_scalar_ssa_target(self):
-        func = MediumLevelILFunction('invariant_test')
+        func = ED9MediumLevelILFunctionSSA('invariant_test')
         block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
 

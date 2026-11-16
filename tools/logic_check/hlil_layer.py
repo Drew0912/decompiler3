@@ -100,10 +100,9 @@ class ExitTarget:
 
 
 def mlil_variables_by_name(mlil: MediumLevelILFunction) -> dict[str, MLILVariable]:
-    """Every variable of the MLIL function by name: its parameters, locals and register variables, and any other an
-    instruction reads or writes"""
-    variables = {var.name: var for var in [*mlil.parameters, *mlil.locals.values(), *mlil.register_vars.values()]
-                 if var is not None}
+    """Every variable of the MLIL function by name: its parameters and locals (the SSA path's register variables are
+    locals too), and any other an instruction reads or writes"""
+    variables = {var.name: var for var in [*mlil.parameters, *mlil.locals.values()] if var is not None}
     for inst in mlil.iter_instructions():
         for node in walk(inst):
             if isinstance(node, MLILVar):

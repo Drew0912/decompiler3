@@ -24,16 +24,6 @@ def mlil_arg_var_name(arg_index: int) -> str:
     return f'arg{arg_index}'
 
 
-def mlil_reg_var_name(reg_index: int) -> str:
-    """Generate register variable name (reg0, reg1, ...)"""
-    return f'reg{reg_index}'
-
-
-def mlil_global_var_name(global_index: int) -> str:
-    """Generate global variable name (global0, global1, ...)"""
-    return f'global{global_index}'
-
-
 class MediumLevelILOperation(IntEnum2):
     """MLIL operations - stack-free version of LLIL"""
 
@@ -503,11 +493,13 @@ class MLILRet(MediumLevelILStatement, Terminal):
 class MediumLevelILCall(MediumLevelILStatement):
     """Base class for calls: statements that also define an output variable
 
-    output is the variable receiving the call result (the VM result register),
-    or None when the result is unused. It holds an MLILVariable, or an
-    MLILVariableSSA while the function is in SSA form. The callee may change any VM
-    register or global other than its own output: SSA construction gives every one
-    of them a fresh, unknown-valued pseudo-definition here.
+    output is the variable receiving the call result, or None when the result is
+    unused: on the decompile path a temporary the stack translator stores in the
+    result register, on the SSA path the result register's variable (an
+    MLILVariableSSA while the function is in SSA form). What else the callee may
+    change is the VM's call rule; on the SSA path MediumLevelILFunctionSSA asks it,
+    and SSA construction gives every register and global the call may change a
+    fresh, unknown-valued pseudo-definition here.
 
     tail_call marks a call that never gives control back (the LLIL's returns=False): the
     stack translator follows it with the return that passes its result on, and only the
@@ -815,8 +807,6 @@ class MediumLevelILFunction:
         self.basic_blocks: list[MediumLevelILBasicBlock] = []
         self.parameters: list[MLILVariable] = []  # Ordered parameter list (populated during translation)
         self.locals: dict[str, MLILVariable] = {}  # Local variables
-        self.register_vars: dict[int, MLILVariable] = {}  # VM register index -> variable
-        self.global_vars: dict[int, MLILVariable] = {}  # Global var table index -> variable
         self.result_register: int | None = None  # The register a return's value travels in, passed as that value
         self.llil_function: 'LowLevelILFunction | None' = None
         self.var_types: dict[str, MLILType] = {}  # Variable name -> inferred type
@@ -855,46 +845,6 @@ class MediumLevelILFunction:
         if name not in self.locals:
             self.locals[name] = MLILVariable(name, slot_index)
         return self.locals[name]
-
-    def get_or_create_register_var(self, reg_index: int) -> MLILVariable:
-        """Get existing register variable or create new one
-
-        VM registers are modelled as variables so the SSA passes track them like
-        any other value. Calls define the result register and clobber the others.
-        """
-        if reg_index not in self.register_vars:
-            self.register_vars[reg_index] = self.get_or_create_local(mlil_reg_var_name(reg_index))
-
-        return self.register_vars[reg_index]
-
-    def is_register_var(self, var: MLILVariable) -> bool:
-        return var in self.register_vars.values()
-
-    def get_or_create_global_var(self, global_index: int) -> MLILVariable:
-        """Get existing global variable or create new one
-
-        Unlike registers/locals, global variables are kept out of self.locals - they are
-        script-wide storage, not something that belongs in a locals-derived variable listing
-        """
-        if global_index not in self.global_vars:
-            self.global_vars[global_index] = MLILVariable(mlil_global_var_name(global_index))
-
-        return self.global_vars[global_index]
-
-    def is_global_var(self, var: MLILVariable) -> bool:
-        return var in self.global_vars.values()
-
-    def call_may_clobber(self, var: MLILVariable) -> bool:
-        """Whether a call may clobber the storage var represents: a register or a global"""
-        return self.is_register_var(var) or self.is_global_var(var)
-
-    def global_index_of(self, var: MLILVariable) -> int | None:
-        """Global var table index of a variable, or None if it does not model a global"""
-        for index, global_var in self.global_vars.items():
-            if global_var == var:
-                return index
-
-        return None
 
     def iter_instructions(self) -> Iterator[MediumLevelILInstruction]:
         for block in self.basic_blocks:

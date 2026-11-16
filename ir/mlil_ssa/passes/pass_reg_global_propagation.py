@@ -6,10 +6,11 @@ from dataclasses import dataclass, field
 from ir.core import constant_values_equal
 from ir.pipeline import Pass
 from ir.mlil.mlil import (
-    map_operands, MediumLevelILFunction, MediumLevelILBasicBlock, MediumLevelILInstruction,
+    map_operands, MediumLevelILBasicBlock, MediumLevelILInstruction,
     MLILConst, MLILVar, MLILBinaryOp, MLILUnaryOp, MediumLevelILCall,
     MLILLoadGlobal, MLILStoreGlobal, MLILLoadReg, MLILStoreReg, MLILDeref,
 )
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 
 
 # Each tracked slot (a register or global index) -> its closed-form value, or None once unknown
@@ -33,7 +34,7 @@ class RegGlobalState:
 class RegGlobalValuePropagator:
     """Propagate values through REG/GLOBAL storage"""
 
-    def __init__(self, func: MediumLevelILFunction):
+    def __init__(self, func: MediumLevelILFunctionSSA):
         self.func = func
 
     def run(self) -> bool:
@@ -145,10 +146,12 @@ class RegGlobalValuePropagator:
             return new_state
         elif isinstance(inst, MediumLevelILCall):
             new_state = state.copy()
-            for k in new_state.reg:
-                new_state.reg[k] = None
-            for k in new_state.global_:
-                new_state.global_[k] = None
+            for index in new_state.reg:
+                if self.func.call_may_change_register(inst, index):
+                    new_state.reg[index] = None
+            for index in new_state.global_:
+                if self.func.call_may_change_global(inst, index):
+                    new_state.global_[index] = None
             return new_state
         else:
             return state
@@ -223,7 +226,7 @@ class RegGlobalValuePropagator:
 class RegGlobalValuePropagationPass(Pass):
     """Propagate values through REG/GLOBAL storage"""
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Run REG/GLOBAL value propagation"""
         propagator = RegGlobalValuePropagator(func)
         propagator.run()

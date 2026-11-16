@@ -12,7 +12,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from ir.llil.llil import WORD_SIZE
 from falcom.ed9.ir.mlil_ssa.mlil_translator import ED9LLILToMLILTranslator
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILVariable,
+    MLILDeref, MLILStoreDeref, MLILSetVar, MLILVar, MLILVariable,
     MLILConst, MLILCall, MLILStoreReg, MLILLoadReg, MLILRet, MLILAddressOf, MLILIf, MLILGoto,
     MLILAdd, MLILEq,
 )
@@ -22,6 +22,7 @@ from ir.mlil_ssa.passes import (
     SSAConversionPass, SSADeconstructionPass, CopyPropagationPass, ExpressionInliningPass,
     SSADeadCodeEliminationPass, RegGlobalValuePropagationPass,
 )
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.llil_utils import FUNC_START, SECOND_BLOCK_START, THIRD_BLOCK_START, build_function_with_deref
 
 
@@ -58,7 +59,7 @@ class TestDerefStoreSurvivesDCE(unittest.TestCase):
     downstream passes could not see the use at all)."""
 
     def test_definition_feeding_a_store_deref_is_kept(self):
-        func = MediumLevelILFunction('dce_test')
+        func = ED9MediumLevelILFunctionSSA('dce_test')
         block = func.create_block(start=FUNC_START)
         ptr_param = func.get_or_create_parameter(1, 'arg1')
         temp = MLILVariable('var_s1')
@@ -89,7 +90,7 @@ class TestDerefLoadNotInlinedAcrossCall(unittest.TestCase):
     the expression inliner must not move it past an intervening call."""
 
     def test_deref_read_stays_put_across_a_call(self):
-        func = MediumLevelILFunction('inline_test')
+        func = ED9MediumLevelILFunctionSSA('inline_test')
         block = func.create_block(start=FUNC_START)
         ptr_param = func.get_or_create_parameter(1, 'arg1')
         temp = MLILVariable('var_s1')
@@ -123,7 +124,7 @@ class TestDerefMetadataPreservation(unittest.TestCase):
         SOURCE_INST_INDEX = 7
         SOURCE_LLIL_INDEX = 3
 
-        func = MediumLevelILFunction('metadata_test')
+        func = ED9MediumLevelILFunctionSSA('metadata_test')
         block = func.create_block(start=FUNC_START)
         ptr_param = func.get_or_create_parameter(1, 'arg1')
 
@@ -161,7 +162,7 @@ class TestRegGlobalPropagationSkipsDerefReads(unittest.TestCase):
     caching it and invalidating on a later pointer store."""
 
     def test_deref_read_is_not_propagated_past_a_later_store_deref(self):
-        func = MediumLevelILFunction('reg_global_test')
+        func = ED9MediumLevelILFunctionSSA('reg_global_test')
         block = func.create_block(start=FUNC_START)
         ptr_param = func.get_or_create_parameter(1, 'arg1')
 
@@ -186,7 +187,7 @@ class TestAddressTakenLocalStoresUseMemoryForm(unittest.TestCase):
         # x = 1; *(&x) = 2; return x - both writes become *(&x) stores and the read becomes
         # *(&x); x itself never advances past its seeded version, since a memory-form
         # variable has no scalar SSA identity for a store to clobber
-        func = MediumLevelILFunction('addr_taken_store_test')
+        func = ED9MediumLevelILFunctionSSA('addr_taken_store_test')
         block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
 
@@ -208,7 +209,7 @@ class TestAddressTakenLocalStoresUseMemoryForm(unittest.TestCase):
 
     def test_deref_store_does_not_let_sccp_fold_a_stale_constant(self):
         # x = 1; *(&x) = 2; return x - full optimizer must not fold this to `return 1`
-        func = MediumLevelILFunction('addr_taken_store_sccp_test')
+        func = ED9MediumLevelILFunctionSSA('addr_taken_store_sccp_test')
         block = func.create_block(start=FUNC_START)
         x = func.get_or_create_local('x')
 
@@ -227,9 +228,9 @@ class TestCallAddressTakenArgNeedsNoPhi(unittest.TestCase):
     scalar-versioned, so a merge after a conditional call needs no phi for it: every read sees
     the one stable address."""
 
-    def _build_diamond_with_addr_taken_call(self, name: str) -> MediumLevelILFunction:
+    def _build_diamond_with_addr_taken_call(self, name: str) -> ED9MediumLevelILFunctionSSA:
         # var_s0 = 0; if (arg1 == 0) { f(&var_s0) } ; return var_s0 + 1
-        func = MediumLevelILFunction(name)
+        func = ED9MediumLevelILFunctionSSA(name)
         entry = func.create_block(start=FUNC_START)
         call_block = func.create_block(start=SECOND_BLOCK_START)
         merge_block = func.create_block(start=THIRD_BLOCK_START)

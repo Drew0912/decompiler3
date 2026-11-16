@@ -5,7 +5,6 @@ Remove SSA variable assignments that are never used
 
 from ir.pipeline import Pass
 from ir.mlil.mlil import (
-    MediumLevelILFunction,
     MediumLevelILCall,
     MLILConst,
     MLILDebug,
@@ -16,6 +15,7 @@ from ..mlil_ssa import (
     MLILSetVarSSA,
     MLILPhi,
 )
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 
 
 def string_debug_comment(inst: MLILSetVarSSA, replaced_vars: set[MLILVariableSSA]) -> list[MLILDebug]:
@@ -35,7 +35,7 @@ class SSADeadCodeEliminationPass(Pass):
         # Kept even while empty: the optimizer hands in constant propagation's set, which fills up later
         self.replaced_vars = set() if replaced_vars is None else replaced_vars
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Eliminate dead code
 
         Removing an assignment or phi can leave the definitions it read unread too, so one sweep
@@ -46,7 +46,7 @@ class SSADeadCodeEliminationPass(Pass):
 
         return func
 
-    def _sweep(self, func: MediumLevelILFunction) -> bool:
+    def _sweep(self, func: MediumLevelILFunctionSSA) -> bool:
         """Remove every assignment and phi nothing reads now; whether any was removed
 
         Clearing an unread call output does not count: it drops no read, so it cannot make
@@ -84,6 +84,6 @@ class SSADeadCodeEliminationPass(Pass):
 
         return removed
 
-    def _collect_read_vars(self, func: MediumLevelILFunction):
+    def _collect_read_vars(self, func: MediumLevelILFunctionSSA):
         """The SSA variables func reads anywhere: a sweep only asks whether a variable is read"""
         self.read_vars = {var for inst in func.iter_instructions() for var, _ in iter_ssa_reads(inst)}

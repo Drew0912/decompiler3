@@ -14,15 +14,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst,
+    MediumLevelILBasicBlock, MLILVariable, MLILConst,
     MLILDiv, MLILMod, MLILAdd, MLILMul, MLILLt, MLILNeg,
 )
 from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILIf, MLILRet
 from ir.mlil_ssa.passes.pass_ssa_sccp import SCCP
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
 
-def make_func(name: str) -> MediumLevelILFunction:
-    return MediumLevelILFunction(name, 0)
+def make_func(name: str) -> ED9MediumLevelILFunctionSSA:
+    return ED9MediumLevelILFunctionSSA(name, 0)
 
 
 def run_sccp_and_get_use(op) -> object:

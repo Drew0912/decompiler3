@@ -9,7 +9,6 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil import (
-    MediumLevelILFunction,
     MLILConst,
     MLILEq,
     MLILIf,
@@ -25,6 +24,7 @@ from ir.mlil_ssa.passes import (
     SSAConversionPass,
     SSADeconstructionPass,
 )
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.ir_utils import MetadataTestCase, set_metadata
 
 
@@ -50,7 +50,7 @@ class TestMLILMetadataPreservation(MetadataTestCase):
     """Tests for MLIL source metadata propagation."""
 
     def test_ssa_conversion_and_deconstruction_preserve_metadata(self):
-        func = MediumLevelILFunction(TEST_FUNCTION_NAME)
+        func = ED9MediumLevelILFunctionSSA(TEST_FUNCTION_NAME)
         block = func.create_block(start=SOURCE_ADDRESS)
         source_var = MLILVariable(TEST_VAR_NAME)
         source_inst = set_metadata(
@@ -74,7 +74,7 @@ class TestMLILMetadataPreservation(MetadataTestCase):
         self.assert_metadata(restored_inst, SOURCE_ADDRESS, SOURCE_INST_INDEX, SOURCE_LLIL_INDEX)
 
     def test_condition_simplification_preserves_metadata(self):
-        func = MediumLevelILFunction(TEST_FUNCTION_NAME)
+        func = ED9MediumLevelILFunctionSSA(TEST_FUNCTION_NAME)
         entry_block = func.create_block(start=SOURCE_ADDRESS)
         true_block = func.create_block(start=OTHER_ADDRESS)
         false_block = func.create_block(start=OTHER_ADDRESS)
@@ -94,7 +94,7 @@ class TestMLILMetadataPreservation(MetadataTestCase):
         self.assert_metadata(simplified_inst, SOURCE_ADDRESS, SOURCE_INST_INDEX, SOURCE_LLIL_INDEX)
 
     def test_copy_propagation_preserves_rewritten_instruction_metadata(self):
-        func = MediumLevelILFunction(TEST_FUNCTION_NAME)
+        func = ED9MediumLevelILFunctionSSA(TEST_FUNCTION_NAME)
         block = func.create_block(start=SOURCE_ADDRESS)
         base_var = MLILVariable(TEST_VAR_NAME)
         source_var = MLILVariableSSA(base_var, SOURCE_VERSION)

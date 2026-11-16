@@ -28,12 +28,13 @@ MARKER_LINE = 7
 
 
 def make_func(name: str, block_count: int):
-    """Function with params arg1/arg2, registers reg0/reg1 and block_count empty blocks"""
+    """Function with params arg1/arg2, locals reg0/reg1 (named like the SSA path's register variables) and
+    block_count empty blocks"""
     func = MediumLevelILFunction(name, 0)
     arg1 = func.get_or_create_parameter(1, 'arg1')
     arg2 = func.get_or_create_parameter(2, 'arg2')
-    reg0 = func.get_or_create_register_var(0)
-    reg1 = func.get_or_create_register_var(1)
+    reg0 = func.get_or_create_local('reg0')
+    reg1 = func.get_or_create_local('reg1')
     blocks = [func.create_block() for _ in range(block_count)]
     return func, blocks, arg1, arg2, reg0, reg1
 

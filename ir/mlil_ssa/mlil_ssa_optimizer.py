@@ -3,7 +3,8 @@
 from enum import Enum
 
 from dc3.logging import log
-from ir.mlil.mlil import MediumLevelILBasicBlock, MediumLevelILFunction, MediumLevelILInstruction
+from ir.mlil.mlil import MediumLevelILBasicBlock, MediumLevelILInstruction
+from .mlil_ssa_function import MediumLevelILFunctionSSA
 from .passes import (
     NNFPass,
     ConstantPropagationPass,
@@ -58,10 +59,10 @@ def _attribute_order(attrs: dict, excluded: frozenset = frozenset()) -> list[str
 class SSAOptimizer:
     """Orchestrates SSA optimization passes"""
 
-    def __init__(self, function: MediumLevelILFunction):
+    def __init__(self, function: MediumLevelILFunctionSSA):
         self.function = function
 
-    def optimize(self) -> MediumLevelILFunction:
+    def optimize(self) -> MediumLevelILFunctionSSA:
         """Run the passes to a fixpoint. None computes a value the bytecode does not hold: SCCP and
         ExpressionSimplificationPass (folds, algebraic identities) are left out but kept (docs/mlil/MLIL_DESIGN.md)"""
         constant_propagation = ConstantPropagationPass()

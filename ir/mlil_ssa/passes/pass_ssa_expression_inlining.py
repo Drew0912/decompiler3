@@ -8,7 +8,6 @@ from ir.pipeline import Pass
 from ir.mlil.mlil import (
     map_operands,
     walk,
-    MediumLevelILFunction,
     MediumLevelILBasicBlock,
     MediumLevelILInstruction,
     MLILConst,
@@ -26,6 +25,7 @@ from ..mlil_ssa import (
     MLILPhi,
     MLILUndef,
 )
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 from .pass_ssa_copy_propagation import reaches_without_redefinition
 
 
@@ -38,7 +38,7 @@ class ExpressionInliningPass(Pass):
         self.ssa_uses: dict[MLILVariableSSA, list[MediumLevelILInstruction]] = {}
         self.use_positions: dict[MLILVariableSSA, list[tuple[MediumLevelILBasicBlock, int]]] = {}
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Inline single-use expressions"""
         changed = True
 
@@ -48,7 +48,7 @@ class ExpressionInliningPass(Pass):
 
         return func
 
-    def _build_def_use_chains(self, func: MediumLevelILFunction):
+    def _build_def_use_chains(self, func: MediumLevelILFunctionSSA):
         """Build SSA def-use chains, tracking each def's and use's (block, index) position"""
         self.ssa_defs = {}
         self.def_positions = {}
@@ -69,7 +69,7 @@ class ExpressionInliningPass(Pass):
         self.ssa_uses.setdefault(var, []).append(use)
         self.use_positions.setdefault(var, []).append((block, idx))
 
-    def _inline_once(self, func: MediumLevelILFunction) -> bool:
+    def _inline_once(self, func: MediumLevelILFunctionSSA) -> bool:
         """Single inlining pass"""
         inlinable: dict[MLILVariableSSA, MediumLevelILInstruction] = {}
 
@@ -144,7 +144,7 @@ class ExpressionInliningPass(Pass):
 
         return changed
 
-    def _impure_read_storages(self, expr: MediumLevelILInstruction, func: MediumLevelILFunction) -> list | None:
+    def _impure_read_storages(self, expr: MediumLevelILInstruction, func: MediumLevelILFunctionSSA) -> list | None:
         """The register/global base variables expr reads, one entry per read in evaluation order;
         [] if it reads no mutable storage. `reg0 + global3` gives two: a hazard on either one alone
         makes forwarding the expression unsafe, so each needs its own reachability check.

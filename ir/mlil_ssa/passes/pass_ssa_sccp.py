@@ -7,7 +7,6 @@ from typing import Any
 from ir.core import constant_values_equal, is_plain_int
 from ir.mlil.mlil import (
     map_operands,
-    MediumLevelILFunction,
     MediumLevelILInstruction,
     MediumLevelILBasicBlock,
     MLILConst,
@@ -47,6 +46,7 @@ from ..mlil_ssa import (
     MLILPhi,
     MLILUndef,
 )
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 
 # How each binary operation folds two constants, at Python's unbounded width, without a VM's integer wrap; DIV and
 # MOD never fold: a VM's division and remainder may truncate toward zero where Python's // and % floor, and folding
@@ -159,7 +159,7 @@ _BOTTOM = LatticeValue(LatticeValue.BOTTOM)
 class SCCP:
     """Sparse Conditional Constant Propagation"""
 
-    def __init__(self, function: MediumLevelILFunction):
+    def __init__(self, function: MediumLevelILFunctionSSA):
         self.function = function
 
         # Variables replaced with constants (for DCE to skip debug.string)

@@ -72,7 +72,6 @@ class TestCanonicalForm(StackTranslatorTestCase):
             'REG[0] = 0', 'return REG[0]',
         ])
         self.assertEqual(mlil.result_register, 0)
-        self.assertEqual(mlil.register_vars, {})
         self.assertTrue(all(block.has_terminal for block in mlil.basic_blocks))
 
     def test_a_call_result_pending_across_a_call_is_copied(self):

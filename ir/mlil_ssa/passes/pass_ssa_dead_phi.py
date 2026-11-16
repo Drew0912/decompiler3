@@ -6,7 +6,6 @@ A Phi node is "dead" if its result is never used except by other dead Phi nodes.
 
 from ir.pipeline import Pass
 from ir.mlil.mlil import (
-    MediumLevelILFunction,
     MediumLevelILInstruction,
 )
 from ..mlil_ssa import (
@@ -15,6 +14,7 @@ from ..mlil_ssa import (
     MLILSetVarSSA,
     MLILPhi,
 )
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 from .pass_ssa_dead_code import string_debug_comment
 
 
@@ -26,13 +26,13 @@ class DeadPhiSourceEliminationPass(Pass):
         # Kept even while empty: the optimizer hands in constant propagation's set, which fills up later
         self.replaced_vars = set() if replaced_vars is None else replaced_vars
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Run dead phi elimination"""
         self._build_info(func)
         self._eliminate_dead_phis(func)
         return func
 
-    def _build_info(self, func: MediumLevelILFunction):
+    def _build_info(self, func: MediumLevelILFunctionSSA):
         """Build SSA use chains"""
         self.ssa_uses = {}
 
@@ -40,7 +40,7 @@ class DeadPhiSourceEliminationPass(Pass):
             for var, _ in iter_ssa_reads(inst):
                 self.ssa_uses.setdefault(var, []).append(inst)
 
-    def _eliminate_dead_phis(self, func: MediumLevelILFunction):
+    def _eliminate_dead_phis(self, func: MediumLevelILFunctionSSA):
         """Eliminate dead Phi nodes and definitions feeding them"""
         # Find all Phi nodes with no real use
         dead_phis: set[MLILPhi] = set()

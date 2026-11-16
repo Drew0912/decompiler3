@@ -75,7 +75,9 @@ The decompile path's MLIL comes from the symbolic-stack translator (`convert_ed9
 straight from the LLIL's stack layout, registers as storage, then the passes that merge blocks, forward call results,
 return the value stored before each return and mark bitwise constants hex (IR rewrite part 2). Beside it, kept and
 never called by the decompile path, the SSA path (`convert_ed9_llil_to_mlil_ssa`, in its own packages, which
-import from `ir/mlil/` and never the other way): every temporary a named variable, and a full SSA optimizer pipeline —
+import from `ir/mlil/` and never the other way): every temporary a named variable, registers and globals too (its
+function class, `MediumLevelILFunctionSSA`, whose call and return rules ED9's subclass gives), and a full SSA optimizer
+pipeline —
 construction/deconstruction, critical-edge splitting, type inference, and further optimization passes (constant/copy
 propagation, dead-code elimination; none computes a value the bytecode does not hold). See `docs/mlil/MLIL_DESIGN.md`
 for the node model and pipeline shape, `docs/mlil/MLIL_GUIDE.md` for a practical usage guide.

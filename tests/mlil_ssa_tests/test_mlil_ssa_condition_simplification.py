@@ -10,10 +10,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILEq, MLILNe, MLILLt, MLILLogicalNot,
+    MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILEq, MLILNe, MLILLt, MLILLogicalNot,
 )
 from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILIf, MLILRet
 from ir.mlil_ssa.passes.pass_ssa_condition_simplification import ConditionSimplificationPass
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
 
 INT_ZERO = 0
@@ -26,7 +27,7 @@ def read_x() -> MLILVarSSA:
 
 def simplify_mlil_condition(condition):
     """if (condition) - runs ConditionSimplificationPass, returns the condition it leaves"""
-    func = MediumLevelILFunction('condition_test')
+    func = ED9MediumLevelILFunctionSSA('condition_test')
     entry, true_block, false_block = (MediumLevelILBasicBlock(index) for index in range(3))
     entry.instructions = [MLILIf(condition, true_block, false_block)]
     true_block.instructions = [MLILRet()]

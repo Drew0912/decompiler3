@@ -10,7 +10,6 @@ Push all NOT operators down to comparison leaves:
 from ir.pipeline import Pass
 from ir.mlil.mlil import (
     DE_MORGAN,
-    MediumLevelILFunction,
     MediumLevelILInstruction,
     MLILConst,
     MLILLogicalNot,
@@ -21,12 +20,13 @@ from ir.mlil.mlil import (
     negate_comparison,
 )
 from ..mlil_ssa import MLILSetVarSSA, MLILIf
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 
 
 class NNFPass(Pass):
     """Negation Normal Form transformation pass"""
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Apply NNF transformation to the function"""
         # Single pass - outer optimizer loop handles iteration
         for block in func.basic_blocks:

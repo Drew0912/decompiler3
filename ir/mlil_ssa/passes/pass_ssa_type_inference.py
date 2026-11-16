@@ -10,6 +10,7 @@ from ir.pipeline import Pass
 from ir.mlil.mlil import *
 from ir.mlil.mlil_types import *
 from ..mlil_ssa import *
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 
 SSA_TYPE_PROPAGATION_MAX_ITERATIONS = 20
 USAGE_INFERENCE_PASSES = 3
@@ -32,10 +33,10 @@ class SSATypeInferencePass(Pass):
     """Infer types for SSA variables"""
 
     def __init__(self):
-        self.function: MediumLevelILFunction = None
+        self.function: MediumLevelILFunctionSSA = None
         self.var_types: dict[MLILVariableSSA, MLILType] = {}
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Infer types and store in var_types"""
         self.function = func
         self.var_types = {}

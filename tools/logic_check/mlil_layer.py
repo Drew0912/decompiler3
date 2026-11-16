@@ -19,7 +19,7 @@ from .state import MEMORY_EPOCH, State
 from .trees import ENTRY, const, constant_truth, op
 from .vm_effects import VMEffects
 
-SPLIT_SUFFIX = re.compile(r'_v\d+$')
+SPLIT_SUFFIX = re.compile(r'_v\d+$')    # the SSA path's de-SSA split names (SSADeconstructor), checked there too
 PARAMETER_NAME = re.compile(r'^arg(\d+)$')
 STACK_NAME = re.compile(r'^var_s(\d+)$')
 IGNORED = (MLILGoto, MLILDebug, MLILNop)
@@ -31,7 +31,9 @@ class MLILStorage:
     """The storage an MLIL function's variables stand for (the module docstring), which HLIL names through too"""
 
     def __init__(self, func: MediumLevelILFunction):
-        self.register_of = {var.name: index for index, var in func.register_vars.items()}
+        # Only the SSA path's function models registers as variables: getattr, not isinstance, so the check imports no
+        # SSA package (no test outside tests/mlil_ssa_tests/ reads one, docs/TESTS_GUIDE.md)
+        self.register_of = {var.name: index for index, var in getattr(func, 'register_vars', {}).items()}
         self.parameter_of = {var.name: position for position, var in enumerate(func.parameters, 1) if var is not None}
         self.base_key: dict[str, tuple] = {}    # own storage's name -> its base's key, filled as key() meets it
 

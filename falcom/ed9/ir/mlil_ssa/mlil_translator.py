@@ -5,6 +5,7 @@ from ir.mlil import *
 from ir.mlil_ssa import *
 from ..llil.llil_ext import *
 from ..llil.constants import *
+from .mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
 # REG[0] is the VM result register: calls write it and RETURN reads it
 RESULT_REG_INDEX = 0
@@ -14,6 +15,7 @@ class ED9LLILToMLILTranslator(LLILToMLILTranslator):
     """ED9-specific LLIL to MLIL translator"""
 
     RESULT_REGISTER = RESULT_REG_INDEX
+    FUNCTION_CLASS  = ED9MediumLevelILFunctionSSA
 
     def _result_reg_var(self) -> MLILVariable:
         """Variable modelling the VM result register"""

@@ -25,7 +25,7 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | Path | Responsibility |
 | --- | --- |
 | `ir/mlil/mlil.py` | Core non-SSA data structures: `MediumLevelILInstruction` base, the `MediumLevelILExpr`/`MediumLevelILStatement` split, `MLILVariable`, `MediumLevelILBasicBlock`, `MediumLevelILFunction`. |
-| `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function's blocks, variables and statements; expressions are built with the node classes. |
+| `ir/mlil/mlil_builder.py` | `MLILBuilder`: builds a function (of the class it is given, the base by default) and its blocks, variables and statements; expressions are built with the node classes. |
 | `ir/mlil/mlil_formatter.py` | Pretty printer for MLIL functions (text dump used in tests/debugging) and the `.mlil.dot` graphs, with the DOT writer LLIL's formatter shares (`CFGDotFormatter`, `ir/core/il_cfg.py`). |
 | `ir/mlil/mlil_types.py` | Type-kind/unification support (HLIL's converter reads it; the SSA path's type pass fills it). |
 | `ir/mlil/llil_ops.py` | The LLIL operations that map one to one onto MLIL ones (`BINARY_OP_TYPES`, `UNARY_OP_TYPES`), for both translators. |
@@ -34,12 +34,14 @@ MLIL is the bridge between the Falcom-specific stack-based LLIL and HLIL. It:
 | `falcom/ed9/ir/mlil/mlil_converter.py` | ED9's concrete pipeline wiring — the decompile path's entry point, the stack translator's `convert_ed9_llil_to_mlil_stack()`. Mirrors `falcom/ed9/ir/hlil/hlil_converter.py`'s structure exactly. |
 | `falcom/ed9/ir/mlil/stack_translator.py` | `ED9StackTranslator`: ED9's result register, calling convention, globals, script calls, `POPN` and `DEBUG_INT` on the stack translator. |
 | **The SSA path** | Kept beside the decompile path and never called by it (IR rewrite part 2, Step 10); it imports from `ir/mlil/`, never the other way. |
-| `ir/mlil_ssa/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific), the SSA path's translator. |
+| `ir/mlil_ssa/mlil_ssa_function.py` | `MediumLevelILFunctionSSA`, the SSA path's function: VM registers and globals modelled as variables (`register_vars`, `global_vars`), and the VM's call and return rules as hooks a VM's subclass answers (`call_may_change_register`, `call_may_change_global`, `return_leaves_register`; `call_may_clobber` asks them for a variable); `MLILBuilderSSA`, its builder. |
+| `ir/mlil_ssa/llil_to_mlil.py` | Generic `LLILToMLILTranslator` (not Falcom-specific), the SSA path's translator; its `FUNCTION_CLASS` is the VM's function class. |
 | `ir/mlil_ssa/mlil_ssa.py` | The SSA layer: `MLILVariableSSA`/`MLILVarSSA`/`MLILSetVarSSA`/`MLILPhi`, `DominanceAnalysis`, `SSAConstructor`, `SSADeconstructor` (including critical-edge splitting), and the public `convert_to_ssa`/`convert_from_ssa` entry points. |
 | `ir/mlil_ssa/mlil_ssa_optimizer.py` | `SSAOptimizer` — orchestrates the optimization passes below. |
 | `ir/mlil_ssa/mlil_optimizer.py` | `mlil_optimization_passes()`, the SSA path's one list of passes that runs after its LLIL→MLIL translation (see "LLIL → MLIL Pipeline"), and `optimize_mlil()`, which runs that list on an already translated function. |
 | `ir/mlil_ssa/passes/` | The SSA path's passes (13 files): `pass_llil_to_mlil.py`, `pass_ssa.py`, `pass_ssa_sccp.py`, `pass_ssa_constant_propagation.py`, `pass_ssa_copy_propagation.py`, `pass_ssa_expression_simplification.py`, `pass_ssa_condition_simplification.py`, `pass_ssa_nnf.py`, `pass_ssa_expression_inlining.py`, `pass_ssa_dead_code.py`, `pass_ssa_dead_phi.py`, `pass_ssa_type_inference.py`, `pass_reg_global_propagation.py`; SCCP, expression simplification and register/global propagation are out of its pipeline (see "LLIL → MLIL Pipeline"). |
 | `falcom/ed9/ir/mlil_ssa/mlil_converter.py` | The SSA path's entry point, `convert_ed9_llil_to_mlil_ssa()`. |
+| `falcom/ed9/ir/mlil_ssa/mlil_ssa_function.py` | `ED9MediumLevelILFunctionSSA`: ED9's rules (nothing saves a register, so a call may change any register or global and a return leaves them). |
 | `falcom/ed9/ir/mlil_ssa/mlil_passes.py` | `ED9LLILToMLILPass`, the SSA path's first pass: the generic `LLILToMLILPass` run with the ED9 translator. |
 | `falcom/ed9/ir/mlil_ssa/mlil_translator.py` | The SSA path's ED9-specific LLIL → MLIL translation (syscall IDs, `CALL_SCRIPT` metadata, etc.). |
 | `tests/mlil_tests/`, `tests/mlil_ssa_tests/` | The MLIL tests, the SSA path's in their own folder — see Testing below. |
@@ -108,6 +110,12 @@ Two coexisting representations, not a single evolving one:
   (`SSAConstructor._add_entry_preheader`): the dominance frontier counts only real predecessors, so
   without one the loop header had no phi and the loop's writes to a parameter or register were lost.
 
+The SSA path's function is `MediumLevelILFunctionSSA` (`ir/mlil_ssa/mlil_ssa_function.py`): it models the VM's
+registers and globals as variables (`reg0`, `global3`), which its passes track like any other value. What a call may
+change and what a return leaves are the VM's rules, hooks its subclass answers (ED9's: `ED9MediumLevelILFunctionSSA`,
+set as the translator's `FUNCTION_CLASS`); the generic class raises `NotImplementedError` naming itself. The decompile
+path builds the base `MediumLevelILFunction`, whose registers and globals stay storage (`MLILLoadReg`, `MLILStoreReg`).
+
 Stack slots are named `var_sN` and parameters `argN`. Which one an access gets is decided by the
 LLIL builder from the slot's current lifetime (`LowLevelILBuilder._holds_parameter`): a parameter
 slot is `argN` only while it still holds the caller's value, and a value pushed there after the
@@ -147,7 +155,8 @@ raised back to a plain variable only at print time (`x` / `x = v`, never `deref(
 **A register a return leaves is the caller's.** A caller can read a register after the call, as it
 reads a global, while a register variable prints as a local. The stack translator keeps registers as storage
 throughout; on the SSA path, SSA construction ends by storing,
-before each return, every register whose version there is the function's own write
+before each return, every register the VM's return rule leaves (`return_leaves_register`; ED9's leaves every one)
+whose version there is the function's own write
 (`SSAConstructor._store_registers_left_by_returns`, `registers_left_by_returns`): `REGS[n] = v`,
 an `MLILStoreReg`, an ordinary read no pass drops, which HLIL prints as the register. Left out: the
 result register (`MediumLevelILFunction.result_register`, from the translator's `RESULT_REGISTER`),
@@ -171,10 +180,15 @@ class MediumLevelILFunction:
     name: str
     start_addr: int
     basic_blocks: list[MediumLevelILBasicBlock]
+
+
+class MediumLevelILFunctionSSA(MediumLevelILFunction):    # the SSA path's
+    register_vars: dict[int, MLILVariable]                # VM register index -> variable
+    global_vars: dict[int, MLILVariable]                  # global var table index -> variable
 ```
 
 (Simplified for illustration — the real classes are `MediumLevelILBasicBlock` and
-`MediumLevelILFunction` in `ir/mlil/mlil.py`.) Predecessor/successor edges are `incoming_edges`/`outgoing_edges`, not `preds`/
+`MediumLevelILFunction` in `ir/mlil/mlil.py`, `MediumLevelILFunctionSSA` in `ir/mlil_ssa/mlil_ssa_function.py`.) Predecessor/successor edges are `incoming_edges`/`outgoing_edges`, not `preds`/
 `succs`. Both layers' blocks derive from `ILBasicBlock` (`ir/core/il_cfg.py`): the instructions, the edges kept on
 both ends (`add_outgoing_edge`) and `has_terminal`.
 The decompile path always merges blocks (its `BlockMergePass` runs after the translator). On the SSA path each MLIL
@@ -235,8 +249,8 @@ HLIL's structuring still inverts orderings (`negate_condition`, `ir/hlil/hlil.py
 Copy propagation and expression inlining never move a register/global read past anything that may
 redefine that storage: an explicit definition, a store to the register (`MLILStoreReg`), a call's
 own output, or any call that may clobber it
-(`MediumLevelILFunction.call_may_clobber`, the same rule SSA construction uses for its `<undef>`
-pseudo-definitions). Both passes share one check, `reaches_without_redefinition`
+(`MediumLevelILFunctionSSA.call_may_clobber`, which asks the VM's call rule; the same rule SSA construction uses for
+its `<undef>` pseudo-definitions). Both passes share one check, `reaches_without_redefinition`
 (`pass_ssa_copy_propagation.py`), which also scans the use block's own instructions before the use.
 The call itself is the barrier, not its pseudo-definitions or output: dead-code elimination drops an
 unread call output and dead register pseudo-definitions while the call - and its clobber - stays,

@@ -12,10 +12,11 @@ from falcom.ed9.ir.llil.vm_lifter import ED9VMLifter
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from falcom.ed9.assembler.function import FunctionParam
 from falcom.ed9.structs.scp_types import Nullable32, NullableStr, Pointer, ScpParamFlags, Value32
-from ir.mlil.mlil import MediumLevelILFunction, MLILAddressOf, MLILCall, MLILConst, MLILRet, MLILSetVar, MLILVar
+from ir.mlil.mlil import MLILAddressOf, MLILCall, MLILConst, MLILRet, MLILSetVar, MLILVar
 from ir.mlil_ssa.mlil_ssa import SSAConstructor
 from ir.mlil.mlil_types import MLILType
 from ir.mlil_ssa.passes import SSATypeInferencePass
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.scp_asm import Asm, Program, main_function
 
 
@@ -39,7 +40,7 @@ class TestVariantGrowthIsRecorded(unittest.TestCase):
 
     def test_address_taken_local_collects_every_stored_type(self):
         # x = 1; x = 1.5; x = "s"; f(&x); return
-        func = MediumLevelILFunction('variant_growth')
+        func = ED9MediumLevelILFunctionSSA('variant_growth')
         block = func.create_block()
         x = func.get_or_create_local('x')
 

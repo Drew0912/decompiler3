@@ -11,7 +11,8 @@ if TYPE_CHECKING:
 class MLILBuilder:
     """Builder for constructing MLIL functions"""
 
-    def __init__(self):
+    def __init__(self, function_class: type[MediumLevelILFunction] = MediumLevelILFunction):
+        self.function_class = function_class
         self.function: MediumLevelILFunction | None = None
         self.current_block: MediumLevelILBasicBlock | None = None
         self._current_address = 0  # Source bytecode address of the current instruction
@@ -25,7 +26,7 @@ class MLILBuilder:
     # === Function Management ===
 
     def create_function(self, name: str, start_addr: int = 0, params: 'list[IRParameter]' = None):
-        self.function = MediumLevelILFunction(name, start_addr, params)
+        self.function = self.function_class(name, start_addr, params)
 
     def finalize(self) -> MediumLevelILFunction:
         # Fill in missing parameters (unused params not created during translation)
@@ -69,10 +70,6 @@ class MLILBuilder:
 
     def get_or_create_local(self, name: str, slot_index: int = UNASSIGNED_SLOT_INDEX) -> MLILVariable:
         return self.function.get_or_create_local(name, slot_index)
-
-    def get_or_create_register_var(self, reg_index: int) -> MLILVariable:
-        """Get or create the variable modelling a VM register"""
-        return self.function.get_or_create_register_var(reg_index)
 
     # === Statements ===
 

@@ -11,7 +11,6 @@ from ir.core import is_int_zero
 from ir.pipeline import Pass
 from ir.mlil.mlil import (
     COMPARISON_TYPES,
-    MediumLevelILFunction,
     MediumLevelILInstruction,
     MLILConst,
     MLILLogicalNot,
@@ -20,12 +19,13 @@ from ir.mlil.mlil import (
     negate_comparison,
 )
 from ..mlil_ssa import MLILIf
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 
 
 class ConditionSimplificationPass(Pass):
     """Simplify conditional expressions"""
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Apply condition simplification"""
         for block in func.basic_blocks:
             for i, inst in enumerate(block.instructions):

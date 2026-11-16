@@ -2,15 +2,14 @@
 
 from dc3.logging import log
 from ir.llil import LowLevelILFunction
-from ir.mlil import MediumLevelILFunction
-from ir.mlil_ssa import mlil_optimization_passes
+from ir.mlil_ssa import MediumLevelILFunctionSSA, mlil_optimization_passes
 from ir.pipeline import Pipeline
 from .mlil_passes import ED9LLILToMLILPass
 
 
 def convert_ed9_llil_to_mlil_ssa(llil_func: LowLevelILFunction,
                                  optimize: bool = True,
-                                 infer_types: bool = True) -> MediumLevelILFunction:
+                                 infer_types: bool = True) -> MediumLevelILFunctionSSA:
     """The SSA path's MLIL, kept beside the decompile path and never called by it (IR rewrite part 2): LLIL converted
     to MLIL with ED9-specific handling
 

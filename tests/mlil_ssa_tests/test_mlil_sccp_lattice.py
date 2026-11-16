@@ -12,10 +12,11 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from falcom.ed9.structs.scp_types import RawInt
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILGoto,
+    MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILGoto,
 )
 from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILIf, MLILRet, MLILPhi
 from ir.mlil_ssa.passes.pass_ssa_sccp import SCCP, LatticeValue
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
 
 INT_VALUE = 1
@@ -27,7 +28,7 @@ NAN_VALUE = float('nan')
 def run_sccp_on_phi(true_value, false_value) -> object:
     """Run SCCP on a phi with two reachable constant inputs and return its use: MLILConst if the phi
     folded, MLILVarSSA if it did not."""
-    func = MediumLevelILFunction('sccp_phi_test', 0)
+    func = ED9MediumLevelILFunctionSSA('sccp_phi_test', 0)
     p = MLILVariable('p')
     x = MLILVariable('x')
     func.locals['x'] = x

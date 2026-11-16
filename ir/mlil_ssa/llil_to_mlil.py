@@ -3,20 +3,21 @@
 from ir.llil import *
 from ir.mlil.llil_ops import BINARY_OP_TYPES, UNARY_OP_TYPES
 from ir.mlil.mlil import *
-from ir.mlil.mlil_builder import *
+from .mlil_ssa_function import MediumLevelILFunctionSSA, MLILBuilderSSA
 
 
 class LLILToMLILTranslator:
     """LLIL to MLIL translator (base class)"""
 
     RESULT_REGISTER: int | None = None      # the VM's result register, if a return's value travels in one
+    FUNCTION_CLASS: type[MediumLevelILFunctionSSA] = MediumLevelILFunctionSSA   # a VM's subclass gives its rules
 
     def __init__(self):
-        self.builder = MLILBuilder()
+        self.builder = MLILBuilderSSA(self.FUNCTION_CLASS)
         self.llil_func: LowLevelILFunction | None = None
         self.block_map: dict[LowLevelILBasicBlock, MediumLevelILBasicBlock] = {}
 
-    def translate(self, llil_func: LowLevelILFunction) -> MediumLevelILFunction:
+    def translate(self, llil_func: LowLevelILFunction) -> MediumLevelILFunctionSSA:
         """Translate LLIL function to MLIL"""
         self.llil_func = llil_func
         self.builder.create_function(llil_func.name, llil_func.start_addr, llil_func.params)

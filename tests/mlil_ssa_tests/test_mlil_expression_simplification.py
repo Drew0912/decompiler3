@@ -11,10 +11,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILAdd, MLILMul, MLILDiv, MLILAnd, MLILOr,
+    MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILAdd, MLILMul, MLILDiv, MLILAnd, MLILOr,
 )
 from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILRet
 from ir.mlil_ssa.passes.pass_ssa_expression_simplification import ExpressionSimplificationPass
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 
 ALL_BITS_SET = -1
 
@@ -25,7 +26,7 @@ def read_y() -> MLILVarSSA:
 
 def simplify(op):
     """x = op; return - runs the pass, returns what x's value became"""
-    func = MediumLevelILFunction('simplification_test', 0)
+    func = ED9MediumLevelILFunctionSSA('simplification_test', 0)
     block = MediumLevelILBasicBlock(0)
     block.instructions = [
         MLILSetVarSSA(MLILVariableSSA(MLILVariable('x'), 1), op),

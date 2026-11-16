@@ -11,7 +11,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst,
+    MediumLevelILBasicBlock, MLILVariable, MLILConst,
     MLILGt, MLILCall, MLILSyscall, MLILDeref, MLILLoadGlobal,
 )
 from ir.mlil_ssa.mlil_ssa import (
@@ -23,11 +23,12 @@ from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from falcom.ed9.ir.mlil_ssa.mlil_translator import RESULT_REG_INDEX
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.corpus import SORA2_SCRIPTS, require
 
 
-def make_func(name: str) -> MediumLevelILFunction:
-    return MediumLevelILFunction(name, 0)
+def make_func(name: str) -> ED9MediumLevelILFunctionSSA:
+    return ED9MediumLevelILFunctionSSA(name, 0)
 
 
 class TestCopyPropagationGlobalSaveRestore(unittest.TestCase):
@@ -679,7 +680,7 @@ class TestCallClobberSurvivesDeadCodeElimination(unittest.TestCase):
         self.assertFalse(reaches_without_redefinition(func, global5, block, 0, block, 2))
 
 
-def optimized_corpus_mlil(dat_name: str, func_name: str) -> MediumLevelILFunction:
+def optimized_corpus_mlil(dat_name: str, func_name: str) -> ED9MediumLevelILFunctionSSA:
     path = require(SORA2_SCRIPTS / f'ani/{dat_name}')
     parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False)
     func = next(f for f in functions if f.name == func_name)
@@ -691,7 +692,7 @@ class TestCorpusRegisterReadAfterClobberingCall(unittest.TestCase):
     """Real functions whose bytecode saves reg0 to a stack slot before a call and later reads the
     saved slot - the decompiled call after the clobber must read the saved copy, not reg0."""
 
-    def call_text(self, mlil: MediumLevelILFunction, target: str) -> str:
+    def call_text(self, mlil: ED9MediumLevelILFunctionSSA, target: str) -> str:
         return next(str(inst) for block in mlil.basic_blocks for inst in block.instructions
                     if str(inst).startswith(f'{target}('))
 

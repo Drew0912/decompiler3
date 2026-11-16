@@ -16,7 +16,6 @@ Identities fire only on plain int constants (is_plain_int)
 from ir.core import is_plain_int
 from ir.pipeline import Pass
 from ir.mlil.mlil import (
-    MediumLevelILFunction,
     MediumLevelILInstruction,
     MLILConst,
     MLILAdd,
@@ -37,6 +36,7 @@ from ir.mlil.mlil import (
     MLILStoreDeref,
 )
 from ..mlil_ssa import MLILSetVarSSA, MLILIf
+from ..mlil_ssa_function import MediumLevelILFunctionSSA
 
 ALL_BITS_SET = -1   # every bit set at any int width (Python's -1), what SCCP folds ~0 to
 
@@ -44,7 +44,7 @@ ALL_BITS_SET = -1   # every bit set at any int width (Python's -1), what SCCP fo
 class ExpressionSimplificationPass(Pass):
     """Apply algebraic simplifications"""
 
-    def run(self, func: MediumLevelILFunction) -> MediumLevelILFunction:
+    def run(self, func: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
         """Apply simplification to all instructions"""
         for block in func.basic_blocks:
             new_instructions = []

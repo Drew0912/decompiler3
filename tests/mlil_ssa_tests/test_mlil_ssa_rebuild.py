@@ -9,13 +9,14 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT))
 
 from ir.mlil.mlil import (
-    MediumLevelILFunction, MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILVar, MLILAdd, MLILLogicalAnd,
+    MediumLevelILBasicBlock, MLILVariable, MLILConst, MLILVar, MLILAdd, MLILLogicalAnd,
     MLILLogicalNot, MLILAddressOf, MLILDeref,
 )
 from ir.mlil_ssa.mlil_ssa import MLILVariableSSA, MLILVarSSA, MLILSetVarSSA, MLILRet
 from ir.mlil_ssa.passes.pass_ssa_sccp import SCCP
 from ir.mlil_ssa.passes.pass_ssa_constant_propagation import ConstantPropagationPass
 from ir.mlil_ssa.passes.pass_ssa_nnf import NNFPass
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.ir_utils import SOURCE_ADDRESS, SOURCE_INST_INDEX, with_metadata
 
 
@@ -25,7 +26,7 @@ class TestPassRebuildKeepsMetadata(unittest.TestCase):
 
     def test_constant_propagation_keeps_rebuilt_expression_metadata(self):
         # a = 5; b = a + arg1 -> b = 5 + arg1, and the rebuilt add keeps its address
-        func = MediumLevelILFunction('rebuild_metadata_test', 0)
+        func = ED9MediumLevelILFunctionSSA('rebuild_metadata_test', 0)
         a = MLILVariable('a')
         b = MLILVariable('b')
         a1 = MLILVariableSSA(a, 1)
@@ -46,7 +47,7 @@ class TestPassRebuildKeepsMetadata(unittest.TestCase):
 
     def test_nnf_keeps_rebuilt_logical_op_metadata(self):
         # y = !!arg1 && arg2 -> y = arg1 && arg2: same operation, new operand, same metadata
-        func = MediumLevelILFunction('nnf_metadata_test', 0)
+        func = ED9MediumLevelILFunctionSSA('nnf_metadata_test', 0)
         y1 = MLILVariableSSA(MLILVariable('y'), 1)
         arg1 = MLILVar(MLILVariable('arg1'))
         logical_and = with_metadata(MLILLogicalAnd(MLILLogicalNot(MLILLogicalNot(arg1)), MLILVar(MLILVariable('arg2'))))
@@ -71,7 +72,7 @@ class TestSCCPNeverSubstitutesUnderAddressOf(unittest.TestCase):
 
     def run_sccp(self, make_value):
         # x = 5; y = <make_value(x)>; return y - returns what y's value became
-        func = MediumLevelILFunction('sccp_address_of_test', 0)
+        func = ED9MediumLevelILFunctionSSA('sccp_address_of_test', 0)
         x = MLILVariable('x')
         y = MLILVariable('y')
         func.locals['x'] = x

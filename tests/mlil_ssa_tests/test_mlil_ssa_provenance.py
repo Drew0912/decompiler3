@@ -12,11 +12,12 @@ sys.path.insert(0, str(REPO_ROOT))
 from falcom.ed9.ir.mlil_ssa.mlil_converter import convert_ed9_llil_to_mlil_ssa
 from ir.llil.llil import LowLevelILCall, LowLevelILRet
 from ir.mlil.mlil import (
-    MediumLevelILCall, MediumLevelILFunction, MLILConst, MLILDebug, MLILGoto, MLILSetVar, MLILVariable,
+    MediumLevelILCall, MLILConst, MLILDebug, MLILGoto, MLILSetVar, MLILVariable,
 )
 from ir.mlil_ssa.mlil_optimizer import optimize_mlil
 from ir.mlil_ssa.mlil_ssa import MLILIf, MLILPhi, MLILRet, MLILSetVarSSA, MLILVariableSSA, MLILVarSSA, SSADeconstructor
 from ir.mlil_ssa.passes import DeadPhiSourceEliminationPass, SSADeadCodeEliminationPass
+from falcom.ed9.ir.mlil_ssa.mlil_ssa_function import ED9MediumLevelILFunctionSSA
 from tests.shared.llil_utils import ProvenanceTestCase, build_call_function, llil_instructions
 
 
@@ -76,7 +77,7 @@ class TestEdgeStatementProvenance(unittest.TestCase):
     def test_split_edge_copy_and_goto_take_the_branch(self):
         # join's phi reads x#2 over the other -> join edge, which is critical (other also goes to exit, join is
         # also reached from entry); x#1 stays live into exit, so x#2 needs a name of its own and the copy survives
-        func = MediumLevelILFunction('split_edge', FUNC_START)
+        func = ED9MediumLevelILFunctionSSA('split_edge', FUNC_START)
         x = MLILVariable('x')
         func.locals['x'] = x
         x1, x2, x3 = (MLILVariableSSA(x, version) for version in (1, 2, 3))
@@ -115,7 +116,7 @@ class TestDebugNoteProvenance(unittest.TestCase):
         self.assertEqual((note.address, note.llil_index), (DEAD_STORE_ADDRESS, DEAD_STORE_LLIL_INDEX))
 
     def test_dead_code_elimination(self):
-        func = MediumLevelILFunction('dead_string', FUNC_START)
+        func = ED9MediumLevelILFunctionSSA('dead_string', FUNC_START)
         s = MLILVariable('s')
         func.locals['s'] = s
         block = func.create_block(FUNC_START, 'entry')
@@ -130,7 +131,7 @@ class TestDebugNoteProvenance(unittest.TestCase):
 
     def test_dead_phi_elimination(self):
         # s#1 only feeds a phi nothing reads
-        func = MediumLevelILFunction('dead_phi_string', FUNC_START)
+        func = ED9MediumLevelILFunctionSSA('dead_phi_string', FUNC_START)
         s = MLILVariable('s')
         func.locals['s'] = s
         s1, s2, s3 = (MLILVariableSSA(s, version) for version in (1, 2, 3))

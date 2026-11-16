@@ -24,11 +24,12 @@ GLOBAL_SLOT = 3
 
 
 def make_func(name: str, block_count: int):
-    """Function with parameter arg1, registers reg0/reg1, locals x/y and block_count empty blocks"""
+    """Function with parameter arg1, locals reg0/reg1 (named like the SSA path's register variables) and x/y, and
+    block_count empty blocks"""
     func = MediumLevelILFunction(name, 0)
     arg1 = func.get_or_create_parameter(1, 'arg1')
-    reg0 = func.get_or_create_register_var(0)
-    reg1 = func.get_or_create_register_var(1)
+    reg0 = func.get_or_create_local('reg0')
+    reg1 = func.get_or_create_local('reg1')
     blocks = [func.create_block() for _ in range(block_count)]
     return func, blocks, arg1, reg0, reg1, MLILVariable('x'), MLILVariable('y')
 

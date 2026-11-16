@@ -4,6 +4,7 @@ from typing import Iterator
 from collections import deque, defaultdict
 from ir.core import reverse_post_order
 from ir.mlil.mlil import *
+from .mlil_ssa_function import MediumLevelILFunctionSSA
 
 
 # ============================================================================
@@ -93,8 +94,8 @@ def iter_ssa_reads(node: MediumLevelILInstruction,
                 yield source_var, current
 
 
-def iter_ssa_defs(function: MediumLevelILFunction) -> Iterator[tuple[MLILVariableSSA, MediumLevelILInstruction,
-                                                                     MediumLevelILBasicBlock, int]]:
+def iter_ssa_defs(function: MediumLevelILFunctionSSA) -> Iterator[tuple[MLILVariableSSA, MediumLevelILInstruction,
+                                                                        MediumLevelILBasicBlock, int]]:
     """Every SSA variable a statement defines - an MLILSetVarSSA's var, an MLILPhi's dest - as (variable,
     definition, block, index in the block). A call's output is not included."""
     for block in function.basic_blocks:
@@ -105,10 +106,11 @@ def iter_ssa_defs(function: MediumLevelILFunction) -> Iterator[tuple[MLILVariabl
                 yield inst.dest, inst, block, index
 
 
-def registers_left_by_returns(function: MediumLevelILFunction) -> dict[MediumLevelILBasicBlock,
-                                                                         list[tuple[int, MLILVariableSSA]]]:
+def registers_left_by_returns(function: MediumLevelILFunctionSSA) -> dict[MediumLevelILBasicBlock,
+                                                                          list[tuple[int, MLILVariableSSA]]]:
     """Each block ending in a return -> the registers (index, version) the return leaves holding the function's own
-    write, for its caller to read after the call. The result register is left out: a return passes it as its value"""
+    write, for its caller to read after the call: those the VM's return rule leaves. The result register is left out:
+    a return passes it as its value"""
     registers = sorted((index, var) for index, var in function.register_vars.items()
                        if index != function.result_register)
     if not registers:
@@ -120,7 +122,8 @@ def registers_left_by_returns(function: MediumLevelILFunction) -> dict[MediumLev
     left = {}
     for block in function.basic_blocks:
         if block.instructions and isinstance(block.instructions[-1], MLILRet):
-            versions = [(index, reaching_version(function, block, var)) for index, var in registers]
+            versions = [(index, reaching_version(function, block, var)) for index, var in registers
+                        if function.return_leaves_register(index)]
             left[block] = [(index, version) for index, version in versions
                            if version is not None and holds_own_write(version, definitions, outputs)]
 
@@ -147,7 +150,7 @@ def holds_own_write(version: MLILVariableSSA, definitions: dict, outputs: set) -
     return False
 
 
-def reaching_version(function: MediumLevelILFunction, block: MediumLevelILBasicBlock,
+def reaching_version(function: MediumLevelILFunctionSSA, block: MediumLevelILBasicBlock,
                      var: MLILVariable) -> MLILVariableSSA | None:
     """var's version at the end of block if this function wrote it: None for the value the function came in with or
     one a call may have clobbered (the callee's; the call itself ends the walk, its pseudo-definition aside). On the
@@ -164,7 +167,7 @@ def reaching_version(function: MediumLevelILFunction, block: MediumLevelILBasicB
             if isinstance(inst, MediumLevelILCall):
                 if inst.output is not None and inst.output.base_var == var:
                     return inst.output
-                if function.call_may_clobber(var):
+                if function.call_may_clobber(inst, var):
                     return None
         for predecessor in current.incoming_edges:
             if predecessor not in visited:
@@ -181,7 +184,7 @@ def reaching_version(function: MediumLevelILFunction, block: MediumLevelILBasicB
 class DominanceAnalysis:
     """Compute dominance tree and dominance frontiers (iterative)"""
 
-    def __init__(self, function: MediumLevelILFunction):
+    def __init__(self, function: MediumLevelILFunctionSSA):
         blocks = function.basic_blocks
         self.blocks = reverse_post_order(blocks[0], lambda block: block.outgoing_edges) if blocks else []
         self.block_index = {block: i for i, block in enumerate(self.blocks)}
@@ -273,7 +276,7 @@ class DominanceAnalysis:
                         break
 
 
-def _names_in_use(function: MediumLevelILFunction) -> set[str]:
+def _names_in_use(function: MediumLevelILFunctionSSA) -> set[str]:
     """Every name a fresh local must not collide with: locals (registers included - a
     register's MLILVariable is created via get_or_create_local, so it lives in .locals too),
     parameters, and globals. Shared by every minted-name site in this file
@@ -291,7 +294,7 @@ def _names_in_use(function: MediumLevelILFunction) -> set[str]:
 class SSAConstructor:
     """Convert MLIL to SSA form (iterative algorithms)"""
 
-    def __init__(self, function: MediumLevelILFunction):
+    def __init__(self, function: MediumLevelILFunctionSSA):
         self.function = function
         self.dom_analysis = DominanceAnalysis(function)
 
@@ -305,7 +308,7 @@ class SSAConstructor:
         # (see _collect_defs/_rename_inst) needs it
         self.address_taken_vars: set[MLILVariable] = set()
 
-    def construct(self) -> MediumLevelILFunction:
+    def construct(self) -> MediumLevelILFunctionSSA:
         """Convert function to SSA form (modifies in-place)"""
         if self._add_entry_preheader():
             self.dom_analysis = DominanceAnalysis(self.function)
@@ -513,7 +516,7 @@ class SSAConstructor:
     def _clobbered_reg_global_vars(self, inst: MediumLevelILCall) -> list[MLILVariable]:
         """Registers/globals a call may clobber, excluding its own output"""
         return [var for var in [*self.function.register_vars.values(), *self.function.global_vars.values()]
-                if var != inst.output and self.function.call_may_clobber(var)]
+                if var != inst.output and self.function.call_may_clobber(inst, var)]
 
     def _insert_phi_nodes(self):
         """Insert Phi nodes at dominance frontiers (worklist algorithm)"""
@@ -688,7 +691,7 @@ class SSAConstructor:
 class SSADeconstructor:
     """Convert SSA back to non-SSA form with interference-based variable allocation"""
 
-    def __init__(self, function: MediumLevelILFunction):
+    def __init__(self, function: MediumLevelILFunctionSSA):
         self.function = function
         self.all_ssa_vars: set[MLILVariableSSA] = set()
         self.live_in: dict[MediumLevelILBasicBlock, set[MLILVariableSSA]] = {}
@@ -712,7 +715,7 @@ class SSADeconstructor:
         # the copy coalesces away
         self.split_blocks: list[MediumLevelILBasicBlock] = []
 
-    def deconstruct(self) -> MediumLevelILFunction:
+    def deconstruct(self) -> MediumLevelILFunctionSSA:
         """Convert from SSA to non-SSA (modifies in-place)"""
         self._eliminate_phi_nodes()
         self._collect_ssa_vars()
@@ -1127,11 +1130,11 @@ class SSADeconstructor:
 # Public API
 # ============================================================================
 
-def convert_to_ssa(function: MediumLevelILFunction) -> MediumLevelILFunction:
+def convert_to_ssa(function: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
     """Convert MLIL to SSA (in-place)"""
     return SSAConstructor(function).construct()
 
 
-def convert_from_ssa(function: MediumLevelILFunction) -> MediumLevelILFunction:
+def convert_from_ssa(function: MediumLevelILFunctionSSA) -> MediumLevelILFunctionSSA:
     """Convert from SSA to non-SSA (in-place)"""
     return SSADeconstructor(function).deconstruct()
