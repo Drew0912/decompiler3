@@ -5,7 +5,7 @@
 > file format and how decompiler3 reads it: `docs/falcom/ed9/ED9_FORMAT.md`.
 
 **Source.** A static read of `sora_2nd.exe` 1.5.0.0 (Trails in the Sky 2nd Chapter, the game of the `sora2` corpus;
-SHA-256 `CEAED8DA75BC1B1A32BAB2694D2CFF816DFB58A4AB16693041DCD7EEE0E258F4`), 2026-10-30 to 2026-11-06, most rules
+SHA-256 `CEAED8DA75BC1B1A32BAB2694D2CFF816DFB58A4AB16693041DCD7EEE0E258F4`), 2026-10-30 to 2026-11-17, most rules
 confirmed by a second, independent read. Nothing here is traced in the running game, and the other four games' exes are
 unread (their scripts share the format, `ED9_FORMAT.md`). The reads, with instruction addresses, are kept outside the
 repo. The exe's log messages are quoted in translation: the exe holds them in Japanese.
@@ -62,7 +62,16 @@ Every value is a 32-bit word; its top 2 bits are the tag [exe]:
   2, so it does nothing at runtime [exe].
 - decompiler3's opcode table reads 0x28's operand as signed, as the logger's `%d` prints it.
 - 0x20 `EZ` is the logical not, 0x21 `NOT` the bitwise not [exe].
-- 0x26 `DEBUG_SET_LINENO` stores its u16 in the thread and does nothing else; nothing in the VM reads it [exe].
+- 0x26 `DEBUG_SET_LINENO` stores its u16 in the thread (0 in a new thread) and does nothing else: nothing in the VM
+  reads it, and a call neither saves nor restores it, so after a return the thread holds the callee's last value until
+  the caller runs another 0x26 [exe]. Outside the VM only three log messages print it, each as a `%d` after a name, at
+  levels the logger keeps, so leaving 0x26 out changes those numbers and nothing else [exe]:
+  - Sys 3's warning that the thread it is about to use is running another function prints the *target* thread's value;
+  - Btl 1 `btl_damage_anime`'s error when used on oneself, and Btl 52 `btl_absorb`'s when argument 5 or 6 is outside
+    90 to -90, print the calling thread's own value, after its script's name;
+  - no other reader was found (2026-11-17); the search could not see indexed accesses, code outside a function or
+    UTF-16 strings. That the value is a source line is decompiler3's reading of the scripts (`ED9_FORMAT.md`, Line
+    markers).
 - `PUSH` (0x00): a size byte, then a 4-byte word. It checks `sp + size <= stack size`, copies `size` bytes from the
   word and adds `size` to sp; PC always advances by 6. Size 0 pushes nothing, 1-3 push part of the word and leave sp
   misaligned, above 4 copy bytes from beyond the operand [exe]. The compiled scripts always use size 4 [compiler].
@@ -672,8 +681,7 @@ correct [exe]. What a record holds: `ED9_FORMAT.md`, Call-site debug records.
 - **Syscall handlers:** five were read for their effects. Those that read a String or reach a name function were read
   only for how they use the name, and the rest not at all: their arguments, results and whether they write `REG[0]` or
   script globals are open.
-- **Not read yet:** whether anything else outside the VM reads `DEBUG_SET_LINENO`'s value (Sys 3's warning prints the
-  field it is stored in); which threads clear bit 0 or bit 1 of their command mask, and whether anything adds bits to a
+- **Not read yet:** which threads clear bit 0 or bit 1 of their command mask, and whether anything adds bits to a
   command's mask after startup, so what masks 2 and 3 change in play; what sets the thread's flags bit 1; which file a
   character's second script is (the scripts that define `SkillTable` would tell); what the virtual call that lets Mes
   0's window use its measured sizes tests; what the Integers passed to `ExecuteEventNext` and `TBoxProcess` and the Ani
