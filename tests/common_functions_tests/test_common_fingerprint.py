@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Unit tests for the common-function fingerprint (falcom/ed9/structs/fingerprint.py): real common functions,
-branch targets by where they land and relative to the function, global operands by name"""
+branch targets by where they land and relative to the function, global operands by name, a NaN by its word"""
 
 from pathlib import Path
+from types import SimpleNamespace
 import sys
 import unittest
 
@@ -13,14 +14,20 @@ from assembler import Disassembler, DisassemblerContext, Function, Instruction
 from falcom.ed9.assembler import *
 from falcom.ed9.assembler.opcode_table import ed9_create_fallthrough_jump
 from falcom.ed9.structs.fingerprint import (
-    GLOBAL_INDEX_TAG, GLOBAL_TAG, UNRESOLVED_BRANCH_TAG, body_fingerprint, function_fingerprint,
+    GLOBAL_INDEX_TAG, GLOBAL_TAG, UNRESOLVED_BRANCH_TAG, body_fingerprint, function_fingerprint, signature_fingerprint,
 )
+from falcom.ed9.structs.scp_types import FloatWord, ScpValue
 from falcom.ed9.parser.scp import ScpParser
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_asm import GLOBAL_INDEX, REG_INDEX, Asm
 
 OTHER_GLOBAL_INDEX = GLOBAL_INDEX + 5
 OTHER_BASE = 0x40
+
+# Float words holding a NaN: the plain one, its negative and one with a payload
+NAN_WORD            = 0x9FF00000
+NEGATIVE_NAN_WORD   = 0xBFF00000
+PAYLOAD_NAN_WORD    = 0x9FF048D1
 
 
 def load_function(relative_path: str, name: str):
@@ -142,6 +149,31 @@ class TestGlobalOperands(unittest.TestCase):
 
         self.assertNotEqual(keys[0], keys[1])
         self.assertEqual(keys[1][0][1], (GLOBAL_INDEX_TAG, OTHER_GLOBAL_INDEX))
+
+
+class TestNaNValues(unittest.TestCase):
+    """Every NaN's repr is 'nan': a NaN pushed or given as a parameter's default is keyed by the word it is stored as"""
+
+    @classmethod
+    def body(cls, word: int) -> tuple:
+        asm = Asm()
+        asm.push_float(FloatWord(word)); asm.set_reg(REG_INDEX); asm.ret()
+        return body_fingerprint(reachable_instructions(asm.assemble(0, {})[0]), 0, no_calls, no_globals)
+
+    @classmethod
+    def signature(cls, word: int) -> tuple:
+        """A function whose one parameter defaults to the NaN stored as word"""
+        param = SimpleNamespace(type=SimpleNamespace(flags=0), default_value=ScpValue(FloatWord(word)))
+        return signature_fingerprint(SimpleNamespace(params=[param]))
+
+    def test_nan_words_differ(self):
+        for fingerprint in (self.body, self.signature):
+            keys = [fingerprint(word) for word in (NAN_WORD, NEGATIVE_NAN_WORD, PAYLOAD_NAN_WORD)]
+            self.assertEqual(len(set(keys)), len(keys), fingerprint.__name__)
+
+    def test_one_nan_word_matches(self):
+        for fingerprint in (self.body, self.signature):
+            self.assertEqual(fingerprint(NAN_WORD), fingerprint(NAN_WORD), fingerprint.__name__)
 
 
 if __name__ == '__main__':

@@ -3,15 +3,18 @@
 Two copies of the same function in different scripts differ in bytes, because branch targets are
 absolute offsets and CALL operands are per-script table ids. The fingerprint normalizes those away:
 same fingerprint means the same function in every way that affects game logic. Shared by the
-common-function library generator and the DSL emitter, so both sides always agree.
+common-function library generator and the DSL emitter, so both sides always agree. A value is keyed by
+its text, a NaN by the word it is stored as (value_key).
 """
 
 import hashlib
+import math
 from typing import TYPE_CHECKING, Callable
 
 from assembler.instruction import Instruction, Operand
 from assembler.instruction_table import OperandType
 from ..assembler.opcode_table import ED9OperandType
+from .scp_types import ScpValue
 
 if TYPE_CHECKING:
     from ..parser.scp import ScpParser
@@ -22,9 +25,20 @@ UNRESOLVED_BRANCH_TAG   = 'L?'  # branch target that isn't a reachable instructi
 FUNC_TAG                = 'F'   # CALL target, by name
 GLOBAL_TAG              = 'G'   # global variable, by name
 GLOBAL_INDEX_TAG        = 'G#'  # global variable index with no name in the table
-VALUE_TAG               = 'V'   # any other operand, by content
+VALUE_TAG               = 'V'   # any other operand, by content; a NaN by its stored word (value_key)
 
 DIGEST_ENCODING = 'utf-8'
+
+
+def value_key(value) -> str:
+    """value's repr, never == (ScpValue has no __eq__, and 1 == 1.0 while their encodings differ); a NaN, pushed (a
+    float) or a default (an ScpValue), as the .py spells it, by its stored word, since every NaN's repr is 'nan'"""
+    number = value.value if isinstance(value, ScpValue) else value
+    if not (isinstance(number, float) and math.isnan(number)):
+        return repr(value)
+
+    text = ScpValue.float_literal(number)
+    return f'ScpValue({text})' if isinstance(value, ScpValue) else text
 
 
 def operand_key(op: Operand, func_offset: int, ordinals: dict[int, int], get_func_name: Callable[[int], str],
@@ -44,8 +58,7 @@ def operand_key(op: Operand, func_offset: int, ordinals: dict[int, int], get_fun
             return (GLOBAL_TAG, name) if name is not None else (GLOBAL_INDEX_TAG, op.value)
 
         case _:
-            # repr, never ==: ScpValue has no __eq__, and 1 == 1.0 while their encodings differ
-            return (VALUE_TAG, repr(op.value))
+            return (VALUE_TAG, value_key(op.value))
 
 
 def body_fingerprint(instructions: list[Instruction], func_offset: int, get_func_name: Callable[[int], str],
@@ -62,7 +75,7 @@ def body_fingerprint(instructions: list[Instruction], func_offset: int, get_func
 
 def signature_fingerprint(func: 'Function') -> tuple:
     """Parameter flags and defaults - stored outside the code, so the body alone can't see them"""
-    return tuple((int(param.type.flags), repr(param.default_value)) for param in func.params)
+    return tuple((int(param.type.flags), value_key(param.default_value)) for param in func.params)
 
 
 def function_fingerprint(parser: 'ScpParser', func: 'Function') -> tuple:
