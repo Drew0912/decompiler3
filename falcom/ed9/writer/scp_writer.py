@@ -32,6 +32,7 @@ from ..structs.scp_types import (
     ScpFunctionCallDebugInfo,
     ScpFunctionCallDebugInfoArg,
 )
+from .hlil_dsl.stubs import library_function, stub_body
 from .scp_compile_check import CheckedFunction, CompileCheck, SourceSite, def_location, location_prefix
 from .scp_writer_hook_registry import HookRegistry, require_function, wrapped_chain
 
@@ -191,16 +192,18 @@ class ScpWriter:
     # Script registration: functions, common imports, global vars and replaced bodies
 
     def LLILCode(self):
+        """Registers a script function; its name is bound to the function's stub (library_function)"""
         def wrapper(func):
             self._register_function(func)
-            return func
+            return library_function(func)
 
         return wrapper
 
     def LLILCommonCode(self):
+        """Registers a script's own common function; its name is bound to the function's stub (library_function)"""
         def wrapper(func):
             self._register_function(func, is_common_func=True)
-            return func
+            return library_function(func)
 
         return wrapper
 
@@ -290,7 +293,9 @@ class ScpWriter:
         return index
 
     def _register_function(self, func: Callable, is_common_func: bool = False):
-        """A script function: checked, then given its pending table entry (registration order is code order)"""
+        """A script function, a stub standing for its body: checked, then given its pending table entry (registration
+        order is code order)"""
+        func = stub_body(func)
         require_function(func, 'LLILCommonCode' if is_common_func else 'LLILCode')
         self._require_open(func)
         name = func.__name__

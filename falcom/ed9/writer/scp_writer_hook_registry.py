@@ -10,6 +10,7 @@ from types import FunctionType
 from typing import TYPE_CHECKING, Callable
 
 from dc3.logging import log
+from .hlil_dsl.stubs import stub_body
 from .scp_compile_check import SourceSite, def_location
 
 if TYPE_CHECKING:
@@ -194,6 +195,7 @@ class HookRegistry:
         if replacement is None:
             return None
 
+        replacement = stub_body(replacement)  # a script or library function returned by its name: its body
         require_function(replacement, f'{def_location(cb)}: {cb.__name__} for {f.name}')
         if replacement is not body:  # a body merely passed on may be the script's or a library's: no names for it
             self._inject(replacement)

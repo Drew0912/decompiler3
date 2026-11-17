@@ -83,8 +83,9 @@ error.
 **Public names.** Generated scripts and hook files call these by name, so a rename breaks every one of them: it needs
 the user's OK. `create_scp_writer`, `get_scp_writer`, positional `run(globals())`, `@scena.LLILCode()`,
 `LLILCommonCode`, `CommonImports`, `GlobalVars`, the camelCase `register*` hook names, `replace_function`,
-`add_function`, `original`, `inline_original_func`, `label`, `GLOBAL_VAR`, `get_scp_writer().globals`, every opcode
-function and type the helper exports (`RawInt`, `FloatWord`; it has no `__all__`, so every public name in it), and the
+`add_function`, `original`, `inline_original_func`, `label`, `GLOBAL_VAR`, `library_function` (above each library
+`def`), `get_scp_writer().globals`, every opcode function and type the helper exports (`RawInt`, `FloatWord`; it has
+no `__all__`, so every public name in it), and the
 import paths `falcom.ed9.writer.scp_writer_helper`, `falcom.ed9.games.<game>.writer.scp_writer_helper` and
 `falcom.ed9.games.<game>.metadata.common_all`. Documented here, not frozen.
 
@@ -99,6 +100,10 @@ callbacks, then merges each replaced function's signature (below). (6) Counts th
 hook body writes `CALL(SkillTable)` like the script does. The names arrive when the compile starts, so code at a hook's
 top level can't use them: use a run callback. A body a callback merely passes on (`return func`) gets nothing; a
 `functools.wraps` wrapper of a library body does give the library's module the names (nothing in it is overwritten).
+A script or library function's name is bound to its stub (`@scena.LLILCode()`, `LLILCommonCode()` and the library's
+`@library_function` return one): `CALL(SkillTable)` calls it, a function callback may return it (the function's body
+becomes the replacement), and a bare `SkillTable()` raises at its line (`SkillTable(...) builds an HLIL call; in an
+LLIL body write CALL(SkillTable)`); `original.SkillTable()` inlines a body.
 
 **Signatures.** A replaced function keeps its position, table index and common flag; its signature merges per
 parameter: the replacement's type or default where it gives one, else the original's. The parameter count must match,

@@ -119,6 +119,7 @@ class TestGenerator(unittest.TestCase):
     def test_function_rendered_from_its_instructions_with_stack_comments(self):
         """The stack comments only: a float SYSCALL argument gets neither the float bits nor its argument number"""
         self.assertEqual(self.render(callee_module=OWN_MODULE), [
+            '@library_function',
             f'def {FUNC_NAME}(arg1: Value32):',
             '    L0 = genLabel()',
             '    L1 = genLabel()',

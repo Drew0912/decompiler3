@@ -1,6 +1,6 @@
 # HLIL DSL
 
-> Status: design, not started; the DSL work follows the IR rewrite. Overview and decisions:
+> Status: design; started: the function stubs (Calls) are implemented, the rest is planned. Overview and decisions:
 > `docs/dsl/DSL_FUTURE_WORK.md`, Recompilation Pipeline §1; its hooks: `docs/dsl/HOOKS.md`.
 
 ## HLIL DSL: Recompile Path
@@ -92,7 +92,10 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   when listed in `@scena.CommonImports()` (`functools.update_wrapper` keeps the writer's signature
   handling working). The script's own decorators return stubs too. While an HLIL body is being built,
   an opcode call only builds a node that `EmitLLIL` must claim (Mixing LLIL and HLIL, below), so a
-  leftover raw body fails loudly.
+  leftover raw body fails loudly. **Implemented:** the stubs (`falcom/ed9/writer/hlil_dsl/stubs.py`), the
+  generator's `@library_function` line above each library `def`, and the decorators returning stubs; registration
+  and a function callback's return value see through a stub to its body. Until HLIL bodies exist, a bare call
+  raises at its line: `AdjustSpeed(...) builds an HLIL call; in an LLIL body write CALL(AdjustSpeed)`.
 - **Jumps:** `JumpIfFalse`/`JumpIfTrue` (`POP_JMP_ZERO`/`POP_JMP_NOT_ZERO`), `Label` and `Jump` mix with
   blocks in one function: structure what is clean, jump elsewhere. Labels are per function and named by
   order, not address. A jump must arrive with the same live locals; `Break`/`Continue` free inner

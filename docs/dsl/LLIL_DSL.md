@@ -141,7 +141,10 @@ unknown name, and `PUSH_INT(5.0)` there its type. A wrong argument type is a `Ty
 statement, the argument and the types it takes - `PUSH_INT value is 5.0 (float), not int`, in a body at
 its line. `CALL` of a function the script never registered says where one comes from: a library function
 listed in `@scena.CommonImports()`, a script function with `@scena.LLILCode()`, a hook function with
-`@add_function`. An integer operand must fit what its type reads back, and a global index the declared
+`@add_function`. A function called by its bare name (`Foo()`, not `CALL(Foo)`) is a `TypeError` at its line
+(`Foo(...) builds an HLIL call; in an LLIL body write CALL(Foo)`): `@scena.LLILCode()`, `LLILCommonCode()` and the
+library's `@library_function` bind the name to a stub, which `CALL` and `CommonImports` see through to the body
+(`docs/dsl/HLIL_DSL.md`, Calls). An integer operand must fit what its type reads back, and a global index the declared
 table - `SET_REG(16)` fails at its line (`SET_REG operand 1 is 16, outside 0..15`: the VM has 16 registers;
 `POP` takes at most 255 bytes) instead of being truncated. A string - pushed, a `CALL_SCRIPT` name, a `str` default or a
 global name - can't hold a NUL (the game ends the string there) or a lone surrogate (it can't be encoded):
@@ -432,9 +435,10 @@ scripts skip their library import.
 
 **The four questions this section used to leave open, now closed:**
 
-- *Eager registration on decoration* — the shared-library modules define plain, undecorated
-  `def`s. Registration only happens when an output script's own `@scena.CommonImports()` manifest
-  imports and returns a specific function, going through the same registration machinery
+- *Eager registration on decoration* — the shared-library modules' `def`s carry only
+  `@library_function`, which binds the name to a stub and registers nothing. Registration only
+  happens when an output script's own `@scena.CommonImports()` manifest imports and returns a
+  specific function, going through the same registration machinery
   `LLILCode`/`LLILCommonCode` use (as an ordinary `is_common_func=True` registration) — so
   importing the library module itself registers nothing.
 - *Name collisions* — registration now raises `ValueError` on a duplicate name instead of
