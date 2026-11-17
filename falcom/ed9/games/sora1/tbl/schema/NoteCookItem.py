@@ -9,7 +9,7 @@ class NoteCookItem(TableDataEntry):
         ('itemId',        'I'),
         ('failItemId',    'I'),
         ('uint32_0c',     'I'),
-        ('str10',         'S'),
+        ('texture',       'S'),   # loaded for the selected dish
         ('selector',      'W'),
         ('pad1a',         'P2'),
         ('selectorValue', 'I'),

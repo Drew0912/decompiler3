@@ -16,9 +16,9 @@ class TipsTableData(TableDataEntry):
         #   N 0x2: left out of the tips lists
         #   P 0x4: nothing found reading it
         ('flags',      'S'),
-        ('uint8_20',   'B'),
+        ('category',   'B'),   # a NoteHelpCategory id (6 and up: the tips lists)
         ('pad21',      'P3'),
-        ('uint32_24',  'I'),
+        ('sortKey',    'i'),   # the tips list order, ascending
         ('title',      'S'),
         ('text',       'S'),
     )

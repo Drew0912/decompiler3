@@ -5,6 +5,7 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class RouletteNumber(TableDataEntry):
     DESCRIPTOR = (
         ('key',        'I'),
-        ('float32_04', 'f'),
-        ('float32_08', 'f'),
+        # degrees: the number's slot on the wheel (a reading), 360/38 wide; the code uses its centre
+        ('angleStart', 'f'),
+        ('angleEnd',   'f'),
     )

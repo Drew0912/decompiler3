@@ -5,10 +5,10 @@ from falcom.ed9.parser.tbl import TableDataEntry
 class DLCTableData(TableDataEntry):
     DESCRIPTOR = (
         ('id',          'I'),
-        ('uint32_04',   'I'),
+        ('sortKey',     'i'),   # the DLC list order, ascending
         ('itemIds',     'A4'),
         ('uint32_14',   'I'),
-        ('arr32_18',    'A4'),
+        ('itemCounts',  'A4'),  # one per itemIds entry: how many are given
         ('uint32_24',   'I'),
         ('name',        'S'),
         ('description', 'S'),

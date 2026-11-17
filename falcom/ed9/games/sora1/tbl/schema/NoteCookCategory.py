@@ -6,7 +6,7 @@ class NoteCookCategory(TableDataEntry):
     DESCRIPTOR = (
         ('id',    'B'),
         ('pad01', 'P7'),
-        ('str08', 'S'),
+        ('name',  'S'),
         ('text',  'S'),
         ('ruby',  'S'),
     )

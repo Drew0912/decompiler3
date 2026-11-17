@@ -6,9 +6,9 @@ class SlotMonsterInfo(TableDataEntry):
     DESCRIPTOR = (
         ('id',        'W'),
         ('pad02',     'P6'),
-        ('str08',     'S'),
-        ('uint32_10', 'I'),
-        ('uint32_14', 'I'),
+        ('name',      'S'),
+        ('hp',        'I'),   # lowered by SlotPomInfo attack; shown as a gauge
+        ('attack',    'I'),   # taken off SlotPomInfo hp
         ('uint32_18', 'I'),
         ('uint32_1c', 'I'),
         ('uint32_20', 'I'),
