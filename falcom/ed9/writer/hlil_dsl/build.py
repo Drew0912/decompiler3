@@ -29,11 +29,11 @@ class Build:
         self.locate = locate
         self.body_codes = body_codes                    # id() of each code the body runs as itself
         self.check_helper = check_helper
-        self.nodes: list = []                           # the composite nodes, in creation order
+        self.nodes: list = []                           # the tracked nodes, in creation order
         self.first_error: HLILError | None = None       # raised again after the body, even if the body caught it
 
     def register(self, node):
-        """A composite node joins this build, at the line making it"""
+        """A tracked node joins this build, at the line making it"""
         node.build = self
         node.site = self.site_of()
         node.parent = None
@@ -42,7 +42,7 @@ class Build:
             for frame in self.helper_frames(sys._getframe(1)):
                 problem = self.check_helper(frame.f_code, frame.f_globals)
                 if problem is not None:
-                    raise self.kept(HLILError(problem))
+                    raise self.keep_first(HLILError(problem))
 
     def helper_frames(self, frame: FrameType) -> list[FrameType]:
         """The helpers between frame and the body: none unless the walk reaches the body"""
@@ -63,9 +63,9 @@ class Build:
 
     def fail_at(self, site, text: str) -> HLILError:
         """The error to raise about the node made at site (None: no line); the build keeps the first"""
-        return self.kept(HLILError(self.locate(site, text)))
+        return self.keep_first(HLILError(self.locate(site, text)))
 
-    def kept(self, error: HLILError) -> HLILError:
+    def keep_first(self, error: HLILError) -> HLILError:
         """error, kept as the build's first unless one came before"""
         if self.first_error is None:
             self.first_error = error

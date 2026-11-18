@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests for the common-function fingerprint (falcom/ed9/structs/fingerprint.py): real common functions,
-branch targets by where they land and relative to the function, global operands by name, a NaN by its word"""
+branch targets by where they land and relative to the function, global operands by name, the code without its line
+markers, a NaN by its word"""
 
 from pathlib import Path
 from types import SimpleNamespace
@@ -14,7 +15,8 @@ from assembler import Disassembler, DisassemblerContext, Function, Instruction
 from falcom.ed9.assembler import *
 from falcom.ed9.assembler.opcode_table import ed9_create_fallthrough_jump
 from falcom.ed9.structs.fingerprint import (
-    GLOBAL_INDEX_TAG, GLOBAL_TAG, UNRESOLVED_BRANCH_TAG, body_fingerprint, function_fingerprint, signature_fingerprint,
+    GLOBAL_INDEX_TAG, GLOBAL_TAG, UNRESOLVED_BRANCH_TAG, body_fingerprint, function_fingerprint,
+    body_fingerprint_without_line_markers, signature_fingerprint,
 )
 from falcom.ed9.structs.scp_types import FloatWord, ScpValue
 from falcom.ed9.parser.scp import ScpParser
@@ -149,6 +151,44 @@ class TestGlobalOperands(unittest.TestCase):
 
         self.assertNotEqual(keys[0], keys[1])
         self.assertEqual(keys[1][0][1], (GLOBAL_INDEX_TAG, OTHER_GLOBAL_INDEX))
+
+
+def marked_bytecode(markers: bool) -> bytes:
+    """One function, with line markers where the compiler writes them when markers: one first, two at a branch's
+    target, one before the return"""
+    asm = Asm()
+    if markers:
+        asm.debug_set_lineno(1)
+
+    asm.get_reg(REG_INDEX); asm.jz('target')
+    asm.push_int(1); asm.set_reg(REG_INDEX)
+    asm.label('target')
+    if markers:
+        asm.debug_set_lineno(2); asm.debug_set_lineno(3)
+
+    asm.push_int(2); asm.set_reg(REG_INDEX)
+    if markers:
+        asm.debug_set_lineno(4)
+
+    asm.ret()
+    return asm.assemble(0, {})[0]
+
+
+class TestFingerprintWithoutLineMarkers(unittest.TestCase):
+    """The code without its line markers: a function written in the HLIL DSL, which writes none, compiles to it"""
+
+    @classmethod
+    def keys(cls, fingerprint, markers: bool) -> tuple:
+        return fingerprint(reachable_instructions(marked_bytecode(markers)), 0, no_calls, no_globals)
+
+    def test_markers_left_out_and_a_branch_to_one_is_to_the_next_instruction(self):
+        unmarked = self.keys(body_fingerprint, markers=False)
+        self.assertEqual(self.keys(body_fingerprint_without_line_markers, markers=True), unmarked)
+        self.assertNotEqual(self.keys(body_fingerprint, markers=True), unmarked)
+
+    def test_without_markers_it_is_the_fingerprint(self):
+        self.assertEqual(self.keys(body_fingerprint_without_line_markers, markers=False),
+                         self.keys(body_fingerprint, markers=False))
 
 
 class TestNaNValues(unittest.TestCase):

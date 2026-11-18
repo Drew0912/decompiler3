@@ -34,7 +34,7 @@ from ..structs.scp_types import (
 )
 from .hlil_dsl.build import Build, HLILError, active_build, set_outside_build_locator
 from .hlil_dsl.lowering import Lowering
-from .hlil_dsl.source_check import body_problem, helper_problem
+from .hlil_dsl.source_check import SourceProblem, body_problem, helper_problem
 from .hlil_dsl.stubs import STUB_CODE, is_hlil_body, library_function, mark_hlil_body, stub_body
 from .hlil_dsl.tree import build_tree
 from .scp_compile_check import CheckedFunction, CompileCheck, SourceSite, def_location, location_prefix
@@ -188,7 +188,8 @@ class ScpWriter:
         self.lowering_site: SourceSite | None = None         # while an HLIL tree is lowered: its node's site
 
         # HLIL bodies
-        self.source_checked: set[tuple[int, bool]] = set()   # (id(code), as a body) of each source check passed
+        self.checked_body_codes: set[int] = set()            # id() of each body's code whose source check passed
+        self.checked_helper_codes: set[int] = set()          # the same for the helpers' and the wrappers'
 
         # Hooks
         self.hooks: HookRegistry = HookRegistry(self)
@@ -218,7 +219,8 @@ class ScpWriter:
 
     def HLILCode(self):
         """Registers a script function written in the HLIL DSL (docs/dsl/HLIL_DSL.md), compiled by lowering the tree
-        its body builds; its name is bound to the function's stub (library_function)"""
+        its body builds; its name is bound to the function's stub (library_function). The HLIL mark goes on the body
+        itself, through a stub when func is one already (stub_body)"""
         def wrapper(func):
             require_function(func, 'HLILCode')
             mark_hlil_body(stub_body(func))
@@ -497,56 +499,73 @@ class ScpWriter:
         """Emit a body's opcodes, f's own or inlined into the function compiling: an LLIL body emits them itself,
         reading its arguments from the VM stack, not from its parameters; an HLIL body builds its tree, lowered here
         onto a stack holding exactly f's parameters"""
-        build = active_build()
-        if build is not None:
-            raise build.fail(f"original.{f.name}() and inline_original_func() inline a body in an LLIL body only, "
-                             "not in an HLIL one")
+        outer_build = active_build()
+        if outer_build is not None:
+            raise outer_build.fail(f"original.{f.name}() and inline_original_func() inline a body in an LLIL body "
+                                   "only, not in an HLIL one")
 
-        if not is_hlil_body(body):
+        if is_hlil_body(body):
+            self._run_hlil_body(f, body)
+        else:
             body(*[None] * f.entry.param_count)
-            return
 
-        codes = self._check_hlil_source(body)
-        build = Build(f.name, self._opcode_site, self._located, codes, self._helper_problem)
+    def _run_hlil_body(self, f: ScpFunction, body: Callable):
+        body_codes = self._check_hlil_source(body)
+        build = Build(f.name, site_of=self._opcode_site, locate=self._message_at, body_codes=body_codes,
+                      check_helper=self._located_helper_problem)
         statements = build_tree(build, body, self._param_names(body, f))
 
         # Imported here: the opcode functions it calls import this module
-        from .hlil_dsl.opcode_sink import OpcodeSink
+        from .hlil_dsl.llil_sink import LLILSink
         try:
-            Lowering(OpcodeSink(self), f.entry.param_count, build).run(statements)
+            Lowering(LLILSink(self), f.entry.param_count, build).run(statements)
         finally:
-            self.lowering_site = None
+            self.lowering_site = None       # set by the sink at each node
 
     def _check_hlil_source(self, body: Callable) -> frozenset[int]:
-        """The source check (hlil_dsl/source_check.py) of each layer of an HLIL body: the innermost, the body itself,
-        by the body's rules, its functools.wraps wrappers by a helper's; returns the id() of each layer's code"""
+        """The source check (hlil_dsl/source_check.py) of each layer of an HLIL body: its functools.wraps wrappers by
+        a helper's rules, then the innermost, the body itself, by the body's; returns the id() of each layer's code"""
         layers = [layer for layer in wrapped_chain(body) if getattr(layer, '__code__', STUB_CODE) is not STUB_CODE]
-        for layer in layers:
-            code = layer.__code__
-            problem = (self._checked(code, True, lambda: body_problem(code)) if layer is layers[-1]
-                       else self._helper_problem(code, layer.__globals__))
-            if problem is not None:
-                raise HLILError(problem)
+        *wrappers, innermost = layers
+        for wrapper in wrappers:
+            message = self._located_helper_problem(wrapper.__code__, wrapper.__globals__)
+            if message is not None:
+                raise HLILError(message)
+
+        message = self._located_body_problem(innermost.__code__)
+        if message is not None:
+            raise HLILError(message)
 
         return frozenset(id(layer.__code__) for layer in layers)
 
-    def _helper_problem(self, code: CodeType, names: dict) -> str | None:
-        """A helper's or a wrapper's source check (hlil_dsl/source_check.py), as a located message, or None"""
-        return self._checked(code, False, lambda: helper_problem(code, names))
-
-    def _checked(self, code: CodeType, is_body: bool, check: Callable[[], tuple[int, str] | None]) -> str | None:
-        """check()'s problem in code as a located message, or None; once per code and kind of check"""
-        key = (id(code), is_body)
-        if key in self.source_checked:
+    def _located_body_problem(self, code: CodeType) -> str | None:
+        """An HLIL body's own source check, as a located message, or None; once per code"""
+        if id(code) in self.checked_body_codes:
             return None
 
-        problem = check()
-        if problem is not None:
-            line, text = problem
-            return f'{code.co_filename}:{line}: {self.current_function.name}: {text}'
+        message = self._source_problem_message(code, body_problem(code))
+        if message is None:
+            self.checked_body_codes.add(id(code))
 
-        self.source_checked.add(key)
-        return None
+        return message
+
+    def _located_helper_problem(self, code: CodeType, names: dict) -> str | None:
+        """A helper's or a wrapper's source check (hlil_dsl/source_check.py), as a located message, or None; once per
+        code"""
+        if id(code) in self.checked_helper_codes:
+            return None
+
+        message = self._source_problem_message(code, helper_problem(code, names))
+        if message is None:
+            self.checked_helper_codes.add(id(code))
+
+        return message
+
+    def _source_problem_message(self, code: CodeType, problem: SourceProblem | None) -> str | None:
+        if problem is None:
+            return None
+
+        return f'{code.co_filename}:{problem.line}: {self.current_function.name}: {problem.text}'
 
     @classmethod
     def _param_names(cls, body: Callable, f: ScpFunction) -> list[str]:
@@ -583,7 +602,7 @@ class ScpWriter:
 
     def _at_opcode(self, text: str) -> str:
         """text about the opcode being compiled, at its .py line when the compile check keeps the source map"""
-        return self._located(self.current_site, text)
+        return self._message_at(self.current_site, text)
 
     def at_statement(self, text: str) -> str:
         """text about the DSL statement running, before its opcode is written (current_site is still the previous
@@ -591,9 +610,9 @@ class ScpWriter:
         if self.current_function is None:
             return text
 
-        return self._located(self._opcode_site(), text)
+        return self._message_at(self._opcode_site(), text)
 
-    def _located(self, site: SourceSite | None, text: str) -> str:
+    def _message_at(self, site: SourceSite | None, text: str) -> str:
         return f'{location_prefix(site)}{self.current_function.name}: {text}'
 
     def _build_debug_records(self):

@@ -16,6 +16,7 @@ from typing import Callable
 from dc3.gc_policy import infrequent_gc
 from dc3.logging import log
 from dc3.utils import collect_paths, raise_recursion_limit, write_text_lf
+from falcom.ed9.formatter.hlil_dsl.script_formatter import HLILScriptFormatter
 from falcom.ed9.formatter.llil_dsl.comments import CommentOptions
 from falcom.ed9.games import GAMES_DIR
 from falcom.ed9.parser.scp import ScpParser
@@ -74,23 +75,56 @@ def process_file(path: Path, config: ScpDecompileConfig, *, game: str) -> None:
     # Only create the output folder once parsing has actually produced something to write
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if config.write_py:
-        comments = CommentOptions(
-            stack_slots=config.stack_slot_comments,
-            float_bits=config.float_bits_comments,
-            function_ids=config.function_id_comments,
-            call_args=config.call_arg_comments,
-        )
+    comments = CommentOptions(
+        stack_slots=config.stack_slot_comments,
+        float_bits=config.float_bits_comments,
+        function_ids=config.function_id_comments,
+        call_args=config.call_arg_comments,
+    )
+    # The mixed <stem>.py needs each function's HLIL, so it is written after the IR outputs
+    mixed = config.write_py and config.write_hlil_py and not (config.round_trip or config.keep_unreachable_code)
+    if config.write_py and not mixed:
         script = LLILScriptFormatter(parser).gen_python_script(functions, comments=comments)
         write_text_lf(out.with_suffix('.py'), script)
         if config.write_hook_template:
             write_hook_template(parser, output_dir)
 
-    write_ir_outputs(path, parser, functions, config, out)
+    matched = LLILScriptFormatter(parser).match_library_functions(functions) if mixed else {}
+    hlil_formatter = make_hlil_script_formatter(path, parser, matched) if mixed else None
+    write_ir_outputs(path, parser, functions, config, out, hlil_formatter)
+
+    if mixed:
+        write_mixed_scripts(parser, functions, matched, hlil_formatter, comments, out)
+        if config.write_hook_template:
+            write_hook_template(parser, output_dir)
 
     # Last: the listing loads the file again, so its failure can't cost the other outputs
     if config.write_debug_info:
         write_listing(path, out.with_suffix('.debug.txt'), config.debug_sections, {func.index for func in functions})
+
+
+def make_hlil_script_formatter(path: Path, parser: ScpParser,
+                               matched: dict[str, str]) -> HLILScriptFormatter | None:
+    """The file's HLIL DSL formatter; None, with a warning, when it can't be set up (<stem>.py is then the LLIL
+    listing)"""
+    try:
+        return HLILScriptFormatter(parser, matched)
+    except Exception as e:
+        log.warning(f'{path}: HLIL DSL not written ({type(e).__name__}: {e}); {path.stem}.py is the LLIL listing')
+        return None
+
+
+def write_mixed_scripts(parser: ScpParser, functions: list[Function], matched: dict[str, str],
+                        hlil_formatter: HLILScriptFormatter | None, comments: CommentOptions, out: Path):
+    """<stem>.py with each function the DSL holds in it, and the LLIL listing <stem>.llil.py"""
+    formatter = LLILScriptFormatter(parser)
+    if hlil_formatter is not None:
+        hlil_formatter.log(formatter.get_inline_functions(functions, matched=matched))
+
+    hlil_lines = None if hlil_formatter is None else hlil_formatter.lines
+    mixed, listing = formatter.gen_mixed_scripts(functions, hlil_lines, matched=matched, comments=comments)
+    write_text_lf(out.with_suffix('.py'), mixed)
+    write_text_lf(out.with_suffix('.llil.py'), listing)
 
 
 def callee_default_values(parser: ScpParser) -> dict[str, tuple]:
@@ -103,12 +137,13 @@ def callee_default_values(parser: ScpParser) -> dict[str, tuple]:
 
 
 def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScpDecompileConfig,
-                     out: Path) -> None:
-    """The .llil.asm, .mlil.asm, .hlil.ts, .ts and .dot outputs the config asks for"""
+                     out: Path, hlil_formatter: HLILScriptFormatter | None) -> None:
+    """The .llil.asm, .mlil.asm, .hlil.ts, .ts and .dot outputs the config asks for; with hlil_formatter, each
+    function's HLIL handed to it, before the file-level passes"""
     output_dir = out.parent
 
     need_file_passes = config.write_ts    # the outputs that read the file-level passes' facts
-    need_hlil = config.write_hlil_ts or need_file_passes
+    need_hlil = config.write_hlil_ts or need_file_passes or hlil_formatter is not None
     need_mlil = config.write_mlil_asm or config.write_mlil_dot or need_hlil
     if not (config.write_llil_asm or config.write_llil_dot or need_mlil):
         return
@@ -155,6 +190,11 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
 
             if need_file_passes:
                 converted.append((func, hlil_func))
+
+            # Last, so its failure costs no other output; the DSL's forms never depend on line_markers
+            if hlil_formatter is not None:
+                hlil_with_line_markers = hlil_func if config.line_markers else convert_ed9_mlil_to_hlil(mlil_func)
+                hlil_formatter.add(func, hlil_with_line_markers)
         except Exception as e:
             # One bad function shouldn't lose the rest of the file's output
             log.warning(f'{path} [{func.name}]: {type(e).__name__}: {e}')

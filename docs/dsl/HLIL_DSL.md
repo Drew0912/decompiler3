@@ -1,8 +1,9 @@
 # HLIL DSL
 
-> Status: design; started: the function stubs (Calls) and the compile side of straight-line HLIL bodies
-> (`@scena.HLILCode()`, Form: Implemented) are implemented; the printer and the rest are planned. Overview and
-> decisions: `docs/dsl/DSL_FUTURE_WORK.md`, Recompilation Pipeline §1; its hooks: `docs/dsl/HOOKS.md`.
+> Status: design; started: the function stubs (Calls), the compile side of straight-line HLIL bodies
+> (`@scena.HLILCode()`, Form: Implemented) and their printer with the exact check (`write_hlil_py`, Recompile Path:
+> Fallback and File names) are implemented; control flow and the rest are planned. Overview and decisions:
+> `docs/dsl/DSL_FUTURE_WORK.md`, Recompilation Pipeline §1; its hooks: `docs/dsl/HOOKS.md`.
 
 ## HLIL DSL: Recompile Path
 
@@ -84,9 +85,9 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   from its game's `scp_hlil_dsl_helper` (`falcom/ed9/games/<game>/writer/`, which star-imports the shared
   `falcom/ed9/writer/scp_hlil_dsl_helper.py` and holds the game's own DSL helpers). The body runs once, with a
   parameter node per parameter, under a build of its own; its statements are checked, then lowered through the opcode
-  functions (`falcom/ed9/writer/hlil_dsl/`: `nodes.py`, `build.py`, `tree.py`, `lowering.py`, `opcode_sink.py`,
-  `source_check.py`), so the call tracker, the opcode callbacks and the compile check see each opcode as an LLIL
-  body's, at the line of the node it came from. The nodes, the build, its checks and the source check are
+  functions (`falcom/ed9/writer/hlil_dsl/`: `nodes.py`, `calls.py`, `build.py`, `tree.py`, `lowering.py`,
+  `llil_sink.py`, `source_check.py`), so the call tracker, the opcode callbacks and the compile check see each opcode
+  as an LLIL body's, at the line of the node it came from. The nodes, the build, its checks and the source check are
   VM-neutral: an operation is keyed by HLIL's own operator (`ir/core/operators.py`), a constant by its value's type,
   and they import nothing from `falcom/ed9/`; the ED9-only nodes (`Raw`, `REGS`, `Syscall`, `PopN`, `DebugInt`) are
   in `ed9_nodes.py`, and the lowering turns the rest into ED9's opcodes (an operator ED9 lacks, `^`, `<<` or `>>`,
@@ -235,12 +236,24 @@ function at LLIL level only when it has to.
 - **Fallback.** A function is printed with `@scena.LLILCode()` when structuring leaves an
   `HLILUnstructured` node, when it uses a construct the DSL has no form for, or, in an exact mode, when
   it does not compile back to its original opcodes. The decompiler runs that check while writing the
-  file, so an exact-mode file recompiles exactly by construction.
-- **File names.** The mixed file is `<stem>.py`, and the pure LLIL listing becomes `<stem>_llil.py`
-  (named in `falcom/ed9/scp2py_base.py`). Both compile to `<stem>.dat` and import the same
-  `<stem>_hook.py`, whose name comes from the `.dat` name (`gen_hook_import`,
-  `falcom/ed9/parser/scp.py`). The round-trip validator's `{stem}.py` and `{stem}_out.py` are internal
-  run files and can keep their names.
+  file, so an exact-mode file recompiles exactly by construction. Implemented for straight-line bodies
+  (`falcom/ed9/formatter/hlil_dsl/`): the function formatter (`function_formatter.py`) writes a function's
+  text from its HLIL, converted with its line markers kept whatever `line_markers` says, and
+  `script_formatter.py` collects a script's functions and reasons; the exact check (`exact_check.py`) parses
+  that text, runs the source check on it, runs it in a namespace of the DSL's names and a stub per
+  function-table name, requires the one function it registers to be the source's, and lowers its tree into a
+  list that must equal the source's code without its line markers (`body_fingerprint_without_line_markers`,
+  `falcom/ed9/structs/fingerprint.py`). It loads neither the writer nor the library. Each function left
+  LLIL is logged with its reason at DEBUG, each file with its counts at INFO
+  (`brk_obj.dat: 3 of 8 functions as HLIL; LLIL: if 5`).
+- **File names.** With `ScpDecompileConfig.write_hlil_py` on (off by default; with `write_py`, and
+  neither `round_trip` nor `keep_unreachable_code`), `<stem>.py` is the mixed file and `<stem>.llil.py`
+  the pure LLIL listing, named like `.llil.asm` (`write_mixed_scripts`, `falcom/ed9/scp2py_base.py`). Both
+  compile to `<stem>.dat` with the same game logic, the mixed file's HLIL functions without their line
+  markers. Only `<stem>.py` imports `<stem>_hook.py`, whose name comes from the `.dat` name
+  (`gen_hook_import`, `falcom/ed9/parser/scp.py`); the listing imports no hook. With the flag off, or
+  under either fidelity flag, `<stem>.py` is the LLIL listing and no `.llil.py` is written. The
+  round-trip validator's `{stem}.py` and `{stem}_out.py` are internal run files and can keep their names.
 
 The `POPN` in `ai_chr5122_e00`'s `CheckAlgoUse`, written as opcodes to show a list. The printer would use the
 statement the TypeScript output has, `POPN("駆動解除レジストできないやつ発見：chrid：", v.var_s5)`: its values top of

@@ -13,7 +13,9 @@ The decompilation pipeline goes forward (bytecode → readable code). This docum
 reverse: turning a Python source file back into game bytecode.
 
 **Naming note:** "LLIL DSL" in this document refers to this `.py` output — generated from the
-disassembly IR (`assembler/`, `falcom/ed9/assembler/`), not from `ir/llil`'s `LowLevelILFunction`. The real LLIL
+disassembly IR (`assembler/`, `falcom/ed9/assembler/`), not from `ir/llil`'s `LowLevelILFunction`. With
+`write_hlil_py` on, the listing is `<stem>.llil.py` and `<stem>.py` writes in the HLIL DSL each function that
+has an exact form there (`docs/dsl/HLIL_DSL.md`, File names). The real LLIL
 pipeline (`ED9VMLifter`, `ED9LLILFormatter`) is a separate, disjoint path that only feeds
 `.llil.asm`/`.llil.dot` debug dumps and MLIL→HLIL→TypeScript. The two are close enough in shape
 (one opcode, one function call, stack-machine semantics), and the disassembly-sourced version is
@@ -122,7 +124,8 @@ def AniCatWait():
 The function id's offset changes after the first recompile, like `loc_` labels; the fixed point holds
 from round 2.
 
-**Compiling.** A generated script's `main()` calls `scena.run(globals())`. `ScpWriter.build()` compiles
+**Compiling.** A generated script's footer calls `scena.run(globals())` when it is run directly; it binds no
+name, so a script function may be called `main`. `ScpWriter.build()` compiles
 in memory - the function table, every body in source order, debug records, globals and the string pool -
 and returns the bytes; `run()` writes the `.dat` only after `build()` succeeds, so a failed compile writes
 nothing and leaves an older `.dat` as it was. Labels are file-wide: a name is defined once in the script
@@ -289,12 +292,12 @@ checks only).
 `scp2py` builds them from its config); the validator keeps the defaults, so the logic round trip
 checks that the stack comments reach the fixed point too. A generated script first puts the repo root on `sys.path` (`import sys` and
 `sys.path.insert(0, '<root>')`, the root of the checkout that generated it - `SYS_PATH_SETUP_LINES` in
-`falcom/ed9/formatter/generated_script.py`, from `dc3.utils.PROJECT_ROOT`), so it runs from any folder without
+`falcom/ed9/formatter/generated_imports.py`, from `dc3.utils.PROJECT_ROOT`), so it runs from any folder without
 `PYTHONPATH`; moving the
 checkout means regenerating the script or editing that line. It then imports the helper, an
 optional `<stem>_hook` module for patches kept outside the generated file (only a missing hook is
 ignored; an import error inside the hook stops the compile; `docs/dsl/HOOKS.md`, which also covers the opt-in hook template), and the
-library (§3). Its footer calls `main()`, which compiles the script when it is run directly. Every generated text file is written
+library (§3). Its footer compiles the script when it is run directly. Every generated text file is written
 with `\n` line endings.
 
 **The `.dat` listing** (`.debug.txt`, `ScpDecompileConfig.write_debug_info`, off by default): the
@@ -315,7 +318,7 @@ as for the `chr0000`-style files and calls without a record. `filter_func` picks
 listing is written after every other output.
 
 **Compilation** (`.py` → bytecode): the `.py` file is executed (`python e0000.py`, or the
-validator's `runpy.run_path(...)['main']()`) against a `ScpWriter`, which emits bytecode via the same
+validator's `runpy.run_path(..., run_name='__main__')`) against a `ScpWriter`, which emits bytecode via the same
 per-opcode calls.
 
 **Validation**: `tools/scp_roundtrip_validator.py` automates a full loop — decompile a script,

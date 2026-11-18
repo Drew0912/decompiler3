@@ -11,11 +11,12 @@ if TYPE_CHECKING:
     from ..scp_writer import ScpWriter
 
 
-class OpcodeSink:
+class LLILSink:
     def __init__(self, writer: 'ScpWriter'):
         self.writer = writer
 
     def at(self, site):
+        """Sets the writer's lowering_site, which the writer clears after the lowering"""
         self.writer.lowering_site = site
 
     def new_label(self) -> str:
@@ -30,4 +31,5 @@ class OpcodeSink:
         self.writer.add_label(name)
 
     def emit(self, opcode: ED9Opcode, *operands):
-        getattr(scp_writer_opcode_handler, opcode.name)(*operands)  # each opcode's DSL function has its name
+        opcode_function = getattr(scp_writer_opcode_handler, opcode.name)
+        opcode_function(*operands)

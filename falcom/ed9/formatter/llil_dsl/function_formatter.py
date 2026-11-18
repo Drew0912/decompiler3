@@ -92,10 +92,9 @@ class Formatter:
     def format_function(self, func: 'Function') -> list[str]:
         """Format a complete function with header"""
         lines = function_comments(func, self.context.comments)
-        param_str = ', '.join(self.format_param(i, param) for i, param in enumerate(func.params))
         decorator = 'LLILCommonCode' if func.is_common_func else 'LLILCode'
         lines.append(f'@scena.{decorator}()')
-        lines.append(f'def {func.name}({param_str}):')
+        lines.append(f'def {func.name}({self.format_params(func.params)}):')
         lines.extend(self.format_entry_block(func.entry_block, func.unreachable_blocks, func.stack_layout,
                                              func.call_debug_argc, func.call_unrecorded))
 
@@ -139,12 +138,22 @@ class Formatter:
         return lines
 
     @classmethod
+    def param_name(cls, index: int) -> str:
+        """The DSL's name for the parameter at index: arg1, arg2, ..."""
+        return f'arg{index + 1}'
+
+    @classmethod
+    def format_params(cls, params: 'list[FunctionParam]') -> str:
+        """A def line's parameter list: every generated def spells it so"""
+        return ', '.join(cls.format_param(index, param) for index, param in enumerate(params))
+
+    @classmethod
     def format_param(cls, index: int, param: 'FunctionParam') -> str:
         """'argN: Type' or 'argN: Type = default' for one parameter (1-indexed, matching the DSL's
         own param naming) - shared by format_function and the common-function generator, which must
         render parameters identically since a divergent-signature function stays inline precisely
         when this rendering would differ"""
-        text = f'arg{index + 1}: {param.type.get_python_type()}'
+        text = f'{cls.param_name(index)}: {param.type.get_python_type()}'
         if param.default_value is not None:
             default = param.default_value.value
             default_text = ScpValue.float_literal(default) if isinstance(default, float) else repr(default)

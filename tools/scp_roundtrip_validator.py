@@ -129,8 +129,8 @@ EXCUSED_SECOND_COPY     = 'second copy'
 
 MAX_CONVERGENCE_ROUNDS  = 4  # --logic-round-trip: give up if compile/decompile hasn't hit a fixed point by then
 
-# Runs a generated script's main() under a fixed run_name, so its own __main__ guard stays off
-ROUND_TRIP_RUNNER = "import runpy, sys; runpy.run_path(sys.argv[1], run_name='scp_roundtrip')['main']()"
+# Runs a generated script as Python runs it directly: its __main__ block compiles it
+ROUND_TRIP_RUNNER = "import runpy, sys; runpy.run_path(sys.argv[1], run_name='__main__')"
 
 
 class Status(IntEnum):

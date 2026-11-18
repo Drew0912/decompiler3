@@ -16,6 +16,10 @@ class ScpDecompileConfig(StrictBase):
     write_ts: bool = True   # final TypeScript (.ts)
     write_hlil_ts: bool = True  # the bytecode's high-level form (.hlil.ts): not TypeScript, not recompilable
     write_hook_template: bool = False   # a starting <stem>_hook.py next to the .py (with write_py); never over an existing file
+    # With write_py: <stem>.py writes each function whose HLIL DSL text compiles to its own code as @scena.HLILCode(),
+    # the rest in the LLIL DSL as today, and <stem>.llil.py is the LLIL listing; off under round_trip or
+    # keep_unreachable_code, where <stem>.py stays the LLIL listing (docs/dsl/HLIL_DSL.md, File names)
+    write_hlil_py: bool = False
 
     # .py comments (scripts only; the common library always has the stack comments and never the others)
     stack_slot_comments: bool = True       # the slot each LOAD_STACK/POP_TO/... addresses, sp at labels, POP's slots

@@ -181,8 +181,7 @@ class ScpListing:
 
     def entry_text(self, func: Function) -> str:
         entry = self.parser.function_entries[func.index]
-        params = ', '.join(Formatter.format_param(i, param) for i, param in enumerate(func.params))
-        return (f'code 0x{entry.offset:X}; {entry.param_count} params [{params}]; '
+        return (f'code 0x{entry.offset:X}; {entry.param_count} params [{Formatter.format_params(func.params)}]; '
                 f'{entry.default_params_count} defaults; '
                 f'common {entry.is_common_func}; byte06 {entry.byte06}; name {quote_string(func.name)} '
                 f'(pool 0x{string_offset(entry.name_offset):X}, hash 0x{entry.name_hash:08X}); '

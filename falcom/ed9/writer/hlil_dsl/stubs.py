@@ -6,7 +6,7 @@ import functools
 from typing import Callable
 
 from .build import active_build, locate_outside_build
-from .nodes import LocalCall
+from .calls import LocalCall
 
 # Set on an HLIL body by @scena.HLILCode(); functools.wraps copies it, so a wrapper of one is compiled as HLIL too
 HLIL_BODY_MARK = 'hlil_body'

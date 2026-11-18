@@ -5,7 +5,9 @@
 
 ## LLIL DSL Hooks — Implemented
 
-A hook file `<stem>_hook.py`, next to `<stem>.py`, patches a script without editing the generated file. The script
+A hook file `<stem>_hook.py`, next to `<stem>.py`, patches a script without editing the generated file (with
+`write_hlil_py` on, the mixed `<stem>.py`; its LLIL listing `<stem>.llil.py` imports no hook: `docs/dsl/HLIL_DSL.md`,
+File names). The script
 imports it before `create_scp_writer()` (`docs/dsl/LLIL_DSL.md` §2: only a missing hook is ignored), so what a hook
 registers at import time is there when the script compiles (`scena.run(globals())` → `ScpWriter.build`). The hook API is
 `falcom/ed9/writer/scp_writer_hooks.py`; the helper star-imports it, so a hook needs only the helper's import. The

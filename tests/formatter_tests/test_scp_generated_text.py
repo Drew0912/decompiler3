@@ -22,8 +22,8 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from dc3.logging import log
 from dc3.utils import PROJECT_ROOT, RECURSION_LIMIT, write_text_lf
 from falcom.ed9.structs.common_library import COMMON_ALL_MODULE, COMMON_LIBRARY_FOLDER, game_metadata_module
-from falcom.ed9.formatter.generated_script import (SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES,
-                                                  game_writer_helper_import)
+from falcom.ed9.formatter.generated_imports import (SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES,
+                                                    game_writer_helper_import)
 from falcom.ed9.tools import gen_common_library as gen
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
@@ -408,14 +408,10 @@ class TestFidelityScriptCompiles(unittest.TestCase):
 
 
 class TestFooter(unittest.TestCase):
-    def test_footer_calls_main_directly(self):
+    def test_footer_compiles_directly_and_binds_no_name(self):
         self.assertEqual(LLILScriptFormatter(named_parser('e0000.dat')).gen_python_footer(), [
-            'def main():',
-            '    scena.run(globals())',
-            '',
-            '',
             "if __name__ == '__main__':",
-            '    main()',
+            '    scena.run(globals())',
         ])
 
 

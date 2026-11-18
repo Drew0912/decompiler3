@@ -6,10 +6,11 @@ from itertools import pairwise
 from typing import Callable
 
 from .build import Build, activated
-from .nodes import Call, Composite, Let, Local, Param, Return, Set, Statement
+from .calls import BodyStatement
+from .nodes import Let, Local, Param, Return, Set, TrackedNode
 
 
-def build_tree(build: Build, body: Callable, param_names: list[str]) -> list[Statement | Call]:
+def build_tree(build: Build, body: Callable, param_names: list[str]) -> list[BodyStatement]:
     """body's statements, in order, run under build"""
     params = [Param(build, position, name) for position, name in enumerate(param_names, 1)]
     with activated(build):
@@ -23,16 +24,16 @@ def build_tree(build: Build, body: Callable, param_names: list[str]) -> list[Sta
         raise build.fail_at(None, f'the body returned {result!r}: an HLIL body returns with Return(...)')
 
     statements = [node for node in build.nodes if node.parent is None]
-    _require_statements(build, statements)
+    _require_no_unused_values(build, statements)
     _require_creation_order(build)
     _require_return_last(build, statements)
     _require_declared_locals(build, statements)
     return statements
 
 
-def _require_statements(build: Build, statements: list):
+def _require_no_unused_values(build: Build, statements: list):
     for node in statements:
-        if not isinstance(node, (Statement, Call)):
+        if not isinstance(node, BodyStatement):
             raise build.fail_at(node.site, f'{node!r} is computed and never used: a line of its own is a call or a '
                                            'statement')
 
@@ -44,18 +45,18 @@ def _require_creation_order(build: Build):
     for node in reversed(build.nodes):  # a node's user is made after it
         statement_of[id(node)] = node if node.parent is None else statement_of[id(node.parent)]
 
-    run_start = None    # the first node of the statement being made
+    statement_start = None    # the first node of the statement being made
     for node in build.nodes:
         statement = statement_of[id(node)]
-        if run_start is None:
-            run_start = node
-        elif statement_of[id(run_start)] is not statement:
-            raise build.fail_at(run_start.site, f'{run_start!r} is made here but used by '
-                                                f'{statement_of[id(run_start)]!r}, after {statement!r}: it would run '
-                                                'where it is used; keep a value with Let(x, value)')
+        if statement_start is None:
+            statement_start = node
+        elif statement_of[id(statement_start)] is not statement:
+            raise build.fail_at(statement_start.site, f'{statement_start!r} is made here but used by '
+                                                      f'{statement_of[id(statement_start)]!r}, after {statement!r}: '
+                                                      'it would run where it is used; keep a value with Let(x, value)')
 
         if node is statement:
-            run_start = None
+            statement_start = None
 
 
 def _require_return_last(build: Build, statements: list):
@@ -77,14 +78,14 @@ def _require_declared_locals(build: Build, statements: list):
                 raise build.fail_at(statement.site, f'local {name} is read before Let({name}, ...)')
 
         match statement:
-            case Let(local=Local(name=name)):
-                if name in declared:
-                    raise build.fail_at(statement.site, f'a second Let({name}, ...)')
+            case Let(local=Local(name=declared_name)):
+                if declared_name in declared:
+                    raise build.fail_at(statement.site, f'a second Let({declared_name}, ...)')
 
-                declared.add(name)
+                declared.add(declared_name)
 
-            case Set(target=Local(name=name)) if name not in declared:
-                raise build.fail_at(statement.site, f'Set({name}, ...) before Let({name})')
+            case Set(target=Local(name=set_name)) if set_name not in declared:
+                raise build.fail_at(statement.site, f'Set({set_name}, ...) before Let({set_name})')
 
 
 def _locals_read(statement) -> list[str]:
@@ -95,7 +96,7 @@ def _locals_read(statement) -> list[str]:
         node = pending.pop()
         if isinstance(node, Local):
             names.append(node.name)
-        elif isinstance(node, Composite):
+        elif isinstance(node, TrackedNode):
             pending.extend(node.children)
 
     return names

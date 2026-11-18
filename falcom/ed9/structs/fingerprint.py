@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Callable
 
 from assembler.instruction import Instruction, Operand
 from assembler.instruction_table import OperandType
-from ..assembler.opcode_table import ED9OperandType
+from ..assembler.opcode_table import ED9Opcode, ED9OperandType
 from .scp_types import ScpValue
 
 if TYPE_CHECKING:
@@ -65,7 +65,27 @@ def body_fingerprint(instructions: list[Instruction], func_offset: int, get_func
                      get_global_name: Callable[[int], str | None]) -> tuple:
     """instructions: the function's reachable instructions in offset order (Function.reachable_instructions)"""
     ordinals = {inst.offset: ordinal for ordinal, inst in enumerate(instructions)}
+    return _keyed_instructions(instructions, func_offset, ordinals, get_func_name, get_global_name)
 
+
+def body_fingerprint_without_line_markers(instructions: list[Instruction], func_offset: int,
+                                          get_func_name: Callable[[int], str],
+                                          get_global_name: Callable[[int], str | None]) -> tuple:
+    """body_fingerprint without the line markers (DEBUG_SET_LINENO): the ordinals count the other instructions, and a
+    branch to a marker is keyed as one to the next other instruction (to the end after trailing markers). The code a
+    function written in the HLIL DSL, which writes no markers, must lower to"""
+    code = []
+    ordinals = {}
+    for inst in instructions:
+        ordinals[inst.offset] = len(code)   # a marker's is the next kept instruction's
+        if inst.opcode != ED9Opcode.DEBUG_SET_LINENO:
+            code.append(inst)
+
+    return _keyed_instructions(code, func_offset, ordinals, get_func_name, get_global_name)
+
+
+def _keyed_instructions(instructions: list[Instruction], func_offset: int, ordinals: dict[int, int],
+                        get_func_name: Callable[[int], str], get_global_name: Callable[[int], str | None]) -> tuple:
     return tuple(
         (int(inst.opcode),
          *(operand_key(op, func_offset, ordinals, get_func_name, get_global_name) for op in inst.operands))

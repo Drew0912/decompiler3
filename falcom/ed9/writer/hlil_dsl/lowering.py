@@ -1,6 +1,6 @@
 """The HLIL DSL's ED9 lowering (docs/dsl/HLIL_DSL.md, Recompile Path): an HLIL body's statements as the LLIL opcodes the
 compiler writes for them, handed to a sink one at a time - at compile time the writer's opcode functions
-(opcode_sink.py). It starts with the stack holding exactly the parameters (slot 0 the last); a local's slot is where
+(llil_sink.py). It starts with the stack holding exactly the parameters (slot 0 the last); a local's slot is where
 its Let pushed it; arguments are pushed last first; a call's result is read from REGS[0]. Each opcode is at the line
 of the node it lowers, a leaf's at its user's. HLIL's operators and the constants' kinds become ED9's opcodes here"""
 
@@ -12,9 +12,9 @@ from ...assembler import ED9Opcode
 from ...assembler.vm import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, RESULT_REGISTER, WORD_SIZE
 from ...structs.scp_types import RawInt
 from .build import Build
+from .calls import BodyStatement, Call, LocalCall, ScriptCall
 from .ed9_nodes import DebugInt, PopN, Register, SyscallCall
-from .nodes import (BinaryOp, Call, Const, Global, Let, Local, LocalCall, Param, Return, ScriptCall, Set, Statement,
-                    UnaryOp)
+from .nodes import BinaryOperation, Const, Global, Let, Local, Param, Return, Set, UnaryOperation
 
 # POP's byte count is one byte: the compiler pops more as POP of this many, then the rest
 POP_MAX_BYTES = OperandFormat.integer_range(OperandType.UInt8).stop - 1
@@ -67,62 +67,75 @@ class Sink(Protocol):
 
 
 class Lowering:
+    """One HLIL body's statements as opcodes into a sink. stack_depth counts the slots in use (the parameters, the
+    locals, the values in flight): a variable's LOAD_STACK and POP_TO offsets follow from it"""
+
     def __init__(self, sink: Sink, param_count: int, build: Build):
         """build: the one that made the statements, which locates an operator ED9 lacks at its line"""
         self.sink = sink
         self.param_count = param_count
         self.build = build
-        self.sp = param_count                       # slots in use: the parameters, the locals, the values in flight
+        self.stack_depth = param_count
         self.local_slots: dict[str, int] = {}
 
-    def run(self, statements: list[Statement | Call]):
+    def run(self, statements: list[BodyStatement]):
         for statement in statements:
-            self.statement(statement)
+            self.lower_statement(statement)
 
-    def statement(self, node: Statement | Call):
+    def lower_statement(self, node: BodyStatement):
         sink = self.sink
         sink.at(node.site)
         match node:
             case Call():
-                self.call(node)
+                self.lower_call(node)
 
             case Set():
-                self.operand(node.value, node.site)
+                self.push_operand(node.value, node.site)
                 self.store(node.target)
 
             case Let():
-                self.local_slots[node.local.name] = self.sp
-                self.push(ED9Opcode.PUSH_RAW, RawInt(0))
-                if node.value is not None:
-                    self.operand(node.value, node.site)
-                    self.store(node.local)
+                self.lower_let(node)
 
             case Return():
-                if node.value is None:
-                    self.push(ED9Opcode.PUSH_RAW, RawInt(0))    # the compiler's return value
-                else:
-                    self.operand(node.value, node.site)
-
-                sink.emit(ED9Opcode.SET_REG, RESULT_REGISTER)
-                self.sp -= 1
-                self.pop(self.sp)
-                sink.emit(ED9Opcode.RETURN)
+                self.lower_return(node)
 
             case PopN():
                 self.push_args(node.values, node.site)
                 sink.emit(ED9Opcode.POPN, len(node.values))
-                self.sp -= len(node.values)
+                self.stack_depth -= len(node.values)
 
             case DebugInt():
                 sink.emit(ED9Opcode.DEBUG_INT, node.value)
 
-    def operand(self, node, site):
+    def lower_let(self, node: Let):
+        self.local_slots[node.local.name] = self.stack_depth
+        self.push(ED9Opcode.PUSH_RAW, RawInt(0))
+        if node.value is not None:
+            self.push_operand(node.value, node.site)
+            self.store(node.local)
+
+    def lower_return(self, node: Return):
+        if node.value is None:
+            self.push(ED9Opcode.PUSH_RAW, RawInt(0))    # the compiler's return value
+        else:
+            self.push_operand(node.value, node.site)
+
+        self.sink.emit(ED9Opcode.SET_REG, RESULT_REGISTER)
+        self.stack_depth -= 1       # SET_REG popped the value
+        self.discard_frame()
+        self.sink.emit(ED9Opcode.RETURN)
+
+    def discard_frame(self):
+        """Pop every slot still in use: the locals and the parameters"""
+        self.pop(self.stack_depth)
+
+    def push_operand(self, node, site):
         """node's value pushed, a leaf at site (its user's line), then site again for the user's own opcodes"""
         self.sink.at(site)
-        self.expr(node)
+        self.push_value(node)
         self.sink.at(site)
 
-    def expr(self, node):
+    def push_value(self, node):
         match node:
             case Const():
                 opcode = next(opcode for kind, opcode in PUSH_OPCODES if isinstance(node.value, kind))
@@ -137,25 +150,25 @@ class Lowering:
             case Global():
                 self.push(ED9Opcode.LOAD_GLOBAL, node.name)
 
-            case BinaryOp():
+            case BinaryOperation():
                 opcode = BINARY_OPCODES.get(node.op)
                 if opcode is None:
                     raise self.build.fail_at(node.site, f'{node!r}: the ED9 VM has no {node.op.name} operation')
 
-                self.operand(node.lhs, node.site)
-                self.operand(node.rhs, node.site)
+                self.push_operand(node.lhs, node.site)
+                self.push_operand(node.rhs, node.site)
                 self.sink.emit(opcode)
-                self.sp -= 1
+                self.stack_depth -= 1
 
-            case UnaryOp():
-                self.operand(node.operand, node.site)
+            case UnaryOperation():
+                self.push_operand(node.operand, node.site)
                 self.sink.emit(UNARY_OPCODES[node.op])
 
             case Call():
-                self.call(node)
+                self.lower_call(node)
                 self.push(ED9Opcode.GET_REG, RESULT_REGISTER)
 
-    def call(self, node: Call):
+    def lower_call(self, node: Call):
         sink = self.sink
         sink.at(node.site)
         match node:
@@ -163,20 +176,20 @@ class Lowering:
                 return_label = sink.new_label()
                 sink.emit(ED9Opcode.PUSH_CURRENT_FUNC_ID)
                 sink.emit(ED9Opcode.PUSH_RET_ADDR, return_label)
-                self.sp += LOCAL_SETUP_SLOTS
+                self.stack_depth += LOCAL_SETUP_SLOTS
                 self.push_args(node.args, node.site)
                 sink.emit(ED9Opcode.CALL, node.function)
                 sink.label(return_label)
-                self.sp -= LOCAL_SETUP_SLOTS + len(node.args)
+                self.stack_depth -= LOCAL_SETUP_SLOTS + len(node.args)
 
             case ScriptCall():
                 return_label = sink.new_label()
                 sink.emit(ED9Opcode.PUSH_CALLER_FRAME, return_label)
-                self.sp += CALLER_FRAME_SLOTS
+                self.stack_depth += CALLER_FRAME_SLOTS
                 self.push_args(node.args, node.site)
                 sink.emit(ED9Opcode.CALL_SCRIPT, node.module, node.name, len(node.args))
                 sink.label(return_label)
-                self.sp -= CALLER_FRAME_SLOTS + len(node.args)
+                self.stack_depth -= CALLER_FRAME_SLOTS + len(node.args)
 
             case SyscallCall():
                 self.push_args(node.args, node.site)
@@ -186,12 +199,12 @@ class Lowering:
     def push_args(self, values: tuple, site):
         """The last first: the first argument ends on top"""
         for value in reversed(values):
-            self.operand(value, site)
+            self.push_operand(value, site)
 
     def push(self, opcode: ED9Opcode, *operands):
         """An opcode pushing one value"""
         self.sink.emit(opcode, *operands)
-        self.sp += 1
+        self.stack_depth += 1
 
     def pop(self, slots: int):
         size = slots * WORD_SIZE
@@ -202,11 +215,11 @@ class Lowering:
         if size:
             self.sink.emit(ED9Opcode.POP, size)
 
-        self.sp -= slots
+        self.stack_depth -= slots
 
     def store(self, target):
         """Pop the value on top into target"""
-        self.sp -= 1     # POP_TO's offset counts after the pop
+        self.stack_depth -= 1     # the value is consumed: POP_TO's offset counts the stack after the pop
         match target:
             case Global():
                 self.sink.emit(ED9Opcode.SET_GLOBAL, target.name)
@@ -221,4 +234,4 @@ class Lowering:
         """Bytes from the stack's top to its slot; slots count from the frame's bottom, the last parameter's is 0"""
         slot = (self.param_count - variable.position if isinstance(variable, Param)
                 else self.local_slots[variable.name])
-        return (slot - self.sp) * WORD_SIZE
+        return (slot - self.stack_depth) * WORD_SIZE

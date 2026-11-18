@@ -34,7 +34,6 @@ Algorithm:
 """
 
 import argparse
-import importlib
 import keyword
 import os
 import re
@@ -53,11 +52,11 @@ from assembler.instruction_table import OperandType
 from falcom.ed9.assembler.opcode_table import ED9Opcode, ED9OperandType
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
 from falcom.ed9.formatter.llil_dsl.comments import CommentOptions, append_comment, instruction_comments, label_comments
-from falcom.ed9.games import GAMES_DIR, GAMES_PACKAGE, game_names
+from falcom.ed9.games import GAMES_DIR, game_names
 from falcom.ed9.structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_FOLDER,
                                                GAME_METADATA_FOLDER, game_metadata_module)
 from falcom.ed9.structs.fingerprint import function_fingerprint, fingerprint_digest
-from falcom.ed9.formatter.generated_script import SCP_WRITER_HELPER_IMPORT
+from falcom.ed9.formatter.generated_imports import SCP_WRITER_HELPER_IMPORT, hlil_dsl_names
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.assembler.function import Function
 from falcom.ed9.writer import scp_writer_helper
@@ -78,21 +77,12 @@ LIBRARY_COMMENTS = CommentOptions()     # the stack comments, always; the opt-in
 # a canonical function reusing one would silently shadow it for the rest of that module's file
 RESERVED_HELPER_NAMES = {name for name in vars(scp_writer_helper) if not name.startswith('_')}
 
-# Names every generated .py script's own header/footer bind at module scope (scp.py's
-# gen_python_header/gen_python_footer) - an imported common function reusing one of these would
+# Names every generated .py script's own header binds at module scope (LLILScriptFormatter's
+# gen_python_header; the footer binds none) - an imported common function reusing one of these would
 # silently rebind it (e.g. a function named 'scena' would replace the writer, breaking the very next
 # '@scena.CommonImports()' line the header emits). Unlike RESERVED_HELPER_NAMES this isn't a name
 # used inside the library itself, so it can't be discovered by introspecting a library module.
-EMITTED_SCRIPT_RESERVED_NAMES = {'scena', 'globalvars', 'commonImports', 'main'}
-
-# A mixed script also star-imports its game's HLIL DSL helper: the DSL's names and the game's own DSL helpers
-HLIL_DSL_HELPER_MODULE = 'writer.scp_hlil_dsl_helper'
-
-
-def hlil_dsl_names(game: str) -> set[str]:
-    """The names game's HLIL DSL helper brings into a mixed script"""
-    module = importlib.import_module(f'{GAMES_PACKAGE}.{game}.{HLIL_DSL_HELPER_MODULE}')
-    return {name for name in vars(module) if not name.startswith('_')}
+EMITTED_SCRIPT_RESERVED_NAMES = {'scena', 'globalvars', 'commonImports'}
 
 
 @dataclass
@@ -250,11 +240,10 @@ def render_function(parser: ScpParser, func: Function, path: Path, expected_dige
     )
     own_module = name_to_module[func.name]
     indent = default_indent()
-    param_str = ', '.join(Formatter.format_param(i, param) for i, param in enumerate(func.params))
 
     offset_to_local = {offset: f'L{i}' for i, offset in enumerate(sorted(referenced_offsets))}
 
-    lines = [LIBRARY_FUNCTION_DECORATOR, f'def {func.name}({param_str}):']
+    lines = [LIBRARY_FUNCTION_DECORATOR, f'def {func.name}({Formatter.format_params(func.params)}):']
 
     for local in offset_to_local.values():
         lines.append(f'{indent}{local} = genLabel()')

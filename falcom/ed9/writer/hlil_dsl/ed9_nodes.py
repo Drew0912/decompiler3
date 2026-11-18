@@ -4,12 +4,13 @@ registers, engine calls and the two intrinsic statements"""
 from ...assembler.vm import REGISTER_COUNT
 from ...structs.scp_types import RawInt
 from .build import dsl_error
-from .nodes import Call, Const, Statement, Variable, claim, dsl_call_maker
+from .calls import Call, dsl_call_maker
+from .nodes import Const, Statement, Variable, claim, is_int_not_bool
 
 
 def Raw(value: int) -> Const:
     """A Raw word, untyped: Return() returns Raw(0)"""
-    if isinstance(value, bool) or not isinstance(value, int):
+    if not is_int_not_bool(value):
         raise dsl_error(f'Raw takes an int, not {value!r}')
 
     return Const(RawInt(value))
@@ -29,7 +30,7 @@ class _Registers:
     """REGS: REGS[n] is register n, n a constant"""
 
     def __getitem__(self, index: int) -> Register:
-        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < REGISTER_COUNT:
+        if not is_int_not_bool(index) or not 0 <= index < REGISTER_COUNT:
             raise dsl_error(f'REGS[n] takes a register number 0..{REGISTER_COUNT - 1}, not {index!r}')
 
         return Register(index)
@@ -50,7 +51,7 @@ class SyscallCall(Call):
     def __init__(self, subsystem: int, cmd: int, args: tuple, kwargs: dict):
         build = self.join_build('Syscall(...)')
         for what, number in (('subsystem', subsystem), ('cmd', cmd)):
-            if isinstance(number, bool) or not isinstance(number, int):
+            if not is_int_not_bool(number):
                 raise build.fail(f'Syscall\'s {what} is a constant number, not {number!r}')
 
         self.subsystem = subsystem
@@ -86,7 +87,7 @@ class DebugInt(Statement):
 
     def __init__(self, value: int):
         build = self.join_build('DebugInt(...)')
-        if isinstance(value, bool) or not isinstance(value, int):
+        if not is_int_not_bool(value):
             raise build.fail(f'DebugInt takes a constant int, not {value!r}')
 
         self.value = value

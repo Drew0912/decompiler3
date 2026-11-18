@@ -15,8 +15,8 @@ from ...assembler.function import Function
 from ...structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_MISSING_HINT,
                                        game_metadata_module)
 from ...structs.fingerprint import function_fingerprint, fingerprint_digest
-from ..generated_script import (DEFINITION_SPACING, SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES,
-                                game_writer_helper_import)
+from ..generated_imports import (DEFINITION_SPACING, SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES,
+                                 game_writer_helper_import, hlil_dsl_helper_import)
 from .comments import GLOBAL_VAR_INDEX_COMMENT, CommentOptions, append_comment
 from .function_formatter import Formatter, FormatterContext
 
@@ -87,18 +87,43 @@ class LLILScriptFormatter:
         result feeds both the header and the inline-function filter, so the two never disagree about
         which functions are imported"""
         matched = self.match_library_functions(functions)
+        header = self.gen_python_header(functions, matched=matched)
+        inline = self.get_inline_functions(functions, matched=matched)
+        return self.script_text(header, [self.format_function(func, comments) for func in inline])
 
-        lines = self.gen_python_header(functions, matched=matched)
+    def gen_mixed_scripts(self, functions: list[Function], hlil_lines: dict[str, list[str]] | None, *,
+                          matched: dict[str, str], comments: CommentOptions = CommentOptions()) -> tuple[str, str]:
+        """<stem>.py and <stem>.llil.py (docs/dsl/HLIL_DSL.md, File names) from one formatting of each function: the
+        first with hlil_lines' functions in the HLIL DSL and the DSL's import line (gen_python_script's text when
+        hlil_lines is None), the second the LLIL listing, without the hook import"""
+        inline = self.get_inline_functions(functions, matched=matched)
+        llil_lines = [self.format_function(func, comments) for func in inline]
+        if hlil_lines is None:
+            mixed = self.script_text(self.gen_python_header(functions, matched=matched), llil_lines)
+        else:
+            header = self.gen_python_header(functions, matched=matched, hlil_dsl_import=True)
+            mixed = self.script_text(header, [hlil_lines.get(func.name, lines)
+                                              for func, lines in zip(inline, llil_lines)])
 
-        for func in self.get_inline_functions(functions, matched=matched):
-            lines.extend(self.format_function(func, comments))
+        stem = pathlib.Path(self.parser.name).stem
+        title = (f'# The LLIL listing of {self.parser.name}: it compiles to the same game logic as {stem}.py (line '
+                 'markers aside), without its hooks')
+        listing = self.script_text([title, *self.gen_python_header(functions, matched=matched, hook_import=False)],
+                                   llil_lines)
+        return mixed, listing
+
+    def script_text(self, header: list[str], function_lines: list[list[str]]) -> str:
+        """A whole script: header, each function's lines, the footer"""
+        lines = list(header)
+        for definition in function_lines:
+            lines.extend(definition)
             lines.extend(DEFINITION_SPACING)
 
         lines.extend(self.gen_python_footer())
         return '\n'.join(lines) + '\n'
 
-    def gen_python_header(self, functions: list[Function] | None = None, *,
-                          matched: dict[str, str] | None = None) -> list[str]:
+    def gen_python_header(self, functions: list[Function] | None = None, *, matched: dict[str, str] | None = None,
+                          hook_import: bool = True, hlil_dsl_import: bool = False) -> list[str]:
         """Generate Python header lines for output script execution.
 
         functions, when given, are this script's disassembled functions in code order - used to
@@ -109,14 +134,23 @@ class LLILScriptFormatter:
 
         With a game, the first import is the game's helper, which installs the game's writer before
         the hook import can register on it, and the whole-library import (gen_library_import) follows
-        the hook import, whatever
-        the fidelity mode and whether or not there is a function list, so a human editing the script
-        has every common function in scope for CALL()/autocomplete even when adding one this script
-        never originally used.
+        the hook import, whatever the fidelity mode and whether or not there is a function list, so a
+        human editing the script has every common function in scope for CALL()/autocomplete even when
+        adding one this script never originally used.
+
+        hlil_dsl_import: the mixed <stem>.py's line star-importing the game's HLIL DSL helper, after the
+        writer helper's; hook_import False: the LLIL listing <stem>.llil.py, which imports no hook.
         """
         game = self.parser.game
         helper_import = SCP_WRITER_HELPER_IMPORT if game is None else game_writer_helper_import(game)
-        lines = [*SYS_PATH_SETUP_LINES, helper_import, *self.gen_hook_import().splitlines(), '']
+        lines = [*SYS_PATH_SETUP_LINES, helper_import]
+        if hlil_dsl_import:
+            lines.append(hlil_dsl_helper_import(game))
+
+        if hook_import:
+            lines.extend(self.gen_hook_import().splitlines())
+
+        lines.append('')
         if game is not None:
             lines += [*self.gen_library_import().splitlines(), '']
 
@@ -296,11 +330,6 @@ def opcode_hook(opcode, *args):
 """
 
     def gen_python_footer(self) -> list[str]:
-        """Generate Python footer lines for output script execution"""
-        return """\
-def main():
-    scena.run(globals())
-
-
-if __name__ == '__main__':
-    main()""".splitlines()
+        """Run directly, the script compiles. The footer binds no name, so a script function of any name (main too)
+        keeps its stub, which an HLIL body's call reaches"""
+        return ["if __name__ == '__main__':", f'{default_indent()}scena.run(globals())']

@@ -3,7 +3,7 @@ paths:
   - "falcom/ed9/writer/**"
   - "falcom/ed9/tools/**"
   - "falcom/ed9/structs/common_library.py"
-  - "falcom/ed9/formatter/generated_script.py"
+  - "falcom/ed9/formatter/generated_imports.py"
   - "falcom/ed9/games/__init__.py"
   - "falcom/ed9/assembler/**"
   - "falcom/ed9/structs/scp_types.py"
