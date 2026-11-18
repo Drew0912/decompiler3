@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for the reachability audit (tools/scp_roundtrip_validator.py) used by --logic-round-trip"""
+"""Unit tests for the reachability audit (tools/round_trip/source_audit.py) used by --logic-round-trip"""
 
 from pathlib import Path
 import sys
@@ -15,7 +15,7 @@ from falcom.ed9.assembler import *
 from falcom.ed9.assembler.opcode_table import ED9_FORMAT_TABLE
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.code_layout import dropped_ranges
-from scp_roundtrip_validator import (
+from round_trip.source_audit import (
     PAIRED_CALL_OPS,
     check_instruction_ranges,
     is_range_provably_dead,

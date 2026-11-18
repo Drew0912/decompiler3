@@ -26,7 +26,8 @@ from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.scp_writer_test_utils import HEX, at, fresh_writer, local_call
 from tests.shared.stack_translator_checks import StackTranslationTestCase, statements
-from scp_roundtrip_validator import Status, check_logic_round_trip
+from round_trip.logic_round_trip import check_logic_round_trip
+from round_trip.results import Status
 
 GLOBAL_READ     = 0     # the global read: pending, or a branch's condition
 GLOBAL_RESULT   = 1     # where each shape stores the value it is about

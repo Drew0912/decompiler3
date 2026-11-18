@@ -12,7 +12,7 @@ Two tiers, in priority order:
    `falcom/ed9/structs/fingerprint.py`), `is_common_func`, the global table as ordered
    `(name, type)` tuples, and header `dword_14`. Function order and label names may differ.
    Dropping unreachable code only counts as logic-preserving where the reachability audit
-   (`tools/scp_roundtrip_validator.py`'s `check_reachability`) confirms the dropped bytes are
+   (`check_reachability`, `tools/round_trip/source_audit.py`) confirms the dropped bytes are
    provably dead. Repeating decompile → recompile must reach a fixed point within a few rounds:
    `outN.py == outN+1.py` and `cN.dat == cN+1.dat`. Checked by `tools/scp_roundtrip_validator.py
    --logic-round-trip`. Each recompiled `.dat` must also keep the records the engine reads (Records the engine reads,

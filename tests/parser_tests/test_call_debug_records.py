@@ -29,8 +29,12 @@ from falcom.ed9.structs.string_pool import NUL, read_text, string_offset
 from falcom.ed9.structs.scp_types import (RawInt, ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg,
                                           ScpFunctionEntry, ScpValue)
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_roundtrip_validator import (PUSH_VALUE_OFFSET, Status, check_debug_records, check_round_trip,
-                                     compare_file_records, decompile_to_python, describe_difference, load_script)
+from round_trip.byte_round_trip import check_round_trip, describe_difference
+from round_trip.format_checks import PUSH_VALUE_OFFSET, check_debug_records
+from round_trip.generated_scripts import decompile_to_python
+from round_trip.record_comparison import compare_file_records
+from round_trip.results import Status
+from round_trip.script_context import load_script
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
 

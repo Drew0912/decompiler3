@@ -17,7 +17,9 @@ from falcom.ed9.structs.call_debug_records import read_debug_records
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.structs.string_pool import StringPoolSection, StringRefs, collect_string_refs, pool_strings, read_text
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_roundtrip_validator import Status, load_script, validate_file
+from round_trip.format_checks import validate_file
+from round_trip.results import Status
+from round_trip.script_context import load_script
 from tests.shared.corpus import SORA2_SCRIPTS, require
 from tests.shared.scp_writer_test_utils import fresh_writer
 

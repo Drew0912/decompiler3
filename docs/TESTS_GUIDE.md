@@ -80,8 +80,8 @@ need goes in `tests/shared/`.
   ```
 
   Without the last two lines, `python tests/<folder>/<file>.py` runs nothing and still exits cleanly. A test that
-  imports a `tools/` script also adds `sys.path.insert(0, str(REPO_ROOT / 'tools'))` and imports the script by its
-  plain module name.
+  imports a `tools/` script or package also adds `sys.path.insert(0, str(REPO_ROOT / 'tools'))` and imports it by
+  its plain name (`logic_check`, `round_trip.results`).
 - A new folder needs an empty `__init__.py`; without one, `unittest` discovery skips it without an error.
 - A test that searches a whole HLIL, MLIL or LLIL subtree uses the shared walkers (named in `docs/hlil/HLIL_DESIGN.md`
   and `docs/mlil/MLIL_DESIGN.md`, "Operations & Node Types", and `docs/llil/LLIL_DESIGN.md`, "Node Model"), so it

@@ -15,9 +15,12 @@ sys.path.insert(0, str(REPO_ROOT / 'tools'))
 from falcom.ed9.games.kuro1.writer.scp_writer import Kuro1ScpWriter
 from falcom.ed9.writer import scp_writer
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_roundtrip_validator import (EXCUSED_COMMON, EXCUSED_DEAD, EXCUSED_EXTRA, EXCUSED_NO_CODE, EXCUSED_SECOND_COPY,
-                                     Status, check_logic_round_trip, check_records_kept, file_record_views, load_script,
-                                     source_records)
+from round_trip.logic_round_trip import check_logic_round_trip
+from round_trip.record_comparison import file_record_views
+from round_trip.records_kept import (EXCUSED_COMMON, EXCUSED_DEAD, EXCUSED_EXTRA, EXCUSED_NO_CODE, EXCUSED_SECOND_COPY,
+                                     check_records_kept, source_records)
+from round_trip.results import Status
+from round_trip.script_context import load_script
 from tests.shared.scp_writer_test_utils import fresh_writer, local_call
 
 STRING_DEFAULT = 'fallback'

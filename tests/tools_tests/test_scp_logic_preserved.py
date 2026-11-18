@@ -19,7 +19,9 @@ from dc3.logging import log
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer import scp_writer
 from falcom.ed9.writer.scp_writer_helper import *
-from scp_roundtrip_validator import LogicSnapshot, Status, check_logic_round_trip, compare_logic
+from round_trip.logic_preserved import LogicSnapshot, compare_logic
+from round_trip.logic_round_trip import check_logic_round_trip
+from round_trip.results import Status
 from tests.shared.scp_writer_test_utils import fresh_writer
 
 GAME = 'sora2'

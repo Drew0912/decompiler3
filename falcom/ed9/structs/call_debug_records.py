@@ -1,8 +1,8 @@
 """Call-site debug records: CallDebugInfoTracker rebuilds the records a function's calls get from its opcodes (shared by
-the parser, ScpWriter, the listing and tools/scp_roundtrip_validator.py); how many args a local call's record keeps by
-the compiler's rule (canonical_argc, shared by the writer and the parser); each function's raw records, each record's
-raw arguments, a script call's callee id and name (script_call_identity, shared by the writer and the check), a
-record's view for comparing two files, whether a record holds what its call would get (content only), and the
+the parser, ScpWriter, the listing and the round-trip validator, tools/round_trip/); how many args a local call's record
+keeps by the compiler's rule (canonical_argc, shared by the writer and the parser); each function's raw records, each
+record's raw arguments, a script call's callee id and name (script_call_identity, shared by the writer and the check),
+a record's view for comparing two files, whether a record holds what its call would get (content only), and the
 pairing of a function's records with its calls (pair_records, shared by the parser, the listing and the validator;
 align_records when the compiler left calls without a record)"""
 

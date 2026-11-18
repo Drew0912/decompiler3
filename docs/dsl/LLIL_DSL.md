@@ -321,10 +321,10 @@ listing is written after every other output.
 validator's `runpy.run_path(..., run_name='__main__')`) against a `ScpWriter`, which emits bytecode via the same
 per-opcode calls.
 
-**Validation**: `tools/scp_roundtrip_validator.py` automates a full loop — decompile a script,
-delete the temporary *copy* of the source `.dat` it made for the run (the original input file is
-never touched), exec the generated `.py` in a subprocess, byte-compare the result against the
-original. This mechanism — the automated byte-exact comparison itself — is real and implemented.
+**Validation**: `tools/scp_roundtrip_validator.py` (its checks in `tools/round_trip/`) automates a
+full loop — decompile a script, delete the temporary *copy* of the source `.dat` it made for the
+run (the original input file is never touched), exec the generated `.py` in a subprocess,
+byte-compare the result against the original. This mechanism — the automated byte-exact comparison itself — is real and implemented.
 Inputs must be named `<name>.dat`: the generated header names the compiled output after the whole
 file name, so a two-suffix input (`X.original.dat`) compiles to `X.original.dat`, and
 `--logic-round-trip` reports its round as a failed compile. No script in the corpora has such a

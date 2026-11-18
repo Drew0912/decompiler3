@@ -31,8 +31,8 @@ from falcom.ed9.parser.parser_types import GlobalVar
 from falcom.ed9.structs.scp_types import ScpGlobalVar
 from falcom.ed9.scp2py_base import main, process_file
 from falcom.ed9.scp2py_config import ScpDecompileConfig
-import scp_roundtrip_validator
-from scp_roundtrip_validator import compile_round, decompile_to_python
+from round_trip import generated_scripts
+from round_trip.generated_scripts import compile_round, decompile_to_python
 from tests.shared.corpus import SORA2_SCRIPTS, require, require_library
 from tests.shared.scp_writer_test_utils import fresh_writer
 
@@ -473,7 +473,7 @@ class TestLineEndings(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             first = Path(tmp) / 'e0000.py'
             decompile_to_python(SMALL_FILE, first, round_trip=False, keep_unreachable_code=False)
-            with mock.patch.object(scp_roundtrip_validator, 'compile_dsl', return_value=(0, [])):
+            with mock.patch.object(generated_scripts, 'compile_dsl', return_value=(0, [])):
                 compile_round('e0000', Path(tmp) / 'round1', first.read_text(encoding='utf-8'))
 
             self.assert_lf_only([first, Path(tmp) / 'round1' / 'e0000.py'])
