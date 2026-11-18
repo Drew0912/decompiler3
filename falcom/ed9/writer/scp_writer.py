@@ -5,7 +5,7 @@ import sys
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from types import UnionType
+from types import CodeType, UnionType
 from typing import Callable, get_args
 
 from dc3 import fileio
@@ -32,7 +32,11 @@ from ..structs.scp_types import (
     ScpFunctionCallDebugInfo,
     ScpFunctionCallDebugInfoArg,
 )
-from .hlil_dsl.stubs import library_function, stub_body
+from .hlil_dsl.build import Build, HLILError, active_build
+from .hlil_dsl.lowering import Lowering
+from .hlil_dsl.source_check import body_problem, helper_problem
+from .hlil_dsl.stubs import STUB_CODE, is_hlil_body, library_function, mark_hlil_body, stub_body
+from .hlil_dsl.tree import build_tree
 from .scp_compile_check import CheckedFunction, CompileCheck, SourceSite, def_location, location_prefix
 from .scp_writer_hook_registry import HookRegistry, require_function, wrapped_chain
 
@@ -134,6 +138,7 @@ class ScpFunction:
     debug_records: list[DebugRecord] = field(default_factory=list)
     # From function callbacks, in chain order; may repeat or include the original
     callback_bodies: list[Callable] = field(default_factory=list)
+    lowered_labels: int = 0  # the labels HLIL lowering placed in this function's code, for the next one's name
 
 
 class ScpWriter:
@@ -180,6 +185,10 @@ class ScpWriter:
         self.current_site: SourceSite | None = None          # the compiling opcode's site, for messages and its label
         # id(), not the code: code objects hash their constants on every lookup and compare equal across files
         self.opcode_emitter_code_ids: set[int] = set()       # code of every opcode emitter and of what it wraps
+        self.lowering_site: SourceSite | None = None         # while an HLIL tree is lowered: its node's site
+
+        # HLIL bodies
+        self.source_checked: set[tuple[int, bool]] = set()   # (id(code), as a body) of each source check passed
 
         # Hooks
         self.hooks: HookRegistry = HookRegistry(self)
@@ -203,6 +212,17 @@ class ScpWriter:
         """Registers a script's own common function; its name is bound to the function's stub (library_function)"""
         def wrapper(func):
             self._register_function(func, is_common_func=True)
+            return library_function(func)
+
+        return wrapper
+
+    def HLILCode(self):
+        """Registers a script function written in the HLIL DSL (docs/dsl/HLIL_DSL.md), compiled by lowering the tree
+        its body builds; its name is bound to the function's stub (library_function)"""
+        def wrapper(func):
+            require_function(func, 'HLILCode')
+            mark_hlil_body(stub_body(func))
+            self._register_function(func)
             return library_function(func)
 
         return wrapper
@@ -473,10 +493,69 @@ class ScpWriter:
 
         return code
 
+    def _run_body(self, f: ScpFunction, body: Callable):
+        """Emit a body's opcodes, f's own or inlined into the function compiling: an LLIL body emits them itself,
+        reading its arguments from the VM stack, not from its parameters; an HLIL body builds its tree, lowered here
+        onto a stack holding exactly f's parameters"""
+        build = active_build()
+        if build is not None:
+            raise build.fail(f"original.{f.name}() and inline_original_func() inline a body in an LLIL body only, "
+                             "not in an HLIL one")
+
+        if not is_hlil_body(body):
+            body(*[None] * f.entry.param_count)
+            return
+
+        codes = self._check_hlil_source(body)
+        build = Build(f.name, self._opcode_site, self._located, codes, self._helper_problem)
+        statements = build_tree(build, body, self._param_names(body, f))
+
+        # Imported here: the opcode functions it calls import this module
+        from .hlil_dsl.opcode_sink import OpcodeSink
+        try:
+            Lowering(OpcodeSink(self), f.entry.param_count).run(statements)
+        finally:
+            self.lowering_site = None
+
+    def _check_hlil_source(self, body: Callable) -> frozenset[int]:
+        """The source check (hlil_dsl/source_check.py) of each layer of an HLIL body: the innermost, the body itself,
+        by the body's rules, its functools.wraps wrappers by a helper's; returns the id() of each layer's code"""
+        layers = [layer for layer in wrapped_chain(body) if getattr(layer, '__code__', STUB_CODE) is not STUB_CODE]
+        for layer in layers:
+            code = layer.__code__
+            problem = (self._checked(code, True, lambda: body_problem(code)) if layer is layers[-1]
+                       else self._helper_problem(code, layer.__globals__))
+            if problem is not None:
+                raise HLILError(problem)
+
+        return frozenset(id(layer.__code__) for layer in layers)
+
+    def _helper_problem(self, code: CodeType, names: dict) -> str | None:
+        """A helper's or a wrapper's source check (hlil_dsl/source_check.py), as a located message, or None"""
+        return self._checked(code, False, lambda: helper_problem(code, names))
+
+    def _checked(self, code: CodeType, is_body: bool, check: Callable[[], tuple[int, str] | None]) -> str | None:
+        """check()'s problem in code as a located message, or None; once per code and kind of check"""
+        key = (id(code), is_body)
+        if key in self.source_checked:
+            return None
+
+        problem = check()
+        if problem is not None:
+            line, text = problem
+            return f'{code.co_filename}:{line}: {self.current_function.name}: {text}'
+
+        self.source_checked.add(key)
+        return None
+
     @classmethod
-    def _run_body(cls, f: ScpFunction, body: Callable):
-        """Emit a body's opcodes; an LLIL body reads its arguments from the VM stack, not from its parameters"""
-        body(*[None] * f.entry.param_count)
+    def _param_names(cls, body: Callable, f: ScpFunction) -> list[str]:
+        """The names of the parameter nodes an HLIL body gets: its own, or arg1, arg2, ... for a wrapper's *args"""
+        code = body.__code__
+        if code.co_argcount == f.entry.param_count:
+            return list(code.co_varnames[:code.co_argcount])
+
+        return [f'arg{position}' for position in range(1, f.entry.param_count + 1)]
 
     def _opcode_emitters(self):
         """The functions the compile runs to emit opcodes: each function's original body and every body its function
@@ -711,6 +790,12 @@ class ScpWriter:
     def handle_opcode(self, opcode: int, *args, debug_argc: int | None = None, debug_record: bool = True):
         """Write one opcode a DSL opcode function emitted, unless an opcode callback drops it; a CALL's debug_argc and
         debug_record go to its tracked call only, never to the callbacks"""
+        build = active_build()
+        if build is not None:
+            raise build.fail(f'{ED9Opcode(opcode).name} is an LLIL opcode, run in an HLIL body: an opcode function, an '
+                             'LLIL body called raw, or a library function from before @library_function (regenerate '
+                             'the library)')
+
         if self.current_function is None:
             raise ValueError(f'{ED9Opcode(opcode).name} is outside a function body')
 
@@ -763,6 +848,10 @@ class ScpWriter:
         f_lineno scans the line table, which grows with the function"""
         if not self.check_compiled:
             return None
+
+        # A lowered HLIL node's opcodes are its line's; an opcode callback's own opcodes are the callback's
+        if self.lowering_site is not None and not self.hooks.in_opcode_callback:
+            return self.lowering_site
 
         frame = sys._getframe(1)
         while frame is not None and id(frame.f_code) not in self.opcode_emitter_code_ids:
@@ -886,6 +975,10 @@ class ScpWriter:
 
     def add_label(self, name: str):
         """Labels are file-wide: a name is defined once in the script"""
+        build = active_build()
+        if build is not None:
+            raise build.fail(f'label({name!r}) in an HLIL body: an HLIL body places no labels')
+
         f = self.current_function
         if f is None:
             raise ValueError(f'label({name!r}) is outside a function body')

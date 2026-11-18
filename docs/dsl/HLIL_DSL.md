@@ -1,7 +1,8 @@
 # HLIL DSL
 
-> Status: design; started: the function stubs (Calls) are implemented, the rest is planned. Overview and decisions:
-> `docs/dsl/DSL_FUTURE_WORK.md`, Recompilation Pipeline §1; its hooks: `docs/dsl/HOOKS.md`.
+> Status: design; started: the function stubs (Calls) and the compile side of straight-line HLIL bodies
+> (`@scena.HLILCode()`, Form: Implemented) are implemented; the printer and the rest are planned. Overview and
+> decisions: `docs/dsl/DSL_FUTURE_WORK.md`, Recompilation Pipeline §1; its hooks: `docs/dsl/HOOKS.md`.
 
 ## HLIL DSL: Recompile Path
 
@@ -16,8 +17,9 @@
   the LLIL lifter checks stack discipline - the writer's compile check does this at the end of every
   `build()` (`ScpWriter.check_compiled`, `docs/dsl/LLIL_DSL.md` §1), so lowered functions get it too. Its
   `.py` lines come from walking up to the frame running the body, which only works while the body
-  emits opcodes: an HLIL body has returned before its tree is lowered, so the lowering must set the
-  writer's source site from each node's recorded file and line, or every error falls back to the `def`.
+  emits opcodes: an HLIL body has returned before its tree is lowered, so the lowering sets the writer's
+  source site from each node's recorded site (`ScpWriter.lowering_site`), else every error would fall back to the
+  `def`.
   A syscall lowers its argc and the `POP` right after it from one count: the compile check warns when they
   differ. A pop of more than 255 bytes (`POP`'s operand is one byte) lowers as the compiler's does: `POP(255)`, then
   a `POP` of the rest right after it (`docs/falcom/ed9/ED9_VM.md`, Stack and slots).
@@ -53,25 +55,42 @@ against its original opcodes, lowers to exactly them:
 ```python
 @scena.HLILCode()
 def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
-    v = Locals('var_s2', 'var_s3')
+    var_s2 = Local('var_s2')
+    var_s3 = Local('var_s3')
     If(arg1 == 3, [
-        Let(v.var_s2, chr_info(65534, 0)),
-        If(btl_check_condition(v.var_s2, 26, 0), [
-            If(btl_get_chr_info(v.var_s2, 18), [Return(0)]),
-            Let(v.var_s3, 0),
-            btl_chr_list_init(v.var_s2, Int(1) | 32768),
-            While(btl_chr_list_get_remain(v.var_s2) > 0, [
-                Set(v.var_s3, v.var_s3 + 1),
-                btl_chr_list_next(v.var_s2),
+        Let(var_s2, chr_info(65534, 0)),
+        If(btl_check_condition(var_s2, 26, 0), [
+            If(btl_get_chr_info(var_s2, 18), [Return(0)]),
+            Let(var_s3, 0),
+            btl_chr_list_init(var_s2, Int(1) | 32768),
+            While(btl_chr_list_get_remain(var_s2) > 0, [
+                Set(var_s3, var_s3 + 1),
+                btl_chr_list_next(var_s2),
             ]),
-            If(v.var_s3 == 0, [Return(0)]),
-            If(chr_info(v.var_s2, 35), [Return(0)]),
-            If(btl_get_sys_info(4) != v.var_s2, [Return(1)]),
-            If(btl_get_condition_remain_turn(v.var_s2, 26) == arg2 - 1, [Return(1)]),
+            If(var_s3 == 0, [Return(0)]),
+            If(chr_info(var_s2, 35), [Return(0)]),
+            If(btl_get_sys_info(4) != var_s2, [Return(1)]),
+            If(btl_get_condition_remain_turn(var_s2, 26) == arg2 - 1, [Return(1)]),
         ]),
     ])
     Return(0)
 ```
+
+- **Implemented (straight-line bodies):** `@scena.HLILCode()` compiles a body of statements with no control flow: a
+  call (`f(...)`, `script.<module>.f(...)`, `Syscall(subsystem, cmd, ...)`), `Set(target, value)` (a parameter, a
+  local, `this.x`, `REGS[n]`), `Let(x)` and `Let(x, value)`, `Return(value)` and `Return()`, `PopN(...)`,
+  `DebugInt(n)`; values are literals, `Int` / `Float` / `Str` / `Raw`, parameters, locals, `this.x`, `REGS[n]`, a
+  call's result, `+ - * / % == != < <= > >= & |`, `-x`, `~x`, `And` / `Or` / `Not`. A mixed script gets these names
+  from its game's `scp_hlil_dsl_helper` (`falcom/ed9/games/<game>/writer/`, which star-imports the shared
+  `falcom/ed9/writer/scp_hlil_dsl_helper.py` and holds the game's own DSL helpers). The body runs once, with a
+  parameter node per parameter, under a build of its own; its statements are checked, then lowered through the opcode
+  functions (`falcom/ed9/writer/hlil_dsl/`: `nodes.py`, `build.py`, `tree.py`, `lowering.py`, `opcode_sink.py`,
+  `source_check.py`), so the call tracker, the opcode callbacks and the compile check see each opcode as an LLIL
+  body's, at the line of the node it came from. A helper function builds its caller's statements, in order, each
+  time it runs: a statement it kept from an earlier run (a cache) is another body's and is not lowered again. A
+  value kept between functions goes in a global (`Set(this.target, arg1)`), never a Python variable: a parameter or
+  a call from another function's body raises where it is used. Lowered labels are named for the function compiling
+  (`AniFall:0`, ...).
 
 - **Ownership:** every node registers when it is created, and a parent (`If`, `While`, `Set`, a call's
   arguments) claims what is passed to it; unclaimed statements are the function's top level, in order.
@@ -79,8 +98,8 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   Python variable and used later (which would move a call), a node claimed twice, and an unclaimed
   non-statement (`arg1 = arg1 + 1`) all raise. Build each function in isolation, validate it, then
   lower it; record each node's file and line for error messages.
-- **Locals:** `Let` declares (where the source's declaring push is) and `Set` assigns. `Locals(...)`
-  makes a typo an `AttributeError`; `Set` on an undeclared local and a second `Let` in one scope raise.
+- **Locals:** `Let` declares (where the source's declaring push is) and `Set` assigns. One `x = Local('x')`
+  line per local names it; `Set` on an undeclared local, a read before its `Let` and a second `Let` in one scope raise.
   The end of a block frees the locals declared in it; `Scope([...])` covers a lifetime that is not a
   control block. Script globals are `this.x`.
 - **Calls:** `f()` is a `CALL` by table index, `script.<module>.f()` a `CALL_SCRIPT` (`script['']` for
@@ -94,8 +113,12 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   an opcode call only builds a node that `EmitLLIL` must claim (Mixing LLIL and HLIL, below), so a
   leftover raw body fails loudly. **Implemented:** the stubs (`falcom/ed9/writer/hlil_dsl/stubs.py`), the
   generator's `@library_function` line above each library `def`, and the decorators returning stubs; registration
-  and a function callback's return value see through a stub to its body. Until HLIL bodies exist, a bare call
-  raises at its line: `AdjustSpeed(...) builds an HLIL call; in an LLIL body write CALL(AdjustSpeed)`.
+  and a function callback's return value see through a stub to its body. In an HLIL body a stub builds a call node,
+  its arguments by position and exactly the callee's parameter count, defaults included (a local `CALL` ignores
+  defaults, `docs/falcom/ed9/ED9_VM.md`, Calls); `script.<module>.f(...)` passes what is written (the engine fills a
+  script call's trailing defaults). Anywhere else a bare call raises at its line: `AdjustSpeed(...) builds an HLIL
+  call; in an LLIL body write CALL(AdjustSpeed)`. Until `EmitLLIL` exists, an opcode function in an HLIL body raises,
+  and so does a library body from before `@library_function` (regenerate the library).
 - **Jumps:** `JumpIfFalse`/`JumpIfTrue` (`POP_JMP_ZERO`/`POP_JMP_NOT_ZERO`), `Label` and `Jump` mix with
   blocks in one function: structure what is clean, jump elsewhere. Labels are per function and named by
   order, not address. A jump must arrive with the same live locals; `Break`/`Continue` free inner
@@ -127,10 +150,25 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   - print with Python's operator precedence, not C's (`a == b & c` is `a == (b & c)`), and make chained
     comparisons raise;
   - Python folds an operation between two literals before the DSL sees it (`1 | 32768`, `7 / 2`), so
-    the printer wraps one side (`Int(1) | 32768`) and an optional lint flags hand edits;
+    the printer wraps one side (`Int(1) | 32768`). In a hand edit Python's result stands (`8 | 16` is 24), but `/`
+    and `%` between two literals raise, as Python's rules for them are not the VM's (its `/` gives a Float and its
+    `%` floors; `DIV` and `MOD` truncate): write `Int(7) / 2` for the VM's operation, or the value;
+  - a node's `__str__` and `__format__` raise: text is fixed when the script compiles, so `f'HP {arg1}'` can't hold a
+    game value (pass the value as an argument of its own);
+  - `this.x = ...` and `REGS[n] = ...` set nothing in the game and raise: `Set(this.x, value)`;
   - keep `1` and `1.0` distinct, and emit `# fmt: off` so formatters don't reflow the lists;
-  - warn when a function's last statement is not a return or a jump (a bare Python `return` stopped
-    the build early); `return Return()` stays a deliberate early exit.
+  - a body ends with `Return(...)`, and `return Return(...)` is the one Python `return` it takes;
+  - **the source check** (implemented: `falcom/ed9/writer/hlil_dsl/source_check.py`) reads each HLIL body's own
+    source before it runs and raises at the line of a Python variable given a value holding a call (`a = f()`: the
+    call would run where `a` is used, after the arguments to its right; write `Let(a, f())`), any binding of a
+    parameter's or a local's name (`arg1 = 5`, `for arg1 in ...`, `with ... as arg1`: each rebinds the Python name;
+    write `Set(arg1, 5)`), `is` / `is not` on a parameter or a local (Python's identity; the VM has no None), any
+    other `return`, and `/` or `%` between two literals. It also reads each helper the body runs (when the helper
+    makes a node) and each `functools.wraps` wrapper over the body, for a call of the DSL's kept in a variable (a
+    stub, `Syscall`, `script....`, looked up in the helper's globals: `n = len(x)` is the helper's own business) and
+    for `/` or `%` between two literals; the body under its wrappers by the body's rules;
+  - a DSL error the body catches (`try` / `except`) still ends the build: the build raises its first one after the
+    body returns.
 - **Line numbers:** none in the DSL, and none planned (user, 2026-10-05): hand edits wouldn't carry
   `DEBUG_SET_LINENO`, so an HLIL function compiles without it. That changes no game logic: the engine
   only prints the value, in three log messages (`docs/falcom/ed9/ED9_VM.md`, Opcodes and operands). It

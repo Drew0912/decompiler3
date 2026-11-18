@@ -177,6 +177,18 @@ class TestGenerator(unittest.TestCase):
                 self.assertEqual(str(raised.exception),
                                  f'{FUNC_NAME}: CALL target {target!r} is excluded or not a common function')
 
+    def test_a_function_named_like_an_hlil_dsl_name_is_refused(self):
+        """A mixed script star-imports its game's HLIL DSL helper too: a library function named Set would shadow
+        the DSL's Set there; a game's own DSL helper's names count as well"""
+        name_to_module = {'Set': gen.NO_SYSCALL_MODULE}
+        with self.assertRaisesRegex(RuntimeError, r"^'Set' \(scp_writer_common_no_syscall\) collides with a reserved "
+                                                  r'name \(opcode helper, HLIL DSL name,'):
+            gen.validate_names({'Set'}, name_to_module, 'sora2')
+
+        with mock.patch.object(gen, 'hlil_dsl_names', return_value={'game_helper'}):
+            with self.assertRaisesRegex(RuntimeError, "^'game_helper' "):
+                gen.validate_names({'game_helper'}, {'game_helper': gen.NO_SYSCALL_MODULE}, 'sora2')
+
     def game_folder(self, games: Path, name: str = 'game') -> Path:
         """A game package in games, a stand-in for falcom/ed9/games/ (gen.GAMES_DIR)"""
         game = games / name
@@ -230,6 +242,7 @@ class TestGenerator(unittest.TestCase):
         --game agreeing with the path is accepted"""
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()), \
              mock.patch.object(gen, 'collect_occurrences', return_value=({}, {})), \
+             mock.patch.object(gen, 'hlil_dsl_names', return_value=set()), \
              mock.patch.object(gen, 'write_output') as write_output:
             games = Path(tmp) / 'games'
             game = self.game_folder(games)
@@ -251,6 +264,7 @@ class TestGenerator(unittest.TestCase):
         library goes to the script folder's game"""
         with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(io.StringIO()), \
              mock.patch.object(gen, 'collect_occurrences', return_value=({}, {})), \
+             mock.patch.object(gen, 'hlil_dsl_names', return_value=set()), \
              mock.patch.object(gen, 'write_output') as write_output:
             games = Path(tmp) / 'games'
             game = self.game_folder(games)

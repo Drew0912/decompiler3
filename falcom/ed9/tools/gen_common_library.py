@@ -34,6 +34,7 @@ Algorithm:
 """
 
 import argparse
+import importlib
 import keyword
 import os
 import re
@@ -52,7 +53,7 @@ from assembler.instruction_table import OperandType
 from falcom.ed9.assembler.opcode_table import ED9Opcode, ED9OperandType
 from falcom.ed9.formatter.llil_dsl.function_formatter import Formatter, FormatterContext
 from falcom.ed9.formatter.llil_dsl.comments import CommentOptions, append_comment, instruction_comments, label_comments
-from falcom.ed9.games import GAMES_DIR, game_names
+from falcom.ed9.games import GAMES_DIR, GAMES_PACKAGE, game_names
 from falcom.ed9.structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, COMMON_LIBRARY_FOLDER,
                                                GAME_METADATA_FOLDER, game_metadata_module)
 from falcom.ed9.structs.fingerprint import function_fingerprint, fingerprint_digest
@@ -83,6 +84,15 @@ RESERVED_HELPER_NAMES = {name for name in vars(scp_writer_helper) if not name.st
 # '@scena.CommonImports()' line the header emits). Unlike RESERVED_HELPER_NAMES this isn't a name
 # used inside the library itself, so it can't be discovered by introspecting a library module.
 EMITTED_SCRIPT_RESERVED_NAMES = {'scena', 'globalvars', 'commonImports', 'main'}
+
+# A mixed script also star-imports its game's HLIL DSL helper: the DSL's names and the game's own DSL helpers
+HLIL_DSL_HELPER_MODULE = 'writer.scp_hlil_dsl_helper'
+
+
+def hlil_dsl_names(game: str) -> set[str]:
+    """The names game's HLIL DSL helper brings into a mixed script"""
+    module = importlib.import_module(f'{GAMES_PACKAGE}.{game}.{HLIL_DSL_HELPER_MODULE}')
+    return {name for name in vars(module) if not name.startswith('_')}
 
 
 @dataclass
@@ -208,23 +218,24 @@ def module_alias(module_key: str) -> str:
     return 'common_' + module_suffix(module_key)
 
 
-def validate_names(included: set[str], name_to_module: dict[str, str]):
+def validate_names(included: set[str], name_to_module: dict[str, str], game: str):
     """Every generated name must be a usable, non-keyword Python identifier, and can't collide with
-    a star-imported helper name, any module's cross-module alias, or a name every emitted script's
-    own header/footer binds (scena, commonImports, ...) - any of those would silently shadow the
-    real one, either inside the library module that defines it or inside the first script that
-    imports it. Reserves every module's alias, not just the ones the function's own module currently
-    needs, so a name that's safe today can't start colliding after a later regen adds a new
-    cross-module call."""
+    a star-imported helper name (game's HLIL DSL names included), any module's cross-module alias, or
+    a name every emitted script's own header/footer binds (scena, commonImports, ...) - any of those
+    would silently shadow the real one, either inside the library module that defines it or inside
+    the first script that imports it. Reserves every module's alias, not just the ones the function's
+    own module currently needs, so a name that's safe today can't start colliding after a later regen
+    adds a new cross-module call."""
     all_aliases = {module_alias(module_key) for module_key in set(name_to_module.values())}
-    reserved = RESERVED_HELPER_NAMES | all_aliases | EMITTED_SCRIPT_RESERVED_NAMES
+    reserved = RESERVED_HELPER_NAMES | hlil_dsl_names(game) | all_aliases | EMITTED_SCRIPT_RESERVED_NAMES
 
     for name in included:
         if not name.isidentifier() or keyword.iskeyword(name):
             raise RuntimeError(f'{name!r} is not a usable Python function name')
 
         if name in reserved:
-            raise RuntimeError(f'{name!r} ({name_to_module[name]}) collides with a reserved name (opcode helper, cross-module alias, or emitted-script binding)')
+            raise RuntimeError(f'{name!r} ({name_to_module[name]}) collides with a reserved name (opcode helper, HLIL '
+                               'DSL name, cross-module alias, or emitted-script binding)')
 
 
 def render_function(parser: ScpParser, func: Function, path: Path, expected_digest: str,
@@ -455,7 +466,7 @@ def generate(corpus_root: Path, game: str | None = None):
     require_closed_calls(included, facts)
 
     name_to_module = assign_modules(included, facts)
-    validate_names(included, name_to_module)
+    validate_names(included, name_to_module, game)
     rendered = render_included_functions(canonical, included, name_to_module)
     game_dir = GAMES_DIR / game
     write_output(game_dir, canonical, facts, rendered, name_to_module)

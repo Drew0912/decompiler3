@@ -82,12 +82,15 @@ error.
 
 **Public names.** Generated scripts and hook files call these by name, so a rename breaks every one of them: it needs
 the user's OK. `create_scp_writer`, `get_scp_writer`, positional `run(globals())`, `@scena.LLILCode()`,
-`LLILCommonCode`, `CommonImports`, `GlobalVars`, the camelCase `register*` hook names, `replace_function`,
-`add_function`, `original`, `inline_original_func`, `label`, `GLOBAL_VAR`, `library_function` (above each library
-`def`), `get_scp_writer().globals`, every opcode function and type the helper exports (`RawInt`, `FloatWord`; it has
-no `__all__`, so every public name in it), and the
-import paths `falcom.ed9.writer.scp_writer_helper`, `falcom.ed9.games.<game>.writer.scp_writer_helper` and
-`falcom.ed9.games.<game>.metadata.common_all`. Documented here, not frozen.
+`LLILCommonCode`, `HLILCode`, `CommonImports`, `GlobalVars`, the camelCase `register*` hook names,
+`replace_function`, `add_function`, `original`, `inline_original_func`, `label`, `GLOBAL_VAR`, `library_function`
+(above each library `def`), `get_scp_writer().globals`, every opcode function and type the helper exports (`RawInt`,
+`FloatWord`; it has no `__all__`, so every public name in it), the HLIL DSL's names (`Set`, `Let`, `Return`, `PopN`,
+`DebugInt`, `Syscall`, `Local`, `REGS`, `this`, `script`, `Int`, `Float`, `Str`, `Raw`, `And`, `Or`, `Not`: the
+`__all__` of `falcom.ed9.writer.scp_hlil_dsl_helper`), and the import paths `falcom.ed9.writer.scp_writer_helper`,
+`falcom.ed9.games.<game>.writer.scp_writer_helper`, `falcom.ed9.writer.scp_hlil_dsl_helper`,
+`falcom.ed9.games.<game>.writer.scp_hlil_dsl_helper` and `falcom.ed9.games.<game>.metadata.common_all`. Documented
+here, not frozen.
 
 **What `build()` does, in order.** (1) Saves the script's globals. (2) Registers the queued `@add_function`s. (3) Sets
 the script's names in the hook modules (below). (4) Runs the run callbacks. (5) Runs every function through the function
@@ -102,8 +105,9 @@ top level can't use them: use a run callback. A body a callback merely passes on
 `functools.wraps` wrapper of a library body does give the library's module the names (nothing in it is overwritten).
 A script or library function's name is bound to its stub (`@scena.LLILCode()`, `LLILCommonCode()` and the library's
 `@library_function` return one): `CALL(SkillTable)` calls it, a function callback may return it (the function's body
-becomes the replacement), and a bare `SkillTable()` raises at its line (`SkillTable(...) builds an HLIL call; in an
-LLIL body write CALL(SkillTable)`); `original.SkillTable()` inlines a body.
+becomes the replacement), a bare `SkillTable()` builds a call in an HLIL body and raises at its line anywhere else
+(`SkillTable(...) builds an HLIL call; in an LLIL body write CALL(SkillTable)`); `original.SkillTable()` inlines a
+body.
 
 **Signatures.** A replaced function keeps its position, table index and common flag; its signature merges per
 parameter: the replacement's type or default where it gives one, else the original's. The parameter count must match,
@@ -164,7 +168,8 @@ then name the decorator's wrapper `def`.
   breaks, not a slot that is valid but wrong.
 - Labels are file-wide: a body with literal labels can't be inlined twice, or inlined while it also compiles on its own
   ("label already defined"). A label-free body, or one using `genLabel()` - the whole common library - is copied
-  silently, the second copy dead code after the first `RETURN`.
+  silently, the second copy dead code after the first `RETURN`; so is an HLIL original, whose lowered labels are named
+  for the function compiling (`Host:0`, `Host:1`, ...).
 - `inline_original_func()` skips every other replacement too: a raw callback's wrapper that should keep earlier
   wrappers calls the `func` it was given (`func(*args)`, LLIL only).
 - In round-trip mode a replaced function loses the original's debug-record argument trimming, even when the
@@ -208,12 +213,21 @@ suggested name (`mon5078_.py`, `dc3_.py`; it still compiles to the same `.dat`, 
 uncomment the two imports it lists. Until then, Pylance reports the script's names in that hook as undefined, though
 they work when it compiles. A stem with a dot gets no template, only a warning.
 
-**Limits.** One compile per process (the writer has no reset); hooks can't be unregistered; hooks on HLIL-level
-scripts are future work (HLIL DSL: Hooks and Patching, below).
+**Limits.** One compile per process (the writer has no reset); hooks can't be unregistered; hook bodies written in
+HLIL are future work (HLIL DSL: Hooks and Patching, below).
 
 ## HLIL DSL: Hooks and Patching
 
-**Not started; after the HLIL DSL writer** (user, 2026-10-06). Hook files keep decompiler2's ED8.x layout:
+**Today's hooks on HLIL functions (implemented).** A hook body is LLIL. An LLIL replacement of an `@scena.HLILCode()`
+function compiles as LLIL; `inline_original_func()` and `original.Name(...)` of an HLIL original lower its tree right
+there, on a stack holding exactly its parameters (Inlining hazards, above). A function callback's body compiles at
+its own level: a body passed on keeps it, and a `functools.wraps` wrapper of an HLIL body is HLIL (its own statements,
+then the body's where it calls it). Opcode callbacks see the lowered opcodes as an LLIL body's, `CALL` with the
+callee's stub. In an HLIL body an opcode function, `label()`, `original.Name()` and `inline_original_func()` raise,
+and an LLIL wrapper calling an HLIL body raw raises at the body's first statement.
+
+**Hook bodies in HLIL: not started; after the HLIL DSL writer** (user, 2026-10-06). Hook files keep decompiler2's
+ED8.x layout:
 each script `<stem>.py` imports the `<stem>_hook.py` next to it, and a build script runs each `.py` (which
 compiles it) and moves the `.dat` into the game's patch folder. The hooks themselves already exist for LLIL
 DSL scripts (LLIL DSL Hooks, above): the raw callbacks, `@replace_function`, `@add_function`,
