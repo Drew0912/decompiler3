@@ -34,14 +34,21 @@ Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler l
 
 --logic-round-trip checks (decompile with round_trip=False, the everyday config; see docs/ROUND_TRIP_POLICY.md
 for the full policy - byte-exact fidelity is not required, preserved game logic and a byte-level
-fixed point within a few rounds are):
+fixed point within a few rounds are). With --game each decompile is the mixed <stem>.py (logic_decompile, the steps
+scp2py_base.py takes with write_hlil_py): each function whose HLIL DSL text lowers exactly to its code written in the
+HLIL DSL, the rest in the LLIL DSL (docs/dsl/HLIL_DSL.md); without it the all-LLIL .py, since a mixed file needs its
+game's DSL helper:
     source preconditions   fields the decompile normalizes away that no check on a recompiled file
                             could see (duplicate names, header dword_14, name_hash, instruction-range
                             validity, call pairing)
     reachability            every dropped byte range is provably dead (see is_range_provably_dead)
     string fidelity         every pooled string re-encodes to exactly its raw bytes
     round N logic preserved  source vs that round's decompile: per-function fingerprint + signature,
-                            the global table, and header dword_14 - checked every round, not just once
+                            the global table, and header dword_14 - checked every round, not just once; a
+                            function the source decompile printed in the HLIL DSL, which writes no line
+                            markers, is fingerprinted without its DEBUG_SET_LINENO
+    round N mode            that round's decompile prints exactly the source decompile's HLIL functions in
+                            the HLIL DSL
     round N records kept    source vs that round's call-site records, call by call: the right callee, its
                             constants and its place; excused by reason (docs/ROUND_TRIP_POLICY.md, Records
                             the engine reads) and counted in the summary
@@ -73,6 +80,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field, replace
 from enum import IntEnum
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -83,13 +91,18 @@ from assembler import Instruction, OperandType
 from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.assembler.vm import WORD_SIZE
 from falcom.ed9.games import game_names
-from falcom.ed9.structs.fingerprint import function_fingerprint
+from falcom.ed9.structs.fingerprint import function_fingerprint, function_fingerprint_without_line_markers
 from falcom.ed9.structs.call_debug_records import (CallDebugInfoTracker, RecordPairing, RecordView, TrackedCall,
                                                     canonical_argc, pair_records, read_debug_records, record_view)
 from falcom.ed9.parser.code_layout import code_order, dropped_ranges, function_extents
 from falcom.ed9.structs.crc32 import hash_function_name
 from falcom.ed9.parser.scp import OPCODE_SIZE, ScpParser
+from falcom.ed9.formatter.hlil_dsl.script_formatter import HLILScriptFormatter
 from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
+from falcom.ed9.ir.llil import ED9VMLifter
+from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
+from ir.hlil import HighLevelILFunction
 from falcom.ed9.structs.string_pool import NUL, StringRefs, collect_string_refs, pool_strings, read_text, read_u32
 from falcom.ed9.assembler.function import Function
 from falcom.ed9.structs.scp_types import (
@@ -548,6 +561,47 @@ def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = Tru
     return parser, functions
 
 
+class LogicDecompile(NamedTuple):
+    """A --logic-round-trip decompile: the parser, its functions and the names the .py holds in the HLIL DSL"""
+
+    parser: ScpParser
+    functions: list[Function]
+    hlil_names: frozenset[str]
+
+
+def logic_decompile(dat_path: Path, py_path: Path, game: str | None) -> LogicDecompile:
+    """A --logic-round-trip decompile written to py_path: with a game the mixed <stem>.py as scp2py_base.py writes it
+    (write_hlil_py: each function whose HLIL DSL text lowers exactly to its code in the HLIL DSL, the rest in the LLIL
+    DSL); without one the all-LLIL .py, since a mixed file needs its game's DSL helper"""
+    if game is None:
+        parser, functions = decompile_to_python(dat_path, py_path, round_trip=False, keep_unreachable_code=False)
+        return LogicDecompile(parser, functions, frozenset())
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        parser, functions = ScpParser.load(dat_path, round_trip=False, keep_unreachable_code=False, game=game)
+
+    formatter = LLILScriptFormatter(parser)
+    matched = formatter.match_library_functions(functions)
+    hlil_formatter = HLILScriptFormatter(parser, matched)
+    for func in functions:
+        hlil = dsl_hlil(parser, func)
+        if hlil is not None:
+            hlil_formatter.add(func, hlil)
+
+    mixed, _ = formatter.gen_mixed_scripts(functions, hlil_formatter.lines, matched=matched)
+    write_text_lf(py_path, mixed)
+    return LogicDecompile(parser, functions, frozenset(hlil_formatter.lines))
+
+
+def dsl_hlil(parser: ScpParser, func: Function) -> HighLevelILFunction | None:
+    """func's HLIL with its line markers, as write_ir_outputs hands it to the HLIL DSL; None when the lift or a
+    conversion raises (the function stays LLIL, as there)"""
+    try:
+        return convert_ed9_mlil_to_hlil(convert_ed9_llil_to_mlil_stack(ED9VMLifter(parser=parser).lift_function(func)))
+    except Exception:
+        return None
+
+
 def compile_dsl(py_path: Path, run_dir: Path) -> tuple[int, list[str]]:
     """Compile a generated .py in a subprocess: (exit code, the last lines of its output, ascii-escaped). -P keeps
     run_dir off sys.path, so a script named after a top-level package (e.g. dc3.dat) can't shadow the real one; the
@@ -725,21 +779,33 @@ def arg_text(arg: tuple[int, int | str]) -> str:
 class LogicSnapshot:
     """Everything the 'game logic' definition covers for one decompile: per-function (fingerprint,
     is_common_func) by name, the global table in index order (bytecode refers to globals by index,
-    so order matters), and header dword_14"""
+    so order matters), and header dword_14. The functions in without_line_markers (those the source's
+    decompile printed in the HLIL DSL, which writes no line markers) are fingerprinted without them"""
 
     fingerprints: dict[str, tuple]
     globals_table: list[tuple[str, int]]
     dword_14: int
+    without_line_markers: frozenset[str] = frozenset()
 
     @classmethod
-    def of(cls, parser: ScpParser, functions: list[Function]) -> LogicSnapshot:
-        fingerprints = {func.name: (function_fingerprint(parser, func), func.is_common_func) for func in functions}
+    def of(cls, parser: ScpParser, functions: list[Function],
+           without_line_markers: frozenset[str] = frozenset()) -> LogicSnapshot:
+        fingerprints = {func.name: (cls.fingerprint(parser, func, without_line_markers), func.is_common_func)
+                        for func in functions}
         globals_table = [(g.name, int(g.type)) for g in parser.global_vars]
-        return cls(fingerprints, globals_table, parser.header.dword_14)
+        return cls(fingerprints, globals_table, parser.header.dword_14, without_line_markers)
+
+    @classmethod
+    def fingerprint(cls, parser: ScpParser, func: Function, without_line_markers: frozenset[str]) -> tuple:
+        if func.name in without_line_markers:
+            return function_fingerprint_without_line_markers(parser, func)
+
+        return function_fingerprint(parser, func)
 
 
 def compare_logic(source: LogicSnapshot, other: LogicSnapshot) -> CheckResult:
-    """Everything the game logic definition covers, source vs one recompiled round"""
+    """Everything the game logic definition covers, source vs one recompiled round; both snapshots take the source
+    decompile's HLIL names as their without_line_markers"""
     failures = []
 
     missing = sorted(set(source.fingerprints) - set(other.fingerprints))
@@ -755,7 +821,8 @@ def compare_logic(source: LogicSnapshot, other: LogicSnapshot) -> CheckResult:
         other_fingerprint, other_common = other.fingerprints[name]
 
         if src_fingerprint != other_fingerprint:
-            failures.append(f'{name}: fingerprint differs after recompile')
+            kind = ' (without line markers)' if name in source.without_line_markers else ''
+            failures.append(f'{name}: fingerprint{kind} differs after recompile')
 
         if src_common != other_common:
             failures.append(f'{name}: is_common_func {src_common} != {other_common}')
@@ -766,8 +833,21 @@ def compare_logic(source: LogicSnapshot, other: LogicSnapshot) -> CheckResult:
     if source.dword_14 != other.dword_14:
         failures.append(f'header dword_14 {source.dword_14} != {other.dword_14}')
 
-    summary = f'{len(source.fingerprints)} functions compared'
+    summary = (f'{len(source.fingerprints)} functions compared '
+               f'({len(source.without_line_markers)} without line markers)')
     return CheckResult.build('logic preserved', summary, failures)
+
+
+def check_mode(source_names: frozenset[str], round_names: frozenset[str]) -> CheckResult:
+    """A round's decompile prints exactly the source decompile's functions in the HLIL DSL"""
+    failures = []
+    if lost := sorted(source_names - round_names):
+        failures.append(f'no longer HLIL: {lost}')
+
+    if gained := sorted(round_names - source_names):
+        failures.append(f'newly HLIL: {gained}')
+
+    return CheckResult.build('mode', f'{len(source_names)} functions HLIL, as in the source decompile', failures)
 
 
 @dataclass(frozen=True, slots=True)
@@ -949,7 +1029,9 @@ def check_logic_round_trip(path: Path, work_dir: Path, *, game: str | None = Non
     label names may differ); byte layout only needs to reach a fixed point within
     MAX_CONVERGENCE_ROUNDS. Every round runs in its own directory but keeps the same <stem>
     basename, since the generated header embeds it and a changing name would stop out2 == out3 from
-    ever holding even at a real fixed point."""
+    ever holding even at a real fixed point. With a game the .py is the mixed file (logic_decompile): the
+    functions the source decompile prints in the HLIL DSL are compared without their line markers, and
+    every round must print exactly those in it."""
     stem = script_stem(path)
     results = []
 
@@ -965,9 +1047,9 @@ def check_logic_round_trip(path: Path, work_dir: Path, *, game: str | None = Non
 
     file_dir = Path(tempfile.mkdtemp(prefix=f'{stem}_logic_', dir=work_dir))
 
-    source_parser, source_functions = decompile_to_python(path, file_dir / f'{stem}.py', round_trip=False,
-                                                          keep_unreachable_code=False, game=game)
-    source_snapshot = LogicSnapshot.of(source_parser, source_functions)
+    source = logic_decompile(path, file_dir / f'{stem}.py', game)
+    hlil_names = source.hlil_names
+    source_snapshot = LogicSnapshot.of(source.parser, source.functions, hlil_names)
     py_texts = [(file_dir / f'{stem}.py').read_text(encoding='utf-8')]
     dat_bytes = []
 
@@ -986,15 +1068,15 @@ def check_logic_round_trip(path: Path, work_dir: Path, *, game: str | None = Non
 
         results.extend(struct_results)
 
-        round_parser, round_functions = decompile_to_python(dat_path, round_dir / f'{stem}_out.py', round_trip=False,
-                                                            keep_unreachable_code=False, game=game)
+        decompiled = logic_decompile(dat_path, round_dir / f'{stem}_out.py', game)
         py_texts.append((round_dir / f'{stem}_out.py').read_text(encoding='utf-8'))
 
         # Checked every round, not just round 1: a file that only diverges after round 1 but still
         # happens to reach a byte-level fixed point must still fail here
-        logic_result = compare_logic(source_snapshot, LogicSnapshot.of(round_parser, round_functions))
-        logic_result.name = f'round {round_num} {logic_result.name}'
-        results.append(logic_result)
+        round_snapshot = LogicSnapshot.of(decompiled.parser, decompiled.functions, hlil_names)
+        for result in (compare_logic(source_snapshot, round_snapshot), check_mode(hlil_names, decompiled.hlil_names)):
+            result.name = f'round {round_num} {result.name}'
+            results.append(result)
 
         records_result = check_records_kept(source_function_records, file_record_views(dat_bytes[-1]))
         records_result.name = f'round {round_num} {records_result.name}'

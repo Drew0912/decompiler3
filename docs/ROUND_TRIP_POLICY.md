@@ -16,7 +16,10 @@ Two tiers, in priority order:
    provably dead. Repeating decompile → recompile must reach a fixed point within a few rounds:
    `outN.py == outN+1.py` and `cN.dat == cN+1.dat`. Checked by `tools/scp_roundtrip_validator.py
    --logic-round-trip`. Each recompiled `.dat` must also keep the records the engine reads (Records the engine reads,
-   below).
+   below). A function the decompile prints in the HLIL DSL (`docs/dsl/HLIL_DSL.md`) is compared without its line
+   markers (`DEBUG_SET_LINENO`): the DSL writes none, and the engine only prints their value
+   (`docs/falcom/ed9/ED9_VM.md`, Opcodes and operands); every round must print the same functions in the HLIL DSL.
+   The library's digests still key the full fingerprint.
 2. **Byte-exact round trip — medium priority.** `source.dat → out.py → c.dat` with `c.dat == source.dat`. Needs
    `round_trip=True, keep_unreachable_code=True` — this also disables the common-function library
    (`docs/dsl/LLIL_DSL.md` §3), so this path behaves exactly as it did before the library existed. The script it writes

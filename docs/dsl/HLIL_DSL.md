@@ -253,7 +253,10 @@ function at LLIL level only when it has to.
   markers. Only `<stem>.py` imports `<stem>_hook.py`, whose name comes from the `.dat` name
   (`gen_hook_import`, `falcom/ed9/parser/scp.py`); the listing imports no hook. With the flag off, or
   under either fidelity flag, `<stem>.py` is the LLIL listing and no `.llil.py` is written. The
-  round-trip validator's `{stem}.py` and `{stem}_out.py` are internal run files and can keep their names.
+  round-trip validator's `--logic-round-trip --game <game>` decompiles each round to the mixed file (its own
+  `logic_decompile`, the steps above), compares the source decompile's HLIL functions without their line
+  markers and requires every round to print the same ones in the HLIL DSL (`docs/ROUND_TRIP_POLICY.md`); its
+  run files are internal and can keep their names.
 
 The `POPN` in `ai_chr5122_e00`'s `CheckAlgoUse`, written as opcodes to show a list. The printer would use the
 statement the TypeScript output has, `POPN("駆動解除レジストできないやつ発見：chrid：", v.var_s5)`: its values top of

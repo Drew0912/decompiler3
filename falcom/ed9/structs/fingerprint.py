@@ -104,5 +104,12 @@ def function_fingerprint(parser: 'ScpParser', func: 'Function') -> tuple:
     return (body, signature_fingerprint(func))
 
 
+def function_fingerprint_without_line_markers(parser: 'ScpParser', func: 'Function') -> tuple:
+    """function_fingerprint with its body's line markers left out: what a function written in the HLIL DSL keeps"""
+    body = body_fingerprint_without_line_markers(func.reachable_instructions(), func.offset,
+                                                 parser.get_func_name_from_func_id, parser.get_global_name_from_index)
+    return (body, signature_fingerprint(func))
+
+
 def fingerprint_digest(fingerprint: tuple) -> str:
     return hashlib.sha256(repr(fingerprint).encode(DIGEST_ENCODING)).hexdigest()

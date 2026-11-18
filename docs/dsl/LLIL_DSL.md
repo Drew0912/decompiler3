@@ -333,8 +333,9 @@ name.
 **What's opt-in, not default:** round-trip fidelity depends on
 `ScpParser(round_trip=True, keep_unreachable_code=True)`. `scp2py_config.py` — the everyday CLI
 config — sets both to `False`. The validator passes both explicitly (`decompile_to_python`: `True`
-for `--round-trip`, `False` for `--logic-round-trip`), so it does not depend on `ScpParser`'s class
-defaults. Anyone using `scp2py.py` directly for byte-exact recompilation needs to set both flags
+for `--round-trip`, `False` for `--logic-round-trip`, which with `--game` writes the mixed file,
+`docs/dsl/HLIL_DSL.md`), so it does not depend on `ScpParser`'s class defaults. Anyone using `scp2py.py`
+directly for byte-exact recompilation needs to set both flags
 to `True`.
 
 **What's actually verified, and what isn't:** `--round-trip` is byte-identical on the validator's 5
