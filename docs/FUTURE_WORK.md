@@ -122,6 +122,57 @@ from decompiler2's ED8.x support:
     MLIL as lifted, before `optimize_mlil`, compared with the optimized MLIL as LLIL is with MLIL today; ED9's LLIL
     side (`llil_layer.py`) and driver (`scripts.py`) get ED85 counterparts. The lifter stays outside the check, as
     ED9's bytecode -> LLIL lifter does.
+  - **Since the IR rewrite** (2026-11-03): `optimize_mlil` and `MediumLevelILFunctionSSA` are off the decompile path,
+    in `ir/mlil_ssa/`. A script call's register rule has a home on the current path too:
+    `call_may_change_register` in `ir/mlil/passes/pass_call_result.py`, which ED9 subclasses in
+    `falcom/ed9/ir/mlil/pass_call_result.py`.
+- **The HLIL DSL for ED8** (2026-11-18, user; the HLIL DSL plan's D18). ED8 lifts straight into MLIL, then goes
+  through the generic MLIL and HLIL passes into an HLIL DSL `.py`. The DSL's code sits in `falcom/ed9/`
+  (`writer/hlil_dsl/`, `formatter/hlil_dsl/`) because ED9 is its only user. Its seams for a second VM are cut now
+  (D18); the VM-neutral part moves out when ED8 starts. Generated scripts import only their game's
+  `scp_hlil_dsl_helper`, so the move changes no script.
+  - **Three layers:**
+    - VM-neutral: the nodes keyed by HLIL's operators, the build and its checks, the source check, the stubs, the
+      printer's rules, the exact-check driver (print, run, lower, compare, else fall back);
+    - per VM: the lowering and its sink, constant kinds, VM-only nodes, what the exact check compares with, the
+      fallback listing, the DSL-only HLIL conversion;
+    - per game: the namespace helper, ID tables, signature rows.
+  - **What ED8 differs in.** From decompiler2 `Falcom/ED83`, `ED84` and `ED85`; each game's tables are the previous
+    one's plus changes.
+    - **Instructions:** each is a 1-byte opcode and, except `0x00`, `0x01` and `0x04`, a debug word (24-bit line,
+      size byte). decompiler2's writer writes `0xFF << 24` there: no line, size unknown
+      (`ED85InstructionTable.writeOpCode`).
+    - **No operand stack:** ED9's stack-slot lifetimes, `Return(n)`'s `POP` and the stack contract have no
+      counterpart. A store is `ExecExpressionWithReg(reg, expr)` or `ExecExpressionWithVar(var, expr)`, with
+      compound operators (`Add2`, `Sub2`, ...; `Nop` a plain store).
+    - **Expressions** are RPN programs ending in `Return` (`ScenaExpression.Operator`):
+      - comparisons, `Ez`, `Nez64` (logical and), bitwise and arithmetic operators, `Xor`, `Not`;
+      - reads: `PushReg`, `PushVar`, `PushValueByIndex`, `GetChrWork`, `TestScenaFlags`, `Rand`;
+      - `Eval` embeds a whole instruction whose result the expression uses;
+      - `Expr24` / `Expr25` are not known.
+    - **Control flow:**
+      - `If(expr, false_target)`, `Jump`, `Return`;
+      - a native `Switch(expr, (value, target), ..., default)` (`Handler_06`), not a compiled chain;
+      - `Call(scriptId, name, args...)` with typed arguments (`ArgReg`, `ArgInt`, `ArgStr`, `ParamStr`, `ParamFloat`,
+        `ParamInt`), and `CreateThread`.
+    - **Text operands** hold their codes inside the string (`TextCtrlCode`: `0x01` newline, `0x10` item, `0x11` voice,
+      `0x19` craft), where ED9 passes them as separate arguments.
+    - **Data blocks beside code:** `ActionTable`, `AlgoTable`, `WeaponAttTable`, `BreakTable`, `SummonTable`,
+      `BattleSetting`, `AnimeClipTable` and others are typed data (`ScenaParser.functionTypeMap`), printed as
+      constructor calls (`ScenaActionTableEntry(craftId = ..., ...)`).
+      - The DSL needs data forms beside its code functions.
+      - ED8's AI tables are these blocks, so ED9's `btl_ai_skill` / `btl_ai_algo` naming (work order row 9) does not
+        carry over.
+    - **No LLIL:** a function with no HLIL form falls back to an instruction-level listing in decompiler2's style
+      (`If(((Expr.PushReg, 0x0), Expr.Return), 'loc_BF2B')`), the counterpart of the LLIL DSL.
+  - **What decompiler2 already has** that the per-VM layer can take:
+    - parameter names and layout flags per instruction (`inst(0x24, 'ChrTalk', 'NLT', Flags.FormatMultiLine,
+      parameters = ('chrId', 'flags', 'text'))`);
+    - operand kinds `N` ChrId, `t` item, `R` craft;
+    - aliases chosen by fixed operand values (`ED85Optimizer`: opcode `0x29` with operand 0 equal to `0x01` prints
+      as `MenuAddItem`, that operand dropped);
+    - hand-written helpers (`RandIf`, `Switch2`, `ForEachTarget`), which the HLIL DSL's `If` / `Switch` / `While`
+      cover.
 
 ## Older-Compiler Byte-Exact Debug Records (`falcom/ed9/structs/call_debug_records.py`, `falcom/ed9/writer/`)
 
