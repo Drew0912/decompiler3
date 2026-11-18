@@ -20,7 +20,7 @@ import linecache
 from types import CodeType
 from typing import Callable, Iterable, Iterator
 
-from .nodes import ScriptFunction, Syscall
+from .nodes import makes_dsl_call
 from .stubs import STUB_CODE
 
 # The calls a body's Python variable may hold: each makes a constant or a local, nothing that runs in the game
@@ -184,8 +184,7 @@ def _is_call_to(value: ast.expr | None, *names: str) -> bool:
 def _makes_dsl_call(call: ast.Call, names: dict) -> bool:
     """call's callee, looked up in names, is a function's stub, Syscall or script.module.name"""
     callee = _resolved(call.func, names)
-    return (getattr(callee, '__code__', None) is STUB_CODE or callee is Syscall
-            or isinstance(callee, ScriptFunction))
+    return getattr(callee, '__code__', None) is STUB_CODE or makes_dsl_call(callee)
 
 
 def _resolved(node: ast.expr, names: dict):

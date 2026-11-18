@@ -86,7 +86,11 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   parameter node per parameter, under a build of its own; its statements are checked, then lowered through the opcode
   functions (`falcom/ed9/writer/hlil_dsl/`: `nodes.py`, `build.py`, `tree.py`, `lowering.py`, `opcode_sink.py`,
   `source_check.py`), so the call tracker, the opcode callbacks and the compile check see each opcode as an LLIL
-  body's, at the line of the node it came from. A helper function builds its caller's statements, in order, each
+  body's, at the line of the node it came from. The nodes, the build, its checks and the source check are
+  VM-neutral: an operation is keyed by HLIL's own operator (`ir/core/operators.py`), a constant by its value's type,
+  and they import nothing from `falcom/ed9/`; the ED9-only nodes (`Raw`, `REGS`, `Syscall`, `PopN`, `DebugInt`) are
+  in `ed9_nodes.py`, and the lowering turns the rest into ED9's opcodes (an operator ED9 lacks, `^`, `<<` or `>>`,
+  raises at its line). A helper function builds its caller's statements, in order, each
   time it runs: a statement it kept from an earlier run (a cache) is another body's and is not lowered again. A
   value kept between functions goes in a global (`Set(this.target, arg1)`), never a Python variable: a parameter or
   a call from another function's body raises where it is used. Lowered labels are named for the function compiling

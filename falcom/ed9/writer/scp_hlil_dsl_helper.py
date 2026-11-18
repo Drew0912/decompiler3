@@ -2,8 +2,8 @@
 a star import of this module; public names: docs/dsl/HOOKS.md. @scena.HLILCode() and the library's functions come
 with the script's other imports"""
 
-from .hlil_dsl.nodes import (REGS, And, DebugInt, Float, Int, Let, Local, Not, Or, PopN, Raw, Return, Set, Str, Syscall,
-                             script, this)
+from .hlil_dsl.ed9_nodes import REGS, DebugInt, PopN, Raw, Syscall
+from .hlil_dsl.nodes import And, Float, Int, Let, Local, Not, Or, Return, Set, Str, script, this
 
 __all__ = (
     'Set',

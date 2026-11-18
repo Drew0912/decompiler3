@@ -1,17 +1,32 @@
 """The HLIL DSL's nodes (docs/dsl/HLIL_DSL.md, Form): what an HLIL body's statements and expressions build while it
-runs. Composite nodes (operators, calls, statements) register in the active build and are used once; leaves are
-reusable: constants, locals (by name), registers and globals anywhere, a parameter only in its own body. The concrete
-expression classes are siblings: Python tries a right operand's reflected operator first only when its class
-subclasses the left's"""
+runs, keyed by HLIL's own operators and by the constant's value, so no VM's opcode (the ED9-only nodes are in
+ed9_nodes.py, the ED9 opcodes in lowering.py). Composite nodes (operators, calls, statements) register in the active
+build and are used once; leaves are reusable: constants, locals (by name) and globals anywhere, a parameter only in
+its own body. The concrete expression classes are siblings: Python tries a right operand's reflected operator first
+only when its class subclasses the left's"""
 
 import inspect
+from enum import Enum
 
-from ...assembler import ED9Opcode
-from ...assembler.vm import REGISTER_COUNT
-from ...structs.scp_types import RawInt
+from ir.core import operators
 from .build import Build, active_build, dsl_error
 
 _MISSING = object()     # Return() and Let(x): no value given
+
+# The functions whose call makes a DSL call besides the stubs and script.module.name (ED9's Syscall), each registered
+# where it is defined; a wrapper of one is not one, as a stub's wrapper is not a stub
+_dsl_call_makers: list = []
+
+
+def dsl_call_maker(function):
+    _dsl_call_makers.append(function)
+    return function
+
+
+def makes_dsl_call(callee) -> bool:
+    """callee's call makes a DSL call: script.module.name, or a registered function itself (the source check reads
+    a helper's calls by it; a stub it tells by the stub's code)"""
+    return isinstance(callee, ScriptFunction) or any(callee is maker for maker in _dsl_call_makers)
 
 
 class Node:
@@ -46,80 +61,97 @@ class Expr(Node):
     leaves it unhashable, as Node is"""
 
     def __add__(self, other):
-        return BinaryOp(ED9Opcode.ADD, self, other)
+        return BinaryOp(operators.BinaryOp.ADD, self, other)
 
     def __radd__(self, other):
-        return BinaryOp(ED9Opcode.ADD, other, self)
+        return BinaryOp(operators.BinaryOp.ADD, other, self)
 
     def __sub__(self, other):
-        return BinaryOp(ED9Opcode.SUB, self, other)
+        return BinaryOp(operators.BinaryOp.SUB, self, other)
 
     def __rsub__(self, other):
-        return BinaryOp(ED9Opcode.SUB, other, self)
+        return BinaryOp(operators.BinaryOp.SUB, other, self)
 
     def __mul__(self, other):
-        return BinaryOp(ED9Opcode.MUL, self, other)
+        return BinaryOp(operators.BinaryOp.MUL, self, other)
 
     def __rmul__(self, other):
-        return BinaryOp(ED9Opcode.MUL, other, self)
+        return BinaryOp(operators.BinaryOp.MUL, other, self)
 
     def __truediv__(self, other):
-        return BinaryOp(ED9Opcode.DIV, self, other)
+        return BinaryOp(operators.BinaryOp.DIV, self, other)
 
     def __rtruediv__(self, other):
-        return BinaryOp(ED9Opcode.DIV, other, self)
+        return BinaryOp(operators.BinaryOp.DIV, other, self)
 
     def __mod__(self, other):
-        return BinaryOp(ED9Opcode.MOD, self, other)
+        return BinaryOp(operators.BinaryOp.MOD, self, other)
 
     def __rmod__(self, other):
-        return BinaryOp(ED9Opcode.MOD, other, self)
+        return BinaryOp(operators.BinaryOp.MOD, other, self)
 
     def __and__(self, other):
-        return BinaryOp(ED9Opcode.BITWISE_AND, self, other)
+        return BinaryOp(operators.BinaryOp.BIT_AND, self, other)
 
     def __rand__(self, other):
-        return BinaryOp(ED9Opcode.BITWISE_AND, other, self)
+        return BinaryOp(operators.BinaryOp.BIT_AND, other, self)
 
     def __or__(self, other):
-        return BinaryOp(ED9Opcode.BITWISE_OR, self, other)
+        return BinaryOp(operators.BinaryOp.BIT_OR, self, other)
 
     def __ror__(self, other):
-        return BinaryOp(ED9Opcode.BITWISE_OR, other, self)
+        return BinaryOp(operators.BinaryOp.BIT_OR, other, self)
+
+    def __xor__(self, other):
+        return BinaryOp(operators.BinaryOp.BIT_XOR, self, other)
+
+    def __rxor__(self, other):
+        return BinaryOp(operators.BinaryOp.BIT_XOR, other, self)
+
+    def __lshift__(self, other):
+        return BinaryOp(operators.BinaryOp.SHL, self, other)
+
+    def __rlshift__(self, other):
+        return BinaryOp(operators.BinaryOp.SHL, other, self)
+
+    def __rshift__(self, other):
+        return BinaryOp(operators.BinaryOp.SHR, self, other)
+
+    def __rrshift__(self, other):
+        return BinaryOp(operators.BinaryOp.SHR, other, self)
 
     # A literal on the left reaches these reflected (5 < x is x > 5): the same test, its operands swapped
     def __eq__(self, other):
-        return BinaryOp(ED9Opcode.EQ, self, other)
+        return BinaryOp(operators.BinaryOp.EQ, self, other)
 
     def __ne__(self, other):
-        return BinaryOp(ED9Opcode.NE, self, other)
+        return BinaryOp(operators.BinaryOp.NE, self, other)
 
     def __lt__(self, other):
-        return BinaryOp(ED9Opcode.LT, self, other)
+        return BinaryOp(operators.BinaryOp.LT, self, other)
 
     def __le__(self, other):
-        return BinaryOp(ED9Opcode.LE, self, other)
+        return BinaryOp(operators.BinaryOp.LE, self, other)
 
     def __gt__(self, other):
-        return BinaryOp(ED9Opcode.GT, self, other)
+        return BinaryOp(operators.BinaryOp.GT, self, other)
 
     def __ge__(self, other):
-        return BinaryOp(ED9Opcode.GE, self, other)
+        return BinaryOp(operators.BinaryOp.GE, self, other)
 
     def __neg__(self):
-        return UnaryOp(ED9Opcode.NEG, self)
+        return UnaryOp(operators.UnaryOp.NEG, self)
 
     def __invert__(self):
-        return UnaryOp(ED9Opcode.NOT, self)
+        return UnaryOp(operators.UnaryOp.BIT_NOT, self)
 
 
 # Leaves
 
 class Const(Expr):
-    """A constant, pushed by opcode (PUSH_INT, PUSH_FLOAT, PUSH_STR or PUSH_RAW)"""
+    """A constant, its kind its value's type: int, float, str, or a VM's own (ED9's RawInt, ed9_nodes.Raw)"""
 
-    def __init__(self, opcode: ED9Opcode, value: int | float | str | RawInt):
-        self.opcode = opcode
+    def __init__(self, value: int | float | str):
         self.value = value
 
     def __repr__(self) -> str:
@@ -131,7 +163,7 @@ def Int(value: int) -> Const:
     if isinstance(value, bool) or not isinstance(value, int):
         raise dsl_error(f'Int takes an int, not {value!r}')
 
-    return Const(ED9Opcode.PUSH_INT, int(value))
+    return Const(int(value))
 
 
 def Float(value: float) -> Const:
@@ -139,7 +171,7 @@ def Float(value: float) -> Const:
     if not isinstance(value, float):
         raise dsl_error(f'Float takes a float (2.0, not 2), not {value!r}')
 
-    return Const(ED9Opcode.PUSH_FLOAT, value)
+    return Const(value)
 
 
 def Str(value: str) -> Const:
@@ -147,18 +179,14 @@ def Str(value: str) -> Const:
     if not isinstance(value, str):
         raise dsl_error(f'Str takes a str, not {value!r}')
 
-    return Const(ED9Opcode.PUSH_STR, value)
+    return Const(value)
 
 
-def Raw(value: int) -> Const:
-    """A Raw word, untyped: Return() returns Raw(0)"""
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise dsl_error(f'Raw takes an int, not {value!r}')
-
-    return Const(ED9Opcode.PUSH_RAW, RawInt(value))
+class Variable(Expr):
+    """What Set stores into: a parameter, a local, a global, or a VM's own (ED9's register)"""
 
 
-class Param(Expr):
+class Param(Variable):
     """A parameter of the body its build runs: position counts from 1, as arg1 does"""
 
     def __init__(self, build: Build, position: int, name: str):
@@ -170,7 +198,7 @@ class Param(Expr):
         return self.name
 
 
-class Local(Expr):
+class Local(Variable):
     """A local variable, by name: x = Local('x'), declared in each body with Let(x) or Let(x, value)"""
 
     def __init__(self, name: str):
@@ -183,36 +211,7 @@ class Local(Expr):
         return self.name
 
 
-class Register(Expr):
-    """REGS[n], the VM's register n (REGS[0] holds a call's result)"""
-
-    def __init__(self, index: int):
-        self.index = index
-
-    def __repr__(self) -> str:
-        return f'REGS[{self.index}]'
-
-
-class _Registers:
-    """REGS: REGS[n] is register n, n a constant"""
-
-    def __getitem__(self, index: int) -> Register:
-        if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < REGISTER_COUNT:
-            raise dsl_error(f'REGS[n] takes a register number 0..{REGISTER_COUNT - 1}, not {index!r}')
-
-        return Register(index)
-
-    def __setitem__(self, index, value):
-        raise dsl_error(f'REGS[{index!r}] = ... sets nothing in the game: write Set(REGS[{index!r}], value)')
-
-    def __repr__(self) -> str:
-        return 'REGS'
-
-
-REGS = _Registers()
-
-
-class Global(Expr):
+class Global(Variable):
     """this.name, a script global"""
 
     def __init__(self, name: str):
@@ -245,21 +244,16 @@ this = _This()
 # Composite nodes: each joins the active build, then claims its operands
 
 def constant(value) -> Const:
-    """A Python value as a DSL constant: int an Integer, float a Float, str a String, RawInt a Raw word"""
+    """A Python value as a DSL constant: an int an Integer, a float a Float, a str a String; an enum (an ID's name) its
+    number; any other int kind (ED9's RawInt) as it is, for the VM to push by it"""
     if isinstance(value, bool) or value is None:
         raise dsl_error(f'{value!r} is not a DSL value: the VM has no bool or None (write 1 / 0)')
 
-    if isinstance(value, RawInt):
-        return Const(ED9Opcode.PUSH_RAW, value)
+    if isinstance(value, Enum) and isinstance(value, int):
+        return Const(int(value))
 
-    if isinstance(value, int):
-        return Const(ED9Opcode.PUSH_INT, int(value))  # an IntEnum, an ID's name: its number
-
-    if isinstance(value, float):
-        return Const(ED9Opcode.PUSH_FLOAT, value)
-
-    if isinstance(value, str):
-        return Const(ED9Opcode.PUSH_STR, value)
+    if isinstance(value, (int, float, str)):
+        return Const(value)
 
     raise dsl_error(f'{value!r} ({type(value).__name__}) is not a DSL value')
 
@@ -319,53 +313,53 @@ class Composite:
 
 
 class BinaryOp(Composite, Expr):
-    def __init__(self, opcode: ED9Opcode, lhs, rhs):
-        build = self.join_build(f'an operation ({opcode.name})')
-        self.opcode = opcode
+    def __init__(self, op: operators.BinaryOp, lhs, rhs):
+        build = self.join_build(f'an operation ({op.name})')
+        self.op = op
         self.lhs = claim(build, lhs, self)
         self.rhs = claim(build, rhs, self)
         self.children = (self.lhs, self.rhs)
 
     def __repr__(self) -> str:
-        return f'({self.lhs!r} {self.opcode.name} {self.rhs!r})'
+        return f'({self.lhs!r} {self.op.name} {self.rhs!r})'
 
 
 class UnaryOp(Composite, Expr):
-    def __init__(self, opcode: ED9Opcode, operand):
-        build = self.join_build(f'an operation ({opcode.name})')
-        self.opcode = opcode
+    def __init__(self, op: operators.UnaryOp, operand):
+        build = self.join_build(f'an operation ({op.name})')
+        self.op = op
         self.operand = claim(build, operand, self)
         self.children = (self.operand,)
 
     def __repr__(self) -> str:
-        return f'{self.opcode.name}({self.operand!r})'
+        return f'{self.op.name}({self.operand!r})'
 
 
 def And(first, second, *rest) -> BinaryOp:
-    """The VM's eager logical and of two or more values (LOGICAL_AND), left to right"""
-    node = BinaryOp(ED9Opcode.LOGICAL_AND, first, second)
+    """The VM's eager logical and of two or more values, left to right"""
+    node = BinaryOp(operators.BinaryOp.AND, first, second)
     for value in rest:
-        node = BinaryOp(ED9Opcode.LOGICAL_AND, node, value)
+        node = BinaryOp(operators.BinaryOp.AND, node, value)
 
     return node
 
 
 def Or(first, second, *rest) -> BinaryOp:
-    """The VM's eager logical or of two or more values (LOGICAL_OR), left to right"""
-    node = BinaryOp(ED9Opcode.LOGICAL_OR, first, second)
+    """The VM's eager logical or of two or more values, left to right"""
+    node = BinaryOp(operators.BinaryOp.OR, first, second)
     for value in rest:
-        node = BinaryOp(ED9Opcode.LOGICAL_OR, node, value)
+        node = BinaryOp(operators.BinaryOp.OR, node, value)
 
     return node
 
 
 def Not(value) -> UnaryOp:
-    """The VM's logical not (EZ): 1 when value is 0"""
-    return UnaryOp(ED9Opcode.EZ, value)
+    """The logical not: 1 when value is 0"""
+    return UnaryOp(operators.UnaryOp.NOT, value)
 
 
 class Call(Composite, Expr):
-    """A call: a statement when nothing uses it, else its result (REGS[0] after the call)"""
+    """A call: a statement when nothing uses it, else its result (the VM's result register after the call)"""
 
     def claim_args(self, build: Build, args: tuple, kwargs: dict):
         if kwargs:
@@ -377,7 +371,7 @@ class Call(Composite, Expr):
 
 
 class LocalCall(Call):
-    """A call of a script or library function (CALL): every parameter given, since a local CALL ignores defaults"""
+    """A call of a script or library function: every parameter given, since a local call ignores defaults"""
 
     def __init__(self, function, body, args: tuple, kwargs: dict):
         """function is what CALL takes, as an LLIL body passes it (the stub its name is bound to); body its body"""
@@ -397,8 +391,8 @@ class LocalCall(Call):
 
 
 class ScriptCall(Call):
-    """script.module.name(...), a call of another script's function (CALL_SCRIPT): the arguments as written, since a
-    script call may leave out trailing defaults"""
+    """script.module.name(...), a call of another script's function: the arguments as written, since a script call
+    may leave out trailing defaults"""
 
     def __init__(self, module: str, name: str, args: tuple, kwargs: dict):
         build = self.join_build(f'script.{module}.{name}(...)')
@@ -408,27 +402,6 @@ class ScriptCall(Call):
 
     def __repr__(self) -> str:
         return f'script.{self.module}.{self.name}(...)'
-
-
-class SyscallCall(Call):
-    """Syscall(subsystem, cmd, ...), an engine call (SYSCALL), its arguments popped after it"""
-
-    def __init__(self, subsystem: int, cmd: int, args: tuple, kwargs: dict):
-        build = self.join_build('Syscall(...)')
-        for what, number in (('subsystem', subsystem), ('cmd', cmd)):
-            if isinstance(number, bool) or not isinstance(number, int):
-                raise build.fail(f'Syscall\'s {what} is a constant number, not {number!r}')
-
-        self.subsystem = subsystem
-        self.cmd = cmd
-        self.claim_args(build, args, kwargs)
-
-    def __repr__(self) -> str:
-        return f'Syscall({self.subsystem}, {self.cmd}, ...)'
-
-
-def Syscall(subsystem: int, cmd: int, *args, **kwargs) -> SyscallCall:
-    return SyscallCall(subsystem, cmd, args, kwargs)
 
 
 class ScriptFunction:
@@ -484,7 +457,7 @@ class Set(Statement):
 
     def __init__(self, target, value):
         build = self.join_build('Set(...)')
-        if not isinstance(target, (Param, Local, Global, Register)):
+        if not isinstance(target, Variable):
             raise build.fail(f'Set\'s target is a parameter, a local, this.x or REGS[n], not {target!r}')
 
         self.target = claim(build, target, self)
@@ -496,7 +469,7 @@ class Set(Statement):
 
 
 class Let(Statement):
-    """Let(x) declares local x (PUSH_RAW 0); Let(x, value) declares and stores it"""
+    """Let(x) declares local x; Let(x, value) declares and stores it"""
 
     def __init__(self, local, value=_MISSING):
         build = self.join_build('Let(...)')
@@ -512,42 +485,13 @@ class Let(Statement):
 
 
 class Return(Statement):
-    """Return(value) ends the body with value in REGS[0]; Return() with the Raw 0 the compiler writes"""
+    """Return(value) ends the body with value as its result; Return() with the value the VM's compiler returns (ED9: a
+    Raw 0)"""
 
     def __init__(self, value=_MISSING):
         build = self.join_build('Return(...)')
-        self.value = Raw(0) if value is _MISSING else claim(build, value, self)
-        self.children = (self.value,)
+        self.value = None if value is _MISSING else claim(build, value, self)
+        self.children = () if self.value is None else (self.value,)
 
     def __repr__(self) -> str:
         return 'Return(...)'
-
-
-class PopN(Statement):
-    """PopN(values...): pushes the values and pops them again (POPN), with nothing logged"""
-
-    def __init__(self, *values):
-        build = self.join_build('PopN(...)')
-        if not values:
-            raise build.fail('PopN takes one value or more')
-
-        self.values = tuple(claim(build, value, self) for value in values)
-        self.children = self.values
-
-    def __repr__(self) -> str:
-        return 'PopN(...)'
-
-
-class DebugInt(Statement):
-    """DebugInt(n): DEBUG_INT, a constant the engine logs at a level its logger drops"""
-
-    def __init__(self, value: int):
-        build = self.join_build('DebugInt(...)')
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise build.fail(f'DebugInt takes a constant int, not {value!r}')
-
-        self.value = value
-        self.children = ()
-
-    def __repr__(self) -> str:
-        return f'DebugInt({self.value})'

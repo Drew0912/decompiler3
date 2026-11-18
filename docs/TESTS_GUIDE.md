@@ -28,7 +28,7 @@ A test sits in the folder of the code it tests. Each folder is named after that 
 | `assembler_tests/` | the ED9 instruction set and disassembler (`falcom/ed9/assembler/`, `assembler/`): the stack simulation, the opcode table's stack effects against every walker of the VM stack |
 | `formatter_tests/` | what is printed from a parsed script (`falcom/ed9/formatter/`): the `.py` text scp2py writes, the LLIL DSL's labels and comments, the `.debug.txt` listing |
 | `writer_tests/` | `ScpWriter` (`falcom/ed9/writer/`): compiling the LLIL DSL, hooks, the compile check |
-| `hlil_dsl_tests/` | the HLIL DSL's compile side (`falcom/ed9/writer/hlil_dsl/`, `@scena.HLILCode()`): each form against its LLIL twin, each mistake at its line, helpers and hooks on HLIL functions |
+| `hlil_dsl_tests/` | the HLIL DSL's compile side (`falcom/ed9/writer/hlil_dsl/`, `@scena.HLILCode()`): each form against its LLIL twin, each mistake at its line, helpers and hooks on HLIL functions, the VM-neutral modules importing nothing from `falcom/ed9/` |
 | `common_functions_tests/` | the shared common-function library (`falcom/ed9/tools/`, `falcom/ed9/structs/`): fingerprints, matching, what a script imports, and its generator (the facts, rendering, the closure and input checks) |
 | `tools_tests/` | the scripts in `tools/`: the validators, the logic check, the line-order report |
 | `dc3_tests/` | `dc3/`: logging, file I/O, the GC policy |

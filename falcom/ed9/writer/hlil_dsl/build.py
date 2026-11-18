@@ -91,6 +91,24 @@ def activated(build: Build):
         _active = outer
 
 
+def _text_alone(text: str) -> str:
+    return text
+
+
+# Where an error raised outside any build points: the writer, when it loads, sets the statement it is compiling
+_outside_build_locator: Callable[[str], str] = _text_alone
+
+
+def set_outside_build_locator(locate: Callable[[str], str]):
+    global _outside_build_locator
+    _outside_build_locator = locate
+
+
+def locate_outside_build(text: str) -> str:
+    """text, located as the writer locates the statement running (text alone without a writer)"""
+    return _outside_build_locator(text)
+
+
 def dsl_error(text: str) -> HLILError:
     """An error about the DSL statement running: located and kept by the active build; outside one, at the statement
     the writer is compiling"""
@@ -98,6 +116,4 @@ def dsl_error(text: str) -> HLILError:
     if build is not None:
         return build.fail(text)
 
-    # Imported here: the writer imports this package's modules
-    from ..scp_writer import get_scp_writer
-    return HLILError(get_scp_writer().at_statement(text))
+    return HLILError(locate_outside_build(text))

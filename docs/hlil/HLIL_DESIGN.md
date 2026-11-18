@@ -33,7 +33,7 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 
 | Path | Responsibility |
 | --- | --- |
-| `ir/hlil/hlil.py` | Core enums and tree nodes: expressions, statements, variables, switch cases, and `HighLevelILFunction`. |
+| `ir/hlil/hlil.py` | Core enums and tree nodes: expressions, statements, variables, switch cases, and `HighLevelILFunction`. The operator enums `BinaryOp` / `UnaryOp` are defined in `ir/core/operators.py` and re-exported here, so the HLIL DSL's nodes key on them without loading HLIL's passes. |
 | `ir/hlil/mlil_to_hlil.py` | Generic MLIL → HLIL conversion, including CFG construction, loop/branch reconstruction, shared-region cloning, and variable declaration. |
 | `ir/hlil/call_result_folder.py` | `CallResultFolder`: which call results fold into the instruction reading them, decided on the MLIL before the converter emits anything. |
 | `ir/hlil/mlil_ssa_types.py` | The SSA path's type hand-off: `MLIL_TYPE_HINTS` and `apply_inferred_types`, which gives each HLIL parameter and local the type the SSA path inferred for its name. It loads the SSA package, so `ir/hlil/__init__.py` does not import it; only the SSA path's HLIL entry point does. |
@@ -91,8 +91,8 @@ leaves the answer open. `.ts` prints both as `&&`/`||`, `.hlil.ts` the recovered
 `DE_MORGAN_OP` keeps the kind, `OR_OPS` is either `||`, and the logic check (`tools/logic_check/`) tests an
 eager op whole and a recovered one operand by operand.
 
-Operator knowledge lives once, in `ir/hlil/hlil.py`, in two groups. The language-neutral group -
-`COMPARISON_OPS`, `BOOLEAN_BINARY_OPS`/`is_boolean_expr`, `NEGATED_COMPARISON_OP`, `DE_MORGAN_OP`,
+Operator knowledge lives once, in `ir/hlil/hlil.py` (the enums themselves in `ir/core/operators.py`), in two
+groups. The language-neutral group - `COMPARISON_OPS`, `BOOLEAN_BINARY_OPS`/`is_boolean_expr`, `NEGATED_COMPARISON_OP`, `DE_MORGAN_OP`,
 `negate_condition` (negation distributed through `&&`/`||`) and `strip_truth_test` (a boolean's truth
 tests, `(c) != 0`, `(c) == 0` and `!c`, read off without changing the tree) - is what any output language
 needs, including the planned HLIL DSL. The C-family syntax group - the `BINARY_OP_STR`/`UNARY_OP_STR`

@@ -32,7 +32,7 @@ from ..structs.scp_types import (
     ScpFunctionCallDebugInfo,
     ScpFunctionCallDebugInfoArg,
 )
-from .hlil_dsl.build import Build, HLILError, active_build
+from .hlil_dsl.build import Build, HLILError, active_build, set_outside_build_locator
 from .hlil_dsl.lowering import Lowering
 from .hlil_dsl.source_check import body_problem, helper_problem
 from .hlil_dsl.stubs import STUB_CODE, is_hlil_body, library_function, mark_hlil_body, stub_body
@@ -513,7 +513,7 @@ class ScpWriter:
         # Imported here: the opcode functions it calls import this module
         from .hlil_dsl.opcode_sink import OpcodeSink
         try:
-            Lowering(OpcodeSink(self), f.entry.param_count).run(statements)
+            Lowering(OpcodeSink(self), f.entry.param_count, build).run(statements)
         finally:
             self.lowering_site = None
 
@@ -1036,3 +1036,7 @@ def create_scp_writer(name: str) -> ScpWriter:
 
 def get_scp_writer() -> ScpWriter:
     return _gScp
+
+
+# An HLIL DSL error raised outside a build (a stub called in an LLIL body) points at the statement being compiled
+set_outside_build_locator(lambda text: get_scp_writer().at_statement(text))

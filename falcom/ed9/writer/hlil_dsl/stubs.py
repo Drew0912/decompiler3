@@ -5,7 +5,7 @@ anywhere else. Also the mark @scena.HLILCode() sets on an HLIL body"""
 import functools
 from typing import Callable
 
-from .build import active_build
+from .build import active_build, locate_outside_build
 from .nodes import LocalCall
 
 # Set on an HLIL body by @scena.HLILCode(); functools.wraps copies it, so a wrapper of one is compiled as HLIL too
@@ -20,11 +20,8 @@ def library_function(body: Callable) -> Callable:
         if active_build() is not None:
             return LocalCall(stub, body, args, kwargs)
 
-        # Imported here: scp_writer imports this module for its decorators
-        from ..scp_writer import get_scp_writer
         name = body.__name__
-        raise TypeError(get_scp_writer().at_statement(f'{name}(...) builds an HLIL call; in an LLIL body write '
-                                                      f'CALL({name})'))
+        raise TypeError(locate_outside_build(f'{name}(...) builds an HLIL call; in an LLIL body write CALL({name})'))
 
     return stub
 

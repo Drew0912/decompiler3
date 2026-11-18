@@ -1,20 +1,55 @@
-"""The HLIL DSL's lowering (docs/dsl/HLIL_DSL.md, Recompile Path): an HLIL body's statements as the LLIL opcodes the
+"""The HLIL DSL's ED9 lowering (docs/dsl/HLIL_DSL.md, Recompile Path): an HLIL body's statements as the LLIL opcodes the
 compiler writes for them, handed to a sink one at a time - at compile time the writer's opcode functions
 (opcode_sink.py). It starts with the stack holding exactly the parameters (slot 0 the last); a local's slot is where
 its Let pushed it; arguments are pushed last first; a call's result is read from REGS[0]. Each opcode is at the line
-of the node it lowers, a leaf's at its user's"""
+of the node it lowers, a leaf's at its user's. HLIL's operators and the constants' kinds become ED9's opcodes here"""
 
 from typing import Protocol
 
 from assembler import OperandFormat, OperandType
+from ir.core import operators
 from ...assembler import ED9Opcode
 from ...assembler.vm import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, RESULT_REGISTER, WORD_SIZE
 from ...structs.scp_types import RawInt
-from .nodes import (BinaryOp, Call, Const, DebugInt, Global, Let, Local, LocalCall, Param, PopN, Register, Return,
-                    ScriptCall, Set, Statement, SyscallCall, UnaryOp)
+from .build import Build
+from .ed9_nodes import DebugInt, PopN, Register, SyscallCall
+from .nodes import (BinaryOp, Call, Const, Global, Let, Local, LocalCall, Param, Return, ScriptCall, Set, Statement,
+                    UnaryOp)
 
 # POP's byte count is one byte: the compiler pops more as POP of this many, then the rest
 POP_MAX_BYTES = OperandFormat.integer_range(OperandType.UInt8).stop - 1
+
+# HLIL's operators as ED9's opcodes; ED9 has no BIT_XOR, SHL or SHR
+BINARY_OPCODES = {
+    operators.BinaryOp.ADD      : ED9Opcode.ADD,
+    operators.BinaryOp.SUB      : ED9Opcode.SUB,
+    operators.BinaryOp.MUL      : ED9Opcode.MUL,
+    operators.BinaryOp.DIV      : ED9Opcode.DIV,
+    operators.BinaryOp.MOD      : ED9Opcode.MOD,
+    operators.BinaryOp.EQ       : ED9Opcode.EQ,
+    operators.BinaryOp.NE       : ED9Opcode.NE,
+    operators.BinaryOp.LT       : ED9Opcode.LT,
+    operators.BinaryOp.LE       : ED9Opcode.LE,
+    operators.BinaryOp.GT       : ED9Opcode.GT,
+    operators.BinaryOp.GE       : ED9Opcode.GE,
+    operators.BinaryOp.AND      : ED9Opcode.LOGICAL_AND,
+    operators.BinaryOp.OR       : ED9Opcode.LOGICAL_OR,
+    operators.BinaryOp.BIT_AND  : ED9Opcode.BITWISE_AND,
+    operators.BinaryOp.BIT_OR   : ED9Opcode.BITWISE_OR,
+}
+UNARY_OPCODES = {
+    operators.UnaryOp.NEG       : ED9Opcode.NEG,
+    operators.UnaryOp.BIT_NOT   : ED9Opcode.NOT,
+    operators.UnaryOp.NOT       : ED9Opcode.EZ,     # 1 when the value is 0
+}
+# A constant's kind, its value's type, as the push opcode: the first kind the value is an instance of, RawInt before the
+# int it subclasses; any other kind of int, float or str takes its base's push
+PUSH_OPCODES = (
+    (RawInt, ED9Opcode.PUSH_RAW),
+    (int,    ED9Opcode.PUSH_INT),
+    (float,  ED9Opcode.PUSH_FLOAT),
+    (str,    ED9Opcode.PUSH_STR),
+)
 
 
 class Sink(Protocol):
@@ -32,9 +67,11 @@ class Sink(Protocol):
 
 
 class Lowering:
-    def __init__(self, sink: Sink, param_count: int):
+    def __init__(self, sink: Sink, param_count: int, build: Build):
+        """build: the one that made the statements, which locates an operator ED9 lacks at its line"""
         self.sink = sink
         self.param_count = param_count
+        self.build = build
         self.sp = param_count                       # slots in use: the parameters, the locals, the values in flight
         self.local_slots: dict[str, int] = {}
 
@@ -61,7 +98,11 @@ class Lowering:
                     self.store(node.local)
 
             case Return():
-                self.operand(node.value, node.site)
+                if node.value is None:
+                    self.push(ED9Opcode.PUSH_RAW, RawInt(0))    # the compiler's return value
+                else:
+                    self.operand(node.value, node.site)
+
                 sink.emit(ED9Opcode.SET_REG, RESULT_REGISTER)
                 self.sp -= 1
                 self.pop(self.sp)
@@ -84,7 +125,8 @@ class Lowering:
     def expr(self, node):
         match node:
             case Const():
-                self.push(node.opcode, node.value)
+                opcode = next(opcode for kind, opcode in PUSH_OPCODES if isinstance(node.value, kind))
+                self.push(opcode, node.value)
 
             case Param() | Local():
                 self.push(ED9Opcode.LOAD_STACK, self.stack_offset(node))
@@ -96,14 +138,18 @@ class Lowering:
                 self.push(ED9Opcode.LOAD_GLOBAL, node.name)
 
             case BinaryOp():
+                opcode = BINARY_OPCODES.get(node.op)
+                if opcode is None:
+                    raise self.build.fail_at(node.site, f'{node!r}: the ED9 VM has no {node.op.name} operation')
+
                 self.operand(node.lhs, node.site)
                 self.operand(node.rhs, node.site)
-                self.sink.emit(node.opcode)
+                self.sink.emit(opcode)
                 self.sp -= 1
 
             case UnaryOp():
                 self.operand(node.operand, node.site)
-                self.sink.emit(node.opcode)
+                self.sink.emit(UNARY_OPCODES[node.op])
 
             case Call():
                 self.call(node)

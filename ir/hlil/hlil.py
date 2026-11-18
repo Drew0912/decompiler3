@@ -6,6 +6,7 @@ import operator
 import re
 from dc3 import format_uint32_hex, quote_string
 from ir.core import UNASSIGNED_INST_INDEX, constant_values_equal, is_int_zero, is_plain_int
+from ir.core.operators import BinaryOp, UnaryOp
 
 
 class HLILTypeKind(IntEnum):
@@ -18,48 +19,6 @@ class HLILTypeKind(IntEnum):
     VOID    = auto()
     POINTER = auto()    # Out-parameter: a stack address the callee writes through
     NUMBER  = auto()    # Int or float
-
-
-class BinaryOp(IntEnum):
-    """Binary operators"""
-
-    # Arithmetic
-    ADD     = auto()
-    SUB     = auto()
-    MUL     = auto()
-    DIV     = auto()
-    MOD     = auto()
-
-    # Comparison
-    EQ      = auto()
-    NE      = auto()
-    LT      = auto()
-    LE      = auto()
-    GT      = auto()
-    GE      = auto()
-
-    # Logical: the VM's eager ops, both operands always run
-    AND     = auto()
-    OR      = auto()
-
-    # Logical, recovered from jumps: the right operand runs only when the left leaves the answer open
-    AND_THEN = auto()
-    OR_ELSE  = auto()
-
-    # Bitwise
-    BIT_AND = auto()
-    BIT_OR  = auto()
-    BIT_XOR = auto()
-    SHL     = auto()
-    SHR     = auto()
-
-
-class UnaryOp(IntEnum):
-    """Unary operators"""
-
-    NEG     = auto()
-    NOT     = auto()
-    BIT_NOT = auto()
 
 
 class HLILOperation(IntEnum):

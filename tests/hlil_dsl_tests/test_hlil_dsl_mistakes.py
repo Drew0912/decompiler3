@@ -70,6 +70,32 @@ class TestNodeUse(MistakeTestCase):
 
         self.assert_raises_at(register, 'unused', 'Func', '(arg1 ADD 1) is computed and never used')
 
+    def test_an_operator_the_vm_lacks(self):
+        """HLIL has ^, << and >>; ED9 has none of them"""
+        def xor(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                Set(arg1, arg1 ^ 4)  # line: xor
+                Return()
+
+        def shift_left(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                Set(arg1, arg1 << 1)  # line: shift left
+                Return()
+
+        def shift_right(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                Set(arg1, 1 >> arg1)  # line: shift right
+                Return()
+
+        for register, marker, text in ((xor, 'xor', '(arg1 BIT_XOR 4)'), (shift_left, 'shift left', '(arg1 SHL 1)'),
+                                       (shift_right, 'shift right', '(1 SHR arg1)')):
+            with self.subTest(marker):
+                self.assert_raises_at(register, marker, 'Func', f'{text}: the ED9 VM has no {text.split()[1]} '
+                                                                'operation')
+
     def test_a_call_made_before_a_statement_and_used_after_it(self):
         """Kept in a list, which the source check doesn't see: it would run after the statement between"""
         kept = []
