@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """End to end: scp2py's .ts leaves out a local call's trailing arguments equal to the callee's defaults, with the
 defaults converted as the lifter converts them (so a float default matches its argument), from the whole function
-table (a callee left out of the output still counts); a Raw argument is not an Integer default. In a round trip it
-keeps the arguments a call's debug record says its author wrote."""
+table (a callee left out of the output still counts); a Raw argument is not an Integer default; the rule holds where a
+call's debug record says its author wrote the default out."""
 
 from pathlib import Path
 import re
@@ -73,7 +73,7 @@ def decompile(filter_func=None) -> str:
         return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding='utf-8')
 
 
-def decompile_written(round_trip: bool) -> str:
+def decompile_written() -> str:
     """The .ts of mp4000_ev EV_03_62_01's shape: SetAuto(1, 0) twice with identical bytes, the first as the compiler's
     rule leaves its record (SetAuto(1)), the second written out in full (debug_argc=2)"""
     with tempfile.TemporaryDirectory() as tmp:
@@ -101,7 +101,6 @@ def decompile_written(round_trip: bool) -> str:
 
         config = ScpDecompileConfig()
         config.output_dir = Path(tmp) / 'out'
-        config.round_trip = round_trip
         process_file(dat, config, game='sora2')
         return (config.output_dir / dat.stem / f'{dat.stem}.ts').read_text(encoding='utf-8')
 
@@ -112,12 +111,8 @@ def set_auto_calls(ts: str) -> list[str]:
 
 
 class TestCallDefaultsEndToEnd(unittest.TestCase):
-    def test_round_trip_keeps_the_written_arguments(self):
-        self.assertEqual(set_auto_calls(decompile_written(round_trip=True)),
-                         [f'SetAuto({FIRST_ARG})', f'SetAuto({FIRST_ARG}, 0)'])
-
-    def test_everyday_decompile_prints_the_rule(self):
-        self.assertEqual(set_auto_calls(decompile_written(round_trip=False)), [f'SetAuto({FIRST_ARG})'] * 2)
+    def test_a_written_out_call_prints_the_rule(self):
+        self.assertEqual(set_auto_calls(decompile_written()), [f'SetAuto({FIRST_ARG})'] * 2)
 
     def test_trailing_defaults_left_out(self):
         ts = decompile()

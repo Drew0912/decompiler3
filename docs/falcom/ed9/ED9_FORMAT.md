@@ -52,7 +52,10 @@ A push that an ordinary consumer reads, discards or overwrites cannot also be a 
 parser also rejects overlapping instructions, targets inside an instruction, and code that runs
 into the string pool. The pool's start is known only from references (function names, and the
 strings the decoded code references), so a string referenced only by undecoded dead code does not
-bound it. See `tests/assembler_tests/test_scp_stack_simulation.py`.
+bound it. See `tests/assembler_tests/test_scp_stack_simulation.py`. Code no branch reaches is decoded only for the
+byte-exact listing (`keep_unreachable_code`); an everyday parse drops it and logs one line per function, at DEBUG when
+it is the compiler's boilerplate (a statement's closing `JMP` or `POP`, line markers, a tail call's closing
+`return 0`), else at INFO (`falcom/ed9/parser/dead_code.py`).
 
 Each disassembled function keeps the simulated stack as `Function.stack_layout` (`StackLayout`, for
 the `.py` comments): the depth before every reachable real instruction (not the synthetic

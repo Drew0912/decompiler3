@@ -1,8 +1,8 @@
 # HLIL DSL
 
 > Status: design; started: the function stubs (Calls), the compile side of straight-line HLIL bodies
-> (`@scena.HLILCode()`, Form: Implemented) and their printer with the exact check (`write_hlil_py`, Recompile Path:
-> Fallback and File names) are implemented; control flow and the rest are planned. Overview and decisions:
+> (`@scena.HLILCode()`, Form: Implemented) and their printer with the exact check (the default `<stem>.py`, Recompile
+> Path: Fallback and File names) are implemented; control flow and the rest are planned. Overview and decisions:
 > `docs/dsl/DSL_FUTURE_WORK.md`, Recompilation Pipeline §1; its hooks: `docs/dsl/HOOKS.md`.
 
 ## HLIL DSL: Recompile Path
@@ -246,19 +246,22 @@ function at LLIL level only when it has to.
   `falcom/ed9/structs/fingerprint.py`). It loads neither the writer nor the library. Each function left
   LLIL is logged with its reason at DEBUG, each file with its counts at INFO
   (`brk_obj.dat: 3 of 8 functions as HLIL; LLIL: if 5`).
-- **File names.** With `ScpDecompileConfig.write_hlil_py` on (off by default; with `write_py`, and
-  neither `round_trip` nor `keep_unreachable_code`), `<stem>.py` is the mixed file and `<stem>.llil.py`
-  the pure LLIL listing, named like `.llil.asm` (`write_mixed_scripts`, `falcom/ed9/scp2py_base.py`), printed
-  by `HLILScriptFormatter` and `LLILListingFormatter`, each a subclass of `LLILScriptFormatter` overriding the
-  header's parts (`title_lines`, `helper_import_lines`, `hook_import_lines`) and the first its
-  `format_function`. Both compile to `<stem>.dat` with the same game logic, the mixed file's HLIL functions
-  without their line markers. Only `<stem>.py` imports `<stem>_hook.py`, whose name comes from the `.dat` name
-  (`gen_hook_import`, `falcom/ed9/formatter/llil_dsl/script_formatter.py`); the listing imports no hook. With
-  the flag off, or under either fidelity flag, `<stem>.py` is the LLIL listing and no `.llil.py` is written. The
-  round-trip validator's `--logic-round-trip --game <game>` decompiles each round to the mixed file (its own
-  `logic_decompile`, the steps above), compares the source decompile's HLIL functions without their line
-  markers and requires every round to print the same ones in the HLIL DSL (`docs/ROUND_TRIP_POLICY.md`); its
-  run files are internal and can keep their names.
+- **File names.** `<stem>.py` (`ScpDecompileConfig.write_py`, on by default) is the mixed file (`write_script`,
+  `falcom/ed9/scp2py_base.py`); `<stem>.llil.py` (`write_llil_py`, off by default) is the pure LLIL listing, named
+  like `.llil.asm`, with every common function inline (`write_listing_script`). `HLILScriptFormatter` and
+  `LLILListingFormatter` print them, each a subclass of `LLILScriptFormatter` overriding the header's parts
+  (`title_lines`, `helper_import_lines`, `hook_import_lines`), the first also its `format_function`, the second
+  its `match_library_functions`. Both compile to `<stem>.dat` with the same game logic, the mixed file's HLIL
+  functions without their line markers. With `round_trip` the listing comes from a second parse that keeps every
+  byte (the call-site records, the dead code) and compiles to the source's bytes; no other output changes, and
+  without `write_llil_py` it logs a warning and writes nothing. When the DSL can't be set up for a file,
+  `<stem>.py` is all LLIL, with a warning. Only `<stem>.py` imports `<stem>_hook.py`, whose name comes from the
+  `.dat` name (`gen_hook_import`, `falcom/ed9/formatter/llil_dsl/script_formatter.py`); the listing imports no
+  hook. The round-trip validator's `--round-trip` compiles the byte-exact listing (`byte_exact_decompile`); its
+  `--logic-round-trip --game <game>` decompiles each round to the mixed file (its own `logic_decompile`, the steps
+  above), compares the source decompile's HLIL functions without their line markers and requires every round to
+  print the same ones in the HLIL DSL (`docs/ROUND_TRIP_POLICY.md`); its run files are internal and can keep
+  their names.
 
 The `POPN` in `ai_chr5122_e00`'s `CheckAlgoUse`, written as opcodes to show a list. The printer would use the
 statement the TypeScript output has, `POPN("駆動解除レジストできないやつ発見：chrid：", v.var_s5)`: its values top of

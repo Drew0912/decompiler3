@@ -70,9 +70,7 @@ class Function(assembler.function.Function):
     is_common_func      : bool = False
     # round_trip: the raw call debug records, against the file's bytes
     debug_info          : list[ScpFunctionCallDebugInfo] = field(default_factory=list)
-    # local CALL offset -> args its debug record keeps, every paired local call
-    call_written_argc   : dict[int, int] = field(default_factory=dict)
-    # the same, only where that isn't the compiler's rule (canonical_argc)
+    # local CALL offset -> args its debug record keeps, where that isn't the compiler's rule (canonical_argc)
     call_debug_argc     : dict[int, int] = field(default_factory=dict)
     # local CALL offsets the compiler left without a record (align_records)
     call_unrecorded     : set[int] = field(default_factory=set)

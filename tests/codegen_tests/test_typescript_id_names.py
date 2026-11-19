@@ -30,7 +30,6 @@ HINT = IdFormatHint(
 ID_HINTS = {KIND: HINT}
 
 CALLEE = 'chr_face'
-CALL_ADDRESS = 0x40
 SUBSYSTEM = 1
 CMD = 0
 
@@ -81,15 +80,9 @@ class TestTaggedConstants(unittest.TestCase):
 
         self.assertIn(f"syscall({SUBSYSTEM}, {CMD}, {CALLEE}(TestIdTable['Estelle']))", ts)
 
-    def test_a_trailing_default_is_dropped_and_kept_named_where_its_author_wrote_it(self):
-        call = HLILCall(CALLEE, [tagged(NAMED)])
-        call.address = CALL_ADDRESS
-        func = function_of(HLILExprStmt(call))
-        defaults = {CALLEE: (NAMED,)}
-
-        self.assertIn(f'{CALLEE}();', generate_typescript(func, defaults, id_hints=ID_HINTS))
-        self.assertIn(f"{CALLEE}(TestIdTable['Estelle']);",
-                      generate_typescript(func, defaults, {CALL_ADDRESS: 1}, ID_HINTS))
+    def test_a_trailing_default_is_dropped(self):
+        func = function_of(HLILExprStmt(HLILCall(CALLEE, [tagged(NAMED)])))
+        self.assertIn(f'{CALLEE}();', generate_typescript(func, {CALLEE: (NAMED,)}, id_hints=ID_HINTS))
 
 
 class TestTaggedParameterDefaults(unittest.TestCase):

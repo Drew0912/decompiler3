@@ -1,5 +1,5 @@
-"""A script decompiled to a .py (all in the LLIL DSL, or with a game the logic round trip's mixed file), and a
-generated .py compiled in a subprocess"""
+"""A script decompiled as the round trips read it (the byte-exact LLIL listing; the logic round trip's .py, with a game
+the mixed file), and a generated .py compiled in a subprocess"""
 
 import contextlib
 import io
@@ -12,7 +12,7 @@ from typing import NamedTuple
 from dc3.utils import write_text_lf
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.formatter.hlil_dsl.script_formatter import HLILScriptFormatter
-from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
+from falcom.ed9.formatter.llil_dsl.script_formatter import LLILListingFormatter, LLILScriptFormatter
 from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
@@ -25,17 +25,14 @@ from .results import MAX_DETAILS
 ROUND_TRIP_RUNNER = "import runpy, sys; runpy.run_path(sys.argv[1], run_name='__main__')"
 
 
-def decompile_to_python(dat_path: Path, py_path: Path, *, round_trip: bool = True, keep_unreachable_code: bool = True,
-                        game: str | None = None) -> tuple[ScpParser, list[Function]]:
-    """Same DSL emission as scp2py_base.py's process_file. Explicit flags rather than relying on
-    ScpParser's class defaults, which happen to match round_trip=True today but aren't guaranteed to.
-    Returns the parser and its disassembled functions so callers can fingerprint them without
-    re-parsing."""
+def byte_exact_decompile(dat_path: Path, py_path: Path, game: str | None = None) -> tuple[ScpParser, list[Function]]:
+    """The <stem>.llil.py scp2py_base.py's process_file writes with write_llil_py and round_trip, written to py_path:
+    it compiles to dat_path's bytes. The parser and its functions are returned, so a caller fingerprints them without
+    parsing again"""
     with contextlib.redirect_stdout(io.StringIO()):
-        parser, functions = ScpParser.load(dat_path, round_trip=round_trip, keep_unreachable_code=keep_unreachable_code,
-                                           game=game)
+        parser, functions = ScpParser.load(dat_path, round_trip=True, keep_unreachable_code=True, game=game)
 
-    write_text_lf(py_path, LLILScriptFormatter(parser).gen_python_script(functions))
+    write_text_lf(py_path, LLILListingFormatter(parser).gen_python_script(functions))
     return parser, functions
 
 
@@ -49,17 +46,20 @@ class LogicDecompile(NamedTuple):
 
 def logic_decompile(dat_path: Path, py_path: Path, game: str | None) -> LogicDecompile:
     """A --logic-round-trip decompile written to py_path: with a game the mixed <stem>.py as scp2py_base.py writes it
-    (write_hlil_py: each function whose HLIL DSL text lowers exactly to its code in the HLIL DSL, the rest in the LLIL
-    DSL); without one the all-LLIL .py, since a mixed file needs its game's DSL helper"""
-    if game is None:
-        parser, functions = decompile_to_python(dat_path, py_path, round_trip=False, keep_unreachable_code=False)
-        return LogicDecompile(parser, functions, frozenset())
-
+    (each function whose HLIL DSL text lowers exactly to its code in the HLIL DSL, the rest in the LLIL DSL); without
+    one the all-LLIL .py, since a mixed file needs its game's DSL helper"""
     with contextlib.redirect_stdout(io.StringIO()):
         parser, functions = ScpParser.load(dat_path, round_trip=False, keep_unreachable_code=False, game=game)
 
+    if game is None:
+        write_text_lf(py_path, LLILScriptFormatter(parser).gen_python_script(functions))
+        return LogicDecompile(parser, functions, frozenset())
+
     formatter = HLILScriptFormatter(parser)
     for func in functions:
+        if formatter.refusal(func) is not None:
+            continue    # the DSL turns it away before reading its HLIL, so it is never lifted
+
         hlil = dsl_hlil(parser, func)
         if hlil is not None:
             formatter.add(func, hlil)

@@ -6,8 +6,8 @@
 Two tiers, in priority order:
 
 1. **Logic round trip — required, high priority.** `source.dat → out1.py → c1.dat → out2.py → c2.dat → …`, with
-   every decompile using `round_trip=False, keep_unreachable_code=False` (the everyday
-   `scp2py_config.py` defaults). Every function in each recompiled `.dat` must match its source
+   every decompile using `round_trip=False, keep_unreachable_code=False` (the parse `scp2py.py` writes `<stem>.py`
+   from). Every function in each recompiled `.dat` must match its source
    counterpart: normalized body + signature (position-independent fingerprint, keyed by name —
    `falcom/ed9/structs/fingerprint.py`), `is_common_func`, the global table as ordered
    `(name, type)` tuples, and header `dword_14`. Function order and label names may differ.
@@ -20,9 +20,10 @@ Two tiers, in priority order:
    markers (`DEBUG_SET_LINENO`): the DSL writes none, and the engine only prints their value
    (`docs/falcom/ed9/ED9_VM.md`, Opcodes and operands); every round must print the same functions in the HLIL DSL.
    The library's digests still key the full fingerprint.
-2. **Byte-exact round trip — medium priority.** `source.dat → out.py → c.dat` with `c.dat == source.dat`. Needs
-   `round_trip=True, keep_unreachable_code=True` — this also disables the common-function library
-   (`docs/dsl/LLIL_DSL.md` §3), so this path behaves exactly as it did before the library existed. The script it writes
+2. **Byte-exact round trip — medium priority.** `source.dat → out.llil.py → c.dat` with `c.dat == source.dat`.
+   Needs `round_trip=True, keep_unreachable_code=True`, the byte-exact `<stem>.llil.py` (`scp2py_config.py`'s
+   `write_llil_py` and `round_trip`: a second parse, no other output changes) — all LLIL, every common function
+   inline (`docs/dsl/LLIL_DSL.md` §3), so this path behaves exactly as it did before the library existed. The script
    keeps the original's dead code, which its compile warns about (`docs/dsl/LLIL_DSL.md` §1). Checked by
    `tools/scp_roundtrip_validator.py --round-trip`.
    More files round-tripping byte-exact is wanted: a step takes a byte-exact fix on the side when it is small and in

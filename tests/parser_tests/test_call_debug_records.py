@@ -31,7 +31,7 @@ from falcom.ed9.structs.scp_types import (RawInt, ScpFunctionCallDebugInfo, ScpF
 from falcom.ed9.writer.scp_writer_helper import *
 from round_trip.byte_round_trip import check_round_trip, describe_difference
 from round_trip.format_checks import PUSH_VALUE_OFFSET, check_debug_records
-from round_trip.generated_scripts import decompile_to_python
+from round_trip.generated_scripts import byte_exact_decompile
 from round_trip.record_comparison import compare_file_records
 from round_trip.results import Status
 from round_trip.script_context import load_script
@@ -964,7 +964,7 @@ class TestRealRoundTrip(unittest.TestCase):
         """The round-trip .py marks the one call the compiler left without a record"""
         path = require(UNMARKED_CALL_FILE)
         tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        _, functions = decompile_to_python(path, tmp / 'unmarked.py')
+        _, functions = byte_exact_decompile(path, tmp / 'unmarked.py')
         self.assertEqual(next(func for func in functions if func.name == UNMARKED_CALL_FUNCTION).call_unrecorded,
                          {UNMARKED_CALL_OFFSET})
         self.assertEqual((tmp / 'unmarked.py').read_text(encoding='utf-8').count('debug_record=False'), 1)
@@ -985,10 +985,9 @@ class TestCountsOnTheCall(unittest.TestCase):
 
     def test_round_trip_py_writes_the_count_on_its_call(self):
         py_path = self.tmp / 'counts.py'
-        _, functions = decompile_to_python(self.dat, py_path)
+        _, functions = byte_exact_decompile(self.dat, py_path)
         main = next(func for func in functions if func.name == 'Main')
-        first, second = sorted(main.call_written_argc)
-        self.assertEqual(main.call_written_argc, {first: 1, second: 2})
+        _, second = [inst.offset for inst in main.code_instructions() if inst.opcode == ED9Opcode.CALL]
         self.assertEqual(main.call_debug_argc, {second: 2})
 
         lines = [line.strip() for line in py_path.read_text(encoding='utf-8').splitlines()]
@@ -1150,11 +1149,10 @@ class TestUnrecordedCalls(SkillScript):
 
     def test_round_trip_py_marks_them(self):
         py_path = self.tmp / 'skills.py'
-        _, functions = decompile_to_python(self.dat, py_path)
+        _, functions = byte_exact_decompile(self.dat, py_path)
         func = next(func for func in functions if func.name == 'OneUnrecorded')
-        first, unrecorded, last = self.call_offsets('OneUnrecorded')
-        self.assertEqual((func.call_unrecorded, func.call_written_argc, func.call_debug_argc),
-                         ({unrecorded}, {first: 1, last: 1}, {}))
+        _, unrecorded, _ = self.call_offsets('OneUnrecorded')
+        self.assertEqual((func.call_unrecorded, func.call_debug_argc), ({unrecorded}, {}))
 
         lines = [line.strip() for line in py_path.read_text(encoding='utf-8').splitlines()]
         body = lines[lines.index('def OneUnrecorded():'):lines.index('def FourUnrecorded():')]
@@ -1203,7 +1201,7 @@ class TestDeadCallRecords(unittest.TestCase):
 
     def test_round_trip_py_writes_the_count_in_the_dead_code(self):
         py_path = self.tmp / 'dead.py'
-        decompile_to_python(self.dat, py_path)
+        byte_exact_decompile(self.dat, py_path)
         lines = [line.strip() for line in py_path.read_text(encoding='utf-8').splitlines()]
         dead_code = lines[lines.index('# --- unreachable code ---'):]
         self.assertIn('CALL(SetAuto, debug_argc=2)', dead_code)
@@ -1225,7 +1223,7 @@ class TestRealDeadBody(unittest.TestCase):
         order: the writer's tracker sees the same calls"""
         path = require(DEAD_BODY_FILE)
         py_path = Path(self.enterContext(tempfile.TemporaryDirectory())) / 'chr0110.py'
-        parser, functions = decompile_to_python(path, py_path)
+        _, functions = byte_exact_decompile(path, py_path)
         func = next(func for func in functions if func.name == DEAD_BODY_FUNCTION)
         offsets = [inst.offset for inst in func.code_instructions() if inst.opcode == ED9Opcode.CALL]
 
@@ -1235,7 +1233,6 @@ class TestRealDeadBody(unittest.TestCase):
         call_lines = [line.strip() for line in lines[start:end] if line.strip().startswith('CALL(')]
 
         self.assertEqual(len(call_lines), len(offsets))
-        self.assertEqual(sorted(func.call_written_argc), offsets)
         self.assertEqual(len(func.debug_info), DEAD_BODY_RECORD_COUNT)
 
 

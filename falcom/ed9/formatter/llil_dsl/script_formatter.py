@@ -81,12 +81,14 @@ class LLILScriptFormatter:
         formatter = Formatter(formatter_context)
         return formatter.format_function(func)
 
-    def gen_python_script(self, functions: list[Function], *, comments: CommentOptions = CommentOptions()) -> str:
+    def gen_python_script(self, functions: list[Function], *, comments: CommentOptions = CommentOptions(),
+                          matched: dict[str, str] | None = None) -> str:
         """Full generated .py text: header (incl. shared-library imports/manifest), every function this
-        script must still define itself, then the footer. match_library_functions runs once here and its
-        result feeds both the header and the inline-function filter, so the two never disagree about
-        which functions are imported"""
-        matched = self.match_library_functions(functions)
+        script must still define itself, then the footer. match_library_functions runs once here (or once
+        by the caller, which passes its result as matched) and its result feeds both the header and the
+        inline-function filter, so the two never disagree about which functions are imported"""
+        if matched is None:
+            matched = self.match_library_functions(functions)
         header = self.gen_python_header(functions, matched=matched)
         inline = self.get_inline_functions(functions, matched=matched)
         return self.script_text(header, [self.format_function(func, comments) for func in inline])
@@ -317,12 +319,21 @@ def opcode_hook(opcode, *args):
 
 
 class LLILListingFormatter(LLILScriptFormatter):
-    """<stem>.llil.py: every function in the LLIL DSL, without the hook import (docs/dsl/HLIL_DSL.md, File names)"""
+    """<stem>.llil.py: every function in the LLIL DSL, the common functions inline, without the hook import
+    (docs/dsl/HLIL_DSL.md, File names)"""
 
     def title_lines(self) -> list[str]:
+        if self.parser.round_trip:
+            return [f'# The byte-exact LLIL listing of {self.parser.name}: it compiles to its bytes, dead code and '
+                    'call-site records kept, without hooks, every common function inline']
+
         stem = pathlib.Path(self.parser.name).stem
         return [f'# The LLIL listing of {self.parser.name}: it compiles to the same game logic as {stem}.py (line '
-                'markers aside), without its hooks']
+                'markers aside), without hooks, every common function inline']
 
     def hook_import_lines(self) -> list[str]:
         return []
+
+    def match_library_functions(self, functions: list[Function]) -> dict[str, str]:
+        """Nothing from the library: the listing defines every common function itself"""
+        return {}

@@ -126,8 +126,8 @@ byte.
   header's second import brought the helper's names in again and `Value32` got a second declaration. The
   generator now writes each module's own function names as its `__all__`, and `common_all.py` imports
   `log` under a private name. No runtime change.
-- **Debugging dumps** can use fidelity mode (`round_trip=True, keep_unreachable_code=True`), which keeps
-  library functions and unreachable code inline.
+- **Debugging dumps** can use the byte-exact `<stem>.llil.py` (`write_llil_py` and `round_trip`: a parse with
+  `round_trip=True, keep_unreachable_code=True`), which keeps library functions and unreachable code inline.
 
 ## Writer (`falcom/ed9/writer/`)
 

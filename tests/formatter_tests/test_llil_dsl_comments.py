@@ -395,7 +395,7 @@ class TestRealScript(unittest.TestCase):
         self.assertIn('    LOAD_STACK(-24)                 # slot 0 = arg3, passed as arg1', lines)
 
     def test_scp2py_flags(self):
-        """The defaults, then each flag the other way on its own"""
+        """The defaults, then each flag the other way on its own, in the LLIL listing (an HLIL function has none)"""
         markers = {
             'stack_slot_comments'   : '# slot 2 = arg1',
             'float_bits_comments'   : 'f32 0x',
@@ -407,11 +407,13 @@ class TestRealScript(unittest.TestCase):
                 config = ScpDecompileConfig()
                 config.output_dir = Path(tmp_dir)
                 config.write_ts = config.write_hlil_ts = config.write_mlil_asm = False
+                config.write_llil_py = True
                 if flipped is not None:
                     setattr(config, flipped, not getattr(config, flipped))
 
                 process_file(CHECK_ALGO_USE_FILE, config, game='sora2')
-                text = (Path(tmp_dir) / CHECK_ALGO_USE_FILE.stem / f'{CHECK_ALGO_USE_FILE.stem}.py').read_text(encoding='utf-8')
+                listing = Path(tmp_dir) / CHECK_ALGO_USE_FILE.stem / f'{CHECK_ALGO_USE_FILE.stem}.llil.py'
+                text = listing.read_text(encoding='utf-8')
                 self.assertEqual({flag: marker in text for flag, marker in markers.items()},
                                  {flag: getattr(config, flag) for flag in markers})
 

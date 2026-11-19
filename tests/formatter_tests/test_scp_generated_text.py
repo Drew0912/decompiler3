@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Text of the generated LLIL DSL .py (header, hook import, label spacers, footer),
-scp2py's recursion limit and summary, the opt-in hook template, a fidelity script compiling back to its bytes,
-and LF line endings in every generated text file (scp2py_base.process_file, the common-library generator, the
-round-trip validator's intermediate scripts)."""
+scp2py's recursion limit and summary, the opt-in hook template, the <stem>.llil.py listing in both modes (the
+byte-exact one compiling back to its bytes), and LF line endings in every generated text file
+(scp2py_base.process_file, the common-library generator, the round-trip validator's intermediate scripts)."""
 
 from pathlib import Path
 import importlib
@@ -26,13 +26,14 @@ from falcom.ed9.formatter.generated_imports import (SCP_WRITER_HELPER_IMPORT, SY
                                                     game_writer_helper_import)
 from falcom.ed9.tools import gen_common_library as gen
 from falcom.ed9.parser.scp import ScpParser
+from falcom.ed9.formatter.llil_dsl.function_formatter import UNREACHABLE_CODE_BEGIN
 from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
 from falcom.ed9.parser.parser_types import GlobalVar
 from falcom.ed9.structs.scp_types import ScpGlobalVar
 from falcom.ed9.scp2py_base import main, process_file
 from falcom.ed9.scp2py_config import ScpDecompileConfig
 from round_trip import generated_scripts
-from round_trip.generated_scripts import compile_round, decompile_to_python
+from round_trip.generated_scripts import byte_exact_decompile, compile_round, logic_decompile
 from tests.shared.corpus import SORA2_SCRIPTS, require, require_library
 from tests.shared.scp_writer_test_utils import fresh_writer
 
@@ -297,11 +298,11 @@ class TestHookTemplateWritten(unittest.TestCase):
         self.assertEqual(self.hooks(), [self.out / ' ai' / 'ai_hook.py'])
         self.assertIn('    import ai_hook\n', (self.out / ' ai' / ' ai.py').read_text(encoding='utf-8'))
 
-    def test_only_with_write_py(self):
+    def test_written_without_write_py(self):
         self.config.write_hook_template = True
         self.config.write_py = False
         process_file(SMALL_FILE, self.config, game='sora2')
-        self.assertEqual(self.hooks(), [])
+        self.assertEqual(self.hooks(), [self.out / 'e0000' / 'e0000_hook.py'])
 
     def test_existing_hook_kept(self):
         self.config.write_hook_template = True
@@ -382,29 +383,89 @@ class TestHookTemplateCompiles(unittest.TestCase):
         self.assertEqual(call.operands[0].value, by_name['Init'].index)
 
 
+def compiled(script: Path, text: str) -> bytes:
+    """text written to script and compiled in memory"""
+    write_text_lf(script, text)
+    fresh_writer()
+    g = runpy.run_path(str(script), run_name='fidelity_check')
+    return g['scena'].build(g)
+
+
 class TestFidelityScriptCompiles(unittest.TestCase):
-    """A fidelity decompile of a script with dead code compiles back to its own bytes, warning about that dead code"""
+    """The validator's byte-exact decompile of a script with dead code compiles back to its own bytes, warning about
+    that dead code"""
 
     def setUp(self):
         require(DEAD_CODE_FILE)
         out = Path(self.enterContext(tempfile.TemporaryDirectory()))
-        self.script = out / DEAD_CODE_FILE.with_suffix('.py').name
-        decompile_to_python(DEAD_CODE_FILE, self.script, round_trip=True, keep_unreachable_code=True)
+        self.script = out / DEAD_CODE_FILE.with_suffix('.llil.py').name
+        byte_exact_decompile(DEAD_CODE_FILE, self.script)
         self.text = self.script.read_text(encoding='utf-8')
-
-    def compiled(self, text: str) -> bytes:
-        """text compiled in memory"""
-        write_text_lf(self.script, text)
-        fresh_writer()
-        g = runpy.run_path(str(self.script), run_name='fidelity_check')
-        return g['scena'].build(g)
 
     def test_same_bytes_with_only_unreachable_code_warnings(self):
         with self.assertLogs(log, 'WARNING') as logs:
-            data = self.compiled(self.text)
+            data = compiled(self.script, self.text)
 
         self.assertEqual(data, DEAD_CODE_FILE.read_bytes())
         self.assertEqual([message for message in logs.output if 'never run' not in message], [])
+
+
+class TestListing(unittest.TestCase):
+    """<stem>.llil.py only with write_llil_py, every common function inline: the everyday listing, or with round_trip
+    the byte-exact one from a second parse, which changes no other output; round_trip alone warns and writes none"""
+
+    def setUp(self):
+        require(DEAD_CODE_FILE)
+        self.tmp = Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def outputs(self, **settings) -> dict[str, str]:
+        """DEAD_CODE_FILE's outputs with settings, each one's text by its suffixes (.py, .llil.py, ...)"""
+        config = ScpDecompileConfig()
+        config.output_dir = Path(tempfile.mkdtemp(dir=self.tmp))
+        for name, value in settings.items():
+            setattr(config, name, value)
+
+        process_file(DEAD_CODE_FILE, config, game='sora2')
+        folder = config.output_dir / DEAD_CODE_FILE.stem
+        return {''.join(path.suffixes): path.read_text(encoding='utf-8') for path in folder.iterdir()}
+
+    def test_none_by_default(self):
+        self.assertNotIn('.llil.py', self.outputs())
+
+    def test_everyday_listing(self):
+        require_library('sora2')
+        outputs = self.outputs(write_llil_py=True)
+        listing = outputs['.llil.py'].splitlines()
+        self.assertEqual(listing[0], '# The LLIL listing of ai_chr5121_e01.dat: it compiles to the same game logic as '
+                                     'ai_chr5121_e01.py (line markers aside), without hooks, every common function '
+                                     'inline')
+        self.assertIn('@scena.CommonImports()', outputs['.py'].splitlines())
+        self.assertNotIn('@scena.CommonImports()', listing)
+        self.assertNotIn(UNREACHABLE_CODE_BEGIN, outputs['.llil.py'])
+
+    def test_round_trip_changes_only_the_listing(self):
+        everyday = self.outputs(write_llil_py=True)
+        exact = self.outputs(write_llil_py=True, round_trip=True)
+        listing = exact.pop('.llil.py')
+        del everyday['.llil.py']
+        self.assertEqual(exact, everyday)
+
+        self.assertEqual(listing.splitlines()[0], '# The byte-exact LLIL listing of ai_chr5121_e01.dat: it compiles to '
+                                                  'its bytes, dead code and call-site records kept, without hooks, '
+                                                  'every common function inline')
+        self.assertIn(UNREACHABLE_CODE_BEGIN, listing)
+        with self.assertLogs(log, 'WARNING'):
+            data = compiled(self.tmp / 'ai_chr5121_e01.llil.py', listing)
+
+        self.assertEqual(data, DEAD_CODE_FILE.read_bytes())
+
+    def test_round_trip_alone_warns_and_writes_no_listing(self):
+        with self.assertLogs(log, 'WARNING') as logs:
+            outputs = self.outputs(round_trip=True)
+
+        self.assertEqual(outputs, self.outputs())
+        self.assertIn(f'{DEAD_CODE_FILE}: round_trip changes only ai_chr5121_e01.llil.py, and write_llil_py is off: '
+                      'nothing written', [record.getMessage() for record in logs.records])
 
 
 class TestFooter(unittest.TestCase):
@@ -444,14 +505,15 @@ class TestLineEndings(unittest.TestCase):
         require(TEST_FILE)
         config = ScpDecompileConfig()
         config.write_llil_asm = config.write_llil_dot = config.write_mlil_asm = config.write_mlil_dot = True
-        config.write_hlil_ts = config.write_debug_info = config.write_hook_template = True
+        config.write_hlil_ts = config.write_debug_info = config.write_hook_template = config.write_llil_py = True
 
         with tempfile.TemporaryDirectory() as tmp:
             config.output_dir = Path(tmp)
             process_file(TEST_FILE, config, game='sora2')
             outputs = sorted(Path(tmp).rglob('*.*'))
             self.assertEqual({''.join(path.suffixes[-2:]) for path in outputs},
-                             {'.py', '.ts', '.hlil.ts', '.llil.asm', '.mlil.asm', '.llil.dot', '.mlil.dot', '.debug.txt'})
+                             {'.py', '.llil.py', '.ts', '.hlil.ts', '.llil.asm', '.mlil.asm', '.llil.dot', '.mlil.dot',
+                              '.debug.txt'})
             self.assertIn(Path(tmp) / TEST_FILE.stem / f'{TEST_FILE.stem}_hook.py', outputs)
             self.assert_lf_only(outputs)
 
@@ -472,7 +534,7 @@ class TestLineEndings(unittest.TestCase):
         require(SMALL_FILE)
         with tempfile.TemporaryDirectory() as tmp:
             first = Path(tmp) / 'e0000.py'
-            decompile_to_python(SMALL_FILE, first, round_trip=False, keep_unreachable_code=False)
+            logic_decompile(SMALL_FILE, first, None)
             with mock.patch.object(generated_scripts, 'compile_dsl', return_value=(0, [])):
                 compile_round('e0000', Path(tmp) / 'round1', first.read_text(encoding='utf-8'))
 

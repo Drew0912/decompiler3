@@ -1,4 +1,4 @@
-from typing import Callable
+from typing import Callable, Iterator
 import bisect
 import pathlib
 import struct
@@ -14,6 +14,7 @@ from ..assembler.disassembler import (ScpDisassemblerContext, ScpDisassemblyErro
 from ..assembler.function import Function, FunctionParam
 from ..structs.call_debug_records import PUSH_CONSTANT_OPS, canonical_argc, pair_records
 from ..structs.string_pool import string_offset
+from .dead_code import DroppedBlock, dropped_code_message
 from dc3.logging import log
 
 
@@ -24,6 +25,9 @@ SCRIPT_CALL_OPS = opcodes_of(InstructionKind.CALL_SCRIPT, InstructionKind.TAIL_C
 PUSH_ENCODED_OPS = (*PUSH_CONSTANT_OPS, *opcodes_of(InstructionKind.PUSH_FUNC_ID, InstructionKind.PUSH_RET_ADDR))
 
 OPCODE_SIZE             = 1     # every opcode is one byte, followed by its operands
+
+# Bytes [start, end) no branch reaches, decoded linearly: None when they aren't whole instructions
+UnreachableGap = tuple[int, int, BasicBlock | None]
 
 
 class ScpParser(StrictBase):
@@ -190,11 +194,11 @@ class ScpParser(StrictBase):
 
     # disassemble
 
-    def require_code_before_strings(self, functions: list[Function]):
+    def require_code_before_strings(self, functions: list[Function], code_end: int):
         """Every reachable instruction must end before the string pool, whose start is known only from references: the
-        function names and the strings decoded code references. Unreachable references count only when
-        keep_unreachable_code decoded them; undecoded or filtered-out code does not tighten the bound."""
-        code_end = self.get_code_end(functions)
+        function names and the strings decoded code references (code_end, from get_code_end). Unreachable references
+        count only when keep_unreachable_code decoded them; undecoded or filtered-out code does not tighten the
+        bound."""
         if self.keep_unreachable_code:
             unreachable = [inst for func in functions for inst in func.unreachable_instructions()]
             code_end = min([code_end, *self.get_string_refs(unreachable)])
@@ -237,10 +241,13 @@ class ScpParser(StrictBase):
         )
 
     def disasm_all_functions(self, filter_func=None, quiet: bool = False) -> list[Function]:
-        """Disassemble all functions in the SCP file; quiet drops the per-function progress and error lines and the
-        unusual-slot and backward-return warnings. A function's failure is raised as a ScpDisassemblyError naming it."""
+        """Disassemble all functions in the SCP file; quiet drops the per-function progress and error lines, the
+        unusual-slot and backward-return warnings and the dropped dead code's lines (log_dropped_code). A function's
+        failure is raised as a ScpDisassemblyError naming it."""
         disassembled_functions = []
         starts = sorted({func.offset for func in self.functions})
+        logs_dropped_code = not (quiet or self.keep_unreachable_code)
+        claimed: dict[Function, int] = {}       # the bytes each function's code covers up to the next function
 
         for func in self.functions:
             # Apply filter if provided
@@ -253,8 +260,8 @@ class ScpParser(StrictBase):
             # Create new context for each function; its code ends where the next function starts, the last one's
             # where the code ends when that is known
             next_start = bisect.bisect_right(starts, func.offset)
-            context = self.disasm_context(func, starts[next_start] if next_start < len(starts) else self.known_code_end,
-                                          quiet)
+            end = starts[next_start] if next_start < len(starts) else None
+            context = self.disasm_context(func, end if end is not None else self.known_code_end, quiet)
 
             disasm = Disassembler(ED9_INSTRUCTION_TABLE, context)
             try:
@@ -263,6 +270,8 @@ class ScpParser(StrictBase):
                 func.runs_on = context.runs_on
                 func.backward_returns = context.backward_returns
                 disassembled_functions.append(func)
+                if logs_dropped_code:
+                    claimed[func] = disasm.claimed_byte_count(func.offset, end)
             except Exception as e:
                 if not quiet:
                     log.error(f'Error disassembling {func.name} @ 0x{func.offset:08X}: {e}')
@@ -277,15 +286,19 @@ class ScpParser(StrictBase):
 
         self.require_disjoint_instructions(disassembled_functions)
 
+        code_end = self.get_code_end(disassembled_functions)
+        has_all_functions = filter_func is None
         if self.keep_unreachable_code:
-            self.find_unreachable_code(disassembled_functions, has_all_functions=filter_func is None)
+            self.find_unreachable_code(disassembled_functions, code_end, has_all_functions)
+        elif logs_dropped_code:
+            self.log_dropped_code(disassembled_functions, claimed, code_end, has_all_functions)
 
         # After the dead code is decoded: its calls have records too
         if self.round_trip:
             for func in disassembled_functions:
                 self.pair_call_debug_info(func)
 
-        self.require_code_before_strings(disassembled_functions)
+        self.require_code_before_strings(disassembled_functions, code_end)
 
         # The table is sorted by name, but code is laid out in source order
         disassembled_functions.sort(key=lambda func: func.offset)
@@ -309,7 +322,6 @@ class ScpParser(StrictBase):
                 continue
 
             written = match.record.arg_count
-            func.call_written_argc[match.offset] = written
             if written != canonical_argc(match.call.args, defaults[match.call.target]):
                 func.call_debug_argc[match.offset] = written
 
@@ -320,41 +332,69 @@ class ScpParser(StrictBase):
 
         return self.defaults_by_func_id
 
-    def find_unreachable_code(self, functions: list[Function], has_all_functions: bool):
+    def find_unreachable_code(self, functions: list[Function], code_end: int, has_all_functions: bool):
         """Linearly decode the bytes no branch reaches (between reachable instructions and up to the next function)
         into func.unreachable_blocks"""
-        if not functions:
-            return
+        for func, instructions, gaps in self.unreachable_gaps(functions, code_end, has_all_functions, warn=True):
+            blocks = [block for _, _, block in gaps if block is not None]
+            func.unreachable_blocks = self._prune_unreachable_blocks(func, instructions, blocks)
 
-        starts = sorted(func.offset for func in self.functions)
-        next_starts = dict(zip(starts, starts[1:]))
-        code_end = self.get_code_end(functions)
+    def log_dropped_code(self, functions: list[Function], claimed: dict[Function, int], code_end: int,
+                         has_all_functions: bool):
+        """One line per function whose code leaves bytes before the next function: the dead code the everyday decompile
+        drops, at DEBUG when it is all compiler boilerplate, else at INFO (dead_code.py). Only those functions are
+        decoded (claimed: the bytes each one's code covers up to the next function); the last one's always"""
+        next_starts = self.next_function_starts()
+        gapped = [func for func in functions
+                  if func.offset not in next_starts or claimed[func] < next_starts[func.offset] - func.offset]
+        for func, instructions, gaps in self.unreachable_gaps(gapped, code_end, has_all_functions, warn=False):
+            if not gaps:
+                continue
+
+            after = {inst.offset + inst.size: inst for inst in instructions}
+            blocks = [DroppedBlock(start, end, after.get(start), None if block is None else tuple(block.instructions))
+                      for start, end, block in gaps]
+            level, message = dropped_code_message(blocks)
+            log.log(level, f'{self.name} [{func.name}]: {message}')
+
+    def next_function_starts(self) -> dict[int, int]:
+        """A function's offset -> the next function's in code order; the last one's is missing. Functions sharing an
+        offset (an empty one before another) share its range"""
+        starts = sorted({func.offset for func in self.functions})
+        return dict(zip(starts, starts[1:]))
+
+    def unreachable_gaps(self, functions: list[Function], code_end: int, has_all_functions: bool,
+                         warn: bool) -> Iterator[tuple[Function, list[Instruction], list[UnreachableGap]]]:
+        """Each function in code order, its reachable instructions and the bytes no branch reaches (between them and
+        up to the next function), each run decoded linearly; warn: a run that isn't whole instructions is logged. The
+        last function in code order runs up to code_end, lowered by the strings earlier dead code references"""
+        next_starts = self.next_function_starts()
 
         # Code order, so strings used by earlier unreachable code can lower code_end before the last function's tail
         for func in sorted(functions, key=lambda f: f.offset):
             instructions = func.reachable_instructions()
-            blocks = []
+            gaps = []
             cursor = func.offset
 
             for inst in instructions:
                 if inst.offset > cursor:
-                    blocks.append(self._decode_unreachable_block(func, cursor, inst.offset))
+                    gaps.append((cursor, inst.offset, self._decode_unreachable_block(func, cursor, inst.offset, warn)))
 
                 cursor = max(cursor, inst.offset + inst.size)
 
-            blocks = [block for block in blocks if block is not None]
-            code_end = min([code_end, *self.get_string_refs([inst for block in blocks for inst in block.instructions])])
+            decoded = [inst for _, _, block in gaps if block is not None for inst in block.instructions]
+            code_end = min([code_end, *self.get_string_refs(decoded)])
 
             # The last function in code order runs up to the string pool, only known when every function's strings
             # were seen
             end = next_starts.get(func.offset, code_end if has_all_functions else None)
             if end is not None and cursor < end:
-                tail = self._decode_unreachable_block(func, cursor, end)
+                tail = self._decode_unreachable_block(func, cursor, end, warn)
+                gaps.append((cursor, end, tail))
                 if tail is not None:
-                    blocks.append(tail)
                     code_end = min([code_end, *self.get_string_refs(tail.instructions)])
 
-            func.unreachable_blocks = self._prune_unreachable_blocks(func, instructions, blocks)
+            yield func, instructions, gaps
 
     def get_code_end(self, functions: list[Function]) -> int:
         """Where the string pool starts - it holds the code strings first, then the function names"""
@@ -392,8 +432,8 @@ class ScpParser(StrictBase):
 
         return []
 
-    def _decode_unreachable_block(self, func: Function, start: int, end: int) -> BasicBlock | None:
-        """Linearly decode [start, end), or None (with a warning) when the bytes aren't whole instructions"""
+    def _decode_unreachable_block(self, func: Function, start: int, end: int, warn: bool) -> BasicBlock | None:
+        """Linearly decode [start, end), or None (with a warning when warn) when the bytes aren't whole instructions"""
         block = BasicBlock(offset=start)
         fs = self.fs
 
@@ -404,11 +444,16 @@ class ScpParser(StrictBase):
                 while fs.Position < end:
                     block.instructions.append(ED9_INSTRUCTION_TABLE.decode_instruction(fs, fs.Position))
             except (ValueError, struct.error) as e:
-                log.warning(f'{func.name}: unreachable code 0x{start:X}..0x{end:X} not kept, decode failed: {e}')
+                if warn:
+                    log.warning(f'{func.name}: unreachable code 0x{start:X}..0x{end:X} not kept, decode failed: {e}')
+
                 return None
 
             if fs.Position != end:
-                log.warning(f'{func.name}: unreachable code 0x{start:X}..0x{end:X} not kept, last instruction ends at 0x{fs.Position:X}')
+                if warn:
+                    log.warning(f'{func.name}: unreachable code 0x{start:X}..0x{end:X} not kept, last instruction ends '
+                                f'at 0x{fs.Position:X}')
+
                 return None
 
         return block

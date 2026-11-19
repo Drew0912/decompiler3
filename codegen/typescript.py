@@ -44,7 +44,6 @@ class TypeScriptGenerator(HLILStatementPrinter):
 
     _current_func: HighLevelILFunction = None
     _callee_defaults: dict[str, tuple] = {}  # local callee name -> each parameter's default (None: none)
-    _written_argc: dict[int, int] = {}       # local CALL offset -> args its debug record keeps (round trip)
     _id_hints: dict[str, IdFormatHint] = {}      # ID kind -> how its tagged values print
 
     @classmethod
@@ -95,16 +94,14 @@ class TypeScriptGenerator(HLILStatementPrinter):
         return None
 
     @classmethod
-    def _format_call_args(cls, func_name: str, args: list, address: int) -> str:
+    def _format_call_args(cls, func_name: str, args: list) -> str:
         """The call's arguments without its trailing defaults"""
-        return ', '.join(cls._format_expr(arg) for arg in cls._without_trailing_defaults(func_name, args, address))
+        return ', '.join(cls._format_expr(arg) for arg in cls._without_trailing_defaults(func_name, args))
 
     @classmethod
-    def _without_trailing_defaults(cls, func_name: str, args: list, address: int) -> list:
+    def _without_trailing_defaults(cls, func_name: str, args: list) -> list:
         """args without the longest tail of constants that are the callee's defaults (the original compiler's own
-        rule; the signature prints them), but never fewer than the call's debug record keeps (the author wrote them;
-        round trip only, by the CALL's offset). The larger count, not the record's: a record that keeps fewer passes
-        an address-taken local HLIL shows as a variable. A new list: the call keeps every argument"""
+        rule; the signature prints them). A new list: the call keeps every argument"""
         defaults = cls._callee_defaults.get(func_name)
         if defaults is None or len(defaults) != len(args):
             return args
@@ -116,7 +113,7 @@ class TypeScriptGenerator(HLILStatementPrinter):
 
             kept -= 1
 
-        return args[:max(kept, cls._written_argc.get(address, 0))]
+        return args[:kept]
 
     @classmethod
     def _return_values(cls, block: HLILBlock) -> Iterator[HLILExpression]:
@@ -323,7 +320,7 @@ class TypeScriptGenerator(HLILStatementPrinter):
             operand = cls._format_expr(expr.operand)
             return f'deref({operand})'
         elif isinstance(expr, HLILCall):
-            args = cls._format_call_args(expr.func_name, expr.args, expr.address)
+            args = cls._format_call_args(expr.func_name, expr.args)
             return f'{expr.func_name}({args})'
         elif isinstance(expr, HLILSyscall):
             args = [str(expr.subsystem), str(expr.cmd), *[cls._format_expr(arg) for arg in expr.args]]
@@ -452,20 +449,16 @@ function DEBUG_INT(value: number): void { }
 
 
 def generate_typescript(func: HighLevelILFunction, callee_defaults: dict[str, tuple] | None = None,
-                        written_argc: dict[int, int] | None = None,
                         id_hints: dict[str, IdFormatHint] | None = None) -> str:
     """func's TypeScript; with callee_defaults (local callee name -> each parameter's default as the lifter converts
-    it, None where there is none) a call leaves out its trailing arguments equal to them, but with written_argc
-    (local CALL offset -> args its debug record keeps: Function.call_written_argc, round trip only) never the ones its
-    author wrote; with id_hints (ID kind -> IdFormatHint) a tagged value prints by name"""
+    it, None where there is none) a call leaves out its trailing arguments equal to them; with id_hints (ID kind ->
+    IdFormatHint) a tagged value prints by name"""
     TypeScriptGenerator._callee_defaults = callee_defaults or {}
-    TypeScriptGenerator._written_argc = written_argc or {}
     TypeScriptGenerator._id_hints = id_hints or {}
     try:
         lines = TypeScriptGenerator.generate_function(func)
     finally:
         TypeScriptGenerator._callee_defaults = {}
-        TypeScriptGenerator._written_argc = {}
         TypeScriptGenerator._id_hints = {}
 
     return '\n'.join(lines)

@@ -5,8 +5,7 @@ Usage, from a game's launcher:
     python falcom/ed9/games/{game}/scp2py.py {file_path} [-o {output_dir}]
 
 Flags live in scp2py_config.py, not on the command line (only the output folder has an
-override, -o) - edit scp2py_config.py to change which outputs are written and which
-ScpParser flags are used.
+override, -o) - edit scp2py_config.py to change which outputs are written.
 """
 
 import argparse
@@ -68,8 +67,7 @@ def process_file(path: Path, config: ScpDecompileConfig, *, game: str) -> None:
     output_dir = output_root(config, game) / path.stem
     out = output_dir / path.name
 
-    parser, functions = ScpParser.load(path, round_trip=config.round_trip,
-                                       keep_unreachable_code=config.keep_unreachable_code, game=game,
+    parser, functions = ScpParser.load(path, round_trip=False, keep_unreachable_code=False, game=game,
                                        filter_func=config.filter_func)
 
     # Only create the output folder once parsing has actually produced something to write
@@ -81,47 +79,64 @@ def process_file(path: Path, config: ScpDecompileConfig, *, game: str) -> None:
         function_ids=config.function_id_comments,
         call_args=config.call_arg_comments,
     )
-    # The mixed <stem>.py needs each function's HLIL, so it is written after the IR outputs
-    mixed = config.write_py and config.write_hlil_py and not (config.round_trip or config.keep_unreachable_code)
-    if config.write_py and not mixed:
-        script = LLILScriptFormatter(parser).gen_python_script(functions, comments=comments)
-        write_text_lf(out.with_suffix('.py'), script)
-        if config.write_hook_template:
-            write_hook_template(parser, output_dir)
+    # <stem>.py needs each function's HLIL, so it is written after the IR outputs
+    hlil_formatter = make_hlil_script_formatter(path, parser) if config.write_py else None
+    converted = write_ir_outputs(path, parser, functions, config, out, hlil_formatter)
+    if config.write_py:
+        write_script(parser, functions, hlil_formatter, comments, out)
 
-    hlil_formatter = make_hlil_script_formatter(path, parser) if mixed else None
-    write_ir_outputs(path, parser, functions, config, out, hlil_formatter)
+    if config.write_hook_template:
+        write_hook_template(parser, output_dir)
 
-    if mixed:
-        write_mixed_scripts(parser, functions, hlil_formatter, comments, out)
-        if config.write_hook_template:
-            write_hook_template(parser, output_dir)
+    if config.write_llil_py:
+        write_listing_script(path, parser, functions, config, comments, out)
+    elif config.round_trip:
+        log.warning(f'{path}: round_trip changes only {path.stem}.llil.py, and write_llil_py is off: nothing written')
 
-    # Last: the listing loads the file again, so its failure can't cost the other outputs
+    # After the scripts, so a failure in the file-level passes can't cost them
+    if config.write_ts:
+        write_typescript(path, parser, converted, config, out)
+
+    # Last: the debug listing loads the file again, so its failure can't cost the other outputs
     if config.write_debug_info:
         write_listing(path, out.with_suffix('.debug.txt'), config.debug_sections, {func.index for func in functions})
 
 
 def make_hlil_script_formatter(path: Path, parser: ScpParser) -> HLILScriptFormatter | None:
-    """The file's HLIL DSL formatter; None, with a warning, when it can't be set up (<stem>.py is then the LLIL
-    listing)"""
+    """The file's HLIL DSL formatter; None, with a warning, when it can't be set up (<stem>.py is then all LLIL)"""
     try:
         return HLILScriptFormatter(parser)
     except Exception as e:
-        log.warning(f'{path}: HLIL DSL not written ({type(e).__name__}: {e}); {path.stem}.py is the LLIL listing')
+        log.warning(f'{path}: HLIL DSL not written ({type(e).__name__}: {e}); {path.stem}.py is all in the LLIL DSL')
         return None
 
 
-def write_mixed_scripts(parser: ScpParser, functions: list[Function], hlil_formatter: HLILScriptFormatter | None,
-                        comments: CommentOptions, out: Path):
-    """<stem>.py with each function the DSL holds in it (all LLIL when the DSL couldn't be set up), and the LLIL
-    listing <stem>.llil.py"""
+def write_script(parser: ScpParser, functions: list[Function], hlil_formatter: HLILScriptFormatter | None,
+                 comments: CommentOptions, out: Path):
+    """<stem>.py with each function the DSL holds in it; all LLIL when the DSL couldn't be set up"""
     script = LLILScriptFormatter(parser) if hlil_formatter is None else hlil_formatter
+    matched = script.match_library_functions(functions)     # once, for the log and the script
     if hlil_formatter is not None:
-        hlil_formatter.log(functions)
+        hlil_formatter.log(script.get_inline_functions(functions, matched=matched))
 
-    write_text_lf(out.with_suffix('.py'), script.gen_python_script(functions, comments=comments))
-    listing = LLILListingFormatter(parser).gen_python_script(functions, comments=comments)
+    write_text_lf(out.with_suffix('.py'), script.gen_python_script(functions, comments=comments, matched=matched))
+
+
+def write_listing_script(path: Path, parser: ScpParser, functions: list[Function], config: ScpDecompileConfig,
+                         comments: CommentOptions, out: Path):
+    """<stem>.llil.py; with round_trip from a second parse that keeps every byte, so it compiles to the original's.
+    A failure (that parse is stricter) is logged, so it can't cost the outputs after it"""
+    try:
+        if config.round_trip:
+            parser, functions = ScpParser.load_bytes(path.read_bytes(), path.name, round_trip=True,
+                                                     keep_unreachable_code=True, game=parser.game,
+                                                     filter_func=config.filter_func, quiet=True)
+
+        listing = LLILListingFormatter(parser).gen_python_script(functions, comments=comments)
+    except Exception as e:
+        log.warning(f'{path}: {path.stem}.llil.py not written ({type(e).__name__}: {e})')
+        return
+
     write_text_lf(out.with_suffix('.llil.py'), listing)
 
 
@@ -134,17 +149,17 @@ def callee_default_values(parser: ScpParser) -> dict[str, tuple]:
             for func in parser.functions}
 
 
-def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScpDecompileConfig,
-                     out: Path, hlil_formatter: HLILScriptFormatter | None) -> None:
-    """The .llil.asm, .mlil.asm, .hlil.ts, .ts and .dot outputs the config asks for; with hlil_formatter, each
-    function's HLIL handed to it, before the file-level passes"""
+def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], config: ScpDecompileConfig, out: Path,
+                     hlil_formatter: HLILScriptFormatter | None) -> list[tuple[Function, HighLevelILFunction]]:
+    """The .llil.asm, .mlil.asm, .hlil.ts and .dot outputs the config asks for; with hlil_formatter, each function's
+    HLIL handed to it. With write_ts, each function whose HLIL came out is returned, for write_typescript"""
     output_dir = out.parent
 
     need_file_passes = config.write_ts    # the outputs that read the file-level passes' facts
     need_hlil = config.write_hlil_ts or need_file_passes or hlil_formatter is not None
     need_mlil = config.write_mlil_asm or config.write_mlil_dot or need_hlil
     if not (config.write_llil_asm or config.write_llil_dot or need_mlil):
-        return
+        return []
 
     llil_asm_lines: list[str] = []
     mlil_asm_lines: list[str] = []
@@ -206,18 +221,19 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
     if config.write_hlil_ts:
         write_text_lf(out.with_suffix('.hlil.ts'), '\n'.join(hlil_ts_lines))
 
-    if not need_file_passes:
-        return
+    return converted
 
-    # After the outputs above, so a failure in the file-level passes can't cost them; the outputs below read their
-    # facts (the types; with the game's syscall rows, the ID marks and tags)
+
+def write_typescript(path: Path, parser: ScpParser, converted: list[tuple[Function, HighLevelILFunction]],
+                     config: ScpDecompileConfig, out: Path) -> None:
+    """The .ts, after the file-level passes over every converted function, whose facts it reads (the types; with the
+    game's syscall rows, the ID marks and tags)"""
     warn = function_warning(path)
     syscall_args = game_syscall_args(parser.game) if config.id_names else None
     run_ed9_file_passes([hlil_func for _, hlil_func in converted], parser.functions, syscall_args, warn)
 
-    if config.write_ts:
-        id_hints = game_format_hints(parser.game) if syscall_args is not None else None
-        write_ts(parser, converted, id_hints, warn, out)
+    id_hints = game_format_hints(parser.game) if syscall_args is not None else None
+    write_ts(parser, converted, id_hints, warn, out)
 
 
 def function_warning(path: Path) -> Callable[[str, Exception], None]:
@@ -234,14 +250,14 @@ def write_ts(parser: ScpParser, converted: list[tuple[Function, HighLevelILFunct
     name"""
 
     # From the whole function table (callees the output omits included): .ts leaves out a call's trailing arguments
-    # equal to these defaults - in a round trip, never those the call's debug record keeps (call_written_argc)
+    # equal to these defaults
     callee_defaults = callee_default_values(parser)
 
     # Each function on its own, as in write_ir_outputs: one that fails to print can't cost the rest
     ts_chunks = []
     for func, hlil_func in converted:
         try:
-            ts_chunks.append(generate_typescript(hlil_func, callee_defaults, func.call_written_argc, id_hints))
+            ts_chunks.append(generate_typescript(hlil_func, callee_defaults, id_hints))
         except Exception as e:
             warn(func.name, e)
 

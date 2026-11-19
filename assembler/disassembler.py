@@ -181,6 +181,18 @@ class Disassembler:
         for offset in range(inst.offset, inst.offset + inst.size):
             self.byte_to_instruction[offset] = inst
 
+    def claimed_byte_count(self, start: int, end: int | None = None) -> int:
+        """How many bytes in [start, end) the decoded instructions cover; end None: every one from start on"""
+        claimed = self.byte_to_instruction
+        if not claimed:
+            return 0
+
+        # Most functions decode nothing outside their own bytes: then every claimed byte counts, without a scan
+        if start <= min(claimed) and (end is None or max(claimed) < end):
+            return len(claimed)
+
+        return sum(start <= offset and (end is None or offset < end) for offset in claimed)
+
     def ensure_block_at(self, target_offset: int) -> BasicBlock:
         """Ensure target_offset is the start of a BasicBlock"""
         other = self.byte_to_instruction.get(target_offset)

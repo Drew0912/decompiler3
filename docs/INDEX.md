@@ -44,7 +44,8 @@ A test or verification run writes nothing inside the repo:
   script from a scratch folder.
 - `gen_tables`: `python falcom/ed9/tools/gen_tables.py sora2 -o <scratch folder>`.
 - `scp2py`: `python falcom/ed9/games/<game>/scp2py.py <file or folder> -o <scratch folder>`. A run that needs
-  other settings (e.g. `round_trip = True`) uses a driver script in a scratch folder:
+  other settings (e.g. `write_llil_py` and `round_trip` for the byte-exact `<stem>.llil.py`) uses a driver script in a
+  scratch folder:
 
   ```python
   import sys

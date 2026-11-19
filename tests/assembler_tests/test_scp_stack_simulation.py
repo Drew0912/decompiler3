@@ -770,8 +770,8 @@ def constants(*values) -> list:
 
 
 class TestDebugArgcRecovery(unittest.TestCase):
-    """round_trip: a paired local CALL's recorded arg count by its offset (call_written_argc); the .py writes it on the
-    CALL (call_debug_argc) only where it isn't the compiler's rule - trailing constants equal to the callee's defaults
+    """round_trip: a paired local CALL's recorded arg count, by its offset; the .py writes it on the CALL
+    (call_debug_argc) only where it isn't the compiler's rule - trailing constants equal to the callee's defaults
     dropped. The call is callee(RIGHT_VALUE, LEFT_VALUE)."""
 
     @classmethod
@@ -817,7 +817,6 @@ class TestDebugArgcRecovery(unittest.TestCase):
                 func = parser.disasm_all_functions()[0]
                 [offset] = call_offsets(parser, func)
 
-                self.assertEqual(func.call_written_argc, {offset: explicit_args})
                 self.assertEqual(func.call_debug_argc, {offset: explicit_args} if written_on_the_call else {})
 
 
@@ -834,11 +833,10 @@ class TestDeadCodeRecords(unittest.TestCase):
     def test_a_dead_call_gets_its_count(self):
         parser, functions = self.load()
         main = functions[0]
-        live, dead = call_offsets(parser, main)
+        _, dead = call_offsets(parser, main)
         self.assertEqual([inst.offset for inst in main.unreachable_instructions() if inst.opcode == ED9Opcode.CALL],
                          [dead])
 
-        self.assertEqual(main.call_written_argc, {live: 1, dead: 2})
         self.assertEqual(main.call_debug_argc, {dead: 2})
 
     def test_without_the_dead_code_the_function_is_not_paired(self):
@@ -846,7 +844,7 @@ class TestDeadCodeRecords(unittest.TestCase):
         with self.assertLogs(log, 'WARNING') as logs:
             _, functions = self.load(keep_unreachable_code=False)
 
-        self.assertEqual((functions[0].call_written_argc, functions[0].call_debug_argc), ({}, {}))
+        self.assertEqual(functions[0].call_debug_argc, {})
         self.assertIn(f'{FUNC_NAME}: records not paired: 1 calls, 2 records; the .py writes no debug_argc',
                       [record.getMessage() for record in logs.records])
 
@@ -855,7 +853,7 @@ class TestDeadCodeRecords(unittest.TestCase):
             with self.subTest(keep_unreachable_code=keep_unreachable_code):
                 program = TestDebugArgcRecovery.program(LEFT_VALUE, dead_call=True)
                 main = program.parser(keep_unreachable_code).disasm_all_functions()[0]
-                self.assertEqual((main.call_written_argc, main.call_debug_argc), ({}, {}))
+                self.assertEqual(main.call_debug_argc, {})
 
     def test_a_filtered_function_is_not_paired(self):
         """Pairing runs over the disassembled functions only: the filtered-out one gets no counts and no warning"""
@@ -865,7 +863,7 @@ class TestDeadCodeRecords(unittest.TestCase):
         self.assertEqual([func.name for func in functions], [CALLEE_NAME])
         filtered = parser.function_map[FUNC_NAME]
         self.assertTrue(filtered.debug_info)
-        self.assertEqual((filtered.call_written_argc, filtered.call_debug_argc, filtered.call_unrecorded), ({}, {}, set()))
+        self.assertEqual((filtered.call_debug_argc, filtered.call_unrecorded), ({}, set()))
 
 
 class TestDebugArgcFormatting(unittest.TestCase):

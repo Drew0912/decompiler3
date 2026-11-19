@@ -75,9 +75,9 @@ class HLILScriptFormatter(LLILScriptFormatter):
 
         return 'common function' if func.is_common_func else None
 
-    def log(self, functions: list[Function]):
-        """The file's INFO line, and the reason at DEBUG of each function the file defines in LLIL"""
-        inline_functions = self.get_inline_functions(functions)
+    def log(self, inline_functions: list[Function]):
+        """The file's INFO line, and the reason at DEBUG of each function it defines in LLIL (inline_functions: the
+        functions it defines itself, get_inline_functions)"""
         categories = []
         for func in inline_functions:
             if func.name not in self.lines:

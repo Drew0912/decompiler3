@@ -376,10 +376,14 @@ class TestProcessFile(unittest.TestCase):
         return (config.output_dir / dat.stem / f'{dat.stem}.debug.txt').read_text(encoding='utf-8')
 
     def test_listing_alone_in_both_modes(self):
-        """No other output asked for - the listing is still written, the same whatever the decompile mode"""
-        texts = [self.listing_text(self.main, round_trip=mode, keep_unreachable_code=mode) for mode in (False, True)]
-        self.assertEqual(texts[0], texts[1])
-        self.assertEqual(texts[0], '\n'.join(ScpListing(self.main).lines(ListingSections())) + '\n')
+        """No other output asked for - the listing is still written, the same with round_trip (which, without
+        write_llil_py, only warns)"""
+        with self.assertLogs(log, 'WARNING'):
+            exact = self.listing_text(self.main, round_trip=True)
+
+        text = self.listing_text(self.main)
+        self.assertEqual(exact, text)
+        self.assertEqual(text, '\n'.join(ScpListing(self.main).lines(ListingSections())) + '\n')
 
     def test_selected_functions_only(self):
         lines = self.listing_text(self.main, filter_func=lambda func: func.name in ('Main', 'Inner')).splitlines()

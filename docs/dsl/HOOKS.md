@@ -5,9 +5,9 @@
 
 ## LLIL DSL Hooks — Implemented
 
-A hook file `<stem>_hook.py`, next to `<stem>.py`, patches a script without editing the generated file (with
-`write_hlil_py` on, the mixed `<stem>.py`; its LLIL listing `<stem>.llil.py` imports no hook: `docs/dsl/HLIL_DSL.md`,
-File names). The script
+A hook file `<stem>_hook.py`, next to `<stem>.py`, patches a script without editing the generated file (the mixed
+`<stem>.py`, each function in the HLIL DSL where its text is exact; the LLIL listing `<stem>.llil.py` imports no hook:
+`docs/dsl/HLIL_DSL.md`, File names). The script
 imports it before `create_scp_writer()` (`docs/dsl/LLIL_DSL.md` §2: only a missing hook is ignored), so what a hook
 registers at import time is there when the script compiles (`scena.run(globals())` → `ScpWriter.build`). The hook API is
 `falcom/ed9/writer/scp_writer_hooks.py`; the helper star-imports it, so a hook needs only the helper's import. The
@@ -189,7 +189,7 @@ ignore on the star-import line lets a replacement keep its function's name: basi
 imported `CheckAlgoUse` as clashing with the hook's own `def`. A hook that assigns its own `original` hides the
 helper's. Importing the script for real from its hook would run it a second time ("duplicate function name").
 
-**Hook template.** `ScpDecompileConfig.write_hook_template` (off by default; only with `write_py`) writes a
+**Hook template.** `ScpDecompileConfig.write_hook_template` (off by default) writes a
 starting `<stem>_hook.py` next to `<stem>.py` (`LLILScriptFormatter.gen_hook_template`), never over an existing file (a
 log
 line instead). It holds the Pylance lines above, then three hooks with their `register*` lines commented out: a
@@ -227,6 +227,11 @@ its own level: a body passed on keeps it, and a `functools.wraps` wrapper of an 
 then the body's where it calls it). Opcode callbacks see the lowered opcodes as an LLIL body's, `CALL` with the
 callee's stub. In an HLIL body an opcode function, `label()`, `original.Name()` and `inline_original_func()` raise,
 and an LLIL wrapper calling an HLIL body raw raises at the body's first statement.
+
+**The limitation.** `<stem>.py` is mixed by default, so a hook written against an all-LLIL `<stem>.py` meets these
+rules wherever its function now prints in the HLIL DSL; the one form that fails is an LLIL wrapper calling the HLIL
+body raw. No setting keeps a function LLIL in `<stem>.py` yet: that escape hatch comes with the HLIL DSL hooks
+(below).
 
 **Hook bodies in HLIL: not started; after the HLIL DSL writer** (user, 2026-10-06). Hook files keep decompiler2's
 ED8.x layout:

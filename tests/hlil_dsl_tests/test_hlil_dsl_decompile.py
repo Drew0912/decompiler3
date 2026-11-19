@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""The HLIL DSL's decompile side on real sora2 scripts: with write_hlil_py on, <stem>.py holds each function whose DSL
-text is exact as @scena.HLILCode() and the rest in the LLIL DSL, <stem>.llil.py is the LLIL listing, and the two
+"""The HLIL DSL's decompile side on real sora2 scripts: <stem>.py holds each function whose DSL text is exact as
+@scena.HLILCode() and the rest in the LLIL DSL, <stem>.llil.py (write_llil_py) is the LLIL listing, and the two
 compile to the same game logic (the HLIL functions without their line markers); real functions' printed text"""
 
 from itertools import pairwise
@@ -68,7 +68,7 @@ class TestMixedScript(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             config = ScpDecompileConfig()
             config.output_dir = Path(folder)
-            config.write_hlil_py = True
+            config.write_llil_py = True
             config.write_ts = config.write_hlil_ts = config.write_mlil_asm = False
             with self.assertLogs(log, 'INFO'):
                 process_file(path, config, game=GAME)
@@ -94,7 +94,7 @@ class TestMixedScript(unittest.TestCase):
             self.assertEqual(mixed[mixed.index('def AniWait():') - 1], '@scena.LLILCode()')    # an if
 
             self.assertEqual(listing[0], '# The LLIL listing of brk_obj.dat: it compiles to the same game logic as '
-                                         'brk_obj.py (line markers aside), without its hooks')
+                                         'brk_obj.py (line markers aside), without hooks, every common function inline')
             self.assertNotIn(hlil_dsl_helper_import(GAME), listing)
             self.assertNotIn('    import brk_obj_hook', listing)
             self.assertNotIn('@scena.HLILCode()', listing)

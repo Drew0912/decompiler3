@@ -1,10 +1,10 @@
-"""--round-trip: a file decompiled, recompiled and byte-compared with the original"""
+"""--round-trip: a file decompiled to its byte-exact <stem>.llil.py, recompiled and byte-compared with the original"""
 
 import shutil
 import tempfile
 from pathlib import Path
 
-from .generated_scripts import compile_dsl, decompile_to_python, script_stem
+from .generated_scripts import byte_exact_decompile, compile_dsl, script_stem
 from .record_comparison import compare_file_records
 from .results import CheckResult, Status, exception_text
 
@@ -13,10 +13,10 @@ def check_round_trip(path: Path, work_dir: Path, *, game: str | None = None) -> 
     stem = script_stem(path)
     run_dir = Path(tempfile.mkdtemp(prefix=f'{stem}_', dir=work_dir))
     dat_path = run_dir / f'{stem}.dat'
-    py_path = run_dir / f'{stem}.py'
+    py_path = run_dir / f'{stem}.llil.py'
 
     shutil.copyfile(path, dat_path)
-    decompile_to_python(dat_path, py_path, round_trip=True, keep_unreachable_code=True, game=game)
+    byte_exact_decompile(dat_path, py_path, game)
     dat_path.unlink()
 
     returncode, tail = compile_dsl(py_path, run_dir)
