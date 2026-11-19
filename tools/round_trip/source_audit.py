@@ -13,16 +13,18 @@ from .results import CheckResult
 from .script_context import ScriptContext
 
 
-# Reachability audit (--logic-round-trip): a dropped byte range is provably dead only when the
-# reachable instruction right before it can't fall through - RETURN/JMP/CALL_SCRIPT_NO_RETURN never
-# link a continuation at all, and CALL/CALL_SCRIPT only do so via a paired PUSH_RET_ADDR/
-# PUSH_CALLER_FRAME (checked separately, per function) - so a range after an unpaired one is unproven
-REACHABLE_TERMINATORS = (ED9Opcode.RETURN, ED9Opcode.JMP, ED9Opcode.CALL_SCRIPT_NO_RETURN)
-PAIRED_CALL_OPS       = {ED9Opcode.CALL: ED9Opcode.PUSH_RET_ADDR, ED9Opcode.CALL_SCRIPT: ED9Opcode.PUSH_CALLER_FRAME}
+# A dropped range is provably dead after these (is_range_provably_dead): opcodes that link no continuation, and calls
+# each paired with its continuation push (call_pairing)
+NO_CONTINUATION_OPS = (ED9Opcode.RETURN, ED9Opcode.JMP, ED9Opcode.CALL_SCRIPT_NO_RETURN)
+PAIRED_CALL_OPS     = {ED9Opcode.CALL: ED9Opcode.PUSH_RET_ADDR, ED9Opcode.CALL_SCRIPT: ED9Opcode.PUSH_CALLER_FRAME}
+
+# Opcode pairs a function's code holds equally many of: a call and its continuation push, a CALL and its
+# PUSH_CURRENT_FUNC_ID
+EQUAL_COUNT_OPS     = (*PAIRED_CALL_OPS.items(), (ED9Opcode.CALL, ED9Opcode.PUSH_CURRENT_FUNC_ID))
 
 
-def check_instruction_ranges(insts: list[Instruction], start: int, end: int) -> list[str]:
-    """Every branch target lands on a reachable instruction start inside [start, end) - never mid-instruction, never
+def branch_target_failures(insts: list[Instruction], start: int, end: int) -> list[str]:
+    """Every branch target lands on a reachable instruction start inside [start, end): never mid-instruction, never
     outside the function"""
     failures = []
     inst_starts = {inst.offset for inst in insts}
@@ -33,24 +35,23 @@ def check_instruction_ranges(insts: list[Instruction], start: int, end: int) -> 
                 continue
 
             if not (start <= op.value < end) or op.value not in inst_starts:
-                failures.append(f'{inst.mnemonic} @0x{inst.offset:X} targets 0x{op.value:X}, not a reachable instruction in this function')
+                failures.append(f'{inst.mnemonic} @0x{inst.offset:X} targets 0x{op.value:X}, '
+                                'not a reachable instruction in this function')
 
     return failures
 
 
 def call_pairing(insts: list[Instruction]) -> dict[int, bool]:
-    """Per paired call opcode (CALL/CALL_SCRIPT): does its count match its continuation-push
-    opcode's count (PUSH_RET_ADDR/PUSH_CALLER_FRAME)? Used by the reachability audit to know
-    whether a dropped range following a call is provably dead."""
+    """Per call opcode in PAIRED_CALL_OPS: whether its count matches its continuation push's
+    (is_range_provably_dead)"""
     counts = Counter(inst.opcode for inst in insts)
     return {op: counts[op] == counts[ret_op] for op, ret_op in PAIRED_CALL_OPS.items()}
 
 
 def check_source_preconditions(ctx: ScriptContext, pool_start: int) -> CheckResult:
-    """Fields the decompile normalizes away, which no check on a recompiled file could see - e.g. a
-    non-canonical PUSH_CURRENT_FUNC_ID value would just get silently corrected by the writer. The
-    PUSH_CURRENT_FUNC_ID value itself isn't rechecked here - check_code already validates it on
-    every file, source included, and validate_file always runs before this does."""
+    """Fields the decompile normalizes away, which no check on a recompiled file could see (the writer silently
+    corrects a non-canonical value); PUSH_CURRENT_FUNC_ID's value is left to check_code, which the command line runs
+    on every file, the source included, first"""
     failures = []
 
     names = [func.name for func in ctx.parser.functions]
@@ -67,31 +68,24 @@ def check_source_preconditions(ctx: ScriptContext, pool_start: int) -> CheckResu
             failures.append(f'{func.name}: name_hash 0x{entry.name_hash:X} != hash_function_name 0x{expected:X}')
 
     for _, func, insts, extent in ctx.functions_in_code_order(pool_start):
-        failures.extend(f'{func.name}: {message}' for message in check_instruction_ranges(insts, *extent))
+        failures.extend(f'{func.name}: {message}' for message in branch_target_failures(insts, *extent))
 
         counts = Counter(inst.opcode for inst in insts)
-        for call_op, ret_op in PAIRED_CALL_OPS.items():
-            if counts[call_op] != counts[ret_op]:
-                failures.append(f'{func.name}: {counts[call_op]} {call_op.name} vs {counts[ret_op]} {ret_op.name}, expected equal')
-
-        if counts[ED9Opcode.CALL] != counts[ED9Opcode.PUSH_CURRENT_FUNC_ID]:
-            failures.append(f'{func.name}: {counts[ED9Opcode.CALL]} CALL vs {counts[ED9Opcode.PUSH_CURRENT_FUNC_ID]} PUSH_CURRENT_FUNC_ID, expected equal')
+        for opcode, partner in EQUAL_COUNT_OPS:
+            if counts[opcode] != counts[partner]:
+                failures.append(f'{func.name}: {counts[opcode]} {opcode.name} vs {counts[partner]} {partner.name}, '
+                                'expected equal')
 
     summary = f'{len(ctx.parser.functions)} functions'
     return CheckResult.build('source preconditions', summary, failures)
 
 
 def is_range_provably_dead(prev_opcode: int | None, paired: dict[int, bool]) -> bool:
-    """Is a dropped range, following an instruction with opcode prev_opcode, safe to drop?
-
-    RETURN/JMP/CALL_SCRIPT_NO_RETURN never link a continuation at all, so anything after them is
-    unconditionally dead. CALL/CALL_SCRIPT do link one (via PUSH_RET_ADDR/PUSH_CALLER_FRAME), but a
-    dropped range right after them is still dead as long as that call is paired - a paired call's
-    own continuation, wherever it resumes, is by construction a real reachable instruction (never
-    inside this same range, since every Offset target must land on one), so nothing between the
-    call and its continuation can be referenced by anything.
-    """
-    return prev_opcode in REACHABLE_TERMINATORS or paired.get(prev_opcode, False)
+    """Whether a dropped range after an instruction with opcode prev_opcode is safe to drop: always after one that
+    links no continuation (NO_CONTINUATION_OPS); after CALL / CALL_SCRIPT only when the function's calls of that
+    opcode pair (call_pairing), since a paired call's continuation is a reachable instruction outside the range
+    (every Offset target lands on one), so nothing reaches the bytes between"""
+    return prev_opcode in NO_CONTINUATION_OPS or paired.get(prev_opcode, False)
 
 
 def check_reachability(ctx: ScriptContext, pool_start: int) -> CheckResult:
@@ -118,14 +112,9 @@ def check_reachability(ctx: ScriptContext, pool_start: int) -> CheckResult:
 
 
 def check_string_fidelity(ctx: ScriptContext, pool_start: int) -> CheckResult:
-    """Every pooled string must re-encode to exactly its raw bytes.
-
-    The parser decodes with errors='ignore' (ReadMultiByte -> _ReadAString), which silently drops
-    invalid bytes - a corrupted string would then decode shorter, re-encode without the dropped
-    bytes, and still fingerprint the same as its own already-truncated value. Decoding here the same
-    way and comparing against the raw pool bytes (not ctx.read_text's errors='replace') is what
-    catches that.
-    """
+    """Every pooled string re-encodes to exactly its raw bytes: the parser decodes with errors='ignore'
+    (ReadMultiByte -> _ReadAString), so a corrupted string decodes shorter and fingerprints the same as its truncated
+    value; decoding the same way and comparing with the raw pool bytes (not read_text's errors='replace') catches it"""
     failures = []
     encoding = default_encoding()
     positions = pool_strings(ctx.data, pool_start)  # an unterminated tail is left out: check_string_pool reports it

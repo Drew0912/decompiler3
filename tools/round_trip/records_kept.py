@@ -13,8 +13,8 @@ from .results import CheckResult
 from .script_context import ScriptContext
 
 
-# Records kept (--logic-round-trip): the functions among the clip walk's nine that don't fall back on their defaults
-# (docs/falcom/ed9/ED9_VM.md, Who reads the call-site records), so a record that drops a String of theirs drops a name
+# The clip walk's functions (of its nine) that don't fall back on their defaults (docs/falcom/ed9/ED9_VM.md, Who reads
+# the call-site records): a record that drops a String of theirs drops a name
 NO_DEFAULT_FALLBACK = {'chr_play_animeclip', 'chr_attach_load_model'}
 
 # What a rebuild may leave out or add, with its reason: docs/ROUND_TRIP_POLICY.md, Records the engine reads
@@ -28,11 +28,11 @@ EXCUSED_SECOND_COPY = 'second copy'
 @dataclass(frozen=True, slots=True)
 class RecordSlot:
     """A call the rebuilt file keeps: the source's record for it (None: the compiler left it without one), the function
-    a local call calls and the arguments a local record can't drop"""
+    a local call calls and how many arguments a local record can't drop"""
 
-    record  : RecordView | None
-    callee  : str | None
-    keep    : int
+    record      : RecordView | None
+    callee      : str | None
+    min_argc    : int
 
 
 @dataclass
@@ -43,6 +43,13 @@ class SourceRecords:
     is_common       : bool
     slots           : list[RecordSlot] | None       # one per call kept, in record order; None: the records don't pair
     excused         : Counter[str]                  # source records no rebuild can keep, by reason
+
+
+def is_doubled(views: list[RecordView]) -> bool:
+    """A doubled record list: its second half repeats the first (docs/falcom/ed9/ED9_FORMAT.md, Call-Site Debug
+    Records, 8)"""
+    half = len(views) // 2
+    return views[:half] == views[half:]
 
 
 def source_records(ctx: ScriptContext) -> dict[str, SourceRecords]:
@@ -71,12 +78,14 @@ def function_source_records(ctx: ScriptContext, index: int, views: list[RecordVi
         return source
 
     pairing = pairing_of(records)
-    half = len(records) // 2
-    if not pairing.paired and views[:half] == views[half:]:
+    if not pairing.paired and is_doubled(views):
+        half = len(records) // 2
         source.excused[EXCUSED_SECOND_COPY] = half
         records, views = records[:half], views[:half]
         pairing = pairing_of(records)
 
+    # A common function the source holds no records for keeps no slots: a record a rebuild writes for it fails as
+    # extra, not excused as a call the compiler left without one
     if not pairing.paired:
         source.slots = None
     elif records or not func.is_common_func:
@@ -97,18 +106,19 @@ def record_slots(ctx: ScriptContext, func: Function, calls: list[tuple[TrackedCa
             excused[EXCUSED_DEAD] += offset in record_at
             continue
 
-        callee, keep = None, 0
+        callee, min_argc = None, 0
         if call.call_type == ScpFunctionCallDebugInfo.CallType.Local:
             callee = parser.functions[call.target].name
-            keep = canonical_argc(call.args, parser.func_defaults()[call.target])
+            min_argc = canonical_argc(call.args, parser.func_defaults()[call.target])
 
-        slots.append(RecordSlot(views[record_at[offset]] if offset in record_at else None, callee, keep))
+        slots.append(RecordSlot(views[record_at[offset]] if offset in record_at else None, callee, min_argc))
 
     return slots
 
 
 def slot_problem(slot: RecordSlot, rebuilt: RecordView) -> str | None:
-    """How rebuilt falls short of its slot. A local record can differ in its trailing arguments, down to slot.keep"""
+    """How rebuilt falls short of its slot; a local record can differ in its trailing arguments, down to
+    slot.min_argc"""
     source = slot.record
     if source is None:
         is_local = rebuilt.call_type == ScpFunctionCallDebugInfo.CallType.Local
@@ -123,8 +133,8 @@ def slot_problem(slot: RecordSlot, rebuilt: RecordView) -> str | None:
     if difference is not None:
         return difference
 
-    if shared < min(slot.keep, len(source.args)):
-        return f'{shared} args, the rule keeps {slot.keep}'
+    if shared < min(slot.min_argc, len(source.args)):
+        return f'{shared} args, the rule keeps {slot.min_argc}'
 
     dropped = source.args[shared:]
     if source.callee in NO_DEFAULT_FALLBACK and any(isinstance(word, str) for _, word in dropped):
@@ -155,27 +165,27 @@ def check_records_kept(source: dict[str, SourceRecords], rebuilt: dict[str, list
     excused = Counter()
     kept = trimmed = 0
 
-    for name, function in source.items():
+    for name, source_function in source.items():
         views = rebuilt.get(name)
-        if views is None:   # compare_logic reports it
+        if views is None:   # check_logic_preserved reports it
             continue
 
         # The suite tests that kuro's writer keeps these: only the sora writers' rule leaves them out
-        if function.is_common and function.record_count and not views:
-            excused[EXCUSED_COMMON] += function.record_count
+        if source_function.is_common and source_function.record_count and not views:
+            excused[EXCUSED_COMMON] += source_function.record_count
             continue
 
-        excused.update(function.excused)
-        if function.slots is None:
-            failures.append(f"{name}: the source's {function.record_count} records don't pair with its calls")
+        excused.update(source_function.excused)
+        if source_function.slots is None:
+            failures.append(f"{name}: the source's {source_function.record_count} records don't pair with its calls")
             continue
 
-        problem = first_slot_problem(function.slots, views)
+        problem = first_slot_problem(source_function.slots, views)
         if problem is not None:
             failures.append(f'{name} {problem}')
             continue
 
-        for slot, view in zip(function.slots, views):
+        for slot, view in zip(source_function.slots, views):
             if slot.record is None:
                 excused[EXCUSED_EXTRA] += 1
             else:

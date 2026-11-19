@@ -17,7 +17,7 @@ from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.parser.code_layout import dropped_ranges
 from round_trip.source_audit import (
     PAIRED_CALL_OPS,
-    check_instruction_ranges,
+    branch_target_failures,
     is_range_provably_dead,
 )
 from tests.shared.corpus import SORA2_SCRIPTS, require
@@ -69,7 +69,7 @@ class TestDroppedRanges(unittest.TestCase):
         self.assertEqual(dropped_ranges(insts, start=0x00, end=0x01), [])
 
 
-class TestCheckInstructionRanges(unittest.TestCase):
+class TestBranchTargetFailures(unittest.TestCase):
     """Target-validity checks, hand-built rather than from a real .dat"""
 
     def test_target_inside_another_instruction_fails(self):
@@ -77,7 +77,7 @@ class TestCheckInstructionRanges(unittest.TestCase):
             make_instruction(0x00, ED9Opcode.JMP, size=5, offset_target=0x02),  # targets mid-instruction below
             make_instruction(0x05, ED9Opcode.RETURN, size=1),
         ]
-        failures = check_instruction_ranges(insts, start=0x00, end=0x06)
+        failures = branch_target_failures(insts, start=0x00, end=0x06)
 
         self.assertTrue(any('not a reachable instruction' in f for f in failures))
 
@@ -86,7 +86,7 @@ class TestCheckInstructionRanges(unittest.TestCase):
             make_instruction(0x00, ED9Opcode.JMP, size=5, offset_target=0x05),
             make_instruction(0x05, ED9Opcode.RETURN, size=1),
         ]
-        self.assertEqual(check_instruction_ranges(insts, start=0x00, end=0x06), [])
+        self.assertEqual(branch_target_failures(insts, start=0x00, end=0x06), [])
 
 
 class TestRealCallPairing(unittest.TestCase):

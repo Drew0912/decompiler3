@@ -4,16 +4,17 @@ each logic round's rebuilt one"""
 from pathlib import Path
 
 from dc3.config import default_encoding
+from assembler import Instruction
 from falcom.ed9.assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
 from falcom.ed9.assembler.vm import WORD_SIZE
 from falcom.ed9.structs.call_debug_records import pair_records
 from falcom.ed9.parser.code_layout import dropped_ranges
 from falcom.ed9.parser.scp import OPCODE_SIZE
-from falcom.ed9.structs.string_pool import NUL, StringRefs, collect_string_refs
+from falcom.ed9.structs.string_pool import NUL, StringRefs, collect_string_refs, read_text, read_u32
 from falcom.ed9.structs.scp_types import (ScpFunctionCallDebugInfo, ScpFunctionCallDebugInfoArg, ScpFunctionEntry,
                                           ScpGlobalVar, ScpHeader)
 from falcom.ed9.writer.scp_writer import PUSH_SIZE_BYTE
-from .results import CheckResult
+from .results import CheckResult, first_difference
 from .script_context import ScriptContext, load_script
 
 
@@ -54,8 +55,9 @@ def check_layout(ctx: ScriptContext) -> CheckResult:
     position = header.function_entry_offset + header.function_count * ScpFunctionEntry.SIZE
     for field_name, get_offset, get_size in regions:
         for index, entry in enumerate(ctx.entries):
-            if get_offset(entry) != position:
-                failures.append(f'{ctx.func_name(index)}: {field_name} 0x{get_offset(entry):X} != running offset 0x{position:X}')
+            offset = get_offset(entry)
+            if offset != position:
+                failures.append(f'{ctx.func_name(index)}: {field_name} 0x{offset:X} != running offset 0x{position:X}')
 
             position += get_size(entry)
 
@@ -64,7 +66,8 @@ def check_layout(ctx: ScriptContext) -> CheckResult:
     for index, records in enumerate(ctx.records):
         for record in records:
             if record.info_offset != position:
-                failures.append(f'{ctx.func_name(index)}: record info_offset 0x{record.info_offset:X} != running offset 0x{position:X}')
+                failures.append(f'{ctx.func_name(index)}: record info_offset 0x{record.info_offset:X} '
+                                f'!= running offset 0x{position:X}')
 
             position += record.arg_count * ScpFunctionCallDebugInfoArg.SIZE
             record_count += 1
@@ -79,7 +82,8 @@ def check_layout(ctx: ScriptContext) -> CheckResult:
     if first_code != position:
         failures.append(f'first code offset 0x{first_code:X} != global var table end 0x{position:X}')
 
-    summary = f'{len(ctx.entries)} functions, {record_count} debug records, {arg_count} debug args, {header.global_var_count} global vars'
+    summary = (f'{len(ctx.entries)} functions, {record_count} debug records, {arg_count} debug args, '
+               f'{header.global_var_count} global vars')
     return CheckResult.build('layout', summary, failures)
 
 
@@ -97,11 +101,11 @@ def check_function_order(ctx: ScriptContext) -> CheckResult:
 
     common_count = 0
     source_count = 0
-    previous = None
+    previous_name, previous_max_line = None, None
     for index in ctx.code_order:
         func = ctx.parser.functions[index]
-        lines = [inst.operands[0].value for inst in ctx.instructions[index]
-                 if inst.opcode == ED9Opcode.DEBUG_SET_LINENO]
+        line_numbers = [inst.operands[0].value for inst in ctx.instructions[index]
+                        if inst.opcode == ED9Opcode.DEBUG_SET_LINENO]
 
         if func.is_common_func:
             common_count += 1
@@ -109,24 +113,33 @@ def check_function_order(ctx: ScriptContext) -> CheckResult:
             if source_count:
                 failures.append(f'{func.name}: common function code follows a source function')
 
-            if lines:
+            if line_numbers:
                 failures.append(f'{func.name}: common function has DEBUG_SET_LINENO')
 
             continue
 
         source_count += 1
 
-        if not lines:
+        if not line_numbers:
             warnings.append(f'{func.name}: source function has no DEBUG_SET_LINENO, order not checked')
             continue
 
-        if previous is not None and lines[0] <= previous[1]:
-            failures.append(f'{func.name}: first line {lines[0]} <= line {previous[1]} of {previous[0]}')
+        if previous_name is not None and line_numbers[0] <= previous_max_line:
+            failures.append(f'{func.name}: first line {line_numbers[0]} <= line {previous_max_line} of {previous_name}')
 
-        previous = (func.name, max(lines))
+        previous_name, previous_max_line = func.name, max(line_numbers)
 
     summary = f'sorted by name ({hash_note} by hash); {common_count} common + {source_count} source functions'
     return CheckResult.build('function order', summary, failures, warnings)
+
+
+def push_size_byte(data: bytes, inst: Instruction) -> int | None:
+    """A PUSH's size byte, else None; tested on the raw opcode byte, since a decoded PUSH carries its value's
+    pseudo-op (PUSH_INT, PUSH_CURRENT_FUNC_ID, ...)"""
+    if data[inst.offset] != ED9Opcode.PUSH:
+        return None
+
+    return data[inst.offset + PUSH_SIZE_OFFSET]
 
 
 def check_code(ctx: ScriptContext, pool_start: int) -> CheckResult:
@@ -138,16 +151,26 @@ def check_code(ctx: ScriptContext, pool_start: int) -> CheckResult:
             warnings.append(f'{func.name}: unreachable 0x{start:X}..0x{end:X}: {describe_range(ctx, start, end)}')
 
         for inst in insts:
-            if ctx.data[inst.offset] == ED9Opcode.PUSH and ctx.data[inst.offset + PUSH_SIZE_OFFSET] != PUSH_SIZE_BYTE:
-                failures.append(f'{func.name} @0x{inst.offset:X}: PUSH size byte {ctx.data[inst.offset + PUSH_SIZE_OFFSET]} != {PUSH_SIZE_BYTE}')
+            size_byte = push_size_byte(ctx.data, inst)
+            if size_byte is not None and size_byte != PUSH_SIZE_BYTE:
+                failures.append(f'{func.name} @0x{inst.offset:X}: PUSH size byte {size_byte} != {PUSH_SIZE_BYTE}')
 
             if inst.opcode == ED9Opcode.PUSH_CURRENT_FUNC_ID:
-                func_id = ctx.read_u32(inst.offset + PUSH_VALUE_OFFSET)
+                func_id = read_u32(ctx.data, inst.offset + PUSH_VALUE_OFFSET)
                 if func_id != index:
-                    failures.append(f'{func.name} @0x{inst.offset:X}: PUSH_CURRENT_FUNC_ID pushes {func_id}, table index is {index}')
+                    failures.append(f'{func.name} @0x{inst.offset:X}: PUSH_CURRENT_FUNC_ID pushes {func_id}, '
+                                    f'table index is {index}')
 
     summary = f'{len(warnings)} unreachable ranges'
     return CheckResult.build('code', summary, failures, warnings)
+
+
+def pool_entry_text(data: bytes, positions: list[int], index: int, past_end: str) -> str:
+    """positions[index]'s string as a pool mismatch names it, or past_end when the list is shorter"""
+    if index >= len(positions):
+        return past_end
+
+    return f'0x{positions[index]:X} {ascii(read_text(data, positions[index]))}'
 
 
 def check_string_pool(ctx: ScriptContext, refs: StringRefs) -> CheckResult:
@@ -166,15 +189,14 @@ def check_string_pool(ctx: ScriptContext, refs: StringRefs) -> CheckResult:
 
     expected = refs.expected_pool
     if actual != expected:
-        mismatch = next((i for i, (a, b) in enumerate(zip(actual, expected)) if a != b),
-                        min(len(actual), len(expected)))
-        actual_text = (f'0x{actual[mismatch]:X} {ascii(ctx.read_text(actual[mismatch]))}' if mismatch < len(actual)
-                       else 'end of file')
-        expected_text = (f'0x{expected[mismatch]:X} {ascii(ctx.read_text(expected[mismatch]))}'
-                         if mismatch < len(expected) else 'end of references')
-        failures.append(f'pool string #{mismatch}: found {actual_text}, expected {expected_text} ({len(actual)} strings, {len(expected)} references)')
+        mismatch = first_difference(actual, expected)
+        actual_text = pool_entry_text(ctx.data, actual, mismatch, 'end of file')
+        expected_text = pool_entry_text(ctx.data, expected, mismatch, 'end of references')
+        failures.append(f'pool string #{mismatch}: found {actual_text}, expected {expected_text} '
+                        f'({len(actual)} strings, {len(expected)} references)')
 
-    summary = f'{len(actual)} strings: {len(refs.code)} code, {len(refs.names)} names, {len(refs.defaults)} defaults, {len(refs.debug)} debug-only, {len(refs.global_names)} global names'
+    summary = (f'{len(actual)} strings: {len(refs.code)} code, {len(refs.names)} names, {len(refs.defaults)} defaults, '
+               f'{len(refs.debug)} debug-only, {len(refs.global_names)} global names')
     return CheckResult.build('string pool', summary, failures)
 
 
@@ -219,9 +241,7 @@ def check_common_order(common_orders: dict[Path, list[str]]) -> CheckResult:
 
 
 def validate_file(path: Path) -> tuple[list[CheckResult], list[str]]:
-    ctx = load_script(path)
-
-    try:
+    with load_script(path) as ctx:
         refs = collect_string_refs(ctx.data, ctx.parser, ctx.records)
         results = [
             check_layout(ctx),
@@ -231,7 +251,5 @@ def validate_file(path: Path) -> tuple[list[CheckResult], list[str]]:
             check_debug_records(ctx),
         ]
         common_order = [ctx.func_name(index) for index in ctx.code_order if ctx.parser.functions[index].is_common_func]
-    finally:
-        ctx.fs.Close()
 
     return results, common_order

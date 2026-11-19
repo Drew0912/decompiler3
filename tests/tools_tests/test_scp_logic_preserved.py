@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Unit tests for the validator's logic comparison (--logic-round-trip): compare_logic and LogicSnapshot on compiled
-scripts, each change the game logic definition covers failing (docs/ROUND_TRIP_POLICY.md), a difference in line
-markers only passing just for a function the source decompile printed in the HLIL DSL; and the logic round trip of a
-script whose function the HLIL DSL holds. The check runs only when a plan names it, so these are what guards it
+"""Unit tests for the validator's logic comparison (--logic-round-trip): check_logic_preserved and LogicSnapshot on
+compiled scripts, each change the game logic definition covers failing (docs/ROUND_TRIP_POLICY.md), a difference in
+line markers only passing just for a function the source decompile printed in the HLIL DSL; and the logic round trip
+of a script whose function the HLIL DSL holds. The check runs only when a plan names it, so these are what guards it
 (docs/HARDENING_POLICY.md)"""
 
 from dataclasses import replace
@@ -19,7 +19,7 @@ from dc3.logging import log
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer import scp_writer
 from falcom.ed9.writer.scp_writer_helper import *
-from round_trip.logic_preserved import LogicSnapshot, compare_logic
+from round_trip.logic_preserved import LogicSnapshot, check_logic_preserved
 from round_trip.logic_round_trip import check_logic_round_trip
 from round_trip.results import Status
 from tests.shared.scp_writer_test_utils import fresh_writer
@@ -81,7 +81,7 @@ class LogicTestCase(unittest.TestCase):
         return LogicSnapshot.of(parser, functions, without_line_markers)
 
     def assert_failed(self, source: LogicSnapshot, other: LogicSnapshot, expected: str):
-        result = compare_logic(source, other)
+        result = check_logic_preserved(source, other)
         self.assertEqual(result.status, Status.FAIL, result.summary)
         self.assertTrue(any(expected in detail for detail in result.details), result.details)
 
@@ -92,7 +92,7 @@ class TestEachChangeFails(LogicTestCase):
         self.source = self.snapshot(define_main())
 
     def test_the_same_script_passes(self):
-        self.assertEqual(compare_logic(self.source, self.snapshot(define_main())).status, Status.PASS)
+        self.assertEqual(check_logic_preserved(self.source, self.snapshot(define_main())).status, Status.PASS)
 
     def test_an_operand(self):
         self.assert_failed(self.source, self.snapshot(define_main(value=6)), 'Main: fingerprint differs')
@@ -116,7 +116,8 @@ class TestEachChangeFails(LogicTestCase):
 class TestLineMarkers(LogicTestCase):
     def test_left_out_only_for_a_function_printed_in_the_hlil_dsl(self):
         hlil = frozenset({'Main'})
-        result = compare_logic(self.snapshot(define_main(), hlil), self.snapshot(define_main(marked=False), hlil))
+        result = check_logic_preserved(self.snapshot(define_main(), hlil),
+                                       self.snapshot(define_main(marked=False), hlil))
         self.assertEqual(result.status, Status.PASS, result.details)
         self.assertIn('1 without line markers', result.summary)
         self.assert_failed(self.snapshot(define_main()), self.snapshot(define_main(marked=False)),

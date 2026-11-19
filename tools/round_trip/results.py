@@ -1,5 +1,6 @@
 """What a check reports: its status, a summary and its detail lines"""
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import IntEnum
 
@@ -36,3 +37,8 @@ class CheckResult:
 
 def exception_text(exc: Exception) -> str:
     return f'{type(exc).__name__}: {ascii(str(exc))}'
+
+
+def first_difference(a: Sequence, b: Sequence) -> int:
+    """The first index where a and b differ, else the shorter one's length"""
+    return next((i for i, (x, y) in enumerate(zip(a, b)) if x != y), min(len(a), len(b)))

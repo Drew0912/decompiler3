@@ -11,7 +11,6 @@ from assembler import Instruction
 from falcom.ed9.structs.call_debug_records import read_debug_records
 from falcom.ed9.parser.code_layout import code_order, function_extents
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.structs.string_pool import read_text, read_u32
 from falcom.ed9.assembler.function import Function
 from falcom.ed9.structs.scp_types import ScpFunctionCallDebugInfo, ScpFunctionEntry
 
@@ -28,11 +27,14 @@ class ScriptContext:
     instructions    : list[list[Instruction]]               # table order, reachable, offset order
     code_order      : list[int]                             # table indices sorted by code offset
 
-    def read_u32(self, offset: int) -> int:
-        return read_u32(self.data, offset)
+    def __enter__(self) -> ScriptContext:
+        return self
 
-    def read_text(self, offset: int) -> str:
-        return read_text(self.data, offset)
+    def __exit__(self, *exc_info):
+        self.close()
+
+    def close(self):
+        self.fs.Close()
 
     def func_name(self, index: int) -> str:
         return self.parser.functions[index].name
@@ -49,7 +51,8 @@ class ScriptContext:
 
 
 def load_script(path: Path) -> ScriptContext:
-    """Parse and disassemble path; the caller closes ctx.fs, or this closes it when the file fails to load"""
+    """Parse and disassemble path; the caller closes it (with load_script(path) as ctx), or this does when the file
+    fails to load"""
     fs = fileio.FileStream(str(path))
 
     try:

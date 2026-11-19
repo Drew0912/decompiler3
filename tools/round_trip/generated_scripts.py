@@ -22,7 +22,8 @@ from .results import MAX_DETAILS
 
 
 # Runs a generated script as Python runs it directly: its __main__ block compiles it
-ROUND_TRIP_RUNNER = "import runpy, sys; runpy.run_path(sys.argv[1], run_name='__main__')"
+RUN_AS_MAIN         = "import runpy, sys; runpy.run_path(sys.argv[1], run_name='__main__')"
+COMPILE_TAIL_LINES  = MAX_DETAILS   # a failed compile's last output lines: as many as a check prints
 
 
 def byte_exact_decompile(dat_path: Path, py_path: Path, game: str | None = None) -> tuple[ScpParser, list[Function]]:
@@ -39,12 +40,12 @@ def byte_exact_decompile(dat_path: Path, py_path: Path, game: str | None = None)
 class LogicDecompile(NamedTuple):
     """A --logic-round-trip decompile: the parser, its functions and the names the .py holds in the HLIL DSL"""
 
-    parser: ScpParser
-    functions: list[Function]
-    hlil_names: frozenset[str]
+    parser      : ScpParser
+    functions   : list[Function]
+    hlil_names  : frozenset[str]
 
 
-def logic_decompile(dat_path: Path, py_path: Path, game: str | None) -> LogicDecompile:
+def logic_decompile(dat_path: Path, py_path: Path, game: str | None = None) -> LogicDecompile:
     """A --logic-round-trip decompile written to py_path: with a game the mixed <stem>.py as scp2py_base.py writes it
     (each function whose HLIL DSL text lowers exactly to its code in the HLIL DSL, the rest in the LLIL DSL); without
     one the all-LLIL .py, since a mixed file needs its game's DSL helper"""
@@ -60,7 +61,7 @@ def logic_decompile(dat_path: Path, py_path: Path, game: str | None) -> LogicDec
         if formatter.refusal(func) is not None:
             continue    # the DSL turns it away before reading its HLIL, so it is never lifted
 
-        hlil = dsl_hlil(parser, func)
+        hlil = hlil_for_dsl(parser, func)
         if hlil is not None:
             formatter.add(func, hlil)
 
@@ -68,7 +69,7 @@ def logic_decompile(dat_path: Path, py_path: Path, game: str | None) -> LogicDec
     return LogicDecompile(parser, functions, frozenset(formatter.lines))
 
 
-def dsl_hlil(parser: ScpParser, func: Function) -> HighLevelILFunction | None:
+def hlil_for_dsl(parser: ScpParser, func: Function) -> HighLevelILFunction | None:
     """func's HLIL with its line markers, as write_ir_outputs hands it to the HLIL DSL; None when the lift or a
     conversion raises (the function stays LLIL, as there)"""
     try:
@@ -85,7 +86,7 @@ def compile_dsl(py_path: Path, run_dir: Path) -> tuple[int, list[str]]:
     env['PYTHONIOENCODING'] = 'utf-8'
 
     result = subprocess.run(
-        [sys.executable, '-P', '-c', ROUND_TRIP_RUNNER, py_path.name],
+        [sys.executable, '-P', '-c', RUN_AS_MAIN, py_path.name],
         cwd=run_dir,
         env=env,
         stdin=subprocess.DEVNULL,
@@ -95,7 +96,7 @@ def compile_dsl(py_path: Path, run_dir: Path) -> tuple[int, list[str]]:
         errors='replace',
     )
 
-    tail = (result.stderr or result.stdout).strip().splitlines()[-MAX_DETAILS:]
+    tail = (result.stderr or result.stdout).strip().splitlines()[-COMPILE_TAIL_LINES:]
     return result.returncode, [ascii(line) for line in tail]
 
 

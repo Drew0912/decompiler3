@@ -11,15 +11,15 @@ from .results import CheckResult
 
 @dataclass
 class LogicSnapshot:
-    """Everything the 'game logic' definition covers for one decompile: per-function (fingerprint,
-    is_common_func) by name, the global table in index order (bytecode refers to globals by index,
-    so order matters), and header dword_14. The functions in without_line_markers (those the source's
-    decompile printed in the HLIL DSL, which writes no line markers) are fingerprinted without them"""
+    """Everything the 'game logic' definition covers for one decompile: per-function (fingerprint, is_common_func) by
+    name, the global table in index order (bytecode refers to globals by index, so order matters) and header
+    dword_14; the functions in without_line_markers (those the source's decompile printed in the HLIL DSL, which
+    writes no line markers) are fingerprinted without them"""
 
-    fingerprints: dict[str, tuple]
-    globals_table: list[tuple[str, int]]
-    dword_14: int
-    without_line_markers: frozenset[str] = frozenset()
+    fingerprints            : dict[str, tuple]
+    globals_table           : list[tuple[str, int]]
+    dword_14                : int
+    without_line_markers    : frozenset[str] = frozenset()
 
     @classmethod
     def of(cls, parser: ScpParser, functions: list[Function],
@@ -37,7 +37,7 @@ class LogicSnapshot:
         return function_fingerprint(parser, func)
 
 
-def compare_logic(source: LogicSnapshot, other: LogicSnapshot) -> CheckResult:
+def check_logic_preserved(source: LogicSnapshot, other: LogicSnapshot) -> CheckResult:
     """Everything the game logic definition covers, source vs one recompiled round; both snapshots take the source
     decompile's HLIL names as their without_line_markers"""
     failures = []
@@ -72,7 +72,7 @@ def compare_logic(source: LogicSnapshot, other: LogicSnapshot) -> CheckResult:
     return CheckResult.build('logic preserved', summary, failures)
 
 
-def check_mode(source_names: frozenset[str], round_names: frozenset[str]) -> CheckResult:
+def check_same_hlil_functions(source_names: frozenset[str], round_names: frozenset[str]) -> CheckResult:
     """A round's decompile prints exactly the source decompile's functions in the HLIL DSL"""
     failures = []
     if lost := sorted(source_names - round_names):

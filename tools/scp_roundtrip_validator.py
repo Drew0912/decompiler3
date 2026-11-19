@@ -36,15 +36,14 @@ Checks (FAIL = a rule the writer depends on is broken, WARN = known decompiler l
                     byte-compare with the original; when they differ, also compare the two files' debug
                     records function by function (the first difference in each, see compare_file_records)
 
---logic-round-trip checks (decompile with round_trip=False, the everyday config; see docs/ROUND_TRIP_POLICY.md
-for the full policy - byte-exact fidelity is not required, preserved game logic and a byte-level
-fixed point within a few rounds are). With --game each decompile is the mixed <stem>.py (logic_decompile, the steps
-scp2py_base.py's process_file takes): each function whose HLIL DSL text lowers exactly to its code written in the HLIL
-DSL, the rest in the LLIL DSL (docs/dsl/HLIL_DSL.md); without it the all-LLIL .py, since a mixed file needs its game's
-DSL helper:
+--logic-round-trip checks (docs/ROUND_TRIP_POLICY.md: preserved game logic and a byte-level fixed point within a few
+rounds are required, byte-exact fidelity is not). Each decompile uses round_trip=False, the everyday config: with
+--game the mixed <stem>.py (logic_decompile, the steps scp2py_base.py's process_file takes: each function whose HLIL
+DSL text lowers exactly to its code written in the HLIL DSL, the rest in the LLIL DSL, docs/dsl/HLIL_DSL.md), without
+it the all-LLIL .py, since a mixed file needs its game's DSL helper:
     source preconditions   fields the decompile normalizes away that no check on a recompiled file
-                            could see (duplicate names, header dword_14, name_hash, instruction-range
-                            validity, call pairing)
+                            could see (duplicate names, header dword_14, name_hash, branch targets,
+                            call pairing)
     reachability            every dropped byte range is provably dead (see is_range_provably_dead)
     string fidelity         every pooled string re-encodes to exactly its raw bytes
     round N logic preserved  source vs that round's decompile: per-function fingerprint + signature,
@@ -62,13 +61,7 @@ Name inputs <name>.dat: the generated header names its output after the whole fi
 two-suffix input (X.original.dat) compiles to X.original.dat and the round is reported as a failed
 compile.
 
-Baseline (2026-10-01, sora2's scripts under script_en/, format checks, no FAIL; all five byte-identical under
---round-trip and converged at round 2 under --logic-round-trip):
-    scena/e0000.dat           PASS, 1 debug record
-    scena/e2000.dat           PASS, 235 debug records (42 with dropped default args)
-    scena/system.dat          WARN: 63 unreachable ranges, 4806 debug records (740 dropped)
-    scena/mp0000_ev.dat       WARN: 3 unreachable JMPs, 19461 debug records (7872 dropped)
-    ai/ai_chr0100_e00.dat     WARN: 1 unreachable JMP, 37 debug records
+What the checks are known to pass on: docs/dsl/LLIL_DSL.md, "What's actually verified".
 """
 
 import argparse
@@ -108,13 +101,42 @@ def create_parser() -> argparse.ArgumentParser:
     arg_parser = argparse.ArgumentParser(
         description='Validate ED9-VM .dat scripts against the byte-exact round-trip rules')
     arg_parser.add_argument('paths', nargs='+', help='.dat files or directories (searched recursively)')
-    arg_parser.add_argument('--round-trip', action='store_true', help='decompile, recompile and byte-compare each file')
-    arg_parser.add_argument('--logic-round-trip', action='store_true', help='decompile with round_trip=False and verify game logic is preserved and compile/decompile reaches a fixed point')
-    arg_parser.add_argument('--work-dir', metavar='DIR', help='where --round-trip / --logic-round-trip write their files (default: a new temp dir)')
+    arg_parser.add_argument('--round-trip', action='store_true',
+                            help='decompile, recompile and byte-compare each file')
+    arg_parser.add_argument('--logic-round-trip', action='store_true',
+                            help='decompile with round_trip=False and verify game logic is preserved and '
+                                 'compile/decompile reaches a fixed point')
+    arg_parser.add_argument('--work-dir', metavar='DIR',
+                            help='where --round-trip / --logic-round-trip write their files (default: a new temp dir)')
     arg_parser.add_argument('--game', choices=game_names(),
-                            help="the game whose common-function library and writer --round-trip / --logic-round-trip's decompiles use (default: none, every common function inline, the shared ScpWriter)")
+                            help='the game whose common-function library and writer '
+                                 "--round-trip / --logic-round-trip's decompiles use "
+                                 '(default: none, every common function inline, the shared ScpWriter)')
     arg_parser.add_argument('--verbose', action='store_true', help='print every detail, including for passing checks')
     return arg_parser
+
+
+def run_file_checks(path: Path, args: argparse.Namespace,
+                    work_dir: Path | None) -> tuple[list[CheckResult], list[str] | None]:
+    """The checks args asks for on one file, and its common functions' code order (None: the file didn't load)"""
+    try:
+        results, common_order = validate_file(path)
+    except Exception as e:
+        results, common_order = [CheckResult('load', Status.FAIL, exception_text(e))], None
+
+    if args.round_trip:
+        try:
+            results.append(check_round_trip(path, work_dir, game=args.game))
+        except Exception as e:
+            results.append(CheckResult('round trip', Status.FAIL, exception_text(e)))
+
+    if args.logic_round_trip:
+        try:
+            results.extend(check_logic_round_trip(path, work_dir, game=args.game))
+        except Exception as e:
+            results.append(CheckResult('logic round trip', Status.FAIL, exception_text(e)))
+
+    return results, common_order
 
 
 def main() -> int:
@@ -133,23 +155,9 @@ def main() -> int:
 
     for path in files:
         print(f'== {path}')
-
-        try:
-            results, common_orders[path] = validate_file(path)
-        except Exception as e:
-            results = [CheckResult('load', Status.FAIL, exception_text(e))]
-
-        if args.round_trip:
-            try:
-                results.append(check_round_trip(path, work_dir, game=args.game))
-            except Exception as e:
-                results.append(CheckResult('round trip', Status.FAIL, exception_text(e)))
-
-        if args.logic_round_trip:
-            try:
-                results.extend(check_logic_round_trip(path, work_dir, game=args.game))
-            except Exception as e:
-                results.append(CheckResult('logic round trip', Status.FAIL, exception_text(e)))
+        results, common_order = run_file_checks(path, args, work_dir)
+        if common_order is not None:
+            common_orders[path] = common_order
 
         for result in results:
             print_result(result, args.verbose)
