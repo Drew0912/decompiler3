@@ -248,11 +248,13 @@ function at LLIL level only when it has to.
   (`brk_obj.dat: 3 of 8 functions as HLIL; LLIL: if 5`).
 - **File names.** With `ScpDecompileConfig.write_hlil_py` on (off by default; with `write_py`, and
   neither `round_trip` nor `keep_unreachable_code`), `<stem>.py` is the mixed file and `<stem>.llil.py`
-  the pure LLIL listing, named like `.llil.asm` (`write_mixed_scripts`, `falcom/ed9/scp2py_base.py`). Both
-  compile to `<stem>.dat` with the same game logic, the mixed file's HLIL functions without their line
-  markers. Only `<stem>.py` imports `<stem>_hook.py`, whose name comes from the `.dat` name
-  (`gen_hook_import`, `falcom/ed9/parser/scp.py`); the listing imports no hook. With the flag off, or
-  under either fidelity flag, `<stem>.py` is the LLIL listing and no `.llil.py` is written. The
+  the pure LLIL listing, named like `.llil.asm` (`write_mixed_scripts`, `falcom/ed9/scp2py_base.py`), printed
+  by `HLILScriptFormatter` and `LLILListingFormatter`, each a subclass of `LLILScriptFormatter` overriding the
+  header's parts (`title_lines`, `helper_import_lines`, `hook_import_lines`) and the first its
+  `format_function`. Both compile to `<stem>.dat` with the same game logic, the mixed file's HLIL functions
+  without their line markers. Only `<stem>.py` imports `<stem>_hook.py`, whose name comes from the `.dat` name
+  (`gen_hook_import`, `falcom/ed9/formatter/llil_dsl/script_formatter.py`); the listing imports no hook. With
+  the flag off, or under either fidelity flag, `<stem>.py` is the LLIL listing and no `.llil.py` is written. The
   round-trip validator's `--logic-round-trip --game <game>` decompiles each round to the mixed file (its own
   `logic_decompile`, the steps above), compares the source decompile's HLIL functions without their line
   markers and requires every round to print the same ones in the HLIL DSL (`docs/ROUND_TRIP_POLICY.md`); its

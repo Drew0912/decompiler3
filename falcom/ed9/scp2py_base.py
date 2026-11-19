@@ -20,7 +20,7 @@ from falcom.ed9.formatter.hlil_dsl.script_formatter import HLILScriptFormatter
 from falcom.ed9.formatter.llil_dsl.comments import CommentOptions
 from falcom.ed9.games import GAMES_DIR
 from falcom.ed9.parser.scp import ScpParser
-from falcom.ed9.formatter.llil_dsl.script_formatter import LLILScriptFormatter
+from falcom.ed9.formatter.llil_dsl.script_formatter import LLILListingFormatter, LLILScriptFormatter
 from falcom.ed9.formatter.listing import write_listing
 from falcom.ed9.formatter.format_hints import game_format_hints
 from falcom.ed9.assembler.syscalls import game_syscall_args
@@ -89,12 +89,11 @@ def process_file(path: Path, config: ScpDecompileConfig, *, game: str) -> None:
         if config.write_hook_template:
             write_hook_template(parser, output_dir)
 
-    matched = LLILScriptFormatter(parser).match_library_functions(functions) if mixed else {}
-    hlil_formatter = make_hlil_script_formatter(path, parser, matched) if mixed else None
+    hlil_formatter = make_hlil_script_formatter(path, parser) if mixed else None
     write_ir_outputs(path, parser, functions, config, out, hlil_formatter)
 
     if mixed:
-        write_mixed_scripts(parser, functions, matched, hlil_formatter, comments, out)
+        write_mixed_scripts(parser, functions, hlil_formatter, comments, out)
         if config.write_hook_template:
             write_hook_template(parser, output_dir)
 
@@ -103,27 +102,26 @@ def process_file(path: Path, config: ScpDecompileConfig, *, game: str) -> None:
         write_listing(path, out.with_suffix('.debug.txt'), config.debug_sections, {func.index for func in functions})
 
 
-def make_hlil_script_formatter(path: Path, parser: ScpParser,
-                               matched: dict[str, str]) -> HLILScriptFormatter | None:
+def make_hlil_script_formatter(path: Path, parser: ScpParser) -> HLILScriptFormatter | None:
     """The file's HLIL DSL formatter; None, with a warning, when it can't be set up (<stem>.py is then the LLIL
     listing)"""
     try:
-        return HLILScriptFormatter(parser, matched)
+        return HLILScriptFormatter(parser)
     except Exception as e:
         log.warning(f'{path}: HLIL DSL not written ({type(e).__name__}: {e}); {path.stem}.py is the LLIL listing')
         return None
 
 
-def write_mixed_scripts(parser: ScpParser, functions: list[Function], matched: dict[str, str],
-                        hlil_formatter: HLILScriptFormatter | None, comments: CommentOptions, out: Path):
-    """<stem>.py with each function the DSL holds in it, and the LLIL listing <stem>.llil.py"""
-    formatter = LLILScriptFormatter(parser)
+def write_mixed_scripts(parser: ScpParser, functions: list[Function], hlil_formatter: HLILScriptFormatter | None,
+                        comments: CommentOptions, out: Path):
+    """<stem>.py with each function the DSL holds in it (all LLIL when the DSL couldn't be set up), and the LLIL
+    listing <stem>.llil.py"""
+    script = LLILScriptFormatter(parser) if hlil_formatter is None else hlil_formatter
     if hlil_formatter is not None:
-        hlil_formatter.log(formatter.get_inline_functions(functions, matched=matched))
+        hlil_formatter.log(functions)
 
-    hlil_lines = None if hlil_formatter is None else hlil_formatter.lines
-    mixed, listing = formatter.gen_mixed_scripts(functions, hlil_lines, matched=matched, comments=comments)
-    write_text_lf(out.with_suffix('.py'), mixed)
+    write_text_lf(out.with_suffix('.py'), script.gen_python_script(functions, comments=comments))
+    listing = LLILListingFormatter(parser).gen_python_script(functions, comments=comments)
     write_text_lf(out.with_suffix('.llil.py'), listing)
 
 

@@ -1,5 +1,5 @@
 """The whole LLIL DSL script (.py) of a parsed .dat: the header with its imports, every function the script still
-defines itself, the footer; and the starting hook file next to it"""
+defines itself, the footer; its listing (.llil.py); and the starting hook file next to it"""
 
 from typing import TYPE_CHECKING
 import functools
@@ -16,7 +16,7 @@ from ...structs.common_library import (COMMON_ALL_MODULE, COMMON_INDEX_MODULE, C
                                        game_metadata_module)
 from ...structs.fingerprint import function_fingerprint, fingerprint_digest
 from ..generated_imports import (DEFINITION_SPACING, SCP_WRITER_HELPER_IMPORT, SYS_PATH_SETUP_LINES,
-                                 game_writer_helper_import, hlil_dsl_helper_import)
+                                 game_writer_helper_import)
 from .comments import GLOBAL_VAR_INDEX_COMMENT, CommentOptions, append_comment
 from .function_formatter import Formatter, FormatterContext
 
@@ -91,27 +91,6 @@ class LLILScriptFormatter:
         inline = self.get_inline_functions(functions, matched=matched)
         return self.script_text(header, [self.format_function(func, comments) for func in inline])
 
-    def gen_mixed_scripts(self, functions: list[Function], hlil_lines: dict[str, list[str]] | None, *,
-                          matched: dict[str, str], comments: CommentOptions = CommentOptions()) -> tuple[str, str]:
-        """<stem>.py and <stem>.llil.py (docs/dsl/HLIL_DSL.md, File names) from one formatting of each function: the
-        first with hlil_lines' functions in the HLIL DSL and the DSL's import line (gen_python_script's text when
-        hlil_lines is None), the second the LLIL listing, without the hook import"""
-        inline = self.get_inline_functions(functions, matched=matched)
-        llil_lines = [self.format_function(func, comments) for func in inline]
-        if hlil_lines is None:
-            mixed = self.script_text(self.gen_python_header(functions, matched=matched), llil_lines)
-        else:
-            header = self.gen_python_header(functions, matched=matched, hlil_dsl_import=True)
-            mixed = self.script_text(header, [hlil_lines.get(func.name, lines)
-                                              for func, lines in zip(inline, llil_lines)])
-
-        stem = pathlib.Path(self.parser.name).stem
-        title = (f'# The LLIL listing of {self.parser.name}: it compiles to the same game logic as {stem}.py (line '
-                 'markers aside), without its hooks')
-        listing = self.script_text([title, *self.gen_python_header(functions, matched=matched, hook_import=False)],
-                                   llil_lines)
-        return mixed, listing
-
     def script_text(self, header: list[str], function_lines: list[list[str]]) -> str:
         """A whole script: header, each function's lines, the footer"""
         lines = list(header)
@@ -122,8 +101,8 @@ class LLILScriptFormatter:
         lines.extend(self.gen_python_footer())
         return '\n'.join(lines) + '\n'
 
-    def gen_python_header(self, functions: list[Function] | None = None, *, matched: dict[str, str] | None = None,
-                          hook_import: bool = True, hlil_dsl_import: bool = False) -> list[str]:
+    def gen_python_header(self, functions: list[Function] | None = None, *,
+                          matched: dict[str, str] | None = None) -> list[str]:
         """Generate Python header lines for output script execution.
 
         functions, when given, are this script's disassembled functions in code order - used to
@@ -132,25 +111,14 @@ class LLILScriptFormatter:
         matched lets gen_python_script pass in an already-computed match set instead of this
         recomputing it.
 
-        With a game, the first import is the game's helper, which installs the game's writer before
-        the hook import can register on it, and the whole-library import (gen_library_import) follows
-        the hook import, whatever the fidelity mode and whether or not there is a function list, so a
-        human editing the script has every common function in scope for CALL()/autocomplete even when
-        adding one this script never originally used.
-
-        hlil_dsl_import: the mixed <stem>.py's line star-importing the game's HLIL DSL helper, after the
-        writer helper's; hook_import False: the LLIL listing <stem>.llil.py, which imports no hook.
+        The title, the helpers' imports and the hook import come from title_lines, helper_import_lines
+        and hook_import_lines, which each kind of file overrides. With a game, the whole-library import
+        (gen_library_import) follows the hook import, whatever the fidelity mode and whether or not
+        there is a function list, so a human editing the script has every common function in scope for
+        CALL()/autocomplete even when adding one this script never originally used.
         """
         game = self.parser.game
-        helper_import = SCP_WRITER_HELPER_IMPORT if game is None else game_writer_helper_import(game)
-        lines = [*SYS_PATH_SETUP_LINES, helper_import]
-        if hlil_dsl_import:
-            lines.append(hlil_dsl_helper_import(game))
-
-        if hook_import:
-            lines.extend(self.gen_hook_import().splitlines())
-
-        lines.append('')
+        lines = [*self.title_lines(), *SYS_PATH_SETUP_LINES, *self.helper_import_lines(), *self.hook_import_lines(), '']
         if game is not None:
             lines += [*self.gen_library_import().splitlines(), '']
 
@@ -170,6 +138,19 @@ class LLILScriptFormatter:
             lines.extend(self.gen_common_imports(functions, matched=matched))
 
         return lines
+
+    def title_lines(self) -> list[str]:
+        """Comment lines above the header: none in a script"""
+        return []
+
+    def helper_import_lines(self) -> list[str]:
+        """The helpers' star imports: the writer helper, the game's when there is a game, which installs the game's
+        writer before the hook import can register on it"""
+        game = self.parser.game
+        return [SCP_WRITER_HELPER_IMPORT if game is None else game_writer_helper_import(game)]
+
+    def hook_import_lines(self) -> list[str]:
+        return self.gen_hook_import().splitlines()
 
     def match_library_functions(self, functions: list[Function]) -> dict[str, str]:
         """This script's common functions whose body+signature exactly match the canonical variant in
@@ -333,3 +314,15 @@ def opcode_hook(opcode, *args):
         """Run directly, the script compiles. The footer binds no name, so a script function of any name (main too)
         keeps its stub, which an HLIL body's call reaches"""
         return ["if __name__ == '__main__':", f'{default_indent()}scena.run(globals())']
+
+
+class LLILListingFormatter(LLILScriptFormatter):
+    """<stem>.llil.py: every function in the LLIL DSL, without the hook import (docs/dsl/HLIL_DSL.md, File names)"""
+
+    def title_lines(self) -> list[str]:
+        stem = pathlib.Path(self.parser.name).stem
+        return [f'# The LLIL listing of {self.parser.name}: it compiles to the same game logic as {stem}.py (line '
+                'markers aside), without its hooks']
+
+    def hook_import_lines(self) -> list[str]:
+        return []

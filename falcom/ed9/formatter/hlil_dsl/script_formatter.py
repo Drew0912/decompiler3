@@ -1,6 +1,5 @@
-"""One script's functions in the HLIL DSL (docs/dsl/HLIL_DSL.md, File names): each function the DSL has a form for and
-whose text passes the exact check, as its lines for the mixed <stem>.py, and why each other function stays LLIL, for
-the logs"""
+"""The mixed <stem>.py (docs/dsl/HLIL_DSL.md, File names): each function the DSL has a form for and whose text passes
+the exact check in the HLIL DSL, the rest in the LLIL DSL; and why each other function stays LLIL, for the logs"""
 
 from collections import Counter
 from typing import TYPE_CHECKING
@@ -8,7 +7,9 @@ from typing import TYPE_CHECKING
 from dc3.logging import log
 from ir.hlil import HighLevelILFunction
 from ...assembler.function import Function
-from ..generated_imports import hlil_dsl_namespace
+from ..generated_imports import hlil_dsl_helper_import, hlil_dsl_namespace
+from ..llil_dsl.comments import CommentOptions
+from ..llil_dsl.script_formatter import LLILScriptFormatter
 from .exact_check import ExactCheck
 from .function_formatter import LLILFallback, ScriptNames, function_lines
 
@@ -16,14 +17,13 @@ if TYPE_CHECKING:
     from ...parser.scp import ScpParser
 
 
-class HLILScriptFormatter:
-    """matched: the script's functions imported from the common-function library (LLILScriptFormatter's
-    match_library_functions), which the mixed file does not define"""
+class HLILScriptFormatter(LLILScriptFormatter):
+    """add takes each function's HLIL; the inherited gen_python_script then prints the functions that passed in the HLIL
+    DSL and the rest in the LLIL DSL"""
 
-    def __init__(self, parser: 'ScpParser', matched: dict[str, str]):
+    def __init__(self, parser: 'ScpParser'):
+        super().__init__(parser)
         namespace = hlil_dsl_namespace(parser.game)
-        self.parser = parser
-        self.matched = matched
         self.names = ScriptNames(parser.get_global_name_from_index, frozenset(func.name for func in parser.functions),
                                  frozenset(namespace))
         # A function so named would rebind the DSL's name for every HLIL function in the file
@@ -33,11 +33,17 @@ class HLILScriptFormatter:
         self.lines: dict[str, list[str]] = {}       # each function in the DSL, by name
         self.reasons: dict[str, str] = {}           # why each other function the DSL saw stays LLIL
 
-    def add(self, func: Function, hlil: HighLevelILFunction):
-        """func's DSL lines when it has a form and they pass the exact check, else the reason it stays LLIL"""
-        if func.name in self.matched:
-            return
+    def helper_import_lines(self) -> list[str]:
+        return [*super().helper_import_lines(), hlil_dsl_helper_import(self.parser.game)]
 
+    def format_function(self, func: Function, comments: CommentOptions = CommentOptions()) -> list[str]:
+        """func's HLIL DSL lines when they passed the exact check, else its LLIL"""
+        lines = self.lines.get(func.name)
+        return lines if lines is not None else super().format_function(func, comments)
+
+    def add(self, func: Function, hlil: HighLevelILFunction):
+        """func's DSL lines when it has a form and they pass the exact check, else the reason it stays LLIL. A function
+        the library holds is a common function, which refusal turns away"""
         refusal = self.refusal(func)
         if refusal is not None:
             self.reasons[func.name] = refusal
@@ -69,8 +75,9 @@ class HLILScriptFormatter:
 
         return 'common function' if func.is_common_func else None
 
-    def log(self, inline_functions: list[Function]):
-        """The file's INFO line, and each LLIL function's reason at DEBUG"""
+    def log(self, functions: list[Function]):
+        """The file's INFO line, and the reason at DEBUG of each function the file defines in LLIL"""
+        inline_functions = self.get_inline_functions(functions)
         categories = []
         for func in inline_functions:
             if func.name not in self.lines:

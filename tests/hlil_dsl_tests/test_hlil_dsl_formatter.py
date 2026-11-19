@@ -29,7 +29,7 @@ def dsl_part(*functions: Func, global_names: tuple[str, ...] = ()) -> HLILScript
     parser, disassembled = Program(*functions).disassemble()
     parser.game = GAME      # a mixed script always has one: its DSL names come from the game's helper
     parser.global_vars = [ScpGlobalVar(name, ScpGlobalVar.Type.Integer) for name in global_names]
-    dsl = HLILScriptFormatter(parser, {})
+    dsl = HLILScriptFormatter(parser)
     lifter = ED9VMLifter(parser=parser)
     for func in disassembled:
         dsl.add(func, convert_ed9_mlil_to_hlil(convert_ed9_llil_to_mlil_stack(lifter.lift_function(func))))

@@ -58,17 +58,14 @@ def logic_decompile(dat_path: Path, py_path: Path, game: str | None) -> LogicDec
     with contextlib.redirect_stdout(io.StringIO()):
         parser, functions = ScpParser.load(dat_path, round_trip=False, keep_unreachable_code=False, game=game)
 
-    formatter = LLILScriptFormatter(parser)
-    matched = formatter.match_library_functions(functions)
-    hlil_formatter = HLILScriptFormatter(parser, matched)
+    formatter = HLILScriptFormatter(parser)
     for func in functions:
         hlil = dsl_hlil(parser, func)
         if hlil is not None:
-            hlil_formatter.add(func, hlil)
+            formatter.add(func, hlil)
 
-    mixed, _ = formatter.gen_mixed_scripts(functions, hlil_formatter.lines, matched=matched)
-    write_text_lf(py_path, mixed)
-    return LogicDecompile(parser, functions, frozenset(hlil_formatter.lines))
+    write_text_lf(py_path, formatter.gen_python_script(functions))
+    return LogicDecompile(parser, functions, frozenset(formatter.lines))
 
 
 def dsl_hlil(parser: ScpParser, func: Function) -> HighLevelILFunction | None:

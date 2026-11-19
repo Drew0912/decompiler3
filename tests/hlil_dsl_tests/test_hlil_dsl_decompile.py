@@ -55,7 +55,7 @@ def printed(relative_path: str, name: str) -> list[str] | str:
     path = require(SORA2_SCRIPTS / relative_path)
     parser, [func] = ScpParser.load(path, round_trip=False, keep_unreachable_code=False, game=GAME,
                                     filter_func=lambda f: f.name == name)
-    dsl = HLILScriptFormatter(parser, {})
+    dsl = HLILScriptFormatter(parser)
     llil = ED9VMLifter(parser=parser).lift_function(func)
     dsl.add(func, convert_ed9_mlil_to_hlil(convert_ed9_llil_to_mlil_stack(llil)))
     return dsl.lines.get(name) or dsl.reasons[name]
