@@ -85,8 +85,82 @@ def chr_info(arg1: Value32, arg2: Value32):
     RETURN()
 
 
+@library_function
+def btl_check_flag(arg1: Value32):
+    """Returns its argument"""
+    LOAD_STACK(-WORD_SIZE)
+    SET_REG(0)
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def btl_get_sys_info(arg1: Value32):
+    """Returns its argument"""
+    LOAD_STACK(-WORD_SIZE)
+    SET_REG(0)
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def btl_chr_list_init(arg1: Value32, arg2: Value32):
+    POP(2 * WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def btl_chr_list_get_remain(arg1: Value32):
+    """Returns its argument"""
+    LOAD_STACK(-WORD_SIZE)
+    SET_REG(0)
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def wait(arg1: Value32):
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def reset_flag(arg1: Value32):
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def btl_sort_target(arg1: Value32, arg2: Value32):
+    POP(2 * WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def btl_get_remain_target(arg1: Value32):
+    """Returns its argument"""
+    LOAD_STACK(-WORD_SIZE)
+    SET_REG(0)
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def chr_delete_joint_controller(arg1: Value32, arg2: str, arg3: Nullable32 = 0.0, arg4: Nullable32 = 0):
+    POP(4 * WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def btl_next_target(arg1: Value32):
+    POP(WORD_SIZE)
+    RETURN()
+
+
 CONTROL_LIBRARY = [global_work, set_global_work, menu_create, menu_additem, menu_open, menu_wait, menu_close,
-                   menu_is_canceled, chr_info]
+                   menu_is_canceled, chr_info, btl_check_flag, btl_get_sys_info, btl_chr_list_init,
+                   btl_chr_list_get_remain, wait, reset_flag, btl_sort_target, btl_get_remain_target,
+                   chr_delete_joint_controller, btl_next_target]
 
 
 def use_control_library(scena):
@@ -819,6 +893,270 @@ class TestControlFlow(HLILTestCase):
                 LOAD_STACK(-4)
                 SET_REG(0)
                 POP(8)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+
+class TestLoops(HLILTestCase):
+    """While, Break and Continue, against twins from real functions and from the VM's rules"""
+
+    def test_an_endless_loop_its_arms_leave(self):
+        """btlsys's BattlePreEnd: while (1) is a real test; a Break in one arm and a Continue in the other, so no jump
+        back after them; the If's false jump and the loop's exit go to one label"""
+        def hlil(scena):
+            use_control_library(scena)
+
+            @scena.HLILCode()
+            def BattlePreEnd():
+                If(And(btl_check_flag(1048576), btl_get_sys_info(6) == 1), [
+                    While(1, [
+                        btl_chr_list_init(65534, 128),
+                        If(btl_chr_list_get_remain(65534) <= 0, [
+                            wait(0.5),
+                            Break(),
+                        ]).Else([
+                            wait(0),
+                            Continue(),
+                        ]),
+                    ]),
+                ])
+                reset_flag(500)
+                Return()
+
+        def llil(scena):
+            use_control_library(scena)
+
+            @scena.LLILCode()
+            def BattlePreEnd():
+                local_call(btl_check_flag, 'loc_9BC1', [(PUSH_INT, 1048576)])
+                GET_REG(0)
+                local_call(btl_get_sys_info, 'loc_9BDB', [(PUSH_INT, 6)])
+                GET_REG(0)
+                PUSH_INT(1)
+                EQ()
+                LOGICAL_AND()
+                POP_JMP_ZERO('loc_9C76')
+                label('loc_9BED')
+                PUSH_INT(1)
+                POP_JMP_ZERO('loc_9C76')
+                local_call(btl_chr_list_init, 'loc_9C16', [(PUSH_INT, 128), (PUSH_INT, 65534)])
+                local_call(btl_chr_list_get_remain, 'loc_9C2E', [(PUSH_INT, 65534)])
+                GET_REG(0)
+                PUSH_INT(0)
+                LE()
+                POP_JMP_ZERO('loc_9C59')
+                local_call(wait, 'loc_9C54', [(PUSH_FLOAT, 0.5)])
+                JMP('loc_9C76')
+                label('loc_9C59')
+                local_call(wait, 'loc_9C71', [(PUSH_INT, 0)])
+                JMP('loc_9BED')
+                label('loc_9C76')
+                local_call(reset_flag, 'loc_9C8E', [(PUSH_INT, 500)])
+                PUSH_RAW(RawInt(0x00000000))
+                SET_REG(0)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_a_local_of_the_loop_block(self):
+        """chr5002's AniBtlSCraft_TargetSclReset: a local declared in the loop's block, pushed every run and popped at
+        the block's end, before the jump back to the test"""
+        def hlil(scena):
+            use_control_library(scena)
+
+            @scena.HLILCode()
+            def AniBtlSCraft_TargetSclReset():
+                var_s0 = Local('var_s0')
+                btl_sort_target(65534, 0)
+                While(btl_get_remain_target(65534) > 0, [
+                    Let(var_s0, chr_info(65516, 7)),
+                    chr_delete_joint_controller(65516, "", 0.0, 0),
+                    btl_next_target(65534),
+                ])
+                Return()
+
+        def llil(scena):
+            use_control_library(scena)
+
+            @scena.LLILCode()
+            def AniBtlSCraft_TargetSclReset():
+                local_call(btl_sort_target, 'loc_9A874', [(PUSH_INT, 0), (PUSH_INT, 65534)])
+                label('loc_9A877')
+                local_call(btl_get_remain_target, 'loc_9A88C', [(PUSH_INT, 65534)])
+                GET_REG(0)
+                PUSH_INT(0)
+                GT()
+                POP_JMP_ZERO('loc_9A90E')
+                PUSH_RAW(RawInt(0x00000000))
+                local_call(chr_info, 'loc_9A8BE', [(PUSH_INT, 7), (PUSH_INT, 65516)])
+                GET_REG(0)
+                POP_TO(-4)
+                local_call(chr_delete_joint_controller, 'loc_9A8EF', [(PUSH_INT, 0), (PUSH_FLOAT, 0.0), (PUSH_STR, ""),
+                                                                       (PUSH_INT, 65516)])
+                local_call(btl_next_target, 'loc_9A907', [(PUSH_INT, 65534)])
+                POP(4)
+                JMP('loc_9A877')
+                label('loc_9A90E')
+                PUSH_RAW(RawInt(0x00000000))
+                SET_REG(0)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_exits_pop_each_block_they_leave(self):
+        """The exits of mon5219_c10's AniFieldSwarmAttack: a Break under the loop block's locals and an If block's pops
+        each block's in turn, the loop's first (POP(8); POP(4)), and no more; a Break and a Continue at the block's end
+        pop the loop block's alone"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Swarm(arg1: Value32):
+                a = Local('a')
+                b = Local('b')
+                c = Local('c')
+                While(arg1 < 20, [
+                    Let(a, 2),
+                    Let(b, 8),
+                    If(arg1, [
+                        Let(c, arg1 + 1),
+                        If(c < 1, [
+                            Set(REGS[1], c),
+                            Break(),
+                        ]),
+                    ]),
+                    Set(arg1, arg1 + 1),
+                    If(b >= arg1, [
+                        Break(),
+                    ]).Else([
+                        Continue(),
+                    ]),
+                ])
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Swarm(arg1: Value32):
+                label('head')
+                LOAD_STACK(-4)
+                PUSH_INT(20)
+                LT()
+                POP_JMP_ZERO('end')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(2)
+                POP_TO(-4)
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(8)
+                POP_TO(-4)
+                LOAD_STACK(-12)
+                POP_JMP_ZERO('after_if')
+                PUSH_RAW(RawInt(0))
+                LOAD_STACK(-16)
+                PUSH_INT(1)
+                ADD()
+                POP_TO(-4)
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                LT()
+                POP_JMP_ZERO('after_inner')
+                LOAD_STACK(-4)
+                SET_REG(1)
+                POP(8)                  # a and b, the loop's block
+                POP(4)                  # c, the If's
+                JMP('end')
+                label('after_inner')
+                POP(4)                  # c at its block's end
+                label('after_if')
+                LOAD_STACK(-12)
+                PUSH_INT(1)
+                ADD()
+                POP_TO(-12)
+                LOAD_STACK(-4)
+                LOAD_STACK(-16)
+                GE()
+                POP_JMP_ZERO('again')
+                POP(8)
+                JMP('end')
+                label('again')
+                POP(8)
+                JMP('head')
+                label('end')
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(4)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_nested_loops_a_return_and_an_empty_block(self):
+        """A Break leaves the innermost loop, popping its block's local only; a Return in a loop pops every live slot;
+        an empty block still jumps back to its test"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Nested(arg1: Value32):
+                x = Local('x')
+                y = Local('y')
+                While(arg1, [
+                    Let(x, 1),
+                    While(x, [
+                        Let(y, 2),
+                        If(y, [
+                            Break(),
+                        ]),
+                        Set(x, 0),
+                    ]),
+                    If(x, [
+                        Return(x),
+                    ]),
+                    Set(arg1, 0),
+                ])
+                While(arg1, [])
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Nested(arg1: Value32):
+                label('outer')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('outer_end')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(1)
+                POP_TO(-4)
+                label('inner')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('inner_end')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(2)
+                POP_TO(-4)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('after_break')
+                POP(4)                  # y, the inner loop's block
+                JMP('inner_end')
+                label('after_break')
+                PUSH_INT(0)
+                POP_TO(-8)
+                POP(4)
+                JMP('inner')
+                label('inner_end')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('after_return')
+                LOAD_STACK(-4)
+                SET_REG(0)
+                POP(8)                  # x and arg1: the whole frame
+                RETURN()
+                label('after_return')
+                PUSH_INT(0)
+                POP_TO(-8)
+                POP(4)
+                JMP('outer')
+                label('outer_end')
+                label('empty')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('empty_end')
+                JMP('empty')
+                label('empty_end')
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(4)
                 RETURN()
 
         self.assert_twins(hlil, llil)

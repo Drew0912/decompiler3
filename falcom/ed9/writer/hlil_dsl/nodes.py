@@ -22,8 +22,8 @@ class Node:
     """Every node: Python's truth test, conversions, text, hashing, a subscript or a call on it are mistakes"""
 
     def __bool__(self):
-        raise dsl_error(f'{self!r} has no truth value while the script compiles: Python\'s if / and / or / not and a '
-                        'chained comparison test it; use And(...), Or(...), Not(...)')
+        raise dsl_error(f'{self!r} has no truth value while the script compiles: Python\'s if / while / and / or / not '
+                        'and a chained comparison test it; use If(...), While(...), And(...), Or(...), Not(...)')
 
     def __int__(self):
         raise dsl_error(f'{self!r} is a game value, not a Python number')

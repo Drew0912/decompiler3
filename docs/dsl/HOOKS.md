@@ -88,8 +88,9 @@ the user's OK. `create_scp_writer`, `get_scp_writer`, positional `run(globals())
 `replace_function`, `add_function`, `original`, `inline_original_func`, `label`, `GLOBAL_VAR`, `library_function`
 (above each library `def`), `get_scp_writer().globals`, every opcode function and type the helper exports (`RawInt`,
 `FloatWord`; it has no `__all__`, so every public name in it), the HLIL DSL's names (`If` with its methods `ElseIf`
-and `Else`, `Set`, `Let`, `Return`, `PopN`, `DebugInt`, `Syscall`, `Local`, `REGS`, `this`, `script`, `Int`, `Float`,
-`Str`, `Raw`, `And`, `Or`, `Not`: the `__all__` of `falcom.ed9.writer.scp_hlil_dsl_helper`), and the import paths
+and `Else`, `While`, `Break`, `Continue`, `Set`, `Let`, `Return`, `PopN`, `DebugInt`, `Syscall`, `Local`, `REGS`,
+`this`, `script`, `Int`, `Float`, `Str`, `Raw`, `And`, `Or`, `Not`: the `__all__` of
+`falcom.ed9.writer.scp_hlil_dsl_helper`), and the import paths
 `falcom.ed9.writer.scp_writer_helper`, `falcom.ed9.games.<game>.writer.scp_writer_helper`,
 `falcom.ed9.writer.scp_hlil_dsl_helper`, `falcom.ed9.games.<game>.writer.scp_hlil_dsl_helper` and
 `falcom.ed9.games.<game>.metadata.common_all`. Documented here, not frozen.

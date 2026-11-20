@@ -651,6 +651,160 @@ class TestControlFlow(MistakeTestCase):
                 self.assert_raises_at(register, marker, 'Func', text)
 
 
+class TestLoops(MistakeTestCase):
+    """While's arguments and block, Break and Continue outside a loop, the paths a loop leaves"""
+
+    def test_the_while_arguments(self):
+        def keyword(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(arg1, block=[Syscall(1, 2, 3)])  # line: while keyword
+                Return()
+
+        def third_block(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(arg1, [Syscall(1, 2, 3)], [Syscall(1, 2, 4)])  # line: while third block
+                Return()
+
+        def no_block(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(arg1)  # line: while no block
+                Return()
+
+        def break_argument(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(arg1, [
+                    Break(1),  # line: break argument
+                ])
+                Return()
+
+        no_else = 'While takes a condition and a block, While(condition, [...]) (the DSL has no loop else)'
+        cases = ((keyword, 'while keyword', 'While takes its condition and its block by position, not block='),
+                 (third_block, 'while third block', no_else),
+                 (no_block, 'while no block', no_else),
+                 (break_argument, 'break argument', 'Break() takes no arguments: it leaves the innermost While '
+                                                    'holding it'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+    def test_exits_outside_a_loop(self):
+        """Checked before the paths, so a Break at the top level is named for what it is"""
+        def at_the_top_level(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                Break()  # line: top-level break
+                Return()
+
+        def in_an_if(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [
+                    Continue(),  # line: continue in an if
+                ])
+                Return()
+
+        cases = ((at_the_top_level, 'top-level break', 'Break() outside a While: it leaves the innermost While '
+                                                        'holding it'),
+                 (in_an_if, 'continue in an if', 'Continue() outside a While'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+    def test_the_paths_a_loop_leaves(self):
+        def after_a_break(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(arg1, [
+                    Break(),
+                    Syscall(1, 2, 3),  # line: after the break
+                ])
+                Return()
+
+        def after_a_continue(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(arg1, [
+                    Continue(),
+                    Syscall(1, 2, 3),  # line: after the continue
+                ])
+                Return()
+
+        def ending_in_a_loop(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(1, [  # line: last loop
+                    Syscall(1, 2, 3),
+                ])
+
+        cases = ((after_a_break, 'after the break', 'a statement after Break(), which leaves the loop: it never runs'),
+                 (after_a_continue, 'after the continue', "a statement after Continue(), which goes to the loop's next "
+                                                          'test: it never runs'),
+                 (ending_in_a_loop, 'last loop', 'the body ends with While(...), which never ends its path (the code '
+                                                 'after it runs when its test is 0): end the body with Return(...)'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+    def test_the_loop_block(self):
+        def changed_after(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                block = []
+                While(arg1, block)  # line: changed loop block
+                block.append(Set(REGS[1], 5))
+                Return()
+
+        def break_not_called(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(arg1, [Break])  # line: break not called
+                Return()
+
+        def read_after(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                x = Local('x')
+                While(arg1, [Let(x, 1)])
+                Syscall(1, 2, x)  # line: read after the loop
+                Return()
+
+        def read_in_the_test(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                x = Local('x')
+                While(x, [  # line: read in the test
+                    Let(x, 1),
+                ])
+                Return()
+
+        def test_made_early(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                test = arg1 > 0  # line: test made early
+                Set(REGS[1], 1)
+                While(test, [
+                    Set(arg1, arg1 - 1),
+                ])
+                Return()
+
+        cases = ((test_made_early, 'test made early', "(arg1 GT 0) is made here but runs after Set(REGS[1], ...), made "
+                                                      "later: the While's condition is tested where the While stands: "
+                                                      'make it there'),
+                 (changed_after, 'changed loop block', 'a block changed after its While took it: the While holds the '
+                                                       'list as it was then'),
+                 (break_not_called, 'break not called', 'Break in a block is not a statement: write Break(), its '
+                                                        'call'),
+                 (read_after, 'read after the loop', 'local x is read after the block that declares it ends'),
+                 (read_in_the_test, 'read in the test', 'local x is read before Let(x, ...)'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+
 class TestWriterGuards(MistakeTestCase):
     """What an HLIL body can't run: LLIL opcodes and labels, an old library's raw body, a body inlined"""
 

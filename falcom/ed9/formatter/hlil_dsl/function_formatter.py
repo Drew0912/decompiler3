@@ -1,9 +1,9 @@
 """The HLIL DSL's function formatter (docs/dsl/HLIL_DSL.md, Form, Printer): an HLIL function as the lines of its
 @scena.HLILCode() definition, or LLILFallback with the reason it stays LLIL. Its forms so far: calls, Set, Let and
-Return and the intrinsic statements; If with its .ElseIf / .Else arms, one statement per line in each block; a literal
-wrapped where Python would fold, mirror or format the bare one; Python's precedence. The HLIL walk is VM-neutral; what
-is ED9's (the constants' spelling, the declaring push and the default return, registers, the ED9-only statements) is
-ED9Forms'"""
+Return and the intrinsic statements; If with its .ElseIf / .Else arms, While, Break and Continue, one statement per
+line in each block; a literal wrapped where Python would fold, mirror or format the bare one; Python's precedence. The
+HLIL walk is VM-neutral; what is ED9's (the constants' spelling, the declaring push and the default return, registers,
+the ED9-only statements) is ED9Forms'"""
 
 from enum import IntEnum, auto
 import keyword
@@ -12,10 +12,10 @@ from typing import Callable, NamedTuple
 
 from dc3 import default_indent, quote_string
 from ir.core import is_int_zero
-from ir.hlil import (BinaryOp, HighLevelILFunction, HLILAddressOf, HLILAssign, HLILBinaryOp, HLILBlock, HLILCall,
-                     HLILComment, HLILConst, HLILDeref, HLILDoWhile, HLILExpression, HLILExprStmt, HLILExternCall,
-                     HLILIf, HLILIntrinsic, HLILReturn, HLILStatement, HLILSwitch, HLILSyscall, HLILUnaryOp, HLILVar,
-                     HLILVariable, HLILWhile, UnaryOp, VariableKind)
+from ir.hlil import (BinaryOp, HighLevelILFunction, HLILAddressOf, HLILAssign, HLILBinaryOp, HLILBlock, HLILBreak,
+                     HLILCall, HLILComment, HLILConst, HLILContinue, HLILDeref, HLILDoWhile, HLILExpression,
+                     HLILExprStmt, HLILExternCall, HLILIf, HLILIntrinsic, HLILReturn, HLILStatement, HLILSwitch,
+                     HLILSyscall, HLILUnaryOp, HLILVar, HLILVariable, HLILWhile, UnaryOp, VariableKind)
 from ir.hlil.hlil import unwrap_address_taken_var
 from ...assembler.function import Function
 from ...structs.scp_types import RawInt, ScpValue
@@ -106,9 +106,10 @@ def code_statements(block: HLILBlock) -> list[HLILStatement]:
 
 
 def ends_path(statement: HLILStatement) -> bool:
-    """No code after statement runs: a return, or an if with an else whose every arm ends its path"""
+    """No code after statement runs: a return, a break, a continue, or an if with an else whose every arm ends its
+    path"""
     match statement:
-        case HLILReturn():
+        case HLILReturn() | HLILBreak() | HLILContinue():
             return True
 
         case HLILIf(false_block=HLILBlock()):
@@ -264,8 +265,23 @@ class FunctionFormatter:
             case HLILIf():
                 return Printed(self.if_lines(statement), 1)
 
-            case HLILWhile() | HLILDoWhile():
-                raise LLILFallback('loop')
+            case HLILWhile(label=None):
+                lines = ['']
+                self.append_arm(lines, f'While({self.condition(statement.condition)}, ',
+                                code_statements(statement.body))
+                return Printed(lines, 1)
+
+            case HLILBreak(label=None):
+                return Printed(['Break()'], 1)
+
+            case HLILContinue(label=None):
+                return Printed(['Continue()'], 1)
+
+            case HLILDoWhile():
+                raise LLILFallback('do-while')
+
+            case HLILWhile() | HLILBreak() | HLILContinue():
+                raise LLILFallback('labelled loop')
 
             case HLILSwitch():
                 raise LLILFallback('switch')

@@ -2,11 +2,14 @@
 compiler writes for them, handed to a sink one at a time - at compile time the writer's opcode functions
 (llil_sink.py). It starts with the stack holding exactly the parameters (slot 0 the last); a local's slot is where
 its Let pushed it, and its block's end pops it; arguments are pushed last first; a call's result is read from REGS[0];
-an If's arms jump past themselves when their condition is 0 (POP_JMP_ZERO) and to its end after their block. Each
+an If's arms jump past themselves when their condition is 0 (POP_JMP_ZERO) and to its end after their block; a While
+tests at its head, jumps past itself when the test is 0 and back to the head after its block; Break and Continue pop
+the locals of each block they leave, a POP per block from the loop's own, then jump past the loop or to its head. Each
 opcode is at the line of the node it lowers, a leaf's at its user's. HLIL's operators and the constants' kinds become
 ED9's opcodes here"""
 
-from typing import Protocol
+from itertools import pairwise
+from typing import NamedTuple, Protocol
 
 from assembler import OperandFormat, OperandType
 from ir.core import operators
@@ -15,7 +18,7 @@ from ...assembler.vm import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, RESULT_REGIST
 from ...structs.scp_types import RawInt
 from .build import Build
 from .calls import BodyStatement, Call, LocalCall, ScriptCall
-from .control import Block, If, block_ends_path
+from .control import Block, Break, If, LoopExit, While, block_ends_path
 from .ed9_nodes import DebugInt, PopN, Register, SyscallCall
 from .nodes import BinaryOperation, Const, Global, Let, Local, Param, Return, Set, UnaryOperation
 
@@ -69,6 +72,14 @@ class Sink(Protocol):
         """One opcode, its operands as its DSL opcode function takes them"""
 
 
+class Loop(NamedTuple):
+    """A While being lowered: its head's label and its end's, and where its block starts in Lowering.block_depths"""
+
+    head: str
+    end: str
+    block: int
+
+
 class Lowering:
     """One HLIL body's statements as opcodes into a sink. stack_depth counts the slots in use (the parameters, the
     locals, the values in flight): a variable's LOAD_STACK and POP_TO offsets follow from it"""
@@ -80,6 +91,8 @@ class Lowering:
         self.build = build
         self.stack_depth = param_count
         self.local_slots: dict[str, int] = {}
+        self.block_depths: list[int] = []   # the stack depth where each block being lowered started, outermost first
+        self.loops: list[Loop] = []         # the Whiles being lowered, outermost first
 
     def run(self, statements: list[BodyStatement]):
         for statement in statements:
@@ -113,6 +126,12 @@ class Lowering:
             case If():
                 self.lower_if(node)
 
+            case While():
+                self.lower_while(node)
+
+            case LoopExit():
+                self.lower_loop_exit(node)
+
     def lower_if(self, node: If):
         """Each arm: its condition, a jump past the arm when it is 0, its block, then a jump to the If's end unless the
         block ends its path or no arm follows; the else block after the last"""
@@ -136,6 +155,31 @@ class Lowering:
         if end is not None:
             sink.label(end)
 
+    def lower_while(self, node: While):
+        """The head: its condition, a jump past the loop when it is 0, its block, then a jump to the head unless the
+        block ends its path"""
+        sink = self.sink
+        loop = Loop(sink.new_label(), sink.new_label(), len(self.block_depths))
+        sink.label(loop.head)
+        self.jump_if_zero(node.condition, loop.end, node.site)
+        self.loops.append(loop)
+        self.lower_block(node.block)
+        self.loops.pop()
+        if not block_ends_path(node.block):
+            sink.at(node.site)
+            sink.emit(ED9Opcode.JMP, loop.head)
+
+        sink.label(loop.end)
+
+    def lower_loop_exit(self, node: LoopExit):
+        """A POP of each left block's locals, the loop's own block first (as the compiler writes it), then a jump past
+        the innermost loop (Break) or to its head (Continue)"""
+        loop = self.loops[-1]
+        for block_start, next_start in pairwise([*self.block_depths[loop.block:], self.stack_depth]):
+            self.pop(next_start - block_start)
+
+        self.sink.emit(ED9Opcode.JMP, loop.end if isinstance(node, Break) else loop.head)
+
     def jump_if_zero(self, condition, target: str, site):
         self.push_operand(condition, site)
         self.sink.emit(ED9Opcode.POP_JMP_ZERO, target)
@@ -145,9 +189,11 @@ class Lowering:
         """block's statements, then a pop of the locals it declared unless its path ended; the code after it starts at
         the depth before it either way"""
         depth = self.stack_depth
+        self.block_depths.append(depth)
         for statement in block:
             self.lower_statement(statement)
 
+        self.block_depths.pop()
         if not block_ends_path(block):
             self.pop(self.stack_depth - depth)
 

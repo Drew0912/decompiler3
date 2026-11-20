@@ -247,6 +247,60 @@ class TestControlFlow(PrinterTestCase):
                                   '])',
                                   'Return()'], argc=1)
 
+    def test_a_loop_its_local_and_a_break(self):
+        """The test at the head, the body's local popped before the jump back, a Break popping it before the jump past
+        the loop. HLIL holds the code after the ending arm as its else, ending in a continue: printed so (the tidying
+        is later)"""
+        asm = Asm()
+        asm.label('head')
+        asm.load_stack(-WORD_SIZE); asm.jz('end')
+        asm.push_raw(0); asm.push_int(5); asm.pop_to(-WORD_SIZE)
+        asm.load_stack(-WORD_SIZE); asm.jz('next')
+        asm.pop(WORD_SIZE); asm.jmp('end')
+        asm.label('next')
+        asm.load_stack(-WORD_SIZE)
+        syscall(asm, 1)
+        asm.pop(WORD_SIZE); asm.jmp('head')
+        asm.label('end')
+        returned(asm, argc=1)
+        self.assert_printed(asm, ["var_s1 = Local('var_s1')",
+                                  'While(arg1, [',
+                                  f'{INDENT}Let(var_s1, 5),',
+                                  f'{INDENT}If(var_s1, [',
+                                  f'{INDENT}{INDENT}Break(),',
+                                  f'{INDENT}]).Else([',
+                                  f'{INDENT}{INDENT}Syscall({SUBSYSTEM}, {CMD}, var_s1),',
+                                  f'{INDENT}{INDENT}Continue(),',
+                                  f'{INDENT}]),',
+                                  '])',
+                                  'Return()'], argc=1)
+
+    def test_an_endless_loop_its_arms_leave(self):
+        """while (1) is a real test; a body whose every path leaves has no jump back of its own"""
+        asm = Asm()
+        asm.label('head')
+        asm.push_int(1); asm.jz('end')
+        asm.load_stack(-WORD_SIZE); asm.jz('else')
+        asm.push_int(10)
+        syscall(asm, 1)
+        asm.jmp('end')
+        asm.label('else')
+        asm.push_int(20)
+        syscall(asm, 1)
+        asm.jmp('head')
+        asm.label('end')
+        returned(asm, argc=1)
+        self.assert_printed(asm, ['While(1, [',
+                                  f'{INDENT}If(arg1, [',
+                                  f'{INDENT}{INDENT}Syscall({SUBSYSTEM}, {CMD}, 10),',
+                                  f'{INDENT}{INDENT}Break(),',
+                                  f'{INDENT}]).Else([',
+                                  f'{INDENT}{INDENT}Syscall({SUBSYSTEM}, {CMD}, 20),',
+                                  f'{INDENT}{INDENT}Continue(),',
+                                  f'{INDENT}]),',
+                                  '])',
+                                  'Return()'], argc=1)
+
 
 class TestFallbacks(PrinterTestCase):
     def test_a_logical_not_is_not_exact_yet(self):
@@ -280,6 +334,37 @@ class TestFallbacks(PrinterTestCase):
         alone.label('end')
         returned(alone, argc=1)
         self.assert_llil(alone, 'not exact: opcode 1, expected POP_JMP_NOT_ZERO 5, got POP_JMP_ZERO 3', argc=1)
+
+    def test_loops_the_dsl_has_no_form_for(self):
+        """A loop tested at its end (do-while), and a jump from an inner loop past the outer one (a labelled break)"""
+        tested_last = Asm()
+        tested_last.label('head')
+        tested_last.push_int(10)
+        syscall(tested_last, 1)
+        tested_last.load_stack(-WORD_SIZE); tested_last.jz('end')
+        tested_last.jmp('head')
+        tested_last.label('end')
+        returned(tested_last, argc=1)
+        self.assert_llil(tested_last, 'do-while', argc=1)
+
+        leaving_two = Asm()
+        leaving_two.label('outer')
+        leaving_two.load_stack(-WORD_SIZE); leaving_two.jz('end')
+        leaving_two.label('inner')
+        leaving_two.push_int(1); leaving_two.jz('inner_end')
+        leaving_two.load_stack(-WORD_SIZE); leaving_two.jz('stay')
+        leaving_two.jmp('end')
+        leaving_two.label('stay')
+        leaving_two.push_int(10)
+        syscall(leaving_two, 1)
+        leaving_two.jmp('inner')
+        leaving_two.label('inner_end')
+        leaving_two.push_int(20)
+        syscall(leaving_two, 1)
+        leaving_two.jmp('outer')
+        leaving_two.label('end')
+        returned(leaving_two, argc=1)
+        self.assert_llil(leaving_two, 'labelled loop', argc=1)
 
     def test_an_address_taken(self):
         asm = Asm()

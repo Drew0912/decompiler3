@@ -1,8 +1,8 @@
 # HLIL DSL
 
-> Status: design; started: the function stubs (Calls), the compile side of straight-line HLIL bodies and `If`
-> (`@scena.HLILCode()`, Form: Implemented) and their printer with the exact check (the default `<stem>.py`, Recompile
-> Path: Fallback and File names) are implemented; loops, `Switch`, short-circuit tests and the rest are planned.
+> Status: design; started: the function stubs (Calls), the compile side of straight-line HLIL bodies, `If` and
+> `While` (`@scena.HLILCode()`, Form: Implemented) and their printer with the exact check (the default `<stem>.py`,
+> Recompile Path: Fallback and File names) are implemented; `Switch`, short-circuit tests and the rest are planned.
 > Overview and decisions: `docs/dsl/DSL_FUTURE_WORK.md`, Recompilation Pipeline §1; its hooks: `docs/dsl/HOOKS.md`.
 
 ## HLIL DSL: Recompile Path
@@ -87,20 +87,26 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
     Return(0)
 ```
 
-- **Implemented (straight-line bodies and `If`):** `@scena.HLILCode()` compiles a body of these statements: a
-  call (`f(...)`, `script.<module>.f(...)`, `Syscall(subsystem, cmd, ...)`), `Set(target, value)` (a parameter, a
-  local, `this.x`, `REGS[n]`), `Let(x)` and `Let(x, value)`, `Return(value)` and `Return()`, `PopN(...)`,
-  `DebugInt(n)`, and `If(condition, [...])` with `.ElseIf(condition, [...])` arms and a last `.Else([...])`, each
-  method returning the `If`, so a chain is one statement; values are literals, `Int` / `Float` / `Str` / `Raw`,
-  parameters, locals, `this.x`, `REGS[n]`, a call's result, `+ - * / % == != < <= > >= & |`, `-x`, `~x`, `And` /
-  `Or` / `Not`. An arm runs when its condition is not 0: it lowers to the condition, `POP_JMP_ZERO` past the arm,
-  the block, and a `JMP` to the `If`'s end unless the block ends its path or no arm follows. A block is a Python list
-  of statements and calls, each in one block; a statement ends its path when it is a `Return` or an `If` with an
-  `.Else` whose every block ends its path, a statement after one raises at its line, and the body must end its path
-  (a body can end in such an `If`). A mixed script gets these names from its game's `scp_hlil_dsl_helper`
-  (`falcom/ed9/games/<game>/writer/`, which star-imports the shared `falcom/ed9/writer/scp_hlil_dsl_helper.py` and
-  holds the game's own DSL helpers). The body runs once, with a parameter node per parameter, under a build of its
-  own; its statements are checked, then lowered through the opcode functions (`falcom/ed9/writer/hlil_dsl/`:
+- **Implemented (straight-line bodies, `If` and `While`):** `@scena.HLILCode()` compiles a body of these
+  statements: a call (`f(...)`, `script.<module>.f(...)`, `Syscall(subsystem, cmd, ...)`), `Set(target, value)` (a
+  parameter, a local, `this.x`, `REGS[n]`), `Let(x)` and `Let(x, value)`, `Return(value)` and `Return()`,
+  `PopN(...)`, `DebugInt(n)`, `If(condition, [...])` with `.ElseIf(condition, [...])` arms and a last `.Else([...])`,
+  each method returning the `If`, so a chain is one statement, `While(condition, [...])`, and `Break()` /
+  `Continue()` in a `While`'s block; values are literals, `Int` / `Float` / `Str` / `Raw`, parameters, locals,
+  `this.x`, `REGS[n]`, a call's result, `+ - * / % == != < <= > >= & |`, `-x`, `~x`, `And` / `Or` / `Not`. An arm
+  runs when its condition is not 0: it lowers to the condition, `POP_JMP_ZERO` past the arm, the block, and a `JMP`
+  to the `If`'s end unless the block ends its path or no arm follows. A `While` lowers to its head's label, the
+  condition, `POP_JMP_ZERO` past the loop, the block, and a `JMP` back to the head unless the block ends its path;
+  `Break()` jumps past the innermost loop and `Continue()` to its head, each after popping the locals of the blocks
+  it leaves (Jumps, below). A block is a Python list of statements and calls, each in one block; a statement ends its
+  path when it is a `Return`, a `Break`, a `Continue`, or an `If` with an `.Else` whose every block ends its path; a
+  `While` never does (its test can be 0, `While(1)`'s too, so the code after a loop needs its own `Return`); a
+  statement after one that ends its path raises at its line, and so do an exit outside a `While` and a body that
+  does not end its path (a body can end in such an `If`). A mixed script gets these names from its game's
+  `scp_hlil_dsl_helper` (`falcom/ed9/games/<game>/writer/`, which star-imports the shared
+  `falcom/ed9/writer/scp_hlil_dsl_helper.py` and holds the game's own DSL helpers). The body runs once, with a
+  parameter node per parameter, under a build of its own; its statements are checked, then lowered through the
+  opcode functions (`falcom/ed9/writer/hlil_dsl/`:
   `nodes.py`, `calls.py`, `control.py`, `build.py`, `tree.py`, `lowering.py`, `llil_sink.py`, `source_check.py`), so
   the call tracker, the opcode callbacks and the compile check see each opcode as an LLIL body's, at the line of the
   node it came from. The nodes, the build, its checks and the source check are VM-neutral: an operation is keyed by
@@ -114,15 +120,15 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
 
 - **Ownership:** every node registers when it is created, and a parent (`If`, `While`, `Set`, a call's
   arguments) claims what is passed to it; unclaimed statements are the function's top level, in order.
-  The code runs units in turn - a statement with everything it claims, an `If`'s each condition and then its block's
-  units (`tree.py`, `units_in_code_order`) - and each unit must be one unbroken run of creation order, the runs in
-  that order. So a node kept in a Python variable and used later (which would move a call), a block a helper makes
-  before its condition, a statement made between an `If`'s arms (`chain = If(...)`, a statement, `chain.Else(...)`:
-  no code runs there; an `If` takes arms only until a block holds it), a block's list changed after its `If` took it
-  (the `If` holds the list as it was), a node claimed twice, and an unclaimed non-statement (`arg1 = arg1 + 1`) all
-  raise; operands within one unit may be made in any order (`And(a, b, c)` makes its operands before its
-  operations). Build each function in isolation, validate it, then lower it; record each node's file and line for
-  error messages.
+  The code runs units in turn - a statement with everything it claims, an `If`'s or a `While`'s each condition and
+  then its block's units (`tree.py`, `units_in_code_order`) - and each unit must be one unbroken run of creation
+  order, the runs in that order. So a node kept in a Python variable and used later (which would move a call), a
+  block a helper makes before its condition, a statement made between an `If`'s arms (`chain = If(...)`, a
+  statement, `chain.Else(...)`: no code runs there; an `If` takes arms only until a block holds it), a block's list
+  changed after its `If` or `While` took it (it holds the list as it was), a node claimed twice, and an unclaimed
+  non-statement (`arg1 = arg1 + 1`) all raise; operands within one unit may be made in any order (`And(a, b, c)`
+  makes its operands before its operations). Build each function in isolation, validate it, then lower it; record
+  each node's file and line for error messages.
 - **Locals:** `Let` declares (where the source's declaring push is) and `Set` assigns. One `x = Local('x')`
   line per local names it; `Set` on an undeclared local, a read before its `Let` and a second `Let` of a live one (an
   outer block's too) raise. The end of a block frees the locals declared in it (its `POP`, before the label the jump
@@ -148,8 +154,9 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   and so does a library body from before `@library_function` (regenerate the library).
 - **Jumps:** `JumpIfFalse`/`JumpIfTrue` (`POP_JMP_ZERO`/`POP_JMP_NOT_ZERO`), `Label` and `Jump` mix with
   blocks in one function: structure what is clean, jump elsewhere. Labels are per function and named by
-  order, not address. A jump must arrive with the same live locals; `Break`/`Continue` free inner
-  locals first.
+  order, not address. A jump must arrive with the same live locals: `Break`/`Continue` pop the locals of each block
+  they leave, a `POP` per block from the loop's own block inwards, as the compiler does (`mon5219_c10`
+  `AniFieldSwarmAttack`: `POP(8); POP(4); JMP` for two locals of the loop's block and one of an `If`'s inside it).
 - **Switch:** `Switch(value, [Case(k, [...]), ...], default=[...])` lowers to the compiler's own
   pattern: `SET_REG 0`; per case `GET_REG 0; PUSH_INT k; EQ; POP_JMP_NOT_ZERO`; a jump past the cases;
   the bodies in order, each ending in a jump to the end. A list rather than a dict keeps `1` and `1.0`
@@ -167,7 +174,9 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   is the raw-zero return. Out-parameters are `Ref(x)` (`PUSH_STACK_OFFSET`), `Deref(p)` and
   `Set(Deref(p), value)`, only on `Pointer` parameters. `Syscall(subsystem, cmd, ...)` covers unnamed
   syscalls, and `EmitLLIL(...)` places LLIL opcodes for a region no HLIL node expresses (Mixing LLIL
-  and HLIL, below). `do … while` and labelled `break` are deferred: the sora2 output has neither.
+  and HLIL, below). `do … while` and a labelled `break` / `continue` (one leaving an outer loop) have no form: a
+  function holding one stays LLIL (`do-while`, `labelled loop`); `sora2`'s census has one do-while and no labelled
+  exit.
 - **Python traps:**
   - a missing comma before a line starting with `[` or `(` parses as a subscript or a call, so nodes'
     `__getitem__` and `__call__` raise "missing comma?";
@@ -184,12 +193,16 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
     game value (pass the value as an argument of its own);
   - `this.x = ...` and `REGS[n] = ...` set nothing in the game and raise: `Set(this.x, value)`;
   - keep `1` and `1.0` distinct, and emit `# fmt: off` so formatters don't reflow the lists;
-  - a body ends its path (`Return(...)`, or an `If` whose every arm, `.Else` included, ends with one), and
-    `return Return(...)` is the one Python `return` it takes;
+  - a body ends its path (`Return(...)`, or an `If` whose every arm, `.Else` included, ends with one; a body ending
+    in a `While` raises, naming why), and `return Return(...)` is the one Python `return` it takes;
   - a block is a list, never a tuple (`(foo(1))` without its comma is no tuple); an element that is a value raises at
-    its line (a missing comma joining two lines into one value), any other at its arm's (`If(...)`, `.ElseIf(...)`
-    or `.Else(...)`); `If` and its arms take their arguments by position, and a third one (C's else) raises, naming
-    `.Else([...])`;
+    its line (a missing comma joining two lines into one value), any other at its arm's (`If(...)`, `.ElseIf(...)`,
+    `.Else(...)` or `While(...)`), `Break` without its call naming `Break()`; `If`, its arms and `While` take their
+    arguments by position, and a third one (C's else, a loop else) raises, naming `.Else([...])` or that the DSL has
+    no loop else; `.Else` on a `While` is Python's `AttributeError`, at its line in the traceback;
+  - a helper called inside an `If(...)` or `While(...)` call's arguments (a block's element, a condition) makes its
+    own statements, those it does not return, before that call runs: for now they run before the `If` or `While`
+    (once, before a loop), not where the helper is called; a planned change nests them where they were made;
   - **the source check** (implemented: `falcom/ed9/writer/hlil_dsl/source_check.py`) reads each HLIL body's own
     source before it runs and raises at the line of a Python variable given a value holding a call (`a = f()`: the
     call would run where `a` is used, after the arguments to its right; write `Let(a, f())`), any binding of a
@@ -214,7 +227,10 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   test leaves out HLIL's outermost `!= 0` against a plain 0, the jump's own test (`If(menu_is_canceled(0), [`). An
   outermost `== 0` is the jump's test negated: an else-less one prints `If(E, []).Else([...])`, the code's empty arm
   that HLIL dropped (where the code jumps if not zero instead, the exact check refuses it), and one with an else stays
-  LLIL (`negated test`). Which constants name an
+  LLIL (`negated test`). A `while` prints `While(test, [`, its block, `])`, its test as an `if`'s (a top-level
+  `== 0`: `negated test`), and a `break` / `continue` `Break()` / `Continue()` where the HLIL has one (in an arm,
+  `.Else([..., Continue()])`; leaving out a trailing one keeps the code only under conditions the later tidying must
+  check). Which constants name an
   ID is decided in HLIL (`HLILConst.id_kind`, set by `ED9TypeInferencePass`: at an ID slot, and compared with,
   labelling or assigned to a variable that holds an ID), so this printer reads the same tags `.ts` does. Still to
   do for it: reading `id_kind` with the game's table (`game_format_hints`), `ChrIdTable` / `PseudoChrId` in the
@@ -270,8 +286,8 @@ function at LLIL level only when it has to.
 - **Fallback.** A function is printed with `@scena.LLILCode()` when structuring leaves an
   `HLILUnstructured` node, when it uses a construct the DSL has no form for, or, in an exact mode, when
   it does not compile back to its original opcodes. The decompiler runs that check while writing the
-  file, so an exact-mode file recompiles exactly by construction. Implemented for straight-line bodies and `If`
-  (`falcom/ed9/formatter/hlil_dsl/`): the function formatter (`function_formatter.py`) writes a function's
+  file, so an exact-mode file recompiles exactly by construction. Implemented for straight-line bodies, `If` and
+  `While` (`falcom/ed9/formatter/hlil_dsl/`): the function formatter (`function_formatter.py`) writes a function's
   text from its HLIL, the DSL's own (`hlil_for_dsl`, `falcom/ed9/ir/hlil/hlil_converter.py`: a function of one
   block keeps the shared tree, converted with its line markers kept whatever `line_markers` says; any other is
   structured as its code without the markers, with no return hoisting and each if's arms in the code's order,

@@ -3,12 +3,15 @@ a star import of this module; public names: docs/dsl/HOOKS.md. @scena.HLILCode()
 with the script's other imports"""
 
 from .hlil_dsl.calls import script
-from .hlil_dsl.control import If
+from .hlil_dsl.control import Break, Continue, If, While
 from .hlil_dsl.ed9_nodes import REGS, DebugInt, PopN, Raw, Syscall
 from .hlil_dsl.nodes import And, Float, Int, Let, Local, Not, Or, Return, Set, Str, this
 
 __all__ = (
     'If',
+    'While',
+    'Break',
+    'Continue',
     'Set',
     'Let',
     'Return',
