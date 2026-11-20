@@ -8,7 +8,7 @@ from pathlib import Path
 from falcom.ed9.structs.string_pool import collect_string_refs
 from .format_checks import validate_file
 from .generated_scripts import compile_round, logic_decompile, script_stem
-from .logic_preserved import LogicSnapshot, check_logic_preserved, check_same_hlil_functions
+from .logic_preserved import LogicSnapshot, check_logic_preserved, check_same_hlil_functions, check_same_hlil_text
 from .record_comparison import file_record_views
 from .records_kept import SourceRecords, check_records_kept, source_records
 from .results import CheckResult, Status
@@ -83,6 +83,7 @@ def check_logic_round_trip(path: Path, work_dir: Path, *, game: str | None = Non
             *format_results,
             check_logic_preserved(source_snapshot, round_snapshot),
             check_same_hlil_functions(hlil_names, decompiled.hlil_names),
+            check_same_hlil_text(source.hlil_lines, decompiled.hlil_lines),
             check_records_kept(source_function_records, file_record_views(dat_bytes[-1])),
         ])
 

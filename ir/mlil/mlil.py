@@ -1,7 +1,8 @@
 """MLIL - Stack-free IR (variables instead of stack operations)"""
 
+from contextlib import contextmanager
 from enum import IntEnum
-from typing import Any, Callable, Iterator, TYPE_CHECKING
+from typing import Any, Callable, Generator, Iterator, TYPE_CHECKING
 
 from dc3 import format_uint32_hex, quote_string
 from ir.core import *
@@ -678,6 +679,11 @@ def is_nop_instr(instr: MediumLevelILInstruction) -> bool:
     return isinstance(instr, (MLILDebug, MLILNop))
 
 
+def is_line_marker(instr: MediumLevelILInstruction) -> bool:
+    """A source line's marker: debug.line(N)"""
+    return isinstance(instr, MLILDebug) and instr.debug_type == 'line'
+
+
 # === Pointer Dereference ===
 
 def _parenthesize_deref_operand(operand: MediumLevelILInstruction) -> str:
@@ -835,6 +841,25 @@ class MediumLevelILFunction:
     def iter_instructions(self) -> Iterator[MediumLevelILInstruction]:
         for block in self.basic_blocks:
             yield from block.instructions
+
+    @contextmanager
+    def line_markers_hidden(self) -> Generator[MediumLevelILFunction]:
+        """This function as code compiled without its line markers, while the with-block runs: every block's markers
+        set aside, then put back, after an exception too. A block of nothing but markers keeps a nop in their place,
+        so it still falls through to the next block, as a block with no instructions would not"""
+        kept = [(block, block.instructions) for block in self.basic_blocks]
+        try:
+            for block, instructions in kept:
+                code = [instr for instr in instructions if not is_line_marker(instr)]
+                if instructions and not code:
+                    code = [MLILNop().copy_metadata_from(instructions[0])]
+
+                block.instructions = code
+
+            yield self
+        finally:
+            for block, instructions in kept:
+                block.instructions = instructions
 
     def __str__(self) -> str:
         result = [f'; ===== MLIL Function {self.name} =====']

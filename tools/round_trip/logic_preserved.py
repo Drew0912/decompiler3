@@ -82,3 +82,12 @@ def check_same_hlil_functions(source_names: frozenset[str], round_names: frozens
         failures.append(f'newly HLIL: {gained}')
 
     return CheckResult.build('mode', f'{len(source_names)} functions HLIL, as in the source decompile', failures)
+
+
+def check_same_hlil_text(source_lines: dict[str, list[str]], round_lines: dict[str, list[str]]) -> CheckResult:
+    """Each function the source decompile printed in the HLIL DSL prints the same lines in a round's decompile: the
+    DSL's HLIL depends on a function's code alone (convert_ed9_mlil_to_hlil_dsl); one no longer HLIL is the mode
+    check's"""
+    failures = [f"{name}: HLIL DSL text differs from the source decompile's"
+                for name, lines in sorted(source_lines.items()) if name in round_lines and round_lines[name] != lines]
+    return CheckResult.build('hlil text', f'{len(source_lines)} functions, as in the source decompile', failures)

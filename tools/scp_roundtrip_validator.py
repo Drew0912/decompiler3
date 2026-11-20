@@ -52,6 +52,7 @@ it the all-LLIL .py, since a mixed file needs its game's DSL helper:
                             markers, is fingerprinted without its DEBUG_SET_LINENO
     round N mode            that round's decompile prints exactly the source decompile's HLIL functions in
                             the HLIL DSL
+    round N hlil text       each of them with the lines the source decompile printed for it
     round N records kept    source vs that round's call-site records, call by call: the right callee, its
                             constants and its place; excused by reason (docs/ROUND_TRIP_POLICY.md, Records
                             the engine reads) and counted in the summary

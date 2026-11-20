@@ -420,6 +420,10 @@ class MLILToHLILConverter:
         if branch_stop is not None:
             self.pending_merges.pop()
 
+        # Where each arm's code starts (an empty arm's is the merge it jumps to), for the HLIL DSL's passes
+        true_block.entry_address = self.mlil_func.basic_blocks[true_target_idx].start
+        false_block.entry_address = self.mlil_func.basic_blocks[false_target_idx].start
+
         self.visited_blocks = all_visited
         if stop_at is not None:
             self.visited_blocks.discard(stop_at)
@@ -439,8 +443,10 @@ class MLILToHLILConverter:
         if true_ends_with_return and (not false_ends_with_return or
                                       len(true_block.statements) <= len(false_block.statements)):
             if_stmt, following = HLILIf(condition, true_block), false_block.statements
+            if_stmt.following_address = false_block.entry_address
         elif false_ends_with_return:
             if_stmt, following = HLILIf(negate_condition(condition), false_block), true_block.statements
+            if_stmt.following_address = true_block.entry_address
         elif not true_block.statements and false_block.statements:
             # true branch is empty, negate and use false as body
             if_stmt, following = HLILIf(negate_condition(condition), false_block), []

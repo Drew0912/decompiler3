@@ -407,6 +407,9 @@ class HLILBlock(HLILStatement):
     def __init__(self, statements: list[HLILStatement] | None = None):
         super().__init__(HLILOperation.HLIL_BLOCK)
         self.statements = statements or []
+        # An if's arm, as the structurer built it: the code address the branch enters at (its MLIL block's start);
+        # None when unknown. Read only by the HLIL DSL's passes (ir/hlil/passes/dsl/)
+        self.entry_address: int | None = None
 
     def add_statement(self, stmt: HLILStatement):
         self.statements.append(stmt)
@@ -428,6 +431,9 @@ class HLILIf(HLILStatement):
         self.condition = condition
         self.true_block = true_block
         self.false_block = false_block
+        # An early return's if: the code address of the other arm, which the structurer placed after the if; None
+        # otherwise. Read only by the HLIL DSL's passes (ir/hlil/passes/dsl/)
+        self.following_address: int | None = None
 
     def __str__(self) -> str:
         if self.false_block:

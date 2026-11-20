@@ -238,7 +238,10 @@ function at LLIL level only when it has to.
   it does not compile back to its original opcodes. The decompiler runs that check while writing the
   file, so an exact-mode file recompiles exactly by construction. Implemented for straight-line bodies
   (`falcom/ed9/formatter/hlil_dsl/`): the function formatter (`function_formatter.py`) writes a function's
-  text from its HLIL, converted with its line markers kept whatever `line_markers` says, and
+  text from its HLIL, the DSL's own (`hlil_for_dsl`, `falcom/ed9/ir/hlil/hlil_converter.py`: a function of one
+  block keeps the shared tree, converted with its line markers kept whatever `line_markers` says; any other is
+  structured as its code without the markers, with no return hoisting and each if's arms in the code's order,
+  `docs/hlil/HLIL_DESIGN.md`), and
   `script_formatter.py` collects a script's functions and reasons; the exact check (`exact_check.py`) parses
   that text, runs the source check on it, runs it in a namespace of the DSL's names and a stub per
   function-table name, requires the one function it registers to be the source's, and lowers its tree into a
@@ -260,7 +263,8 @@ function at LLIL level only when it has to.
   hook. The round-trip validator's `--round-trip` compiles the byte-exact listing (`byte_exact_decompile`); its
   `--logic-round-trip --game <game>` decompiles each round to the mixed file (its own `logic_decompile`, the steps
   above), compares the source decompile's HLIL functions without their line markers and requires every round to
-  print the same ones in the HLIL DSL (`docs/ROUND_TRIP_POLICY.md`); its run files are internal and can keep
+  print the same ones in the HLIL DSL, each with the same lines (`docs/ROUND_TRIP_POLICY.md`); its run files are
+  internal and can keep
   their names.
 
 The `POPN` in `ai_chr5122_e00`'s `CheckAlgoUse`, written as opcodes to show a list. The printer would use the

@@ -1,4 +1,5 @@
-"""ED9 MLIL to HLIL Converter: the per-function passes, then the file-level ones"""
+"""ED9 MLIL to HLIL Converter: the per-function passes (the shared HLIL of .ts and .hlil.ts, and the HLIL DSL's own),
+then the file-level ones"""
 
 from typing import TYPE_CHECKING, Callable
 
@@ -14,6 +15,7 @@ from ir.hlil.passes import (
     BranchOrderNormalizationPass,
     LineMarkerRemovalPass,
 )
+from ir.hlil.passes.dsl import BranchAddressOrderPass
 
 from .call_result_folder import ED9CallResultFolder
 from .pass_type_inference import ED9TypeInferencePass
@@ -51,6 +53,31 @@ def convert_ed9_mlil_to_hlil(mlil_func: MediumLevelILFunction, normalize_branch_
         pipeline.add_pass(LineMarkerRemovalPass())
 
     return pipeline.run(mlil_func, debug=False)
+
+
+def convert_ed9_mlil_to_hlil_dsl(mlil_func: MediumLevelILFunction) -> HighLevelILFunction:
+    """The HLIL the HLIL DSL prints for a function with control flow: structured as its code without the line markers
+    (the DSL writes none), so the text depends on the code alone and every round of a recompile prints it again; no
+    return hoisting and no arms ordered by source line, then each if's arms in the code's order: the shapes that lower
+    back to the code's own jumps (docs/dsl/HLIL_DSL.md). The markers are put back afterwards, for the shared HLIL"""
+    with mlil_func.line_markers_hidden():
+        pipeline = Pipeline()
+        pipeline.add_pass(MLILToHLILPass(ED9CallResultFolder))
+        pipeline.add_pass(SwitchRecoveryPass())
+        pipeline.add_pass(LoopRecoveryPass())
+        pipeline.add_pass(DeadCodeEliminationPass())
+        pipeline.add_pass(BranchAddressOrderPass())
+        return pipeline.run(mlil_func, debug=False)
+
+
+def hlil_for_dsl(mlil_func: MediumLevelILFunction, shared: HighLevelILFunction | None = None) -> HighLevelILFunction:
+    """The HLIL the HLIL DSL prints for one function, for the decompiler and the round-trip validator alike: of one
+    block it has no structure, so the shared tree (shared, when the caller built it with its line markers, else built
+    here); any other, the DSL's own conversion"""
+    if len(mlil_func.basic_blocks) == 1:
+        return shared if shared is not None else convert_ed9_mlil_to_hlil(mlil_func)
+
+    return convert_ed9_mlil_to_hlil_dsl(mlil_func)
 
 
 def run_ed9_file_passes(hlil_funcs: list[HighLevelILFunction], scp_funcs: 'list[Function]',

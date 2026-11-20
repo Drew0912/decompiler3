@@ -18,7 +18,8 @@ Two tiers, in priority order:
    --logic-round-trip`. Each recompiled `.dat` must also keep the records the engine reads (Records the engine reads,
    below). A function the decompile prints in the HLIL DSL (`docs/dsl/HLIL_DSL.md`) is compared without its line
    markers (`DEBUG_SET_LINENO`): the DSL writes none, and the engine only prints their value
-   (`docs/falcom/ed9/ED9_VM.md`, Opcodes and operands); every round must print the same functions in the HLIL DSL.
+   (`docs/falcom/ed9/ED9_VM.md`, Opcodes and operands); every round must print the same functions in the HLIL DSL,
+   each with the same text (its HLIL depends on its code alone, `docs/hlil/HLIL_DESIGN.md`).
    The library's digests still key the full fingerprint.
 2. **Byte-exact round trip — medium priority.** `source.dat → out.llil.py → c.dat` with `c.dat == source.dat`.
    Needs `round_trip=True, keep_unreachable_code=True`, the byte-exact `<stem>.llil.py` (`scp2py_config.py`'s

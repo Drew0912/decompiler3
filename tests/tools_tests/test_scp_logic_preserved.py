@@ -19,7 +19,7 @@ from dc3.logging import log
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.writer import scp_writer
 from falcom.ed9.writer.scp_writer_helper import *
-from round_trip.logic_preserved import LogicSnapshot, check_logic_preserved
+from round_trip.logic_preserved import LogicSnapshot, check_logic_preserved, check_same_hlil_text
 from round_trip.logic_round_trip import check_logic_round_trip
 from round_trip.results import Status
 from tests.shared.scp_writer_test_utils import fresh_writer
@@ -139,7 +139,24 @@ class TestHLILRoundTrip(LogicTestCase):
         self.assertEqual([name for name, result in results.items() if result.status == Status.FAIL], [])
         self.assertIn('1 without line markers', results['round 1 logic preserved'].summary)
         self.assertEqual(results['round 2 mode'].summary, '1 functions HLIL, as in the source decompile')
+        self.assertEqual(results['round 2 hlil text'].summary, '1 functions, as in the source decompile')
         self.assertEqual(results['logic round trip'].summary, 'converged at round 2')
+
+
+class TestHLILText(unittest.TestCase):
+    """A function's HLIL DSL text the same every round: a change fails even where the mode and the logic hold"""
+
+    SOURCE = {'Main': ['@scena.HLILCode()', 'def Main():', '    Return()']}
+
+    def test_a_changed_text_fails_by_name(self):
+        changed = {'Main': ['@scena.HLILCode()', 'def Main():', '    Return(0)']}
+        result = check_same_hlil_text(self.SOURCE, changed)
+
+        self.assertEqual(result.status, Status.FAIL)
+        self.assertEqual(result.details, ["Main: HLIL DSL text differs from the source decompile's"])
+
+    def test_a_function_no_longer_hlil_is_left_to_the_mode_check(self):
+        self.assertEqual(check_same_hlil_text(self.SOURCE, {}).status, Status.PASS)
 
 
 if __name__ == '__main__':

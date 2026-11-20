@@ -44,9 +44,7 @@ class HLILScriptFormatter(LLILScriptFormatter):
     def add(self, func: Function, hlil: HighLevelILFunction):
         """func's DSL lines when it has a form and they pass the exact check, else the reason it stays LLIL. A function
         the library holds is a common function, which refusal turns away"""
-        refusal = self.refusal(func)
-        if refusal is not None:
-            self.reasons[func.name] = refusal
+        if self.refused(func):
             return
 
         try:
@@ -67,6 +65,14 @@ class HLILScriptFormatter(LLILScriptFormatter):
             self.lines[func.name] = lines
         else:
             self.reasons[func.name] = problem
+
+    def refused(self, func: Function) -> bool:
+        """Whether func stays LLIL whatever its HLIL, its reason kept for the logs: asked before its HLIL is built"""
+        refusal = self.refusal(func)
+        if refusal is not None:
+            self.reasons[func.name] = refusal
+
+        return refusal is not None
 
     def refusal(self, func: Function) -> str | None:
         """Why func is not formatted at all: the file's name clash, or a common function"""

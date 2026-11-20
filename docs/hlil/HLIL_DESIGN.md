@@ -40,7 +40,7 @@ translator; on the SSA path, its optimizer); HLIL favors explicit tree ownership
 | `ir/hlil/structural_analysis.py` | Dominator calculation, natural-loop discovery, iterative region reduction, and merge-point queries used by the converter. |
 | `ir/hlil/statement_printer.py` | `HLILStatementPrinter`, the statement printer the `.hlil.ts` formatter and the TypeScript code generator share: each prints expressions its own way and overrides the hooks where its statements differ (assignments, unstructured jumps, an if's arms, switch case blocks). |
 | `ir/hlil/hlil_formatter.py` | The `.hlil.ts` formatter, on the shared statement printer: the bytecode's high-level form, not TypeScript. It is separate from the TypeScript code generator. |
-| `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: switch recovery, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. |
+| `ir/hlil/passes/` | Conversion wrapper and post-conversion tree transformations: switch recovery, loop recovery, common-return extraction, dead-code elimination, branch-order normalization, and line-marker removal. Its `dsl/` holds the HLIL DSL's own passes (branch address order), which only the DSL's conversion runs. |
 | `ir/hlil/__init__.py` | Public re-exports for the node model, the statement printer, the formatter and the passes (the conversion pass `MLILToHLILPass` among them). |
 | `falcom/ed9/ir/hlil/hlil_converter.py` | Production ED9 pipeline entry points: per function, `convert_ed9_mlil_to_hlil()` and its pass ordering/configuration; per file, `run_ed9_file_passes()`. |
 | `falcom/ed9/ir/hlil/hlil_converter_ssa.py` | The SSA path's HLIL entry point, `convert_ed9_mlil_ssa_to_hlil()`: `convert_ed9_mlil_to_hlil()`, then the SSA path's inferred types (`apply_inferred_types`). Only the SSA path imports it. |
@@ -299,6 +299,23 @@ deliberately prefers recovered source-line order over bytecode emission order.
 `LineMarkerRemovalPass` runs after all of them and only with `line_markers` off: it drops the
 `line(N)` comments, then tidies the if arms left empty without changing what runs (a negated
 condition, swapped or nested arms); the code statements and their order are unchanged.
+
+The HLIL DSL has a conversion of its own, `convert_ed9_mlil_to_hlil_dsl()` beside it, for a function with control
+flow (`hlil_for_dsl()` routes: a function of one MLIL block keeps the shared tree). It structures the function's code
+as if compiled without its line markers (`MediumLevelILFunction.line_markers_hidden()` sets them aside and puts them
+back; a block of nothing but markers keeps a nop, so it still falls through), so the DSL's text depends on the code
+alone and every round of a recompile prints it again; and it leaves out the two passes the DSL cannot lower back to
+the code's jumps, return hoisting and source-line ordering:
+
+```
+MLILToHLILPass → SwitchRecoveryPass → LoopRecoveryPass → DeadCodeEliminationPass → BranchAddressOrderPass
+```
+
+`BranchAddressOrderPass` (`ir/hlil/passes/dsl/`, the DSL's own passes, which the shared pipeline never runs) puts
+each if's arms in the code's order from the entry addresses the structurer records (`HLILBlock.entry_address`, an
+early return's `HLILIf.following_address`; fields only the DSL's passes read): an if / else whose else arm comes
+first is swapped, and an early return whose following code comes first and returns is turned around, each flipping
+only the jump's truth test (`E == 0` and `E != 0`), never a comparison inside it.
 
 HLIL has no copy-propagation pass (the disabled HLIL `CopyPropagationPass` was removed on 2026-09-27): the decompile
 path's stack translator folds each push into its consumer, and the SSA path propagates copies in its optimizer.

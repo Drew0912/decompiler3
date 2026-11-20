@@ -13,7 +13,7 @@ from dc3.utils import write_text_lf
 from falcom.ed9.parser.scp import ScpParser
 from falcom.ed9.formatter.hlil_dsl.script_formatter import HLILScriptFormatter
 from falcom.ed9.formatter.llil_dsl.script_formatter import LLILListingFormatter, LLILScriptFormatter
-from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import hlil_for_dsl
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from ir.hlil import HighLevelILFunction
@@ -38,11 +38,13 @@ def byte_exact_decompile(dat_path: Path, py_path: Path, game: str | None = None)
 
 
 class LogicDecompile(NamedTuple):
-    """A --logic-round-trip decompile: the parser, its functions and the names the .py holds in the HLIL DSL"""
+    """A --logic-round-trip decompile: the parser, its functions, the names the .py holds in the HLIL DSL and each
+    one's lines there"""
 
     parser      : ScpParser
     functions   : list[Function]
     hlil_names  : frozenset[str]
+    hlil_lines  : dict[str, list[str]]
 
 
 def logic_decompile(dat_path: Path, py_path: Path, game: str | None = None) -> LogicDecompile:
@@ -54,26 +56,26 @@ def logic_decompile(dat_path: Path, py_path: Path, game: str | None = None) -> L
 
     if game is None:
         write_text_lf(py_path, LLILScriptFormatter(parser).gen_python_script(functions))
-        return LogicDecompile(parser, functions, frozenset())
+        return LogicDecompile(parser, functions, frozenset(), {})
 
     formatter = HLILScriptFormatter(parser)
     for func in functions:
-        if formatter.refusal(func) is not None:
+        if formatter.refused(func):
             continue    # the DSL turns it away before reading its HLIL, so it is never lifted
 
-        hlil = hlil_for_dsl(parser, func)
+        hlil = lifted_hlil_for_dsl(parser, func)
         if hlil is not None:
             formatter.add(func, hlil)
 
     write_text_lf(py_path, formatter.gen_python_script(functions))
-    return LogicDecompile(parser, functions, frozenset(formatter.lines))
+    return LogicDecompile(parser, functions, frozenset(formatter.lines), dict(formatter.lines))
 
 
-def hlil_for_dsl(parser: ScpParser, func: Function) -> HighLevelILFunction | None:
-    """func's HLIL with its line markers, as write_ir_outputs hands it to the HLIL DSL; None when the lift or a
-    conversion raises (the function stays LLIL, as there)"""
+def lifted_hlil_for_dsl(parser: ScpParser, func: Function) -> HighLevelILFunction | None:
+    """func lifted and its HLIL for the HLIL DSL routed as write_ir_outputs routes it (hlil_for_dsl); None when the
+    lift or a conversion raises (the function stays LLIL, as there)"""
     try:
-        return convert_ed9_mlil_to_hlil(convert_ed9_llil_to_mlil_stack(ED9VMLifter(parser=parser).lift_function(func)))
+        return hlil_for_dsl(convert_ed9_llil_to_mlil_stack(ED9VMLifter(parser=parser).lift_function(func)))
     except Exception:
         return None
 

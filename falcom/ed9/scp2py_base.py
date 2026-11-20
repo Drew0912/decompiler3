@@ -27,7 +27,7 @@ from falcom.ed9.assembler.function import Function
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.llil.llil_formatter import ED9LLILFormatter
 from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
-from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil, run_ed9_file_passes
+from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil, hlil_for_dsl, run_ed9_file_passes
 from ir.mlil.mlil_formatter import MLILFormatter
 from ir.hlil.hlil import HighLevelILFunction, HLILUnstructured, reachable_statements
 from ir.hlil.hlil_formatter import HLILFormatter
@@ -205,9 +205,8 @@ def write_ir_outputs(path: Path, parser: ScpParser, functions: list[Function], c
                 converted.append((func, hlil_func))
 
             # Last, so its failure costs no other output; the DSL's forms never depend on line_markers
-            if hlil_formatter is not None:
-                hlil_with_line_markers = hlil_func if config.line_markers else convert_ed9_mlil_to_hlil(mlil_func)
-                hlil_formatter.add(func, hlil_with_line_markers)
+            if hlil_formatter is not None and not hlil_formatter.refused(func):
+                hlil_formatter.add(func, hlil_for_dsl(mlil_func, hlil_func if config.line_markers else None))
         except Exception as e:
             # One bad function shouldn't lose the rest of the file's output
             log.warning(f'{path} [{func.name}]: {type(e).__name__}: {e}')
