@@ -17,6 +17,85 @@ from tests.shared.hlil_dsl_test_utils import *
 from tests.shared.scp_writer_test_utils import local_call
 
 
+# The real functions the control-flow twins call, beyond the shared LIBRARY
+
+@library_function
+def global_work(arg1: Value32):
+    """Returns its argument"""
+    LOAD_STACK(-WORD_SIZE)
+    SET_REG(0)
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def set_global_work(arg1: Value32, arg2: Value32):
+    POP(2 * WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def menu_create(arg1: Value32, arg2: Value32, arg3: Value32, arg4: Value32):
+    POP(4 * WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def menu_additem(arg1: Value32, arg2: NullableStr, arg3: Value32):
+    POP(3 * WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def menu_open(arg1: Value32, arg2: Value32, arg3: Value32, arg4: Value32, arg5: NullableStr):
+    POP(5 * WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def menu_wait(arg1: Value32):
+    """Returns its argument"""
+    LOAD_STACK(-WORD_SIZE)
+    SET_REG(0)
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def menu_close(arg1: Value32):
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def menu_is_canceled(arg1: Value32):
+    """Returns its argument"""
+    LOAD_STACK(-WORD_SIZE)
+    SET_REG(0)
+    POP(WORD_SIZE)
+    RETURN()
+
+
+@library_function
+def chr_info(arg1: Value32, arg2: Value32):
+    """Returns its first argument"""
+    LOAD_STACK(-WORD_SIZE)
+    SET_REG(0)
+    POP(2 * WORD_SIZE)
+    RETURN()
+
+
+CONTROL_LIBRARY = [global_work, set_global_work, menu_create, menu_additem, menu_open, menu_wait, menu_close,
+                   menu_is_canceled, chr_info]
+
+
+def use_control_library(scena):
+    """The script imports CONTROL_LIBRARY"""
+    @scena.CommonImports()
+    def commonImports():
+        return CONTROL_LIBRARY
+
+
 class TestRealFunctions(HLILTestCase):
     """Functions from sora2's scripts, as the HLIL DSL writes them, against the compiler's own bytes"""
 
@@ -457,6 +536,289 @@ class TestForms(HLILTestCase):
             @scena.LLILCode()
             def Later(arg1: Value32, arg2: Value32 = 0):
                 POP(2 * WORD_SIZE)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+
+class TestControlFlow(HLILTestCase):
+    """If / ElseIf / Else and the blocks they hold, against twins from real functions and from the VM's rules"""
+
+    def test_an_if_in_an_if_and_a_local_in_its_block(self):
+        """mp8300_01's EV_07_03_00_SELECT_00: an If with its Else inside an If; a local declared in the outer block,
+        popped at its end, after the inner If's end and before the label the outer test jumps to"""
+        def hlil(scena):
+            use_control_library(scena)
+
+            @scena.HLILCode()
+            def EV_07_03_00_SELECT_00():
+                var_s0 = Local('var_s0')
+                If(global_work(0) == -1, [
+                    menu_create(0, 2, 0, 28),
+                    menu_additem(0, "Take the elevator", 0),
+                    menu_additem(0, "I still have things to do", 1),
+                    menu_open(0, -1, -1, 1, ""),
+                    Let(var_s0, menu_wait(0)),
+                    menu_close(0),
+                    If(menu_is_canceled(0), [
+                        set_global_work(0, 1),
+                    ]).Else([
+                        set_global_work(0, var_s0),
+                    ]),
+                ])
+                Return()
+
+        def llil(scena):
+            use_control_library(scena)
+
+            @scena.LLILCode()
+            def EV_07_03_00_SELECT_00():
+                local_call(global_work, 'loc_E9571', [(PUSH_INT, 0)])
+                GET_REG(0)
+                PUSH_INT(-1)
+                EQ()
+                POP_JMP_ZERO('loc_E96BF')
+                local_call(menu_create, 'loc_E95A9', [(PUSH_INT, 28), (PUSH_INT, 0), (PUSH_INT, 2), (PUSH_INT, 0)])
+                local_call(menu_additem, 'loc_E95CD', [(PUSH_INT, 0), (PUSH_STR, "Take the elevator"), (PUSH_INT, 0)])
+                local_call(menu_additem, 'loc_E95F1', [(PUSH_INT, 1), (PUSH_STR, "I still have things to do"),
+                                                       (PUSH_INT, 0)])
+                local_call(menu_open, 'loc_E9621', [(PUSH_STR, ""), (PUSH_INT, 1), (PUSH_INT, -1), (PUSH_INT, -1),
+                                                    (PUSH_INT, 0)])
+                PUSH_RAW(RawInt(0x00000000))
+                local_call(menu_wait, 'loc_E963F', [(PUSH_INT, 0)])
+                GET_REG(0)
+                POP_TO(-4)
+                local_call(menu_close, 'loc_E965E', [(PUSH_INT, 0)])
+                local_call(menu_is_canceled, 'loc_E9676', [(PUSH_INT, 0)])
+                GET_REG(0)
+                POP_JMP_ZERO('loc_E96A0')
+                local_call(set_global_work, 'loc_E969B', [(PUSH_INT, 1), (PUSH_INT, 0)])
+                JMP('loc_E96BD')
+                label('loc_E96A0')
+                local_call(set_global_work, 'loc_E96BD', [(LOAD_STACK, -12), (PUSH_INT, 0)])
+                POP(4)
+                label('loc_E96BF')
+                PUSH_RAW(RawInt(0x00000000))
+                SET_REG(0)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_an_else_if_chain(self):
+        """btlcom's AniBtlConditionCantAction: the last arm, with no Else after it, jumps nowhere"""
+        def callees(scena):
+            @scena.LLILCode()
+            def AniBtlConditionCantActionSealCraft():
+                PUSH_RAW(RawInt(0x00000000))
+                SET_REG(0)
+                RETURN()
+
+            @scena.LLILCode()
+            def AniBtlConditionCantActionSealArts():
+                PUSH_RAW(RawInt(0x00000000))
+                SET_REG(0)
+                RETURN()
+
+            return AniBtlConditionCantActionSealCraft, AniBtlConditionCantActionSealArts
+
+        def hlil(scena):
+            @scena.HLILCode()
+            def AniBtlConditionCantAction(arg1: Value32):
+                If(arg1 == 6, [
+                    seal_craft(),
+                ]).ElseIf(arg1 == 7, [
+                    seal_arts(),
+                ])
+                Return()
+
+            seal_craft, seal_arts = callees(scena)
+
+        def llil(scena):
+            @scena.LLILCode()
+            def AniBtlConditionCantAction(arg1: Value32):
+                LOAD_STACK(-4)
+                PUSH_INT(6)
+                EQ()
+                POP_JMP_ZERO('loc_3F53D')
+                local_call(seal_craft, 'loc_3F538', [])
+                JMP('loc_3F563')
+                label('loc_3F53D')
+                LOAD_STACK(-4)
+                PUSH_INT(7)
+                EQ()
+                POP_JMP_ZERO('loc_3F563')
+                local_call(seal_arts, 'loc_3F563', [])
+                PUSH_RAW(RawInt(0x00000000))
+                SET_REG(0)
+                POP(4)
+                RETURN()
+
+            seal_craft, seal_arts = callees(scena)
+
+        self.assert_twins(hlil, llil)
+
+    def test_a_body_ending_in_an_if_whose_arms_return(self):
+        """btlsys's DecideBattleStartType: no Return after the If, each arm returning, the Else's after an If of its
+        own"""
+        def globals_block(scena):
+            @scena.GlobalVars()
+            def globalvars():
+                GLOBAL_VAR("start_type", 0)
+
+        def hlil(scena):
+            globals_block(scena)
+            use_control_library(scena)
+
+            @scena.HLILCode()
+            def DecideBattleStartType():
+                If(this.start_type, [
+                    Return(this.start_type),
+                ]).Else([
+                    If(Or(chr_info(65460, 7) > 3.9, chr_info(65460, 8) > 3.0), [
+                        PopN("戦闘開始演出：大型１体"),
+                        Return(1),
+                    ]),
+                    Return(0),
+                ])
+
+        def llil(scena):
+            globals_block(scena)
+            use_control_library(scena)
+
+            @scena.LLILCode()
+            def DecideBattleStartType():
+                LOAD_GLOBAL("start_type")
+                POP_JMP_ZERO('loc_6074')
+                LOAD_GLOBAL("start_type")
+                SET_REG(0)
+                RETURN()
+                label('loc_6074')
+                local_call(chr_info, 'loc_6092', [(PUSH_INT, 7), (PUSH_INT, 65460)])
+                GET_REG(0)
+                PUSH_FLOAT(3.9)
+                GT()
+                local_call(chr_info, 'loc_60B6', [(PUSH_INT, 8), (PUSH_INT, 65460)])
+                GET_REG(0)
+                PUSH_FLOAT(3.0)
+                GT()
+                LOGICAL_OR()
+                POP_JMP_ZERO('loc_60E1')
+                PUSH_STR("戦闘開始演出：大型１体")
+                POPN(1)
+                PUSH_INT(1)
+                SET_REG(0)
+                RETURN()
+                label('loc_60E1')
+                PUSH_INT(0)
+                SET_REG(0)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_an_empty_arm(self):
+        """mon5005's AniBtlDead: the code's empty arm, its jump over the Else kept"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def AniBtlDead(arg1: Nullable32 = 0.2, arg2: Nullable32 = 1.0, arg3: Nullable32 = 0):
+                If(arg3 & 64, []).Else([
+                    script.btlcom.AniMonsDeadEffect(arg1),
+                ])
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def AniBtlDead(arg1: Nullable32 = 0.2, arg2: Nullable32 = 1.0, arg3: Nullable32 = 0):
+                LOAD_STACK(-12)
+                PUSH_INT(64)
+                BITWISE_AND()
+                POP_JMP_ZERO('loc_4D46')
+                JMP('loc_4D5D')
+                label('loc_4D46')
+                PUSH_CALLER_FRAME('loc_4D5D')
+                LOAD_STACK(-24)
+                CALL_SCRIPT("btlcom", "AniMonsDeadEffect", 1)
+                label('loc_4D5D')
+                PUSH_RAW(RawInt(0x00000000))
+                SET_REG(0)
+                POP(12)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_returns_and_locals_in_nested_blocks(self):
+        """A Return under two locals pops every live slot, and the code after its block starts at the depth before
+        it; a name declared again in two sibling blocks after its block ends; an empty If and an empty Else"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Nested(arg1: Value32):
+                x = Local('x')
+                y = Local('y')
+                Let(x, 1)
+                If(arg1, [
+                    Let(y, 2),
+                    If(y, [
+                        Return(y),
+                    ]),
+                    Set(arg1, y),
+                ])
+                If(arg1, [
+                    Let(y, 3),
+                ]).Else([
+                    Let(y, 4),
+                ])
+                If(arg1, [])
+                If(arg1, [
+                    Set(arg1, 5),
+                ]).Else([])
+                Return(x)
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Nested(arg1: Value32):
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(1)
+                POP_TO(-4)
+                LOAD_STACK(-8)
+                POP_JMP_ZERO('after_first')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(2)
+                POP_TO(-4)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('after_return')
+                LOAD_STACK(-4)
+                SET_REG(0)
+                POP(12)
+                RETURN()
+                label('after_return')
+                LOAD_STACK(-4)
+                POP_TO(-12)
+                POP(4)
+                label('after_first')
+                LOAD_STACK(-8)
+                POP_JMP_ZERO('second_else')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(3)
+                POP_TO(-4)
+                POP(4)
+                JMP('second_end')
+                label('second_else')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(4)
+                POP_TO(-4)
+                POP(4)
+                label('second_end')
+                LOAD_STACK(-8)
+                POP_JMP_ZERO('empty_end')
+                label('empty_end')
+                LOAD_STACK(-8)
+                POP_JMP_ZERO('empty_else')
+                PUSH_INT(5)
+                POP_TO(-8)
+                JMP('empty_else')
+                label('empty_else')
+                LOAD_STACK(-4)
+                SET_REG(0)
+                POP(8)
                 RETURN()
 
         self.assert_twins(hlil, llil)

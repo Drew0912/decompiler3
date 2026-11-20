@@ -12,7 +12,8 @@ from assembler.instruction_table import OperandDescriptor, OperandType
 from ...assembler import ED9_INSTRUCTION_TABLE, ED9Opcode
 from ...assembler.function import Function
 from ...assembler.opcode_table import ED9OperandType
-from ...structs.fingerprint import body_fingerprint_without_line_markers, operand_key
+from ...structs.fingerprint import (BRANCH_TAG, UNRESOLVED_BRANCH_TAG, body_fingerprint_without_line_markers,
+                                    operand_key)
 from ...structs.scp_types import FloatWord, RawInt, ScpValue
 from ...writer.hlil_dsl.build import Build
 from ...writer.hlil_dsl.lowering import Lowering
@@ -44,6 +45,32 @@ def no_site():
 
 def unlocated(site, text: str) -> str:
     return text
+
+
+def without_labels(keyed_opcode: tuple) -> tuple:
+    """A fingerprint entry, (opcode, operand keys...), without its jump targets"""
+    opcode, *operands = keyed_opcode
+    return opcode, *(key for key in operands if key[0] not in (BRANCH_TAG, UNRESOLVED_BRANCH_TAG))
+
+
+def first_mismatch(source: tuple, lowered: tuple) -> str:
+    """Where the lowered code first leaves the source's: the opcodes and their other operands first, the jump targets
+    last, as a target moves whenever the code it jumps over differs"""
+    shorter = min(len(source), len(lowered))
+    index = next((index for index in range(shorter)
+                  if without_labels(source[index]) != without_labels(lowered[index])), shorter)
+    if index == len(source) == len(lowered):
+        index = next(index for index in range(shorter) if source[index] != lowered[index])
+
+    return f'opcode {index}, expected {shown_opcode(source, index)}, got {shown_opcode(lowered, index)}'
+
+
+def shown_opcode(code: tuple, index: int) -> str:
+    if index >= len(code):
+        return 'the end'
+
+    opcode, *operands = code[index]
+    return ' '.join([ED9Opcode(opcode).name, *(str(value) for _, value in operands)])
 
 
 class FingerprintSink:
@@ -139,7 +166,9 @@ class ExactCheck:
             return f'registration: {names}'
 
         [body] = registered
-        return None if self.lowered_fingerprint(func, body) == self.source_fingerprint(func) else 'not exact'
+        lowered = self.lowered_fingerprint(func, body)
+        source = self.source_fingerprint(func)
+        return None if lowered == source else f'not exact: {first_mismatch(source, lowered)}'
 
     def registered_bodies(self, func: Function, tree: ast.Module) -> list[Callable]:
         """The bodies the printed definition registers when it runs"""

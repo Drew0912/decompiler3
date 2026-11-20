@@ -91,7 +91,19 @@ class TestMixedScript(unittest.TestCase):
                 f'{INDENT}map_obj_set_animeclip_frame("", var_s0, 0)',
                 f'{INDENT}Return()',
             ])
-            self.assertEqual(mixed[mixed.index('def AniWait():') - 1], '@scena.LLILCode()')    # an if
+            start = mixed.index('def AniWait():') - 1
+            self.assertEqual(mixed[start:start + 8], [
+                '@scena.HLILCode()',
+                'def AniWait():',
+                f'{INDENT}map_obj_play_animeclip("", "wait", 0.0, 0, 0)',
+                f'{INDENT}map_obj_set_alpha("", 1.0, 0.0, 0)',
+                f'{INDENT}If(map_obj_check_asset_name("", "ob5111obj00"), [',
+                f'{INDENT}{INDENT}map_obj_set_flag("", 512),',
+                f'{INDENT}])',
+                f'{INDENT}Return()',
+            ])
+            # An EZ test (Not), which HLIL reads as == 0
+            self.assertEqual(mixed[mixed.index('def AniTargetSelect():') - 1], '@scena.LLILCode()')
 
             self.assertEqual(listing[0], '# The LLIL listing of brk_obj.dat: it compiles to the same game logic as '
                                          'brk_obj.py (line markers aside), without hooks, every common function inline')

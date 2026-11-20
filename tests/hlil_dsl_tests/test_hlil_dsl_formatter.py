@@ -14,7 +14,7 @@ sys.path.insert(0, str(REPO_ROOT))
 from falcom.ed9.assembler.vm import WORD_SIZE
 from falcom.ed9.formatter.hlil_dsl.function_formatter import INDENT
 from falcom.ed9.formatter.hlil_dsl.script_formatter import HLILScriptFormatter
-from falcom.ed9.ir.hlil.hlil_converter import convert_ed9_mlil_to_hlil
+from falcom.ed9.ir.hlil.hlil_converter import hlil_for_dsl
 from falcom.ed9.ir.llil import ED9VMLifter
 from falcom.ed9.ir.mlil.mlil_converter import convert_ed9_llil_to_mlil_stack
 from falcom.ed9.structs.scp_types import ScpGlobalVar
@@ -32,7 +32,7 @@ def dsl_part(*functions: Func, global_names: tuple[str, ...] = ()) -> HLILScript
     dsl = HLILScriptFormatter(parser)
     lifter = ED9VMLifter(parser=parser)
     for func in disassembled:
-        dsl.add(func, convert_ed9_mlil_to_hlil(convert_ed9_llil_to_mlil_stack(lifter.lift_function(func))))
+        dsl.add(func, hlil_for_dsl(convert_ed9_llil_to_mlil_stack(lifter.lift_function(func))))
 
     return dsl
 
@@ -171,23 +171,115 @@ class TestForms(PrinterTestCase):
         self.assert_printed(asm, ['PopN(5, "this")', 'DebugInt(3)', 'Return()'])
 
 
+class TestControlFlow(PrinterTestCase):
+    def test_an_if_its_else_and_a_local_in_a_block(self):
+        """The bare test (the jump's own != 0 left out); the local declared in the block and popped at its end"""
+        asm = Asm()
+        asm.load_stack(-WORD_SIZE); asm.jz('else')
+        asm.push_raw(0); asm.push_int(5); asm.pop_to(-WORD_SIZE)
+        asm.load_stack(-WORD_SIZE)
+        syscall(asm, 1)
+        asm.pop(WORD_SIZE)
+        asm.jmp('end')
+        asm.label('else')
+        asm.push_int(7)
+        syscall(asm, 1)
+        asm.label('end')
+        returned(asm, argc=1)
+        self.assert_printed(asm, ["var_s1 = Local('var_s1')",
+                                  'If(arg1, [',
+                                  f'{INDENT}Let(var_s1, 5),',
+                                  f'{INDENT}Syscall({SUBSYSTEM}, {CMD}, var_s1),',
+                                  ']).Else([',
+                                  f'{INDENT}Syscall({SUBSYSTEM}, {CMD}, 7),',
+                                  '])',
+                                  'Return()'], argc=1)
+
+    def test_an_else_holding_one_if_is_an_else_if(self):
+        asm = Asm()
+        asm.load_stack(-WORD_SIZE); asm.push_int(1); asm.eq(); asm.jz('second')
+        asm.push_int(10)
+        syscall(asm, 1)
+        asm.jmp('end')
+        asm.label('second')
+        asm.load_stack(-WORD_SIZE); asm.push_int(2); asm.eq(); asm.jz('third')
+        asm.push_int(20)
+        syscall(asm, 1)
+        asm.jmp('end')
+        asm.label('third')
+        asm.push_int(30)
+        syscall(asm, 1)
+        asm.label('end')
+        returned(asm, argc=1)
+        self.assert_printed(asm, ['If(arg1 == 1, [',
+                                  f'{INDENT}Syscall({SUBSYSTEM}, {CMD}, 10),',
+                                  ']).ElseIf(arg1 == 2, [',
+                                  f'{INDENT}Syscall({SUBSYSTEM}, {CMD}, 20),',
+                                  ']).Else([',
+                                  f'{INDENT}Syscall({SUBSYSTEM}, {CMD}, 30),',
+                                  '])',
+                                  'Return()'], argc=1)
+
+    def test_an_arm_that_returns(self):
+        """An early return: the code after it is the If's other path"""
+        asm = Asm()
+        asm.load_stack(-WORD_SIZE); asm.jz('other')
+        asm.push_int(1); asm.set_reg(0); asm.pop(WORD_SIZE); asm.ret()
+        asm.label('other')
+        asm.push_int(2); asm.set_reg(0); asm.pop(WORD_SIZE); asm.ret()
+        self.assert_printed(asm, ['If(arg1, [',
+                                  f'{INDENT}Return(1),',
+                                  '])',
+                                  'Return(2)'], argc=1)
+
+    def test_an_empty_arm(self):
+        """The code's if (arg1) {} else {...}, which HLIL shows as if (arg1 == 0) {...}"""
+        asm = Asm()
+        asm.load_stack(-WORD_SIZE); asm.jz('else')
+        asm.jmp('end')
+        asm.label('else')
+        asm.push_int(7)
+        syscall(asm, 1)
+        asm.label('end')
+        returned(asm, argc=1)
+        self.assert_printed(asm, ['If(arg1, []).Else([',
+                                  f'{INDENT}Syscall({SUBSYSTEM}, {CMD}, 7),',
+                                  '])',
+                                  'Return()'], argc=1)
+
+
 class TestFallbacks(PrinterTestCase):
     def test_a_logical_not_is_not_exact_yet(self):
-        """HLIL reads EZ as == 0 (the EZ mark is a later slice's), which lowers to EQ"""
+        """HLIL reads EZ as == 0 (the EZ mark is a later slice's), which lowers to EQ: the reason names the first
+        opcode the lowering misses"""
         asm = Asm()
         asm.load_stack(-WORD_SIZE); asm.ez()
         syscall(asm, 1)
         returned(asm, argc=1)
-        self.assert_llil(asm, 'not exact', argc=1)
+        self.assert_llil(asm, 'not exact: opcode 1, expected EZ, got PUSH_INT 0', argc=1)
 
-    def test_control_flow(self):
-        asm = Asm()
-        asm.load_stack(-WORD_SIZE); asm.jz('end')
-        asm.push_int(1)
-        syscall(asm, 1)
-        asm.label('end')
-        returned(asm, argc=1)
-        self.assert_llil(asm, 'if', argc=1)
+    def test_a_jump_if_not_zero(self):
+        """HLIL shows its test as == 0; with an else, no form lowers to it; without one, the empty-arm form is tried
+        and the check refuses it"""
+        with_else = Asm()
+        with_else.load_stack(-WORD_SIZE); with_else.jnz('else')
+        with_else.push_int(10)
+        syscall(with_else, 1)
+        with_else.jmp('end')
+        with_else.label('else')
+        with_else.push_int(20)
+        syscall(with_else, 1)
+        with_else.label('end')
+        returned(with_else, argc=1)
+        self.assert_llil(with_else, 'negated test', argc=1)
+
+        alone = Asm()
+        alone.load_stack(-WORD_SIZE); alone.jnz('end')
+        alone.push_int(10)
+        syscall(alone, 1)
+        alone.label('end')
+        returned(alone, argc=1)
+        self.assert_llil(alone, 'not exact: opcode 1, expected POP_JMP_NOT_ZERO 5, got POP_JMP_ZERO 3', argc=1)
 
     def test_an_address_taken(self):
         asm = Asm()

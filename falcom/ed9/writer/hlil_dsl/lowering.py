@@ -1,8 +1,10 @@
 """The HLIL DSL's ED9 lowering (docs/dsl/HLIL_DSL.md, Recompile Path): an HLIL body's statements as the LLIL opcodes the
 compiler writes for them, handed to a sink one at a time - at compile time the writer's opcode functions
 (llil_sink.py). It starts with the stack holding exactly the parameters (slot 0 the last); a local's slot is where
-its Let pushed it; arguments are pushed last first; a call's result is read from REGS[0]. Each opcode is at the line
-of the node it lowers, a leaf's at its user's. HLIL's operators and the constants' kinds become ED9's opcodes here"""
+its Let pushed it, and its block's end pops it; arguments are pushed last first; a call's result is read from REGS[0];
+an If's arms jump past themselves when their condition is 0 (POP_JMP_ZERO) and to its end after their block. Each
+opcode is at the line of the node it lowers, a leaf's at its user's. HLIL's operators and the constants' kinds become
+ED9's opcodes here"""
 
 from typing import Protocol
 
@@ -13,6 +15,7 @@ from ...assembler.vm import CALLER_FRAME_SLOTS, LOCAL_SETUP_SLOTS, RESULT_REGIST
 from ...structs.scp_types import RawInt
 from .build import Build
 from .calls import BodyStatement, Call, LocalCall, ScriptCall
+from .control import Block, If, block_ends_path
 from .ed9_nodes import DebugInt, PopN, Register, SyscallCall
 from .nodes import BinaryOperation, Const, Global, Let, Local, Param, Return, Set, UnaryOperation
 
@@ -106,6 +109,49 @@ class Lowering:
 
             case DebugInt():
                 sink.emit(ED9Opcode.DEBUG_INT, node.value)
+
+            case If():
+                self.lower_if(node)
+
+    def lower_if(self, node: If):
+        """Each arm: its condition, a jump past the arm when it is 0, its block, then a jump to the If's end unless the
+        block ends its path or no arm follows; the else block after the last"""
+        sink = self.sink
+        end = None
+        for index, arm in enumerate(node.arms):
+            following = sink.new_label()
+            self.jump_if_zero(arm.condition, following, arm.site)
+            self.lower_block(arm.block)
+            last = index == len(node.arms) - 1 and node.else_block is None
+            if not last and not block_ends_path(arm.block):
+                end = end or sink.new_label()
+                sink.at(arm.site)
+                sink.emit(ED9Opcode.JMP, end)
+
+            sink.label(following)
+
+        if node.else_block is not None:
+            self.lower_block(node.else_block)
+
+        if end is not None:
+            sink.label(end)
+
+    def jump_if_zero(self, condition, target: str, site):
+        self.push_operand(condition, site)
+        self.sink.emit(ED9Opcode.POP_JMP_ZERO, target)
+        self.stack_depth -= 1
+
+    def lower_block(self, block: Block):
+        """block's statements, then a pop of the locals it declared unless its path ended; the code after it starts at
+        the depth before it either way"""
+        depth = self.stack_depth
+        for statement in block:
+            self.lower_statement(statement)
+
+        if not block_ends_path(block):
+            self.pop(self.stack_depth - depth)
+
+        self.stack_depth = depth
 
     def lower_let(self, node: Let):
         self.local_slots[node.local.name] = self.stack_depth

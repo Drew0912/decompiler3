@@ -31,6 +31,34 @@ def staged_speed():
     chr_set_animeclip_speed(65534, speed, 0)
 
 
+def crossing_else(condition):
+    """A helper giving an If its Else after the next statement (Codex's): the Else would run before that statement.
+    Its blocks hold no call, which the source check would find kept in chain"""
+    chain = If(condition, [Set(REGS[1], 1)])
+    Set(REGS[2], 2)
+    chain.Else([Set(REGS[3], 3)])
+
+
+def contiguous_else(condition):
+    """crossing_else's twin with the Else before the next statement: one chain, then the statement"""
+    chain = If(condition, [Set(REGS[1], 1)])
+    chain.Else([Set(REGS[3], 3)])
+    Set(REGS[2], 2)
+
+
+def block_before_condition():
+    """A helper making a block before its condition: the condition runs first"""
+    block = [Set(REGS[1], 1)]
+    If(REGS[2] == 1, block)
+
+
+def block_inside_condition(arg1, arg2):
+    """A helper making a block between its condition's operations (Fable's): the condition runs first"""
+    difference = arg2 - arg1
+    block = [Set(REGS[1], 1)]
+    If(difference > 0, block)
+
+
 
 class MistakeTestCase(HLILTestCase):
     def assert_raises_at(self, register, marker: str, function: str, text: str, error: type = HLILError):
@@ -389,6 +417,238 @@ class TestStatements(MistakeTestCase):
                 Return()
 
         self.assert_raises_at(register, 'caught', 'Func', 'True is not a DSL value')
+
+
+class TestControlFlow(MistakeTestCase):
+    """If's blocks and chain, the creation order across its arms, the paths, the locals of a block"""
+
+    def test_a_block_and_its_elements(self):
+        """A bad element is reported at its own line when it is a node, else at the If's; a list changed after the If
+        took it, at its arm's"""
+        kept = []
+
+        def not_a_list(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, Return())  # line: not a list
+                Return()
+
+        def a_value(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [
+                    arg1 == 5,  # line: a value
+                ])
+                Return()
+
+        def missing_comma(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [  # line: the if
+                    Syscall(1, 2, 3)  # line: joined
+                    -arg1,
+                ])
+                Return()
+
+        def none(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [None])  # line: none
+                Return()
+
+        def not_called(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [Return])  # line: block element not called
+                Return()
+
+        def two_blocks(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                kept.append([Syscall(1, 2, 3)])
+                If(arg1, kept[0]).Else(kept[0])  # line: two blocks
+                Return()
+
+        def changed_after(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                block = []
+                If(arg1, block)  # line: changed block
+                block.append(Set(REGS[1], 5))
+                Return()
+
+        cases =((not_a_list, 'not a list', 'a block is a list of statements, [...], not Return(...)'),
+                 (a_value, 'a value', '(arg1 EQ 5) in a block is not a statement: each element of [...] is a call or '
+                                      'a statement (a missing comma joins two lines into one value)'),
+                 (missing_comma, 'joined', '(Syscall(1, 2, ...) SUB arg1) in a block is not a statement'),
+                 (none, 'none', 'None in a block is not a statement'),
+                 (not_called, 'block element not called', 'Return in a block is not a statement: write Return(...), '
+                                                          'its call'),
+                 (two_blocks, 'two blocks', 'Syscall(1, 2, ...) is in two blocks (or a block is used twice)'),
+                 (changed_after, 'changed block', 'a block changed after its If took it'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+    def test_the_if_arguments_and_its_chain(self):
+        kept = []
+
+        def keyword(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, block=[Syscall(1, 2, 3)])  # line: if keyword
+                Return()
+
+        def third_block(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [Syscall(1, 2, 3)], [Syscall(1, 2, 4)])  # line: third block
+                Return()
+
+        def else_if_after_else(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [Syscall(1, 2, 3)]).Else([
+                    Syscall(1, 2, 4),
+                ]).ElseIf(arg1, [Syscall(1, 2, 5)])  # line: else if after else
+                Return()
+
+        def second_else(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [Syscall(1, 2, 3)]).Else([
+                    Syscall(1, 2, 4),
+                ]).Else([Syscall(1, 2, 5)])  # line: second else
+                Return()
+
+        def arm_after_use(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                kept.append(If(arg1, [Syscall(1, 2, 3)]))
+                If(arg1, [kept[0]])
+                kept[0].Else([Syscall(1, 2, 4)])  # line: arm after use
+                Return()
+
+        cases = ((keyword, 'if keyword', 'If takes its condition and its block by position, not block='),
+                 (third_block, 'third block', 'If takes a condition and a block, If(condition, [...]); the else is '
+                                              '.Else([...]) after it'),
+                 (else_if_after_else, 'else if after else', '.ElseIf(...) after .Else(...), the last arm'),
+                 (second_else, 'second else', '.Else(...) after .Else(...), the last arm'),
+                 (arm_after_use, 'arm after use', '.Else(...) on an If already in a block'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+    def test_creation_order_across_the_arms(self):
+        """A helper's statement made between an If's arms, or its block made before its condition or between the
+        condition's operations, would run out of the order written; the arm given before the next statement compiles"""
+        def crossing(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                crossing_else(arg1)  # line: crossing helper
+                Return()
+
+        def contiguous(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                contiguous_else(arg1)
+                Return()
+
+        def early_block(scena):
+            @scena.HLILCode()
+            def Func():
+                block_before_condition()  # line: early block
+                Return()
+
+        def block_in_condition(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32, arg2: Value32):
+                block_inside_condition(arg1, arg2)  # line: block in condition
+                Return()
+
+        self.assert_raises_at(crossing, 'crossing helper', 'Func', "Set(REGS[2], ...) is made between an If's arms, "
+                                                                   'in no block: no code runs there')
+        self.compiled(contiguous)
+        self.assert_raises_at(early_block, 'early block', 'Func', 'Set(REGS[1], ...) is made here but runs after '
+                                                                  '(REGS[2] EQ 1), made later')
+        self.assert_raises_at(block_in_condition, 'block in condition', 'Func', '((arg2 SUB arg1) GT 0) is made here '
+                                                                                'but runs before Set(REGS[1], ...), '
+                                                                                'made earlier')
+
+    def test_paths_that_end(self):
+        def after_an_ending_if(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [Return(1)]).Else([Return(2)])
+                Syscall(1, 2, 3)  # line: after the if
+                Return()
+
+        def after_a_return_in_a_block(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [
+                    Return(1),
+                    Syscall(1, 2, 3),  # line: after the return
+                ])
+                Return()
+
+        def an_if_without_else_last(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [Return(1)])  # line: no else
+                # (the If is the body's last statement: its other path falls off the end)
+
+        cases = ((after_an_ending_if, 'after the if', 'a statement after an If whose every arm, .Else included, ends '
+                                                      'its path: it never runs'),
+                 (after_a_return_in_a_block, 'after the return', 'a statement after Return(...), which ends the '
+                                                                 'function'),
+                 (an_if_without_else_last, 'no else', 'the body does not end with Return(...), or with an If whose '
+                                                      'every arm, .Else included, ends with one'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+    def test_the_locals_of_a_block(self):
+        def read_after(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                x = Local('x')
+                If(arg1, [Let(x, 1)])
+                Syscall(1, 2, x)  # line: read after
+                Return()
+
+        def set_after(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                x = Local('x')
+                If(arg1, [Let(x, 1)])
+                Set(x, 2)  # line: set after
+                Return()
+
+        def read_in_the_next_arm(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                x = Local('x')
+                If(arg1, [Let(x, 1)]).ElseIf(x, [  # line: next arm
+                    Syscall(1, 2, 3),
+                ])
+                Return()
+
+        def outer_declared_again(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                x = Local('x')
+                Let(x, 1)
+                If(arg1, [Let(x, 2)])  # line: declared again
+                Return()
+
+        cases = ((read_after, 'read after', 'local x is read after the block that declares it ends'),
+                 (set_after, 'set after', 'Set(x, ...) after the block that declares x ends'),
+                 (read_in_the_next_arm, 'next arm', 'local x is read after the block that declares it ends'),
+                 (outer_declared_again, 'declared again', 'a second Let(x, ...)'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
 
 
 class TestWriterGuards(MistakeTestCase):

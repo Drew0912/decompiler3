@@ -1,8 +1,9 @@
 """The HLIL DSL's function formatter (docs/dsl/HLIL_DSL.md, Form, Printer): an HLIL function as the lines of its
-@scena.HLILCode() definition, or LLILFallback with the reason it stays LLIL. Its forms so far: straight-line bodies of
-calls, Set, Let and Return and the intrinsic statements; a literal wrapped where Python would fold, mirror or format
-the bare one; Python's precedence. The HLIL walk is VM-neutral; what is ED9's (the constants' spelling, the declaring
-push and the default return, registers, the ED9-only statements) is ED9Forms'"""
+@scena.HLILCode() definition, or LLILFallback with the reason it stays LLIL. Its forms so far: calls, Set, Let and
+Return and the intrinsic statements; If with its .ElseIf / .Else arms, one statement per line in each block; a literal
+wrapped where Python would fold, mirror or format the bare one; Python's precedence. The HLIL walk is VM-neutral; what
+is ED9's (the constants' spelling, the declaring push and the default return, registers, the ED9-only statements) is
+ED9Forms'"""
 
 from enum import IntEnum, auto
 import keyword
@@ -10,9 +11,10 @@ import re
 from typing import Callable, NamedTuple
 
 from dc3 import default_indent, quote_string
-from ir.hlil import (BinaryOp, HighLevelILFunction, HLILAddressOf, HLILAssign, HLILBinaryOp, HLILCall, HLILComment,
-                     HLILConst, HLILDeref, HLILDoWhile, HLILExpression, HLILExprStmt, HLILExternCall, HLILIf,
-                     HLILIntrinsic, HLILReturn, HLILStatement, HLILSwitch, HLILSyscall, HLILUnaryOp, HLILVar,
+from ir.core import is_int_zero
+from ir.hlil import (BinaryOp, HighLevelILFunction, HLILAddressOf, HLILAssign, HLILBinaryOp, HLILBlock, HLILCall,
+                     HLILComment, HLILConst, HLILDeref, HLILDoWhile, HLILExpression, HLILExprStmt, HLILExternCall,
+                     HLILIf, HLILIntrinsic, HLILReturn, HLILStatement, HLILSwitch, HLILSyscall, HLILUnaryOp, HLILVar,
                      HLILVariable, HLILWhile, UnaryOp, VariableKind)
 from ir.hlil.hlil import unwrap_address_taken_var
 from ...assembler.function import Function
@@ -73,9 +75,9 @@ class ScriptNames(NamedTuple):
 
 
 class Printed(NamedTuple):
-    """A statement's DSL line, and how many HLIL statements it stands for (Let(x, value) fuses two)"""
+    """A statement's DSL lines, and how many HLIL statements it stands for (Let(x, value) fuses two)"""
 
-    line: str
+    lines: list[str]
     statements: int
 
 
@@ -96,6 +98,34 @@ def is_temporary(name: str | None) -> bool:
 def is_store_to_local(statement: HLILStatement | None, name: str) -> bool:
     return (isinstance(statement, HLILAssign) and isinstance(statement.dest, HLILVar)
             and statement.dest.var.kind == VariableKind.LOCAL and statement.dest.var.name == name)
+
+
+def code_statements(block: HLILBlock) -> list[HLILStatement]:
+    """block's statements but its comments"""
+    return [statement for statement in block.statements if not isinstance(statement, HLILComment)]
+
+
+def ends_path(statement: HLILStatement) -> bool:
+    """No code after statement runs: a return, or an if with an else whose every arm ends its path"""
+    match statement:
+        case HLILReturn():
+            return True
+
+        case HLILIf(false_block=HLILBlock()):
+            return block_ends_path(statement.true_block) and block_ends_path(statement.false_block)
+
+    return False
+
+
+def block_ends_path(block: HLILBlock) -> bool:
+    statements = code_statements(block)
+    return bool(statements) and ends_path(statements[-1])
+
+
+def is_zero_test(expr: HLILExpression, op: BinaryOp) -> bool:
+    """expr is a comparison (op: == or !=) with a plain 0: an arm's truth test"""
+    return (isinstance(expr, HLILBinaryOp) and expr.op == op and isinstance(expr.rhs, HLILConst)
+            and is_int_zero(expr.rhs.value))
 
 
 # Parentheses Python's precedence leaves out but the operation needs. A comparison inside another would chain
@@ -185,9 +215,9 @@ class FunctionFormatter:
         self.locals: list[str] = []
 
     def lines(self, hlil: HighLevelILFunction) -> list[str]:
-        statements = [statement for statement in hlil.body.statements if not isinstance(statement, HLILComment)]
-        body = self.body_lines(statements)
-        if not statements or not isinstance(statements[-1], HLILReturn):
+        statements = code_statements(hlil.body)
+        body = [line for printed in self.printed_statements(statements) for line in printed]
+        if not statements or not ends_path(statements[-1]):
             raise LLILFallback('no final return')
 
         return [HLIL_DECORATOR, f'def {self.func.name}({Formatter.format_params(self.func.params)}):',
@@ -196,21 +226,22 @@ class FunctionFormatter:
 
     # Statements
 
-    def body_lines(self, statements: list[HLILStatement]) -> list[str]:
-        lines = []
+    def printed_statements(self, statements: list[HLILStatement]) -> list[list[str]]:
+        """Each DSL statement's lines"""
+        printed_lines = []
         position = 0
         while position < len(statements):
             following = statements[position + 1] if position + 1 < len(statements) else None
             printed = self.statement(statements[position], following)
-            lines.append(printed.line)
+            printed_lines.append(printed.lines)
             position += printed.statements
 
-        return lines
+        return printed_lines
 
     def statement(self, statement: HLILStatement, following: HLILStatement | None) -> Printed:
         match statement:
             case HLILExprStmt(expr=HLILCall() | HLILSyscall() | HLILExternCall()):
-                return Printed(self.call(statement.expr), 1)
+                return Printed([self.call(statement.expr)], 1)
 
             case HLILExprStmt():
                 raise LLILFallback('expression statement')
@@ -222,16 +253,16 @@ class FunctionFormatter:
                 raise LLILFallback('return without value')
 
             case HLILReturn() if self.forms.is_raw_zero(statement.value):
-                return Printed('Return()', 1)
+                return Printed(['Return()'], 1)
 
             case HLILReturn():
-                return Printed(f'Return({self.text(statement.value)})', 1)
+                return Printed([f'Return({self.text(statement.value)})'], 1)
 
             case HLILIntrinsic():
-                return Printed(self.forms.intrinsic(statement.name, statement.args, self.text), 1)
+                return Printed([self.forms.intrinsic(statement.name, statement.args, self.text)], 1)
 
             case HLILIf():
-                raise LLILFallback('if')
+                return Printed(self.if_lines(statement), 1)
 
             case HLILWhile() | HLILDoWhile():
                 raise LLILFallback('loop')
@@ -247,7 +278,7 @@ class FunctionFormatter:
 
         var = statement.dest.var
         if self.is_declared(var):
-            return Printed(f'Set({self.variable(var)}, {self.text(statement.src)})', 1)
+            return Printed([f'Set({self.variable(var)}, {self.text(statement.src)})'], 1)
 
         return self.declare_local(var.name, statement.src, following)
 
@@ -269,9 +300,59 @@ class FunctionFormatter:
 
         self.locals.append(name)
         if is_store_to_local(following, name):
-            return Printed(f'Let({name}, {self.text(following.src)})', 2)
+            return Printed([f'Let({name}, {self.text(following.src)})'], 2)
 
-        return Printed(f'Let({name})', 1)
+        return Printed([f'Let({name})'], 1)
+
+    def if_lines(self, statement: HLILIf) -> list[str]:
+        """If(test, [...]), then .ElseIf(test, [...]) for an else holding one if and nothing else, then .Else([...]).
+        An else-less if whose test is HLIL's E == 0 is the code's if (E) {} else {...}: an empty arm the structuring
+        dropped, its test negated (the check refuses one that is a jump if not zero instead)"""
+        lines = ['']
+        opener = 'If'
+        while True:
+            then_statements = code_statements(statement.true_block)
+            else_statements = code_statements(statement.false_block) if statement.false_block is not None else []
+            if not else_statements and is_zero_test(statement.condition, BinaryOp.EQ):
+                self.append_arm(lines, f'{opener}({self.text(statement.condition.lhs)}, ', [])
+                self.append_arm(lines, '.Else(', then_statements)
+                return lines
+
+            self.append_arm(lines, f'{opener}({self.condition(statement.condition)}, ', then_statements)
+            if not else_statements:
+                return lines
+
+            if len(else_statements) == 1 and isinstance(else_statements[0], HLILIf):
+                statement, opener = else_statements[0], '.ElseIf'
+                continue
+
+            self.append_arm(lines, '.Else(', else_statements)
+            return lines
+
+    def append_arm(self, lines: list[str], head: str, statements: list[HLILStatement]):
+        """head, the block's list, one statement per line with a trailing comma, and the closing parenthesis, from
+        the end of lines' last line"""
+        if not statements:
+            lines[-1] += f'{head}[])'
+            return
+
+        lines[-1] += f'{head}['
+        for printed in self.printed_statements(statements):
+            lines.extend(f'{INDENT}{line}' for line in printed[:-1])
+            lines.append(f'{INDENT}{printed[-1]},')
+
+        lines.append('])')
+
+    def condition(self, condition: HLILExpression) -> str:
+        """The test an arm's jump makes, POP_JMP_ZERO past the arm: HLIL's outermost != 0 against a plain 0 is the
+        jump's own, printed bare; an outermost == 0 is the jump's test negated, which no form with an else lowers to"""
+        if is_zero_test(condition, BinaryOp.NE):
+            return self.text(condition.lhs)
+
+        if is_zero_test(condition, BinaryOp.EQ):
+            raise LLILFallback('negated test')
+
+        return self.text(condition)
 
     # Expressions: (text, its binding strength)
 
