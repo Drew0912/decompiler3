@@ -1,12 +1,14 @@
 """The HLIL DSL's control flow (docs/dsl/HLIL_DSL.md, Form): If with its .ElseIf / .Else arms, While, Break and
-Continue, and the blocks If and While hold - each a Python list of the statements made for it, in order. A statement
-ends its path when no code after it runs: Return, Break, Continue, or an If with an Else whose every block ends its
-path; a While never does, as its test can be 0"""
+Continue, and the blocks If and While hold - each a Python list of the statements made for it, in order, with the
+statements a helper called in it made besides (nested_statements.py). A statement ends its path when no code after it
+runs: Return, Break, Continue, or an If with an Else whose every block ends its path; a While never does, as its test
+can be 0"""
 
-from typing import NamedTuple
+from typing import Iterator, NamedTuple
 
 from .build import Build
 from .calls import BodyStatement
+from .nested_statements import take_nested_statements
 from .nodes import Node, Return, Statement, TrackedNode, claim, require_build
 
 _MISSING = object()     # an argument not given
@@ -15,21 +17,25 @@ Block = tuple[BodyStatement, ...]
 
 
 class Arm(NamedTuple):
-    """One of a statement's blocks: the condition tested before it (None for an If's else), the block, and where its
-    If(...), .ElseIf(...), .Else(...) or While(...) is"""
+    """One of a statement's blocks: the condition tested before it (None for an If's else), the block, where its
+    If(...), .ElseIf(...), .Else(...) or While(...) is, and the statements its condition's helpers made besides, run
+    before each test of it (their locals live through the arm)"""
 
     condition: Node | None
     block: Block
     site: object
+    before: Block = ()
 
 
 def claim_block(build: Build, block, owner: TrackedNode) -> Block:
-    """block as one of owner's blocks: a list whose every element is a statement or a call of this build, in no block
-    yet. A bad element is reported at its own line when it is a node of this build, else at the owner's"""
+    """block as one of owner's blocks: a list whose every element (block_elements) is a statement or a call of this
+    build, in no block yet. A bad element is reported at its own line when it is a node of this build, else at the
+    owner's"""
     if not isinstance(block, list):
         raise build.fail(f'a block is a list of statements, [...], not {block!r}')
 
-    for element in block:
+    elements = tuple(block_elements(block))
+    for element in elements:
         if not isinstance(element, BodyStatement):
             own = isinstance(element, TrackedNode) and element.build is build
             raise build.fail_at(element.site if own else build.site_of(), _not_a_statement(element))
@@ -44,13 +50,26 @@ def claim_block(build: Build, block, owner: TrackedNode) -> Block:
 
         element.parent = owner
 
-    return tuple(block)
+    return elements
+
+
+def block_elements(block: list) -> Iterator:
+    """block's elements in order, a list among them opened in place (a helper's returned list), at any depth, and a
+    None skipped (a helper returning nothing)"""
+    for element in block:
+        if isinstance(element, list):
+            yield from block_elements(element)
+        elif element is not None:
+            yield element
 
 
 def _not_a_statement(element) -> str:
     if isinstance(element, Node):
         return (f'{element!r} in a block is not a statement: each element of [...] is a call or a statement (a '
                 'missing comma joins two lines into one value)')
+
+    if isinstance(element, tuple):
+        return f'{element!r} in a block is a tuple: a block holds statements and lists of them, [...]'
 
     if isinstance(element, type) and issubclass(element, LoopExit):
         return f'{element.__name__} in a block is not a statement: write {element.__name__}(), its call'
@@ -79,14 +98,15 @@ def block_ends_path(block: Block | list) -> bool:
 
 
 class BlockStatement(Statement):
-    """A statement holding blocks (If, While): the lists it was given, kept for the build to check them unchanged, and
-    how many nodes its build held once it took its last block"""
+    """A statement holding blocks (If, While): the lists it was given with what it took from each, kept for the build
+    to check them unchanged, and how many nodes its build held once it took its last block"""
 
     def join_build(self, what: str) -> Build:
         """Register in the active build, holding no block yet"""
         build = super().join_build(what)
-        self.given_blocks: list[tuple[list, object]] = []  # each block's list as given, and where its arm is
-        self.arms_end = 0                                   # len(build.nodes) once its last block was taken
+        # Each block's list as given, the elements taken from it, and where its arm is
+        self.given_blocks: list[tuple[list, Block, object]] = []
+        self.arms_end = 0                   # len(build.nodes) once its last block was taken
         self.children = ()
         return build
 
@@ -97,12 +117,40 @@ class BlockStatement(Statement):
     def blocks(self) -> list[Block]:
         return [arm.block for arm in self.arms_in_order()]
 
-    def _take_block(self, build: Build, block, site) -> Block:
-        """block as the arm's at site: its list kept (the build checks it unchanged), the nodes made so far counted"""
-        held = claim_block(build, block, self)
-        self.given_blocks.append((block, site))
+    def _take_block(self, build: Build, block, site, block_argument: int,
+                    condition_argument: int | None = None) -> tuple[Block, Block]:
+        """block as the arm's at site, and the statements the arm call's arguments made besides (a helper's own): the
+        block argument's (by position) among the block's elements, the condition argument's returned second, to run
+        before each test. Its list is kept (the build checks it unchanged), the nodes made so far counted"""
+        listed = claim_block(build, block, self)
+        self.given_blocks.append((block, listed, site))
         self.arms_end = len(build.nodes)
-        return held
+        arguments = (block_argument,) if condition_argument is None else (condition_argument, block_argument)
+        nested = take_nested_statements(build, self, arguments)
+        for statements in nested.values():
+            for statement in statements:
+                statement.parent = self
+
+        before = tuple(nested[condition_argument]) if condition_argument is not None else ()
+        return _merged(listed, nested[block_argument]), before
+
+
+def _merged(listed: Block, nested: list) -> Block:
+    """listed with the nested statements (in creation order) among its elements: each before the first element made
+    after it, the elements keeping their order (written out of order, the build's order check sees them so)"""
+    if not nested:
+        return listed
+
+    merged = []
+    taken = 0
+    for statement in nested:
+        while taken < len(listed) and listed[taken].index < statement.index:
+            merged.append(listed[taken])
+            taken += 1
+
+        merged.append(statement)
+
+    return (*merged, *listed[taken:])
 
 
 def _require_condition_and_block(build: Build, what: str, condition, block, extra: tuple, keywords: dict, tail: str):
@@ -138,20 +186,23 @@ class If(BlockStatement):
         if extra or block is _MISSING:
             raise build.fail('.Else takes one block, .Else([...]); a tested arm is .ElseIf(condition, [...])')
 
-        self.else_block = self._take_block(build, block, build.site_of())
+        self.else_block, _ = self._take_block(build, block, build.site_of(), 0)
         return self
 
     def arms_in_order(self) -> list[Arm]:
         if self.else_block is None:
             return list(self.arms)
 
-        return [*self.arms, Arm(None, self.else_block, self.given_blocks[-1][1])]
+        return [*self.arms, Arm(None, self.else_block, self.given_blocks[-1][2])]
 
     def _add_arm(self, build: Build, what: str, condition, block, extra: tuple, keywords: dict, site):
+        """An arm testing condition: an .ElseIf's condition's statements run at its test; the If's first condition's
+        stay before the If, run once as on the line above it"""
         _require_condition_and_block(build, what, condition, block, extra, keywords,
                                      '; the else is .Else([...]) after it')
         test = claim(build, condition, self)
-        self.arms.append(Arm(test, self._take_block(build, block, site), site))
+        held, before = self._take_block(build, block, site, 1, 0 if self.arms else None)
+        self.arms.append(Arm(test, held, site, before))
         self.children = tuple(arm.condition for arm in self.arms)
 
     def _open_build(self, what: str) -> Build:
@@ -182,11 +233,11 @@ class While(BlockStatement):
         _require_condition_and_block(build, 'While', condition, block, extra, keywords,
                                      ' (the DSL has no loop else)')
         self.condition = claim(build, condition, self)
-        self.block = self._take_block(build, block, self.site)
+        self.block, self.before = self._take_block(build, block, self.site, 1, 0)
         self.children = (self.condition,)
 
     def arms_in_order(self) -> list[Arm]:
-        return [Arm(self.condition, self.block, self.site)]
+        return [Arm(self.condition, self.block, self.site, self.before)]
 
     def __repr__(self) -> str:
         return 'While(...)'

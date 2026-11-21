@@ -8,7 +8,7 @@ reflected operator first only when its class subclasses the left's"""
 from enum import Enum
 
 from ir.core import operators
-from .build import Build, active_build, dsl_error
+from .build import Build, Origin, active_build, dsl_error
 
 _MISSING = object()     # Return() and Let(x): no value given
 
@@ -239,6 +239,9 @@ class TrackedNode:
     site: object
     parent: TrackedNode | None
     children: tuple
+    index: int                  # its place in build.nodes, its creation order
+    origin: Origin              # where it was made, while its build keeps it (build.py)
+    stands_alone = False        # a statement or a call: it may stand on a line of its own
 
     def join_build(self, what: str) -> Build:
         """Register in the active build (what names the node in the error when there is none)"""
@@ -356,6 +359,8 @@ def Not(value) -> UnaryOperation:
 
 class Statement(TrackedNode, Node):
     """A statement: used by nothing, it stands where it was made"""
+
+    stands_alone = True
 
 
 class Set(Statement):

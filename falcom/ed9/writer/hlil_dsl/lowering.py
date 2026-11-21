@@ -133,21 +133,31 @@ class Lowering:
                 self.lower_loop_exit(node)
 
     def lower_if(self, node: If):
-        """Each arm: its condition, a jump past the arm when it is 0, its block, then a jump to the If's end unless the
-        block ends its path or no arm follows; the else block after the last"""
+        """Each arm: the statements made before its test, its condition, a jump past the arm when it is 0, its block,
+        then a jump to the If's end unless the block ends its path or no arm follows; the else block after the last.
+        The locals declared before an arm's test live through the arm: popped before the jump to the end and past the
+        arm, at one POP when no arm follows"""
         sink = self.sink
         end = None
         for index, arm in enumerate(node.arms):
             following = sink.new_label()
+            depth = self.stack_depth
+            self.block_depths.append(depth)
+            self.run(arm.before)
+            declared = self.stack_depth - depth
             self.jump_if_zero(arm.condition, following, arm.site)
             self.lower_block(arm.block)
+            self.block_depths.pop()
             last = index == len(node.arms) - 1 and node.else_block is None
             if not last and not block_ends_path(arm.block):
                 end = end or sink.new_label()
                 sink.at(arm.site)
+                self.pop(declared)
                 sink.emit(ED9Opcode.JMP, end)
 
             sink.label(following)
+            self.stack_depth = depth + declared
+            self.pop(declared)
 
         if node.else_block is not None:
             self.lower_block(node.else_block)
@@ -156,18 +166,31 @@ class Lowering:
             sink.label(end)
 
     def lower_while(self, node: While):
-        """The head: its condition, a jump past the loop when it is 0, its block, then a jump to the head unless the
-        block ends its path"""
+        """The head: the statements made before its test, its condition, a jump past the loop when it is 0, its block,
+        then a jump to the head unless the block ends its path. The locals declared before the test live for one
+        pass: popped before the jump to the head and on the way out"""
         sink = self.sink
+        depth = self.stack_depth
         loop = Loop(sink.new_label(), sink.new_label(), len(self.block_depths))
         sink.label(loop.head)
-        self.jump_if_zero(node.condition, loop.end, node.site)
+        self.block_depths.append(depth)
         self.loops.append(loop)
+        self.run(node.before)
+        declared = self.stack_depth - depth
+        way_out = sink.new_label() if declared else loop.end
+        self.jump_if_zero(node.condition, way_out, node.site)
         self.lower_block(node.block)
         self.loops.pop()
+        self.block_depths.pop()
         if not block_ends_path(node.block):
             sink.at(node.site)
+            self.pop(declared)
             sink.emit(ED9Opcode.JMP, loop.head)
+
+        if declared:
+            sink.label(way_out)
+            self.stack_depth = depth + declared
+            self.pop(declared)
 
         sink.label(loop.end)
 

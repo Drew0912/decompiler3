@@ -1,14 +1,14 @@
 """The build an HLIL body runs under (docs/dsl/HLIL_DSL.md, Form): the nodes it makes, in creation order, where each was
 made, and its first DSL error; HLILError, the DSL's own error. The nodes register here while a build is active"""
 
-import os
 import sys
 from contextlib import contextmanager
 from types import CodeType, FrameType
 from typing import Any, Callable
 
-# The DSL's own modules: a frame running one is neither the body nor a helper of it
-DSL_FOLDER = os.path.dirname(os.path.abspath(__file__)) + os.sep
+# Where a node was made: each frame between its creation and the body's, the body's last, with the instruction each
+# was at; the DSL's own frames left out
+Origin = list[tuple[FrameType, int]]
 
 
 class HLILError(Exception):
@@ -17,9 +17,11 @@ class HLILError(Exception):
 
 class Build:
     """One HLIL body's run: function_name is the function the body is for; site_of() says where the statement running
-    now is (opaque here), and locate(site, text) puts it in a message. With check_helper, each helper the body runs
-    while it makes a node, a function between the node's creation and one of body_codes (the body's code, and its
-    wrappers'), is passed to check_helper(code, its globals) on the way: a located message is its error"""
+    now is (opaque here), and locate(site, text) puts it in a message. With body_codes (the body's code, and its
+    wrappers'), each node keeps its origin, and each statement or call nothing holds yet waits in unplaced, oldest
+    first, for an If or a While whose arguments made it (nested_statements.py). With check_helper, each helper the
+    body runs while it makes a node, a function in the node's origin before the body, is passed to check_helper(code,
+    its globals) on the way: a located message is its error"""
 
     def __init__(self, function_name: str, site_of: Callable[[], Any], locate: Callable[[Any, str], str],
                  body_codes: frozenset[int] = frozenset(),
@@ -30,6 +32,7 @@ class Build:
         self.body_codes = body_codes                    # id() of each code the body runs as itself
         self.check_helper = check_helper
         self.nodes: list = []                           # the tracked nodes, in creation order
+        self.unplaced: list = []                        # the statements and calls nothing holds yet, oldest first
         self.first_error: HLILError | None = None       # raised again after the body, even if the body caught it
 
     def register(self, node):
@@ -37,25 +40,44 @@ class Build:
         node.build = self
         node.site = self.site_of()
         node.parent = None
+        node.index = len(self.nodes)
         self.nodes.append(node)
+        node.origin = self.origin(sys._getframe(1)) if self.body_codes else []
+        if node.origin and node.stands_alone:
+            self.unplaced.append(node)
+
         if self.check_helper is not None:
-            for frame in self.helper_frames(sys._getframe(1)):
-                problem = self.check_helper(frame.f_code, frame.f_globals)
+            for frame, _ in node.origin[:-1]:
+                code = frame.f_code
+                # Lambdas, comprehensions and generator expressions are read with the function holding them
+                if code.co_name.startswith('<'):
+                    continue
+
+                problem = self.check_helper(code, frame.f_globals)
                 if problem is not None:
                     raise self.keep_first(HLILError(problem))
 
-    def helper_frames(self, frame: FrameType) -> list[FrameType]:
-        """The helpers between frame and the body: none unless the walk reaches the body"""
-        helpers = []
-        while frame is not None and id(frame.f_code) not in self.body_codes:
-            code = frame.f_code
-            # Lambdas, comprehensions and generator expressions are read with the function holding them
-            if not code.co_filename.startswith(DSL_FOLDER) and not code.co_name.startswith('<'):
-                helpers.append(frame)
+    def origin(self, frame: FrameType) -> Origin:
+        """Where the code running in frame is, innermost first: each frame up to the body's, with the instruction it
+        is at, the DSL's own left out (told by their package); empty unless the walk reaches the body"""
+        origin = []
+        while frame is not None:
+            if id(frame.f_code) in self.body_codes:
+                origin.append((frame, frame.f_lasti))
+                return origin
+
+            if frame.f_globals.get('__package__') != __package__:
+                origin.append((frame, frame.f_lasti))
 
             frame = frame.f_back
 
-        return helpers if frame is not None else []
+        return []
+
+    def release_origins(self):
+        """Forget where the nodes were made, with the frames that holds"""
+        self.unplaced = []
+        for node in self.nodes:
+            node.origin = []
 
     def fail(self, text: str) -> HLILError:
         """The error to raise about the statement running now; the build keeps the first"""

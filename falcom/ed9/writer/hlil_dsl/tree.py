@@ -9,7 +9,8 @@ from typing import Callable, Iterator
 
 from .build import Build, activated
 from .calls import BodyStatement
-from .control import Block, BlockStatement, Break, LoopExit, While, block_ends_path, ends_path
+from .control import Block, BlockStatement, Break, LoopExit, While, block_elements, block_ends_path, ends_path
+from .nested_statements import forget_positions, made_inside
 from .nodes import Let, Local, Param, Return, Set, TrackedNode
 
 
@@ -33,6 +34,8 @@ def build_tree(build: Build, body: Callable, param_names: list[str]) -> list[Bod
     _require_exits_in_loops(build, statements, False)
     _require_path_ends(build, statements)
     _require_declared_locals(build, statements, set(), set())
+    build.release_origins()
+    forget_positions()
     return statements
 
 
@@ -51,8 +54,9 @@ def _require_blocks_unchanged(build: Build, statements: list):
             if not isinstance(statement, BlockStatement):
                 continue
 
-            for (given, site), held in zip(statement.given_blocks, statement.blocks()):
-                if len(given) != len(held) or any(now is not taken for now, taken in zip(given, held)):
+            for given, taken, site in statement.given_blocks:
+                now = tuple(block_elements(given))
+                if len(now) != len(taken) or any(element is not first for element, first in zip(now, taken)):
                     owner = type(statement).__name__
                     raise build.fail_at(site, f'a block changed after its {owner} took it: the {owner} holds the list '
                                               'as it was then, so finish the list before giving it')
@@ -60,13 +64,15 @@ def _require_blocks_unchanged(build: Build, statements: list):
 
 def units_in_code_order(statements: Block | list) -> Iterator[tuple[TrackedNode, list[TrackedNode]]]:
     """The units of statements, in the order the code runs them, each (its head, its nodes): a statement with its
-    operands; for an If or a While, each condition and then its block's units, the statement's own node in none"""
+    operands; for an If or a While, each arm's statements made before its test, its condition, then its block's
+    units, the statement's own node in none"""
     for statement in statements:
         if not isinstance(statement, BlockStatement):
             yield statement, list(_tracked_nodes(statement))
             continue
 
         for arm in statement.arms_in_order():
+            yield from units_in_code_order(arm.before)
             nodes = list(_tracked_nodes(arm.condition)) if arm.condition is not None else []
             if nodes:
                 yield arm.condition, nodes
@@ -112,50 +118,78 @@ def _require_creation_order(build: Build, statements: list):
 
         if position != current + 1:
             head, expected = units[position][0], units[current + 1][0]
+            if head is not node and made_inside(expected, head):
+                statement = _arm_owner(expected) or expected
+                raise build.fail_at(expected.site, f'{statement!r} is made between two parts of {head!r} (after '
+                                                   f'{node!r}): a statement runs before or after another, not inside '
+                                                   'it; call the helper first and keep its value with Let(x, value)')
+
             if head is not node:
                 raise build.fail_at(node.site, f'{node!r} is made here but used by {head!r}, after {expected!r}: it '
                                                'would run where it is used; keep a value with Let(x, value)')
 
             raise build.fail_at(node.site, f'{node!r} is made here but runs after {expected!r}, made later: '
-                                           f'{_condition_rule(node)}')
+                                           f'{_condition_rule(node, expected)}')
 
         current = position
 
 
-def _condition_rule(node: TrackedNode) -> str:
-    """The rule a unit made too early breaks: a condition is tested where its If or While stands; a block's statement
-    runs after its condition"""
+def _arm_owner(node: TrackedNode) -> BlockStatement | None:
+    """The If or While testing node as one of its conditions, else None"""
     owner = node.parent
     if isinstance(owner, BlockStatement) and any(arm.condition is node for arm in owner.arms_in_order()):
-        name = type(owner).__name__
-        return f"the {name}'s condition is tested where the {name} stands: make it there"
+        return owner
 
-    return 'an If or a While runs its condition before its block'
+    return None
+
+
+def _condition_rule(node: TrackedNode, expected: TrackedNode) -> str:
+    """The rule a unit made before expected breaks: the statements a condition's helper makes run before its test; a
+    condition is tested where its If or While stands; a block's statement runs after its condition"""
+    owner = _arm_owner(node)
+    if owner is None:
+        return 'an If or a While runs its condition before its block'
+
+    arm = next(arm for arm in owner.arms_in_order() if arm.condition is node)
+    if any(head is expected for head, _ in units_in_code_order(arm.before)):
+        place = 'While' if isinstance(owner, While) else '.ElseIf'
+        return f"a helper's statements made in the {place}'s condition run before its test: make its value after them"
+
+    name = type(owner).__name__
+    return f"the {name}'s condition is tested where the {name} stands: make it there"
 
 
 def _blocks(statements: Block | list) -> Iterator[Block | list]:
-    """statements and every block inside them"""
+    """statements and every block inside them, the statements an arm runs before its test included"""
     yield statements
     for statement in statements:
         if isinstance(statement, BlockStatement):
-            for block in statement.blocks():
-                yield from _blocks(block)
+            for arm in statement.arms_in_order():
+                if arm.before:
+                    yield from _blocks(arm.before)
+
+                yield from _blocks(arm.block)
 
 
 def _require_exits_in_loops(build: Build, block: Block | list, in_loop: bool):
-    """Each Break() and Continue() stands in a While's block, at any depth"""
+    """Each Break() and Continue() stands in a While's block or before its test, at any depth"""
     for statement in block:
         if isinstance(statement, LoopExit) and not in_loop:
             raise build.fail_at(statement.site, f'{statement!r} outside a While: it leaves the innermost While holding '
                                                 'it')
 
         if isinstance(statement, BlockStatement):
-            for inner in statement.blocks():
-                _require_exits_in_loops(build, inner, in_loop or isinstance(statement, While))
+            for arm in statement.arms_in_order():
+                for inner in (arm.before, arm.block):
+                    _require_exits_in_loops(build, inner, in_loop or isinstance(statement, While))
 
 
 def _require_path_ends(build: Build, statements: list):
     for block in _blocks(statements):
+        for statement in block:
+            if isinstance(statement, BlockStatement):
+                _require_tests_reached(build, statement)
+
         for statement, following in pairwise(block):
             if isinstance(statement, Return):
                 raise build.fail_at(following.site, 'a statement after Return(...), which ends the function')
@@ -178,18 +212,35 @@ def _require_path_ends(build: Build, statements: list):
                                   'included, ends with one (a Python return stops it early)')
 
 
+def _require_tests_reached(build: Build, statement: BlockStatement):
+    """No arm's statements made before its test end their path: the test would never run"""
+    for arm in statement.arms_in_order():
+        if block_ends_path(arm.before):
+            last = arm.before[-1]
+            owner = 'While' if isinstance(statement, While) else '.ElseIf'
+            raise build.fail_at(last.site, f"{last!r}, made while the {owner}'s condition is built, ends its path "
+                                           'before the test: the condition never runs')
+
+
 def _require_declared_locals(build: Build, block: Block | list, live: set[str], declared: set[str]):
     """Let declares a local in its block, before any other statement reads or sets it, once while it lives (an
-    outer one too); the block's end frees it. live: the names declared and not yet freed; declared: every name
-    declared so far"""
+    outer one too); the block's end frees it, an arm's end the locals made before its test. live: the names declared
+    and not yet freed; declared: every name declared so far"""
+    live.difference_update(_declare_locals(build, block, live, declared))
+
+
+def _declare_locals(build: Build, block: Block | list, live: set[str], declared: set[str]) -> list[str]:
+    """_require_declared_locals for block, its own locals left live: returns their names"""
     declared_here = []
     for statement in block:
         if isinstance(statement, BlockStatement):
             for arm in statement.arms_in_order():
+                before_test = _declare_locals(build, arm.before, live, declared)
                 if arm.condition is not None:
                     _require_live_reads(build, arm.site, (arm.condition,), live, declared)
 
                 _require_declared_locals(build, arm.block, live, declared)
+                live.difference_update(before_test)
 
             continue
 
@@ -207,7 +258,7 @@ def _require_declared_locals(build: Build, block: Block | list, live: set[str], 
                 raise build.fail_at(statement.site, f'Set({name}, ...) after the block that declares {name} ends'
                                     if name in declared else f'Set({name}, ...) before Let({name})')
 
-    live.difference_update(declared_here)
+    return declared_here
 
 
 def _require_live_reads(build: Build, site, operands: tuple, live: set[str], declared: set[str]):

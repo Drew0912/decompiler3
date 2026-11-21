@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 PACKAGE = 'falcom.ed9.writer.hlil_dsl'
 PACKAGE_DIR = REPO_ROOT / 'falcom' / 'ed9' / 'writer' / 'hlil_dsl'
-NEUTRAL_MODULES = ('nodes', 'calls', 'control', 'build', 'tree', 'source_check', 'stubs')
+NEUTRAL_MODULES = ('nodes', 'calls', 'control', 'nested_statements', 'build', 'tree', 'source_check', 'stubs')
 SHARED_PACKAGES = ('ir.core',)     # outside falcom.ed9: what every IR layer shares
 
 

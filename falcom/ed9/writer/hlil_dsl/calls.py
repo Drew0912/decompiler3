@@ -26,6 +26,8 @@ def makes_dsl_call(callee) -> bool:
 class Call(TrackedNode, Expr):
     """A call: a statement when nothing uses it, else its result (the VM's result register after the call)"""
 
+    stands_alone = True
+
     def claim_args(self, build: Build, args: tuple, kwargs: dict):
         if kwargs:
             raise build.fail(f'{self!r} takes its arguments by position (the VM passes them so), not '

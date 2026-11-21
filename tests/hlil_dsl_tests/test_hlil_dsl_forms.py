@@ -1162,5 +1162,508 @@ class TestLoops(HLILTestCase):
         self.assert_twins(hlil, llil)
 
 
+# The helpers the nesting twins call: each makes statements besides what it returns
+
+def note(value):
+    """Makes a statement and returns nothing"""
+    Set(REGS[3], value)
+
+
+def notes(first, second):
+    """Returns the list of the statements it makes"""
+    return [Set(REGS[first], first), Set(REGS[second], second)]
+
+
+def step_and_leave(done):
+    """Makes a statement and returns an If leaving the loop"""
+    Set(REGS[1], 7)
+    return If(done, [Break()])
+
+
+def counted(value):
+    """Makes a statement and returns value as it is"""
+    Set(REGS[2], 9)
+    return value
+
+
+def tested(register, value):
+    """Makes a statement, then the test it returns"""
+    Set(REGS[register], register)
+    return value == register
+
+
+def leave_when(done, value):
+    """Makes an If leaving the loop, returns value as it is"""
+    If(done, [Break()])
+    return value
+
+
+def countdown(counter):
+    """Makes a whole loop, its block calling a helper too"""
+    While(counter, [
+        note(5),
+        Set(counter, counter - 1),
+    ])
+
+
+def marks(register):
+    """Recursive: each call's statement where that call is made, an inner call's in the block of its caller's If"""
+    Set(REGS[register], register)
+    if register > 1:
+        If(REGS[register], [marks(register - 1)])
+
+
+def declared(local, value):
+    """Declares local and returns it"""
+    Let(local, value)
+    return local
+
+
+def loop_parts(counter):
+    """A While's condition and block, for While(*loop_parts(...))"""
+    return counter, [Set(counter, 0)]
+
+
+class TestNestedStatements(HLILTestCase):
+    """A helper's own statements, those it does not return, run where the helper is called: in the block holding the
+    call, before each test of the condition holding it; an If's first condition's before the If"""
+
+    def test_block_helpers(self):
+        """A helper as a block's first and later element, returning an If, a list and nothing; a list inside a block
+        opened in place; also with the compile check off"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Blocks(arg1: Value32):
+                While(arg1, [
+                    step_and_leave(REGS[4]),
+                    Set(arg1, arg1 - 1),
+                    note(3),
+                ])
+                If(arg1, [notes(5, 6), *notes(7, 8), [note(9)]])
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Blocks(arg1: Value32):
+                label('head')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('end')
+                PUSH_INT(7)
+                SET_REG(1)
+                GET_REG(4)
+                POP_JMP_ZERO('stay')
+                JMP('end')
+                label('stay')
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                SUB()
+                POP_TO(-4)
+                PUSH_INT(3)
+                SET_REG(3)
+                JMP('head')
+                label('end')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('done')
+                PUSH_INT(5)
+                SET_REG(5)
+                PUSH_INT(6)
+                SET_REG(6)
+                PUSH_INT(7)
+                SET_REG(7)
+                PUSH_INT(8)
+                SET_REG(8)
+                PUSH_INT(9)
+                SET_REG(3)
+                label('done')
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(4)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+        self.assertEqual(self.compiled(hlil, check=False), self.compiled(llil))
+
+    def test_while_condition_helpers(self):
+        """A While condition's helper runs before each test, after a Continue too; one making an If that leaves the
+        loop"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Conditions(arg1: Value32, arg2: Value32):
+                While(counted(arg1), [
+                    Set(arg1, arg1 - 1),
+                    If(arg2, [Continue()]),
+                    Set(arg2, 1),
+                ])
+                While(leave_when(REGS[5], arg2), [
+                    Set(arg2, arg2 - 1),
+                ])
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Conditions(arg1: Value32, arg2: Value32):
+                label('first')
+                PUSH_INT(9)
+                SET_REG(2)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('first_end')
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                SUB()
+                POP_TO(-4)
+                LOAD_STACK(-8)
+                POP_JMP_ZERO('no_continue')
+                JMP('first')
+                label('no_continue')
+                PUSH_INT(1)
+                POP_TO(-8)
+                JMP('first')
+                label('first_end')
+                label('second')
+                GET_REG(5)
+                POP_JMP_ZERO('stay')
+                JMP('second_end')
+                label('stay')
+                LOAD_STACK(-8)
+                POP_JMP_ZERO('second_end')
+                LOAD_STACK(-8)
+                PUSH_INT(1)
+                SUB()
+                POP_TO(-8)
+                JMP('second')
+                label('second_end')
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(8)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_if_condition_helpers(self):
+        """An If's first condition's helper runs before the If, inside the loop holding it; an .ElseIf condition's at
+        that arm's test; an .Else block's helper in the block"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Arms(arg1: Value32):
+                If(tested(1, arg1), [
+                    Set(REGS[4], 1),
+                ]).ElseIf(tested(2, arg1), [
+                    Set(REGS[4], 2),
+                ]).Else([
+                    note(3),
+                    Set(REGS[4], 3),
+                ])
+                While(arg1, [
+                    If(tested(5, arg1), [Break()]),
+                    Set(arg1, arg1 - 1),
+                ])
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Arms(arg1: Value32):
+                PUSH_INT(1)
+                SET_REG(1)
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                EQ()
+                POP_JMP_ZERO('second')
+                PUSH_INT(1)
+                SET_REG(4)
+                JMP('if_end')
+                label('second')
+                PUSH_INT(2)
+                SET_REG(2)
+                LOAD_STACK(-4)
+                PUSH_INT(2)
+                EQ()
+                POP_JMP_ZERO('else')
+                PUSH_INT(2)
+                SET_REG(4)
+                JMP('if_end')
+                label('else')
+                PUSH_INT(3)
+                SET_REG(3)
+                PUSH_INT(3)
+                SET_REG(4)
+                label('if_end')
+                label('head')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('loop_end')
+                PUSH_INT(5)
+                SET_REG(5)
+                LOAD_STACK(-4)
+                PUSH_INT(5)
+                EQ()
+                POP_JMP_ZERO('stay')
+                JMP('loop_end')
+                label('stay')
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                SUB()
+                POP_TO(-4)
+                JMP('head')
+                label('loop_end')
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(4)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_helpers_making_whole_statements(self):
+        """A helper making a whole loop whose block calls a helper; a recursive helper, each call's statements in its
+        caller's block"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Whole(arg1: Value32):
+                If(arg1, [countdown(arg1)])
+                marks(3)
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Whole(arg1: Value32):
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('after_if')
+                label('loop')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('loop_end')
+                PUSH_INT(5)
+                SET_REG(3)
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                SUB()
+                POP_TO(-4)
+                JMP('loop')
+                label('loop_end')
+                label('after_if')
+                PUSH_INT(3)
+                SET_REG(3)
+                GET_REG(3)
+                POP_JMP_ZERO('end3')
+                PUSH_INT(2)
+                SET_REG(2)
+                GET_REG(2)
+                POP_JMP_ZERO('end2')
+                PUSH_INT(1)
+                SET_REG(1)
+                label('end2')
+                label('end3')
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(4)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_a_starred_call_with_nothing_to_place(self):
+        """A call whose arguments can't be told apart compiles when no statement needs placing: a statement made
+        before it in the same body, and the call run again by a Python loop"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Starred(arg1: Value32, arg2: Value32):
+                Set(REGS[1], 1)
+                for counter in (arg1, arg2):
+                    While(*loop_parts(counter))
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Starred(arg1: Value32, arg2: Value32):
+                PUSH_INT(1)
+                SET_REG(1)
+                label('first')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('first_end')
+                PUSH_INT(0)
+                POP_TO(-4)
+                JMP('first')
+                label('first_end')
+                label('second')
+                LOAD_STACK(-8)
+                POP_JMP_ZERO('second_end')
+                PUSH_INT(0)
+                POP_TO(-8)
+                JMP('second')
+                label('second_end')
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(8)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_locals_helpers_declare(self):
+        """A block helper's local lives in that block, pushed and popped every pass; a While condition helper's for one
+        pass, popped before the jump back, on the way out and by a Break or a Continue; an .ElseIf condition helper's
+        through that arm, popped on both its paths, at one POP when no arm follows; an If's first condition helper's
+        before the If, to the end of the block holding it"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Locals(arg1: Value32):
+                x = Local('x')
+                y = Local('y')
+                z = Local('z')
+                w = Local('w')
+                While(arg1, [
+                    Set(arg1, declared(x, 1) - arg1),
+                ])
+                While(declared(y, arg1), [
+                    If(y == 2, [Break()]),
+                    If(y == 3, [Continue()]),
+                    Set(arg1, y - 1),
+                ])
+                If(arg1 == 1, [
+                    Set(REGS[1], 1),
+                ]).ElseIf(declared(z, arg1 + 1), [
+                    Set(REGS[1], z),
+                ]).Else([
+                    Set(REGS[1], 3),
+                ])
+                If(arg1, [
+                    Set(REGS[2], 1),
+                ]).ElseIf(declared(z, 2), [
+                    Set(REGS[2], z),
+                ])
+                While(arg1, [
+                    If(arg1 == 5, [
+                        Break(),
+                    ]).ElseIf(declared(z, 6), [
+                        Break(),
+                    ]),
+                    Set(arg1, 0),
+                ])
+                If(declared(w, 4), [
+                    Set(REGS[3], w),
+                ])
+                Set(REGS[4], w)
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Locals(arg1: Value32):
+                label('first')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('first_end')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(1)
+                POP_TO(-4)
+                LOAD_STACK(-4)
+                LOAD_STACK(-12)
+                SUB()
+                POP_TO(-8)
+                POP(4)                  # x, the block's
+                JMP('first')
+                label('first_end')
+                label('second')
+                PUSH_RAW(RawInt(0))
+                LOAD_STACK(-8)
+                POP_TO(-4)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('second_out')
+                LOAD_STACK(-4)
+                PUSH_INT(2)
+                EQ()
+                POP_JMP_ZERO('no_break')
+                POP(4)                  # y, by the Break
+                JMP('second_end')
+                label('no_break')
+                LOAD_STACK(-4)
+                PUSH_INT(3)
+                EQ()
+                POP_JMP_ZERO('no_continue')
+                POP(4)                  # y, by the Continue
+                JMP('second')
+                label('no_continue')
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                SUB()
+                POP_TO(-8)
+                POP(4)                  # y, before the jump back
+                JMP('second')
+                label('second_out')
+                POP(4)                  # y, on the way out
+                label('second_end')
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                EQ()
+                POP_JMP_ZERO('third_second')
+                PUSH_INT(1)
+                SET_REG(1)
+                JMP('third_end')
+                label('third_second')
+                PUSH_RAW(RawInt(0))
+                LOAD_STACK(-8)
+                PUSH_INT(1)
+                ADD()
+                POP_TO(-4)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('third_else')
+                LOAD_STACK(-4)
+                SET_REG(1)
+                POP(4)                  # z, before the jump to the end
+                JMP('third_end')
+                label('third_else')
+                POP(4)                  # z, past the arm
+                PUSH_INT(3)
+                SET_REG(1)
+                label('third_end')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('fourth_second')
+                PUSH_INT(1)
+                SET_REG(2)
+                JMP('fourth_end')
+                label('fourth_second')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(2)
+                POP_TO(-4)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('fourth_last')
+                LOAD_STACK(-4)
+                SET_REG(2)
+                label('fourth_last')
+                POP(4)                  # z, both paths
+                label('fourth_end')
+                label('fifth')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('fifth_loop_end')
+                LOAD_STACK(-4)
+                PUSH_INT(5)
+                EQ()
+                POP_JMP_ZERO('fifth_second')
+                JMP('fifth_loop_end')
+                label('fifth_second')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(6)
+                POP_TO(-4)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('fifth_last')
+                POP(4)                  # z, by the Break leaving its arm
+                JMP('fifth_loop_end')
+                label('fifth_last')
+                POP(4)
+                PUSH_INT(0)
+                POP_TO(-4)
+                JMP('fifth')
+                label('fifth_loop_end')
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(4)
+                POP_TO(-4)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('fifth_end')
+                LOAD_STACK(-4)
+                SET_REG(3)
+                label('fifth_end')
+                LOAD_STACK(-4)
+                SET_REG(4)
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(8)                  # w and arg1: the whole frame
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+
 if __name__ == '__main__':
     unittest.main()

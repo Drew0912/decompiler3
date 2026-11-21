@@ -4,6 +4,7 @@ in the nodes, the build's checks of the statements, the source check, the writer
 still ends the build"""
 
 import contextlib
+import functools
 from pathlib import Path
 import re
 import sys
@@ -57,6 +58,30 @@ def block_inside_condition(arg1, arg2):
     difference = arg2 - arg1
     block = [Set(REGS[1], 1)]
     If(difference > 0, block)
+
+
+def computed(value):
+    """A helper making a statement besides the value it returns"""
+    Set(REGS[3], 3)
+    return value + 1
+
+
+def tested_late(value):
+    """A condition helper making its test before its own statement, which runs before the test"""
+    test = value > 0
+    Set(REGS[6], 6)
+    return test
+
+
+def returning_early(value):
+    """A condition helper whose own statement ends the path before the test"""
+    Return(5)
+    return value
+
+
+def noted(value):
+    """A helper making a statement and returning nothing"""
+    Set(REGS[5], value)
 
 
 
@@ -450,10 +475,10 @@ class TestControlFlow(MistakeTestCase):
                 ])
                 Return()
 
-        def none(scena):
+        def a_tuple(scena):
             @scena.HLILCode()
             def Func(arg1: Value32):
-                If(arg1, [None])  # line: none
+                If(arg1, [(Syscall(1, 2, 3), Syscall(1, 2, 4))])  # line: tuple
                 Return()
 
         def not_called(scena):
@@ -481,7 +506,8 @@ class TestControlFlow(MistakeTestCase):
                  (a_value, 'a value', '(arg1 EQ 5) in a block is not a statement: each element of [...] is a call or '
                                       'a statement (a missing comma joins two lines into one value)'),
                  (missing_comma, 'joined', '(Syscall(1, 2, ...) SUB arg1) in a block is not a statement'),
-                 (none, 'none', 'None in a block is not a statement'),
+                 (a_tuple, 'tuple', '(Syscall(1, 2, ...), Syscall(1, 2, ...)) in a block is a tuple: a block holds '
+                                    'statements and lists of them, [...]'),
                  (not_called, 'block element not called', 'Return in a block is not a statement: write Return(...), '
                                                           'its call'),
                  (two_blocks, 'two blocks', 'Syscall(1, 2, ...) is in two blocks (or a block is used twice)'),
@@ -800,6 +826,76 @@ class TestLoops(MistakeTestCase):
                                                         'call'),
                  (read_after, 'read after the loop', 'local x is read after the block that declares it ends'),
                  (read_in_the_test, 'read in the test', 'local x is read before Let(x, ...)'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+
+class TestNestedStatements(MistakeTestCase):
+    """A helper's own statement where it can't run where the helper is called: inside another statement, after its
+    condition's test was made, ending the path before the test; or where the source can't tell which argument made it"""
+
+    def test_what_a_helper_cannot_nest(self):
+        def mid_expression(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                Set(arg1, Syscall(1, 2, 3) + computed(arg1))  # line: mid expression
+                Return()
+
+        def test_before_its_statement(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(tested_late(arg1), [  # line: test before statement
+                    Set(arg1, arg1 - 1),
+                ])
+                Return()
+
+        def ended_before_the_test(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(returning_early(arg1), [  # line: ended before the test
+                    Set(arg1, arg1 - 1),
+                ])
+                Return()
+
+        def star_arguments(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                parts = (arg1,)
+                While(*parts, [noted(1)])  # line: star arguments
+                Return()
+
+        def through_partial(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                functools.partial(While, arg1)([noted(1), Set(arg1, 0)])  # line: through partial
+                Return()
+
+        def listed_out_of_order(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [*reversed([Set(REGS[1], 1), Set(REGS[2], 2)]), noted(3)])  # line: listed out of order
+                Return()
+
+        cases = ((listed_out_of_order, 'listed out of order', 'Set(REGS[1], ...) is made here but runs after '
+                                                              'Set(REGS[2], ...), made later'),
+                 (mid_expression, 'mid expression', 'Set(REGS[3], ...) is made between two parts of Set(arg1, ...) '
+                                                    '(after Syscall(1, 2, ...)): a statement runs before or after '
+                                                    'another, not inside it'),
+                 (test_before_its_statement, 'test before statement', "(arg1 GT 0) is made here but runs after "
+                                                                      "Set(REGS[6], ...), made later: a helper's "
+                                                                      "statements made in the While's condition run "
+                                                                      'before its test: make its value after them'),
+                 (ended_before_the_test, 'ended before the test', "Return(...), made while the While's condition is "
+                                                                  'built, ends its path before the test: the '
+                                                                  'condition never runs'),
+                 (star_arguments, 'star arguments', 'Set(REGS[5], ...) is made while the arguments of this call are '
+                                                    "built, and the call's source can't be read to tell which "
+                                                    'argument made it'),
+                 (through_partial, 'through partial', "Set(REGS[5], ...) is made while the arguments of this call are "
+                                                      "built, and the call's source can't be read to tell which "
+                                                      'argument made it (no source, *arguments or keywords, or a call '
+                                                      "that is not the If's or While's own"))
         for register, marker, text in cases:
             with self.subTest(case=marker):
                 self.assert_raises_at(register, marker, 'Func', text)
