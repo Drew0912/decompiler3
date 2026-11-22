@@ -241,6 +241,12 @@ class TrackedNode:
     children: tuple
     index: int                  # its place in build.nodes, its creation order
     origin: Origin              # where it was made, while its build keeps it (build.py)
+    leading: tuple = ()         # the statements a macro made for a value under it, run just before it
+    holder = None               # what holds it among its leading: a node, or a Carried nothing used yet
+    leads = None                # the statement or condition it runs just before, once that is placed
+    uncarried = None            # the type of a macro's result that could not carry it
+    carries = 0                 # how many macros, from the one that made it outwards, returned it with their value
+    read_first = None           # the first operand it took that reads the game (not a constant)
     stands_alone = False        # a statement or a call: it may stand on a line of its own
 
     def join_build(self, what: str) -> Build:
@@ -273,9 +279,75 @@ def as_constant(value) -> Const:
     raise dsl_error(f'{value!r} ({type(value).__name__}) is not a DSL value')
 
 
-def claim(build: Build, value, parent: TrackedNode) -> Node:
+def hold_leading(holder, statements: list | tuple):
+    """statements run just before holder, after the ones it already holds"""
+    holder.leading = (*holder.leading, *statements)
+    for statement in statements:
+        statement.holder = holder
+
+
+def take_leading(build: Build, parent: TrackedNode, statements: list | tuple):
+    """statements a macro made for one of parent's operands, run before the whole statement holding parent: refused
+    when parent took an operand that reads the game before it, as that read would then come after them"""
+    if statements and parent.read_first is not None:
+        earlier = parent.read_first
+        raise build.fail(f'{statements[0]!r}, made by a macro, would run before {earlier!r}, which this expression '
+                         "takes first: a macro's statements run before the whole statement holding its value; keep "
+                         f'{earlier!r} in a Let on a line before, or call the macro first')
+
+    hold_leading(parent, statements)
+
+
+class Carried(Expr):
+    """A leaf a macro returned after making statements of its own: the leaf, used once, its statements run just before
+    what uses it (macro_statements.py). Never in a tree: claim() takes it apart"""
+
+    def __init__(self, leading: list, value: Node):
+        self.value = value
+        self.leading = ()
+        self.used = False
+        hold_leading(self, leading)
+
+    def claimed_by(self, build: Build, parent: TrackedNode) -> Node:
+        if self.used:
+            raise build.fail(f"{self!r}, a macro's value, is used twice: the statements the macro made run once, "
+                             'where the value is used; keep a value with Let(x, value) and read x')
+
+        self.used = True
+        take_leading(build, parent, self.leading)
+        return self.value
+
+    def __repr__(self) -> str:
+        return repr(self.value)
+
+
+def claim(build: Build, value, parent: TrackedNode, reads: bool = True) -> Node:
     """value as parent's operand: a literal becomes a constant; a tracked node is used once, in its own build; a
-    parameter only in its own body"""
+    parameter only in its own body; the statements a macro made for it become parent's leading ones. reads: the
+    operand is read where parent runs (a Set's target and a condition of an If or a While are not, for it)"""
+    operand = _claimed(build, value, parent)
+    if reads and parent.read_first is None and reads_game(operand):
+        parent.read_first = operand
+
+    return operand
+
+
+def reads_game(operand: Node) -> bool:
+    """operand reads the game where it runs: any but a constant, or an operation that took no reading operand (whose
+    place in the order the code runs things changes nothing)"""
+    if isinstance(operand, Const):
+        return False
+
+    if isinstance(operand, (BinaryOperation, UnaryOperation)):
+        return operand.read_first is not None
+
+    return True
+
+
+def _claimed(build: Build, value, parent: TrackedNode) -> Node:
+    if isinstance(value, Carried):
+        value = value.claimed_by(build, parent)
+
     if isinstance(value, Param):
         if value.build is not build:
             raise build.fail(f'{value.name} belongs to {value.build.function_name}\'s body; to keep a value between '
@@ -296,6 +368,10 @@ def claim(build: Build, value, parent: TrackedNode) -> Node:
                              'value with Let(x, value) and read x')
 
         value.parent = parent
+        if value.leading:
+            take_leading(build, parent, value.leading)
+            value.leading = ()
+
         return value
 
     if isinstance(value, Node):
@@ -368,10 +444,13 @@ class Set(Statement):
 
     def __init__(self, target, value):
         build = self.join_build('Set(...)')
+        if isinstance(target, Carried):
+            target = target.claimed_by(build, self)
+
         if not isinstance(target, Variable):
             raise build.fail(f'Set\'s target is a parameter, a local, this.x or REGS[n], not {target!r}')
 
-        self.target = claim(build, target, self)
+        self.target = claim(build, target, self, reads=False)
         self.value = claim(build, value, self)
         self.children = (self.value,)
 
@@ -384,6 +463,9 @@ class Let(Statement):
 
     def __init__(self, local, value=_MISSING):
         build = self.join_build('Let(...)')
+        if isinstance(local, Carried):
+            local = local.claimed_by(build, self)
+
         if not isinstance(local, Local):
             raise build.fail(f'Let declares a local (x = Local(\'x\')), not {local!r}')
 

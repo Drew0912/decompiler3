@@ -99,7 +99,8 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   condition, `POP_JMP_ZERO` past the loop, the block, and a `JMP` back to the head unless the block ends its path;
   `Break()` jumps past the innermost loop and `Continue()` to its head, each after popping the locals of the blocks
   it leaves (Jumps, below). A block is a Python list of statements and calls, each in one block, a list inside it
-  opened in place (a helper's returned list, with or without `*`) and a `None` skipped (a helper returning nothing);
+  opened in place (a function's returned list, with or without `*`, a macro's statements) and a `None` skipped (a
+  function returning nothing);
   a statement ends its path when it is a `Return`, a `Break`, a `Continue`, or an `If` with an `.Else` whose every
   block ends its path; a `While` never does (its test can be 0, `While(1)`'s too, so the code after a loop needs its
   own `Return`); a statement after one that ends its path raises at its line, and so do an exit outside a `While`
@@ -107,7 +108,7 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   game's `scp_hlil_dsl_helper` (`falcom/ed9/games/<game>/writer/`, which star-imports the shared
   `falcom/ed9/writer/scp_hlil_dsl_helper.py` and holds the game's own DSL helpers). The body runs once, with a
   parameter node per parameter, under a build of its own; its statements are checked, then lowered through the
-  opcode functions (`falcom/ed9/writer/hlil_dsl/`: `nodes.py`, `calls.py`, `control.py`, `nested_statements.py`,
+  opcode functions (`falcom/ed9/writer/hlil_dsl/`: `nodes.py`, `calls.py`, `control.py`, `macro_statements.py`,
   `build.py`, `tree.py`, `lowering.py`, `llil_sink.py`, `source_check.py`), so the call tracker, the opcode callbacks
   and the compile check see each opcode as an LLIL body's, at the line of the node it came from. The nodes, the
   build, its checks and the source check are VM-neutral: an operation is keyed by HLIL's own operator
@@ -130,28 +131,42 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
   non-statement (`arg1 = arg1 + 1`) all raise; operands within one unit may be made in any order (`And(a, b, c)`
   makes its operands before its operations). Build each function in isolation, validate it, then lower it; record
   each node's file and line for error messages.
-- **A helper's own statements** (those it makes besides what it returns) run where the helper is called, also when
-  it is called inside an `If(...)`, `.ElseIf(...)`, `.Else(...)` or `While(...)` call's arguments, which Python
-  runs before the call (`nested_statements.py`): a block element's join that block, in the order made; a `While`
-  condition's run before each test (a `Continue` re-runs them), an `.ElseIf` condition's at that arm's test, and an
-  `If`'s first condition's before the `If`, as on the line above it. Each statement and call records the frames it
-  was made in, with the instruction each was at; when an arm takes its arguments, an unplaced statement whose
-  instruction in the calling frame lies inside one argument's source span (the call's arguments read from the
-  body file's AST, matched by the call's end position) is that argument's. So the creation-order rule above sees
-  an arm's statements made before its test, then its condition, then its block. Refused, each at its line: a
-  statement made in the middle of one expression (`Set(arg1, Syscall(1, 2) + helper(arg1))`, "made between two
-  parts of"; a statement runs before or after another), a condition helper making its value before its own
-  statement (the statement runs before the test), a condition helper whose statement ends its path before the test,
-  and a call whose arguments can't be told apart (`While(*parts, [...])`, keywords, no source, a call that is not
-  the arm's own as `functools.partial(While, a)([...])`, Python without column positions, `-X no_debug_ranges`) when
-  a statement needs placing. The decompile's exact check builds without the frames (its printed bodies have every
-  statement as a list element).
+- **Macros** (`macro_statements.py`): Python gives the place a function is called only what the function returns, so
+  a function whose statements should go where it is called is marked `@macro`. A macro's own statements (those it
+  makes and nothing holds when it returns) go with its call's value, wherever that value goes: a block's list
+  holding it (also through the script's own wrappers, a function's Python variable, `functools.partial`, `map` or
+  `starmap`; a body keeps no call in a variable),
+  the statement using the value (they run just before it), a `While`'s or an `.ElseIf`'s condition (before each
+  test of it; a `Continue` re-runs them), an `If`'s first condition (before the `If`, as on the line above). A
+  macro returning nothing returns its statements (a list a block opens in place, which Python can't truth-test: an
+  `or`, `and`, `not` or `if` on it raises); one returning a list returns it with its statements merged in, in the
+  order made; a statement or a computed value comes back with its statements leading it; a leaf (a parameter, a
+  local, `this.x`, `REGS[n]`, a constant) comes back carrying them, used once (twice raises). `@macro` on a generator
+  raises (its body runs after its call returns). So the creation-order rule above sees an arm's statements made
+  before its test, then its condition, then its block. Refused, each at its line: a macro's statements for an
+  operand after one the same expression reads first (`Set(REGS[4], REGS[3] + set_then(REGS[3], REGS[5]))`: they
+  would run before that read; with the macro first they compile, in Python's order; a constant, or an operation on
+  constants only, is no read), a condition macro making its value before its own statement (the statement runs before
+  the test), a condition macro whose statement ends its path before the test, and a macro returning a Python number
+  or tuple after making statements, inside an expression.
+- **Where a statement stands:** a statement no block holds stands where it was made only when no call on the way
+  from its making up to the body put its value inside a larger expression, read from each calling frame's next
+  bytecode instruction (dropped, returned or kept in a plain variable; one it doesn't know refuses). So an unmarked
+  function works on a line of its own (also `x = f()` in a function, `return f()`, with keywords or a star), and a
+  wrapper returning what it makes works anywhere (`def when(c, block): return If(c, block)`); an unmarked function
+  making statements it does not return, called inside an expression (a block's list, a condition, an operand,
+  through a wrapper or a star), raises, naming `@macro`; so do a statement written inside an expression nothing takes
+  (`[Set(REGS[n], 0) for n in (1, 2)]` as a line: write a `for` loop; `(Set(...), Set(...))[1]`), an unmarked
+  function's value stored on an attribute or an item, unpacked, kept in two variables, or abandoned by a caught
+  exception (in a function, assign it to one plain variable first), and a generator's statements anywhere but
+  yielded into a block's list (its body runs as it is iterated: make it a function returning a list). The decompile's
+  exact check builds without the frames (its printed bodies have every statement as a list element and no macros).
 - **Locals:** `Let` declares (where the source's declaring push is) and `Set` assigns. One `x = Local('x')`
   line per local names it; `Set` on an undeclared local, a read before its `Let` and a second `Let` of a live one (an
   outer block's too) raise. The end of a block frees the locals declared in it (its `POP`, before the label the jump
   past the arm goes to; none on a path that ended), and a read or `Set` after it raises; a later block may declare the
   name again. The compiler pops locals only at a block's end, so a lifetime that is no block has no source and no
-  form. A `Let` a condition's helper makes lives through its arm: a `While`'s for one pass (pushed at the head,
+  form. A `Let` a condition's macro makes lives through its arm: a `While`'s for one pass (pushed at the head,
   popped before the jump back, on the way out and by a `Break` or a `Continue`), an `.ElseIf`'s through that arm's
   test and block (popped on both paths, at one `POP` when no arm follows). Script globals are `this.x`.
 - **Calls:** `f()` is a `CALL` by table index, `script.<module>.f()` a `CALL_SCRIPT` (`script['']` for
@@ -220,13 +235,12 @@ def CheckSBreak(arg1: Value32, arg2: Nullable32 = 2):
     arms and `While` take their arguments by position, and a third one (C's else, a loop else) raises, naming
     `.Else([...])` or that the DSL has no loop else; `.Else` on a `While` is Python's `AttributeError`, at its line in
     the traceback;
-  - a helper called inside an `If(...)` or `While(...)` call's arguments makes its own statements before Python
-    makes the call; they still run where the helper is called (Ownership, a helper's own statements), and the few
-    places they can't raise, naming why;
-  - not yet: a helper's statements join a block only when its list is written in that `If(...)`, `.ElseIf(...)`,
-    `.Else(...)` or `While(...)` call's own arguments; a list passed through a function of the script's own
-    (`def when(c, block): return If(c, block)`) or kept in a variable first leaves them before the `If`, or in the
-    block holding that call, with no error (a later step places them or refuses);
+  - a function called inside an `If(...)` or `While(...)` call's arguments makes its own statements before Python
+    makes the call, and gives the call only what it returns: mark it `@macro` and its statements go with what it
+    returns (Ownership, macros); unmarked, it raises, naming `@macro`, unless called on a line of its own (where a
+    statement stands); a macro's value read in Python (`or`, `and`, `not`, `if`) raises, and so do `@macro` on a
+    generator and `@macro` above `@classmethod` (put it right above the `def`); in C a macro's argument used twice runs twice, here Python runs it once and a computed one used twice
+    raises (claimed twice: keep it with `Let`);
   - **the source check** (implemented: `falcom/ed9/writer/hlil_dsl/source_check.py`) reads each HLIL body's own
     source before it runs and raises at the line of a Python variable given a value holding a call (`a = f()`: the
     call would run where `a` is used, after the arguments to its right; write `Let(a, f())`), any binding of a

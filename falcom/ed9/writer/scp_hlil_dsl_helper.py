@@ -5,6 +5,7 @@ with the script's other imports"""
 from .hlil_dsl.calls import script
 from .hlil_dsl.control import Break, Continue, If, While
 from .hlil_dsl.ed9_nodes import REGS, DebugInt, PopN, Raw, Syscall
+from .hlil_dsl.macro_statements import macro
 from .hlil_dsl.nodes import And, Float, Int, Let, Local, Not, Or, Return, Set, Str, this
 
 __all__ = (
@@ -29,4 +30,5 @@ __all__ = (
     'And',
     'Or',
     'Not',
+    'macro',
 )

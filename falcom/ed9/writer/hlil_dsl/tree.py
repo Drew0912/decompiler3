@@ -1,17 +1,18 @@
 """An HLIL body's tree (docs/dsl/HLIL_DSL.md, Form): the body run under a build of its own, a parameter node per
 parameter, then its statements checked - the nodes nothing uses, each a statement; each block as its list was when its
-If or While took it; each statement and each condition made in one run, the runs in the order the code runs them,
-none between an If's arms; each Break and Continue in a While; every path ending only at its block's last statement,
-the body's at its end; each local declared in a block before it is used there"""
+If or While took it; each statement no block holds standing where it was made; each statement and each condition made
+in one run, the runs in the order the code runs them, none between an If's arms; each Break and Continue in a While;
+every path ending only at its block's last statement, the body's at its end; each local declared in a block before it
+is used there"""
 
 from itertools import pairwise
 from typing import Callable, Iterator
 
 from .build import Build, activated
 from .calls import BodyStatement
-from .control import Block, BlockStatement, Break, LoopExit, While, block_elements, block_ends_path, ends_path
-from .nested_statements import forget_positions, made_inside
-from .nodes import Let, Local, Param, Return, Set, TrackedNode
+from .control import Arm, Block, BlockStatement, Break, LoopExit, While, block_elements, block_ends_path, ends_path
+from .macro_statements import forget_instructions, stands_where_made
+from .nodes import Let, Local, Param, Return, Set, TrackedNode, reads_game
 
 
 def build_tree(build: Build, body: Callable, param_names: list[str]) -> list[BodyStatement]:
@@ -30,12 +31,13 @@ def build_tree(build: Build, body: Callable, param_names: list[str]) -> list[Bod
     statements = [node for node in build.nodes if node.parent is None]
     _require_no_unused_values(build, statements)
     _require_blocks_unchanged(build, statements)
+    _require_statements_stand(build, statements)
     _require_creation_order(build, statements)
     _require_exits_in_loops(build, statements, False)
     _require_path_ends(build, statements)
     _require_declared_locals(build, statements, set(), set())
     build.release_origins()
-    forget_positions()
+    forget_instructions()
     return statements
 
 
@@ -44,6 +46,20 @@ def _require_no_unused_values(build: Build, statements: list):
         if not isinstance(node, BodyStatement):
             raise build.fail_at(node.site, f'{node!r} is computed and never used: a line of its own is a call or a '
                                            'statement')
+
+
+def _require_statements_stand(build: Build, statements: list):
+    """Each statement no block holds stands where it was made (macro_statements.py); one a top-level statement's value
+    brought with it runs just before that statement, as made"""
+    for statement in statements:
+        for leading in statement.leading:
+            leading.leads = statement
+
+    for statement in statements:
+        if statement.origin and not isinstance(statement.holder, TrackedNode):
+            problem = stands_where_made(statement.origin, statement.carries, uncarried=statement.uncarried)
+            if problem is not None:
+                raise build.fail_at(statement.site, f'{statement!r} {problem}')
 
 
 def _require_blocks_unchanged(build: Build, statements: list):
@@ -108,6 +124,10 @@ def _require_creation_order(build: Build, statements: list):
             continue
 
         position = unit_of[id(node)]
+        # An operation on constants only reads nothing, so where it runs changes nothing (a unit's head keeps its place)
+        if not reads_game(node) and units[position][0] is not node:
+            continue
+
         if position == current:
             continue
 
@@ -118,11 +138,11 @@ def _require_creation_order(build: Build, statements: list):
 
         if position != current + 1:
             head, expected = units[position][0], units[current + 1][0]
-            if head is not node and made_inside(expected, head):
+            if head is not node and expected.leads is head:
                 statement = _arm_owner(expected) or expected
                 raise build.fail_at(expected.site, f'{statement!r} is made between two parts of {head!r} (after '
                                                    f'{node!r}): a statement runs before or after another, not inside '
-                                                   'it; call the helper first and keep its value with Let(x, value)')
+                                                   'it; call the macro first and keep its value with Let(x, value)')
 
             if head is not node:
                 raise build.fail_at(node.site, f'{node!r} is made here but used by {head!r}, after {expected!r}: it '
@@ -144,19 +164,74 @@ def _arm_owner(node: TrackedNode) -> BlockStatement | None:
 
 
 def _condition_rule(node: TrackedNode, expected: TrackedNode) -> str:
-    """The rule a unit made before expected breaks: the statements a condition's helper makes run before its test; a
-    condition is tested where its If or While stands; a block's statement runs after its condition"""
+    """The rule a unit made before expected breaks: the statements macros make for a condition run before its test; a
+    condition is tested where its If or While stands; a block's statements run after its condition, in their listed
+    order, where its If or While stands"""
     owner = _arm_owner(node)
     if owner is None:
-        return 'an If or a While runs its condition before its block'
+        return _block_rule(node, expected)
 
     arm = next(arm for arm in owner.arms_in_order() if arm.condition is node)
     if any(head is expected for head, _ in units_in_code_order(arm.before)):
         place = 'While' if isinstance(owner, While) else '.ElseIf'
-        return f"a helper's statements made in the {place}'s condition run before its test: make its value after them"
+        return f"the statements macros make for the {place}'s condition run before its test: make its value after them"
 
     name = type(owner).__name__
     return f"the {name}'s condition is tested where the {name} stands: make it there"
+
+
+def _block_rule(node: TrackedNode, expected: TrackedNode) -> str:
+    """The rule a statement of an If's or a While's made before expected breaks: node runs before a condition's test
+    (a macro's statement for it); expected is a condition (or runs before one), in the same If's or While's blocks
+    (listed out of order), or before that If or While"""
+    holder = node.parent
+    if not isinstance(holder, BlockStatement):
+        return 'an If or a While runs its condition before its block'
+
+    if any(node is statement for arm in holder.arms_in_order() for statement in arm.before):
+        name = type(holder).__name__
+        return (f"a macro's statements for the {name}'s condition run before its test, where the {name} stands: call "
+                'the macro where its value is used')
+
+    # From node's If or While outwards, the first that holds expected too says which rule
+    while isinstance(holder, BlockStatement):
+        arms = holder.arms_in_order()
+        if _arm_owner(expected) is holder or any(expected is statement for arm in arms for statement in arm.before):
+            return 'an If or a While runs its condition before its block'
+
+        expected_arm = _arm_holding(holder, expected)
+        if expected_arm is not None:
+            # A statement holding node made after expected: node came in from before it, in a block it was given
+            if _element_holding(holder, node).index > expected.index:
+                break
+
+            if expected_arm is _arm_holding(holder, node):
+                return "a block's list runs in its written order: make its statements in that order"
+
+            return "an If's blocks run in their written order: make each arm's block in that order"
+
+        holder = holder.parent
+
+    return (f"its block runs where its If or While stands, after {expected!r}; a function given a block can't make "
+            'statements before the If or While holding it yet')
+
+
+def _element_holding(holder: BlockStatement, node: TrackedNode) -> TrackedNode | None:
+    """The statement or condition directly under holder that is node or holds it, else None"""
+    while node is not None and node.parent is not holder:
+        node = node.parent
+
+    return node
+
+
+def _arm_holding(holder: BlockStatement, node: TrackedNode) -> Arm | None:
+    """The arm of holder whose block holds node, at any depth (a block of a statement in it, that statement's
+    condition), else None"""
+    element = _element_holding(holder, node)
+    if element is None:
+        return None
+
+    return next((arm for arm in holder.arms_in_order() if any(statement is element for statement in arm.block)), None)
 
 
 def _blocks(statements: Block | list) -> Iterator[Block | list]:

@@ -1,14 +1,14 @@
 """The HLIL DSL's control flow (docs/dsl/HLIL_DSL.md, Form): If with its .ElseIf / .Else arms, While, Break and
-Continue, and the blocks If and While hold - each a Python list of the statements made for it, in order, with the
-statements a helper called in it made besides (nested_statements.py). A statement ends its path when no code after it
+Continue, and the blocks If and While hold - each a Python list of the statements made for it, in order, each after
+the statements a macro made for a value it uses (macro_statements.py). A statement ends its path when no code after it
 runs: Return, Break, Continue, or an If with an Else whose every block ends its path; a While never does, as its test
 can be 0"""
 
+import sys
 from typing import Iterator, NamedTuple
 
 from .build import Build
 from .calls import BodyStatement
-from .nested_statements import take_nested_statements
 from .nodes import Node, Return, Statement, TrackedNode, claim, require_build
 
 _MISSING = object()     # an argument not given
@@ -18,8 +18,8 @@ Block = tuple[BodyStatement, ...]
 
 class Arm(NamedTuple):
     """One of a statement's blocks: the condition tested before it (None for an If's else), the block, where its
-    If(...), .ElseIf(...), .Else(...) or While(...) is, and the statements its condition's helpers made besides, run
-    before each test of it (their locals live through the arm)"""
+    If(...), .ElseIf(...), .Else(...) or While(...) is, and the statements macros made for its condition, run before
+    each test of it (their locals live through the arm)"""
 
     condition: Node | None
     block: Block
@@ -53,9 +53,33 @@ def claim_block(build: Build, block, owner: TrackedNode) -> Block:
     return elements
 
 
+def led(statements: Block, owner: TrackedNode, build: Build) -> Block:
+    """statements as owner's, each after its leading statements (those a macro made for a value it uses), in the
+    order made"""
+    held = []
+    pending = [(statement, False) for statement in reversed(statements)]
+    while pending:
+        statement, leading_done = pending.pop()
+        if leading_done or not statement.leading:
+            statement.parent = owner
+            held.append(statement)
+            continue
+
+        pending.append((statement, True))
+        for leading in sorted(statement.leading, key=lambda node: node.index, reverse=True):
+            if leading.parent is not None:
+                raise build.fail(f'{leading!r} is in two blocks (or a block is used twice): a statement runs once, '
+                                 'where it stands')
+
+            leading.leads = statement
+            pending.append((leading, False))
+
+    return tuple(held)
+
+
 def block_elements(block: list) -> Iterator:
-    """block's elements in order, a list among them opened in place (a helper's returned list), at any depth, and a
-    None skipped (a helper returning nothing)"""
+    """block's elements in order, a list among them opened in place (a function's returned list, a macro's
+    statements), at any depth, and a None skipped (a function returning nothing)"""
     for element in block:
         if isinstance(element, list):
             yield from block_elements(element)
@@ -117,40 +141,25 @@ class BlockStatement(Statement):
     def blocks(self) -> list[Block]:
         return [arm.block for arm in self.arms_in_order()]
 
-    def _take_block(self, build: Build, block, site, block_argument: int,
-                    condition_argument: int | None = None) -> tuple[Block, Block]:
-        """block as the arm's at site, and the statements the arm call's arguments made besides (a helper's own): the
-        block argument's (by position) among the block's elements, the condition argument's returned second, to run
-        before each test. Its list is kept (the build checks it unchanged), the nodes made so far counted"""
+    def _take_block(self, build: Build, block, site) -> Block:
+        """block as the arm's at site, each element after its leading statements. Its list is kept (the build checks
+        it unchanged), the nodes made so far counted"""
         listed = claim_block(build, block, self)
         self.given_blocks.append((block, listed, site))
         self.arms_end = len(build.nodes)
-        arguments = (block_argument,) if condition_argument is None else (condition_argument, block_argument)
-        nested = take_nested_statements(build, self, arguments)
-        for statements in nested.values():
-            for statement in statements:
-                statement.parent = self
+        return led(listed, self, build)
 
-        before = tuple(nested[condition_argument]) if condition_argument is not None else ()
-        return _merged(listed, nested[block_argument]), before
+    def _claim_condition(self, build: Build, condition) -> tuple[Node, Block]:
+        """condition as one of its tests, and the statements macros made for it, to run before each test. A condition
+        is an expression of its own: no read in the If's or While's other conditions comes before it"""
+        own, self.leading = self.leading, ()
+        test = claim(build, condition, self, reads=False)
+        made, self.leading = self.leading, own
+        before = led(tuple(sorted(made, key=lambda node: node.index)), self, build)
+        for statement in made:
+            statement.leads = test
 
-
-def _merged(listed: Block, nested: list) -> Block:
-    """listed with the nested statements (in creation order) among its elements: each before the first element made
-    after it, the elements keeping their order (written out of order, the build's order check sees them so)"""
-    if not nested:
-        return listed
-
-    merged = []
-    taken = 0
-    for statement in nested:
-        while taken < len(listed) and listed[taken].index < statement.index:
-            merged.append(listed[taken])
-            taken += 1
-
-        merged.append(statement)
-
-    return (*merged, *listed[taken:])
+        return test, before
 
 
 def _require_condition_and_block(build: Build, what: str, condition, block, extra: tuple, keywords: dict, tail: str):
@@ -176,6 +185,7 @@ class If(BlockStatement):
     def ElseIf(self, condition=_MISSING, block=_MISSING, /, *extra, **keywords) -> If:
         build = self._open_build('.ElseIf(...)')
         self._add_arm(build, '.ElseIf', condition, block, extra, keywords, build.site_of())
+        self._stand_here(build)
         return self
 
     def Else(self, block=_MISSING, /, *extra, **keywords) -> If:
@@ -186,7 +196,8 @@ class If(BlockStatement):
         if extra or block is _MISSING:
             raise build.fail('.Else takes one block, .Else([...]); a tested arm is .ElseIf(condition, [...])')
 
-        self.else_block, _ = self._take_block(build, block, build.site_of(), 0)
+        self.else_block = self._take_block(build, block, build.site_of())
+        self._stand_here(build)
         return self
 
     def arms_in_order(self) -> list[Arm]:
@@ -196,14 +207,22 @@ class If(BlockStatement):
         return [*self.arms, Arm(None, self.else_block, self.given_blocks[-1][2])]
 
     def _add_arm(self, build: Build, what: str, condition, block, extra: tuple, keywords: dict, site):
-        """An arm testing condition: an .ElseIf's condition's statements run at its test; the If's first condition's
-        stay before the If, run once as on the line above it"""
+        """An arm testing condition: the statements macros made for an .ElseIf's condition run at its test; the If's
+        first condition's stay before the If, run once as on the line above it"""
         _require_condition_and_block(build, what, condition, block, extra, keywords,
                                      '; the else is .Else([...]) after it')
-        test = claim(build, condition, self)
-        held, before = self._take_block(build, block, site, 1, 0 if self.arms else None)
-        self.arms.append(Arm(test, held, site, before))
+        if self.arms:
+            test, before = self._claim_condition(build, condition)
+        else:
+            test, before = claim(build, condition, self, reads=False), ()
+
+        self.arms.append(Arm(test, self._take_block(build, block, site), site, before))
         self.children = tuple(arm.condition for arm in self.arms)
+
+    def _stand_here(self, build: Build):
+        """The If stands where its latest arm is added: its origin is that call's"""
+        if build.body_codes:
+            self.origin = build.origin(sys._getframe(2))
 
     def _open_build(self, what: str) -> Build:
         """The If's build, for an arm added after the If is made: the chain still open"""
@@ -232,8 +251,8 @@ class While(BlockStatement):
         build = self.join_build('While(...)')
         _require_condition_and_block(build, 'While', condition, block, extra, keywords,
                                      ' (the DSL has no loop else)')
-        self.condition = claim(build, condition, self)
-        self.block, self.before = self._take_block(build, block, self.site, 1, 0)
+        self.condition, self.before = self._claim_condition(build, condition)
+        self.block = self._take_block(build, block, self.site)
         self.children = (self.condition,)
 
     def arms_in_order(self) -> list[Arm]:

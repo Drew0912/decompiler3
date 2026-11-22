@@ -17,7 +17,7 @@ from falcom.ed9.writer.hlil_dsl.build import HLILError
 from falcom.ed9.writer.scp_hlil_dsl_helper import *
 from falcom.ed9.writer.scp_writer_helper import *
 from tests.shared.hlil_dsl_test_utils import *
-from tests.shared.scp_writer_test_utils import at
+from tests.shared.scp_writer_test_utils import at, marked_line
 
 
 def raw_wait(arg1: Value32, arg2: Value32):
@@ -60,28 +60,182 @@ def block_inside_condition(arg1, arg2):
     If(difference > 0, block)
 
 
+@macro
 def computed(value):
-    """A helper making a statement besides the value it returns"""
+    """A macro making a statement besides the value it returns"""
     Set(REGS[3], 3)
     return value + 1
 
 
+@macro
 def tested_late(value):
-    """A condition helper making its test before its own statement, which runs before the test"""
+    """A condition macro making its test before its own statement, which runs before the test"""
     test = value > 0
     Set(REGS[6], 6)
     return test
 
 
+@macro
 def returning_early(value):
-    """A condition helper whose own statement ends the path before the test"""
+    """A condition macro whose own statement ends the path before the test"""
     Return(5)
     return value
 
 
+@macro
 def noted(value):
-    """A helper making a statement and returning nothing"""
+    """A macro making a statement and returning nothing"""
     Set(REGS[5], value)
+
+
+@macro
+def counted(value):
+    """A macro making a statement, returning value as it is"""
+    Set(REGS[2], 9)
+    return value
+
+
+@macro
+def set_then(register, value):
+    """A macro setting register to 9, returning value as it is"""
+    Set(register, 9)
+    return value
+
+
+@macro
+def pair(value):
+    """A macro returning a tuple after making a statement"""
+    Set(REGS[3], 1)
+    return value, value
+
+
+@macro
+def number():
+    """A macro returning a Python number after making a statement"""
+    Set(REGS[2], 2)
+    return 5
+
+
+@macro
+def empty_after_noting():
+    """A macro returning an empty list after making a statement"""
+    Set(REGS[3], 1)
+    return []
+
+
+@macro
+def carrying_an_unmarked(value):
+    """A macro calling an unmarked function inside an expression: that function's statement is not the macro's"""
+    Set(REGS[1], plain_counted(value))  # line: inside a macro
+
+
+def counted_then_late(value):
+    """Unmarked, called on a line of its own: a macro's value kept, a statement made, then the value tested"""
+    kept = counted(value)
+    Set(REGS[9], 1)
+    While(kept, [Set(value, value - 1)])
+
+
+def counted_twice(value):
+    """Unmarked, called on a line of its own: a macro's value kept and used twice"""
+    kept = counted(value)
+    Set(REGS[1], kept)
+    Set(REGS[2], kept)
+
+
+def plain_note(value):
+    """Unmarked: makes a statement and returns nothing"""
+    Set(REGS[3], value)
+
+
+def plain_counted(value):
+    """Unmarked: makes a statement, returns value as it is"""
+    Set(REGS[2], 9)
+    return value
+
+
+def plain_pair(value):
+    """Unmarked: makes a statement, returns two values"""
+    Set(REGS[3], 1)
+    return value, value
+
+
+def plain_generated():
+    """Yields one statement and makes another"""
+    yield Set(REGS[1], 1)
+    Set(REGS[2], 2)
+
+
+class Box:
+    """Holds a value on an attribute"""
+    value = None
+
+
+def attribute_store():
+    """Unmarked, called on a line of its own: an unmarked function's value stored on an attribute"""
+    Box.value = plain_note(7)  # line: stored
+
+
+def unpacking(value):
+    """Unmarked, called on a line of its own: an unmarked function's value unpacked"""
+    first, second = plain_pair(value)  # line: unpacking
+
+
+def when(condition, block):
+    """The script's own wrapper, unmarked: returns the If it makes"""
+    return If(condition, block)
+
+
+def repeat(times, block):
+    """A wrapper making a statement before the While holding the block it was given"""
+    counter = Local('counter')
+    Let(counter, 0)
+    While(counter < times, [*block, Set(counter, counter + 1)])
+
+
+def chained_assignment(value):
+    """Unmarked, called on a line of its own: an unmarked function's value kept in two variables at once"""
+    first = second = plain_counted(value)  # line: chained assignment
+    return first, second
+
+
+def plain_counting():
+    """A generator making a statement as it is iterated"""
+    Set(REGS[1], 1)
+    yield 1
+
+
+def loop_over_generator():
+    """Unmarked, called on a line of its own: a loop over a generator making statements"""
+    for _ in plain_counting():  # line: over a generator
+        pass
+
+
+def nested_listed_out_of_order(value):
+    """An If made before a statement, then listed after it"""
+    inner = If(value, [Set(REGS[5], 5)])
+    last = Set(REGS[1], 1)
+    If(value, [last, inner])
+
+
+def second_arm_made_first(value):
+    """An If's else block made before its first block"""
+    otherwise = [Set(REGS[2], 2)]
+    If(value, [Set(REGS[1], 1)]).Else(otherwise)
+
+
+@macro
+def repeating(times, block):
+    """A macro making a statement before the While holding the block it was given"""
+    counter = Local('counter')
+    Let(counter, 0)
+    While(counter < times, [*block, Set(counter, counter + 1)])
+
+
+def block_kept_before_condition(value):
+    """A block kept in a variable, made before its If's condition"""
+    block = [Set(REGS[1], 1)]
+    If(value == 1, block)
 
 
 
@@ -297,8 +451,8 @@ class TestNodesAcrossBodies(MistakeTestCase):
         self.assert_raises_at(register, 'other parameter', 'Second', "arg1 belongs to First's body; to keep a value "
                                                                      'between functions, store it in a global')
 
-    def test_a_call_from_a_finished_body(self):
-        """A statement of First, kept and used by Second, would run again there"""
+    def test_a_value_from_a_finished_body(self):
+        """An operation of First, kept and used by Second, would run again there"""
         kept = []
 
         def register(scena):
@@ -306,7 +460,9 @@ class TestNodesAcrossBodies(MistakeTestCase):
 
             @scena.HLILCode()
             def First():
-                kept.append(AdjustSpeed(1))
+                value = REGS[2] + 1
+                Set(REGS[1], value)
+                kept.append(value)
                 Return()
 
             @scena.HLILCode()
@@ -314,7 +470,24 @@ class TestNodesAcrossBodies(MistakeTestCase):
                 chr_wait_animeclip(kept[0], 0)  # line: finished body
                 Return()
 
-        self.assert_raises_at(register, 'finished body', 'Second', 'AdjustSpeed(...) was made in another HLIL body')
+        self.assert_raises_at(register, 'finished body', 'Second', '(REGS[2] ADD 1) was made in another HLIL body')
+
+    def test_a_statement_kept_in_a_python_list(self):
+        """A statement kept in a list nothing takes as a block, to use in another body: refused where it is made"""
+        kept = []
+
+        def register(scena):
+            use_library(scena)
+
+            @scena.HLILCode()
+            def First():
+                kept.append(AdjustSpeed(1))  # line: kept in a list
+                Return()
+
+        line = marked_line(__file__, 'kept in a list')
+        self.assert_raises_at(register, 'kept in a list', 'First', f'AdjustSpeed(...) is written inside an expression '
+                                                                    f'(line {line}) and no block took it: a statement '
+                                                                    "stands on a line of its own or in a block's list")
 
     def test_a_node_made_outside_a_body(self):
         """At module level or in a helper's default value: no build to belong to"""
@@ -831,15 +1004,29 @@ class TestLoops(MistakeTestCase):
                 self.assert_raises_at(register, marker, 'Func', text)
 
 
-class TestNestedStatements(MistakeTestCase):
-    """A helper's own statement where it can't run where the helper is called: inside another statement, after its
-    condition's test was made, ending the path before the test; or where the source can't tell which argument made it"""
+class TestMacroStatements(MistakeTestCase):
+    """A statement no block holds where it can't stand where it was made: an unmarked function's called inside an
+    expression, a statement written inside one; a macro's that can't run where its value goes: after an operand read
+    before it, after its condition's test was made, ending the path before the test, with a value that can't carry it
+    or used twice; a macro's statements truth-tested; a block made before what runs before it"""
 
-    def test_what_a_helper_cannot_nest(self):
+    def test_what_a_macro_cannot_carry(self):
         def mid_expression(scena):
             @scena.HLILCode()
             def Func(arg1: Value32):
                 Set(arg1, Syscall(1, 2, 3) + computed(arg1))  # line: mid expression
+                Return()
+
+        def after_a_read(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                Set(REGS[4], REGS[3] + set_then(REGS[3], REGS[5]))  # line: after a read
+                Return()
+
+        def after_an_argument_read(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                Syscall(1, 2, REGS[3], set_then(REGS[3], REGS[5]))  # line: after an argument read
                 Return()
 
         def test_before_its_statement(scena):
@@ -858,17 +1045,254 @@ class TestNestedStatements(MistakeTestCase):
                 ])
                 Return()
 
-        def star_arguments(scena):
+        def a_tuple(scena):
             @scena.HLILCode()
             def Func(arg1: Value32):
-                parts = (arg1,)
-                While(*parts, [noted(1)])  # line: star arguments
+                Set(REGS[1], pair(arg1)[0])  # line: a tuple
                 Return()
 
-        def through_partial(scena):
+        def a_number(scena):
             @scena.HLILCode()
             def Func(arg1: Value32):
-                functools.partial(While, arg1)([noted(1), Set(arg1, 0)])  # line: through partial
+                Set(REGS[1], number() + 1)  # line: a number
+                Return()
+
+        def used_twice(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                counted_twice(arg1)  # line: used twice
+                Return()
+
+        def used_after_a_statement(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                counted_then_late(arg1)  # line: used after a statement
+                Return()
+
+        def carrying_an_unmarked_statement(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [carrying_an_unmarked(arg1)])  # line: carrying an unmarked statement
+                Return()
+
+        def a_list_comprehension(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                [noted(value) for value in (1, 2)]  # line: a list comprehension
+                Return()
+
+        read_first = ("which this expression takes first: a macro's statements run before the whole statement holding "
+                      'its value')
+        cases = ((mid_expression, 'mid expression', 'Set(REGS[3], ...), made by a macro, would run before Syscall(1, '
+                                                    f'2, ...), {read_first}'),
+                 (after_a_read, 'after a read', f'Set(REGS[3], ...), made by a macro, would run before REGS[3], '
+                                                f'{read_first}; keep REGS[3] in a Let on a line before, or call the '
+                                                'macro first'),
+                 (after_an_argument_read, 'after an argument read', 'Set(REGS[3], ...), made by a macro, would run '
+                                                                    f'before REGS[3], {read_first}'),
+                 (test_before_its_statement, 'test before statement', '(arg1 GT 0) is made here but runs after '
+                                                                      'Set(REGS[6], ...), made later: the statements '
+                                                                      "macros make for the While's condition run "
+                                                                      'before its test: make its value after them'),
+                 (ended_before_the_test, 'ended before the test', "Return(...), made while the While's condition is "
+                                                                  'built, ends its path before the test: the '
+                                                                  'condition never runs'),
+                 (a_tuple, 'a tuple', 'Set(REGS[3], ...) is made in the macro pair(), called inside an expression '
+                                      f"(line {marked_line(__file__, 'a tuple')}), and pair could not return it with "
+                                      "its value (tuple can't carry a statement: a macro returns a DSL value, a "
+                                      'statement, a list of statements or nothing)'),
+                 (a_number, 'a number', 'Set(REGS[2], ...) is made in the macro number(), called inside an expression '
+                                        f"(line {marked_line(__file__, 'a number')}), and number could not return it "
+                                        "with its value (int can't carry a statement"),
+                 (used_twice, 'used twice', "arg1, a macro's value, is used twice: the statements the macro made run "
+                                            'once, where the value is used; keep a value with Let(x, value) and read '
+                                            'x'),
+                 (used_after_a_statement, 'used after a statement', 'Set(REGS[2], ...) is made here but runs after '
+                                                                    "Set(REGS[9], ...), made later: a macro's "
+                                                                    "statements for the While's condition run before "
+                                                                    'its test, where the While stands: call the macro '
+                                                                    'where its value is used'),
+                 (carrying_an_unmarked_statement, 'carrying an unmarked statement',
+                  'Set(REGS[2], ...) is made in plain_counted(), called inside an expression (line '
+                  f"{marked_line(__file__, 'inside a macro')} of carrying_an_unmarked): Python gives the expression "
+                  'only what plain_counted returns'),
+                 (a_list_comprehension, 'a list comprehension', 'Set(REGS[5], ...) is made in the macro noted(), '
+                                                                'called inside an expression (line '
+                                                                f"{marked_line(__file__, 'a list comprehension')}), "
+                                                                'and no block or statement took what noted returned '
+                                                                'with it'))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+    def test_what_cannot_stand_where_made(self):
+        def in_a_block(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [plain_note(1)])  # line: in a block
+                Return()
+
+        def in_a_condition(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                While(plain_counted(arg1), [  # line: in a condition
+                    Set(arg1, arg1 - 1),
+                ])
+                Return()
+
+        def through_a_wrapper(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                when(arg1, [plain_note(1)])  # line: through a wrapper
+                Return()
+
+        def through_a_generator(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [*plain_generated()])  # line: through a generator
+                Return()
+
+        def on_an_attribute(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                attribute_store()  # line: on an attribute
+                Return()
+
+        def unpacked(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                unpacking(arg1)  # line: unpacked
+                Return()
+
+        def in_an_expression(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [(Set(REGS[1], 1), Set(REGS[2], 2))[1]])  # line: in an expression
+                Return()
+
+        def statements_in_a_comprehension(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                [Set(REGS[register], 0) for register in (1, 2)]  # line: statements in a comprehension
+                Return()
+
+        def kept_twice(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                chained_assignment(arg1)  # line: kept twice
+                Return()
+
+        def a_generator_looped_over(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                loop_over_generator()  # line: a generator looped over
+                Return()
+
+        def mark_it(function: str, marker: str, inside: str = '') -> str:
+            """The message for an unmarked function called inside an expression, in the body or in function inside
+            (only there may a plain variable keep its value)"""
+            where = f'{marked_line(__file__, marker)}' + (f' of {inside}' if inside else '')
+            variable = f', or assign its value to one plain variable first (x = {function}(...))' if inside else ''
+            return (f'is made in {function}(), called inside an expression (line {where}): Python gives the '
+                    f"expression only what {function} returns, so the statement can't go where the call is written; "
+                    f'mark the function (@macro above def {function}), or call it on a line of its own{variable}')
+
+        def inside_an_expression(marker: str) -> str:
+            return (f'is written inside an expression (line {marked_line(__file__, marker)}) and no block took it: a '
+                    "statement stands on a line of its own or in a block's list")
+
+        cases = ((in_a_block, 'in a block', f"Set(REGS[3], ...) {mark_it('plain_note', 'in a block')}"),
+                 (in_a_condition, 'in a condition', f"Set(REGS[2], ...) {mark_it('plain_counted', 'in a condition')}"),
+                 (through_a_wrapper, 'through a wrapper', 'Set(REGS[3], ...) '
+                                                          f"{mark_it('plain_note', 'through a wrapper')}"),
+                 (through_a_generator, 'through a generator', 'Set(REGS[2], ...) is made in the generator '
+                                                              'plain_generated() (line '
+                                                              f"{marked_line(__file__, 'through a generator')}): its "
+                                                              "body runs as it is iterated, so its statements can't "
+                                                              'go where it is called; make it a function returning a '
+                                                              'list'),
+                 (on_an_attribute, 'on an attribute', 'Set(REGS[3], ...) '
+                                                      f"{mark_it('plain_note', 'stored', 'attribute_store')}"),
+                 (unpacked, 'unpacked', f"Set(REGS[3], ...) {mark_it('plain_pair', 'unpacking', 'unpacking')}"),
+                 (in_an_expression, 'in an expression',
+                  f"Set(REGS[1], ...) {inside_an_expression('in an expression')}"),
+                 (statements_in_a_comprehension, 'statements in a comprehension',
+                  f"Set(REGS[1], ...) {inside_an_expression('statements in a comprehension')}"),
+                 (kept_twice, 'kept twice',
+                  f"Set(REGS[2], ...) {mark_it('plain_counted', 'chained assignment', 'chained_assignment')}"),
+                 (a_generator_looped_over, 'a generator looped over',
+                  'Set(REGS[1], ...) is made in the generator plain_counting() (line '
+                  f"{marked_line(__file__, 'over a generator')} of loop_over_generator): its body runs as it is "
+                  "iterated, so its statements can't go where it is called; make it a function returning a list"))
+        for register, marker, text in cases:
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', text)
+
+        # In the body, where its source check refuses a call kept in a variable, the message ends with no such hint
+        with self.subTest(case='no variable hint in a body'):
+            with self.assertRaisesRegex(HLILError, f"{re.escape(mark_it('plain_note', 'in a block'))}$"):
+                self.compiled(in_a_block)
+
+    def test_a_macro_truth_tested(self):
+        """Python's or, and, not and if test a macro's statements in place of what it returned: nothing, or a list"""
+        def with_or(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [noted(1) or Set(REGS[4], 2)])  # line: or
+                Return()
+
+        def with_and(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [empty_after_noting() and Set(REGS[4], 2)])  # line: and
+                Return()
+
+        def with_not(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [Set(REGS[4], 2)] if not noted(1) else [])  # line: not
+                Return()
+
+        def with_if(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                if empty_after_noting():  # line: if
+                    Set(REGS[4], 2)
+                Return()
+
+        for register, marker in ((with_or, 'or'), (with_and, 'and'), (with_not, 'not'), (with_if, 'if')):
+            with self.subTest(case=marker):
+                self.assert_raises_at(register, marker, 'Func', "a macro's statements have no truth value while the "
+                                                                "script compiles: Python's if / while / and / or / "
+                                                                'not would test them in place of what the macro '
+                                                                'returned; use If(...)')
+
+    def test_a_generator_macro(self):
+        """A generator's body runs after its call returns: nothing would go with the call"""
+        with self.assertRaisesRegex(HLILError, re.escape("@macro can't mark generated: a generator's body runs when it "
+                                                         'is iterated, after its call returns')):
+            @macro
+            def generated():
+                yield Set(REGS[1], 1)
+
+    def test_a_macro_over_a_classmethod(self):
+        """@macro above @classmethod gets a classmethod object, not a function: the decorators' order, at its line"""
+        with self.assertRaisesRegex(HLILError, f"^{at(__file__, 'over a classmethod')}" + re.escape(
+                '@macro marks a function (a def), not a classmethod: put it right above the def, below @classmethod '
+                'or @staticmethod')):
+            class Notes:
+                @macro  # line: over a classmethod
+                @classmethod
+                def note(cls, value):
+                    Set(REGS[3], value)
+
+    def test_a_block_made_too_early(self):
+        """A block's statement made before what runs before it: its If's condition, an earlier element of its block,
+        or a statement before its If or While (a function given a block, making statements first)"""
+        def before_its_condition(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                block_kept_before_condition(arg1)  # line: before its condition
                 Return()
 
         def listed_out_of_order(scena):
@@ -877,25 +1301,51 @@ class TestNestedStatements(MistakeTestCase):
                 If(arg1, [*reversed([Set(REGS[1], 1), Set(REGS[2], 2)]), noted(3)])  # line: listed out of order
                 Return()
 
-        cases = ((listed_out_of_order, 'listed out of order', 'Set(REGS[1], ...) is made here but runs after '
-                                                              'Set(REGS[2], ...), made later'),
-                 (mid_expression, 'mid expression', 'Set(REGS[3], ...) is made between two parts of Set(arg1, ...) '
-                                                    '(after Syscall(1, 2, ...)): a statement runs before or after '
-                                                    'another, not inside it'),
-                 (test_before_its_statement, 'test before statement', "(arg1 GT 0) is made here but runs after "
-                                                                      "Set(REGS[6], ...), made later: a helper's "
-                                                                      "statements made in the While's condition run "
-                                                                      'before its test: make its value after them'),
-                 (ended_before_the_test, 'ended before the test', "Return(...), made while the While's condition is "
-                                                                  'built, ends its path before the test: the '
-                                                                  'condition never runs'),
-                 (star_arguments, 'star arguments', 'Set(REGS[5], ...) is made while the arguments of this call are '
-                                                    "built, and the call's source can't be read to tell which "
-                                                    'argument made it'),
-                 (through_partial, 'through partial', "Set(REGS[5], ...) is made while the arguments of this call are "
-                                                      "built, and the call's source can't be read to tell which "
-                                                      'argument made it (no source, *arguments or keywords, or a call '
-                                                      "that is not the If's or While's own"))
+        def given_to_a_wrapper(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                repeat(3, [Set(REGS[4], 2)])  # line: given to a wrapper
+                Return()
+
+        def given_to_a_macro_in_a_block(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                If(arg1, [repeating(3, [Set(REGS[4], 2)])])  # line: given to a macro in a block
+                Return()
+
+        def nested_out_of_order(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                nested_listed_out_of_order(arg1)  # line: nested out of order
+                Return()
+
+        def second_arm_first(scena):
+            @scena.HLILCode()
+            def Func(arg1: Value32):
+                second_arm_made_first(arg1)  # line: second arm first
+                Return()
+
+        cases = ((before_its_condition, 'before its condition', 'Set(REGS[1], ...) is made here but runs after (arg1 '
+                                                                'EQ 1), made later: an If or a While runs its '
+                                                                'condition before its block'),
+                 (listed_out_of_order, 'listed out of order', 'Set(REGS[1], ...) is made here but runs after '
+                                                              "Set(REGS[2], ...), made later: a block's list runs in "
+                                                              'its written order: make its statements in that order'),
+                 (given_to_a_wrapper, 'given to a wrapper', 'Set(REGS[4], ...) is made here but runs after '
+                                                            'Let(counter, ...), made later: its block runs where its '
+                                                            'If or While stands, after Let(counter, ...); a function '
+                                                            "given a block can't make statements before the If or "
+                                                            'While holding it yet'),
+                 (given_to_a_macro_in_a_block, 'given to a macro in a block',
+                  'Set(REGS[4], ...) is made here but runs after Let(counter, ...), made later: its block runs where '
+                  "its If or While stands, after Let(counter, ...); a function given a block can't make statements "
+                  'before the If or While holding it yet'),
+                 (nested_out_of_order, 'nested out of order', 'Set(REGS[5], ...) is made here but runs after '
+                                                              "Set(REGS[1], ...), made later: a block's list runs in "
+                                                              'its written order: make its statements in that order'),
+                 (second_arm_first, 'second arm first', 'Set(REGS[2], ...) is made here but runs after Set(REGS[1], '
+                                                        "...), made later: an If's blocks run in their written order: "
+                                                        "make each arm's block in that order"))
         for register, marker, text in cases:
             with self.subTest(case=marker):
                 self.assert_raises_at(register, marker, 'Func', text)

@@ -3,6 +3,8 @@
 twin without line markers, by each kind of game writer. A twin from a real script is its listing in the stored sora2
 dump, the line markers dropped; the others follow the VM's rules (docs/falcom/ed9/ED9_VM.md)"""
 
+import functools
+import itertools
 import operator
 from pathlib import Path
 import sys
@@ -1162,8 +1164,9 @@ class TestLoops(HLILTestCase):
         self.assert_twins(hlil, llil)
 
 
-# The helpers the nesting twins call: each makes statements besides what it returns
+# The functions the macro twins call: each macro makes statements besides what it returns; the others are unmarked
 
+@macro
 def note(value):
     """Makes a statement and returns nothing"""
     Set(REGS[3], value)
@@ -1174,38 +1177,44 @@ def notes(first, second):
     return [Set(REGS[first], first), Set(REGS[second], second)]
 
 
+@macro
 def step_and_leave(done):
     """Makes a statement and returns an If leaving the loop"""
     Set(REGS[1], 7)
     return If(done, [Break()])
 
 
+@macro
 def counted(value):
     """Makes a statement and returns value as it is"""
     Set(REGS[2], 9)
     return value
 
 
+@macro
 def tested(register, value):
     """Makes a statement, then the test it returns"""
     Set(REGS[register], register)
     return value == register
 
 
+@macro
 def leave_when(done, value):
     """Makes an If leaving the loop, returns value as it is"""
     If(done, [Break()])
     return value
 
 
+@macro
 def countdown(counter):
-    """Makes a whole loop, its block calling a helper too"""
+    """Makes a whole loop, its block calling a macro too"""
     While(counter, [
         note(5),
         Set(counter, counter - 1),
     ])
 
 
+@macro
 def marks(register):
     """Recursive: each call's statement where that call is made, an inner call's in the block of its caller's If"""
     Set(REGS[register], register)
@@ -1213,6 +1222,7 @@ def marks(register):
         If(REGS[register], [marks(register - 1)])
 
 
+@macro
 def declared(local, value):
     """Declares local and returns it"""
     Let(local, value)
@@ -1224,12 +1234,148 @@ def loop_parts(counter):
     return counter, [Set(counter, 0)]
 
 
-class TestNestedStatements(HLILTestCase):
-    """A helper's own statements, those it does not return, run where the helper is called: in the block holding the
-    call, before each test of the condition holding it; an If's first condition's before the If"""
+@macro
+def set_then(register, value):
+    """Sets register to 9, returns value as it is"""
+    Set(register, 9)
+    return value
 
-    def test_block_helpers(self):
-        """A helper as a block's first and later element, returning an If, a list and nothing; a list inside a block
+
+@macro
+def slot(register):
+    """Makes a statement and returns the register it names, for Set's target"""
+    Set(REGS[1], register)
+    return REGS[register]
+
+
+@macro
+def two_notes(first, second):
+    """A macro calling a macro twice, on lines of their own"""
+    note(first)
+    note(second)
+
+
+@macro
+def note_then_list(value):
+    """Makes a statement, then returns a list of another"""
+    Set(REGS[1], value)
+    return [Set(REGS[2], value)]
+
+
+@macro
+def set_counted(value):
+    """A macro making a statement of another macro's value: that macro's statement leads it, not the block"""
+    Set(REGS[6], counted(value))
+
+
+@macro
+def two_then(value):
+    """Makes two statements, returns value as it is"""
+    Set(REGS[1], 1)
+    Set(REGS[2], 2)
+    return value
+
+
+@macro
+def if_then_note(condition):
+    """Returns an If, then makes a statement after it"""
+    made = If(condition, [Set(REGS[1], 1)])
+    Set(REGS[2], 2)
+    return made
+
+
+@macro
+def list_then_note(value):
+    """Makes a list, then a statement, and returns the list"""
+    listed = [Set(REGS[1], value)]
+    Set(REGS[2], value)
+    return listed
+
+
+@macro
+def outer_counted(value):
+    """Returns another macro's value"""
+    return counted(value)
+
+
+@macro
+def fresh(local):
+    """Makes a statement, returns the local it is given, for Let"""
+    Set(REGS[1], 1)
+    return local
+
+
+kept_value = None
+
+
+def keep_in_a_global():
+    """Unmarked, called on a line of its own: an unmarked function's value kept in a global"""
+    global kept_value
+    kept_value = plain_note(1)
+
+
+def keep_in_a_closure():
+    """Unmarked, called on a line of its own: an unmarked function's value kept in a closure's variable"""
+    kept = None
+
+    def keep():
+        nonlocal kept
+        kept = plain_note(2)
+
+    keep()
+    return kept
+
+
+class Notes:
+    @macro
+    def note(self, value):
+        """A macro as a method"""
+        Set(REGS[3], value)
+
+
+NOTES = Notes()
+
+
+def plain_note(value):
+    """Unmarked: makes a statement and returns nothing"""
+    Set(REGS[3], value)
+
+
+def when(condition, block):
+    """The script's own wrapper, unmarked: returns the If it makes"""
+    return If(condition, block)
+
+
+def until_zero(condition, block):
+    """An unmarked wrapper making a While, called on a line of its own"""
+    While(condition, block)
+
+
+def block_in_a_variable(condition):
+    """Unmarked, called on a line of its own: a block kept in a variable before its If takes it"""
+    block = [note(1), Set(REGS[4], 2)]
+    If(condition, block)
+
+
+def plain_boundaries(flag):
+    """Unmarked, called on a line of its own: an unmarked function's statement stands where made when its call is a
+    line of its own, kept in a variable, called with keywords or a star, one side of a ternary line, or returned"""
+    plain_note(1)
+    _ = plain_note(2)
+    plain_note(value=3)
+    plain_note(*(4,))
+    plain_note(5) if flag else plain_note(6)
+    return plain_note(7)
+
+
+class TestMacroStatements(HLILTestCase):
+    """A macro's own statements, those it does not return, run where its call's value goes: in the block holding the
+    call, through the script's own wrappers, a Python variable or a C-level callable; before each test of the condition
+    holding it; an If's first condition's before the If. An unmarked function's stand where made, on a line of its
+    own"""
+
+    def test_block_macros(self):
+        """A macro as a block's first and later element, returning an If, a list and nothing; a list inside a block
         opened in place; also with the compile check off"""
         def hlil(scena):
             @scena.HLILCode()
@@ -1283,8 +1429,8 @@ class TestNestedStatements(HLILTestCase):
         self.assert_twins(hlil, llil)
         self.assertEqual(self.compiled(hlil, check=False), self.compiled(llil))
 
-    def test_while_condition_helpers(self):
-        """A While condition's helper runs before each test, after a Continue too; one making an If that leaves the
+    def test_while_condition_macros(self):
+        """A While condition's macro runs before each test, after a Continue too; one making an If that leaves the
         loop"""
         def hlil(scena):
             @scena.HLILCode()
@@ -1339,9 +1485,10 @@ class TestNestedStatements(HLILTestCase):
 
         self.assert_twins(hlil, llil)
 
-    def test_if_condition_helpers(self):
-        """An If's first condition's helper runs before the If, inside the loop holding it; an .ElseIf condition's at
-        that arm's test; an .Else block's helper in the block"""
+    def test_if_condition_macros(self):
+        """An If's first condition's macro runs before the If, inside the loop holding it (an .ElseIf after it
+        keeping it there); an .ElseIf condition's at that arm's test, a later .ElseIf's too; an .Else block's macro in
+        the block"""
         def hlil(scena):
             @scena.HLILCode()
             def Arms(arg1: Value32):
@@ -1349,12 +1496,14 @@ class TestNestedStatements(HLILTestCase):
                     Set(REGS[4], 1),
                 ]).ElseIf(tested(2, arg1), [
                     Set(REGS[4], 2),
+                ]).ElseIf(tested(3, arg1), [
+                    Set(REGS[4], 4),
                 ]).Else([
                     note(3),
                     Set(REGS[4], 3),
                 ])
                 While(arg1, [
-                    If(tested(5, arg1), [Break()]),
+                    If(tested(5, arg1), [Break()]).ElseIf(REGS[6], [Set(REGS[6], 0)]),
                     Set(arg1, arg1 - 1),
                 ])
                 Return()
@@ -1377,8 +1526,18 @@ class TestNestedStatements(HLILTestCase):
                 LOAD_STACK(-4)
                 PUSH_INT(2)
                 EQ()
-                POP_JMP_ZERO('else')
+                POP_JMP_ZERO('third')
                 PUSH_INT(2)
+                SET_REG(4)
+                JMP('if_end')
+                label('third')
+                PUSH_INT(3)
+                SET_REG(3)
+                LOAD_STACK(-4)
+                PUSH_INT(3)
+                EQ()
+                POP_JMP_ZERO('else')
+                PUSH_INT(4)
                 SET_REG(4)
                 JMP('if_end')
                 label('else')
@@ -1398,6 +1557,11 @@ class TestNestedStatements(HLILTestCase):
                 POP_JMP_ZERO('stay')
                 JMP('loop_end')
                 label('stay')
+                GET_REG(6)
+                POP_JMP_ZERO('inner_end')
+                PUSH_INT(0)
+                SET_REG(6)
+                label('inner_end')
                 LOAD_STACK(-4)
                 PUSH_INT(1)
                 SUB()
@@ -1411,8 +1575,8 @@ class TestNestedStatements(HLILTestCase):
 
         self.assert_twins(hlil, llil)
 
-    def test_helpers_making_whole_statements(self):
-        """A helper making a whole loop whose block calls a helper; a recursive helper, each call's statements in its
+    def test_macros_making_whole_statements(self):
+        """A macro making a whole loop whose block calls a macro; a recursive macro, each call's statements in its
         caller's block"""
         def hlil(scena):
             @scena.HLILCode()
@@ -1457,9 +1621,8 @@ class TestNestedStatements(HLILTestCase):
 
         self.assert_twins(hlil, llil)
 
-    def test_a_starred_call_with_nothing_to_place(self):
-        """A call whose arguments can't be told apart compiles when no statement needs placing: a statement made
-        before it in the same body, and the call run again by a Python loop"""
+    def test_a_starred_call_run_again(self):
+        """A starred While call, after a statement made in the same body, and run again by a Python loop"""
         def hlil(scena):
             @scena.HLILCode()
             def Starred(arg1: Value32, arg2: Value32):
@@ -1494,10 +1657,10 @@ class TestNestedStatements(HLILTestCase):
 
         self.assert_twins(hlil, llil)
 
-    def test_locals_helpers_declare(self):
-        """A block helper's local lives in that block, pushed and popped every pass; a While condition helper's for one
-        pass, popped before the jump back, on the way out and by a Break or a Continue; an .ElseIf condition helper's
-        through that arm, popped on both its paths, at one POP when no arm follows; an If's first condition helper's
+    def test_locals_macros_declare(self):
+        """A block macro's local lives in that block, pushed and popped every pass; a While condition macro's for one
+        pass, popped before the jump back, on the way out and by a Break or a Continue; an .ElseIf condition macro's
+        through that arm, popped on both its paths, at one POP when no arm follows; an If's first condition macro's
         before the If, to the end of the block holding it"""
         def hlil(scena):
             @scena.HLILCode()
@@ -1660,6 +1823,339 @@ class TestNestedStatements(HLILTestCase):
                 PUSH_RAW(RawInt(0))
                 SET_REG(0)
                 POP(8)                  # w and arg1: the whole frame
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_blocks_through_wrappers(self):
+        """A macro in a block given to the script's own wrapper, in a wrapper's block nested in another's, and in a
+        block kept in a Python variable before its If takes it"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Wrapped(arg1: Value32):
+                when(arg1, [note(1), Set(REGS[4], 2)])
+                If(arg1, [when(REGS[5], [note(6)])])
+                block_in_a_variable(arg1)
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Wrapped(arg1: Value32):
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('first_end')
+                PUSH_INT(1)
+                SET_REG(3)
+                PUSH_INT(2)
+                SET_REG(4)
+                label('first_end')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('outer_end')
+                GET_REG(5)
+                POP_JMP_ZERO('inner_end')
+                PUSH_INT(6)
+                SET_REG(3)
+                label('inner_end')
+                label('outer_end')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('third_end')
+                PUSH_INT(1)
+                SET_REG(3)
+                PUSH_INT(2)
+                SET_REG(4)
+                label('third_end')
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(4)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_arms_called_indirectly(self):
+        """A condition macro given to a While wrapper or to itertools.starmap runs before each test; a block macro
+        given through functools.partial, or to a starred While call, runs in the block"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Indirect(arg1: Value32, arg2: Value32):
+                until_zero(counted(arg1), [Set(arg1, arg1 - 1)])
+                for _ in itertools.starmap(While, [(counted(arg2), [Set(arg2, arg2 - 1)])]):
+                    pass
+                functools.partial(While, arg1)([note(1), Set(arg1, 0)])
+                parts = (arg2,)
+                While(*parts, [note(2), Set(arg2, 0)])
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Indirect(arg1: Value32, arg2: Value32):
+                label('first')
+                PUSH_INT(9)
+                SET_REG(2)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('first_end')
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                SUB()
+                POP_TO(-4)
+                JMP('first')
+                label('first_end')
+                label('second')
+                PUSH_INT(9)
+                SET_REG(2)
+                LOAD_STACK(-8)
+                POP_JMP_ZERO('second_end')
+                LOAD_STACK(-8)
+                PUSH_INT(1)
+                SUB()
+                POP_TO(-8)
+                JMP('second')
+                label('second_end')
+                label('third')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('third_end')
+                PUSH_INT(1)
+                SET_REG(3)
+                PUSH_INT(0)
+                POP_TO(-4)
+                JMP('third')
+                label('third_end')
+                label('fourth')
+                LOAD_STACK(-8)
+                POP_JMP_ZERO('fourth_end')
+                PUSH_INT(2)
+                SET_REG(3)
+                PUSH_INT(0)
+                POP_TO(-8)
+                JMP('fourth')
+                label('fourth_end')
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(8)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_macro_values(self):
+        """A macro's leaf value as Set's target, its statement first; a macro calling macros, one making a statement of
+        another's value; a macro returning a list after a statement; a macro as a method; a macro first in an
+        operation and in a call's arguments, its statement before the whole statement (Python's order: the later
+        operand is read after it)"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Values(arg1: Value32):
+                Set(slot(7), 5)
+                If(arg1, [two_notes(1, 2), NOTES.note(4), note_then_list(6), set_counted(arg1)])
+                Set(REGS[4], set_then(REGS[3], REGS[5]) + REGS[3])
+                Syscall(1, 2, set_then(REGS[3], REGS[5]), REGS[3])
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Values(arg1: Value32):
+                PUSH_INT(7)
+                SET_REG(1)
+                PUSH_INT(5)
+                SET_REG(7)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('if_end')
+                PUSH_INT(1)
+                SET_REG(3)
+                PUSH_INT(2)
+                SET_REG(3)
+                PUSH_INT(4)
+                SET_REG(3)
+                PUSH_INT(6)
+                SET_REG(1)
+                PUSH_INT(6)
+                SET_REG(2)
+                PUSH_INT(9)
+                SET_REG(2)
+                LOAD_STACK(-4)
+                SET_REG(6)
+                label('if_end')
+                PUSH_INT(9)
+                SET_REG(3)
+                GET_REG(5)
+                GET_REG(3)
+                ADD()
+                SET_REG(4)
+                PUSH_INT(9)
+                SET_REG(3)
+                GET_REG(3)
+                GET_REG(5)
+                SYSCALL(1, 2, 2)
+                POP(8)
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(4)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_constant_operands_before_a_macro(self):
+        """An operand read before a macro's is no read of the game when it is a constant or an operation on constants
+        only, so the macro's statement runs before the whole statement"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Constants(arg1: Value32):
+                Syscall(1, 2, Int(8) | 16, counted(arg1))
+                Syscall(1, 2, -Int(8), counted(arg1))
+                Set(REGS[1], 5 - counted(arg1))
+                Set(REGS[4], And(1, 2, counted(arg1)))
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Constants(arg1: Value32):
+                PUSH_INT(9)
+                SET_REG(2)
+                LOAD_STACK(-4)
+                PUSH_INT(8)
+                PUSH_INT(16)
+                BITWISE_OR()
+                SYSCALL(1, 2, 2)
+                POP(8)
+                PUSH_INT(9)
+                SET_REG(2)
+                LOAD_STACK(-4)
+                PUSH_INT(8)
+                NEG()
+                SYSCALL(1, 2, 2)
+                POP(8)
+                PUSH_INT(9)
+                SET_REG(2)
+                PUSH_INT(5)
+                LOAD_STACK(-8)
+                SUB()
+                SET_REG(1)
+                PUSH_INT(9)
+                SET_REG(2)
+                PUSH_INT(1)
+                PUSH_INT(2)
+                LOGICAL_AND()
+                LOAD_STACK(-8)
+                LOGICAL_AND()
+                SET_REG(4)
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(4)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_macro_statement_orders(self):
+        """A macro's statements in the order made: two for an operand in a block and for a While's condition, one
+        after the If it returns, one after its list's element; a macro returning another's value; Let taking a macro's
+        local; an unmarked function's value kept in a global or a closure's variable"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Orders(arg1: Value32):
+                t = Local('t')
+                If(arg1, [Set(REGS[3], two_then(arg1))])
+                While(two_then(arg1), [Set(arg1, arg1 - 1)])
+                If(arg1, [if_then_note(REGS[5])])
+                If(arg1, [list_then_note(6)])
+                If(arg1, [Set(REGS[4], outer_counted(arg1))])
+                keep_in_a_global()
+                keep_in_a_closure()
+                Let(fresh(t), 2)
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Orders(arg1: Value32):
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('first_end')
+                PUSH_INT(1)
+                SET_REG(1)
+                PUSH_INT(2)
+                SET_REG(2)
+                LOAD_STACK(-4)
+                SET_REG(3)
+                label('first_end')
+                label('loop')
+                PUSH_INT(1)
+                SET_REG(1)
+                PUSH_INT(2)
+                SET_REG(2)
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('loop_end')
+                LOAD_STACK(-4)
+                PUSH_INT(1)
+                SUB()
+                POP_TO(-4)
+                JMP('loop')
+                label('loop_end')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('third_end')
+                GET_REG(5)
+                POP_JMP_ZERO('inner_end')
+                PUSH_INT(1)
+                SET_REG(1)
+                label('inner_end')
+                PUSH_INT(2)
+                SET_REG(2)
+                label('third_end')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('fourth_end')
+                PUSH_INT(6)
+                SET_REG(1)
+                PUSH_INT(6)
+                SET_REG(2)
+                label('fourth_end')
+                LOAD_STACK(-4)
+                POP_JMP_ZERO('fifth_end')
+                PUSH_INT(9)
+                SET_REG(2)
+                LOAD_STACK(-4)
+                SET_REG(4)
+                label('fifth_end')
+                PUSH_INT(1)
+                SET_REG(3)
+                PUSH_INT(2)
+                SET_REG(3)
+                PUSH_INT(1)
+                SET_REG(1)
+                PUSH_RAW(RawInt(0))
+                PUSH_INT(2)
+                POP_TO(-4)
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(8)
+                RETURN()
+
+        self.assert_twins(hlil, llil)
+
+    def test_unmarked_functions_standing(self):
+        """An unmarked function's statement stands where it is made at each boundary that keeps its call out of an
+        expression: a line of its own in the body or in a function, a plain variable, a keyword or a starred call, one
+        side of a ternary line, a returned call"""
+        def hlil(scena):
+            @scena.HLILCode()
+            def Standing(arg1: Value32):
+                plain_boundaries(True)
+                plain_note(8)
+                Return()
+
+        def llil(scena):
+            @scena.LLILCode()
+            def Standing(arg1: Value32):
+                PUSH_INT(1)
+                SET_REG(3)
+                PUSH_INT(2)
+                SET_REG(3)
+                PUSH_INT(3)
+                SET_REG(3)
+                PUSH_INT(4)
+                SET_REG(3)
+                PUSH_INT(5)
+                SET_REG(3)
+                PUSH_INT(7)
+                SET_REG(3)
+                PUSH_INT(8)
+                SET_REG(3)
+                PUSH_RAW(RawInt(0))
+                SET_REG(0)
+                POP(4)
                 RETURN()
 
         self.assert_twins(hlil, llil)

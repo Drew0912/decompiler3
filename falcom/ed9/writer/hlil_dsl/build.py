@@ -18,10 +18,10 @@ class HLILError(Exception):
 class Build:
     """One HLIL body's run: function_name is the function the body is for; site_of() says where the statement running
     now is (opaque here), and locate(site, text) puts it in a message. With body_codes (the body's code, and its
-    wrappers'), each node keeps its origin, and each statement or call nothing holds yet waits in unplaced, oldest
-    first, for an If or a While whose arguments made it (nested_statements.py). With check_helper, each helper the
-    body runs while it makes a node, a function in the node's origin before the body, is passed to check_helper(code,
-    its globals) on the way: a located message is its error"""
+    wrappers'), each node keeps its origin, which tells whether a statement nothing holds stands where it was made
+    (macro_statements.py). With check_helper, each helper the body runs while it makes a node, a function in the
+    node's origin before the body, is passed to check_helper(code, its globals) on the way: a located message is its
+    error"""
 
     def __init__(self, function_name: str, site_of: Callable[[], Any], locate: Callable[[Any, str], str],
                  body_codes: frozenset[int] = frozenset(),
@@ -32,7 +32,6 @@ class Build:
         self.body_codes = body_codes                    # id() of each code the body runs as itself
         self.check_helper = check_helper
         self.nodes: list = []                           # the tracked nodes, in creation order
-        self.unplaced: list = []                        # the statements and calls nothing holds yet, oldest first
         self.first_error: HLILError | None = None       # raised again after the body, even if the body caught it
 
     def register(self, node):
@@ -43,9 +42,6 @@ class Build:
         node.index = len(self.nodes)
         self.nodes.append(node)
         node.origin = self.origin(sys._getframe(1)) if self.body_codes else []
-        if node.origin and node.stands_alone:
-            self.unplaced.append(node)
-
         if self.check_helper is not None:
             for frame, _ in node.origin[:-1]:
                 code = frame.f_code
@@ -75,7 +71,6 @@ class Build:
 
     def release_origins(self):
         """Forget where the nodes were made, with the frames that holds"""
-        self.unplaced = []
         for node in self.nodes:
             node.origin = []
 
