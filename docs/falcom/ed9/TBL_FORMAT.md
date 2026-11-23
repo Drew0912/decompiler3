@@ -128,9 +128,9 @@ kind is a letter or two, defined in `FIELD_KINDS` (`parser/tbl.py`), with a key 
 new kind updates each key.
 
 `sora2`'s `schema_all.py` star-imports `sora1`'s, then imports its own classes, which are what differs, since the two
-are remakes in one series; a class of the same name replaces `sora1`'s. `sora2/tbl/README.md` lists each `sora2`
-table with links to the classes that read it, in either game's folder. `kuro1`, `kuro2` and `kai1` are a separate
-group: they do not build on these files.
+are remakes in one series; a class of the same name replaces `sora1`'s. `sora1/tbl/README.md` and
+`sora2/tbl/README.md` list each table of their game with links to the classes that read it. `kuro1`, `kuro2` and
+`kai1` are a separate group: they do not build on these files.
 
 Adding a table:
 
